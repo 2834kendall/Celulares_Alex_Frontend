@@ -1,0 +1,19 @@
+name: Restrict main to dev only
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check-source-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR source is dev
+        run: |
+          if [ "${{ github.head_ref }}" != "dev" ]; then
+            echo "❌ Pull requests to 'main' are only allowed from 'dev'."
+            echo "You're trying to merge from: ${{ github.head_ref }}"
+            exit 1
+          fi
+          echo "✅ Source branch is 'dev'. OK."
