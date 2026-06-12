@@ -87,9 +87,6 @@ npm run test
 - `dev`: integration branch for ongoing development
 - `feature/*`: new features, branched from and merged into `dev`
 
-## Team
-
-- Project for: Ingeniería de Sistemas - I Ciclo 2026
 
 ## License
 
