@@ -9,7 +9,7 @@
     "lint": "eslint",
     "supabase:login": "supabase login",
     "supabase:link": "supabase link --project-ref opgdvnkbdledcyvpeifu",
-    "supabase:types": "supabase gen types typescript --project-id opgdvnkbdledcyvpeifu > types/supabase.ts"
+    "supabase:types": "supabase gen types typescript --project-id opgdvnkbdledcyvpeifu > src/types/database.types.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

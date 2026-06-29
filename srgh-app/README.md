@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SGRH — Sistema de Gestión de Recursos Humanos
 
-## Getting Started
+Sistema interno de gestión de recursos humanos para Celulares Alex.
 
-First, run the development server:
+## Stack
+
+- **Frontend:** Next.js 14 (App Router) + TypeScript + Tailwind CSS
+- **Backend / DB:** Supabase (PostgreSQL, Auth, RLS multi-tenant)
+- **Package manager:** pnpm
+- **Gestión de proyecto:** Jira (clave `SGRH`)
+
+## Requisitos previos
+
+- Node.js 18.18+ o 20+
+- pnpm (`corepack enable && corepack prepare pnpm@latest --activate`)
+- Acceso al proyecto de Supabase (solicitar credenciales al equipo)
+- Cuenta con acceso al Jira del proyecto
+
+## Setup inicial
+
+1. Clonar el repositorio:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+   git clone <repo-url>
+   cd sgrh-frontend
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Instalar dependencias:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+   pnpm install
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Configurar variables de entorno:
 
-## Learn More
+```bash
+   cp .env.example .env.local
+```
 
-To learn more about Next.js, take a look at the following resources:
+Completar `.env.local` con las keys de Supabase Dashboard → Settings → API.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. (Opcional) Regenerar tipos de la base de datos si hubo cambios de schema:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+   pnpm dlx supabase login
+   pnpm dlx supabase link --project-ref <project-ref>
+   pnpm dlx supabase gen types typescript --linked > src/types/database.types.ts
+```
 
-## Deploy on Vercel
+5. Levantar el entorno de desarrollo:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+   pnpm dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Abrir [http://localhost:3000](http://localhost:3000)
+
+## Estructura del proyecto
