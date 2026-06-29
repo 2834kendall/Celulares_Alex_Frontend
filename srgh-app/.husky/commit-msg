@@ -1,0 +1,1 @@
+cd srgh-app && pnpm exec commitlint --edit "$1"

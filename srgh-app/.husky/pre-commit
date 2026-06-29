@@ -1,0 +1,1 @@
+cd srgh-app && pnpm lint-staged
