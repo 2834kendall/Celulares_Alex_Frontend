@@ -11,9 +11,11 @@ export function usePermisos() {
 
   useEffect(() => {
     const supabase = createClient()
-    
+
     async function fetchUser() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (user) {
         setPermisos((user.app_metadata?.permisos as string[]) || [])
         setUserId(user.id)
@@ -24,18 +26,18 @@ export function usePermisos() {
     fetchUser()
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (session?.user) {
-          setPermisos((session.user.app_metadata?.permisos as string[]) || [])
-          setUserId(session.user.id)
-        } else {
-          setPermisos([])
-          setUserId(null)
-        }
-        setLoading(false)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        setPermisos((session.user.app_metadata?.permisos as string[]) || [])
+        setUserId(session.user.id)
+      } else {
+        setPermisos([])
+        setUserId(null)
       }
-    )
+      setLoading(false)
+    })
 
     return () => {
       subscription.unsubscribe()
@@ -47,7 +49,7 @@ export function usePermisos() {
   }
 
   const tieneCualquiera = (requiredPermisos: Permiso[]) => {
-    return requiredPermisos.some(permiso => permisos.includes(permiso))
+    return requiredPermisos.some((permiso) => permisos.includes(permiso))
   }
 
   return {

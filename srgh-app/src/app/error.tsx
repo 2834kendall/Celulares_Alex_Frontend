@@ -1,24 +1,30 @@
 // app/error.tsx
-"use client";
+'use client'
+
+import { useEffect } from 'react'
 
 export default function GlobalError({
   error,
   reset,
 }: {
-  error: Error & { digest?: string };
-  reset: () => void;
+  error: Error & { digest?: string }
+  reset: () => void
 }) {
+  useEffect(() => {
+    console.error(error)
+  }, [error])
+
   return (
     <html lang="es">
       <body>
         <div
           style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            height: "100vh",
-            gap: "1rem",
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            gap: '1rem',
           }}
         >
           <h2>Algo salió mal</h2>
@@ -27,5 +33,5 @@ export default function GlobalError({
         </div>
       </body>
     </html>
-  );
+  )
 }
