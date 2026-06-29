@@ -18,9 +18,10 @@
 8. [Cómo agregar una funcionalidad a un módulo existente](#8-cómo-agregar-una-funcionalidad-a-un-módulo-existente)
 9. [Carga de Datos y Gestión de Estado (RSC vs. TanStack Query)](#9-carga-de-datos-y-gestión-de-estado-rsc-vs-tanstack-query)
 10. [Validación de Formularios y Datos (Zod + React Hook Form)](#10-validación-de-formularios-y-datos-zod--react-hook-form)
-11. [Decisiones consolidadas](#11-decisiones-consolidadas)
-12. [Qué NO hacer](#12-qué-no-hacer)
-13. [Roadmap de crecimiento](#13-roadmap-de-crecimiento)
+11. [Calidad de Código y Git Hooks (Prettier, ESLint, Husky, Commitlint)](#11-calidad-de-código-y-git-hooks-prettier-eslint-husky-commitlint)
+12. [Decisiones consolidadas](#12-decisiones-consolidadas)
+13. [Qué NO hacer](#13-qué-no-hacer)
+14. [Roadmap de crecimiento](#14-roadmap-de-crecimiento)
 
 ---
 
@@ -311,7 +312,31 @@ Para la captura de entradas de usuario, SGRH adopta un estándar de validación 
 
 ---
 
-## 11. Decisiones consolidadas
+## 11. Calidad de Código y Git Hooks (Prettier, ESLint, Husky, Commitlint)
+
+Para garantizar la estabilidad del proyecto y la consistencia en el código desarrollado por todo el equipo, SGRH implementa un flujo de automatización local durante el ciclo de desarrollo.
+
+### Estándar de Formato y Estilo (Prettier + ESLint)
+1. **Prettier:** Es el formateador de código obligatorio del proyecto. Se configura en [.prettierrc](file:///c:/Users/herre/OneDrive/Documentos/Universidad/Tercer%20A%C3%B1o%201%C2%B0%20Ciclo/Ingenieria%20en%20sistema%20I/Celulares_Alex_Frontend/srgh-app/.prettierrc) con reglas de comillas simples y sin puntos y comas.
+2. **ESLint:** Asegura la calidad del código e identifica malas prácticas en archivos de TypeScript. Se configura en [eslint.config.mjs](file:///c:/Users/herre/OneDrive/Documentos/Universidad/Tercer%20A%C3%B1o%201%C2%B0%20Ciclo/Ingenieria%20en%20sistema%20I/Celulares_Alex_Frontend/srgh-app/eslint.config.mjs) e incluye `eslint-config-prettier` para deshabilitar reglas de diseño que colisionen con Prettier.
+
+### Git Hooks (Husky + Commitlint + Lint-staged)
+Los Git hooks automatizan tareas clave de forma local antes de registrar cambios en Git, bloqueando código roto o mensajes de commit inválidos:
+
+1. **`commit-msg` Hook (Commitlint):**
+   - Intercepta el mensaje del commit local y valida que siga el formato estándar de Jira y Conventional Commits:
+     ```
+     SGRH-XX: type(scope): subject
+     ```
+   - Si el mensaje no inicia con el prefijo de ticket de Jira (`SGRH-`) seguido del número de tarea y dos puntos, el commit es rechazado.
+2. **`pre-commit` Hook (Lint-staged):**
+   - Detecta de forma inteligente los archivos de código en stage de Git (`git add`).
+   - Ejecuta `prettier --write` y `eslint --fix` únicamente sobre los archivos modificados.
+   - De esta manera, el formateador y el linter actúan de forma extremadamente rápida sin retrasar el flujo de commits locales.
+
+---
+
+## 12. Decisiones consolidadas
 
 | #   | Decisión                                                                 | Por qué                                                                                                  |
 | --- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
@@ -325,10 +350,11 @@ Para la captura de entradas de usuario, SGRH adopta un estándar de validación 
 | 8   | `error.tsx`/`loading.tsx` jerárquicos, no uno por página desde el inicio | Menor costo de mantenimiento; se especializa solo donde la criticidad lo justifica                       |
 | 9   | Carga de datos híbrida (RSC para lectura, TanStack Query para cliente/mutaciones) | Optimiza el rendimiento de la carga inicial (RSC) y ofrece una UX fluida mediante caché y estados optimistas (TanStack Query) |
 | 10  | Validación centralizada y tipada en `types.ts` (Zod + React Hook Form) | Asegura validación idéntica en cliente y servidor, infiere tipos automáticamente y previene desalineación con Supabase |
+| 11  | Calidad automática local (ESLint, Prettier, Husky, Commitlint) | Evita código mal formateado o con lints en stage, y asegura trazabilidad con Jira de forma obligatoria |
 
 ---
 
-## 12. Qué NO hacer
+## 13. Qué NO hacer
 
 - No escribir lógica de negocio dentro de `app/**/page.tsx` más allá de obtener datos y ensamblar componentes.
 - No escribir un string de permiso a mano (`'nomina.algo'`) fuera de `lib/permissions/catalog.ts`.
@@ -339,7 +365,7 @@ Para la captura de entradas de usuario, SGRH adopta un estándar de validación 
 
 ---
 
-## 13. Roadmap de crecimiento
+## 14. Roadmap de crecimiento
 
 Orden sugerido de expansión, alineado con los sprints de Jira ya definidos:
 
@@ -349,6 +375,8 @@ Sprint 1 (actual) — Base
   ✅ Clientes Supabase + proxy de sesión
   ✅ Capas de error/loading + página no-autorizado
   ✅ Catálogo central de permisos
+  ✅ Husky + commitlint con soporte de prefijo Jira
+  ✅ Validación de env vars con Zod
   ☐ Flujo de login / activación de cuenta ((auth))
   ☐ Layout de dashboard (sidebar + topbar condicionados por permisos)
 
@@ -362,8 +390,6 @@ Sprint 2+ — Módulos
 
 Transversal — cuando aplique
   ☐ Definición de librería de componentes UI (pendiente de wireframes)
-  ☐ Husky + commitlint con soporte de prefijo Jira
-  ☐ Validación de env vars con Zod
 ```
 
 Cada módulo nuevo, al construirse, debería poder responder a la sección 7 de este documento sin necesidad de inventar una estructura distinta.
