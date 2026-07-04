@@ -28,8 +28,8 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // This will refresh the session if needed
-  await supabase.auth.getUser()
+  // Validates the JWT signature and refreshes the session cookie when needed.
+  await supabase.auth.getClaims()
 
   return supabaseResponse
 }
