@@ -39,6 +39,11 @@ BEGIN
   FROM public.sgrh_usuarios
   WHERE usr_auth_id = (event->>'user_id')::uuid;
 
+  -- Si el usuario no existe en sgrh_usuarios, devolver claims originales sin modificar
+  IF v_usr_id IS NULL THEN
+    RETURN jsonb_set(event, '{claims}', coalesce(event->'claims', '{}'::jsonb));
+  END IF;
+
   -- Rol y empresa activos del usuario
   SELECT r.rol_codigo, uer.uer_empresa_id
   INTO v_rol, v_empresa
@@ -56,7 +61,7 @@ BEGIN
   JOIN public.sgrh_cat_roles r    ON r.rol_id = rp.rpe_rol_id
   WHERE r.rol_codigo = v_rol;
 
-  claims := event->'claims';
+  claims := coalesce(event->'claims', '{}'::jsonb);
   
   -- Obtener app_metadata existente u objeto vacío
   v_app_metadata := coalesce(claims->'app_metadata', '{}'::jsonb);
