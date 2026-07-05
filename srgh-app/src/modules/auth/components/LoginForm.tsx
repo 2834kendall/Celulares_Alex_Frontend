@@ -46,7 +46,7 @@ export function LoginForm() {
 
     try {
       const supabase = createClient()
-      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+      const { error: loginError } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
@@ -56,7 +56,11 @@ export function LoginForm() {
         return
       }
 
-      const permisos = data.user?.app_metadata?.permisos
+      // Los permisos viven en el JWT (los inyecta el hook de Supabase),
+      // NO en el registro del usuario — por eso se leen con getClaims().
+      const { data: claimsData } = await supabase.auth.getClaims()
+      const meta = (claimsData?.claims?.app_metadata ?? {}) as { permisos?: unknown }
+      const permisos = meta.permisos
 
       if (!Array.isArray(permisos) || permisos.length === 0) {
         router.replace('/unauthorized')
