@@ -154,7 +154,9 @@ export function LoginForm() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+          {/* method="post": si el form se envia antes de que React hidrate,
+              las credenciales van en el body y nunca en la URL */}
+          <form onSubmit={handleSubmit(onSubmit)} method="post" className="space-y-4" noValidate>
             <div>
               <label
                 className="block text-xs font-semibold uppercase text-slate-600 mb-1"
