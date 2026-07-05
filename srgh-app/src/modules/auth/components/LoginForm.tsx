@@ -1,19 +1,14 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertTriangle, CheckCircle, Loader2, Smartphone } from 'lucide-react'
 import type { AuthError } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
-
-const companyConfig = {
-  name: 'Celulares Alex',
-  tagline: 'Talento, asistencia y planillas',
-  logo: 'C',
-  accent: 'bg-[#D97706]',
-  accentHover: 'hover:bg-[#B45309]',
-  gradient: 'from-[#1E3A8A] via-indigo-900 to-amber-950',
-}
+import { loginSchema, type LoginInput } from '@/modules/auth/types'
+import { companyConfig, loginScreenContent } from '@/modules/auth/constants'
 
 function getLoginMessage(error: AuthError) {
   const message = error.message.toLowerCase()
@@ -33,35 +28,31 @@ function getLoginMessage(error: AuthError) {
   return 'Credenciales invalidas.'
 }
 
-export default function LoginForm() {
+export function LoginForm() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginInput>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: '', password: '' },
+  })
 
-    const cleanEmail = email.trim().toLowerCase()
-
-    if (!cleanEmail || !password.trim()) {
-      setError('Complete todos los campos de acceso requeridos.')
-      return
-    }
-
-    setLoading(true)
-    setError(null)
+  async function onSubmit({ email, password }: LoginInput) {
+    setServerError(null)
 
     try {
       const supabase = createClient()
       const { data, error: loginError } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
+        email,
         password,
       })
 
       if (loginError) {
-        setError(getLoginMessage(loginError))
+        setServerError(getLoginMessage(loginError))
         return
       }
 
@@ -76,11 +67,9 @@ export default function LoginForm() {
       router.replace('/dashboard')
       router.refresh()
     } catch {
-      setError(
+      setServerError(
         'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.'
       )
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -94,10 +83,7 @@ export default function LoginForm() {
       >
         <div
           className="absolute inset-0 bg-cover bg-center opacity-15 blur-[2px] pointer-events-none mix-blend-overlay"
-          style={{
-            backgroundImage:
-              "url('https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&q=80&w=800')",
-          }}
+          style={{ backgroundImage: `url('${loginScreenContent.backgroundImageUrl}')` }}
           aria-hidden="true"
         />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.05)_1px,transparent_1px)] bg-[size:20px_20px]" />
@@ -106,21 +92,17 @@ export default function LoginForm() {
 
         <div className="relative z-10">
           <span className="text-xs bg-white/15 backdrop-blur-md text-white font-bold px-3 py-1.5 rounded-full uppercase border border-white/25">
-            SGRH - Talento & Planillas v3.5
+            {loginScreenContent.badge}
           </span>
           <h1 className="text-3xl md:text-5xl font-black mt-8 leading-none text-white font-sans">
-            SGRH
+            {loginScreenContent.title}
           </h1>
-          <p className="text-slate-300 mt-2 text-sm max-w-sm">
-            Sistema de Gestion de Recursos Humanos. Control de asistencia inteligente, calculo
-            exacto de planillas Costarricenses (CCSS) y expedientes digitales.
-          </p>
+          <p className="text-slate-300 mt-2 text-sm max-w-sm">{loginScreenContent.description}</p>
         </div>
 
         <div className="relative z-10 my-10 hidden md:block">
           <blockquote className="border-l-4 border-emerald-500 pl-4 py-1 italic text-slate-300 text-sm">
-            &quot;La solucion de recursos humanos unificada para el retail de mayor movimiento
-            tecnologico en el pais.&quot;
+            &quot;{loginScreenContent.quote}&quot;
           </blockquote>
           <div className="mt-4 flex items-center gap-3">
             <div className="p-2.5 bg-white/10 backdrop-blur rounded-lg">
@@ -128,18 +110,17 @@ export default function LoginForm() {
             </div>
             <div>
               <p className="text-white text-xs font-bold leading-tight">
-                Infinity CR & Celulares Alex
+                {loginScreenContent.organization}
               </p>
-              <p className="text-slate-400 text-[10px]">
-                Un solo ecosistema operativo para 12 tiendas pais
-              </p>
+              <p className="text-slate-400 text-[10px]">{loginScreenContent.organizationDetail}</p>
             </div>
           </div>
         </div>
 
         <div className="relative z-10 text-[11px] text-slate-400 flex justify-between gap-4">
-          <span>(c) {new Date().getFullYear()} SGRH Hub Costa Rica</span>
-          <span>ISO 9241 & W3C Compliant</span>
+          <span>
+            (c) {new Date().getFullYear()} {loginScreenContent.copyrightName}
+          </span>
         </div>
       </section>
 
@@ -163,14 +144,17 @@ export default function LoginForm() {
             </p>
           </div>
 
-          {error && (
-            <div className="bg-rose-50 border-l-4 border-rose-600 p-3 text-xs text-rose-800 rounded flex gap-2">
+          {serverError && (
+            <div
+              role="alert"
+              className="bg-rose-50 border-l-4 border-rose-600 p-3 text-xs text-rose-800 rounded flex gap-2"
+            >
               <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-              <div>{error}</div>
+              <div>{serverError}</div>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
             <div>
               <label
                 className="block text-xs font-semibold uppercase text-slate-600 mb-1"
@@ -186,13 +170,14 @@ export default function LoginForm() {
                   type="email"
                   id="email-input"
                   autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  disabled={loading}
-                  className="w-full pl-8 pr-3 py-2.5 rounded-lg border border-slate-300 text-slate-800 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  disabled={isSubmitting}
+                  aria-invalid={!!errors.email}
+                  {...register('email')}
+                  className="w-full pl-8 pr-3 py-2.5 rounded-lg border border-slate-300 text-slate-800 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-500"
                   placeholder="correo@sucursal.com"
                 />
               </div>
+              {errors.email && <p className="mt-1 text-xs text-rose-600">{errors.email.message}</p>}
             </div>
 
             <div>
@@ -209,37 +194,24 @@ export default function LoginForm() {
                 type="password"
                 id="pass-input"
                 autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                disabled={loading}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.password}
+                {...register('password')}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-500"
                 placeholder="********"
               />
-            </div>
-
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="remember"
-                defaultChecked
-                disabled={loading}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed"
-              />
-              <label
-                htmlFor="remember"
-                className="ml-2 text-xs text-slate-500 font-medium select-none"
-              >
-                Mantener sesion iniciada en este navegador (Tienda)
-              </label>
+              {errors.password && (
+                <p className="mt-1 text-xs text-rose-600">{errors.password.message}</p>
+              )}
             </div>
 
             <button
               type="submit"
               id="submit-login"
-              disabled={loading}
+              disabled={isSubmitting}
               className={`w-full py-3 rounded-lg text-white font-bold text-sm transition shadow-md flex items-center justify-center gap-2 ${companyConfig.accent} ${companyConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
             >
-              {loading ? (
+              {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" /> Validando acceso
                 </>
