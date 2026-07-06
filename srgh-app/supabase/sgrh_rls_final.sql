@@ -21,7 +21,7 @@ DROP INDEX IF EXISTS public.idx_sgrh_his_lab_empleado;
 -- 2. FUNCIONES BASE (HELPERS & HOOKS)
 -- ---------------------------------------------------------------------
 
--- Hook para inyectar claims personalizados dentro de app_metadata en el JWT
+-- Hook para inyectar claims personalizados dentro de app_metadata en el JWT de forma segura
 CREATE OR REPLACE FUNCTION public.custom_access_token_hook(event jsonb)
 RETURNS jsonb AS $$
 DECLARE
@@ -32,50 +32,79 @@ DECLARE
   v_usr_id       int;
   v_emp_id       int;
   v_permisos     text[];
+  v_user_id_raw  text;
 BEGIN
-  -- Obtener usr_id y emp_id desde usr_auth_id
-  SELECT usr_id, usr_empleado_id
-  INTO v_usr_id, v_emp_id
-  FROM public.sgrh_usuarios
-  WHERE usr_auth_id = (event->>'user_id')::uuid;
-
-  -- Si el usuario no existe en sgrh_usuarios, devolver claims originales sin modificar
-  IF v_usr_id IS NULL THEN
-    RETURN jsonb_set(event, '{claims}', coalesce(event->'claims', '{}'::jsonb));
+  -- 1. Asegurar que event no sea nulo
+  IF event IS NULL THEN
+    RETURN '{"claims":{}}'::jsonb;
   END IF;
 
-  -- Rol y empresa activos del usuario
-  SELECT r.rol_codigo, uer.uer_empresa_id
-  INTO v_rol, v_empresa
-  FROM public.sgrh_usuarios_empresa_rol uer
-  JOIN public.sgrh_cat_roles r ON r.rol_id = uer.uer_rol_id
-  WHERE uer.uer_usuario_id = v_usr_id
-    AND uer.uer_activo = true
-  LIMIT 1;
+  -- 2. Asegurar que event->'claims' sea siempre un objeto JSON válido (nunca null ni escalar)
+  IF event->'claims' IS NULL OR jsonb_typeof(event->'claims') <> 'object' THEN
+    event := jsonb_set(event, '{claims}', '{}'::jsonb);
+  END IF;
 
-  -- Lista de códigos de permisos asignados al rol activo
-  SELECT ARRAY_AGG(p.per_codigo)
-  INTO v_permisos
-  FROM public.sgrh_rol_permisos rp
-  JOIN public.sgrh_cat_permisos p ON p.per_id = rp.rpe_permiso_id
-  JOIN public.sgrh_cat_roles r    ON r.rol_id = rp.rpe_rol_id
-  WHERE r.rol_codigo = v_rol;
+  -- 3. Validar user_id de forma segura
+  v_user_id_raw := event->>'user_id';
+  IF v_user_id_raw IS NULL THEN
+    RETURN event;
+  END IF;
 
-  claims := coalesce(event->'claims', '{}'::jsonb);
-  
-  -- Obtener app_metadata existente u objeto vacío
-  v_app_metadata := coalesce(claims->'app_metadata', '{}'::jsonb);
-  
-  -- Guardar claims de negocio dentro de app_metadata para alineación con session.user en Next.js
-  v_app_metadata := jsonb_set(v_app_metadata, '{usr_id}',     to_jsonb(v_usr_id));
-  v_app_metadata := jsonb_set(v_app_metadata, '{emp_id}',     to_jsonb(v_emp_id));
-  v_app_metadata := jsonb_set(v_app_metadata, '{rol}',        to_jsonb(v_rol));
-  v_app_metadata := jsonb_set(v_app_metadata, '{empresa_id}', to_jsonb(v_empresa));
-  v_app_metadata := jsonb_set(v_app_metadata, '{permisos}',   to_jsonb(v_permisos));
-  
-  claims := jsonb_set(claims, '{app_metadata}', v_app_metadata);
+  -- 4. Bloque seguro para evitar caídas catastróficas en el login
+  BEGIN
+    -- Obtener usr_id y emp_id desde usr_auth_id
+    SELECT usr_id, usr_empleado_id
+    INTO v_usr_id, v_emp_id
+    FROM public.sgrh_usuarios
+    WHERE usr_auth_id = v_user_id_raw::uuid;
 
-  RETURN jsonb_set(event, '{claims}', claims);
+    -- Si el usuario no existe en la base de datos de negocio, retornar sin claims extras
+    IF v_usr_id IS NULL THEN
+      RETURN event;
+    END IF;
+
+    -- Rol y empresa activos del usuario
+    SELECT r.rol_codigo, uer.uer_empresa_id
+    INTO v_rol, v_empresa
+    FROM public.sgrh_usuarios_empresa_rol uer
+    JOIN public.sgrh_cat_roles r ON r.rol_id = uer.uer_rol_id
+    WHERE uer.uer_usuario_id = v_usr_id
+      AND uer.uer_activo = true
+    LIMIT 1;
+
+    -- Lista de códigos de permisos asignados al rol activo
+    SELECT ARRAY_AGG(p.per_codigo)
+    INTO v_permisos
+    FROM public.sgrh_rol_permisos rp
+    JOIN public.sgrh_cat_permisos p ON p.per_id = rp.rpe_permiso_id
+    JOIN public.sgrh_cat_roles r    ON r.rol_id = rp.rpe_rol_id
+    WHERE r.rol_codigo = v_rol;
+
+    claims := event->'claims';
+    
+    -- Obtener app_metadata existente u objeto vacío
+    v_app_metadata := coalesce(claims->'app_metadata', '{}'::jsonb);
+    
+    -- Guardar claims de negocio dentro de app_metadata para alineación con session.user en Next.js
+    -- Se protege cada to_jsonb con coalesce para evitar que retorne NULL de base de datos (lo que anularía todo jsonb_set)
+    v_app_metadata := jsonb_set(v_app_metadata, '{usr_id}',
+                        coalesce(to_jsonb(v_usr_id), 'null'::jsonb));
+    v_app_metadata := jsonb_set(v_app_metadata, '{emp_id}',
+                        coalesce(to_jsonb(v_emp_id), 'null'::jsonb));
+    v_app_metadata := jsonb_set(v_app_metadata, '{rol}',
+                        to_jsonb(coalesce(v_rol, 'SIN_ROL')));
+    v_app_metadata := jsonb_set(v_app_metadata, '{empresa_id}',
+                        coalesce(to_jsonb(v_empresa), 'null'::jsonb));
+    v_app_metadata := jsonb_set(v_app_metadata, '{permisos}',
+                        to_jsonb(coalesce(v_permisos, '{}'::text[])));
+    
+    claims := jsonb_set(claims, '{app_metadata}', v_app_metadata);
+
+    RETURN jsonb_set(event, '{claims}', claims);
+  EXCEPTION WHEN OTHERS THEN
+    -- En caso de error imprevisto, retornar el evento original intacto para no bloquear el inicio de sesión
+    RETURN event;
+  END;
 END;
 $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public;
 
@@ -100,13 +129,12 @@ RETURNS int AS $$
   SELECT (auth.jwt() -> 'app_metadata' ->> 'emp_id')::int;
 $$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
 
--- Validador de permisos en memoria de JWT
+-- Validador de permisos en memoria de JWT (Optimizada y segura ante nulos o no-arrays)
 CREATE OR REPLACE FUNCTION public.tiene_permiso(p_codigo text)
 RETURNS boolean AS $$
-  SELECT p_codigo = ANY(
-    ARRAY(
-      SELECT jsonb_array_elements_text(coalesce(auth.jwt() -> 'app_metadata' -> 'permisos', '[]'::jsonb))
-    )
+  SELECT coalesce(
+    (auth.jwt() -> 'app_metadata' -> 'permisos') @> to_jsonb(p_codigo),
+    false
   );
 $$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
 
@@ -122,12 +150,14 @@ RETURNS void AS $$
   ON CONFLICT DO NOTHING;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
 
--- Trigger para autocreación de usuarios vinculados a Auth
+-- Trigger para autocreación de usuarios vinculados a Auth (Manejo seguro de conflictos de correo)
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.sgrh_usuarios (usr_auth_id, usr_email, usr_password_hash, usr_activo)
-  VALUES (NEW.id, NEW.email, '', true);
+  VALUES (NEW.id, NEW.email, '', true)
+  ON CONFLICT (usr_email) DO UPDATE
+  SET usr_auth_id = EXCLUDED.usr_auth_id;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
@@ -136,6 +166,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 -- 3. ASOCIAR TRIGGERS E INTEGRACIONES
 -- ---------------------------------------------------------------------
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
@@ -145,21 +176,54 @@ CREATE TRIGGER on_auth_user_created
 -- ---------------------------------------------------------------------
 -- Otorgar accesos al servicio de autenticación de Supabase (Admin Hook)
 GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
-GRANT SELECT ON public.sgrh_usuarios             TO supabase_auth_admin;
-GRANT SELECT ON public.sgrh_usuarios_empresa_rol TO supabase_auth_admin;
-GRANT SELECT ON public.sgrh_cat_roles            TO supabase_auth_admin;
-GRANT SELECT ON public.sgrh_rol_permisos         TO supabase_auth_admin;
-GRANT SELECT ON public.sgrh_cat_permisos         TO supabase_auth_admin;
+
+GRANT
+SELECT ON public.sgrh_usuarios TO supabase_auth_admin;
+
+GRANT
+SELECT ON public.sgrh_usuarios_empresa_rol TO supabase_auth_admin;
+
+GRANT
+SELECT ON public.sgrh_cat_roles TO supabase_auth_admin;
+
+GRANT
+SELECT ON public.sgrh_rol_permisos TO supabase_auth_admin;
+
+GRANT
+SELECT ON public.sgrh_cat_permisos TO supabase_auth_admin;
 
 -- Revocar permisos de ejecución por defecto a PUBLIC de manera explícita
-REVOKE EXECUTE ON FUNCTION public.handle_new_auth_user()             FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb)    FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.get_rol()                          FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.get_empresa_id()                   FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.get_usr_id()                       FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.get_emp_id()                       FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.tiene_permiso(text)                FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION sgrh_private.asignar_permisos(text, text[])     FROM PUBLIC, anon, authenticated;
+REVOKE
+EXECUTE ON FUNCTION public.handle_new_auth_user ()
+FROM PUBLIC, anon, authenticated;
+
+REVOKE
+EXECUTE ON FUNCTION public.custom_access_token_hook (jsonb)
+FROM PUBLIC, anon, authenticated;
+
+REVOKE
+EXECUTE ON FUNCTION public.get_rol ()
+FROM PUBLIC, anon, authenticated;
+
+REVOKE
+EXECUTE ON FUNCTION public.get_empresa_id ()
+FROM PUBLIC, anon, authenticated;
+
+REVOKE
+EXECUTE ON FUNCTION public.get_usr_id ()
+FROM PUBLIC, anon, authenticated;
+
+REVOKE
+EXECUTE ON FUNCTION public.get_emp_id ()
+FROM PUBLIC, anon, authenticated;
+
+REVOKE
+EXECUTE ON FUNCTION public.tiene_permiso (text)
+FROM PUBLIC, anon, authenticated;
+
+REVOKE
+EXECUTE ON FUNCTION sgrh_private.asignar_permisos (text, text [])
+FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------
 -- 5. HABILITAR ROW LEVEL SECURITY (RLS)
@@ -298,1234 +362,2037 @@ END;
 $$;
 
 -- Empresas y Sucursales (Aislamiento tenant con wrapping para cache)
-CREATE POLICY "empresas_select" ON public.sgrh_empresas
-  FOR SELECT
-  TO authenticated
-  USING (org_id = (SELECT public.get_empresa_id()));
+CREATE POLICY "empresas_select" ON public.sgrh_empresas FOR
+SELECT TO authenticated USING (
+        org_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
-CREATE POLICY "empresas_insert" ON public.sgrh_empresas
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (org_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
+CREATE POLICY "empresas_insert" ON public.sgrh_empresas FOR INSERT TO authenticated
+WITH
+    CHECK (
+        org_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EMPRESAS_WRITE')
+        )
+    );
 
 CREATE POLICY "empresas_update" ON public.sgrh_empresas
-  FOR UPDATE
-  TO authenticated
-  USING (org_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')))
-  WITH CHECK (org_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        org_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EMPRESAS_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        org_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EMPRESAS_WRITE')
+        )
+    );
 
-CREATE POLICY "empresas_delete" ON public.sgrh_empresas
-  FOR DELETE
-  TO authenticated
-  USING (org_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
+CREATE POLICY "empresas_delete" ON public.sgrh_empresas FOR DELETE TO authenticated USING (
+    org_id = (
+        SELECT public.get_empresa_id ()
+    )
+    AND (
+        SELECT public.tiene_permiso ('EMPRESAS_WRITE')
+    )
+);
 
-CREATE POLICY "sucursales_select" ON public.sgrh_sucursales
-  FOR SELECT
-  TO authenticated
-  USING (suc_empresa_id = (SELECT public.get_empresa_id()));
+CREATE POLICY "sucursales_select" ON public.sgrh_sucursales FOR
+SELECT TO authenticated USING (
+        suc_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
-CREATE POLICY "sucursales_insert" ON public.sgrh_sucursales
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (suc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
+CREATE POLICY "sucursales_insert" ON public.sgrh_sucursales FOR INSERT TO authenticated
+WITH
+    CHECK (
+        suc_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EMPRESAS_WRITE')
+        )
+    );
 
 CREATE POLICY "sucursales_update" ON public.sgrh_sucursales
-  FOR UPDATE
-  TO authenticated
-  USING (suc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')))
-  WITH CHECK (suc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        suc_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EMPRESAS_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        suc_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EMPRESAS_WRITE')
+        )
+    );
 
-CREATE POLICY "sucursales_delete" ON public.sgrh_sucursales
-  FOR DELETE
-  TO authenticated
-  USING (suc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
+CREATE POLICY "sucursales_delete" ON public.sgrh_sucursales FOR DELETE TO authenticated USING (
+    suc_empresa_id = (
+        SELECT public.get_empresa_id ()
+    )
+    AND (
+        SELECT public.tiene_permiso ('EMPRESAS_WRITE')
+    )
+);
 
 -- Empleados (Lectura de sucursal/empresa o datos propios)
-CREATE POLICY "empleados_select" ON public.sgrh_empleados
-  FOR SELECT
-  TO authenticated
-  USING (
-    ((SELECT public.tiene_permiso('EMPLEADOS_READ')) AND
-      emp_id IN (
-        SELECT lab_empleado_id FROM public.sgrh_historial_laboral
-        WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-      ))
-    OR emp_id = (SELECT public.get_emp_id())
-  );
+CREATE POLICY "empleados_select" ON public.sgrh_empleados FOR
+SELECT TO authenticated USING (
+        (
+            (
+                SELECT public.tiene_permiso ('EMPLEADOS_READ')
+            )
+            AND emp_id IN (
+                SELECT lab_empleado_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+        OR emp_id = (
+            SELECT public.get_emp_id ()
+        )
+    );
 
-CREATE POLICY "empleados_insert" ON public.sgrh_empleados
-  FOR INSERT
-  TO authenticated
-  WITH CHECK ((SELECT public.tiene_permiso('EMPLEADOS_WRITE')));
+CREATE POLICY "empleados_insert" ON public.sgrh_empleados FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('EMPLEADOS_WRITE')
+        )
+    );
 
 CREATE POLICY "empleados_update" ON public.sgrh_empleados
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('EMPLEADOS_WRITE')) AND
-    emp_id IN (
-      SELECT lab_empleado_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('EMPLEADOS_WRITE')
+        )
+        AND emp_id IN (
+            SELECT lab_empleado_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('EMPLEADOS_WRITE')) AND
-    emp_id IN (
-      SELECT lab_empleado_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('EMPLEADOS_WRITE')
+        )
+        AND emp_id IN (
+            SELECT lab_empleado_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
-CREATE POLICY "empleados_delete" ON public.sgrh_empleados
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('EMPLEADOS_WRITE')) AND
-    emp_id IN (
-      SELECT lab_empleado_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "empleados_delete" ON public.sgrh_empleados FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('EMPLEADOS_WRITE')
     )
-  );
+    AND emp_id IN (
+        SELECT lab_empleado_id
+        FROM public.sgrh_historial_laboral
+        WHERE
+            lab_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
 
 -- Ausencias (Operaciones segregadas y protección WITH CHECK)
-CREATE POLICY "ausencias_select" ON public.sgrh_ausencias
-  FOR SELECT
-  TO authenticated
-  USING (
-    ((SELECT public.tiene_permiso('AUSENCIAS_READ')) AND
-      aus_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-      ))
-    OR
-    aus_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empleado_id = (SELECT public.get_emp_id())
-    )
-  );
+CREATE POLICY "ausencias_select" ON public.sgrh_ausencias FOR
+SELECT TO authenticated USING (
+        (
+            (
+                SELECT public.tiene_permiso ('AUSENCIAS_READ')
+            )
+            AND aus_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+        OR aus_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empleado_id = (
+                    SELECT public.get_emp_id ()
+                )
+        )
+    );
 
-CREATE POLICY "ausencias_insert" ON public.sgrh_ausencias
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (aus_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empleado_id = (SELECT public.get_emp_id())
-        AND lab_empresa_id  = (SELECT public.get_empresa_id())
-    ))
-    OR (SELECT public.tiene_permiso('AUSENCIAS_APPROVE'))
-  );
+CREATE POLICY "ausencias_insert" ON public.sgrh_ausencias FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            aus_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empleado_id = (
+                        SELECT public.get_emp_id ()
+                    )
+                    AND lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+        OR (
+            SELECT public.tiene_permiso ('AUSENCIAS_APPROVE')
+        )
+    );
 
 CREATE POLICY "ausencias_update" ON public.sgrh_ausencias
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('AUSENCIAS_APPROVE')) AND
-    aus_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('AUSENCIAS_APPROVE')
+        )
+        AND aus_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('AUSENCIAS_APPROVE')) AND
-    aus_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('AUSENCIAS_APPROVE')
+        )
+        AND aus_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
-CREATE POLICY "ausencias_delete" ON public.sgrh_ausencias
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('AUSENCIAS_APPROVE')) AND
-    aus_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "ausencias_delete" ON public.sgrh_ausencias FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('AUSENCIAS_APPROVE')
     )
-  );
+    AND aus_historial_laboral_id IN (
+        SELECT lab_id
+        FROM public.sgrh_historial_laboral
+        WHERE
+            lab_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
 
 -- Marcas de asistencia (Aislamiento tenant y propiedad)
-CREATE POLICY "marcas_select" ON public.sgrh_marcas_asistencia
-  FOR SELECT
-  TO authenticated
-  USING (
-    ((SELECT public.tiene_permiso('ASISTENCIA_READ')) AND
-      mar_sucursal_id IN (
-        SELECT suc_id FROM public.sgrh_sucursales
-        WHERE suc_empresa_id = (SELECT public.get_empresa_id())
-      ))
-    OR
-    mar_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empleado_id = (SELECT public.get_emp_id())
-    )
-  );
+CREATE POLICY "marcas_select" ON public.sgrh_marcas_asistencia FOR
+SELECT TO authenticated USING (
+        (
+            (
+                SELECT public.tiene_permiso ('ASISTENCIA_READ')
+            )
+            AND mar_sucursal_id IN (
+                SELECT suc_id
+                FROM public.sgrh_sucursales
+                WHERE
+                    suc_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+        OR mar_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empleado_id = (
+                    SELECT public.get_emp_id ()
+                )
+        )
+    );
 
-CREATE POLICY "marcas_insert" ON public.sgrh_marcas_asistencia
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (mar_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empleado_id = (SELECT public.get_emp_id())
-        AND lab_empresa_id  = (SELECT public.get_empresa_id())
-    ))
-    OR (SELECT public.tiene_permiso('ASISTENCIA_WRITE'))
-  );
+CREATE POLICY "marcas_insert" ON public.sgrh_marcas_asistencia FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            mar_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empleado_id = (
+                        SELECT public.get_emp_id ()
+                    )
+                    AND lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+        OR (
+            SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
+        )
+    );
 
 CREATE POLICY "marcas_update" ON public.sgrh_marcas_asistencia
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('ASISTENCIA_WRITE')) AND
-    mar_sucursal_id IN (
-      SELECT suc_id FROM public.sgrh_sucursales
-      WHERE suc_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
+        )
+        AND mar_sucursal_id IN (
+            SELECT suc_id
+            FROM public.sgrh_sucursales
+            WHERE
+                suc_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('ASISTENCIA_WRITE')) AND
-    mar_sucursal_id IN (
-      SELECT suc_id FROM public.sgrh_sucursales
-      WHERE suc_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
+        )
+        AND mar_sucursal_id IN (
+            SELECT suc_id
+            FROM public.sgrh_sucursales
+            WHERE
+                suc_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
-CREATE POLICY "marcas_delete" ON public.sgrh_marcas_asistencia
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('ASISTENCIA_WRITE')) AND
-    mar_sucursal_id IN (
-      SELECT suc_id FROM public.sgrh_sucursales
-      WHERE suc_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "marcas_delete" ON public.sgrh_marcas_asistencia FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
     )
-  );
+    AND mar_sucursal_id IN (
+        SELECT suc_id
+        FROM public.sgrh_sucursales
+        WHERE
+            suc_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
 
 -- Nómina Periodo (Segregando FOR ALL a políticas individuales)
-CREATE POLICY "nomina_periodo_select" ON public.sgrh_nomina_periodo
-  FOR SELECT
-  TO authenticated
-  USING (npe_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('NOMINA_READ')));
+CREATE POLICY "nomina_periodo_select" ON public.sgrh_nomina_periodo FOR
+SELECT TO authenticated USING (
+        npe_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('NOMINA_READ')
+        )
+    );
 
-CREATE POLICY "nomina_periodo_insert" ON public.sgrh_nomina_periodo
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (npe_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('NOMINA_WRITE')));
+CREATE POLICY "nomina_periodo_insert" ON public.sgrh_nomina_periodo FOR INSERT TO authenticated
+WITH
+    CHECK (
+        npe_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+    );
 
 CREATE POLICY "nomina_periodo_update" ON public.sgrh_nomina_periodo
-  FOR UPDATE
-  TO authenticated
-  USING (npe_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('NOMINA_WRITE')))
-  WITH CHECK (npe_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('NOMINA_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        npe_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        npe_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+    );
 
-CREATE POLICY "nomina_periodo_delete" ON public.sgrh_nomina_periodo
-  FOR DELETE
-  TO authenticated
-  USING (npe_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('NOMINA_WRITE')));
+CREATE POLICY "nomina_periodo_delete" ON public.sgrh_nomina_periodo FOR DELETE TO authenticated USING (
+    npe_empresa_id = (
+        SELECT public.get_empresa_id ()
+    )
+    AND (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
+    )
+);
 
 -- Nómina Detalle
-CREATE POLICY "nomina_detalle_select" ON public.sgrh_nomina_detalle
-  FOR SELECT
-  TO authenticated
-  USING (
-    ((SELECT public.tiene_permiso('NOMINA_READ')) AND
-      ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      ))
-    OR
-    ndt_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empleado_id = (SELECT public.get_emp_id())
-    )
-  );
+CREATE POLICY "nomina_detalle_select" ON public.sgrh_nomina_detalle FOR
+SELECT TO authenticated USING (
+        (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND ndt_nomina_periodo_id IN (
+                SELECT npe_id
+                FROM public.sgrh_nomina_periodo
+                WHERE
+                    npe_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+        OR ndt_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empleado_id = (
+                    SELECT public.get_emp_id ()
+                )
+        )
+    );
 
-CREATE POLICY "nomina_detalle_insert" ON public.sgrh_nomina_detalle
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE')) AND
-    ndt_nomina_periodo_id IN (
-      SELECT npe_id FROM public.sgrh_nomina_periodo
-      WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+CREATE POLICY "nomina_detalle_insert" ON public.sgrh_nomina_detalle FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ndt_nomina_periodo_id IN (
+            SELECT npe_id
+            FROM public.sgrh_nomina_periodo
+            WHERE
+                npe_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
 CREATE POLICY "nomina_detalle_update" ON public.sgrh_nomina_detalle
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE')) AND
-    ndt_nomina_periodo_id IN (
-      SELECT npe_id FROM public.sgrh_nomina_periodo
-      WHERE npe_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ndt_nomina_periodo_id IN (
+            SELECT npe_id
+            FROM public.sgrh_nomina_periodo
+            WHERE
+                npe_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE')) AND
-    ndt_nomina_periodo_id IN (
-      SELECT npe_id FROM public.sgrh_nomina_periodo
-      WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ndt_nomina_periodo_id IN (
+            SELECT npe_id
+            FROM public.sgrh_nomina_periodo
+            WHERE
+                npe_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
-CREATE POLICY "nomina_detalle_delete" ON public.sgrh_nomina_detalle
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE')) AND
-    ndt_nomina_periodo_id IN (
-      SELECT npe_id FROM public.sgrh_nomina_periodo
-      WHERE npe_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "nomina_detalle_delete" ON public.sgrh_nomina_detalle FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
-  );
+    AND ndt_nomina_periodo_id IN (
+        SELECT npe_id
+        FROM public.sgrh_nomina_periodo
+        WHERE
+            npe_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
 
 -- ---------------------------------------------------------------------
 -- MÓDULOS ADICIONALES (POLÍTICAS FALTANTES)
 -- ---------------------------------------------------------------------
 
 -- Usuarios (Perfiles de usuario)
-CREATE POLICY "usuarios_select" ON public.sgrh_usuarios
-  FOR SELECT
-  TO authenticated
-  USING (usr_auth_id = (SELECT auth.uid()) OR (SELECT public.tiene_permiso('USUARIOS_WRITE')));
+CREATE POLICY "usuarios_select" ON public.sgrh_usuarios FOR
+SELECT TO authenticated USING (
+        usr_auth_id = (
+            SELECT auth.uid ()
+        )
+        OR (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+    );
 
-CREATE POLICY "usuarios_insert" ON public.sgrh_usuarios
-  FOR INSERT
-  TO authenticated
-  WITH CHECK ((SELECT public.tiene_permiso('USUARIOS_WRITE')));
+CREATE POLICY "usuarios_insert" ON public.sgrh_usuarios FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+    );
 
 CREATE POLICY "usuarios_update" ON public.sgrh_usuarios
-  FOR UPDATE
-  TO authenticated
-  USING (usr_auth_id = (SELECT auth.uid()) OR (SELECT public.tiene_permiso('USUARIOS_WRITE')))
-  WITH CHECK (usr_auth_id = (SELECT auth.uid()) OR (SELECT public.tiene_permiso('USUARIOS_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        usr_auth_id = (
+            SELECT auth.uid ()
+        )
+        OR (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        usr_auth_id = (
+            SELECT auth.uid ()
+        )
+        OR (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+    );
 
-CREATE POLICY "usuarios_delete" ON public.sgrh_usuarios
-  FOR DELETE
-  TO authenticated
-  USING ((SELECT public.tiene_permiso('USUARIOS_WRITE')));
+CREATE POLICY "usuarios_delete" ON public.sgrh_usuarios FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('USUARIOS_WRITE')
+    )
+);
 
 -- Usuarios Empresa Rol (Asociación Tenant-Rol)
-CREATE POLICY "uer_select" ON public.sgrh_usuarios_empresa_rol
-  FOR SELECT
-  TO authenticated
-  USING (uer_usuario_id = (SELECT public.get_usr_id()) OR (SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')));
+CREATE POLICY "uer_select" ON public.sgrh_usuarios_empresa_rol FOR
+SELECT TO authenticated USING (
+        uer_usuario_id = (
+            SELECT public.get_usr_id ()
+        )
+        OR (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+        OR (
+            SELECT public.tiene_permiso ('ROLES_WRITE')
+        )
+    );
 
-CREATE POLICY "uer_insert" ON public.sgrh_usuarios_empresa_rol
-  FOR INSERT
-  TO authenticated
-  WITH CHECK ((SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')));
+CREATE POLICY "uer_insert" ON public.sgrh_usuarios_empresa_rol FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+        OR (
+            SELECT public.tiene_permiso ('ROLES_WRITE')
+        )
+    );
 
 CREATE POLICY "uer_update" ON public.sgrh_usuarios_empresa_rol
-  FOR UPDATE
-  TO authenticated
-  USING ((SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')))
-  WITH CHECK ((SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+        OR (
+            SELECT public.tiene_permiso ('ROLES_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+        OR (
+            SELECT public.tiene_permiso ('ROLES_WRITE')
+        )
+    );
 
-CREATE POLICY "uer_delete" ON public.sgrh_usuarios_empresa_rol
-  FOR DELETE
-  TO authenticated
-  USING ((SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')));
+CREATE POLICY "uer_delete" ON public.sgrh_usuarios_empresa_rol FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('USUARIOS_WRITE')
+    )
+    OR (
+        SELECT public.tiene_permiso ('ROLES_WRITE')
+    )
+);
 
 -- Historial Laboral
-CREATE POLICY "historial_select" ON public.sgrh_historial_laboral
-  FOR SELECT
-  TO authenticated
-  USING (
-    lab_empleado_id = (SELECT public.get_emp_id())
-    OR (
-      ((SELECT public.tiene_permiso('HISTORIAL_READ')) OR (SELECT public.tiene_permiso('EMPLEADOS_READ')))
-      AND lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+CREATE POLICY "historial_select" ON public.sgrh_historial_laboral FOR
+SELECT TO authenticated USING (
+        lab_empleado_id = (
+            SELECT public.get_emp_id ()
+        )
+        OR (
+            (
+                (
+                    SELECT public.tiene_permiso ('HISTORIAL_READ')
+                )
+                OR (
+                    SELECT public.tiene_permiso ('EMPLEADOS_READ')
+                )
+            )
+            AND lab_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+        )
+    );
 
-CREATE POLICY "historial_insert" ON public.sgrh_historial_laboral
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('HISTORIAL_WRITE'))
-    AND lab_empresa_id = (SELECT public.get_empresa_id())
-  );
+CREATE POLICY "historial_insert" ON public.sgrh_historial_laboral FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('HISTORIAL_WRITE')
+        )
+        AND lab_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
 CREATE POLICY "historial_update" ON public.sgrh_historial_laboral
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('HISTORIAL_WRITE'))
-    AND lab_empresa_id = (SELECT public.get_empresa_id())
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('HISTORIAL_WRITE'))
-    AND lab_empresa_id = (SELECT public.get_empresa_id())
-  );
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('HISTORIAL_WRITE')
+        )
+        AND lab_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    )
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('HISTORIAL_WRITE')
+        )
+        AND lab_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
-CREATE POLICY "historial_delete" ON public.sgrh_historial_laboral
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('HISTORIAL_WRITE'))
-    AND lab_empresa_id = (SELECT public.get_empresa_id())
-  );
+CREATE POLICY "historial_delete" ON public.sgrh_historial_laboral FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('HISTORIAL_WRITE')
+    )
+    AND lab_empresa_id = (
+        SELECT public.get_empresa_id ()
+    )
+);
 
 -- Horarios por Empresa
-CREATE POLICY "horarios_select" ON public.sgrh_cat_horarios
-  FOR SELECT
-  TO authenticated
-  USING (hor_empresa_id = (SELECT public.get_empresa_id()));
+CREATE POLICY "horarios_select" ON public.sgrh_cat_horarios FOR
+SELECT TO authenticated USING (
+        hor_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
-CREATE POLICY "horarios_insert" ON public.sgrh_cat_horarios
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (hor_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+CREATE POLICY "horarios_insert" ON public.sgrh_cat_horarios FOR INSERT TO authenticated
+WITH
+    CHECK (
+        hor_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    );
 
 CREATE POLICY "horarios_update" ON public.sgrh_cat_horarios
-  FOR UPDATE
-  TO authenticated
-  USING (hor_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')))
-  WITH CHECK (hor_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        hor_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        hor_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    );
 
-CREATE POLICY "horarios_delete" ON public.sgrh_cat_horarios
-  FOR DELETE
-  TO authenticated
-  USING (hor_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+CREATE POLICY "horarios_delete" ON public.sgrh_cat_horarios FOR DELETE TO authenticated USING (
+    hor_empresa_id = (
+        SELECT public.get_empresa_id ()
+    )
+    AND (
+        SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+    )
+);
 
 -- Puestos por Empresa
-CREATE POLICY "puestos_select" ON public.sgrh_cat_puestos
-  FOR SELECT
-  TO authenticated
-  USING (pue_empresa_id = (SELECT public.get_empresa_id()));
+CREATE POLICY "puestos_select" ON public.sgrh_cat_puestos FOR
+SELECT TO authenticated USING (
+        pue_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
-CREATE POLICY "puestos_insert" ON public.sgrh_cat_puestos
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (pue_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+CREATE POLICY "puestos_insert" ON public.sgrh_cat_puestos FOR INSERT TO authenticated
+WITH
+    CHECK (
+        pue_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    );
 
 CREATE POLICY "puestos_update" ON public.sgrh_cat_puestos
-  FOR UPDATE
-  TO authenticated
-  USING (pue_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')))
-  WITH CHECK (pue_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        pue_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        pue_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    );
 
-CREATE POLICY "puestos_delete" ON public.sgrh_cat_puestos
-  FOR DELETE
-  TO authenticated
-  USING (pue_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+CREATE POLICY "puestos_delete" ON public.sgrh_cat_puestos FOR DELETE TO authenticated USING (
+    pue_empresa_id = (
+        SELECT public.get_empresa_id ()
+    )
+    AND (
+        SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+    )
+);
 
 -- Niveles de Comisión por Empresa
-CREATE POLICY "niveles_comision_select" ON public.sgrh_cat_niveles_comision
-  FOR SELECT
-  TO authenticated
-  USING (nvc_empresa_id = (SELECT public.get_empresa_id()));
+CREATE POLICY "niveles_comision_select" ON public.sgrh_cat_niveles_comision FOR
+SELECT TO authenticated USING (
+        nvc_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
-CREATE POLICY "niveles_comision_insert" ON public.sgrh_cat_niveles_comision
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (nvc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+CREATE POLICY "niveles_comision_insert" ON public.sgrh_cat_niveles_comision FOR INSERT TO authenticated
+WITH
+    CHECK (
+        nvc_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    );
 
 CREATE POLICY "niveles_comision_update" ON public.sgrh_cat_niveles_comision
-  FOR UPDATE
-  TO authenticated
-  USING (nvc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')))
-  WITH CHECK (nvc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        nvc_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        nvc_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    );
 
-CREATE POLICY "niveles_comision_delete" ON public.sgrh_cat_niveles_comision
-  FOR DELETE
-  TO authenticated
-  USING (nvc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+CREATE POLICY "niveles_comision_delete" ON public.sgrh_cat_niveles_comision FOR DELETE TO authenticated USING (
+    nvc_empresa_id = (
+        SELECT public.get_empresa_id ()
+    )
+    AND (
+        SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+    )
+);
 
 -- Feriados
-CREATE POLICY "feriados_select" ON public.sgrh_cat_feriados
-  FOR SELECT
-  TO authenticated
-  USING (fer_empresa_id IS NULL OR fer_empresa_id = (SELECT public.get_empresa_id()));
+CREATE POLICY "feriados_select" ON public.sgrh_cat_feriados FOR
+SELECT TO authenticated USING (
+        fer_empresa_id IS NULL
+        OR fer_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
-CREATE POLICY "feriados_insert" ON public.sgrh_cat_feriados
-  FOR INSERT
-  TO authenticated
-  WITH CHECK ((fer_empresa_id IS NULL OR fer_empresa_id = (SELECT public.get_empresa_id())) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+CREATE POLICY "feriados_insert" ON public.sgrh_cat_feriados FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            fer_empresa_id IS NULL
+            OR fer_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    );
 
 CREATE POLICY "feriados_update" ON public.sgrh_cat_feriados
-  FOR UPDATE
-  TO authenticated
-  USING ((fer_empresa_id IS NULL OR fer_empresa_id = (SELECT public.get_empresa_id())) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')))
-  WITH CHECK ((fer_empresa_id IS NULL OR fer_empresa_id = (SELECT public.get_empresa_id())) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        (
+            fer_empresa_id IS NULL
+            OR fer_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        (
+            fer_empresa_id IS NULL
+            OR fer_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+        )
+        AND (
+            SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+        )
+    );
 
-CREATE POLICY "feriados_delete" ON public.sgrh_cat_feriados
-  FOR DELETE
-  TO authenticated
-  USING ((fer_empresa_id IS NULL OR fer_empresa_id = (SELECT public.get_empresa_id())) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+CREATE POLICY "feriados_delete" ON public.sgrh_cat_feriados FOR DELETE TO authenticated USING (
+    (
+        fer_empresa_id IS NULL
+        OR fer_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    )
+    AND (
+        SELECT public.tiene_permiso ('CATALOGOS_WRITE')
+    )
+);
 
 -- Programación Semanal de Asistencia
-CREATE POLICY "programacion_select" ON public.sgrh_programacion_semanal
-  FOR SELECT
-  TO authenticated
-  USING (
-    prg_empleado_id = (SELECT public.get_emp_id())
-    OR (
-      (SELECT public.tiene_permiso('ASISTENCIA_READ'))
-      AND prg_sucursal_id IN (
-        SELECT suc_id FROM public.sgrh_sucursales
-        WHERE suc_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+CREATE POLICY "programacion_select" ON public.sgrh_programacion_semanal FOR
+SELECT TO authenticated USING (
+        prg_empleado_id = (
+            SELECT public.get_emp_id ()
+        )
+        OR (
+            (
+                SELECT public.tiene_permiso ('ASISTENCIA_READ')
+            )
+            AND prg_sucursal_id IN (
+                SELECT suc_id
+                FROM public.sgrh_sucursales
+                WHERE
+                    suc_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "programacion_insert" ON public.sgrh_programacion_semanal
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('ASISTENCIA_WRITE'))
-    AND prg_sucursal_id IN (
-      SELECT suc_id FROM public.sgrh_sucursales
-      WHERE suc_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+CREATE POLICY "programacion_insert" ON public.sgrh_programacion_semanal FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
+        )
+        AND prg_sucursal_id IN (
+            SELECT suc_id
+            FROM public.sgrh_sucursales
+            WHERE
+                suc_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
 CREATE POLICY "programacion_update" ON public.sgrh_programacion_semanal
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('ASISTENCIA_WRITE'))
-    AND prg_sucursal_id IN (
-      SELECT suc_id FROM public.sgrh_sucursales
-      WHERE suc_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
+        )
+        AND prg_sucursal_id IN (
+            SELECT suc_id
+            FROM public.sgrh_sucursales
+            WHERE
+                suc_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('ASISTENCIA_WRITE'))
-    AND prg_sucursal_id IN (
-      SELECT suc_id FROM public.sgrh_sucursales
-      WHERE suc_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
+        )
+        AND prg_sucursal_id IN (
+            SELECT suc_id
+            FROM public.sgrh_sucursales
+            WHERE
+                suc_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
-CREATE POLICY "programacion_delete" ON public.sgrh_programacion_semanal
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('ASISTENCIA_WRITE'))
-    AND prg_sucursal_id IN (
-      SELECT suc_id FROM public.sgrh_sucursales
-      WHERE suc_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "programacion_delete" ON public.sgrh_programacion_semanal FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
     )
-  );
+    AND prg_sucursal_id IN (
+        SELECT suc_id
+        FROM public.sgrh_sucursales
+        WHERE
+            suc_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
 
 -- Comprobantes de Pago
-CREATE POLICY "comprobantes_select" ON public.sgrh_comprobantes_pago
-  FOR SELECT
-  TO authenticated
-  USING (
-    com_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empleado_id = (SELECT public.get_emp_id())
-      )
-    )
-    OR (
-      (SELECT public.tiene_permiso('NOMINA_READ'))
-      AND com_nomina_detalle_id IN (
-        SELECT ndt_id FROM public.sgrh_nomina_detalle
-        WHERE ndt_nomina_periodo_id IN (
-          SELECT npe_id FROM public.sgrh_nomina_periodo
-          WHERE npe_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "comprobantes_select" ON public.sgrh_comprobantes_pago FOR
+SELECT TO authenticated USING (
+        com_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_historial_laboral_id IN (
+                    SELECT lab_id
+                    FROM public.sgrh_historial_laboral
+                    WHERE
+                        lab_empleado_id = (
+                            SELECT public.get_emp_id ()
+                        )
+                )
         )
-      )
-    )
-  );
+        OR (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND com_nomina_detalle_id IN (
+                SELECT ndt_id
+                FROM public.sgrh_nomina_detalle
+                WHERE
+                    ndt_nomina_periodo_id IN (
+                        SELECT npe_id
+                        FROM public.sgrh_nomina_periodo
+                        WHERE
+                            npe_empresa_id = (
+                                SELECT public.get_empresa_id ()
+                            )
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "comprobantes_insert" ON public.sgrh_comprobantes_pago
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND com_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+CREATE POLICY "comprobantes_insert" ON public.sgrh_comprobantes_pago FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND com_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
+    );
 
 CREATE POLICY "comprobantes_update" ON public.sgrh_comprobantes_pago
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND com_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND com_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND com_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND com_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
+    );
 
-CREATE POLICY "comprobantes_delete" ON public.sgrh_comprobantes_pago
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND com_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
+CREATE POLICY "comprobantes_delete" ON public.sgrh_comprobantes_pago FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
-  );
+    AND com_nomina_detalle_id IN (
+        SELECT ndt_id
+        FROM public.sgrh_nomina_detalle
+        WHERE
+            ndt_nomina_periodo_id IN (
+                SELECT npe_id
+                FROM public.sgrh_nomina_periodo
+                WHERE
+                    npe_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+    )
+);
 
 -- Beneficios del Empleado
-CREATE POLICY "beneficios_select" ON public.sgrh_beneficios_empleado
-  FOR SELECT
-  TO authenticated
-  USING (
-    ben_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empleado_id = (SELECT public.get_emp_id())
-    )
-    OR (
-      ((SELECT public.tiene_permiso('NOMINA_READ')) OR (SELECT public.tiene_permiso('EMPLEADOS_READ')))
-      AND ben_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+CREATE POLICY "beneficios_select" ON public.sgrh_beneficios_empleado FOR
+SELECT TO authenticated USING (
+        ben_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empleado_id = (
+                    SELECT public.get_emp_id ()
+                )
+        )
+        OR (
+            (
+                (
+                    SELECT public.tiene_permiso ('NOMINA_READ')
+                )
+                OR (
+                    SELECT public.tiene_permiso ('EMPLEADOS_READ')
+                )
+            )
+            AND ben_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "beneficios_insert" ON public.sgrh_beneficios_empleado
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ben_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+CREATE POLICY "beneficios_insert" ON public.sgrh_beneficios_empleado FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ben_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
 CREATE POLICY "beneficios_update" ON public.sgrh_beneficios_empleado
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ben_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ben_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ben_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ben_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
-CREATE POLICY "beneficios_delete" ON public.sgrh_beneficios_empleado
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ben_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "beneficios_delete" ON public.sgrh_beneficios_empleado FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
-  );
+    AND ben_historial_laboral_id IN (
+        SELECT lab_id
+        FROM public.sgrh_historial_laboral
+        WHERE
+            lab_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
 
 -- Comisiones Calculadas
-CREATE POLICY "comisiones_select" ON public.sgrh_comisiones_calculadas
-  FOR SELECT
-  TO authenticated
-  USING (
-    cal_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empleado_id = (SELECT public.get_emp_id())
-    )
-    OR (
-      (SELECT public.tiene_permiso('NOMINA_READ'))
-      AND cal_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+CREATE POLICY "comisiones_select" ON public.sgrh_comisiones_calculadas FOR
+SELECT TO authenticated USING (
+        cal_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empleado_id = (
+                    SELECT public.get_emp_id ()
+                )
+        )
+        OR (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND cal_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "comisiones_insert" ON public.sgrh_comisiones_calculadas
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND cal_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+CREATE POLICY "comisiones_insert" ON public.sgrh_comisiones_calculadas FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND cal_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
 CREATE POLICY "comisiones_update" ON public.sgrh_comisiones_calculadas
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND cal_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND cal_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND cal_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND cal_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
-CREATE POLICY "comisiones_delete" ON public.sgrh_comisiones_calculadas
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND cal_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "comisiones_delete" ON public.sgrh_comisiones_calculadas FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
-  );
+    AND cal_historial_laboral_id IN (
+        SELECT lab_id
+        FROM public.sgrh_historial_laboral
+        WHERE
+            lab_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
 
 -- Provisiones Anuales
-CREATE POLICY "provisiones_select" ON public.sgrh_provisiones_anuales
-  FOR SELECT
-  TO authenticated
-  USING (
-    pra_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empleado_id = (SELECT public.get_emp_id())
-    )
-    OR (
-      (SELECT public.tiene_permiso('NOMINA_READ'))
-      AND pra_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+CREATE POLICY "provisiones_select" ON public.sgrh_provisiones_anuales FOR
+SELECT TO authenticated USING (
+        pra_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empleado_id = (
+                    SELECT public.get_emp_id ()
+                )
+        )
+        OR (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND pra_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "provisiones_insert" ON public.sgrh_provisiones_anuales
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND pra_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+CREATE POLICY "provisiones_insert" ON public.sgrh_provisiones_anuales FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND pra_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
 CREATE POLICY "provisiones_update" ON public.sgrh_provisiones_anuales
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND pra_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND pra_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND pra_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND pra_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
 
-CREATE POLICY "provisiones_delete" ON public.sgrh_provisiones_anuales
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND pra_historial_laboral_id IN (
-      SELECT lab_id FROM public.sgrh_historial_laboral
-      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "provisiones_delete" ON public.sgrh_provisiones_anuales FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
-  );
+    AND pra_historial_laboral_id IN (
+        SELECT lab_id
+        FROM public.sgrh_historial_laboral
+        WHERE
+            lab_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
 
 -- Líneas de Nómina: Ingresos
-CREATE POLICY "nomina_lineas_ingreso_select" ON public.sgrh_nomina_linea_ingreso
-  FOR SELECT
-  TO authenticated
-  USING (
-    ing_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empleado_id = (SELECT public.get_emp_id())
-      )
-    )
-    OR (
-      (SELECT public.tiene_permiso('NOMINA_READ'))
-      AND ing_nomina_detalle_id IN (
-        SELECT ndt_id FROM public.sgrh_nomina_detalle
-        WHERE ndt_nomina_periodo_id IN (
-          SELECT npe_id FROM public.sgrh_nomina_periodo
-          WHERE npe_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "nomina_lineas_ingreso_select" ON public.sgrh_nomina_linea_ingreso FOR
+SELECT TO authenticated USING (
+        ing_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_historial_laboral_id IN (
+                    SELECT lab_id
+                    FROM public.sgrh_historial_laboral
+                    WHERE
+                        lab_empleado_id = (
+                            SELECT public.get_emp_id ()
+                        )
+                )
         )
-      )
-    )
-  );
+        OR (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND ing_nomina_detalle_id IN (
+                SELECT ndt_id
+                FROM public.sgrh_nomina_detalle
+                WHERE
+                    ndt_nomina_periodo_id IN (
+                        SELECT npe_id
+                        FROM public.sgrh_nomina_periodo
+                        WHERE
+                            npe_empresa_id = (
+                                SELECT public.get_empresa_id ()
+                            )
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "nomina_lineas_ingreso_insert" ON public.sgrh_nomina_linea_ingreso
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ing_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+CREATE POLICY "nomina_lineas_ingreso_insert" ON public.sgrh_nomina_linea_ingreso FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ing_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
+    );
 
 CREATE POLICY "nomina_lineas_ingreso_update" ON public.sgrh_nomina_linea_ingreso
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ing_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ing_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ing_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ing_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
+    );
 
-CREATE POLICY "nomina_lineas_ingreso_delete" ON public.sgrh_nomina_linea_ingreso
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ing_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
+CREATE POLICY "nomina_lineas_ingreso_delete" ON public.sgrh_nomina_linea_ingreso FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
-  );
+    AND ing_nomina_detalle_id IN (
+        SELECT ndt_id
+        FROM public.sgrh_nomina_detalle
+        WHERE
+            ndt_nomina_periodo_id IN (
+                SELECT npe_id
+                FROM public.sgrh_nomina_periodo
+                WHERE
+                    npe_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+    )
+);
 
 -- Líneas de Nómina: Deducciones
-CREATE POLICY "nomina_lineas_deduccion_select" ON public.sgrh_nomina_linea_deduccion
-  FOR SELECT
-  TO authenticated
-  USING (
-    ded_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empleado_id = (SELECT public.get_emp_id())
-      )
-    )
-    OR (
-      (SELECT public.tiene_permiso('NOMINA_READ'))
-      AND ded_nomina_detalle_id IN (
-        SELECT ndt_id FROM public.sgrh_nomina_detalle
-        WHERE ndt_nomina_periodo_id IN (
-          SELECT npe_id FROM public.sgrh_nomina_periodo
-          WHERE npe_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "nomina_lineas_deduccion_select" ON public.sgrh_nomina_linea_deduccion FOR
+SELECT TO authenticated USING (
+        ded_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_historial_laboral_id IN (
+                    SELECT lab_id
+                    FROM public.sgrh_historial_laboral
+                    WHERE
+                        lab_empleado_id = (
+                            SELECT public.get_emp_id ()
+                        )
+                )
         )
-      )
-    )
-  );
+        OR (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND ded_nomina_detalle_id IN (
+                SELECT ndt_id
+                FROM public.sgrh_nomina_detalle
+                WHERE
+                    ndt_nomina_periodo_id IN (
+                        SELECT npe_id
+                        FROM public.sgrh_nomina_periodo
+                        WHERE
+                            npe_empresa_id = (
+                                SELECT public.get_empresa_id ()
+                            )
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "nomina_lineas_deduccion_insert" ON public.sgrh_nomina_linea_deduccion
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ded_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+CREATE POLICY "nomina_lineas_deduccion_insert" ON public.sgrh_nomina_linea_deduccion FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ded_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
+    );
 
 CREATE POLICY "nomina_lineas_deduccion_update" ON public.sgrh_nomina_linea_deduccion
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ded_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ded_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ded_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND ded_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
+    );
 
-CREATE POLICY "nomina_lineas_deduccion_delete" ON public.sgrh_nomina_linea_deduccion
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND ded_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
+CREATE POLICY "nomina_lineas_deduccion_delete" ON public.sgrh_nomina_linea_deduccion FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
-  );
+    AND ded_nomina_detalle_id IN (
+        SELECT ndt_id
+        FROM public.sgrh_nomina_detalle
+        WHERE
+            ndt_nomina_periodo_id IN (
+                SELECT npe_id
+                FROM public.sgrh_nomina_periodo
+                WHERE
+                    npe_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+    )
+);
 
 -- Líneas de Nómina: Aportes Patronales
-CREATE POLICY "nomina_lineas_patronal_select" ON public.sgrh_nomina_linea_patronal
-  FOR SELECT
-  TO authenticated
-  USING (
-    pat_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empleado_id = (SELECT public.get_emp_id())
-      )
-    )
-    OR (
-      (SELECT public.tiene_permiso('NOMINA_READ'))
-      AND pat_nomina_detalle_id IN (
-        SELECT ndt_id FROM public.sgrh_nomina_detalle
-        WHERE ndt_nomina_periodo_id IN (
-          SELECT npe_id FROM public.sgrh_nomina_periodo
-          WHERE npe_empresa_id = (SELECT public.get_empresa_id())
+CREATE POLICY "nomina_lineas_patronal_select" ON public.sgrh_nomina_linea_patronal FOR
+SELECT TO authenticated USING (
+        pat_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_historial_laboral_id IN (
+                    SELECT lab_id
+                    FROM public.sgrh_historial_laboral
+                    WHERE
+                        lab_empleado_id = (
+                            SELECT public.get_emp_id ()
+                        )
+                )
         )
-      )
-    )
-  );
+        OR (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND pat_nomina_detalle_id IN (
+                SELECT ndt_id
+                FROM public.sgrh_nomina_detalle
+                WHERE
+                    ndt_nomina_periodo_id IN (
+                        SELECT npe_id
+                        FROM public.sgrh_nomina_periodo
+                        WHERE
+                            npe_empresa_id = (
+                                SELECT public.get_empresa_id ()
+                            )
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "nomina_lineas_patronal_insert" ON public.sgrh_nomina_linea_patronal
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND pat_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+CREATE POLICY "nomina_lineas_patronal_insert" ON public.sgrh_nomina_linea_patronal FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND pat_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
+    );
 
 CREATE POLICY "nomina_lineas_patronal_update" ON public.sgrh_nomina_linea_patronal
-  FOR UPDATE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND pat_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND pat_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
     )
-  )
-  WITH CHECK (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND pat_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
-    )
-  );
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND pat_nomina_detalle_id IN (
+            SELECT ndt_id
+            FROM public.sgrh_nomina_detalle
+            WHERE
+                ndt_nomina_periodo_id IN (
+                    SELECT npe_id
+                    FROM public.sgrh_nomina_periodo
+                    WHERE
+                        npe_empresa_id = (
+                            SELECT public.get_empresa_id ()
+                        )
+                )
+        )
+    );
 
-CREATE POLICY "nomina_lineas_patronal_delete" ON public.sgrh_nomina_linea_patronal
-  FOR DELETE
-  TO authenticated
-  USING (
-    (SELECT public.tiene_permiso('NOMINA_WRITE'))
-    AND pat_nomina_detalle_id IN (
-      SELECT ndt_id FROM public.sgrh_nomina_detalle
-      WHERE ndt_nomina_periodo_id IN (
-        SELECT npe_id FROM public.sgrh_nomina_periodo
-        WHERE npe_empresa_id = (SELECT public.get_empresa_id())
-      )
+CREATE POLICY "nomina_lineas_patronal_delete" ON public.sgrh_nomina_linea_patronal FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
-  );
+    AND pat_nomina_detalle_id IN (
+        SELECT ndt_id
+        FROM public.sgrh_nomina_detalle
+        WHERE
+            ndt_nomina_periodo_id IN (
+                SELECT npe_id
+                FROM public.sgrh_nomina_periodo
+                WHERE
+                    npe_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+    )
+);
 
 -- Candidatos
-CREATE POLICY "candidatos_select" ON public.sgrh_candidatos
-  FOR SELECT
-  TO authenticated
-  USING ((SELECT public.tiene_permiso('RECLUTAMIENTO_READ')));
+CREATE POLICY "candidatos_select" ON public.sgrh_candidatos FOR
+SELECT TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_READ')
+        )
+    );
 
-CREATE POLICY "candidatos_insert" ON public.sgrh_candidatos
-  FOR INSERT
-  TO authenticated
-  WITH CHECK ((SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE')));
+CREATE POLICY "candidatos_insert" ON public.sgrh_candidatos FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
+    );
 
 CREATE POLICY "candidatos_update" ON public.sgrh_candidatos
-  FOR UPDATE
-  TO authenticated
-  USING ((SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE')))
-  WITH CHECK ((SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
+    );
 
-CREATE POLICY "candidatos_delete" ON public.sgrh_candidatos
-  FOR DELETE
-  TO authenticated
-  USING ((SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE')));
+CREATE POLICY "candidatos_delete" ON public.sgrh_candidatos FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+    )
+);
 
 -- Postulaciones
-CREATE POLICY "postulaciones_select" ON public.sgrh_postulaciones
-  FOR SELECT
-  TO authenticated
-  USING (pos_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('RECLUTAMIENTO_READ')));
+CREATE POLICY "postulaciones_select" ON public.sgrh_postulaciones FOR
+SELECT TO authenticated USING (
+        pos_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_READ')
+        )
+    );
 
-CREATE POLICY "postulaciones_insert" ON public.sgrh_postulaciones
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (pos_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE')));
+CREATE POLICY "postulaciones_insert" ON public.sgrh_postulaciones FOR INSERT TO authenticated
+WITH
+    CHECK (
+        pos_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
+    );
 
 CREATE POLICY "postulaciones_update" ON public.sgrh_postulaciones
-  FOR UPDATE
-  TO authenticated
-  USING (pos_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE')))
-  WITH CHECK (pos_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE')));
+FOR UPDATE
+    TO authenticated USING (
+        pos_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        pos_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
+    );
 
-CREATE POLICY "postulaciones_delete" ON public.sgrh_postulaciones
-  FOR DELETE
-  TO authenticated
-  USING (pos_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE')));
+CREATE POLICY "postulaciones_delete" ON public.sgrh_postulaciones FOR DELETE TO authenticated USING (
+    pos_empresa_id = (
+        SELECT public.get_empresa_id ()
+    )
+    AND (
+        SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+    )
+);
 
 -- Etapas de Postulación
-CREATE POLICY "postulacion_etapas_select" ON public.sgrh_postulacion_etapas
-  FOR SELECT
-  TO authenticated
-  USING (
-    pet_postulacion_id IN (
-      SELECT pos_id FROM public.sgrh_postulaciones
-      WHERE pos_empresa_id = (SELECT public.get_empresa_id())
-    )
-    AND (SELECT public.tiene_permiso('RECLUTAMIENTO_READ'))
-  );
+CREATE POLICY "postulacion_etapas_select" ON public.sgrh_postulacion_etapas FOR
+SELECT TO authenticated USING (
+        pet_postulacion_id IN (
+            SELECT pos_id
+            FROM public.sgrh_postulaciones
+            WHERE
+                pos_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+        AND (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_READ')
+        )
+    );
 
-CREATE POLICY "postulacion_etapas_insert" ON public.sgrh_postulacion_etapas
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    pet_postulacion_id IN (
-      SELECT pos_id FROM public.sgrh_postulaciones
-      WHERE pos_empresa_id = (SELECT public.get_empresa_id())
-    )
-    AND (SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE'))
-  );
+CREATE POLICY "postulacion_etapas_insert" ON public.sgrh_postulacion_etapas FOR INSERT TO authenticated
+WITH
+    CHECK (
+        pet_postulacion_id IN (
+            SELECT pos_id
+            FROM public.sgrh_postulaciones
+            WHERE
+                pos_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+        AND (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
+    );
 
 CREATE POLICY "postulacion_etapas_update" ON public.sgrh_postulacion_etapas
-  FOR UPDATE
-  TO authenticated
-  USING (
-    pet_postulacion_id IN (
-      SELECT pos_id FROM public.sgrh_postulaciones
-      WHERE pos_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        pet_postulacion_id IN (
+            SELECT pos_id
+            FROM public.sgrh_postulaciones
+            WHERE
+                pos_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+        AND (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
     )
-    AND (SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE'))
-  )
-  WITH CHECK (
-    pet_postulacion_id IN (
-      SELECT pos_id FROM public.sgrh_postulaciones
-      WHERE pos_empresa_id = (SELECT public.get_empresa_id())
-    )
-    AND (SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE'))
-  );
+WITH
+    CHECK (
+        pet_postulacion_id IN (
+            SELECT pos_id
+            FROM public.sgrh_postulaciones
+            WHERE
+                pos_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+        AND (
+            SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+        )
+    );
 
-CREATE POLICY "postulacion_etapas_delete" ON public.sgrh_postulacion_etapas
-  FOR DELETE
-  TO authenticated
-  USING (
+CREATE POLICY "postulacion_etapas_delete" ON public.sgrh_postulacion_etapas FOR DELETE TO authenticated USING (
     pet_postulacion_id IN (
-      SELECT pos_id FROM public.sgrh_postulaciones
-      WHERE pos_empresa_id = (SELECT public.get_empresa_id())
+        SELECT pos_id
+        FROM public.sgrh_postulaciones
+        WHERE
+            pos_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
     )
-    AND (SELECT public.tiene_permiso('RECLUTAMIENTO_WRITE'))
-  );
+    AND (
+        SELECT public.tiene_permiso ('RECLUTAMIENTO_WRITE')
+    )
+);
 
 -- Evaluaciones de Desempeño
-CREATE POLICY "evaluaciones_select" ON public.sgrh_evaluaciones
-  FOR SELECT
-  TO authenticated
-  USING (
-    eve_empresa_id = (SELECT public.get_empresa_id())
-    AND (
-      (SELECT public.tiene_permiso('EVALUACIONES_READ'))
-      OR eve_evaluador_id = (SELECT public.get_usr_id())
-      OR eve_historial_laboral_id IN (
-        SELECT lab_id FROM public.sgrh_historial_laboral
-        WHERE lab_empleado_id = (SELECT public.get_emp_id())
-      )
-    )
-  );
+CREATE POLICY "evaluaciones_select" ON public.sgrh_evaluaciones FOR
+SELECT TO authenticated USING (
+        eve_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            (
+                SELECT public.tiene_permiso ('EVALUACIONES_READ')
+            )
+            OR eve_evaluador_id = (
+                SELECT public.get_usr_id ()
+            )
+            OR eve_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empleado_id = (
+                        SELECT public.get_emp_id ()
+                    )
+            )
+        )
+    );
 
-CREATE POLICY "evaluaciones_insert" ON public.sgrh_evaluaciones
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    eve_empresa_id = (SELECT public.get_empresa_id())
-    AND (SELECT public.tiene_permiso('EVALUACIONES_WRITE'))
-  );
+CREATE POLICY "evaluaciones_insert" ON public.sgrh_evaluaciones FOR INSERT TO authenticated
+WITH
+    CHECK (
+        eve_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EVALUACIONES_WRITE')
+        )
+    );
 
 CREATE POLICY "evaluaciones_update" ON public.sgrh_evaluaciones
-  FOR UPDATE
-  TO authenticated
-  USING (
-    eve_empresa_id = (SELECT public.get_empresa_id())
-    AND (SELECT public.tiene_permiso('EVALUACIONES_WRITE'))
-  )
-  WITH CHECK (
-    eve_empresa_id = (SELECT public.get_empresa_id())
-    AND (SELECT public.tiene_permiso('EVALUACIONES_WRITE'))
-  );
+FOR UPDATE
+    TO authenticated USING (
+        eve_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EVALUACIONES_WRITE')
+        )
+    )
+WITH
+    CHECK (
+        eve_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            SELECT public.tiene_permiso ('EVALUACIONES_WRITE')
+        )
+    );
 
-CREATE POLICY "evaluaciones_delete" ON public.sgrh_evaluaciones
-  FOR DELETE
-  TO authenticated
-  USING (
-    eve_empresa_id = (SELECT public.get_empresa_id())
-    AND (SELECT public.tiene_permiso('EVALUACIONES_WRITE'))
-  );
+CREATE POLICY "evaluaciones_delete" ON public.sgrh_evaluaciones FOR DELETE TO authenticated USING (
+    eve_empresa_id = (
+        SELECT public.get_empresa_id ()
+    )
+    AND (
+        SELECT public.tiene_permiso ('EVALUACIONES_WRITE')
+    )
+);
 
 -- Resultados de Evaluación
-CREATE POLICY "eval_resultados_select" ON public.sgrh_evaluacion_resultados
-  FOR SELECT
-  TO authenticated
-  USING (
-    evr_evaluacion_id IN (
-      SELECT eve_id FROM public.sgrh_evaluaciones
-      WHERE eve_empresa_id = (SELECT public.get_empresa_id())
-      AND (
-        (SELECT public.tiene_permiso('EVALUACIONES_READ'))
-        OR eve_evaluador_id = (SELECT public.get_usr_id())
-        OR eve_historial_laboral_id IN (
-          SELECT lab_id FROM public.sgrh_historial_laboral
-          WHERE lab_empleado_id = (SELECT public.get_emp_id())
+CREATE POLICY "eval_resultados_select" ON public.sgrh_evaluacion_resultados FOR
+SELECT TO authenticated USING (
+        evr_evaluacion_id IN (
+            SELECT eve_id
+            FROM public.sgrh_evaluaciones
+            WHERE
+                eve_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+                AND (
+                    (
+                        SELECT public.tiene_permiso ('EVALUACIONES_READ')
+                    )
+                    OR eve_evaluador_id = (
+                        SELECT public.get_usr_id ()
+                    )
+                    OR eve_historial_laboral_id IN (
+                        SELECT lab_id
+                        FROM public.sgrh_historial_laboral
+                        WHERE
+                            lab_empleado_id = (
+                                SELECT public.get_emp_id ()
+                            )
+                    )
+                )
         )
-      )
-    )
-  );
+    );
 
-CREATE POLICY "eval_resultados_insert" ON public.sgrh_evaluacion_resultados
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    evr_evaluacion_id IN (
-      SELECT eve_id FROM public.sgrh_evaluaciones
-      WHERE eve_empresa_id = (SELECT public.get_empresa_id())
-    )
-    AND (SELECT public.tiene_permiso('EVALUACIONES_WRITE'))
-  );
+CREATE POLICY "eval_resultados_insert" ON public.sgrh_evaluacion_resultados FOR INSERT TO authenticated
+WITH
+    CHECK (
+        evr_evaluacion_id IN (
+            SELECT eve_id
+            FROM public.sgrh_evaluaciones
+            WHERE
+                eve_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+        AND (
+            SELECT public.tiene_permiso ('EVALUACIONES_WRITE')
+        )
+    );
 
 CREATE POLICY "eval_resultados_update" ON public.sgrh_evaluacion_resultados
-  FOR UPDATE
-  TO authenticated
-  USING (
-    evr_evaluacion_id IN (
-      SELECT eve_id FROM public.sgrh_evaluaciones
-      WHERE eve_empresa_id = (SELECT public.get_empresa_id())
+FOR UPDATE
+    TO authenticated USING (
+        evr_evaluacion_id IN (
+            SELECT eve_id
+            FROM public.sgrh_evaluaciones
+            WHERE
+                eve_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+        AND (
+            SELECT public.tiene_permiso ('EVALUACIONES_WRITE')
+        )
     )
-    AND (SELECT public.tiene_permiso('EVALUACIONES_WRITE'))
-  )
-  WITH CHECK (
-    evr_evaluacion_id IN (
-      SELECT eve_id FROM public.sgrh_evaluaciones
-      WHERE eve_empresa_id = (SELECT public.get_empresa_id())
-    )
-    AND (SELECT public.tiene_permiso('EVALUACIONES_WRITE'))
-  );
+WITH
+    CHECK (
+        evr_evaluacion_id IN (
+            SELECT eve_id
+            FROM public.sgrh_evaluaciones
+            WHERE
+                eve_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+        AND (
+            SELECT public.tiene_permiso ('EVALUACIONES_WRITE')
+        )
+    );
 
-CREATE POLICY "eval_resultados_delete" ON public.sgrh_evaluacion_resultados
-  FOR DELETE
-  TO authenticated
-  USING (
+CREATE POLICY "eval_resultados_delete" ON public.sgrh_evaluacion_resultados FOR DELETE TO authenticated USING (
     evr_evaluacion_id IN (
-      SELECT eve_id FROM public.sgrh_evaluaciones
-      WHERE eve_empresa_id = (SELECT public.get_empresa_id())
+        SELECT eve_id
+        FROM public.sgrh_evaluaciones
+        WHERE
+            eve_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
     )
-    AND (SELECT public.tiene_permiso('EVALUACIONES_WRITE'))
-  );
+    AND (
+        SELECT public.tiene_permiso ('EVALUACIONES_WRITE')
+    )
+);
 
 -- Notificaciones
-CREATE POLICY "notificaciones_select" ON public.sgrh_notificaciones
-  FOR SELECT
-  TO authenticated
-  USING (
-    ntf_usuario_id = (SELECT public.get_usr_id())
-    OR ntf_empleado_id = (SELECT public.get_emp_id())
-    OR (
-      (SELECT public.tiene_permiso('USUARIOS_WRITE'))
-      AND ntf_empresa_id = (SELECT public.get_empresa_id())
-    )
-  );
+CREATE POLICY "notificaciones_select" ON public.sgrh_notificaciones FOR
+SELECT TO authenticated USING (
+        ntf_usuario_id = (
+            SELECT public.get_usr_id ()
+        )
+        OR ntf_empleado_id = (
+            SELECT public.get_emp_id ()
+        )
+        OR (
+            (
+                SELECT public.tiene_permiso ('USUARIOS_WRITE')
+            )
+            AND ntf_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+        )
+    );
 
-CREATE POLICY "notificaciones_insert" ON public.sgrh_notificaciones
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    ntf_empresa_id = (SELECT public.get_empresa_id())
-  );
+CREATE POLICY "notificaciones_insert" ON public.sgrh_notificaciones FOR INSERT TO authenticated
+WITH
+    CHECK (
+        ntf_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+    );
 
 CREATE POLICY "notificaciones_update" ON public.sgrh_notificaciones
-  FOR UPDATE
-  TO authenticated
-  USING (
-    ntf_usuario_id = (SELECT public.get_usr_id())
-    OR ntf_empleado_id = (SELECT public.get_emp_id())
-  )
-  WITH CHECK (
-    ntf_usuario_id = (SELECT public.get_usr_id())
-    OR ntf_empleado_id = (SELECT public.get_emp_id())
-  );
+FOR UPDATE
+    TO authenticated USING (
+        ntf_usuario_id = (
+            SELECT public.get_usr_id ()
+        )
+        OR ntf_empleado_id = (
+            SELECT public.get_emp_id ()
+        )
+    )
+WITH
+    CHECK (
+        ntf_usuario_id = (
+            SELECT public.get_usr_id ()
+        )
+        OR ntf_empleado_id = (
+            SELECT public.get_emp_id ()
+        )
+    );
 
-CREATE POLICY "notificaciones_delete" ON public.sgrh_notificaciones
-  FOR DELETE
-  TO authenticated
-  USING (
-    ntf_usuario_id = (SELECT public.get_usr_id())
-    OR ntf_empleado_id = (SELECT public.get_emp_id())
-  );
+CREATE POLICY "notificaciones_delete" ON public.sgrh_notificaciones FOR DELETE TO authenticated USING (
+    ntf_usuario_id = (
+        SELECT public.get_usr_id ()
+    )
+    OR ntf_empleado_id = (
+        SELECT public.get_emp_id ()
+    )
+);

@@ -87,7 +87,9 @@ CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.sgrh_usuarios (usr_auth_id, usr_email, usr_password_hash, usr_activo)
-  VALUES (NEW.id, NEW.email, '', true);
+  VALUES (NEW.id, NEW.email, '', true)
+  ON CONFLICT (usr_email) DO UPDATE
+  SET usr_auth_id = EXCLUDED.usr_auth_id;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
@@ -178,45 +180,79 @@ DECLARE
   v_usr_id       int;
   v_emp_id       int;
   v_permisos     text[];
+  v_user_id_raw  text;
 BEGIN
-  -- usr_id y emp_id desde auth_id
-  SELECT usr_id, usr_empleado_id
-  INTO v_usr_id, v_emp_id
-  FROM public.sgrh_usuarios
-  WHERE usr_auth_id = (event->>'user_id')::uuid;
+  -- 1. Asegurar que event no sea nulo
+  IF event IS NULL THEN
+    RETURN '{"claims":{}}'::jsonb;
+  END IF;
 
-  -- Rol y empresa activos del usuario
-  SELECT r.rol_codigo, uer.uer_empresa_id
-  INTO v_rol, v_empresa
-  FROM public.sgrh_usuarios_empresa_rol uer
-  JOIN public.sgrh_cat_roles r ON r.rol_id = uer.uer_rol_id
-  WHERE uer.uer_usuario_id = v_usr_id
-    AND uer.uer_activo = true
-  LIMIT 1;
+  -- 2. Asegurar que event->'claims' sea siempre un objeto JSON válido (nunca null ni escalar)
+  IF event->'claims' IS NULL OR jsonb_typeof(event->'claims') <> 'object' THEN
+    event := jsonb_set(event, '{claims}', '{}'::jsonb);
+  END IF;
 
-  -- Lista de permisos del rol para el frontend y RLS
-  SELECT ARRAY_AGG(p.per_codigo)
-  INTO v_permisos
-  FROM public.sgrh_rol_permisos rp
-  JOIN public.sgrh_cat_permisos p ON p.per_id = rp.rpe_permiso_id
-  JOIN public.sgrh_cat_roles r    ON r.rol_id = rp.rpe_rol_id
-  WHERE r.rol_codigo = v_rol;
+  -- 3. Validar user_id de forma segura
+  v_user_id_raw := event->>'user_id';
+  IF v_user_id_raw IS NULL THEN
+    RETURN event;
+  END IF;
 
-  claims := event->'claims';
-  
-  -- Obtener app_metadata existente u objeto vacío
-  v_app_metadata := coalesce(claims->'app_metadata', '{}'::jsonb);
-  
-  -- Guardar claims dentro de app_metadata para alineación con session.user en Next.js
-  v_app_metadata := jsonb_set(v_app_metadata, '{usr_id}',     to_jsonb(v_usr_id));
-  v_app_metadata := jsonb_set(v_app_metadata, '{emp_id}',     to_jsonb(v_emp_id));
-  v_app_metadata := jsonb_set(v_app_metadata, '{rol}',        to_jsonb(v_rol));
-  v_app_metadata := jsonb_set(v_app_metadata, '{empresa_id}', to_jsonb(v_empresa));
-  v_app_metadata := jsonb_set(v_app_metadata, '{permisos}',   to_jsonb(v_permisos));
-  
-  claims := jsonb_set(claims, '{app_metadata}', v_app_metadata);
+  -- 4. Bloque seguro para evitar caídas catastróficas en el login
+  BEGIN
+    -- Obtener usr_id y emp_id desde usr_auth_id
+    SELECT usr_id, usr_empleado_id
+    INTO v_usr_id, v_emp_id
+    FROM public.sgrh_usuarios
+    WHERE usr_auth_id = v_user_id_raw::uuid;
 
-  RETURN jsonb_set(event, '{claims}', claims);
+    -- Si el usuario no existe en la base de datos de negocio, retornar sin claims extras
+    IF v_usr_id IS NULL THEN
+      RETURN event;
+    END IF;
+
+    -- Rol y empresa activos del usuario
+    SELECT r.rol_codigo, uer.uer_empresa_id
+    INTO v_rol, v_empresa
+    FROM public.sgrh_usuarios_empresa_rol uer
+    JOIN public.sgrh_cat_roles r ON r.rol_id = uer.uer_rol_id
+    WHERE uer.uer_usuario_id = v_usr_id
+      AND uer.uer_activo = true
+    LIMIT 1;
+
+    -- Lista de códigos de permisos asignados al rol activo
+    SELECT ARRAY_AGG(p.per_codigo)
+    INTO v_permisos
+    FROM public.sgrh_rol_permisos rp
+    JOIN public.sgrh_cat_permisos p ON p.per_id = rp.rpe_permiso_id
+    JOIN public.sgrh_cat_roles r    ON r.rol_id = rp.rpe_rol_id
+    WHERE r.rol_codigo = v_rol;
+
+    claims := event->'claims';
+    
+    -- Obtener app_metadata existente u objeto vacío
+    v_app_metadata := coalesce(claims->'app_metadata', '{}'::jsonb);
+    
+    -- Guardar claims de negocio dentro de app_metadata para alineación con session.user en Next.js
+    -- Se protege cada to_jsonb con coalesce para evitar que retorne NULL de base de datos (lo que anularía todo jsonb_set)
+    v_app_metadata := jsonb_set(v_app_metadata, '{usr_id}',
+                        coalesce(to_jsonb(v_usr_id), 'null'::jsonb));
+    v_app_metadata := jsonb_set(v_app_metadata, '{emp_id}',
+                        coalesce(to_jsonb(v_emp_id), 'null'::jsonb));
+    v_app_metadata := jsonb_set(v_app_metadata, '{rol}',
+                        to_jsonb(coalesce(v_rol, 'SIN_ROL')));
+    v_app_metadata := jsonb_set(v_app_metadata, '{empresa_id}',
+                        coalesce(to_jsonb(v_empresa), 'null'::jsonb));
+    v_app_metadata := jsonb_set(v_app_metadata, '{permisos}',
+                        to_jsonb(coalesce(v_permisos, '{}'::text[])));
+    
+    claims := jsonb_set(claims, '{app_metadata}', v_app_metadata);
+
+    RETURN jsonb_set(event, '{claims}', claims);
+  EXCEPTION WHEN OTHERS THEN
+    -- En caso de error imprevisto, retornar el evento original intacto para no bloquear el inicio de sesión
+    RETURN event;
+  END;
 END;
 $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public;
 ```
@@ -331,10 +367,9 @@ Lee directamente del JWT sin hacer queries a la DB:
 ```sql
 CREATE OR REPLACE FUNCTION public.tiene_permiso(p_codigo text)
 RETURNS boolean AS $$
-  SELECT p_codigo = ANY(
-    ARRAY(
-      SELECT jsonb_array_elements_text(coalesce(auth.jwt() -> 'app_metadata' -> 'permisos', '[]'::jsonb))
-    )
+  SELECT coalesce(
+    (auth.jwt() -> 'app_metadata' -> 'permisos') @> to_jsonb(p_codigo),
+    false
   );
 $$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
 ```
