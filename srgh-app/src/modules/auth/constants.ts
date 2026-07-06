@@ -1,29 +1,26 @@
 /**
  * Configuracion visual y textos de la pantalla de login.
  * Centralizado aqui para evitar valores quemados dentro de los componentes.
- * Si en el futuro esto se vuelve multi-empresa, esta config puede
- * cargarse desde Supabase (sgrh_empresas) en lugar de estar en codigo.
+ * La pantalla usa la identidad del SISTEMA (SGRH), no de una empresa,
+ * porque el acceso es multi-empresa.
  */
-export const companyConfig = {
-  name: 'Celulares Alex',
+export const brandConfig = {
+  systemName: 'SGRH',
   tagline: 'Talento, asistencia y planillas',
-  logo: 'C',
-  accent: 'bg-[#D97706]',
-  accentHover: 'hover:bg-[#B45309]',
-  gradient: 'from-[#1E3A8A] via-indigo-900 to-amber-950',
+  logo: 'S',
+  accent: 'bg-gradient-to-r from-[#D97706] to-[#F59E0B]',
+  accentHover: 'hover:from-[#B45309] hover:to-[#D97706]',
+  accentSolid: 'bg-[#D97706]',
+  gradient: 'from-[#1E3A8A] via-[#1E1B4B] to-[#0F172A]',
 } as const
 
 export const loginScreenContent = {
-  badge: 'SGRH - Talento & Planillas',
   title: 'SGRH',
-  description:
-    'Sistema de Gestion de Recursos Humanos. Control de asistencia inteligente, calculo exacto de planillas Costarricenses (CCSS) y expedientes digitales.',
-  quote:
-    'La solucion de recursos humanos unificada para el retail de mayor movimiento tecnologico en el pais.',
-  organization: 'Infinity CR & Celulares Alex',
-  organizationDetail: 'Un solo ecosistema operativo',
-  copyrightName: 'SGRH Hub Costa Rica',
-  // TODO: mover esta imagen a /public para no depender de un servicio externo
-  backgroundImageUrl:
-    'https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&q=80&w=800',
+  subtitle: 'Gestion de talento, asistencia y planillas en un solo lugar.',
+  features: [
+    { key: 'expedientes', label: 'Expedientes' },
+    { key: 'asistencia', label: 'Asistencia' },
+    { key: 'planillas', label: 'Planillas' },
+  ],
+  copyrightName: 'SGRH Costa Rica',
 } as const

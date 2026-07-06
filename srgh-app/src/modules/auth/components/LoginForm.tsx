@@ -4,14 +4,45 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, CheckCircle, Loader2, Smartphone } from 'lucide-react'
+import {
+  AlertTriangle,
+  Banknote,
+  CalendarClock,
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  LogIn,
+  Mail,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
 import { loginSchema, type LoginInput } from '@/modules/auth/types'
-import { companyConfig, loginScreenContent } from '@/modules/auth/constants'
+import { brandConfig, loginScreenContent } from '@/modules/auth/constants'
 import { login } from '@/modules/auth/actions/login'
+
+const FEATURES: { key: string; label: string; icon: LucideIcon; iconClass: string }[] =
+  loginScreenContent.features.map((feature) => ({
+    ...feature,
+    icon:
+      feature.key === 'asistencia' ? CalendarClock : feature.key === 'planillas' ? Banknote : Users,
+    iconClass:
+      feature.key === 'asistencia'
+        ? 'text-sky-300 bg-sky-400/10'
+        : feature.key === 'planillas'
+          ? 'text-amber-300 bg-amber-400/10'
+          : 'text-emerald-300 bg-emerald-400/10',
+  }))
+
+const FLOAT_CLASSES = ['animate-float', 'animate-float-delay-1', 'animate-float-delay-2']
+
+const INPUT_CLASSES =
+  'w-full pl-10 pr-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600/70 focus:border-blue-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
 
 export function LoginForm() {
   const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   const {
     register,
@@ -46,162 +77,185 @@ export function LoginForm() {
 
   return (
     <main
-      className="min-h-screen flex flex-col md:flex-row overflow-hidden bg-[#F8FAFC] font-sans text-slate-800"
+      className="min-h-screen flex flex-col md:flex-row overflow-hidden bg-slate-50 font-sans text-slate-800"
       id="login-screen"
     >
+      {/* Panel visual: identidad del sistema, sin sobrecarga de informacion */}
       <section
-        className={`md:w-1/2 bg-gradient-to-b ${companyConfig.gradient} p-8 md:p-16 flex min-h-[44vh] md:min-h-screen flex-col justify-between text-white relative overflow-hidden`}
+        className={`md:w-1/2 bg-gradient-to-br ${brandConfig.gradient} p-8 md:p-14 flex min-h-[38vh] md:min-h-screen flex-col justify-between text-white relative overflow-hidden`}
       >
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-15 blur-[2px] pointer-events-none mix-blend-overlay"
-          style={{ backgroundImage: `url('${loginScreenContent.backgroundImageUrl}')` }}
-          aria-hidden="true"
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.05)_1px,transparent_1px)] bg-[size:20px_20px]" />
-        <div className="absolute top-1/4 -right-20 w-80 h-80 rounded-full bg-indigo-500/10 blur-3xl" />
-        <div className="absolute bottom-1/4 -left-20 w-80 h-80 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.04)_1px,transparent_1px)] bg-[size:24px_24px]" />
+        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="absolute top-1/3 -left-32 w-96 h-96 rounded-full bg-sky-500/10 blur-3xl" />
+        <div className="absolute -bottom-24 right-1/4 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl" />
 
-        <div className="relative z-10">
-          <span className="text-xs bg-white/15 backdrop-blur-md text-white font-bold px-3 py-1.5 rounded-full uppercase border border-white/25">
-            {loginScreenContent.badge}
+        <div className="relative z-10 flex items-center gap-2.5">
+          <span
+            className={`h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-amber-900/30 ${brandConfig.accent}`}
+          >
+            {brandConfig.logo}
           </span>
-          <h1 className="text-3xl md:text-5xl font-black mt-8 leading-none text-white font-sans">
-            {loginScreenContent.title}
-          </h1>
-          <p className="text-slate-300 mt-2 text-sm max-w-sm">{loginScreenContent.description}</p>
-        </div>
-
-        <div className="relative z-10 my-10 hidden md:block">
-          <blockquote className="border-l-4 border-emerald-500 pl-4 py-1 italic text-slate-300 text-sm">
-            &quot;{loginScreenContent.quote}&quot;
-          </blockquote>
-          <div className="mt-4 flex items-center gap-3">
-            <div className="p-2.5 bg-white/10 backdrop-blur rounded-lg">
-              <Smartphone className="h-5 w-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-white text-xs font-bold leading-tight">
-                {loginScreenContent.organization}
-              </p>
-              <p className="text-slate-400 text-[10px]">{loginScreenContent.organizationDetail}</p>
-            </div>
+          <div className="leading-tight">
+            <span className="block text-sm font-bold tracking-wide">{brandConfig.systemName}</span>
+            <span className="block text-[10px] uppercase tracking-widest text-slate-400">
+              {brandConfig.tagline}
+            </span>
           </div>
         </div>
 
-        <div className="relative z-10 text-[11px] text-slate-400 flex justify-between gap-4">
+        <div className="relative z-10 my-8">
+          <h1 className="text-5xl md:text-7xl font-black leading-none tracking-tight bg-gradient-to-b from-white via-white to-slate-400 bg-clip-text text-transparent">
+            {loginScreenContent.title}
+          </h1>
+          <div className={`mt-4 h-1 w-16 rounded-full ${brandConfig.accent}`} />
+          <p className="text-slate-300 mt-5 text-sm md:text-base max-w-xs leading-relaxed">
+            {loginScreenContent.subtitle}
+          </p>
+
+          <div className="mt-12 hidden md:flex gap-4">
+            {FEATURES.map(({ key, label, icon: Icon, iconClass }, index) => (
+              <div
+                key={key}
+                className={`flex flex-col items-center gap-2.5 rounded-2xl bg-white/[0.07] backdrop-blur-md border border-white/10 px-6 py-5 shadow-xl shadow-black/10 ${FLOAT_CLASSES[index % FLOAT_CLASSES.length]}`}
+              >
+                <span
+                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconClass}`}
+                >
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="text-xs font-semibold text-slate-200">{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative z-10 text-[11px] text-slate-500">
           <span>
             (c) {new Date().getFullYear()} {loginScreenContent.copyrightName}
           </span>
         </div>
       </section>
 
-      <section className="md:w-1/2 bg-white flex items-center justify-center p-8 md:p-16">
-        <div className="w-full max-w-md space-y-8">
-          <div className="text-center md:text-left">
-            <div className="flex items-center justify-center md:justify-start gap-2 mb-3">
-              <span
-                className={`h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-lg ${companyConfig.accent}`}
-              >
-                {companyConfig.logo}
-              </span>
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">{companyConfig.name}</h2>
-                <p className="text-xs text-slate-500">{companyConfig.tagline}</p>
-              </div>
-            </div>
-            <h3 className="text-2xl font-black text-slate-900">Acceso Integrado</h3>
-            <p className="text-slate-500 text-sm mt-1">
-              Ingrese con las credenciales asignadas por administracion.
-            </p>
-          </div>
+      {/* Panel de acceso */}
+      <section className="md:w-1/2 flex items-center justify-center p-6 md:p-16 relative">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(30,58,138,0.05),transparent_60%)]" />
 
-          {serverError && (
-            <div
-              role="alert"
-              className="bg-rose-50 border-l-4 border-rose-600 p-3 text-xs text-rose-800 rounded flex gap-2"
-            >
-              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-              <div>{serverError}</div>
-            </div>
-          )}
-
-          {/* method="post": si el form se envia antes de que React hidrate,
-              las credenciales van en el body y nunca en la URL */}
-          <form onSubmit={handleSubmit(onSubmit)} method="post" className="space-y-4" noValidate>
+        <div className="relative w-full max-w-md">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-xl shadow-slate-200/60 p-8 md:p-10 space-y-7">
             <div>
-              <label
-                className="block text-xs font-semibold uppercase text-slate-600 mb-1"
-                htmlFor="email-input"
-              >
-                Correo Electronico
-              </label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                  @
+              <div className="flex items-center gap-2.5 mb-6">
+                <span
+                  className={`h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold text-lg ${brandConfig.accent}`}
+                >
+                  {brandConfig.logo}
                 </span>
-                <input
-                  type="email"
-                  id="email-input"
-                  autoComplete="email"
-                  disabled={isSubmitting}
-                  aria-invalid={!!errors.email}
-                  {...register('email')}
-                  className="w-full pl-8 pr-3 py-2.5 rounded-lg border border-slate-300 text-slate-800 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-500"
-                  placeholder="correo@sucursal.com"
-                />
+                <div className="leading-tight">
+                  <h2 className="text-lg font-extrabold text-slate-900">
+                    {brandConfig.systemName}
+                  </h2>
+                  <p className="text-[11px] text-slate-500">{brandConfig.tagline}</p>
+                </div>
               </div>
-              {errors.email && <p className="mt-1 text-xs text-rose-600">{errors.email.message}</p>}
+              <h3 className="text-2xl font-black text-slate-900">Bienvenido de nuevo</h3>
+              <p className="text-slate-500 text-sm mt-1.5">
+                Ingrese con las credenciales asignadas por administracion.
+              </p>
             </div>
 
-            <div>
-              <div className="flex justify-between items-center mb-1">
+            {serverError && (
+              <div
+                role="alert"
+                className="bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 rounded-xl flex gap-2.5 items-start"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+                <div>{serverError}</div>
+              </div>
+            )}
+
+            {/* method="post": si el form se envia antes de que React hidrate,
+                las credenciales van en el body y nunca en la URL */}
+            <form onSubmit={handleSubmit(onSubmit)} method="post" className="space-y-5" noValidate>
+              <div>
                 <label
-                  className="block text-xs font-semibold uppercase text-slate-600"
+                  className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1.5"
+                  htmlFor="email-input"
+                >
+                  Correo Electronico
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="email"
+                    id="email-input"
+                    autoComplete="email"
+                    disabled={isSubmitting}
+                    aria-invalid={!!errors.email}
+                    {...register('email')}
+                    className={INPUT_CLASSES}
+                    placeholder="correo@sucursal.com"
+                  />
+                </div>
+                {errors.email && (
+                  <p className="mt-1.5 text-xs text-rose-600">{errors.email.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1.5"
                   htmlFor="pass-input"
                 >
                   Contrasena
                 </label>
-                <span className="text-xs text-blue-600">Olvido la contrasena?</span>
+                <div className="relative">
+                  <LockKeyhole className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    id="pass-input"
+                    autoComplete="current-password"
+                    disabled={isSubmitting}
+                    aria-invalid={!!errors.password}
+                    {...register('password')}
+                    className={`${INPUT_CLASSES} pr-11`}
+                    placeholder="********"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    disabled={isSubmitting}
+                    aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 transition disabled:cursor-not-allowed"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {errors.password && (
+                  <p className="mt-1.5 text-xs text-rose-600">{errors.password.message}</p>
+                )}
               </div>
-              <input
-                type="password"
-                id="pass-input"
-                autoComplete="current-password"
+
+              <button
+                type="submit"
+                id="submit-login"
                 disabled={isSubmitting}
-                aria-invalid={!!errors.password}
-                {...register('password')}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-500"
-                placeholder="********"
-              />
-              {errors.password && (
-                <p className="mt-1 text-xs text-rose-600">{errors.password.message}</p>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              id="submit-login"
-              disabled={isSubmitting}
-              className={`w-full py-3 rounded-lg text-white font-bold text-sm transition shadow-md flex items-center justify-center gap-2 ${companyConfig.accent} ${companyConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Validando acceso
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="h-4 w-4" /> Autenticar Credenciales
-                </>
-              )}
-            </button>
-          </form>
-
-          <div className="border-t border-slate-200 pt-5 text-center">
-            <p className="text-xs text-slate-500">Dificultades de ingreso?</p>
-            <p className="text-[10px] text-slate-400 mt-1">
-              Contacte al soporte interno de TI o al administrador del sistema.
-            </p>
+                className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-600/25 hover:shadow-amber-600/40 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-400 disabled:shadow-none`}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Validando acceso
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="h-4 w-4" /> Iniciar sesion
+                  </>
+                )}
+              </button>
+            </form>
           </div>
+
+          <p className="text-center text-xs text-slate-400 mt-6">
+            Dificultades de ingreso? Contacte al soporte interno de TI.
+          </p>
         </div>
       </section>
     </main>

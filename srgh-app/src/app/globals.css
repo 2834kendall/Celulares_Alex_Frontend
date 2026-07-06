@@ -24,3 +24,26 @@ body {
   color: var(--foreground);
   font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
+
+/* Flotado suave para elementos decorativos (pantalla de login) */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
+
+.animate-float-delay-1 {
+  animation: float 5s ease-in-out 0.8s infinite;
+}
+
+.animate-float-delay-2 {
+  animation: float 5s ease-in-out 1.6s infinite;
+}
