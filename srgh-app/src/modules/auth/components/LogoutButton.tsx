@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Loader2, LogOut } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { logout } from '@/modules/auth/actions/logout'
 
 interface LogoutButtonProps {
   label?: string
@@ -14,15 +13,12 @@ export function LogoutButton({
   label = 'Cerrar sesion',
   className = 'inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60',
 }: LogoutButtonProps) {
-  const router = useRouter()
   const [loading, setLoading] = useState(false)
 
   async function handleLogout() {
     setLoading(true)
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.replace('/login')
-    router.refresh()
+    // Server Action: cierra la sesion en el servidor y redirige a /login
+    await logout()
   }
 
   return (

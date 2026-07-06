@@ -5,28 +5,9 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertTriangle, CheckCircle, Loader2, Smartphone } from 'lucide-react'
-import type { AuthError } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/client'
 import { loginSchema, type LoginInput } from '@/modules/auth/types'
 import { companyConfig, loginScreenContent } from '@/modules/auth/constants'
-
-function getLoginMessage(error: AuthError) {
-  const message = error.message.toLowerCase()
-
-  if (error.status === 429 || error.code === 'over_request_rate_limit') {
-    return 'Demasiados intentos. Espere un momento antes de volver a intentar.'
-  }
-
-  if (error.code === 'email_not_confirmed' || message.includes('email not confirmed')) {
-    return 'No se pudo completar el acceso. Confirme su correo o contacte al administrador.'
-  }
-
-  if (message.includes('failed to fetch') || message.includes('network')) {
-    return 'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.'
-  }
-
-  return 'Credenciales invalidas.'
-}
+import { login } from '@/modules/auth/actions/login'
 
 export function LoginForm() {
   const router = useRouter()
@@ -41,34 +22,20 @@ export function LoginForm() {
     defaultValues: { email: '', password: '' },
   })
 
-  async function onSubmit({ email, password }: LoginInput) {
+  async function onSubmit(input: LoginInput) {
     setServerError(null)
 
     try {
-      const supabase = createClient()
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      // Server Action: la autenticacion corre en el servidor,
+      // el token nunca pasa por el JavaScript del navegador.
+      const result = await login(input)
 
-      if (loginError) {
-        setServerError(getLoginMessage(loginError))
+      if (!result.ok) {
+        setServerError(result.error)
         return
       }
 
-      // Los permisos viven en el JWT (los inyecta el hook de Supabase),
-      // NO en el registro del usuario — por eso se leen con getClaims().
-      const { data: claimsData } = await supabase.auth.getClaims()
-      const meta = (claimsData?.claims?.app_metadata ?? {}) as { permisos?: unknown }
-      const permisos = meta.permisos
-
-      if (!Array.isArray(permisos) || permisos.length === 0) {
-        router.replace('/unauthorized')
-        router.refresh()
-        return
-      }
-
-      router.replace('/dashboard')
+      router.replace(result.destination)
       router.refresh()
     } catch {
       setServerError(
