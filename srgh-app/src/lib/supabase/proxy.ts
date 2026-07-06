@@ -4,7 +4,7 @@ import { Database } from '@/types/database.types'
 import { env } from '@/lib/env'
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
+  const supabaseResponse = NextResponse.next({
     request,
   })
 
@@ -18,9 +18,7 @@ export async function updateSession(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request,
-          })
+
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           )
@@ -29,8 +27,32 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Validates the JWT signature and refreshes the session cookie when needed.
-  await supabase.auth.getClaims()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const hasSession = !!user
+
+  const { pathname } = request.nextUrl
+  const isPublicPath =
+    pathname === '/login' || pathname === '/activate-account' || pathname === '/unauthorized'
+
+  if (pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = hasSession ? '/dashboard' : '/login'
+    return NextResponse.redirect(url)
+  }
+
+  if (!hasSession && !isPublicPath) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+
+  if (hasSession && isPublicPath && pathname !== '/unauthorized') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
 
   return supabaseResponse
 }
