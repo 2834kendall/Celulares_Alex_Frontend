@@ -158,12 +158,12 @@ Request entra
 
 | Capa                      | Responsabilidad                                                   | Dónde vive                                                      | Qué NO hace                                                     |
 | ------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
-| Proxy                     | Autenticación únicamente                                          | `proxy.ts` + `lib/supabase/proxy.ts`                            | No valida permisos ni roles                                     |
+| Proxy                     | Autenticación únicamente (redirige a /login si no hay sesión)     | `proxy.ts` + `lib/supabase/proxy.ts`                            | No valida permisos ni roles                                     |
 | Guard de ruta             | Autorización por permiso, antes de renderizar                     | `lib/auth/require-permission.ts`, llamado desde cada `page.tsx` | No oculta/muestra botones — eso es UI                           |
 | RLS                       | Última línea, protege filas aunque alguien rodee la UI            | Base de datos (ver `SGRH_Supabase_Architecture.md`)             | No da feedback de UX — solo bloquea datos                       |
 | `usePermisos()` (cliente) | Oculta/muestra elementos de UI dentro de una página ya autorizada | `hooks/usePermisos.ts`                                          | No es seguridad real — es UX. La seguridad ya pasó en la capa 2 |
 
-**Regla mental**: el proxy decide si entras al edificio. El guard de ruta decide si entras a esa oficina. RLS decide qué archivos puedes tocar dentro de la oficina. `usePermisos()` decide qué botones ves en el escritorio.
+**Regla mental**: el proxy decide si entras al edificio (redirige a `/login` si no tienes credenciales válidas). El layout verifica con la base de datos (`supabase.auth.getUser()`) que tu sesión no haya sido revocada administrativamente. El guard de ruta decide si entras a esa oficina. RLS decide qué archivos puedes tocar dentro de la oficina. `usePermisos()` decide qué botones ves en el escritorio.
 
 Los strings de permisos usados en todas estas capas vienen **exclusivamente** de `lib/permissions/catalog.ts` — ningún módulo debe escribir un string de permiso a mano. Ver ese archivo para la lista vigente.
 

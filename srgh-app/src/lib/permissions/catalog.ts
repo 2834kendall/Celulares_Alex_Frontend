@@ -19,6 +19,8 @@ export const PERMISOS = {
   // Nómina
   NOMINA_READ: 'NOMINA_READ',
   NOMINA_WRITE: 'NOMINA_WRITE',
+  NOMINA_APPROVE: 'NOMINA_APPROVE',
+  COMPROBANTES_READ: 'COMPROBANTES_READ',
 
   // Asistencia
   ASISTENCIA_READ: 'ASISTENCIA_READ',
@@ -26,6 +28,7 @@ export const PERMISOS = {
 
   // Ausencias
   AUSENCIAS_READ: 'AUSENCIAS_READ',
+  AUSENCIAS_WRITE: 'AUSENCIAS_WRITE',
   AUSENCIAS_APPROVE: 'AUSENCIAS_APPROVE',
 
   // Reclutamiento
@@ -47,6 +50,9 @@ export const PERMISOS = {
 
   // Usuarios
   USUARIOS_WRITE: 'USUARIOS_WRITE',
+
+  // Reportes
+  REPORTES_READ: 'REPORTES_READ',
 } as const
 
 export type Permiso = (typeof PERMISOS)[keyof typeof PERMISOS]
