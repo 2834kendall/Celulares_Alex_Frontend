@@ -29,11 +29,6 @@ export function Sidebar({ permisos }: SidebarProps) {
       <div className="flex-1 overflow-y-auto p-3">
         <NavLinks permisos={permisos} />
       </div>
-
-      <div className="border-t border-slate-100 p-4">
-        <p className="text-[10px] font-semibold text-slate-400">Entorno seguro</p>
-        <p className="text-[10px] text-slate-300">Costa Rica · UTC-6</p>
-      </div>
     </aside>
   )
 }
