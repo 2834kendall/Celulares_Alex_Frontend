@@ -15,8 +15,8 @@ type SupabaseBrowserClient = ReturnType<typeof createClient>
 const unsubscribe = vi.fn()
 let authChangeCallback: (() => void) | null = null
 
-function mockClient(claims: Record<string, unknown> | null) {
-  const getClaims = vi.fn().mockResolvedValue({ data: claims ? { claims } : null })
+function mockClient(claims: Record<string, unknown> | null, error: Error | null = null) {
+  const getClaims = vi.fn().mockResolvedValue({ data: claims ? { claims } : null, error })
   const client = {
     auth: {
       getClaims,
@@ -95,6 +95,27 @@ describe('usePermisos', () => {
     authChangeCallback?.()
 
     await waitFor(() => expect(result.current.permisos).toEqual([PERMISOS.NOMINA_READ]))
+  })
+
+  it('si getClaims devuelve error, limpia el estado sin quedar cargando', async () => {
+    mockClient({ sub: 'u1', app_metadata: { permisos: ['X'] } }, new Error('jwt invalido'))
+
+    const { result } = renderHook(() => usePermisos())
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.permisos).toEqual([])
+    expect(result.current.userId).toBeNull()
+  })
+
+  it('si getClaims rechaza la promesa, limpia el estado sin quedar cargando', async () => {
+    const { getClaims } = mockClient(null)
+    getClaims.mockRejectedValue(new Error('sin conexion'))
+
+    const { result } = renderHook(() => usePermisos())
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.permisos).toEqual([])
+    expect(result.current.userId).toBeNull()
   })
 
   it('cancela la suscripcion al desmontar', async () => {

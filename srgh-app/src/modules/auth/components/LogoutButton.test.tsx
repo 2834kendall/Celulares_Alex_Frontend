@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LogoutButton } from './LogoutButton'
 import { logout } from '@/modules/auth/actions/logout'
@@ -35,5 +35,15 @@ describe('<LogoutButton />', () => {
 
     expect(mockLogout).toHaveBeenCalledOnce()
     expect(screen.getByRole('button')).toBeDisabled()
+  })
+
+  it('restaura el boton si el logout falla, para poder reintentar', async () => {
+    mockLogout.mockRejectedValue(new Error('network down'))
+    render(<LogoutButton />)
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /cerrar sesion/i }))
+
+    await waitFor(() => expect(screen.getByRole('button')).toBeEnabled())
   })
 })

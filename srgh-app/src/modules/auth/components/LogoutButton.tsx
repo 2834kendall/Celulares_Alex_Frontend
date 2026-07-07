@@ -17,8 +17,14 @@ export function LogoutButton({
 
   async function handleLogout() {
     setLoading(true)
-    // Server Action: cierra la sesion en el servidor y redirige a /login
-    await logout()
+    try {
+      // Server Action: cierra la sesion en el servidor y redirige a /login
+      await logout()
+    } catch {
+      // Si el logout falla (ej. sin conexion), no bloquear el boton
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
