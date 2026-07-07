@@ -21,23 +21,19 @@ import { loginSchema, type LoginInput } from '@/modules/auth/types'
 import { brandConfig, loginScreenContent } from '@/modules/auth/constants'
 import { login } from '@/modules/auth/actions/login'
 
-const FEATURES: { key: string; label: string; icon: LucideIcon; iconClass: string }[] =
+const FEATURES: { key: string; label: string; icon: LucideIcon }[] =
   loginScreenContent.features.map((feature) => ({
     ...feature,
     icon:
       feature.key === 'asistencia' ? CalendarClock : feature.key === 'planillas' ? Banknote : Users,
-    iconClass:
-      feature.key === 'asistencia'
-        ? 'text-sky-300 bg-sky-400/10'
-        : feature.key === 'planillas'
-          ? 'text-amber-300 bg-amber-400/10'
-          : 'text-emerald-300 bg-emerald-400/10',
   }))
+
+const FEATURE_ICON_CLASS = 'text-indigo-300 bg-indigo-400/10'
 
 const FLOAT_CLASSES = ['animate-float', 'animate-float-delay-1', 'animate-float-delay-2']
 
 const INPUT_CLASSES =
-  'w-full pl-10 pr-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600/70 focus:border-blue-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
+  'w-full pl-10 pr-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/60 focus:border-indigo-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
 
 export function LoginForm() {
   const router = useRouter()
@@ -85,13 +81,12 @@ export function LoginForm() {
         className={`md:w-1/2 bg-gradient-to-br ${brandConfig.gradient} p-8 md:p-14 flex min-h-[38vh] md:min-h-screen flex-col justify-between text-white relative overflow-hidden`}
       >
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.04)_1px,transparent_1px)] bg-[size:24px_24px]" />
-        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-indigo-500/20 blur-3xl" />
-        <div className="absolute top-1/3 -left-32 w-96 h-96 rounded-full bg-sky-500/10 blur-3xl" />
-        <div className="absolute -bottom-24 right-1/4 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl" />
+        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full bg-slate-500/10 blur-3xl" />
 
         <div className="relative z-10 flex items-center gap-2.5">
           <span
-            className={`h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-amber-900/30 ${brandConfig.accent}`}
+            className={`h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-black/20 ${brandConfig.accent}`}
           >
             {brandConfig.logo}
           </span>
@@ -113,13 +108,13 @@ export function LoginForm() {
           </p>
 
           <div className="mt-12 hidden md:flex gap-4">
-            {FEATURES.map(({ key, label, icon: Icon, iconClass }, index) => (
+            {FEATURES.map(({ key, label, icon: Icon }, index) => (
               <div
                 key={key}
                 className={`flex flex-col items-center gap-2.5 rounded-2xl bg-white/[0.07] backdrop-blur-md border border-white/10 px-6 py-5 shadow-xl shadow-black/10 ${FLOAT_CLASSES[index % FLOAT_CLASSES.length]}`}
               >
                 <span
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconClass}`}
+                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${FEATURE_ICON_CLASS}`}
                 >
                   <Icon className="h-5 w-5" />
                 </span>
@@ -238,7 +233,7 @@ export function LoginForm() {
                 type="submit"
                 id="submit-login"
                 disabled={isSubmitting}
-                className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-600/25 hover:shadow-amber-600/40 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-400 disabled:shadow-none`}
+                className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
               >
                 {isSubmitting ? (
                   <>
