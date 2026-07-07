@@ -20,13 +20,21 @@ export function usePermisos() {
     const supabase = createClient()
 
     async function loadClaims() {
-      const { data } = await supabase.auth.getClaims()
-      const claims = data?.claims
-      const meta = (claims?.app_metadata ?? {}) as Partial<SgrhJwtClaims>
+      try {
+        const { data, error } = await supabase.auth.getClaims()
+        if (error) throw error
 
-      setPermisos(Array.isArray(meta.permisos) ? meta.permisos : [])
-      setUserId(typeof claims?.sub === 'string' ? claims.sub : null)
-      setLoading(false)
+        const claims = data?.claims
+        const meta = (claims?.app_metadata ?? {}) as Partial<SgrhJwtClaims>
+
+        setPermisos(Array.isArray(meta.permisos) ? meta.permisos : [])
+        setUserId(typeof claims?.sub === 'string' ? claims.sub : null)
+      } catch {
+        setPermisos([])
+        setUserId(null)
+      } finally {
+        setLoading(false)
+      }
     }
 
     loadClaims()
