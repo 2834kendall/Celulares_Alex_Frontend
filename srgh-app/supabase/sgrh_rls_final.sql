@@ -666,27 +666,42 @@ CREATE POLICY "historial_delete" ON public.sgrh_historial_laboral
   );
 
 -- Horarios por Empresa
+-- Horarios por Empresa
 CREATE POLICY "horarios_select" ON public.sgrh_cat_horarios
   FOR SELECT
   TO authenticated
-  USING (hor_empresa_id = (SELECT public.get_empresa_id()));
+  USING (
+    hor_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('HORARIOS_READ'))
+  );
 
 CREATE POLICY "horarios_insert" ON public.sgrh_cat_horarios
   FOR INSERT
   TO authenticated
-  WITH CHECK (hor_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+  WITH CHECK (
+    hor_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('HORARIOS_WRITE'))
+  );
 
 CREATE POLICY "horarios_update" ON public.sgrh_cat_horarios
   FOR UPDATE
   TO authenticated
-  USING (hor_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')))
-  WITH CHECK (hor_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+  USING (
+    hor_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('HORARIOS_WRITE'))
+  )
+  WITH CHECK (
+    hor_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('HORARIOS_WRITE'))
+  );
 
 CREATE POLICY "horarios_delete" ON public.sgrh_cat_horarios
   FOR DELETE
   TO authenticated
-  USING (hor_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('CATALOGOS_WRITE')));
-
+  USING (
+    hor_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('HORARIOS_WRITE'))
+  );
 -- Puestos por Empresa
 CREATE POLICY "puestos_select" ON public.sgrh_cat_puestos
   FOR SELECT
