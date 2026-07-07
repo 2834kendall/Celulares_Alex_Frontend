@@ -1,66 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import {
-  Banknote,
-  CalendarClock,
-  ClipboardCheck,
-  LayoutDashboard,
-  Settings,
-  UserSearch,
-  Users,
-  type LucideIcon,
-} from 'lucide-react'
-import { PERMISOS, type Permiso } from '@/lib/permissions/catalog'
-
-interface NavItem {
-  href: string
-  label: string
-  icon: LucideIcon
-  /** Visible si el usuario tiene AL MENOS UNO de estos permisos. Vacio = siempre visible. */
-  permisos: Permiso[]
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard', label: 'Inicio', icon: LayoutDashboard, permisos: [] },
-  { href: '/employees', label: 'Empleados', icon: Users, permisos: [PERMISOS.EMPLEADOS_READ] },
-  {
-    href: '/attendance',
-    label: 'Asistencia',
-    icon: CalendarClock,
-    permisos: [PERMISOS.ASISTENCIA_READ, PERMISOS.ASISTENCIA_WRITE, PERMISOS.AUSENCIAS_WRITE],
-  },
-  {
-    href: '/payroll',
-    label: 'Nomina',
-    icon: Banknote,
-    permisos: [PERMISOS.NOMINA_READ, PERMISOS.COMPROBANTES_READ],
-  },
-  {
-    href: '/recruitment',
-    label: 'Reclutamiento',
-    icon: UserSearch,
-    permisos: [PERMISOS.RECLUTAMIENTO_READ],
-  },
-  {
-    href: '/evaluations',
-    label: 'Evaluaciones',
-    icon: ClipboardCheck,
-    permisos: [PERMISOS.EVALUACIONES_READ, PERMISOS.EVALUACIONES_WRITE],
-  },
-  {
-    href: '/settings',
-    label: 'Configuracion',
-    icon: Settings,
-    permisos: [
-      PERMISOS.EMPRESAS_WRITE,
-      PERMISOS.CATALOGOS_WRITE,
-      PERMISOS.ROLES_WRITE,
-      PERMISOS.USUARIOS_WRITE,
-    ],
-  },
-]
+import { NavLinks } from '@/components/layout/NavLinks'
 
 interface SidebarProps {
   /** Permisos del JWT, leidos server-side en el layout del dashboard. */
@@ -68,43 +8,32 @@ interface SidebarProps {
 }
 
 /**
- * Sidebar adaptativo: solo muestra las zonas que los permisos del usuario autorizan.
- * Esto es UX, no seguridad — cada page.tsx debe validar con requirePermission().
+ * Sidebar fijo de escritorio (oculto en movil — ahi se usa el drawer del AppShell).
+ * Solo muestra las zonas que los permisos del usuario autorizan.
  */
 export function Sidebar({ permisos }: SidebarProps) {
-  const pathname = usePathname()
-
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => item.permisos.length === 0 || item.permisos.some((p) => permisos.includes(p))
-  )
-
   return (
-    <aside className="w-64 border-r border-slate-200 bg-white p-4 flex flex-col">
-      <div className="mb-6">
-        <h2 className="font-extrabold text-lg text-slate-900">SGRH</h2>
-        <p className="text-xs text-slate-500">Talento & Planillas</p>
+    <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
+      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-100">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white">
+          S
+        </span>
+        <div className="leading-tight">
+          <p className="text-sm font-extrabold text-slate-900">SGRH</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+            Talento & Planillas
+          </p>
+        </div>
       </div>
 
-      <nav className="flex flex-col gap-1">
-        {visibleItems.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || pathname.startsWith(`${href}/`)
-          return (
-            <Link
-              key={href}
-              href={href}
-              aria-current={active ? 'page' : undefined}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                active
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {label}
-            </Link>
-          )
-        })}
-      </nav>
+      <div className="flex-1 overflow-y-auto p-3">
+        <NavLinks permisos={permisos} />
+      </div>
+
+      <div className="border-t border-slate-100 p-4">
+        <p className="text-[10px] font-semibold text-slate-400">Entorno seguro</p>
+        <p className="text-[10px] text-slate-300">Costa Rica · UTC-6</p>
+      </div>
     </aside>
   )
 }
