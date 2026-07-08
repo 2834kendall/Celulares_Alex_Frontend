@@ -221,6 +221,27 @@ REVOKE
 EXECUTE ON FUNCTION public.tiene_permiso (text)
 FROM PUBLIC, anon, authenticated;
 
+-- Restituir a authenticated el acceso a los helpers que usan las policies RLS
+GRANT
+EXECUTE ON FUNCTION public.get_rol ()
+TO authenticated;
+
+GRANT
+EXECUTE ON FUNCTION public.get_empresa_id ()
+TO authenticated;
+
+GRANT
+EXECUTE ON FUNCTION public.get_usr_id ()
+TO authenticated;
+
+GRANT
+EXECUTE ON FUNCTION public.get_emp_id ()
+TO authenticated;
+
+GRANT
+EXECUTE ON FUNCTION public.tiene_permiso (text)
+TO authenticated;
+
 REVOKE
 EXECUTE ON FUNCTION sgrh_private.asignar_permisos (text, text [])
 FROM PUBLIC, anon, authenticated;

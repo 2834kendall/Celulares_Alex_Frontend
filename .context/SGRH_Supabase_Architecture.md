@@ -335,7 +335,18 @@ REVOKE EXECUTE ON FUNCTION public.get_emp_id()                       FROM anon, 
 REVOKE EXECUTE ON FUNCTION public.tiene_permiso(text)                FROM anon, authenticated;
 REVOKE EXECUTE ON FUNCTION sgrh_private.asignar_permisos(text, text[])     FROM anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.rls_auto_enable()                  FROM anon, authenticated;
+
+-- Las policies RLS necesitan estos helpers para leer empresa, rol y permisos
+GRANT EXECUTE ON FUNCTION public.get_rol()                           TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_empresa_id()                    TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_usr_id()                        TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_emp_id()                        TO authenticated;
+GRANT EXECUTE ON FUNCTION public.tiene_permiso(text)                 TO authenticated;
 ```
+
+**Por qué este GRANT es necesario**: las policies siguen ejecutándose con el rol `authenticated`, pero el acceso a la función se había revocado por completo. Sin devolverle `EXECUTE` a `authenticated`, cualquier policy que invoque `get_empresa_id()` o `tiene_permiso()` falla antes de evaluar filas.
+
+**Por qué no se devuelve a `anon`**: estos helpers forman parte del flujo autenticado y no deben estar disponibles para usuarios anónimos.
 
 ---
 
