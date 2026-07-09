@@ -71,4 +71,12 @@ describe('<Sidebar />', () => {
     expect(screen.getByRole('link', { name: /empleados/i })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: /inicio/i })).not.toHaveAttribute('aria-current')
   })
+
+  it('colapsado se anima a ancho cero (open=false)', () => {
+    const { container } = render(<Sidebar permisos={[]} open={false} />)
+    const aside = container.querySelector('aside')
+
+    expect(aside?.className).toContain('w-0')
+    expect(aside?.className).not.toContain('w-64')
+  })
 })

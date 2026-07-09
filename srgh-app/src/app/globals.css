@@ -25,6 +25,69 @@ body {
   font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
 
+/* ===== Animaciones sutiles del shell (solo si el usuario no las desactiva) ===== */
+@media (prefers-reduced-motion: no-preference) {
+  /* Entrada suave del contenido al navegar */
+  @keyframes fade-slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-page {
+    animation: fade-slide-up 0.25s ease-out;
+  }
+
+  /* Aparicion del menu del avatar */
+  @keyframes menu-pop {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-menu-pop {
+    animation: menu-pop 0.15s ease-out;
+    transform-origin: top right;
+  }
+
+  /* Drawer movil: panel que se desliza + overlay que se funde */
+  @keyframes slide-in-left {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+
+  .animate-slide-in-left {
+    animation: slide-in-left 0.25s ease-out;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.2s ease-out;
+  }
+}
+
 /* Flotado suave para elementos decorativos (pantalla de login) */
 @keyframes float {
   0%,

@@ -28,12 +28,12 @@ const FEATURES: { key: string; label: string; icon: LucideIcon }[] =
       feature.key === 'asistencia' ? CalendarClock : feature.key === 'planillas' ? Banknote : Users,
   }))
 
-const FEATURE_ICON_CLASS = 'text-indigo-300 bg-indigo-400/10'
+const FEATURE_ICON_CLASS = 'text-slate-200 bg-white/10'
 
 const FLOAT_CLASSES = ['animate-float', 'animate-float-delay-1', 'animate-float-delay-2']
 
 const INPUT_CLASSES =
-  'w-full pl-10 pr-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/60 focus:border-indigo-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
+  'w-full pl-10 pr-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-700/25 focus:border-blue-700 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
 
 export function LoginForm() {
   const router = useRouter()
@@ -85,9 +85,8 @@ export function LoginForm() {
         <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full bg-slate-500/10 blur-3xl" />
 
         <div className="relative z-10 flex items-center gap-2.5">
-          <span
-            className={`h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-black/20 ${brandConfig.accent}`}
-          >
+          {/* En el panel oscuro el chip es de vidrio para no perderse con el fondo */}
+          <span className="h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold text-lg bg-white/10 ring-1 ring-inset ring-white/20">
             {brandConfig.logo}
           </span>
           <div className="leading-tight">
@@ -102,7 +101,7 @@ export function LoginForm() {
           <h1 className="text-5xl md:text-7xl font-black leading-none tracking-tight bg-gradient-to-b from-white via-white to-slate-400 bg-clip-text text-transparent">
             {loginScreenContent.title}
           </h1>
-          <div className={`mt-4 h-1 w-16 rounded-full ${brandConfig.accent}`} />
+          <div className="mt-4 h-1 w-16 rounded-full bg-white/25" />
           <p className="text-slate-300 mt-5 text-sm md:text-base max-w-xs leading-relaxed">
             {loginScreenContent.subtitle}
           </p>
@@ -233,7 +232,7 @@ export function LoginForm() {
                 type="submit"
                 id="submit-login"
                 disabled={isSubmitting}
-                className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
+                className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-700/20 hover:shadow-blue-700/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
               >
                 {isSubmitting ? (
                   <>

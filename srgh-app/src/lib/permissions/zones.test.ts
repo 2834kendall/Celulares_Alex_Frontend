@@ -35,4 +35,9 @@ describe('tituloDeRuta', () => {
   it('devuelve el nombre del sistema para rutas desconocidas', () => {
     expect(tituloDeRuta('/otra-cosa')).toBe('SGRH')
   })
+
+  it('resuelve titulos de rutas fuera del sidebar', () => {
+    expect(tituloDeRuta('/profile')).toBe('Mi perfil')
+    expect(tituloDeRuta('/profile/editar')).toBe('Mi perfil')
+  })
 })

@@ -67,8 +67,20 @@ export function zonasVisibles(permisos: string[]): Zona[] {
   )
 }
 
+/** Rutas que no aparecen en el sidebar pero tienen titulo propio en el Topbar. */
+const TITULOS_EXTRA: Record<string, string> = {
+  '/profile': 'Mi perfil',
+}
+
 /** Titulo de pagina para el Topbar segun la ruta actual. */
 export function tituloDeRuta(pathname: string): string {
   const zona = ZONAS.find((z) => pathname === z.href || pathname.startsWith(`${z.href}/`))
-  return zona?.label ?? 'SGRH'
+  if (zona) {
+    return zona.label
+  }
+
+  const extra = Object.entries(TITULOS_EXTRA).find(
+    ([href]) => pathname === href || pathname.startsWith(`${href}/`)
+  )
+  return extra?.[1] ?? 'SGRH'
 }
