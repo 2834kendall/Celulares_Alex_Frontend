@@ -71,4 +71,19 @@ describe('<Sidebar />', () => {
     expect(screen.getByRole('link', { name: /empleados/i })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: /inicio/i })).not.toHaveAttribute('aria-current')
   })
+
+  it('colapsado se anima a ancho cero y queda inerte (open=false)', () => {
+    const { container } = render(<Sidebar permisos={[]} open={false} />)
+    const aside = container.querySelector('aside')
+
+    expect(aside?.className).toContain('w-0')
+    expect(aside?.className).not.toContain('w-64')
+    // Accesibilidad: sin foco por teclado ni lectores de pantalla al estar oculto
+    expect(aside?.hasAttribute('inert')).toBe(true)
+  })
+
+  it('abierto no esta inerte', () => {
+    const { container } = render(<Sidebar permisos={[]} />)
+    expect(container.querySelector('aside')?.hasAttribute('inert')).toBe(false)
+  })
 })

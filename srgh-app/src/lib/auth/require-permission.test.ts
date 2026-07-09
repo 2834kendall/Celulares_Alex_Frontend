@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { requirePermission } from './require-permission'
+import { requireAnyPermission, requirePermission } from './require-permission'
 import { createClient } from '@/lib/supabase/server'
 import { PERMISOS } from '@/lib/permissions/catalog'
 
@@ -65,5 +65,33 @@ describe('requirePermission', () => {
     const claims = { sub: 'abc', app_metadata: { permisos: [PERMISOS.EMPLEADOS_READ] } }
     mockClaims(claims)
     await expect(requirePermission(PERMISOS.EMPLEADOS_READ)).resolves.toEqual(claims)
+  })
+})
+
+describe('requireAnyPermission', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('redirige a /login si no hay sesion', async () => {
+    mockClaims(null)
+    await expect(
+      requireAnyPermission([PERMISOS.ASISTENCIA_READ, PERMISOS.ASISTENCIA_WRITE])
+    ).rejects.toThrow('NEXT_REDIRECT:/login')
+  })
+
+  it('redirige a /unauthorized si no tiene ninguno de los permisos', async () => {
+    mockClaims({ app_metadata: { permisos: [PERMISOS.NOMINA_READ] } })
+    await expect(
+      requireAnyPermission([PERMISOS.ASISTENCIA_READ, PERMISOS.ASISTENCIA_WRITE])
+    ).rejects.toThrow('NEXT_REDIRECT:/unauthorized')
+  })
+
+  it('devuelve los claims cuando tiene al menos uno de los permisos', async () => {
+    const claims = { sub: 'abc', app_metadata: { permisos: [PERMISOS.ASISTENCIA_WRITE] } }
+    mockClaims(claims)
+    await expect(
+      requireAnyPermission([PERMISOS.ASISTENCIA_READ, PERMISOS.ASISTENCIA_WRITE])
+    ).resolves.toEqual(claims)
   })
 })
