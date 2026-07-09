@@ -1797,7 +1797,7 @@ export type Database = {
           prg_es_feriado: boolean
           prg_fecha: string
           prg_historial_laboral_id: number
-          prg_horario_id: number
+          prg_horario_id: number | null
           prg_id: number
           prg_observaciones: string | null
           prg_sucursal_id: number
@@ -1811,7 +1811,7 @@ export type Database = {
           prg_es_feriado?: boolean
           prg_fecha: string
           prg_historial_laboral_id: number
-          prg_horario_id: number
+          prg_horario_id?: number | null
           prg_id?: number
           prg_observaciones?: string | null
           prg_sucursal_id: number
@@ -1825,7 +1825,7 @@ export type Database = {
           prg_es_feriado?: boolean
           prg_fecha?: string
           prg_historial_laboral_id?: number
-          prg_horario_id?: number
+          prg_horario_id?: number | null
           prg_id?: number
           prg_observaciones?: string | null
           prg_sucursal_id?: number

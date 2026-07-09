@@ -6,6 +6,7 @@ import {
   Banknote,
   CalendarClock,
   ClipboardCheck,
+  Clock,
   LayoutDashboard,
   Settings,
   UserSearch,
@@ -59,6 +60,12 @@ const NAV_ITEMS: NavItem[] = [
       PERMISOS.ROLES_WRITE,
       PERMISOS.USUARIOS_WRITE,
     ],
+  },
+  {
+    href: '/schedule',
+    label: 'Horarios',
+    icon: Clock,
+    permisos: [PERMISOS.HORARIOS_READ, PERMISOS.HORARIOS_WRITE],
   },
 ]
 
