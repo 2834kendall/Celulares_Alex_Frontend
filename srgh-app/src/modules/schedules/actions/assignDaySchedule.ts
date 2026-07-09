@@ -13,6 +13,8 @@ export type AssignDayInput = {
   fecha: string
   horarioId: number | null
   esDiaLibre: boolean
+  horaEntradaCustom?: string | null
+  horaSalidaCustom?: string | null
 }
 
 export type AssignDayResult = { ok: true } | { ok: false; error: string }
@@ -20,8 +22,18 @@ export type AssignDayResult = { ok: true } | { ok: false; error: string }
 export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDayResult> {
   await requirePermission(PERMISOS.HORARIOS_WRITE)
 
-  if (!input.esDiaLibre && !input.horarioId) {
-    return { ok: false, error: 'Debe seleccionar un horario o marcar el día como descanso.' }
+  const isCustom = Boolean(input.horaEntradaCustom && input.horaSalidaCustom)
+
+  if (!input.esDiaLibre && !input.horarioId && !isCustom) {
+    return {
+      ok: false,
+      error:
+        'Debe seleccionar un horario, definir uno personalizado, o marcar el dia como descanso.',
+    }
+  }
+
+  if (isCustom && input.horaSalidaCustom! <= input.horaEntradaCustom!) {
+    return { ok: false, error: 'La hora de salida debe ser posterior a la hora de entrada.' }
   }
 
   const supabase = await createClient()
@@ -30,9 +42,11 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
     prg_empleado_id: input.empleadoId,
     prg_sucursal_id: input.sucursalId,
     prg_historial_laboral_id: input.historialLaboralId,
-    prg_horario_id: input.esDiaLibre ? null : input.horarioId,
+    prg_horario_id: input.esDiaLibre || isCustom ? null : input.horarioId,
     prg_fecha: input.fecha,
     prg_es_dia_libre: input.esDiaLibre,
+    prg_hora_entrada_custom: isCustom ? input.horaEntradaCustom : null,
+    prg_hora_salida_custom: isCustom ? input.horaSalidaCustom : null,
   }
 
   const { error } = input.prgId
@@ -40,7 +54,7 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
     : await supabase.from('sgrh_programacion_semanal').insert(payload)
 
   if (error) {
-    return { ok: false, error: 'No se pudo guardar la asignación.' }
+    return { ok: false, error: 'No se pudo guardar la asignacion.' }
   }
 
   revalidatePath('/schedule')

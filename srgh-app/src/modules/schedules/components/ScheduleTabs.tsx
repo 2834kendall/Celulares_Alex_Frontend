@@ -14,7 +14,7 @@ export function ScheduleTabs({ plantillaContent, especialesContent }: ScheduleTa
   const [activeTab, setActiveTab] = useState<Tab>('plantilla')
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0">
       <div className="inline-flex rounded-xl bg-slate-200/60 p-1">
         <button
           onClick={() => setActiveTab('plantilla')}

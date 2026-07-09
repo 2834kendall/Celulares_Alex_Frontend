@@ -45,7 +45,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 min-w-0">
       <ScheduleTabs
         plantillaContent={
           <WeeklyScheduleMatrix

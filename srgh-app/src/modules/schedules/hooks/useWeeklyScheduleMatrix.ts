@@ -28,6 +28,10 @@ export function useWeeklyScheduleMatrix({
   const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
   const [savingCell, setSavingCell] = useState<string | null>(null)
+  const [customModalFor, setCustomModalFor] = useState<{
+    row: EmployeeWeekRow
+    assignment: DayAssignment
+  } | null>(null)
 
   const activeSchedules = useMemo(
     () => schedules.filter((schedule) => schedule.hor_activo),
@@ -36,12 +40,57 @@ export function useWeeklyScheduleMatrix({
 
   const scheduleOptions = activeSchedules.length > 0 ? activeSchedules : schedules
 
+  function openCustomModal(row: EmployeeWeekRow, assignment: DayAssignment) {
+    setCustomModalFor({ row, assignment })
+  }
+
+  function closeCustomModal() {
+    setCustomModalFor(null)
+  }
+
+  async function handleCustomConfirm(entrada: string, salida: string) {
+    if (!customModalFor) {
+      return
+    }
+
+    const { row, assignment } = customModalFor
+    const cellKey = `${row.historialLaboralId}-${assignment.fecha}`
+    setSavingCell(cellKey)
+
+    const result = await assignDaySchedule({
+      prgId: assignment.prgId,
+      historialLaboralId: row.historialLaboralId,
+      empleadoId: row.empleadoId,
+      sucursalId: row.sucursalId,
+      fecha: assignment.fecha,
+      horarioId: null,
+      esDiaLibre: false,
+      horaEntradaCustom: entrada,
+      horaSalidaCustom: salida,
+    })
+
+    setSavingCell(null)
+    setCustomModalFor(null)
+
+    if (!result.ok) {
+      setServerError(result.error)
+      return
+    }
+
+    router.refresh()
+  }
+
   async function handleAssignmentChange(
     row: EmployeeWeekRow,
     assignment: DayAssignment,
     value: string
   ) {
     if (!canWrite) {
+      return
+    }
+
+    if (value === '__custom__') {
+      openCustomModal(row, assignment)
       return
     }
 
@@ -82,7 +131,11 @@ export function useWeeklyScheduleMatrix({
     scheduleOptions,
     serverError,
     savingCell,
+    customModalFor,
     getAssignmentValue,
+    openCustomModal,
+    closeCustomModal,
+    handleCustomConfirm,
     handleAssignmentChange,
   }
 }

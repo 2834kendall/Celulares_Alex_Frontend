@@ -40,6 +40,8 @@ interface ProgramacionRow {
   prg_es_dia_libre: boolean
   prg_horario_id: number | null
   sgrh_cat_horarios: HorarioJoin | null
+  prg_hora_entrada_custom: string | null
+  prg_hora_salida_custom: string | null
 }
 
 export interface DayAssignment {
@@ -51,6 +53,8 @@ export interface DayAssignment {
   horaSalida: string | null
   esDiaLibre: boolean
   horas: number
+  horaEntradaCustom?: string | null
+  horaSalidaCustom?: string | null
 }
 
 export interface EmployeeWeekRow {
@@ -118,7 +122,10 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
           prg_fecha,
           prg_es_dia_libre,
           prg_horario_id,
-          sgrh_cat_horarios ( hor_id, hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo )
+          sgrh_cat_horarios ( hor_id, hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo ),
+            prg_hora_entrada_custom,
+            prg_hora_salida_custom
+            
         `
         )
         .in('prg_historial_laboral_id', labIds)
@@ -159,16 +166,34 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       }
 
       const horario = asignacion.sgrh_cat_horarios
+      const esPersonalizado = Boolean(
+        asignacion.prg_hora_entrada_custom && asignacion.prg_hora_salida_custom
+      )
       let horas = 0
 
-      if (!asignacion.prg_es_dia_libre && horario) {
-        horas = horasEntrePuntos(
-          horario.hor_hora_entrada,
-          horario.hor_hora_salida,
-          horario.hor_hora_inicio_almuerzo,
-          horario.hor_hora_fin_almuerzo
-        )
-        totalSemanal += horas
+      if (!asignacion.prg_es_dia_libre) {
+        if (esPersonalizado) {
+          const toMin = (t: string) => {
+            const [h, m] = t.split(':').map(Number)
+            return h * 60 + m
+          }
+
+          horas = Math.max(
+            0,
+            (toMin(asignacion.prg_hora_salida_custom!) -
+              toMin(asignacion.prg_hora_entrada_custom!)) /
+              60
+          )
+          totalSemanal += horas
+        } else if (horario) {
+          horas = horasEntrePuntos(
+            horario.hor_hora_entrada,
+            horario.hor_hora_salida,
+            horario.hor_hora_inicio_almuerzo,
+            horario.hor_hora_fin_almuerzo
+          )
+          totalSemanal += horas
+        }
       }
 
       return {
@@ -176,8 +201,14 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
         prgId: asignacion.prg_id,
         horarioId: asignacion.prg_horario_id,
         horarioNombre: horario?.hor_nombre ?? null,
-        horaEntrada: horario?.hor_hora_entrada ?? null,
-        horaSalida: horario?.hor_hora_salida ?? null,
+        horaEntrada: esPersonalizado
+          ? asignacion.prg_hora_entrada_custom
+          : (horario?.hor_hora_entrada ?? null),
+        horaSalida: esPersonalizado
+          ? asignacion.prg_hora_salida_custom
+          : (horario?.hor_hora_salida ?? null),
+        horaEntradaCustom: asignacion.prg_hora_entrada_custom,
+        horaSalidaCustom: asignacion.prg_hora_salida_custom,
         esDiaLibre: asignacion.prg_es_dia_libre,
         horas,
       }

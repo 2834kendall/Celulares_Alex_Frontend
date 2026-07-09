@@ -21,7 +21,7 @@ interface ScheduleFormProps {
 }
 
 const INPUT_CLASSES =
-  'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/70 focus:border-indigo-600 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 shadow-sm transition focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-600/70 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
 
 const LABEL_CLASSES = 'block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1.5'
 
@@ -69,9 +69,9 @@ export function ScheduleForm({ schedule, tiposJornada }: ScheduleFormProps) {
       {serverError && (
         <div
           role="alert"
-          className="bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 rounded-xl flex gap-2.5 items-start"
+          className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800"
         >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
           <div>{serverError}</div>
         </div>
       )}
@@ -115,7 +115,7 @@ export function ScheduleForm({ schedule, tiposJornada }: ScheduleFormProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className={LABEL_CLASSES} htmlFor="hor_hora_entrada">
             Hora de entrada
@@ -151,7 +151,7 @@ export function ScheduleForm({ schedule, tiposJornada }: ScheduleFormProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className={LABEL_CLASSES} htmlFor="hor_hora_inicio_almuerzo">
             Inicio de almuerzo
@@ -189,7 +189,7 @@ export function ScheduleForm({ schedule, tiposJornada }: ScheduleFormProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-start gap-2.5 sm:items-center">
         <input
           type="checkbox"
           id="hor_activo"
@@ -205,7 +205,7 @@ export function ScheduleForm({ schedule, tiposJornada }: ScheduleFormProps) {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full py-3 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white transition-all hover:bg-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-400"
       >
         {isSubmitting ? (
           <>
