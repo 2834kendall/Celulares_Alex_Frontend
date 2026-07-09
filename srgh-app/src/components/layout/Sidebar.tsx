@@ -18,6 +18,9 @@ interface SidebarProps {
 export function Sidebar({ permisos, open = true }: SidebarProps) {
   return (
     <aside
+      // inert al colapsar: el contenido queda para la animacion pero
+      // fuera del tab-order y de los lectores de pantalla
+      inert={!open}
       className={`hidden md:block sticky top-16 h-[calc(100vh-4rem)] shrink-0 overflow-hidden border-r bg-white transition-[width] duration-300 ease-in-out ${
         open ? 'w-64 border-slate-200' : 'w-0 border-transparent'
       }`}
