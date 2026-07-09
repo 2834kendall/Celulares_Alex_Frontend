@@ -1,0 +1,148 @@
+'use client'
+
+import { useState } from 'react'
+import { Layers, Pencil, Plus, Trash2, X } from 'lucide-react'
+import type { ShiftType } from '@/modules/schedules/actions/getShiftTypes'
+import { deleteShiftType } from '@/modules/schedules/actions/deleteShiftType'
+import { ShiftTypeForm } from './ShiftTypeForm'
+
+interface ShiftTypesListProps {
+  tiposJornada: ShiftType[]
+  canWrite: boolean
+}
+
+export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) {
+  const [editing, setEditing] = useState<ShiftType | 'new' | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  async function handleDelete(id: number) {
+    if (!confirm('Seguro que desea eliminar este tipo de jornada?')) return
+    setDeletingId(id)
+    const result = await deleteShiftType(id)
+    setDeletingId(null)
+    if (!result.ok) alert(result.error)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-slate-900">Tipos de jornada</h2>
+          <p className="truncate text-xs text-slate-500">
+            Catálogo global de clasificaciones laborales, usado para clasificar cada plantilla de
+            horario.
+          </p>
+        </div>
+        {canWrite && (
+          <button
+            onClick={() => setEditing('new')}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+          >
+            <Plus className="h-3.5 w-3.5" /> Nuevo tipo de jornada
+          </button>
+        )}
+      </div>
+
+      {editing && (
+        <div className="relative rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
+          <button
+            onClick={() => setEditing(null)}
+            aria-label="Cerrar formulario"
+            className="absolute right-3.5 top-3.5 rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+          <h3 className="mb-3 pr-8 text-sm font-bold text-slate-900">
+            {editing === 'new' ? 'Nuevo tipo de jornada' : `Editar: ${editing.tjo_nombre}`}
+          </h3>
+          <ShiftTypeForm
+            shiftType={editing === 'new' ? undefined : editing}
+            onSuccess={() => setEditing(null)}
+          />
+        </div>
+      )}
+
+      {tiposJornada.length === 0 ? (
+        <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
+            <Layers className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-700">No hay tipos de jornada</p>
+            <p className="mt-1 max-w-sm text-xs text-slate-500">
+              Crea el primero para poder clasificar tus plantillas de horario.
+            </p>
+          </div>
+          {canWrite && (
+            <button
+              onClick={() => setEditing('new')}
+              className="mt-1 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+            >
+              <Plus className="h-3.5 w-3.5" /> Crear el primero
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Código</th>
+                  <th className="px-3 py-2 text-left font-semibold">Nombre</th>
+                  <th className="px-3 py-2 text-left font-semibold">Horas máx. diarias</th>
+                  <th className="px-3 py-2 text-left font-semibold">Horas máx. semanales</th>
+                  <th className="px-3 py-2 text-left font-semibold">Recargo</th>
+                  {canWrite && <th className="px-3 py-2 text-right font-semibold">Acciones</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {tiposJornada.map((tipo) => (
+                  <tr
+                    key={tipo.tjo_id}
+                    className={`border-t border-slate-100 transition hover:bg-slate-50/70 ${
+                      deletingId === tipo.tjo_id ? 'opacity-50' : ''
+                    }`}
+                  >
+                    <td className="px-3 py-2 font-medium text-slate-800">{tipo.tjo_codigo}</td>
+                    <td className="px-3 py-2 text-slate-600">{tipo.tjo_nombre}</td>
+                    <td className="px-3 py-2 tabular-nums text-slate-600">
+                      {tipo.tjo_horas_max_diarias ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums text-slate-600">
+                      {tipo.tjo_horas_max_semanales ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums text-slate-600">
+                      {tipo.tjo_recargo_porcentaje}%
+                    </td>
+                    {canWrite && (
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setEditing(tipo)}
+                            aria-label="Editar"
+                            className="rounded-full p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(tipo.tjo_id)}
+                            disabled={deletingId === tipo.tjo_id}
+                            aria-label="Eliminar"
+                            className="rounded-full p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

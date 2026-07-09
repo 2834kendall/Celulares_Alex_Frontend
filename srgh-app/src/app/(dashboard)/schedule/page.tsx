@@ -1,3 +1,4 @@
+import { AlertTriangle } from 'lucide-react'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getSchedules } from '@/modules/schedules/actions/getSchedules'
@@ -5,8 +6,18 @@ import { getShiftTypes } from '@/modules/schedules/actions/getShiftTypes'
 import { getWeeklySchedule } from '@/modules/schedules/actions/getWeeklySchedule'
 import { SchedulesList } from '@/modules/schedules/components/SchedulesList'
 import { ScheduleTabs } from '@/modules/schedules/components/ScheduleTabs'
+import { ShiftTypesList } from '@/modules/schedules/components/ShiftTypesList'
 import { WeeklyScheduleMatrix } from '@/modules/schedules/components/WeeklyScheduleMatrix'
 import { currentMondayISO } from '@/modules/schedules/lib/week'
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+      <p>{message}</p>
+    </div>
+  )
+}
 
 interface SchedulePageProps {
   searchParams?:
@@ -25,6 +36,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
   const claims = await requirePermission(PERMISOS.HORARIOS_READ)
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canWrite = permisos.includes(PERMISOS.HORARIOS_WRITE)
+  const canWriteJornadas = permisos.includes(PERMISOS.CATALOGOS_WRITE)
 
   const [schedulesResult, shiftTypesResult, weeklyScheduleResult] = await Promise.all([
     getSchedules(),
@@ -33,19 +45,19 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
   ])
 
   if (!schedulesResult.ok) {
-    return <p className="text-rose-600">{schedulesResult.error}</p>
+    return <ErrorBanner message={schedulesResult.error} />
   }
 
   if (!shiftTypesResult.ok) {
-    return <p className="text-rose-600">{shiftTypesResult.error}</p>
+    return <ErrorBanner message={shiftTypesResult.error} />
   }
 
   if (!weeklyScheduleResult.ok) {
-    return <p className="text-rose-600">{weeklyScheduleResult.error}</p>
+    return <ErrorBanner message={weeklyScheduleResult.error} />
   }
 
   return (
-    <div className="p-6 min-w-0">
+    <div className="min-w-0 space-y-4">
       <ScheduleTabs
         plantillaContent={
           <WeeklyScheduleMatrix
@@ -62,6 +74,9 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
             tiposJornada={shiftTypesResult.data}
             canWrite={canWrite}
           />
+        }
+        jornadasContent={
+          <ShiftTypesList tiposJornada={shiftTypesResult.data} canWrite={canWriteJornadas} />
         }
       />
     </div>

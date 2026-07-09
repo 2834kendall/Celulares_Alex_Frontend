@@ -17,6 +17,10 @@ function getAssignmentValue(assignment: DayAssignment) {
     return '__free__'
   }
 
+  if (assignment.horaEntradaCustom) {
+    return '__custom__'
+  }
+
   return assignment.horarioId ? String(assignment.horarioId) : ''
 }
 

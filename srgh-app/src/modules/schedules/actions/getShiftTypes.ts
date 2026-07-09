@@ -1,8 +1,9 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import type { ShiftTypeRow } from '@/modules/schedules/types'
 
-export type ShiftType = { tjo_id: number; tjo_nombre: string }
+export type ShiftType = ShiftTypeRow
 
 export type GetShiftTypesResult = { ok: true; data: ShiftType[] } | { ok: false; error: string }
 
@@ -15,7 +16,9 @@ export async function getShiftTypes(): Promise<GetShiftTypesResult> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_cat_tipos_jornada')
-    .select('tjo_id, tjo_nombre')
+    .select(
+      'tjo_id, tjo_codigo, tjo_nombre, tjo_horas_max_diarias, tjo_horas_max_semanales, tjo_recargo_porcentaje'
+    )
     .order('tjo_nombre', { ascending: true })
 
   if (error) {

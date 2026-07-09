@@ -25,3 +25,34 @@ export const scheduleSchema = z
   })
 
 export type ScheduleInput = z.input<typeof scheduleSchema>
+
+export type ShiftTypeRow = Database['public']['Tables']['sgrh_cat_tipos_jornada']['Row']
+
+const optionalPositiveHours = z
+  .string()
+  .optional()
+  .refine(
+    (val) =>
+      val === undefined || val.trim() === '' || (Number.isFinite(Number(val)) && Number(val) > 0),
+    { message: 'Debe ser un numero positivo.' }
+  )
+
+export const shiftTypeSchema = z.object({
+  tjo_codigo: z
+    .string('El codigo es requerido.')
+    .trim()
+    .min(2, 'El codigo es requerido.')
+    .max(30, 'Maximo 30 caracteres.')
+    .regex(/^[A-Z_]+$/, 'Use mayusculas y guion bajo (ej: JORNADA_MIXTA).'),
+  tjo_nombre: z.string('El nombre es requerido.').trim().min(3, 'El nombre es requerido.').max(100),
+  tjo_horas_max_diarias: optionalPositiveHours,
+  tjo_horas_max_semanales: optionalPositiveHours,
+  tjo_recargo_porcentaje: z.number('El recargo es requerido.').min(0).max(100).default(0),
+})
+
+export type ShiftTypeInput = z.input<typeof shiftTypeSchema>
+
+/** Convierte el string del input (o vacio) al numero nulable que espera la base de datos. */
+export function parseOptionalHours(value: string | undefined): number | null {
+  return value === undefined || value.trim() === '' ? null : Number(value)
+}

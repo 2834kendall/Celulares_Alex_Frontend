@@ -15,6 +15,7 @@ export const ACCESO_ASISTENCIA: Permiso[] = [
   PERMISOS.ASISTENCIA_WRITE,
   PERMISOS.AUSENCIAS_WRITE,
 ]
+export const ACCESO_HORARIOS: Permiso[] = [PERMISOS.HORARIOS_READ, PERMISOS.HORARIOS_WRITE]
 
 export const ACCESO_NOMINA: Permiso[] = [PERMISOS.NOMINA_READ, PERMISOS.COMPROBANTES_READ]
 
@@ -44,6 +45,7 @@ export const ZONAS: Zona[] = [
   { key: 'dashboard', href: '/dashboard', label: 'Inicio', permisos: [] },
   { key: 'employees', href: '/employees', label: 'Empleados', permisos: ACCESO_EMPLEADOS },
   { key: 'attendance', href: '/attendance', label: 'Asistencia', permisos: ACCESO_ASISTENCIA },
+  { key: 'schedule', href: '/schedule', label: 'Horarios', permisos: ACCESO_HORARIOS },
   { key: 'payroll', href: '/payroll', label: 'Nomina', permisos: ACCESO_NOMINA },
   {
     key: 'recruitment',
