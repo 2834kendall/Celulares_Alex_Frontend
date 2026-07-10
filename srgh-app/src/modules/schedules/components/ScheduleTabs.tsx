@@ -20,13 +20,13 @@ interface Section {
 const SECTIONS: Section[] = [
   {
     id: 'plantilla',
-    label: 'Plantilla base corporativa',
-    icon: Clock,
+    label: 'Horarios especiales',
+    icon: Users,
   },
   {
     id: 'especiales',
-    label: 'Horarios especiales',
-    icon: Users,
+    label: 'Plantilla base corporativa',
+    icon: Clock,
   },
   {
     id: 'jornadas',
