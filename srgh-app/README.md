@@ -9,6 +9,12 @@ Sistema interno de gestión de recursos humanos para Celulares Alex.
 - **Package manager:** pnpm
 - **Gestión de proyecto:** Jira (clave `SGRH`)
 
+## Supabase Permissions
+
+El sistema usa RLS en Supabase y depende de helpers de PostgreSQL que leen claims del JWT, como `get_empresa_id()` y `tiene_permiso()`. Esos helpers se revocan desde `PUBLIC` por seguridad, pero el script maestro vuelve a otorgar `EXECUTE` a `authenticated` para que las policies puedan ejecutarse correctamente.
+
+Si cambian los permisos de un rol en la base de datos, el usuario debe cerrar sesión y volver a iniciar sesión para obtener un JWT nuevo con los claims actualizados.
+
 ## Requisitos previos
 
 - Node.js 18.18+ o 20+

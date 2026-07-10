@@ -355,7 +355,7 @@ CREATE TABLE public.sgrh_programacion_semanal (
   prg_empleado_id integer NOT NULL,
   prg_sucursal_id integer NOT NULL,
   prg_historial_laboral_id integer NOT NULL,
-  prg_horario_id integer NOT NULL,
+  prg_horario_id integer,
   prg_fecha date NOT NULL,
   prg_es_dia_libre boolean NOT NULL DEFAULT false,
   prg_es_feriado boolean NOT NULL DEFAULT false,

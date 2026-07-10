@@ -14,6 +14,7 @@ const ALL_PERMISOS = Object.values(PERMISOS)
 const ZONAS = [
   'Empleados',
   'Asistencia',
+  'Horarios',
   'Nomina',
   'Reclutamiento',
   'Evaluaciones',
