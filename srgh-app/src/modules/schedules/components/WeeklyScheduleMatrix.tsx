@@ -89,7 +89,7 @@ export function WeeklyScheduleMatrix({
               type="button"
               onClick={goToPreviousWeek}
               aria-label="Semana anterior"
-              className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
+              className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-40"
               disabled={isNavigating}
             >
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -108,7 +108,7 @@ export function WeeklyScheduleMatrix({
               type="button"
               onClick={goToNextWeek}
               aria-label="Semana siguiente"
-              className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
+              className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-40"
               disabled={isNavigating}
             >
               <ChevronRight className="h-3.5 w-3.5" />
@@ -242,7 +242,7 @@ export function WeeklyScheduleMatrix({
                                     type="button"
                                     onClick={() => openCustomModal(row, assignment)}
                                     aria-label="Editar horas"
-                                    className="rounded-full p-0.5 transition hover:bg-violet-100"
+                                    className="rounded-full p-0.5 outline-none transition hover:bg-violet-100 focus-visible:ring-2 focus-visible:ring-violet-500/60"
                                   >
                                     <Pencil className="h-3 w-3 text-violet-600" />
                                   </button>
@@ -421,7 +421,7 @@ export function WeeklyScheduleMatrix({
                                           type="button"
                                           onClick={() => openCustomModal(row, assignment)}
                                           aria-label="Editar horas"
-                                          className="rounded-full p-0.5 transition hover:bg-violet-100"
+                                          className="rounded-full p-0.5 outline-none transition hover:bg-violet-100 focus-visible:ring-2 focus-visible:ring-violet-500/60"
                                         >
                                           <Pencil className="h-3 w-3 text-violet-600" />
                                         </button>

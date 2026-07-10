@@ -76,9 +76,11 @@ export function ScheduleTabs({
               key={id}
               type="button"
               role="tab"
+              id={`schedule-tab-${id}`}
               aria-selected={active}
+              aria-controls={`schedule-tabpanel-${id}`}
               onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 ${
                 active
                   ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
                   : 'text-slate-500 hover:bg-white/80 hover:text-slate-900'
@@ -97,7 +99,12 @@ export function ScheduleTabs({
         })}
       </div>
 
-      <div className="min-w-0">
+      <div
+        role="tabpanel"
+        id={`schedule-tabpanel-${activeTab}`}
+        aria-labelledby={`schedule-tab-${activeTab}`}
+        className="min-w-0"
+      >
         {activeTab === 'plantilla'
           ? plantillaContent
           : activeTab === 'especiales'

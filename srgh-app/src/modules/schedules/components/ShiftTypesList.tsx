@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Layers, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Layers, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ShiftType } from '@/modules/schedules/actions/getShiftTypes'
 import { deleteShiftType } from '@/modules/schedules/actions/deleteShiftType'
 import { ShiftTypeForm } from './ShiftTypeForm'
@@ -14,13 +14,15 @@ interface ShiftTypesListProps {
 export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) {
   const [editing, setEditing] = useState<ShiftType | 'new' | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   async function handleDelete(id: number) {
     if (!confirm('Seguro que desea eliminar este tipo de jornada?')) return
+    setDeleteError(null)
     setDeletingId(id)
     const result = await deleteShiftType(id)
     setDeletingId(null)
-    if (!result.ok) alert(result.error)
+    if (!result.ok) setDeleteError(result.error)
   }
 
   return (
@@ -36,19 +38,29 @@ export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) 
         {canWrite && (
           <button
             onClick={() => setEditing('new')}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
           >
             <Plus className="h-3.5 w-3.5" /> Nuevo tipo de jornada
           </button>
         )}
       </div>
 
+      {deleteError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+          <div>{deleteError}</div>
+        </div>
+      )}
+
       {editing && (
         <div className="relative rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
           <button
             onClick={() => setEditing(null)}
             aria-label="Cerrar formulario"
-            className="absolute right-3.5 top-3.5 rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="absolute right-3.5 top-3.5 rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -76,7 +88,7 @@ export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) 
           {canWrite && (
             <button
               onClick={() => setEditing('new')}
-              className="mt-1 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+              className="mt-1 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
             >
               <Plus className="h-3.5 w-3.5" /> Crear el primero
             </button>
@@ -121,7 +133,7 @@ export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) 
                           <button
                             onClick={() => setEditing(tipo)}
                             aria-label="Editar"
-                            className="rounded-full p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+                            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
@@ -129,7 +141,7 @@ export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) 
                             onClick={() => handleDelete(tipo.tjo_id)}
                             disabled={deletingId === tipo.tjo_id}
                             aria-label="Eliminar"
-                            className="rounded-full p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
