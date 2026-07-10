@@ -1824,6 +1824,10 @@ export type Database = {
           prg_historial_laboral_id: number
           prg_hora_entrada_custom: string | null
           prg_hora_salida_custom: string | null
+          prg_hora_inicio_almuerzo_custom: string | null
+          prg_hora_fin_almuerzo_custom: string | null
+          prg_hora_inicio_break_custom: string | null
+          prg_hora_fin_break_custom: string | null
           prg_horario_id: number | null
           prg_id: number
           prg_observaciones: string | null
@@ -1840,6 +1844,10 @@ export type Database = {
           prg_historial_laboral_id: number
           prg_hora_entrada_custom?: string | null
           prg_hora_salida_custom?: string | null
+          prg_hora_inicio_almuerzo_custom?: string | null
+          prg_hora_fin_almuerzo_custom?: string | null
+          prg_hora_inicio_break_custom?: string | null
+          prg_hora_fin_break_custom?: string | null
           prg_horario_id?: number | null
           prg_id?: number
           prg_observaciones?: string | null
@@ -1856,6 +1864,10 @@ export type Database = {
           prg_historial_laboral_id?: number
           prg_hora_entrada_custom?: string | null
           prg_hora_salida_custom?: string | null
+          prg_hora_inicio_almuerzo_custom?: string | null
+          prg_hora_fin_almuerzo_custom?: string | null
+          prg_hora_inicio_break_custom?: string | null
+          prg_hora_fin_break_custom?: string | null
           prg_horario_id?: number | null
           prg_id?: number
           prg_observaciones?: string | null

@@ -1,29 +1,28 @@
 'use client'
 
-import { useState } from 'react'
 import { AlertTriangle, Layers, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ShiftType } from '@/modules/schedules/actions/getShiftTypes'
 import { deleteShiftType } from '@/modules/schedules/actions/deleteShiftType'
+import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
+import { ConfirmDialog } from './ConfirmDialog'
 import { ShiftTypeForm } from './ShiftTypeForm'
 
 interface ShiftTypesListProps {
-  tiposJornada: ShiftType[]
+  shiftTypes: ShiftType[]
   canWrite: boolean
 }
 
-export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) {
-  const [editing, setEditing] = useState<ShiftType | 'new' | null>(null)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
-
-  async function handleDelete(id: number) {
-    if (!confirm('Seguro que desea eliminar este tipo de jornada?')) return
-    setDeleteError(null)
-    setDeletingId(id)
-    const result = await deleteShiftType(id)
-    setDeletingId(null)
-    if (!result.ok) setDeleteError(result.error)
-  }
+export function ShiftTypesList({ shiftTypes, canWrite }: ShiftTypesListProps) {
+  const {
+    editing,
+    setEditing,
+    deletingId,
+    confirmingId,
+    deleteError,
+    requestDelete,
+    cancelDelete,
+    confirmDelete,
+  } = useCrudList<ShiftType>(deleteShiftType)
 
   return (
     <div className="space-y-4">
@@ -74,7 +73,7 @@ export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) 
         </div>
       )}
 
-      {tiposJornada.length === 0 ? (
+      {shiftTypes.length === 0 ? (
         <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
             <Layers className="h-4 w-4" />
@@ -109,37 +108,37 @@ export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) 
                 </tr>
               </thead>
               <tbody>
-                {tiposJornada.map((tipo) => (
+                {shiftTypes.map((shiftType) => (
                   <tr
-                    key={tipo.tjo_id}
+                    key={shiftType.tjo_id}
                     className={`border-t border-slate-100 transition hover:bg-slate-50/70 ${
-                      deletingId === tipo.tjo_id ? 'opacity-50' : ''
+                      deletingId === shiftType.tjo_id ? 'opacity-50' : ''
                     }`}
                   >
-                    <td className="px-3 py-2 font-medium text-slate-800">{tipo.tjo_codigo}</td>
-                    <td className="px-3 py-2 text-slate-600">{tipo.tjo_nombre}</td>
+                    <td className="px-3 py-2 font-medium text-slate-800">{shiftType.tjo_codigo}</td>
+                    <td className="px-3 py-2 text-slate-600">{shiftType.tjo_nombre}</td>
                     <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {tipo.tjo_horas_max_diarias ?? '—'}
+                      {shiftType.tjo_horas_max_diarias ?? '—'}
                     </td>
                     <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {tipo.tjo_horas_max_semanales ?? '—'}
+                      {shiftType.tjo_horas_max_semanales ?? '—'}
                     </td>
                     <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {tipo.tjo_recargo_porcentaje}%
+                      {shiftType.tjo_recargo_porcentaje}%
                     </td>
                     {canWrite && (
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => setEditing(tipo)}
+                            onClick={() => setEditing(shiftType)}
                             aria-label="Editar"
                             className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <button
-                            onClick={() => handleDelete(tipo.tjo_id)}
-                            disabled={deletingId === tipo.tjo_id}
+                            onClick={() => requestDelete(shiftType.tjo_id)}
+                            disabled={deletingId === shiftType.tjo_id}
                             aria-label="Eliminar"
                             className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
                           >
@@ -154,6 +153,15 @@ export function ShiftTypesList({ tiposJornada, canWrite }: ShiftTypesListProps) 
             </table>
           </div>
         </div>
+      )}
+
+      {confirmingId !== null && (
+        <ConfirmDialog
+          title="Eliminar tipo de jornada"
+          message="El tipo de jornada se eliminará de forma permanente. No podrá eliminarse si alguna plantilla de horario lo usa."
+          onCancel={cancelDelete}
+          onConfirm={confirmDelete}
+        />
       )}
     </div>
   )

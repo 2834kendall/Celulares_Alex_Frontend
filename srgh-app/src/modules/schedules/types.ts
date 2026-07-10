@@ -3,19 +3,28 @@ import type { Database } from '@/types/database.types'
 
 export type ScheduleRow = Database['public']['Tables']['sgrh_cat_horarios']['Row']
 
-const horaRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
+const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+/** Empty string is allowed too, so the field can be cleared/left blank in the form. */
+const optionalTime = z
+  .string()
+  .refine((val) => val === '' || timeRegex.test(val), {
+    message: 'Formato de hora invalido (HH:mm).',
+  })
+  .nullable()
+  .optional()
 
 export const scheduleSchema = z
   .object({
     hor_nombre: z.string('El nombre es requerido.').trim().min(3).max(100),
     hor_tipo_jornada_id: z.number('Seleccione un tipo de jornada.').int().positive(),
-    hor_hora_entrada: z.string().regex(horaRegex, 'Formato de hora invalido (HH:mm).'),
-    hor_hora_salida: z.string().regex(horaRegex, 'Formato de hora invalido (HH:mm).'),
-    hor_hora_inicio_almuerzo: z.string().regex(horaRegex, 'Formato de hora invalido (HH:mm).'),
-    hor_hora_fin_almuerzo: z.string().regex(horaRegex, 'Formato de hora invalido (HH:mm).'),
+    hor_hora_entrada: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+    hor_hora_salida: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+    hor_hora_inicio_almuerzo: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+    hor_hora_fin_almuerzo: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
     hor_duracion_almuerzo_min: z.number().int().min(0).default(60),
-    hor_hora_inicio_break: z.string().regex(horaRegex).nullable().optional(),
-    hor_hora_fin_break: z.string().regex(horaRegex).nullable().optional(),
+    hor_hora_inicio_break: optionalTime,
+    hor_hora_fin_break: optionalTime,
     hor_duracion_break_min: z.number().int().min(0).default(15),
     hor_activo: z.boolean().default(true),
   })
@@ -23,8 +32,23 @@ export const scheduleSchema = z
     message: 'La hora de salida debe ser posterior a la hora de entrada.',
     path: ['hor_hora_salida'],
   })
+  .refine(
+    (data) =>
+      !data.hor_hora_inicio_break ||
+      !data.hor_hora_fin_break ||
+      data.hor_hora_fin_break > data.hor_hora_inicio_break,
+    {
+      message: 'El fin del break debe ser posterior al inicio.',
+      path: ['hor_hora_fin_break'],
+    }
+  )
 
 export type ScheduleInput = z.input<typeof scheduleSchema>
+
+/** Converts the input string (or empty) into the nullable time the database expects. */
+export function parseOptionalTime(value: string | null | undefined): string | null {
+  return value === undefined || value === null || value.trim() === '' ? null : value
+}
 
 export type ShiftTypeRow = Database['public']['Tables']['sgrh_cat_tipos_jornada']['Row']
 
@@ -52,7 +76,35 @@ export const shiftTypeSchema = z.object({
 
 export type ShiftTypeInput = z.input<typeof shiftTypeSchema>
 
-/** Convierte el string del input (o vacio) al numero nulable que espera la base de datos. */
+/** Converts the input string (or empty) into the nullable number the database expects. */
 export function parseOptionalHours(value: string | undefined): number | null {
   return value === undefined || value.trim() === '' ? null : Number(value)
 }
+
+const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+
+export const assignDayScheduleSchema = z.object({
+  assignmentId: z.number().int().positive().nullable(),
+  employmentHistoryId: z.number().int().positive(),
+  employeeId: z.number().int().positive(),
+  branchId: z.number().int().positive(),
+  date: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+  scheduleId: z.number().int().positive().nullable(),
+  isDayOff: z.boolean(),
+  customStartTime: z
+    .string()
+    .regex(timeRegex, 'Formato de hora invalido (HH:mm).')
+    .nullable()
+    .optional(),
+  customEndTime: z
+    .string()
+    .regex(timeRegex, 'Formato de hora invalido (HH:mm).')
+    .nullable()
+    .optional(),
+  customLunchStart: optionalTime,
+  customLunchEnd: optionalTime,
+  customBreakStart: optionalTime,
+  customBreakEnd: optionalTime,
+})
+
+export type AssignDayInput = z.input<typeof assignDayScheduleSchema>

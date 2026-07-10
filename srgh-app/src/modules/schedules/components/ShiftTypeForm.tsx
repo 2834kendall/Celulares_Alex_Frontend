@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertTriangle, Layers, Loader2 } from 'lucide-react'
@@ -10,7 +9,7 @@ import { createShiftType } from '@/modules/schedules/actions/createShiftType'
 import { updateShiftType } from '@/modules/schedules/actions/updateShiftType'
 
 interface ShiftTypeFormProps {
-  /** Si viene un tipo de jornada existente, el form entra en modo edicion. */
+  /** If an existing shift type is passed, the form enters edit mode. */
   shiftType?: ShiftTypeRow
   onSuccess?: () => void
 }
@@ -21,7 +20,6 @@ const INPUT_CLASSES =
 const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
-  const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
   const isEditing = Boolean(shiftType)
 
@@ -60,7 +58,7 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
       return
     }
 
-    router.refresh()
+    // revalidatePath('/schedule') in the server action already refreshes the route.
     onSuccess?.()
   }
 

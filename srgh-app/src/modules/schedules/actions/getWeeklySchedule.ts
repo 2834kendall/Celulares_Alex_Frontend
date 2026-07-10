@@ -5,83 +5,112 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 
-interface EmpleadoJoin {
+interface EmployeeJoin {
   emp_id: number
   emp_nombre: string
   emp_apellido_1: string
   emp_apellido_2: string | null
 }
 
-interface PuestoJoin {
+interface PositionJoin {
   pue_nombre: string | null
 }
 
-interface HistorialLaboralRow {
+interface EmploymentHistoryRow {
   lab_id: number
   lab_empleado_id: number
   lab_sucursal_id: number
-  sgrh_empleados: EmpleadoJoin | null
-  sgrh_cat_puestos: PuestoJoin | null
+  sgrh_empleados: EmployeeJoin | null
+  sgrh_cat_puestos: PositionJoin | null
 }
 
-interface HorarioJoin {
+interface ScheduleJoin {
   hor_id: number
   hor_nombre: string
   hor_hora_entrada: string
   hor_hora_salida: string
   hor_hora_inicio_almuerzo: string
   hor_hora_fin_almuerzo: string
+  hor_hora_inicio_break: string | null
+  hor_hora_fin_break: string | null
 }
 
-interface ProgramacionRow {
+interface AssignmentRow {
   prg_id: number
   prg_historial_laboral_id: number
   prg_fecha: string
   prg_es_dia_libre: boolean
   prg_horario_id: number | null
-  sgrh_cat_horarios: HorarioJoin | null
+  sgrh_cat_horarios: ScheduleJoin | null
   prg_hora_entrada_custom: string | null
   prg_hora_salida_custom: string | null
+  prg_hora_inicio_almuerzo_custom: string | null
+  prg_hora_fin_almuerzo_custom: string | null
+  prg_hora_inicio_break_custom: string | null
+  prg_hora_fin_break_custom: string | null
 }
 
 export interface DayAssignment {
-  fecha: string
-  prgId: number | null
-  horarioId: number | null
-  horarioNombre: string | null
-  horaEntrada: string | null
-  horaSalida: string | null
-  esDiaLibre: boolean
-  horas: number
-  horaEntradaCustom?: string | null
-  horaSalidaCustom?: string | null
+  date: string
+  assignmentId: number | null
+  scheduleId: number | null
+  scheduleName: string | null
+  startTime: string | null
+  endTime: string | null
+  isDayOff: boolean
+  hours: number
+  customStartTime?: string | null
+  customEndTime?: string | null
+  customLunchStart?: string | null
+  customLunchEnd?: string | null
+  customBreakStart?: string | null
+  customBreakEnd?: string | null
 }
 
 export interface EmployeeWeekRow {
-  historialLaboralId: number
-  empleadoId: number
-  sucursalId: number
-  nombreCompleto: string
-  puesto: string | null
-  dias: DayAssignment[]
-  totalSemanal: number
+  employmentHistoryId: number
+  employeeId: number
+  branchId: number
+  fullName: string
+  position: string | null
+  days: DayAssignment[]
+  weeklyTotal: number
 }
 
 export type GetWeeklyScheduleResult =
   { ok: true; weekDates: string[]; data: EmployeeWeekRow[] } | { ok: false; error: string }
 
-function horasEntrePuntos(entrada: string, salida: string, almInicio: string, almFin: string) {
-  const toMin = (t: string) => {
-    const [h, m] = t.split(':').map(Number)
-    return h * 60 + m
-  }
-  const bruto = toMin(salida) - toMin(entrada)
-  const almuerzo = toMin(almFin) - toMin(almInicio)
-  return Math.max(0, (bruto - almuerzo) / 60)
+function toMinutes(t: string) {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+function subtractPeriod(minutes: number, start?: string | null, end?: string | null) {
+  if (!start || !end) return minutes
+  return minutes - (toMinutes(end) - toMinutes(start))
+}
+
+/**
+ * Worked hours = full span minus lunch minus the separate break. Both
+ * deductions are optional: pass null/undefined when a period isn't set.
+ */
+function hoursBetween(
+  startTime: string,
+  endTime: string,
+  lunchStart?: string | null,
+  lunchEnd?: string | null,
+  breakStart?: string | null,
+  breakEnd?: string | null
+) {
+  let minutes = toMinutes(endTime) - toMinutes(startTime)
+  minutes = subtractPeriod(minutes, lunchStart, lunchEnd)
+  minutes = subtractPeriod(minutes, breakStart, breakEnd)
+  return Math.max(0, minutes / 60)
 }
 
 export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeeklyScheduleResult> {
-  const claims = await requirePermission(PERMISOS.HORARIOS_READ)
+  // RLS policies on sgrh_programacion_semanal require ASISTENCIA_READ.
+  const claims = await requirePermission(PERMISOS.ASISTENCIA_READ)
   const empresaId = (claims.app_metadata as { empresa_id?: number })?.empresa_id
 
   if (!empresaId) {
@@ -91,7 +120,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
   const weekDates = getWeekDates(weekStartISO)
   const supabase = await createClient()
 
-  const { data: historial, error: errHistorial } = await supabase
+  const { data: employmentHistory, error: errHistory } = await supabase
     .from('sgrh_historial_laboral')
     .select(
       `
@@ -104,15 +133,15 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
     )
     .eq('lab_empresa_id', empresaId)
     .is('lab_fecha_fin', null)
-    .returns<HistorialLaboralRow[]>()
+    .returns<EmploymentHistoryRow[]>()
 
-  if (errHistorial) {
+  if (errHistory) {
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
   }
 
-  const labIds = historial.map((h) => h.lab_id)
+  const employmentHistoryIds = employmentHistory.map((h) => h.lab_id)
 
-  const { data: programacion, error: errProg } = labIds.length
+  const { data: assignments, error: errAssignments } = employmentHistoryIds.length
     ? await supabase
         .from('sgrh_programacion_semanal')
         .select(
@@ -122,106 +151,115 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
           prg_fecha,
           prg_es_dia_libre,
           prg_horario_id,
-          sgrh_cat_horarios ( hor_id, hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo ),
+          sgrh_cat_horarios ( hor_id, hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo, hor_hora_inicio_break, hor_hora_fin_break ),
             prg_hora_entrada_custom,
-            prg_hora_salida_custom
-            
+            prg_hora_salida_custom,
+            prg_hora_inicio_almuerzo_custom,
+            prg_hora_fin_almuerzo_custom,
+            prg_hora_inicio_break_custom,
+            prg_hora_fin_break_custom
+
         `
         )
-        .in('prg_historial_laboral_id', labIds)
+        .in('prg_historial_laboral_id', employmentHistoryIds)
         .gte('prg_fecha', weekDates[0])
         .lte('prg_fecha', weekDates[6])
-        .returns<ProgramacionRow[]>()
-    : { data: [] as ProgramacionRow[], error: null }
+        .returns<AssignmentRow[]>()
+    : { data: [] as AssignmentRow[], error: null }
 
-  if (errProg) {
+  if (errAssignments) {
     return { ok: false, error: 'No se pudo cargar la programacion semanal.' }
   }
 
-  const data: EmployeeWeekRow[] = historial.map((h) => {
-    const emp = h.sgrh_empleados
-    const puesto = h.sgrh_cat_puestos
-    const nombreCompleto = emp
-      ? `${emp.emp_nombre} ${emp.emp_apellido_1}${emp.emp_apellido_2 ? ' ' + emp.emp_apellido_2 : ''}`
+  // Index by employmentHistoryId+date to avoid a linear find() per cell.
+  const assignmentByCell = new Map<string, AssignmentRow>()
+  for (const a of assignments ?? []) {
+    assignmentByCell.set(`${a.prg_historial_laboral_id}|${a.prg_fecha}`, a)
+  }
+
+  const data: EmployeeWeekRow[] = employmentHistory.map((h) => {
+    const employee = h.sgrh_empleados
+    const position = h.sgrh_cat_puestos
+    const fullName = employee
+      ? `${employee.emp_nombre} ${employee.emp_apellido_1}${employee.emp_apellido_2 ? ' ' + employee.emp_apellido_2 : ''}`
       : 'Sin nombre'
 
-    let totalSemanal = 0
+    let weeklyTotal = 0
 
-    const dias: DayAssignment[] = weekDates.map((fecha) => {
-      const asignacion = programacion?.find(
-        (p) => p.prg_historial_laboral_id === h.lab_id && p.prg_fecha === fecha
-      )
+    const days: DayAssignment[] = weekDates.map((date) => {
+      const assignment = assignmentByCell.get(`${h.lab_id}|${date}`)
 
-      if (!asignacion) {
+      if (!assignment) {
         return {
-          fecha,
-          prgId: null,
-          horarioId: null,
-          horarioNombre: null,
-          horaEntrada: null,
-          horaSalida: null,
-          esDiaLibre: false,
-          horas: 0,
+          date,
+          assignmentId: null,
+          scheduleId: null,
+          scheduleName: null,
+          startTime: null,
+          endTime: null,
+          isDayOff: false,
+          hours: 0,
         }
       }
 
-      const horario = asignacion.sgrh_cat_horarios
-      const esPersonalizado = Boolean(
-        asignacion.prg_hora_entrada_custom && asignacion.prg_hora_salida_custom
+      const schedule = assignment.sgrh_cat_horarios
+      const isCustom = Boolean(
+        assignment.prg_hora_entrada_custom && assignment.prg_hora_salida_custom
       )
-      let horas = 0
+      let hours = 0
 
-      if (!asignacion.prg_es_dia_libre) {
-        if (esPersonalizado) {
-          const toMin = (t: string) => {
-            const [h, m] = t.split(':').map(Number)
-            return h * 60 + m
-          }
-
-          horas = Math.max(
-            0,
-            (toMin(asignacion.prg_hora_salida_custom!) -
-              toMin(asignacion.prg_hora_entrada_custom!)) /
-              60
+      if (!assignment.prg_es_dia_libre) {
+        if (isCustom) {
+          hours = hoursBetween(
+            assignment.prg_hora_entrada_custom!,
+            assignment.prg_hora_salida_custom!,
+            assignment.prg_hora_inicio_almuerzo_custom,
+            assignment.prg_hora_fin_almuerzo_custom,
+            assignment.prg_hora_inicio_break_custom,
+            assignment.prg_hora_fin_break_custom
           )
-          totalSemanal += horas
-        } else if (horario) {
-          horas = horasEntrePuntos(
-            horario.hor_hora_entrada,
-            horario.hor_hora_salida,
-            horario.hor_hora_inicio_almuerzo,
-            horario.hor_hora_fin_almuerzo
+          weeklyTotal += hours
+        } else if (schedule) {
+          hours = hoursBetween(
+            schedule.hor_hora_entrada,
+            schedule.hor_hora_salida,
+            schedule.hor_hora_inicio_almuerzo,
+            schedule.hor_hora_fin_almuerzo,
+            schedule.hor_hora_inicio_break,
+            schedule.hor_hora_fin_break
           )
-          totalSemanal += horas
+          weeklyTotal += hours
         }
       }
 
       return {
-        fecha,
-        prgId: asignacion.prg_id,
-        horarioId: asignacion.prg_horario_id,
-        horarioNombre: horario?.hor_nombre ?? null,
-        horaEntrada: esPersonalizado
-          ? asignacion.prg_hora_entrada_custom
-          : (horario?.hor_hora_entrada ?? null),
-        horaSalida: esPersonalizado
-          ? asignacion.prg_hora_salida_custom
-          : (horario?.hor_hora_salida ?? null),
-        horaEntradaCustom: asignacion.prg_hora_entrada_custom,
-        horaSalidaCustom: asignacion.prg_hora_salida_custom,
-        esDiaLibre: asignacion.prg_es_dia_libre,
-        horas,
+        date,
+        assignmentId: assignment.prg_id,
+        scheduleId: assignment.prg_horario_id,
+        scheduleName: schedule?.hor_nombre ?? null,
+        startTime: isCustom
+          ? assignment.prg_hora_entrada_custom
+          : (schedule?.hor_hora_entrada ?? null),
+        endTime: isCustom ? assignment.prg_hora_salida_custom : (schedule?.hor_hora_salida ?? null),
+        customStartTime: assignment.prg_hora_entrada_custom,
+        customEndTime: assignment.prg_hora_salida_custom,
+        customLunchStart: assignment.prg_hora_inicio_almuerzo_custom,
+        customLunchEnd: assignment.prg_hora_fin_almuerzo_custom,
+        customBreakStart: assignment.prg_hora_inicio_break_custom,
+        customBreakEnd: assignment.prg_hora_fin_break_custom,
+        isDayOff: assignment.prg_es_dia_libre,
+        hours,
       }
     })
 
     return {
-      historialLaboralId: h.lab_id,
-      empleadoId: h.lab_empleado_id,
-      sucursalId: h.lab_sucursal_id,
-      nombreCompleto,
-      puesto: puesto?.pue_nombre ?? null,
-      dias,
-      totalSemanal,
+      employmentHistoryId: h.lab_id,
+      employeeId: h.lab_empleado_id,
+      branchId: h.lab_sucursal_id,
+      fullName,
+      position: position?.pue_nombre ?? null,
+      days,
+      weeklyTotal,
     }
   })
 

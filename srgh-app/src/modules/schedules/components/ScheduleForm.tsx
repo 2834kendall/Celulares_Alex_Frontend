@@ -1,24 +1,24 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertTriangle, Clock, Loader2 } from 'lucide-react'
 import { scheduleSchema, type ScheduleInput, type ScheduleRow } from '@/modules/schedules/types'
 import { createSchedule } from '@/modules/schedules/actions/createSchedule'
 import { updateSchedule } from '@/modules/schedules/actions/updateSchedule'
+import { stripSeconds } from '@/modules/schedules/lib/time'
 
-interface TipoJornada {
+interface ShiftTypeOption {
   tjo_id: number
   tjo_nombre: string
 }
 
 interface ScheduleFormProps {
-  /** Si viene un horario existente, el form entra en modo edicion. */
+  /** If an existing schedule is passed, the form enters edit mode. */
   schedule?: ScheduleRow
-  tiposJornada: TipoJornada[]
-  /** Se llama despues de guardar exitosamente (crear o actualizar). */
+  shiftTypes: ShiftTypeOption[]
+  /** Called after a successful save (create or update). */
   onSuccess?: () => void
 }
 
@@ -27,18 +27,19 @@ const INPUT_CLASSES =
 
 const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
-function stripSeconds(time: string) {
-  return time.slice(0, 5)
-}
-
-export function ScheduleForm({ schedule, tiposJornada, onSuccess }: ScheduleFormProps) {
-  const router = useRouter()
+export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
   const isEditing = Boolean(schedule)
+
+  const [hasBreak, setHasBreak] = useState(
+    Boolean(schedule?.hor_hora_inicio_break && schedule?.hor_hora_fin_break)
+  )
 
   const {
     register,
     handleSubmit,
+    setValue,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<ScheduleInput>({
     resolver: zodResolver(scheduleSchema),
@@ -51,23 +52,36 @@ export function ScheduleForm({ schedule, tiposJornada, onSuccess }: ScheduleForm
           hor_hora_fin_almuerzo: stripSeconds(schedule.hor_hora_fin_almuerzo),
           hor_hora_inicio_break: schedule.hor_hora_inicio_break
             ? stripSeconds(schedule.hor_hora_inicio_break)
-            : schedule.hor_hora_inicio_break,
+            : '',
           hor_hora_fin_break: schedule.hor_hora_fin_break
             ? stripSeconds(schedule.hor_hora_fin_break)
-            : schedule.hor_hora_fin_break,
+            : '',
         }
       : {
           hor_nombre: '',
-          hor_tipo_jornada_id: tiposJornada[0]?.tjo_id ?? 0,
+          hor_tipo_jornada_id: shiftTypes[0]?.tjo_id ?? 0,
           hor_hora_entrada: '08:00',
           hor_hora_salida: '17:00',
           hor_hora_inicio_almuerzo: '12:00',
           hor_hora_fin_almuerzo: '13:00',
           hor_duracion_almuerzo_min: 60,
+          hor_hora_inicio_break: '',
+          hor_hora_fin_break: '',
           hor_duracion_break_min: 15,
           hor_activo: true,
         },
   })
+
+  function toggleBreak(checked: boolean) {
+    setHasBreak(checked)
+    if (!checked) {
+      setValue('hor_hora_inicio_break', '')
+      setValue('hor_hora_fin_break', '')
+    } else if (!getValues('hor_hora_inicio_break')) {
+      setValue('hor_hora_inicio_break', '10:00')
+      setValue('hor_hora_fin_break', '10:15')
+    }
+  }
 
   async function onSubmit(input: ScheduleInput) {
     setServerError(null)
@@ -81,7 +95,7 @@ export function ScheduleForm({ schedule, tiposJornada, onSuccess }: ScheduleForm
       return
     }
 
-    router.refresh()
+    // revalidatePath('/schedule') in the server action already refreshes the route.
     onSuccess?.()
   }
 
@@ -125,9 +139,9 @@ export function ScheduleForm({ schedule, tiposJornada, onSuccess }: ScheduleForm
           {...register('hor_tipo_jornada_id', { valueAsNumber: true })}
           className={INPUT_CLASSES}
         >
-          {tiposJornada.map((tipo) => (
-            <option key={tipo.tjo_id} value={tipo.tjo_id}>
-              {tipo.tjo_nombre}
+          {shiftTypes.map((shiftType) => (
+            <option key={shiftType.tjo_id} value={shiftType.tjo_id}>
+              {shiftType.tjo_nombre}
             </option>
           ))}
         </select>
@@ -208,6 +222,69 @@ export function ScheduleForm({ schedule, tiposJornada, onSuccess }: ScheduleForm
             <p className="mt-1.5 text-xs text-rose-600">{errors.hor_hora_fin_almuerzo.message}</p>
           )}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 p-3">
+        <label
+          htmlFor="hor_tiene_break"
+          className="flex cursor-pointer select-none items-center gap-3"
+        >
+          <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
+            <input
+              type="checkbox"
+              id="hor_tiene_break"
+              disabled={isSubmitting}
+              checked={hasBreak}
+              onChange={(event) => toggleBreak(event.target.checked)}
+              className="peer sr-only"
+            />
+            <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2" />
+            <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+          </span>
+          <span className="text-xs text-slate-700 sm:text-sm">
+            Incluye break adicional al almuerzo
+          </span>
+        </label>
+
+        {hasBreak && (
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className={LABEL_CLASSES} htmlFor="hor_hora_inicio_break">
+                Inicio de break
+              </label>
+              <input
+                type="time"
+                id="hor_hora_inicio_break"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.hor_hora_inicio_break}
+                {...register('hor_hora_inicio_break')}
+                className={`${INPUT_CLASSES} tabular-nums`}
+              />
+              {errors.hor_hora_inicio_break && (
+                <p className="mt-1.5 text-xs text-rose-600">
+                  {errors.hor_hora_inicio_break.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className={LABEL_CLASSES} htmlFor="hor_hora_fin_break">
+                Fin de break
+              </label>
+              <input
+                type="time"
+                id="hor_hora_fin_break"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.hor_hora_fin_break}
+                {...register('hor_hora_fin_break')}
+                className={`${INPUT_CLASSES} tabular-nums`}
+              />
+              {errors.hor_hora_fin_break && (
+                <p className="mt-1.5 text-xs text-rose-600">{errors.hor_hora_fin_break.message}</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <label

@@ -4,27 +4,28 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-
-export type AssignDayInput = {
-  prgId: number | null
-  historialLaboralId: number
-  empleadoId: number
-  sucursalId: number
-  fecha: string
-  horarioId: number | null
-  esDiaLibre: boolean
-  horaEntradaCustom?: string | null
-  horaSalidaCustom?: string | null
-}
+import {
+  assignDayScheduleSchema,
+  parseOptionalTime,
+  type AssignDayInput,
+} from '@/modules/schedules/types'
 
 export type AssignDayResult = { ok: true } | { ok: false; error: string }
 
 export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDayResult> {
-  await requirePermission(PERMISOS.HORARIOS_WRITE)
+  const parsed = assignDayScheduleSchema.safeParse(input)
 
-  const isCustom = Boolean(input.horaEntradaCustom && input.horaSalidaCustom)
+  if (!parsed.success) {
+    return { ok: false, error: 'Datos de asignacion invalidos.' }
+  }
 
-  if (!input.esDiaLibre && !input.horarioId && !isCustom) {
+  // RLS policies on sgrh_programacion_semanal require ASISTENCIA_WRITE.
+  await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+
+  const data = parsed.data
+  const isCustom = Boolean(data.customStartTime && data.customEndTime)
+
+  if (!data.isDayOff && !data.scheduleId && !isCustom) {
     return {
       ok: false,
       error:
@@ -32,25 +33,45 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
     }
   }
 
-  if (isCustom && input.horaSalidaCustom! <= input.horaEntradaCustom!) {
+  if (isCustom && data.customEndTime! <= data.customStartTime!) {
     return { ok: false, error: 'La hora de salida debe ser posterior a la hora de entrada.' }
+  }
+
+  const customLunchStart = parseOptionalTime(data.customLunchStart)
+  const customLunchEnd = parseOptionalTime(data.customLunchEnd)
+  const customBreakStart = parseOptionalTime(data.customBreakStart)
+  const customBreakEnd = parseOptionalTime(data.customBreakEnd)
+
+  if (isCustom && customLunchStart && customLunchEnd && customLunchEnd <= customLunchStart) {
+    return { ok: false, error: 'El fin del almuerzo debe ser posterior al inicio.' }
+  }
+
+  if (isCustom && customBreakStart && customBreakEnd && customBreakEnd <= customBreakStart) {
+    return { ok: false, error: 'El fin del break debe ser posterior al inicio.' }
   }
 
   const supabase = await createClient()
 
   const payload = {
-    prg_empleado_id: input.empleadoId,
-    prg_sucursal_id: input.sucursalId,
-    prg_historial_laboral_id: input.historialLaboralId,
-    prg_horario_id: input.esDiaLibre || isCustom ? null : input.horarioId,
-    prg_fecha: input.fecha,
-    prg_es_dia_libre: input.esDiaLibre,
-    prg_hora_entrada_custom: isCustom ? input.horaEntradaCustom : null,
-    prg_hora_salida_custom: isCustom ? input.horaSalidaCustom : null,
+    prg_empleado_id: data.employeeId,
+    prg_sucursal_id: data.branchId,
+    prg_historial_laboral_id: data.employmentHistoryId,
+    prg_horario_id: data.isDayOff || isCustom ? null : data.scheduleId,
+    prg_fecha: data.date,
+    prg_es_dia_libre: data.isDayOff,
+    prg_hora_entrada_custom: isCustom ? data.customStartTime : null,
+    prg_hora_salida_custom: isCustom ? data.customEndTime : null,
+    prg_hora_inicio_almuerzo_custom: isCustom ? customLunchStart : null,
+    prg_hora_fin_almuerzo_custom: isCustom ? customLunchEnd : null,
+    prg_hora_inicio_break_custom: isCustom ? customBreakStart : null,
+    prg_hora_fin_break_custom: isCustom ? customBreakEnd : null,
   }
 
-  const { error } = input.prgId
-    ? await supabase.from('sgrh_programacion_semanal').update(payload).eq('prg_id', input.prgId)
+  const { error } = data.assignmentId
+    ? await supabase
+        .from('sgrh_programacion_semanal')
+        .update(payload)
+        .eq('prg_id', data.assignmentId)
     : await supabase.from('sgrh_programacion_semanal').insert(payload)
 
   if (error) {

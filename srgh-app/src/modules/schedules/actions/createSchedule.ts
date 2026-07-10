@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { scheduleSchema, type ScheduleInput } from '@/modules/schedules/types'
+import { parseOptionalTime, scheduleSchema, type ScheduleInput } from '@/modules/schedules/types'
 
 export type CreateScheduleResult = { ok: true; id: number } | { ok: false; error: string }
 
@@ -25,7 +25,12 @@ export async function createSchedule(input: ScheduleInput): Promise<CreateSchedu
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_cat_horarios')
-    .insert({ ...parsed.data, hor_empresa_id: empresaId })
+    .insert({
+      ...parsed.data,
+      hor_hora_inicio_break: parseOptionalTime(parsed.data.hor_hora_inicio_break),
+      hor_hora_fin_break: parseOptionalTime(parsed.data.hor_hora_fin_break),
+      hor_empresa_id: empresaId,
+    })
     .select('hor_id')
     .single()
 

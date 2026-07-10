@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
 import {
   AlertTriangle,
@@ -16,42 +15,39 @@ import {
 } from 'lucide-react'
 import type { ScheduleRow } from '@/modules/schedules/types'
 import { deleteSchedule } from '@/modules/schedules/actions/deleteSchedule'
+import { stripSeconds } from '@/modules/schedules/lib/time'
+import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
+import { ConfirmDialog } from './ConfirmDialog'
 import { ScheduleForm } from './ScheduleForm'
 
-interface TipoJornada {
+interface ShiftTypeOption {
   tjo_id: number
   tjo_nombre: string
 }
 
 interface SchedulesListProps {
   schedules: ScheduleRow[]
-  tiposJornada: TipoJornada[]
+  shiftTypes: ShiftTypeOption[]
   canWrite: boolean
 }
 
-export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesListProps) {
-  const [editing, setEditing] = useState<ScheduleRow | 'new' | null>(null)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
+export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesListProps) {
+  const {
+    editing,
+    setEditing,
+    deletingId,
+    confirmingId,
+    deleteError,
+    requestDelete,
+    cancelDelete,
+    confirmDelete,
+  } = useCrudList<ScheduleRow>(deleteSchedule)
 
   const total = schedules.length
-  const activos = schedules.filter((s) => s.hor_activo).length
+  const activeCount = schedules.filter((s) => s.hor_activo).length
 
-  function tipoNombre(id: number | null | undefined) {
-    return tiposJornada.find((t) => t.tjo_id === id)?.tjo_nombre ?? '—'
-  }
-
-  function stripSeconds(time: string) {
-    return time.slice(0, 5)
-  }
-
-  async function handleDelete(id: number) {
-    if (!confirm('Seguro que desea eliminar este horario?')) return
-    setDeleteError(null)
-    setDeletingId(id)
-    const result = await deleteSchedule(id)
-    setDeletingId(null)
-    if (!result.ok) setDeleteError(result.error)
+  function shiftTypeName(id: number | null | undefined) {
+    return shiftTypes.find((t) => t.tjo_id === id)?.tjo_nombre ?? '—'
   }
 
   return (
@@ -72,7 +68,7 @@ export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesLi
           </div>
           <div className="min-w-0">
             <p className="text-[10px] font-medium text-slate-500">Activas</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{activos}</p>
+            <p className="text-base font-bold tabular-nums text-slate-900">{activeCount}</p>
           </div>
         </div>
         <Link
@@ -84,7 +80,7 @@ export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesLi
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-medium text-slate-500">Tipos de jornada</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{tiposJornada.length}</p>
+            <p className="text-base font-bold tabular-nums text-slate-900">{shiftTypes.length}</p>
           </div>
           <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-500" />
         </Link>
@@ -131,7 +127,7 @@ export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesLi
           </h3>
           <ScheduleForm
             schedule={editing === 'new' ? undefined : editing}
-            tiposJornada={tiposJornada}
+            shiftTypes={shiftTypes}
             onSuccess={() => setEditing(null)}
           />
         </div>
@@ -170,6 +166,7 @@ export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesLi
                   <th className="px-3 py-2 text-left font-semibold">Entrada</th>
                   <th className="px-3 py-2 text-left font-semibold">Salida</th>
                   <th className="px-3 py-2 text-left font-semibold">Almuerzo</th>
+                  <th className="px-3 py-2 text-left font-semibold">Break</th>
                   <th className="px-3 py-2 text-left font-semibold">Estado</th>
                   {canWrite && <th className="px-3 py-2 text-right font-semibold">Acciones</th>}
                 </tr>
@@ -184,7 +181,7 @@ export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesLi
                   >
                     <td className="px-3 py-2 font-medium text-slate-800">{schedule.hor_nombre}</td>
                     <td className="px-3 py-2 text-slate-600">
-                      {tipoNombre(schedule.hor_tipo_jornada_id)}
+                      {shiftTypeName(schedule.hor_tipo_jornada_id)}
                     </td>
                     <td className="px-3 py-2 tabular-nums text-slate-600">
                       {stripSeconds(schedule.hor_hora_entrada)}
@@ -195,6 +192,11 @@ export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesLi
                     <td className="px-3 py-2 tabular-nums text-slate-600">
                       {stripSeconds(schedule.hor_hora_inicio_almuerzo)} -{' '}
                       {stripSeconds(schedule.hor_hora_fin_almuerzo)}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums text-slate-600">
+                      {schedule.hor_hora_inicio_break && schedule.hor_hora_fin_break
+                        ? `${stripSeconds(schedule.hor_hora_inicio_break)} - ${stripSeconds(schedule.hor_hora_fin_break)}`
+                        : '—'}
                     </td>
                     <td className="px-3 py-2">
                       <span
@@ -219,7 +221,7 @@ export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesLi
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <button
-                            onClick={() => handleDelete(schedule.hor_id)}
+                            onClick={() => requestDelete(schedule.hor_id)}
                             disabled={deletingId === schedule.hor_id}
                             aria-label="Eliminar"
                             className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
@@ -235,6 +237,15 @@ export function SchedulesList({ schedules, tiposJornada, canWrite }: SchedulesLi
             </table>
           </div>
         </div>
+      )}
+
+      {confirmingId !== null && (
+        <ConfirmDialog
+          title="Eliminar horario"
+          message="La plantilla se eliminará de forma permanente. Esta acción no se puede deshacer."
+          onCancel={cancelDelete}
+          onConfirm={confirmDelete}
+        />
       )}
     </div>
   )

@@ -1,8 +1,10 @@
 'use client'
 
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Pencil, Users } from 'lucide-react'
-import type { EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
+import type { DayAssignment, EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
 import type { ScheduleRow } from '@/modules/schedules/types'
+import { WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
+import { stripSeconds } from '@/modules/schedules/lib/time'
 import { useWeekNavigation } from '@/modules/schedules/hooks/useWeekNavigation'
 import { useWeeklyScheduleMatrix } from '@/modules/schedules/hooks/useWeeklyScheduleMatrix'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
@@ -15,8 +17,6 @@ interface WeeklyScheduleMatrixProps {
   canWrite: boolean
 }
 
-const DAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-
 const SELECT_CLASSES =
   'w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-900 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500'
 
@@ -27,12 +27,13 @@ function formatDay(dateISO: string) {
   }).format(new Date(`${dateISO}T00:00:00`))
 }
 
-function formatHours(hours: number) {
-  return `${hours.toFixed(0)} Hrs`
+/** Integers with no decimals, fractions with one (7.5 must not show as 8). */
+function formatHoursValue(hours: number) {
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
 }
 
-function getCellLabel(index: number) {
-  return DAY_NAMES[index]
+function formatHours(hours: number) {
+  return `${formatHoursValue(hours)} Hrs`
 }
 
 function initialsOf(fullName: string) {
@@ -43,8 +44,89 @@ function initialsOf(fullName: string) {
     .join('')
 }
 
-function stripSeconds(time: string | null | undefined) {
-  return time ? time.slice(0, 5) : time
+function assignmentLabel(assignment: DayAssignment) {
+  if (assignment.isDayOff) return 'Descanso'
+  if (assignment.customStartTime) return 'Personalizado'
+  return assignment.scheduleName ?? 'Sin asignar'
+}
+
+function AssignmentOptions({ scheduleOptions }: { scheduleOptions: ScheduleRow[] }) {
+  return (
+    <>
+      <option value="">Asignar horario</option>
+      <option value="__free__">Descanso</option>
+      <option value="__custom__">Personalizado</option>
+      {scheduleOptions.map((schedule) => (
+        <option key={schedule.hor_id} value={schedule.hor_id}>
+          {schedule.hor_nombre}
+        </option>
+      ))}
+    </>
+  )
+}
+
+interface AssignmentHoursLineProps {
+  assignment: DayAssignment
+  canWrite: boolean
+  isSaving: boolean
+  onEditCustom: () => void
+  variant: 'mobile' | 'desktop'
+}
+
+/** Cell's hours line (range, custom-edit pencil, and saving spinner). */
+function AssignmentHoursLine({
+  assignment,
+  canWrite,
+  isSaving,
+  onEditCustom,
+  variant,
+}: AssignmentHoursLineProps) {
+  const containerClass =
+    variant === 'mobile'
+      ? 'mt-1.5 flex items-center justify-center gap-1.5 text-[10px] font-semibold tabular-nums text-slate-500'
+      : `flex items-center gap-1 text-[10px] tabular-nums ${
+          assignment.isDayOff
+            ? 'text-amber-700'
+            : assignment.customStartTime
+              ? 'text-violet-700'
+              : 'text-slate-400'
+        }`
+
+  return (
+    <div className={containerClass}>
+      {assignment.isDayOff ? (
+        variant === 'mobile' ? (
+          <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800">Libre</span>
+        ) : (
+          <span>Libre</span>
+        )
+      ) : assignment.customStartTime ? (
+        <>
+          <span>
+            {stripSeconds(assignment.customStartTime)} - {stripSeconds(assignment.customEndTime)}
+          </span>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={onEditCustom}
+              aria-label="Editar horas"
+              className="rounded-full p-0.5 outline-none transition hover:bg-violet-100 focus-visible:ring-2 focus-visible:ring-violet-500/60"
+            >
+              <Pencil className="h-3 w-3 text-violet-600" />
+            </button>
+          )}
+        </>
+      ) : assignment.startTime && assignment.endTime ? (
+        <span>
+          {stripSeconds(assignment.startTime)} - {stripSeconds(assignment.endTime)}
+        </span>
+      ) : (
+        <span>Sin horario</span>
+      )}
+
+      {isSaving && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
+    </div>
+  )
 }
 
 export function WeeklyScheduleMatrix({
@@ -140,32 +222,31 @@ export function WeeklyScheduleMatrix({
           ) : (
             scheduleRows.map((row) => (
               <div
-                key={row.historialLaboralId}
+                key={row.employmentHistoryId}
                 className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]"
               >
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-slate-900 to-blue-600 text-[10px] font-bold text-white shadow-sm">
-                    {initialsOf(row.nombreCompleto)}
+                    {initialsOf(row.fullName)}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate font-bold text-slate-900">{row.nombreCompleto}</p>
+                    <p className="truncate font-bold text-slate-900">{row.fullName}</p>
                     <p className="truncate text-xs text-slate-500">
-                      {row.puesto ?? 'Sin puesto asignado'}
+                      {row.position ?? 'Sin puesto asignado'}
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {row.dias.map((assignment, index) => {
-                    const isDisabled =
-                      !canWrite || savingCell === `${row.historialLaboralId}-${assignment.fecha}`
-                    const selectValue = getAssignmentValue(assignment)
-                    const isFree = assignment.esDiaLibre
-                    const isCustom = Boolean(assignment.horaEntradaCustom)
+                  {row.days.map((assignment, index) => {
+                    const isSaving = savingCell === `${row.employmentHistoryId}-${assignment.date}`
+                    const isDisabled = !canWrite || isSaving
+                    const isFree = assignment.isDayOff
+                    const isCustom = Boolean(assignment.customStartTime)
 
                     return (
                       <div
-                        key={assignment.fecha}
+                        key={assignment.date}
                         className={`rounded-xl border p-2.5 transition ${
                           isFree
                             ? 'border-amber-200 bg-amber-50/80'
@@ -177,10 +258,10 @@ export function WeeklyScheduleMatrix({
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                              {getCellLabel(index)}
+                              {WEEKDAY_NAMES[index]}
                             </p>
                             <p className="text-xs font-bold text-slate-900 sm:text-sm">
-                              {formatDay(assignment.fecha)}
+                              {formatDay(assignment.date)}
                             </p>
                           </div>
                           <span
@@ -192,7 +273,9 @@ export function WeeklyScheduleMatrix({
                                   : 'bg-white text-emerald-700'
                             }`}
                           >
-                            {assignment.horas > 0 ? `${assignment.horas.toFixed(0)} h` : '0 h'}
+                            {assignment.hours > 0
+                              ? `${formatHoursValue(assignment.hours)} h`
+                              : '0 h'}
                           </span>
                         </div>
 
@@ -200,67 +283,28 @@ export function WeeklyScheduleMatrix({
                           {canWrite ? (
                             <select
                               className={SELECT_CLASSES}
-                              value={selectValue}
+                              value={getAssignmentValue(assignment)}
                               disabled={isDisabled}
                               onChange={(event) =>
                                 handleAssignmentChange(row, assignment, event.target.value)
                               }
-                              aria-label={`Asignar horario para ${row.nombreCompleto} el ${DAY_NAMES[index]}`}
+                              aria-label={`Asignar horario para ${row.fullName} el ${WEEKDAY_NAMES[index]}`}
                             >
-                              <option value="">Asignar horario</option>
-                              <option value="__free__">Descanso</option>
-                              <option value="__custom__">Personalizado</option>
-                              {scheduleOptions.map((schedule) => (
-                                <option key={schedule.hor_id} value={schedule.hor_id}>
-                                  {schedule.hor_nombre}
-                                </option>
-                              ))}
+                              <AssignmentOptions scheduleOptions={scheduleOptions} />
                             </select>
                           ) : (
                             <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-700">
-                              {assignment.esDiaLibre
-                                ? 'Descanso'
-                                : assignment.horaEntradaCustom
-                                  ? 'Personalizado'
-                                  : (assignment.horarioNombre ?? 'Sin asignar')}
+                              {assignmentLabel(assignment)}
                             </div>
                           )}
 
-                          <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[10px] font-semibold tabular-nums text-slate-500">
-                            {assignment.esDiaLibre ? (
-                              <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800">
-                                Libre
-                              </span>
-                            ) : assignment.horaEntradaCustom ? (
-                              <>
-                                <span>
-                                  {stripSeconds(assignment.horaEntradaCustom)} -{' '}
-                                  {stripSeconds(assignment.horaSalidaCustom)}
-                                </span>
-                                {canWrite && (
-                                  <button
-                                    type="button"
-                                    onClick={() => openCustomModal(row, assignment)}
-                                    aria-label="Editar horas"
-                                    className="rounded-full p-0.5 outline-none transition hover:bg-violet-100 focus-visible:ring-2 focus-visible:ring-violet-500/60"
-                                  >
-                                    <Pencil className="h-3 w-3 text-violet-600" />
-                                  </button>
-                                )}
-                              </>
-                            ) : assignment.horaEntrada && assignment.horaSalida ? (
-                              <span>
-                                {stripSeconds(assignment.horaEntrada)} -{' '}
-                                {stripSeconds(assignment.horaSalida)}
-                              </span>
-                            ) : (
-                              <span>Sin horario</span>
-                            )}
-
-                            {isDisabled ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
-                            ) : null}
-                          </div>
+                          <AssignmentHoursLine
+                            assignment={assignment}
+                            canWrite={canWrite}
+                            isSaving={isSaving}
+                            onEditCustom={() => openCustomModal(row, assignment)}
+                            variant="mobile"
+                          />
                         </div>
                       </div>
                     )
@@ -269,7 +313,7 @@ export function WeeklyScheduleMatrix({
 
                 <div className="mt-2.5 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold tabular-nums text-emerald-700">
                   <span>Total semanal</span>
-                  <span>{formatHours(row.totalSemanal)}</span>
+                  <span>{formatHours(row.weeklyTotal)}</span>
                 </div>
               </div>
             ))
@@ -291,7 +335,7 @@ export function WeeklyScheduleMatrix({
                     >
                       <div className="space-y-1">
                         <div className="text-[10px] leading-tight text-slate-500">
-                          {DAY_NAMES[index]}
+                          {WEEKDAY_NAMES[index]}
                         </div>
                         <div className="font-semibold tabular-nums text-slate-400">
                           {formatDay(dateISO)}
@@ -314,36 +358,33 @@ export function WeeklyScheduleMatrix({
                 ) : (
                   scheduleRows.map((row) => (
                     <tr
-                      key={row.historialLaboralId}
+                      key={row.employmentHistoryId}
                       className="group align-top transition hover:bg-slate-50/60"
                     >
                       <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-3 py-2.5 group-hover:bg-slate-50/60">
                         <div className="flex items-center gap-2">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-slate-900 to-blue-600 text-[10px] font-bold text-white shadow-sm">
-                            {initialsOf(row.nombreCompleto)}
+                            {initialsOf(row.fullName)}
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate font-bold text-slate-900">
-                              {row.nombreCompleto}
-                            </p>
+                            <p className="truncate font-bold text-slate-900">{row.fullName}</p>
                             <p className="truncate text-[11px] text-slate-500">
-                              {row.puesto ?? 'Sin puesto asignado'}
+                              {row.position ?? 'Sin puesto asignado'}
                             </p>
                           </div>
                         </div>
                       </td>
 
-                      {row.dias.map((assignment, index) => {
-                        const isDisabled =
-                          !canWrite ||
-                          savingCell === `${row.historialLaboralId}-${assignment.fecha}`
-                        const selectValue = getAssignmentValue(assignment)
-                        const isFree = assignment.esDiaLibre
-                        const isCustom = Boolean(assignment.horaEntradaCustom)
+                      {row.days.map((assignment, index) => {
+                        const isSaving =
+                          savingCell === `${row.employmentHistoryId}-${assignment.date}`
+                        const isDisabled = !canWrite || isSaving
+                        const isFree = assignment.isDayOff
+                        const isCustom = Boolean(assignment.customStartTime)
 
                         return (
                           <td
-                            key={assignment.fecha}
+                            key={assignment.date}
                             className="border-b border-slate-100 px-1 py-2 group-hover:bg-slate-50/30"
                           >
                             <div className="flex justify-center">
@@ -365,21 +406,14 @@ export function WeeklyScheduleMatrix({
                                           ? 'text-violet-800'
                                           : 'text-slate-900'
                                     } ${isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
-                                    value={selectValue}
+                                    value={getAssignmentValue(assignment)}
                                     disabled={isDisabled}
                                     onChange={(event) =>
                                       handleAssignmentChange(row, assignment, event.target.value)
                                     }
-                                    aria-label={`Asignar horario para ${row.nombreCompleto} el ${DAY_NAMES[index]}`}
+                                    aria-label={`Asignar horario para ${row.fullName} el ${WEEKDAY_NAMES[index]}`}
                                   >
-                                    <option value="">Asignar horario</option>
-                                    <option value="__free__">Descanso</option>
-                                    <option value="__custom__">Personalizado</option>
-                                    {scheduleOptions.map((schedule) => (
-                                      <option key={schedule.hor_id} value={schedule.hor_id}>
-                                        {schedule.hor_nombre}
-                                      </option>
-                                    ))}
+                                    <AssignmentOptions scheduleOptions={scheduleOptions} />
                                   </select>
                                 ) : (
                                   <span
@@ -391,55 +425,17 @@ export function WeeklyScheduleMatrix({
                                           : 'text-slate-900'
                                     }`}
                                   >
-                                    {assignment.esDiaLibre
-                                      ? 'Descanso'
-                                      : assignment.horaEntradaCustom
-                                        ? 'Personalizado'
-                                        : (assignment.horarioNombre ?? 'Sin asignar')}
+                                    {assignmentLabel(assignment)}
                                   </span>
                                 )}
 
-                                <div
-                                  className={`flex items-center gap-1 text-[10px] tabular-nums ${
-                                    isFree
-                                      ? 'text-amber-700'
-                                      : isCustom
-                                        ? 'text-violet-700'
-                                        : 'text-slate-400'
-                                  }`}
-                                >
-                                  {assignment.esDiaLibre ? (
-                                    <span>Libre</span>
-                                  ) : assignment.horaEntradaCustom ? (
-                                    <>
-                                      <span>
-                                        {stripSeconds(assignment.horaEntradaCustom)} -{' '}
-                                        {stripSeconds(assignment.horaSalidaCustom)}
-                                      </span>
-                                      {canWrite && (
-                                        <button
-                                          type="button"
-                                          onClick={() => openCustomModal(row, assignment)}
-                                          aria-label="Editar horas"
-                                          className="rounded-full p-0.5 outline-none transition hover:bg-violet-100 focus-visible:ring-2 focus-visible:ring-violet-500/60"
-                                        >
-                                          <Pencil className="h-3 w-3 text-violet-600" />
-                                        </button>
-                                      )}
-                                    </>
-                                  ) : assignment.horaEntrada && assignment.horaSalida ? (
-                                    <span>
-                                      {stripSeconds(assignment.horaEntrada)} -{' '}
-                                      {stripSeconds(assignment.horaSalida)}
-                                    </span>
-                                  ) : (
-                                    <span>Sin horario</span>
-                                  )}
-
-                                  {isDisabled && (
-                                    <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
-                                  )}
-                                </div>
+                                <AssignmentHoursLine
+                                  assignment={assignment}
+                                  canWrite={canWrite}
+                                  isSaving={isSaving}
+                                  onEditCustom={() => openCustomModal(row, assignment)}
+                                  variant="desktop"
+                                />
                               </div>
                             </div>
                           </td>
@@ -448,7 +444,7 @@ export function WeeklyScheduleMatrix({
 
                       <td className="border-b border-slate-100 px-3 py-2.5 text-center">
                         <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold tabular-nums text-emerald-700 shadow-sm">
-                          {formatHours(row.totalSemanal)}
+                          {formatHours(row.weeklyTotal)}
                         </span>
                       </td>
                     </tr>
@@ -461,10 +457,14 @@ export function WeeklyScheduleMatrix({
 
         {customModalFor && (
           <CustomHoursModal
-            employeeName={customModalFor.row.nombreCompleto}
-            dayLabel={DAY_NAMES[weekDates.indexOf(customModalFor.assignment.fecha)] ?? 'Día'}
-            initialEntrada={stripSeconds(customModalFor.assignment.horaEntradaCustom) ?? '08:00'}
-            initialSalida={stripSeconds(customModalFor.assignment.horaSalidaCustom) ?? '17:00'}
+            employeeName={customModalFor.row.fullName}
+            dayLabel={WEEKDAY_NAMES[weekDates.indexOf(customModalFor.assignment.date)] ?? 'Día'}
+            initialStartTime={stripSeconds(customModalFor.assignment.customStartTime) ?? '08:00'}
+            initialEndTime={stripSeconds(customModalFor.assignment.customEndTime) ?? '17:00'}
+            initialLunchStart={stripSeconds(customModalFor.assignment.customLunchStart)}
+            initialLunchEnd={stripSeconds(customModalFor.assignment.customLunchEnd)}
+            initialBreakStart={stripSeconds(customModalFor.assignment.customBreakStart)}
+            initialBreakEnd={stripSeconds(customModalFor.assignment.customBreakEnd)}
             onClose={closeCustomModal}
             onConfirm={handleCustomConfirm}
           />

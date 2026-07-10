@@ -1,10 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { assignDaySchedule } from '@/modules/schedules/actions/assignDaySchedule'
 import type { DayAssignment, EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
 import type { ScheduleRow } from '@/modules/schedules/types'
+import type { CustomHoursValues } from '@/modules/schedules/components/CustomHoursModal'
 
 interface UseWeeklyScheduleMatrixParams {
   rows: EmployeeWeekRow[]
@@ -13,15 +13,15 @@ interface UseWeeklyScheduleMatrixParams {
 }
 
 function getAssignmentValue(assignment: DayAssignment) {
-  if (assignment.esDiaLibre) {
+  if (assignment.isDayOff) {
     return '__free__'
   }
 
-  if (assignment.horaEntradaCustom) {
+  if (assignment.customStartTime) {
     return '__custom__'
   }
 
-  return assignment.horarioId ? String(assignment.horarioId) : ''
+  return assignment.scheduleId ? String(assignment.scheduleId) : ''
 }
 
 export function useWeeklyScheduleMatrix({
@@ -29,7 +29,6 @@ export function useWeeklyScheduleMatrix({
   schedules,
   canWrite,
 }: UseWeeklyScheduleMatrixParams) {
-  const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
   const [savingCell, setSavingCell] = useState<string | null>(null)
   const [customModalFor, setCustomModalFor] = useState<{
@@ -52,25 +51,31 @@ export function useWeeklyScheduleMatrix({
     setCustomModalFor(null)
   }
 
-  async function handleCustomConfirm(entrada: string, salida: string) {
+  // revalidatePath('/schedule') inside assignDaySchedule already refreshes
+  // the route in the same response; router.refresh() is not needed here.
+  async function handleCustomConfirm(values: CustomHoursValues) {
     if (!customModalFor) {
       return
     }
 
     const { row, assignment } = customModalFor
-    const cellKey = `${row.historialLaboralId}-${assignment.fecha}`
+    const cellKey = `${row.employmentHistoryId}-${assignment.date}`
     setSavingCell(cellKey)
 
     const result = await assignDaySchedule({
-      prgId: assignment.prgId,
-      historialLaboralId: row.historialLaboralId,
-      empleadoId: row.empleadoId,
-      sucursalId: row.sucursalId,
-      fecha: assignment.fecha,
-      horarioId: null,
-      esDiaLibre: false,
-      horaEntradaCustom: entrada,
-      horaSalidaCustom: salida,
+      assignmentId: assignment.assignmentId,
+      employmentHistoryId: row.employmentHistoryId,
+      employeeId: row.employeeId,
+      branchId: row.branchId,
+      date: assignment.date,
+      scheduleId: null,
+      isDayOff: false,
+      customStartTime: values.startTime,
+      customEndTime: values.endTime,
+      customLunchStart: values.lunchStart,
+      customLunchEnd: values.lunchEnd,
+      customBreakStart: values.breakStart,
+      customBreakEnd: values.breakEnd,
     })
 
     setSavingCell(null)
@@ -78,10 +83,7 @@ export function useWeeklyScheduleMatrix({
 
     if (!result.ok) {
       setServerError(result.error)
-      return
     }
-
-    router.refresh()
   }
 
   async function handleAssignmentChange(
@@ -101,33 +103,30 @@ export function useWeeklyScheduleMatrix({
     setServerError(null)
 
     const isFreeDay = value === '__free__'
-    const horarioId = isFreeDay ? null : value ? Number(value) : null
+    const scheduleId = isFreeDay ? null : value ? Number(value) : null
 
-    if (!isFreeDay && !horarioId) {
+    if (!isFreeDay && !scheduleId) {
       return
     }
 
-    const cellKey = `${row.historialLaboralId}-${assignment.fecha}`
+    const cellKey = `${row.employmentHistoryId}-${assignment.date}`
     setSavingCell(cellKey)
 
     const result = await assignDaySchedule({
-      prgId: assignment.prgId,
-      historialLaboralId: row.historialLaboralId,
-      empleadoId: row.empleadoId,
-      sucursalId: row.sucursalId,
-      fecha: assignment.fecha,
-      horarioId,
-      esDiaLibre: isFreeDay,
+      assignmentId: assignment.assignmentId,
+      employmentHistoryId: row.employmentHistoryId,
+      employeeId: row.employeeId,
+      branchId: row.branchId,
+      date: assignment.date,
+      scheduleId,
+      isDayOff: isFreeDay,
     })
 
     setSavingCell(null)
 
     if (!result.ok) {
       setServerError(result.error)
-      return
     }
-
-    router.refresh()
   }
 
   return {
