@@ -4,7 +4,9 @@ import { AlertTriangle, Layers, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ShiftType } from '@/modules/schedules/actions/getShiftTypes'
 import { deleteShiftType } from '@/modules/schedules/actions/deleteShiftType'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
+import { usePagination } from '@/modules/schedules/hooks/usePagination'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Pagination } from './Pagination'
 import { ShiftTypeForm } from './ShiftTypeForm'
 
 interface ShiftTypesListProps {
@@ -23,6 +25,14 @@ export function ShiftTypesList({ shiftTypes, canWrite }: ShiftTypesListProps) {
     cancelDelete,
     confirmDelete,
   } = useCrudList<ShiftType>(deleteShiftType)
+
+  const {
+    page,
+    totalPages,
+    paginatedItems: paginatedShiftTypes,
+    goToPreviousPage,
+    goToNextPage,
+  } = usePagination(shiftTypes, 8)
 
   return (
     <div className="space-y-4">
@@ -108,7 +118,7 @@ export function ShiftTypesList({ shiftTypes, canWrite }: ShiftTypesListProps) {
                 </tr>
               </thead>
               <tbody>
-                {shiftTypes.map((shiftType) => (
+                {paginatedShiftTypes.map((shiftType) => (
                   <tr
                     key={shiftType.tjo_id}
                     className={`border-t border-slate-100 transition hover:bg-slate-50/70 ${
@@ -152,6 +162,12 @@ export function ShiftTypesList({ shiftTypes, canWrite }: ShiftTypesListProps) {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPrevious={goToPreviousPage}
+            onNext={goToNextPage}
+          />
         </div>
       )}
 

@@ -17,7 +17,9 @@ import type { ScheduleRow } from '@/modules/schedules/types'
 import { deleteSchedule } from '@/modules/schedules/actions/deleteSchedule'
 import { stripSeconds } from '@/modules/schedules/lib/time'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
+import { usePagination } from '@/modules/schedules/hooks/usePagination'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Pagination } from './Pagination'
 import { ScheduleForm } from './ScheduleForm'
 
 interface ShiftTypeOption {
@@ -45,6 +47,14 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
 
   const total = schedules.length
   const activeCount = schedules.filter((s) => s.hor_activo).length
+
+  const {
+    page,
+    totalPages,
+    paginatedItems: paginatedSchedules,
+    goToPreviousPage,
+    goToNextPage,
+  } = usePagination(schedules, 8)
 
   function shiftTypeName(id: number | null | undefined) {
     return shiftTypes.find((t) => t.tjo_id === id)?.tjo_nombre ?? '—'
@@ -172,7 +182,7 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
                 </tr>
               </thead>
               <tbody>
-                {schedules.map((schedule) => (
+                {paginatedSchedules.map((schedule) => (
                   <tr
                     key={schedule.hor_id}
                     className={`border-t border-slate-100 transition hover:bg-slate-50/70 ${
@@ -236,6 +246,12 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPrevious={goToPreviousPage}
+            onNext={goToNextPage}
+          />
         </div>
       )}
 
