@@ -7,7 +7,9 @@ import { WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
 import { stripSeconds } from '@/modules/schedules/lib/time'
 import { useWeekNavigation } from '@/modules/schedules/hooks/useWeekNavigation'
 import { useWeeklyScheduleMatrix } from '@/modules/schedules/hooks/useWeeklyScheduleMatrix'
+import { usePagination } from '@/modules/schedules/hooks/usePagination'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
+import { Pagination } from '@/modules/schedules/components/Pagination'
 
 interface WeeklyScheduleMatrixProps {
   weekStartISO: string
@@ -150,6 +152,14 @@ export function WeeklyScheduleMatrix({
     handleAssignmentChange,
   } = useWeeklyScheduleMatrix({ rows, schedules, canWrite })
 
+  const {
+    page,
+    totalPages,
+    paginatedItems: paginatedRows,
+    goToPreviousPage,
+    goToNextPage,
+  } = usePagination(scheduleRows, 8)
+
   return (
     <div className="min-w-0 space-y-3">
       <div className="rounded-xl border border-slate-200 bg-linear-to-br from-white via-white to-blue-50/50 p-3.5 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
@@ -220,7 +230,7 @@ export function WeeklyScheduleMatrix({
           {scheduleRows.length === 0 ? (
             <EmptyState />
           ) : (
-            scheduleRows.map((row) => (
+            paginatedRows.map((row) => (
               <div
                 key={row.employmentHistoryId}
                 className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]"
@@ -356,7 +366,7 @@ export function WeeklyScheduleMatrix({
                     </td>
                   </tr>
                 ) : (
-                  scheduleRows.map((row) => (
+                  paginatedRows.map((row) => (
                     <tr
                       key={row.employmentHistoryId}
                       className="group align-top transition hover:bg-slate-50/60"
@@ -454,6 +464,15 @@ export function WeeklyScheduleMatrix({
             </table>
           </div>
         </div>
+
+        {scheduleRows.length > 0 && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPrevious={goToPreviousPage}
+            onNext={goToNextPage}
+          />
+        )}
 
         {customModalFor && (
           <CustomHoursModal
