@@ -6,7 +6,7 @@ import { deleteShiftType } from '@/modules/schedules/actions/deleteShiftType'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
 import { usePagination } from '@/modules/schedules/hooks/usePagination'
 import { ConfirmDialog } from './ConfirmDialog'
-import { Pagination } from './Pagination'
+import { Pagination } from '@/components/ui/Pagination'
 import { ShiftTypeForm } from './ShiftTypeForm'
 
 interface ShiftTypesListProps {

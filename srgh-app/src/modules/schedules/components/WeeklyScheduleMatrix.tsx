@@ -9,7 +9,7 @@ import { useWeekNavigation } from '@/modules/schedules/hooks/useWeekNavigation'
 import { useWeeklyScheduleMatrix } from '@/modules/schedules/hooks/useWeeklyScheduleMatrix'
 import { usePagination } from '@/modules/schedules/hooks/usePagination'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
-import { Pagination } from '@/modules/schedules/components/Pagination'
+import { Pagination } from '@/components/ui/Pagination'
 
 interface WeeklyScheduleMatrixProps {
   weekStartISO: string

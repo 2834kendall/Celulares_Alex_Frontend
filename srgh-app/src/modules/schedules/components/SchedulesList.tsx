@@ -19,7 +19,7 @@ import { stripSeconds } from '@/modules/schedules/lib/time'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
 import { usePagination } from '@/modules/schedules/hooks/usePagination'
 import { ConfirmDialog } from './ConfirmDialog'
-import { Pagination } from './Pagination'
+import { Pagination } from '@/components/ui/Pagination'
 import { ScheduleForm } from './ScheduleForm'
 
 interface ShiftTypeOption {
