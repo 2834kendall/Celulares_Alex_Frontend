@@ -17,7 +17,7 @@ interface CollaboratorListModalProps {
   onSelect: (labId: number) => void
 }
 
-/** Listado emergente de colaboradores (pendientes, bajo rendimiento), paginado a 8. */
+// Listado emergente de colaboradores (pendientes, bajo rendimiento), paginado a 8.
 export function CollaboratorListModal({
   title,
   subtitle,

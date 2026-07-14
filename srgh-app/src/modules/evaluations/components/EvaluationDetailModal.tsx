@@ -13,7 +13,7 @@ interface EvaluationDetailModalProps {
   onClose: () => void
 }
 
-/** Pop-up de solo lectura con el detalle completo de una evaluacion del historico. */
+// Pop-up de solo lectura con el detalle completo de una evaluacion del historico.
 export function EvaluationDetailModal({
   collaboratorName,
   detail,

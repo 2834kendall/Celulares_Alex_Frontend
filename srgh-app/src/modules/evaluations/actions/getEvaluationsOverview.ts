@@ -91,10 +91,10 @@ function toDetail(row: EvaluationRow): EvaluationDetail {
   }
 }
 
-/**
- * Carga la planilla activa de la empresa junto con la ultima evaluacion de
- * desempeno de cada colaborador. Es la fuente de datos de las pestanas de
- * metricas, vista individual y nueva evaluacion.
+/*
+  Carga la planilla activa de la empresa junto con la ultima evaluacion de
+  desempeno de cada colaborador. Es la fuente de datos de las pestanas de
+  metricas, vista individual y nueva evaluacion.
  */
 export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewResult> {
   const claims = await requireAnyPermission(ACCESO_EVALUACIONES)

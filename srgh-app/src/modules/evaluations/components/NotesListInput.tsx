@@ -16,7 +16,7 @@ interface NotesListInputProps {
   onChange: (items: string[]) => void
 }
 
-/** Lista dinamica de puntos: se escribe uno y con "+" se agregan mas. */
+// Lista dinamica de puntos: se escribe uno y con "+" se agregan mas.
 export function NotesListInput({
   label,
   placeholder,

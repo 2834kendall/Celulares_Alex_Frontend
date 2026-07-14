@@ -34,7 +34,7 @@ interface EditNotesModalProps {
   onClose: () => void
 }
 
-/** Pop-up para completar las notas cualitativas de una evaluacion ya registrada. */
+// Pop-up para completar las notas cualitativas de una evaluacion ya registrada.
 export function EditNotesModal({ evaluationId, field, notes, onClose }: EditNotesModalProps) {
   const [items, setItems] = useState<string[]>(field === 'comentarios' ? [] : notes[field])
   const [comentarios, setComentarios] = useState(notes.comentarios)

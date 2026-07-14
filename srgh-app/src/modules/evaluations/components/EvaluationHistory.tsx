@@ -13,9 +13,9 @@ interface EvaluationHistoryProps {
   rubros: RubroRow[]
 }
 
-/**
- * Tendencia respecto a la evaluacion anterior (el historico viene ordenado
- * de la mas reciente a la mas antigua).
+/*
+  Tendencia respecto a la evaluacion anterior (el historico viene ordenado
+  de la mas reciente a la mas antigua).
  */
 function trendOf(history: EvaluationDetail[], index: number) {
   const current = history[index]?.promedio

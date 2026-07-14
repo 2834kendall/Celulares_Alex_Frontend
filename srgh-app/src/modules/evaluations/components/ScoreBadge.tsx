@@ -14,7 +14,7 @@ interface ScoreBadgeProps {
   score: number | null
 }
 
-/** Pastilla con el promedio 0-10 coloreada segun la escala cualitativa. */
+// Pastilla con el promedio 0-10 coloreada segun la escala cualitativa.
 export function ScoreBadge({ score }: ScoreBadgeProps) {
   if (score === null) {
     return (

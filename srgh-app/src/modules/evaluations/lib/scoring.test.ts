@@ -5,7 +5,7 @@ import {
   formatPeriod,
   initialsOf,
   parseNotes,
-  scoreBarColor,
+  scoreColor,
   serializeNotes,
 } from './scoring'
 
@@ -32,12 +32,15 @@ describe('classifyScore', () => {
   })
 })
 
-describe('scoreBarColor', () => {
-  it('colorea la barra segun la nota con una escala de un solo tono', () => {
-    expect(scoreBarColor(9.5)).toBe('bg-blue-600')
-    expect(scoreBarColor(8)).toBe('bg-blue-500')
-    expect(scoreBarColor(7)).toBe('bg-blue-300')
-    expect(scoreBarColor(5)).toBe('bg-rose-400')
+describe('scoreColor', () => {
+  it('colorea segun la nota con la escala tipo semaforo', () => {
+    expect(scoreColor(10)).toBe('#22c55e')
+    expect(scoreColor(9.5)).toBe('#16a34a')
+    expect(scoreColor(8)).toBe('#15803d')
+    expect(scoreColor(7)).toBe('#eab308')
+    expect(scoreColor(6.5)).toBe('#f97316')
+    expect(scoreColor(5)).toBe('#ef4444')
+    expect(scoreColor(2)).toBe('#dc2626')
   })
 })
 

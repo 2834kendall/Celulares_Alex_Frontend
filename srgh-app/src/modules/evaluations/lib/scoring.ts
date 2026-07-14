@@ -1,9 +1,7 @@
 import type { EvaluationNotes } from '@/modules/evaluations/types'
 
-/** Umbral bajo el cual un colaborador se considera de bajo rendimiento. */
 export const LOW_PERFORMANCE_THRESHOLD = 7
 
-/** Promedio simple redondeado a 1 decimal; null cuando no hay notas. */
 export function averageScore(scores: number[]): number | null {
   if (scores.length === 0) return null
   const sum = scores.reduce((acc, s) => acc + s, 0)
@@ -12,11 +10,9 @@ export function averageScore(scores: number[]): number | null {
 
 export interface Classification {
   label: string
-  /** Tonalidad tailwind usada por los badges del modulo. */
   tone: 'emerald' | 'blue' | 'amber' | 'orange' | 'rose'
 }
 
-/** Escala cualitativa mostrada junto al promedio (A-E). */
 export function classifyScore(promedio: number): Classification {
   if (promedio >= 9) return { label: 'Sobresaliente (A)', tone: 'emerald' }
   if (promedio >= 8) return { label: 'Muy Bueno (B)', tone: 'blue' }
@@ -25,25 +21,18 @@ export function classifyScore(promedio: number): Classification {
   return { label: 'Deficiente (E)', tone: 'rose' }
 }
 
-/**
- * Color de la barra segun la nota. Escala de un solo tono (mas azul = mejor
- * nota) para que las barras convivan sin chocar; solo el bajo rendimiento
- * rompe la paleta para llamar la atencion.
- */
-export function scoreBarColor(score: number): string {
-  if (score >= 9) return 'bg-blue-600'
-  if (score >= 8) return 'bg-blue-500'
-  if (score >= 7) return 'bg-blue-300'
-  return 'bg-rose-400'
+export function scoreColor(score: number): string {
+  if (score >= 10) return '#22c55e' // green-500
+  if (score >= 9) return '#16a34a' // green-600
+  if (score >= 8) return '#15803d' // green-700
+  if (score >= 7) return '#eab308' // yellow-500
+  if (score >= 6) return '#f97316' // orange-500
+  if (score >= 4) return '#ef4444' // red-500
+  return '#dc2626' // red-600
 }
 
 const EMPTY_NOTES: EvaluationNotes = { fortalezas: [], mejoras: [], comentarios: '' }
 
-/**
- * Las notas cualitativas (puntos fuertes, aspectos a mejorar y comentarios)
- * viajan juntas en eve_observaciones como JSON, porque la tabla solo ofrece
- * un campo de texto libre.
- */
 export function serializeNotes(notes: EvaluationNotes): string {
   return JSON.stringify({
     fortalezas: notes.fortalezas.map((f) => f.trim()).filter(Boolean),
@@ -52,7 +41,6 @@ export function serializeNotes(notes: EvaluationNotes): string {
   })
 }
 
-/** Contraparte de serializeNotes: texto plano legado se trata como comentario. */
 export function parseNotes(raw: string | null): EvaluationNotes {
   if (!raw) return EMPTY_NOTES
   try {
@@ -67,12 +55,10 @@ export function parseNotes(raw: string | null): EvaluationNotes {
   }
 }
 
-/** Rango del periodo evaluado como se guarda en eve_tipo_periodo. */
 export function formatPeriod(inicio: string, fin: string): string {
   return `${inicio} a ${fin}`
 }
 
-/** Iniciales para el avatar (max 2 letras). */
 export function initialsOf(fullName: string): string {
   return fullName
     .split(/\s+/)

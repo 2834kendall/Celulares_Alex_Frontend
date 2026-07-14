@@ -12,15 +12,15 @@ import {
   Star,
   UserRound,
 } from 'lucide-react'
-import type { BranchOption, CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
+import type { CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
 import { classifyScore, initialsOf } from '@/modules/evaluations/lib/scoring'
+import { CollaboratorSearchSelect } from './CollaboratorSearchSelect'
 import { EditNotesModal, type NotesField } from './EditNotesModal'
 import { EvaluationHistory } from './EvaluationHistory'
 import { ScoreBar } from './ScoreBar'
 
 interface IndividualViewProps {
   collaborators: CollaboratorRow[]
-  branches: BranchOption[]
   rubros: RubroRow[]
   canWrite: boolean
 }
@@ -51,7 +51,7 @@ function AddNoteButton({ label, onClick }: AddNoteButtonProps) {
   )
 }
 
-export function IndividualView({ collaborators, branches, rubros, canWrite }: IndividualViewProps) {
+export function IndividualView({ collaborators, rubros, canWrite }: IndividualViewProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -109,24 +109,11 @@ export function IndividualView({ collaborators, branches, rubros, canWrite }: In
         </div>
         <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
           Colaborador:
-          <select
-            value={selected.labId}
-            onChange={(e) => selectCollaborator(Number(e.target.value))}
-            className="max-w-[16rem] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10"
-          >
-            {branches.map((b) => (
-              <optgroup key={b.id} label={b.name}>
-                {collaborators
-                  .filter((c) => c.branchId === b.id)
-                  .map((c) => (
-                    <option key={c.labId} value={c.labId}>
-                      {c.fullName}
-                      {c.idNumber ? ` (${c.idNumber})` : ''}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-          </select>
+          <CollaboratorSearchSelect
+            collaborators={collaborators}
+            selectedLabId={selected.labId}
+            onSelect={selectCollaborator}
+          />
         </label>
       </div>
 

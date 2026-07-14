@@ -7,10 +7,10 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 
 export type DeleteRubroResult = { ok: true } | { ok: false; error: string }
 
-/**
- * Intenta el borrado definitivo del rubro (criterios + area). Si el rubro ya
- * tiene evaluaciones asociadas la FK lo impide, asi que se desactiva para que
- * deje de aparecer sin perder el historial.
+/*
+ Intenta el borrado definitivo del rubro (criterios + area). Si el rubro ya
+ tiene evaluaciones asociadas la FK lo impide, asi que se desactiva para que
+  deje de aparecer sin perder el historial.
  */
 export async function deleteRubro(areaId: number): Promise<DeleteRubroResult> {
   await requirePermission(PERMISOS.CATALOGOS_WRITE)

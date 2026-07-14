@@ -46,12 +46,7 @@ export default async function EvaluationsPage() {
           <BranchMetrics collaborators={collaborators} branches={branches} rubros={rubros} />
         }
         individualContent={
-          <IndividualView
-            collaborators={collaborators}
-            branches={branches}
-            rubros={rubros}
-            canWrite={canWrite}
-          />
+          <IndividualView collaborators={collaborators} rubros={rubros} canWrite={canWrite} />
         }
         rubrosContent={<RubrosManager rubros={rubros} canWrite={canWriteRubros} />}
         nuevaContent={<NewEvaluationSection collaborators={collaborators} rubros={rubros} />}

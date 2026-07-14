@@ -20,9 +20,9 @@ interface AreaRow {
 
 export type GetRubrosResult = { ok: true; data: RubroRow[] } | { ok: false; error: string }
 
-/**
- * Cada rubro es un area de evaluacion con su criterio activo asociado.
- * Solo se listan las areas activas; el criterio guarda la descripcion corta.
+/*
+  Cada rubro es un area de evaluacion con su criterio activo asociado.
+  Solo se listan las areas activas; el criterio guarda la descripcion corta.
  */
 export async function getRubros(): Promise<GetRubrosResult> {
   await requireAnyPermission(ACCESO_EVALUACIONES)

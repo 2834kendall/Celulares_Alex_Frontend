@@ -9,7 +9,7 @@ import { createRubro } from '@/modules/evaluations/actions/createRubro'
 import { updateRubro } from '@/modules/evaluations/actions/updateRubro'
 
 interface RubroFormProps {
-  /** Si se pasa un rubro existente, el formulario entra en modo edicion. */
+  // Si se pasa un rubro existente, el formulario entra en modo edicion.
   rubro?: RubroRow
   onSuccess?: () => void
 }

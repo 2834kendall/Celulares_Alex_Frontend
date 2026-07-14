@@ -9,9 +9,9 @@ import { evaluationNotesSchema, type EvaluationNotes } from '@/modules/evaluatio
 
 export type UpdateEvaluationNotesResult = { ok: true } | { ok: false; error: string }
 
-/**
- * Actualiza las notas cualitativas (puntos fuertes, aspectos a mejorar y
- * comentarios de liderazgo) de una evaluacion ya registrada.
+/*
+  Actualiza las notas cualitativas (puntos fuertes, aspectos a mejorar y
+  comentarios de liderazgo) de una evaluacion ya registrada.
  */
 export async function updateEvaluationNotes(
   evaluationId: number,

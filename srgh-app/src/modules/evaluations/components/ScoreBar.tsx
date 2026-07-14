@@ -1,6 +1,6 @@
 'use client'
 
-import { scoreBarColor } from '@/modules/evaluations/lib/scoring'
+import { scoreColor } from '@/modules/evaluations/lib/scoring'
 
 interface ScoreBarProps {
   label: string
@@ -8,7 +8,7 @@ interface ScoreBarProps {
   score: number | null
 }
 
-/** Fila nombre + barra de progreso 0-10 usada en el grafico comparativo y los criterios. */
+// Fila nombre + barra de progreso 0-10 usada en el grafico comparativo y los criterios.
 export function ScoreBar({ label, detail, score }: ScoreBarProps) {
   const hasScore = score !== null
   const width = hasScore ? Math.min(100, Math.max(0, (score / 10) * 100)) : 0
@@ -32,10 +32,13 @@ export function ScoreBar({ label, detail, score }: ScoreBarProps) {
         aria-valuenow={hasScore ? score : undefined}
         aria-label={label}
       >
-        {hasScore && (
+        {hasScore && width > 0 && (
           <div
-            className={`h-full rounded-full transition-all ${scoreBarColor(score)}`}
-            style={{ width: `${width}%` }}
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${width}%`,
+              backgroundColor: scoreColor(score),
+            }}
           />
         )}
       </div>

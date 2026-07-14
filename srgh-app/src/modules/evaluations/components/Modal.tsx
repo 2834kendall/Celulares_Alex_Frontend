@@ -10,7 +10,7 @@ interface ModalProps {
   children: React.ReactNode
 }
 
-/** Bloquea el scroll del fondo mientras el modal este montado. */
+// Bloquea el scroll del fondo mientras el modal este montado.
 export function useBodyScrollLock() {
   useEffect(() => {
     const previous = document.body.style.overflow
@@ -21,7 +21,7 @@ export function useBodyScrollLock() {
   }, [])
 }
 
-/** Ventana emergente de los indicadores del modulo (listas de colaboradores, detalles). */
+// Ventana emergente de los indicadores del modulo (listas de colaboradores, detalles).
 export function Modal({ title, subtitle, onClose, children }: ModalProps) {
   useBodyScrollLock()
 

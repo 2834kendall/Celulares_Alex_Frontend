@@ -5,14 +5,13 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { AlertTriangle, Loader2, Star } from 'lucide-react'
 import type { CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
 import { evaluationSchema, EVALUATION_TYPES } from '@/modules/evaluations/types'
-import { averageScore, classifyScore } from '@/modules/evaluations/lib/scoring'
+import { averageScore, classifyScore, scoreColor } from '@/modules/evaluations/lib/scoring'
 import { createEvaluation } from '@/modules/evaluations/actions/createEvaluation'
 import { NotesListInput } from './NotesListInput'
 
 interface EvaluationFormProps {
   collaborators: CollaboratorRow[]
   rubros: RubroRow[]
-  /** Colaborador preseleccionado (deep-link desde la vista individual). */
   initialLabId?: number
   onSuccess?: () => void
 }
@@ -48,7 +47,7 @@ export function EvaluationForm({
   const [periodoFin, setPeriodoFin] = useState('')
   const [scores, setScores] = useState<Record<number, ScoreEntry>>(() =>
     Object.fromEntries(
-      scorableRubros.map((r) => [r.criterioId!, { puntaje: 7, observacion: '', noAplica: false }])
+      scorableRubros.map((r) => [r.criterioId!, { puntaje: 8, observacion: '', noAplica: false }])
     )
   )
   const [fortalezas, setFortalezas] = useState<string[]>([])
@@ -230,7 +229,10 @@ export function EvaluationForm({
                   >
                     {r.nombre}
                   </label>
-                  <span className="shrink-0 text-xs font-bold tabular-nums text-slate-900">
+                  <span
+                    className="shrink-0 text-xs font-bold tabular-nums"
+                    style={{ color: entry.noAplica ? '#94a3b8' : scoreColor(entry.puntaje) }}
+                  >
                     {entry.noAplica ? 'N/A' : `${entry.puntaje}/10`}
                   </span>
                 </div>
@@ -243,7 +245,8 @@ export function EvaluationForm({
                   value={entry.puntaje}
                   disabled={isSubmitting || entry.noAplica}
                   onChange={(e) => patchScore(r.criterioId!, { puntaje: Number(e.target.value) })}
-                  className="mt-1 w-full accent-blue-600 disabled:opacity-40"
+                  className="mt-1 w-full disabled:opacity-40"
+                  style={{ accentColor: scoreColor(entry.puntaje) }}
                 />
                 <div className="mt-1.5 flex items-center gap-2">
                   <input
