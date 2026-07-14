@@ -882,11 +882,45 @@ export type Database = {
           },
         ]
       }
+      sgrh_empleado_datos_pago: {
+        Row: {
+          edp_banco: string | null
+          edp_created_at: string
+          edp_empleado_id: number
+          edp_id: number
+          edp_numero_cuenta: string | null
+          edp_tipo_cuenta: string | null
+        }
+        Insert: {
+          edp_banco?: string | null
+          edp_created_at?: string
+          edp_empleado_id: number
+          edp_id?: number
+          edp_numero_cuenta?: string | null
+          edp_tipo_cuenta?: string | null
+        }
+        Update: {
+          edp_banco?: string | null
+          edp_created_at?: string
+          edp_empleado_id?: number
+          edp_id?: number
+          edp_numero_cuenta?: string | null
+          edp_tipo_cuenta?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_empleado_datos_pago_edp_empleado_id_fkey"
+            columns: ["edp_empleado_id"]
+            isOneToOne: true
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+        ]
+      }
       sgrh_empleados: {
         Row: {
           emp_apellido_1: string
           emp_apellido_2: string | null
-          emp_banco: string | null
           emp_created_at: string
           emp_email_personal: string | null
           emp_fecha_ingreso_original: string
@@ -897,18 +931,15 @@ export type Database = {
           emp_nombre: string
           emp_nombre_contacto_emergencia: string | null
           emp_numero_asegurado_ccss: string | null
-          emp_numero_cuenta: string | null
           emp_numero_identificacion: string
           emp_rostro_hash: string | null
           emp_telefono: string | null
           emp_telefono_emergencia: string | null
-          emp_tipo_cuenta: string | null
           emp_tipo_identificacion_id: number
         }
         Insert: {
           emp_apellido_1: string
           emp_apellido_2?: string | null
-          emp_banco?: string | null
           emp_created_at?: string
           emp_email_personal?: string | null
           emp_fecha_ingreso_original: string
@@ -919,18 +950,15 @@ export type Database = {
           emp_nombre: string
           emp_nombre_contacto_emergencia?: string | null
           emp_numero_asegurado_ccss?: string | null
-          emp_numero_cuenta?: string | null
           emp_numero_identificacion: string
           emp_rostro_hash?: string | null
           emp_telefono?: string | null
           emp_telefono_emergencia?: string | null
-          emp_tipo_cuenta?: string | null
           emp_tipo_identificacion_id: number
         }
         Update: {
           emp_apellido_1?: string
           emp_apellido_2?: string | null
-          emp_banco?: string | null
           emp_created_at?: string
           emp_email_personal?: string | null
           emp_fecha_ingreso_original?: string
@@ -941,12 +969,10 @@ export type Database = {
           emp_nombre?: string
           emp_nombre_contacto_emergencia?: string | null
           emp_numero_asegurado_ccss?: string | null
-          emp_numero_cuenta?: string | null
           emp_numero_identificacion?: string
           emp_rostro_hash?: string | null
           emp_telefono?: string | null
           emp_telefono_emergencia?: string | null
-          emp_tipo_cuenta?: string | null
           emp_tipo_identificacion_id?: number
         }
         Relationships: [
@@ -1823,11 +1849,11 @@ export type Database = {
           prg_fecha: string
           prg_historial_laboral_id: number
           prg_hora_entrada_custom: string | null
-          prg_hora_salida_custom: string | null
-          prg_hora_inicio_almuerzo_custom: string | null
           prg_hora_fin_almuerzo_custom: string | null
-          prg_hora_inicio_break_custom: string | null
           prg_hora_fin_break_custom: string | null
+          prg_hora_inicio_almuerzo_custom: string | null
+          prg_hora_inicio_break_custom: string | null
+          prg_hora_salida_custom: string | null
           prg_horario_id: number | null
           prg_id: number
           prg_observaciones: string | null
@@ -1843,11 +1869,11 @@ export type Database = {
           prg_fecha: string
           prg_historial_laboral_id: number
           prg_hora_entrada_custom?: string | null
-          prg_hora_salida_custom?: string | null
-          prg_hora_inicio_almuerzo_custom?: string | null
           prg_hora_fin_almuerzo_custom?: string | null
-          prg_hora_inicio_break_custom?: string | null
           prg_hora_fin_break_custom?: string | null
+          prg_hora_inicio_almuerzo_custom?: string | null
+          prg_hora_inicio_break_custom?: string | null
+          prg_hora_salida_custom?: string | null
           prg_horario_id?: number | null
           prg_id?: number
           prg_observaciones?: string | null
@@ -1863,11 +1889,11 @@ export type Database = {
           prg_fecha?: string
           prg_historial_laboral_id?: number
           prg_hora_entrada_custom?: string | null
-          prg_hora_salida_custom?: string | null
-          prg_hora_inicio_almuerzo_custom?: string | null
           prg_hora_fin_almuerzo_custom?: string | null
-          prg_hora_inicio_break_custom?: string | null
           prg_hora_fin_break_custom?: string | null
+          prg_hora_inicio_almuerzo_custom?: string | null
+          prg_hora_inicio_break_custom?: string | null
+          prg_hora_salida_custom?: string | null
           prg_horario_id?: number | null
           prg_id?: number
           prg_observaciones?: string | null
@@ -2165,6 +2191,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      crear_empleado_completo: {
+        Args: { p_contratacion: Json; p_datos_pago?: Json; p_empleado: Json }
+        Returns: number
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       get_emp_id: { Args: never; Returns: number }
       get_empresa_id: { Args: never; Returns: number }
