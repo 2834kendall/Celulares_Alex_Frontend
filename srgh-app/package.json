@@ -15,7 +15,9 @@
     "prepare": "cd .. && husky srgh-app/.husky",
     "supabase:login": "supabase login",
     "supabase:link": "supabase link --project-ref opgdvnkbdledcyvpeifu",
-    "supabase:types": "supabase gen types typescript --project-id opgdvnkbdledcyvpeifu > src/types/database.types.ts"
+    "supabase:types": "supabase gen types typescript --project-id opgdvnkbdledcyvpeifu > src/types/database.types.ts",
+    "supabase:migrate:pull": "supabase db pull",
+    "supabase:migrate:push": "supabase db push"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -27,6 +29,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.80.0",
+    "server-only": "^0.0.1",
     "sonner": "^2.0.7",
     "zod": "^4.4.3"
   },
