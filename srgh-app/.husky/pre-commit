@@ -1,1 +1,1 @@
-cd srgh-app && pnpm lint-staged
+cd srgh-app && pnpm test && pnpm lint-staged
