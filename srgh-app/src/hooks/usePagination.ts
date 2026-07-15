@@ -18,7 +18,10 @@ export function usePagination<T>(items: T[], pageSize = 8) {
     page: safePage,
     totalPages,
     paginatedItems,
-    goToPreviousPage: () => setPage((p) => Math.max(1, p - 1)),
-    goToNextPage: () => setPage((p) => Math.min(totalPages, p + 1)),
+    // Navegar desde safePage (no desde el estado interno): si la lista se
+    // encogió por un filtro, el estado puede estar fuera de rango y el primer
+    // click quedaría muerto.
+    goToPreviousPage: () => setPage(Math.max(1, safePage - 1)),
+    goToNextPage: () => setPage(Math.min(totalPages, safePage + 1)),
   }
 }

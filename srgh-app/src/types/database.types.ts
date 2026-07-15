@@ -74,7 +74,7 @@ export type Database = {
           aus_fecha_fin: string
           aus_fecha_inicio: string
           aus_historial_laboral_id: number
-          aus_id?: number
+          aus_id?: never
           aus_motivo_rechazo?: string | null
           aus_numero_boleta_ccss?: string | null
           aus_observaciones?: string | null
@@ -94,7 +94,7 @@ export type Database = {
           aus_fecha_fin?: string
           aus_fecha_inicio?: string
           aus_historial_laboral_id?: number
-          aus_id?: number
+          aus_id?: never
           aus_motivo_rechazo?: string | null
           aus_numero_boleta_ccss?: string | null
           aus_observaciones?: string | null
@@ -148,7 +148,7 @@ export type Database = {
           ben_fecha_fin_estimada?: string | null
           ben_fecha_inicio: string
           ben_historial_laboral_id: number
-          ben_id?: number
+          ben_id?: never
           ben_monto_deducido?: number
           ben_monto_total: number
           ben_observaciones?: string | null
@@ -162,7 +162,7 @@ export type Database = {
           ben_fecha_fin_estimada?: string | null
           ben_fecha_inicio?: string
           ben_historial_laboral_id?: number
-          ben_id?: number
+          ben_id?: never
           ben_monto_deducido?: number
           ben_monto_total?: number
           ben_observaciones?: string | null
@@ -198,7 +198,7 @@ export type Database = {
           cdt_cv_url?: string | null
           cdt_email: string
           cdt_fuente_reclutamiento?: string | null
-          cdt_id?: number
+          cdt_id?: never
           cdt_nombre: string
           cdt_numero_identificacion?: string | null
           cdt_telefono?: string | null
@@ -211,7 +211,7 @@ export type Database = {
           cdt_cv_url?: string | null
           cdt_email?: string
           cdt_fuente_reclutamiento?: string | null
-          cdt_id?: number
+          cdt_id?: never
           cdt_nombre?: string
           cdt_numero_identificacion?: string | null
           cdt_telefono?: string | null
@@ -236,15 +236,36 @@ export type Database = {
         }
         Insert: {
           are_activo?: boolean
-          are_id?: number
+          are_id?: never
           are_nombre: string
           are_tipo_aplicacion?: string
         }
         Update: {
           are_activo?: boolean
-          are_id?: number
+          are_id?: never
           are_nombre?: string
           are_tipo_aplicacion?: string
+        }
+        Relationships: []
+      }
+      sgrh_cat_bancos: {
+        Row: {
+          ban_activo: boolean
+          ban_codigo: string | null
+          ban_id: number
+          ban_nombre: string
+        }
+        Insert: {
+          ban_activo?: boolean
+          ban_codigo?: string | null
+          ban_id?: number
+          ban_nombre: string
+        }
+        Update: {
+          ban_activo?: boolean
+          ban_codigo?: string | null
+          ban_id?: number
+          ban_nombre?: string
         }
         Relationships: []
       }
@@ -257,13 +278,13 @@ export type Database = {
         }
         Insert: {
           can_codigo: string
-          can_id?: number
+          can_id?: never
           can_nombre: string
           can_provincia_id: number
         }
         Update: {
           can_codigo?: string
-          can_id?: number
+          can_id?: never
           can_nombre?: string
           can_provincia_id?: number
         }
@@ -294,7 +315,7 @@ export type Database = {
           con_afecta_salario_bruto?: boolean
           con_codigo: string
           con_formula_base?: string | null
-          con_id?: number
+          con_id?: never
           con_nombre: string
           con_tipo: string
         }
@@ -304,7 +325,7 @@ export type Database = {
           con_afecta_salario_bruto?: boolean
           con_codigo?: string
           con_formula_base?: string | null
-          con_id?: number
+          con_id?: never
           con_nombre?: string
           con_tipo?: string
         }
@@ -321,13 +342,13 @@ export type Database = {
           cri_activo?: boolean
           cri_area_id: number
           cri_descripcion: string
-          cri_id?: number
+          cri_id?: never
         }
         Update: {
           cri_activo?: boolean
           cri_area_id?: number
           cri_descripcion?: string
-          cri_id?: number
+          cri_id?: never
         }
         Relationships: [
           {
@@ -349,13 +370,13 @@ export type Database = {
         Insert: {
           dis_canton_id: number
           dis_codigo: string
-          dis_id?: number
+          dis_id?: never
           dis_nombre: string
         }
         Update: {
           dis_canton_id?: number
           dis_codigo?: string
-          dis_id?: number
+          dis_id?: never
           dis_nombre?: string
         }
         Relationships: [
@@ -377,13 +398,13 @@ export type Database = {
         }
         Insert: {
           eta_activo?: boolean
-          eta_id?: number
+          eta_id?: never
           eta_nombre: string
           eta_orden: number
         }
         Update: {
           eta_activo?: boolean
-          eta_id?: number
+          eta_id?: never
           eta_nombre?: string
           eta_orden?: number
         }
@@ -403,7 +424,7 @@ export type Database = {
           fer_empresa_id?: number | null
           fer_es_pago_obligatorio?: boolean
           fer_fecha: string
-          fer_id?: number
+          fer_id?: never
           fer_nombre: string
         }
         Update: {
@@ -411,7 +432,7 @@ export type Database = {
           fer_empresa_id?: number | null
           fer_es_pago_obligatorio?: boolean
           fer_fecha?: string
-          fer_id?: number
+          fer_id?: never
           fer_nombre?: string
         }
         Relationships: [
@@ -451,7 +472,7 @@ export type Database = {
           hor_hora_inicio_almuerzo: string
           hor_hora_inicio_break?: string | null
           hor_hora_salida: string
-          hor_id?: number
+          hor_id?: never
           hor_nombre: string
           hor_tipo_jornada_id: number
         }
@@ -466,7 +487,7 @@ export type Database = {
           hor_hora_inicio_almuerzo?: string
           hor_hora_inicio_break?: string | null
           hor_hora_salida?: string
-          hor_id?: number
+          hor_id?: never
           hor_nombre?: string
           hor_tipo_jornada_id?: number
         }
@@ -500,7 +521,7 @@ export type Database = {
           mot_codigo: string
           mot_genera_cesantia?: boolean
           mot_genera_preaviso?: boolean
-          mot_id?: number
+          mot_id?: never
           mot_nombre: string
           mot_nota_legal?: string | null
         }
@@ -508,7 +529,7 @@ export type Database = {
           mot_codigo?: string
           mot_genera_cesantia?: boolean
           mot_genera_preaviso?: boolean
-          mot_id?: number
+          mot_id?: never
           mot_nombre?: string
           mot_nota_legal?: string | null
         }
@@ -527,7 +548,7 @@ export type Database = {
         Insert: {
           nvc_activo?: boolean
           nvc_empresa_id: number
-          nvc_id?: number
+          nvc_id?: never
           nvc_meta_maxima?: number | null
           nvc_meta_minima: number
           nvc_nombre_nivel: string
@@ -536,7 +557,7 @@ export type Database = {
         Update: {
           nvc_activo?: boolean
           nvc_empresa_id?: number
-          nvc_id?: number
+          nvc_id?: never
           nvc_meta_maxima?: number | null
           nvc_meta_minima?: number
           nvc_nombre_nivel?: string
@@ -563,14 +584,14 @@ export type Database = {
         Insert: {
           per_codigo: string
           per_descripcion?: string | null
-          per_id?: number
+          per_id?: never
           per_modulo: string
           per_nombre: string
         }
         Update: {
           per_codigo?: string
           per_descripcion?: string | null
-          per_id?: number
+          per_id?: never
           per_modulo?: string
           per_nombre?: string
         }
@@ -584,12 +605,12 @@ export type Database = {
         }
         Insert: {
           prv_codigo: string
-          prv_id?: number
+          prv_id?: never
           prv_nombre: string
         }
         Update: {
           prv_codigo?: string
-          prv_id?: number
+          prv_id?: never
           prv_nombre?: string
         }
         Relationships: []
@@ -607,7 +628,7 @@ export type Database = {
           pue_activo?: boolean
           pue_descripcion?: string | null
           pue_empresa_id: number
-          pue_id?: number
+          pue_id?: never
           pue_nombre: string
           pue_salario_minimo_referencia?: number | null
         }
@@ -615,7 +636,7 @@ export type Database = {
           pue_activo?: boolean
           pue_descripcion?: string | null
           pue_empresa_id?: number
-          pue_id?: number
+          pue_id?: never
           pue_nombre?: string
           pue_salario_minimo_referencia?: number | null
         }
@@ -641,14 +662,14 @@ export type Database = {
           rol_activo?: boolean
           rol_codigo: string
           rol_descripcion?: string | null
-          rol_id?: number
+          rol_id?: never
           rol_nombre: string
         }
         Update: {
           rol_activo?: boolean
           rol_codigo?: string
           rol_descripcion?: string | null
-          rol_id?: number
+          rol_id?: never
           rol_nombre?: string
         }
         Relationships: []
@@ -671,7 +692,7 @@ export type Database = {
           tau_codigo: string
           tau_descuenta_vacaciones?: boolean
           tau_es_protegida?: boolean
-          tau_id?: number
+          tau_id?: never
           tau_nombre: string
           tau_paga_ccss_desde_dia?: number | null
           tau_paga_empleador_dias?: number
@@ -684,7 +705,7 @@ export type Database = {
           tau_codigo?: string
           tau_descuenta_vacaciones?: boolean
           tau_es_protegida?: boolean
-          tau_id?: number
+          tau_id?: never
           tau_nombre?: string
           tau_paga_ccss_desde_dia?: number | null
           tau_paga_empleador_dias?: number
@@ -706,7 +727,7 @@ export type Database = {
         }
         Insert: {
           tco_codigo: string
-          tco_id?: number
+          tco_id?: never
           tco_nombre: string
           tco_nota_legal?: string | null
           tco_permite_cesantia?: boolean
@@ -714,7 +735,7 @@ export type Database = {
         }
         Update: {
           tco_codigo?: string
-          tco_id?: number
+          tco_id?: never
           tco_nombre?: string
           tco_nota_legal?: string | null
           tco_permite_cesantia?: boolean
@@ -732,13 +753,13 @@ export type Database = {
         Insert: {
           tid_activo?: boolean
           tid_codigo: string
-          tid_id?: number
+          tid_id?: never
           tid_nombre: string
         }
         Update: {
           tid_activo?: boolean
           tid_codigo?: string
-          tid_id?: number
+          tid_id?: never
           tid_nombre?: string
         }
         Relationships: []
@@ -756,7 +777,7 @@ export type Database = {
           tjo_codigo: string
           tjo_horas_max_diarias?: number | null
           tjo_horas_max_semanales?: number | null
-          tjo_id?: number
+          tjo_id?: never
           tjo_nombre: string
           tjo_recargo_porcentaje?: number
         }
@@ -764,7 +785,7 @@ export type Database = {
           tjo_codigo?: string
           tjo_horas_max_diarias?: number | null
           tjo_horas_max_semanales?: number | null
-          tjo_id?: number
+          tjo_id?: never
           tjo_nombre?: string
           tjo_recargo_porcentaje?: number
         }
@@ -787,7 +808,7 @@ export type Database = {
         Insert: {
           cal_created_at?: string
           cal_historial_laboral_id: number
-          cal_id?: number
+          cal_id?: never
           cal_monto_comision: number
           cal_nivel_comision_id?: number | null
           cal_nomina_detalle_id?: number | null
@@ -800,7 +821,7 @@ export type Database = {
         Update: {
           cal_created_at?: string
           cal_historial_laboral_id?: number
-          cal_id?: number
+          cal_id?: never
           cal_monto_comision?: number
           cal_nivel_comision_id?: number | null
           cal_nomina_detalle_id?: number | null
@@ -857,7 +878,7 @@ export type Database = {
           com_confirmado_por_empleado?: boolean
           com_fecha_confirmacion?: string | null
           com_fecha_emision?: string
-          com_id?: number
+          com_id?: never
           com_metodo_pago?: string | null
           com_nomina_detalle_id: number
           com_referencia_bancaria?: string | null
@@ -867,7 +888,7 @@ export type Database = {
           com_confirmado_por_empleado?: boolean
           com_fecha_confirmacion?: string | null
           com_fecha_emision?: string
-          com_id?: number
+          com_id?: never
           com_metodo_pago?: string | null
           com_nomina_detalle_id?: number
           com_referencia_bancaria?: string | null
@@ -882,11 +903,52 @@ export type Database = {
           },
         ]
       }
+      sgrh_empleado_datos_pago: {
+        Row: {
+          edp_banco_id: number | null
+          edp_created_at: string
+          edp_empleado_id: number
+          edp_id: number
+          edp_numero_cuenta: string | null
+          edp_tipo_cuenta: string | null
+        }
+        Insert: {
+          edp_banco_id?: number | null
+          edp_created_at?: string
+          edp_empleado_id: number
+          edp_id?: number
+          edp_numero_cuenta?: string | null
+          edp_tipo_cuenta?: string | null
+        }
+        Update: {
+          edp_banco_id?: number | null
+          edp_created_at?: string
+          edp_empleado_id?: number
+          edp_id?: number
+          edp_numero_cuenta?: string | null
+          edp_tipo_cuenta?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_empleado_datos_pago_edp_banco_id_fkey"
+            columns: ["edp_banco_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_bancos"
+            referencedColumns: ["ban_id"]
+          },
+          {
+            foreignKeyName: "sgrh_empleado_datos_pago_edp_empleado_id_fkey"
+            columns: ["edp_empleado_id"]
+            isOneToOne: true
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+        ]
+      }
       sgrh_empleados: {
         Row: {
           emp_apellido_1: string
           emp_apellido_2: string | null
-          emp_banco: string | null
           emp_created_at: string
           emp_email_personal: string | null
           emp_fecha_ingreso_original: string
@@ -897,56 +959,48 @@ export type Database = {
           emp_nombre: string
           emp_nombre_contacto_emergencia: string | null
           emp_numero_asegurado_ccss: string | null
-          emp_numero_cuenta: string | null
           emp_numero_identificacion: string
           emp_rostro_hash: string | null
           emp_telefono: string | null
           emp_telefono_emergencia: string | null
-          emp_tipo_cuenta: string | null
           emp_tipo_identificacion_id: number
         }
         Insert: {
           emp_apellido_1: string
           emp_apellido_2?: string | null
-          emp_banco?: string | null
           emp_created_at?: string
           emp_email_personal?: string | null
           emp_fecha_ingreso_original: string
           emp_fecha_nacimiento?: string | null
           emp_genero?: string | null
-          emp_id?: number
+          emp_id?: never
           emp_nacionalidad?: string
           emp_nombre: string
           emp_nombre_contacto_emergencia?: string | null
           emp_numero_asegurado_ccss?: string | null
-          emp_numero_cuenta?: string | null
           emp_numero_identificacion: string
           emp_rostro_hash?: string | null
           emp_telefono?: string | null
           emp_telefono_emergencia?: string | null
-          emp_tipo_cuenta?: string | null
           emp_tipo_identificacion_id: number
         }
         Update: {
           emp_apellido_1?: string
           emp_apellido_2?: string | null
-          emp_banco?: string | null
           emp_created_at?: string
           emp_email_personal?: string | null
           emp_fecha_ingreso_original?: string
           emp_fecha_nacimiento?: string | null
           emp_genero?: string | null
-          emp_id?: number
+          emp_id?: never
           emp_nacionalidad?: string
           emp_nombre?: string
           emp_nombre_contacto_emergencia?: string | null
           emp_numero_asegurado_ccss?: string | null
-          emp_numero_cuenta?: string | null
           emp_numero_identificacion?: string
           emp_rostro_hash?: string | null
           emp_telefono?: string | null
           emp_telefono_emergencia?: string | null
-          emp_tipo_cuenta?: string | null
           emp_tipo_identificacion_id?: number
         }
         Relationships: [
@@ -988,7 +1042,7 @@ export type Database = {
           org_direccion_exacta?: string | null
           org_distrito_id?: number | null
           org_email_corporativo?: string | null
-          org_id?: number
+          org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
           org_nombre_social: string
@@ -1006,7 +1060,7 @@ export type Database = {
           org_direccion_exacta?: string | null
           org_distrito_id?: number | null
           org_email_corporativo?: string | null
-          org_id?: number
+          org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
           org_nombre_social?: string
@@ -1036,7 +1090,7 @@ export type Database = {
         Insert: {
           evr_criterio_id: number
           evr_evaluacion_id: number
-          evr_id?: number
+          evr_id?: never
           evr_no_aplica?: boolean
           evr_observacion?: string | null
           evr_puntaje?: number | null
@@ -1044,7 +1098,7 @@ export type Database = {
         Update: {
           evr_criterio_id?: number
           evr_evaluacion_id?: number
-          evr_id?: number
+          evr_id?: never
           evr_no_aplica?: boolean
           evr_observacion?: string | null
           evr_puntaje?: number | null
@@ -1089,7 +1143,7 @@ export type Database = {
           eve_evaluador_id: number
           eve_fecha_evaluacion: string
           eve_historial_laboral_id?: number | null
-          eve_id?: number
+          eve_id?: never
           eve_observaciones?: string | null
           eve_promedio_final?: number | null
           eve_resultado_texto?: string | null
@@ -1104,7 +1158,7 @@ export type Database = {
           eve_evaluador_id?: number
           eve_fecha_evaluacion?: string
           eve_historial_laboral_id?: number | null
-          eve_id?: number
+          eve_id?: never
           eve_observaciones?: string | null
           eve_promedio_final?: number | null
           eve_resultado_texto?: string | null
@@ -1167,7 +1221,7 @@ export type Database = {
           lab_empresa_id: number
           lab_fecha_fin?: string | null
           lab_fecha_inicio: string
-          lab_id?: number
+          lab_id?: never
           lab_motivo_salida_id?: number | null
           lab_observaciones_salida?: string | null
           lab_puesto_id: number
@@ -1184,7 +1238,7 @@ export type Database = {
           lab_empresa_id?: number
           lab_fecha_fin?: string | null
           lab_fecha_inicio?: string
-          lab_id?: number
+          lab_id?: never
           lab_motivo_salida_id?: number | null
           lab_observaciones_salida?: string | null
           lab_puesto_id?: number
@@ -1269,7 +1323,7 @@ export type Database = {
           mar_distancia_geocerca_metros?: number | null
           mar_fecha_hora: string
           mar_historial_laboral_id: number
-          mar_id?: number
+          mar_id?: never
           mar_latitud_marcada?: number | null
           mar_longitud_marcada?: number | null
           mar_metodo_verificacion: string
@@ -1284,7 +1338,7 @@ export type Database = {
           mar_distancia_geocerca_metros?: number | null
           mar_fecha_hora?: string
           mar_historial_laboral_id?: number
-          mar_id?: number
+          mar_id?: never
           mar_latitud_marcada?: number | null
           mar_longitud_marcada?: number | null
           mar_metodo_verificacion?: string
@@ -1352,7 +1406,7 @@ export type Database = {
           ndt_horas_ordinarias_diurnas?: number
           ndt_horas_ordinarias_mixtas?: number
           ndt_horas_ordinarias_nocturnas?: number
-          ndt_id?: number
+          ndt_id?: never
           ndt_nomina_periodo_id: number
           ndt_pagado?: boolean
           ndt_salario_bruto?: number
@@ -1373,7 +1427,7 @@ export type Database = {
           ndt_horas_ordinarias_diurnas?: number
           ndt_horas_ordinarias_mixtas?: number
           ndt_horas_ordinarias_nocturnas?: number
-          ndt_id?: number
+          ndt_id?: never
           ndt_nomina_periodo_id?: number
           ndt_pagado?: boolean
           ndt_salario_bruto?: number
@@ -1415,7 +1469,7 @@ export type Database = {
           ded_beneficio_id?: number | null
           ded_concepto_id: number
           ded_es_voluntaria?: boolean
-          ded_id?: number
+          ded_id?: never
           ded_monto: number
           ded_nomina_detalle_id: number
           ded_observacion?: string | null
@@ -1426,7 +1480,7 @@ export type Database = {
           ded_beneficio_id?: number | null
           ded_concepto_id?: number
           ded_es_voluntaria?: boolean
-          ded_id?: number
+          ded_id?: never
           ded_monto?: number
           ded_nomina_detalle_id?: number
           ded_observacion?: string | null
@@ -1469,7 +1523,7 @@ export type Database = {
         Insert: {
           ing_cantidad?: number | null
           ing_concepto_id: number
-          ing_id?: number
+          ing_id?: never
           ing_monto: number
           ing_nomina_detalle_id: number
           ing_observacion?: string | null
@@ -1478,7 +1532,7 @@ export type Database = {
         Update: {
           ing_cantidad?: number | null
           ing_concepto_id?: number
-          ing_id?: number
+          ing_id?: never
           ing_monto?: number
           ing_nomina_detalle_id?: number
           ing_observacion?: string | null
@@ -1513,7 +1567,7 @@ export type Database = {
         Insert: {
           pat_base_calculo?: number | null
           pat_concepto_id: number
-          pat_id?: number
+          pat_id?: never
           pat_monto: number
           pat_nomina_detalle_id: number
           pat_porcentaje_aplicado?: number | null
@@ -1521,7 +1575,7 @@ export type Database = {
         Update: {
           pat_base_calculo?: number | null
           pat_concepto_id?: number
-          pat_id?: number
+          pat_id?: never
           pat_monto?: number
           pat_nomina_detalle_id?: number
           pat_porcentaje_aplicado?: number | null
@@ -1569,7 +1623,7 @@ export type Database = {
           npe_fecha_fin_periodo?: string | null
           npe_fecha_inicio_periodo?: string | null
           npe_fecha_pago?: string | null
-          npe_id?: number
+          npe_id?: never
           npe_observaciones?: string | null
           npe_periodo_anio: number
           npe_periodo_mes: number
@@ -1585,7 +1639,7 @@ export type Database = {
           npe_fecha_fin_periodo?: string | null
           npe_fecha_inicio_periodo?: string | null
           npe_fecha_pago?: string | null
-          npe_id?: number
+          npe_id?: never
           npe_observaciones?: string | null
           npe_periodo_anio?: number
           npe_periodo_mes?: number
@@ -1642,7 +1696,7 @@ export type Database = {
           ntf_estado?: string
           ntf_fecha_envio?: string | null
           ntf_fecha_lectura?: string | null
-          ntf_id?: number
+          ntf_id?: never
           ntf_intentos?: number
           ntf_leida?: boolean
           ntf_mensaje: string
@@ -1659,7 +1713,7 @@ export type Database = {
           ntf_estado?: string
           ntf_fecha_envio?: string | null
           ntf_fecha_lectura?: string | null
-          ntf_id?: number
+          ntf_id?: never
           ntf_intentos?: number
           ntf_leida?: boolean
           ntf_mensaje?: string
@@ -1707,7 +1761,7 @@ export type Database = {
           pet_created_at?: string
           pet_etapa_id: number
           pet_fecha: string
-          pet_id?: number
+          pet_id?: never
           pet_notas?: string | null
           pet_postulacion_id: number
           pet_responsable_id?: number | null
@@ -1717,7 +1771,7 @@ export type Database = {
           pet_created_at?: string
           pet_etapa_id?: number
           pet_fecha?: string
-          pet_id?: number
+          pet_id?: never
           pet_notas?: string | null
           pet_postulacion_id?: number
           pet_responsable_id?: number | null
@@ -1765,7 +1819,7 @@ export type Database = {
           pos_empresa_id: number
           pos_estado_final?: string
           pos_fecha_postula?: string
-          pos_id?: number
+          pos_id?: never
           pos_observaciones?: string | null
           pos_puesto_id: number
           pos_sucursal_id?: number | null
@@ -1776,7 +1830,7 @@ export type Database = {
           pos_empresa_id?: number
           pos_estado_final?: string
           pos_fecha_postula?: string
-          pos_id?: number
+          pos_id?: never
           pos_observaciones?: string | null
           pos_puesto_id?: number
           pos_sucursal_id?: number | null
@@ -1823,11 +1877,11 @@ export type Database = {
           prg_fecha: string
           prg_historial_laboral_id: number
           prg_hora_entrada_custom: string | null
-          prg_hora_salida_custom: string | null
-          prg_hora_inicio_almuerzo_custom: string | null
           prg_hora_fin_almuerzo_custom: string | null
-          prg_hora_inicio_break_custom: string | null
           prg_hora_fin_break_custom: string | null
+          prg_hora_inicio_almuerzo_custom: string | null
+          prg_hora_inicio_break_custom: string | null
+          prg_hora_salida_custom: string | null
           prg_horario_id: number | null
           prg_id: number
           prg_observaciones: string | null
@@ -1843,13 +1897,13 @@ export type Database = {
           prg_fecha: string
           prg_historial_laboral_id: number
           prg_hora_entrada_custom?: string | null
-          prg_hora_salida_custom?: string | null
-          prg_hora_inicio_almuerzo_custom?: string | null
           prg_hora_fin_almuerzo_custom?: string | null
-          prg_hora_inicio_break_custom?: string | null
           prg_hora_fin_break_custom?: string | null
+          prg_hora_inicio_almuerzo_custom?: string | null
+          prg_hora_inicio_break_custom?: string | null
+          prg_hora_salida_custom?: string | null
           prg_horario_id?: number | null
-          prg_id?: number
+          prg_id?: never
           prg_observaciones?: string | null
           prg_sucursal_id: number
         }
@@ -1863,13 +1917,13 @@ export type Database = {
           prg_fecha?: string
           prg_historial_laboral_id?: number
           prg_hora_entrada_custom?: string | null
-          prg_hora_salida_custom?: string | null
-          prg_hora_inicio_almuerzo_custom?: string | null
           prg_hora_fin_almuerzo_custom?: string | null
-          prg_hora_inicio_break_custom?: string | null
           prg_hora_fin_break_custom?: string | null
+          prg_hora_inicio_almuerzo_custom?: string | null
+          prg_hora_inicio_break_custom?: string | null
+          prg_hora_salida_custom?: string | null
           prg_horario_id?: number | null
-          prg_id?: number
+          prg_id?: never
           prg_observaciones?: string | null
           prg_sucursal_id?: number
         }
@@ -1935,7 +1989,7 @@ export type Database = {
           pra_dias_vacaciones_usados?: number
           pra_fecha_pago_aguinaldo?: string | null
           pra_historial_laboral_id: number
-          pra_id?: number
+          pra_id?: never
           pra_monto_acumulado_aguinaldo?: number
           pra_monto_acumulado_cesantia?: number
           pra_updated_at?: string
@@ -1949,7 +2003,7 @@ export type Database = {
           pra_dias_vacaciones_usados?: number
           pra_fecha_pago_aguinaldo?: string | null
           pra_historial_laboral_id?: number
-          pra_id?: number
+          pra_id?: never
           pra_monto_acumulado_aguinaldo?: number
           pra_monto_acumulado_cesantia?: number
           pra_updated_at?: string
@@ -1971,12 +2025,12 @@ export type Database = {
           rpe_rol_id: number
         }
         Insert: {
-          rpe_id?: number
+          rpe_id?: never
           rpe_permiso_id: number
           rpe_rol_id: number
         }
         Update: {
-          rpe_id?: number
+          rpe_id?: never
           rpe_permiso_id?: number
           rpe_rol_id?: number
         }
@@ -2021,7 +2075,7 @@ export type Database = {
           suc_distrito_id?: number | null
           suc_email_sucursal?: string | null
           suc_empresa_id: number
-          suc_id?: number
+          suc_id?: never
           suc_latitud?: number | null
           suc_longitud?: number | null
           suc_nombre: string
@@ -2036,7 +2090,7 @@ export type Database = {
           suc_distrito_id?: number | null
           suc_email_sucursal?: string | null
           suc_empresa_id?: number
-          suc_id?: number
+          suc_id?: never
           suc_latitud?: number | null
           suc_longitud?: number | null
           suc_nombre?: string
@@ -2077,7 +2131,7 @@ export type Database = {
           usr_created_at?: string
           usr_email: string
           usr_empleado_id?: number | null
-          usr_id?: number
+          usr_id?: never
           usr_password_hash: string
           usr_ultimo_acceso?: string | null
         }
@@ -2087,7 +2141,7 @@ export type Database = {
           usr_created_at?: string
           usr_email?: string
           usr_empleado_id?: number | null
-          usr_id?: number
+          usr_id?: never
           usr_password_hash?: string
           usr_ultimo_acceso?: string | null
         }
@@ -2115,7 +2169,7 @@ export type Database = {
           uer_activo?: boolean
           uer_created_at?: string
           uer_empresa_id: number
-          uer_id?: number
+          uer_id?: never
           uer_rol_id: number
           uer_sucursal_id?: number | null
           uer_usuario_id: number
@@ -2124,7 +2178,7 @@ export type Database = {
           uer_activo?: boolean
           uer_created_at?: string
           uer_empresa_id?: number
-          uer_id?: number
+          uer_id?: never
           uer_rol_id?: number
           uer_sucursal_id?: number | null
           uer_usuario_id?: number
@@ -2165,6 +2219,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      crear_empleado_completo: {
+        Args: { p_contratacion: Json; p_datos_pago?: Json; p_empleado: Json }
+        Returns: number
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       get_emp_id: { Args: never; Returns: number }
       get_empresa_id: { Args: never; Returns: number }

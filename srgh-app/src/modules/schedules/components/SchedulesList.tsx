@@ -17,9 +17,9 @@ import type { ScheduleRow } from '@/modules/schedules/types'
 import { deleteSchedule } from '@/modules/schedules/actions/deleteSchedule'
 import { stripSeconds } from '@/modules/schedules/lib/time'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
-import { usePagination } from '@/modules/schedules/hooks/usePagination'
-import { ConfirmDialog } from './ConfirmDialog'
+import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
+import { ConfirmDialog } from './ConfirmDialog'
 import { ScheduleForm } from './ScheduleForm'
 
 interface ShiftTypeOption {

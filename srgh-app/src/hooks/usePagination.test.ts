@@ -58,6 +58,26 @@ describe('usePagination', () => {
     expect(result.current.page).toBe(1)
   })
 
+  it('el primer click de goToPreviousPage responde aunque el estado interno quedara fuera de rango', () => {
+    let items = Array.from({ length: 32 }, (_, i) => i)
+    const { result, rerender } = renderHook(({ items }) => usePagination(items, 8), {
+      initialProps: { items },
+    })
+
+    act(() => result.current.goToNextPage())
+    act(() => result.current.goToNextPage())
+    act(() => result.current.goToNextPage())
+    expect(result.current.page).toBe(4)
+
+    // La lista se encoge a 3 paginas: el estado interno (4) queda fuera de rango.
+    items = items.slice(0, 24)
+    rerender({ items })
+    expect(result.current.page).toBe(3)
+
+    act(() => result.current.goToPreviousPage())
+    expect(result.current.page).toBe(2)
+  })
+
   it('se ajusta automaticamente cuando la lista se reduce y la pagina actual queda fuera de rango', () => {
     let items = Array.from({ length: 20 }, (_, i) => i)
     const { result, rerender } = renderHook(({ items }) => usePagination(items, 8), {

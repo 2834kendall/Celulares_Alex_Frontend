@@ -1,0 +1,5 @@
+# Normalización de fines de línea: los archivos de texto se guardan con LF
+# en el repositorio sin importar el sistema operativo. Evita el ruido
+# LF/CRLF en Windows (archivos "modificados" sin cambios reales) cuando
+# herramientas como Prettier reescriben a disco.
+* text=auto
