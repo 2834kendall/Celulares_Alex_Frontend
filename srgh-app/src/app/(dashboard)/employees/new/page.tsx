@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft } from 'lucide-react'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
+  getBancos,
   getPuestos,
   getRoles,
   getSucursales,
@@ -32,6 +33,7 @@ export default async function NewEmployeePage() {
     sucursalesResult,
     tiposContratoResult,
     tiposJornadaResult,
+    bancosResult,
     rolesResult,
   ] = await Promise.all([
     getTiposIdentificacion(),
@@ -39,6 +41,7 @@ export default async function NewEmployeePage() {
     getSucursales(),
     getTiposContrato(),
     getTiposJornada(),
+    getBancos(),
     canInviteUser ? getRoles() : Promise.resolve(null),
   ])
 
@@ -48,6 +51,7 @@ export default async function NewEmployeePage() {
     sucursalesResult,
     tiposContratoResult,
     tiposJornadaResult,
+    bancosResult,
   ]
   const failed = results.find((result) => !result.ok)
   if (failed && !failed.ok) {
@@ -82,6 +86,7 @@ export default async function NewEmployeePage() {
         sucursales={sucursalesResult.ok ? sucursalesResult.data : []}
         tiposContrato={tiposContratoResult.ok ? tiposContratoResult.data : []}
         tiposJornada={tiposJornadaResult.ok ? tiposJornadaResult.data : []}
+        bancos={bancosResult.ok ? bancosResult.data : []}
         roles={rolesResult?.ok ? rolesResult.data : []}
         canInviteUser={canInviteUser}
       />

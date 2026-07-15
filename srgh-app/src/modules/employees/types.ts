@@ -14,6 +14,7 @@
 
 import { z } from 'zod'
 import type { Database } from '@/types/database.types'
+import { IBAN_CR_REGEX, isValidIbanChecksum, normalizeIban } from '@/modules/employees/lib/iban'
 
 // ─── Aliases de tipos Supabase ────────────────────────────────────────────────
 
@@ -124,13 +125,70 @@ export type EditarEmpleadoInput = z.infer<typeof editarEmpleadoSchema>
 // Viven en sgrh_empleado_datos_pago (tabla propia con RLS más estricta que la
 // ficha: NOMINA_READ / EMPLEADOS_WRITE / el propio empleado). Todos opcionales.
 
-export const datosPagoSchema = z.object({
-  edp_banco: emptyToNull(z.string().max(80, 'Máximo 80 caracteres').nullable().optional()),
+export const datosPagoSchema = z
+  .object({
+    // El select emite NaN (valueAsNumber) cuando está en "Sin especificar".
+    edp_banco_id: z.preprocess(
+      (value) =>
+        value === '' || (typeof value === 'number' && Number.isNaN(value)) ? null : value,
+      z.number().int().positive('Seleccione un banco válido').nullable().optional()
+    ),
 
-  edp_tipo_cuenta: emptyToNull(z.enum(['CORRIENTE', 'AHORRO', 'SINPE']).nullable().optional()),
+    edp_tipo_cuenta: emptyToNull(z.enum(['CORRIENTE', 'AHORRO', 'SINPE']).nullable().optional()),
 
-  edp_numero_cuenta: emptyToNull(z.string().max(30, 'Máximo 30 caracteres').nullable().optional()),
-}) satisfies z.ZodType<Omit<DatosPagoInsert, 'edp_id' | 'edp_empleado_id' | 'edp_created_at'>>
+    // Se normaliza ANTES de validar (mayúsculas, sin espacios/guiones); la
+    // coherencia según el tipo de cuenta se valida en el superRefine.
+    edp_numero_cuenta: z.preprocess((value) => {
+      if (typeof value !== 'string') return value
+      const normalized = normalizeIban(value)
+      return normalized === '' ? null : normalized
+    }, z.string().max(30, 'Máximo 30 caracteres').nullable().optional()),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.edp_numero_cuenta) return
+
+    // Una cuenta sin banco no es interpretable: el banco define la entidad
+    // del IBAN. La UI deshabilita el campo hasta elegir banco; esto cubre
+    // cualquier otro camino de entrada.
+    if (data.edp_banco_id === null || data.edp_banco_id === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edp_banco_id'],
+        message: 'Selecciona el banco de la cuenta',
+      })
+    }
+
+    // SINPE Móvil usa el teléfono como número de destino, no un IBAN.
+    if (data.edp_tipo_cuenta === 'SINPE') {
+      if (!/^\d{8}$/.test(data.edp_numero_cuenta)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['edp_numero_cuenta'],
+          message: 'Para SINPE Móvil ingresa el teléfono de 8 dígitos',
+        })
+      }
+      return
+    }
+
+    if (!IBAN_CR_REGEX.test(data.edp_numero_cuenta)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edp_numero_cuenta'],
+        message: 'El IBAN debe iniciar con CR y tener 22 caracteres (CR + 20 dígitos)',
+      })
+      return
+    }
+
+    if (!isValidIbanChecksum(data.edp_numero_cuenta)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edp_numero_cuenta'],
+        message: 'El IBAN no es válido (dígitos verificadores incorrectos)',
+      })
+    }
+    // Que el IBAN pertenezca al banco elegido se verifica en el servidor
+    // (updateEmployee y la RPC), que es quien conoce sgrh_cat_bancos.ban_codigo.
+  }) satisfies z.ZodType<Omit<DatosPagoInsert, 'edp_id' | 'edp_empleado_id' | 'edp_created_at'>>
 
 export type DatosPagoInput = z.infer<typeof datosPagoSchema>
 
@@ -278,5 +336,9 @@ export type EmpleadoDetalle = EmpleadoRow & {
     | null
   // null cuando el empleado no tiene datos de pago registrados O cuando el rol
   // del usuario no alcanza para verlos (la RLS de la tabla oculta las filas).
-  datos_pago: Pick<DatosPagoRow, 'edp_banco' | 'edp_tipo_cuenta' | 'edp_numero_cuenta'> | null
+  datos_pago:
+    | (Pick<DatosPagoRow, 'edp_banco_id' | 'edp_tipo_cuenta' | 'edp_numero_cuenta'> & {
+        banco_nombre: string | null
+      })
+    | null
 }

@@ -11,11 +11,13 @@ import {
   GENERO_LABELS,
   TIPO_CUENTA_LABELS,
 } from '@/modules/employees/lib/format'
+import { formatIbanGroups } from '@/modules/employees/lib/iban'
 import { EmployeeForm } from './EmployeeForm'
 
 interface EmployeeDetailProps {
   empleado: EmpleadoDetalle
   tiposIdentificacion: CatalogoItem[]
+  bancos: CatalogoItem[]
   canWrite: boolean
 }
 
@@ -37,7 +39,12 @@ function SectionCard({ title, children }: { title: string; children: React.React
   )
 }
 
-export function EmployeeDetail({ empleado, tiposIdentificacion, canWrite }: EmployeeDetailProps) {
+export function EmployeeDetail({
+  empleado,
+  tiposIdentificacion,
+  bancos,
+  canWrite,
+}: EmployeeDetailProps) {
   const [editing, setEditing] = useState(false)
 
   const historial = empleado.historial_activo
@@ -83,6 +90,7 @@ export function EmployeeDetail({ empleado, tiposIdentificacion, canWrite }: Empl
           <EmployeeForm
             empleado={empleado}
             tiposIdentificacion={tiposIdentificacion}
+            bancos={bancos}
             onSuccess={() => setEditing(false)}
             onCancel={() => setEditing(false)}
           />
@@ -135,7 +143,7 @@ export function EmployeeDetail({ empleado, tiposIdentificacion, canWrite }: Empl
             {/* datos_pago llega null si no hay registro o si la RLS lo oculta
                 para el rol actual (requiere NOMINA_READ o EMPLEADOS_WRITE). */}
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <InfoItem label="Banco" value={empleado.datos_pago?.edp_banco ?? '—'} />
+              <InfoItem label="Banco" value={empleado.datos_pago?.banco_nombre ?? '—'} />
               <InfoItem
                 label="Tipo de cuenta"
                 value={
@@ -147,7 +155,11 @@ export function EmployeeDetail({ empleado, tiposIdentificacion, canWrite }: Empl
               />
               <InfoItem
                 label="Número de cuenta"
-                value={empleado.datos_pago?.edp_numero_cuenta ?? '—'}
+                value={
+                  empleado.datos_pago?.edp_numero_cuenta
+                    ? formatIbanGroups(empleado.datos_pago.edp_numero_cuenta)
+                    : '—'
+                }
               />
             </dl>
           </SectionCard>

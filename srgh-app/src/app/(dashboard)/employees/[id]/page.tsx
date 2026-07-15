@@ -3,7 +3,7 @@ import { AlertTriangle } from 'lucide-react'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getEmployeeDetail } from '@/modules/employees/actions/getEmployeeDetail'
-import { getTiposIdentificacion } from '@/modules/employees/actions/getCatalogs'
+import { getBancos, getTiposIdentificacion } from '@/modules/employees/actions/getCatalogs'
 import { EmployeeDetail } from '@/modules/employees/components/EmployeeDetail'
 
 function ErrorBanner({ message }: { message: string }) {
@@ -31,9 +31,10 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canWrite = permisos.includes(PERMISOS.EMPLEADOS_WRITE)
 
-  const [detailResult, tiposIdentificacionResult] = await Promise.all([
+  const [detailResult, tiposIdentificacionResult, bancosResult] = await Promise.all([
     getEmployeeDetail(empId),
     getTiposIdentificacion(),
+    getBancos(),
   ])
 
   if (!detailResult.ok) {
@@ -47,10 +48,15 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
     return <ErrorBanner message={tiposIdentificacionResult.error} />
   }
 
+  if (!bancosResult.ok) {
+    return <ErrorBanner message={bancosResult.error} />
+  }
+
   return (
     <EmployeeDetail
       empleado={detailResult.data}
       tiposIdentificacion={tiposIdentificacionResult.data}
+      bancos={bancosResult.data}
       canWrite={canWrite}
     />
   )

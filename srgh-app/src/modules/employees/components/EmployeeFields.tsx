@@ -1,9 +1,10 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useFormContext, type FieldErrors } from 'react-hook-form'
+import { useController, useFormContext, type FieldErrors } from 'react-hook-form'
 import type { CatalogoItem } from '@/modules/employees/types'
 import { GENERO_LABELS, TIPO_CUENTA_LABELS } from '@/modules/employees/lib/format'
+import { formatIbanGroups, IBAN_CR_LENGTH, normalizeIban } from '@/modules/employees/lib/iban'
 
 export const INPUT_CLASSES =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
@@ -50,6 +51,113 @@ export function Labeled({ label, error, children }: LabeledProps) {
         </p>
       )}
     </div>
+  )
+}
+
+// Formato de miles según la misma locale de formatCRC (es-CR), sin símbolo de
+// moneda: el ₡ ya va en la etiqueta del campo.
+const MILES_FORMAT = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 0 })
+
+interface MaskedInputProps {
+  name: string
+  invalid?: boolean
+}
+
+/**
+ * Monto en colones: guarda un number en el form y muestra separadores de
+ * miles mientras se digita ('500000' → '500 000'). El vacío emite NaN para
+ * replicar valueAsNumber y disparar el mensaje de "obligatorio" del schema.
+ */
+export function CurrencyInput({ name, invalid }: MaskedInputProps) {
+  const { control } = useFormContext()
+  // Se desestructura de una vez: `field` contiene una propiedad `ref` y la
+  // regla react-hooks/refs lo confunde con un ref de React (falso positivo).
+  const {
+    field: { value, onChange, onBlur, name: inputName, ref },
+  } = useController({ name, control })
+
+  const display =
+    typeof value === 'number' && !Number.isNaN(value) ? MILES_FORMAT.format(value) : ''
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={display}
+      onChange={(event) => {
+        const digits = event.target.value.replace(/\D/g, '')
+        onChange(digits === '' ? NaN : Number(digits))
+      }}
+      onBlur={onBlur}
+      name={inputName}
+      ref={ref}
+      placeholder="0"
+      aria-invalid={invalid}
+      className={INPUT_CLASSES}
+    />
+  )
+}
+
+interface IbanInputProps extends MaskedInputProps {
+  disabled?: boolean
+  /** 'iban' antepone CR automáticamente; 'sinpe' acepta solo el teléfono de 8 dígitos. */
+  mode?: 'iban' | 'sinpe'
+}
+
+/**
+ * Número de cuenta: en el form vive normalizado (mayúsculas, sin espacios,
+ * máx. 22 caracteres) y en pantalla se muestra agrupado de 4 en 4 para poder
+ * leerlo/llenarlo sin perderse. En modo IBAN el prefijo CR se antepone solo:
+ * el usuario digita únicamente los dígitos (pegar un IBAN completo también
+ * funciona). Queda deshabilitado hasta que se elija el banco.
+ */
+export function IbanInput({ name, invalid, disabled, mode = 'iban' }: IbanInputProps) {
+  const { control } = useFormContext()
+  const {
+    field: { value, onChange, onBlur, name: inputName, ref },
+  } = useController({ name, control })
+
+  const raw = typeof value === 'string' ? value : ''
+
+  function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const normalized = normalizeIban(event.target.value)
+
+    if (mode === 'sinpe') {
+      onChange(normalized.replace(/\D/g, '').slice(0, 8))
+      return
+    }
+
+    // Digitar solo números antepone CR; borrar hasta dejar solo el prefijo
+    // vacía el campo (para que el opcional vuelva a ser null).
+    const withPrefix = normalized.startsWith('CR')
+      ? normalized
+      : `CR${normalized.replace(/\D/g, '')}`
+    const capped = withPrefix.slice(0, IBAN_CR_LENGTH)
+    onChange(capped === 'CR' ? '' : capped)
+  }
+
+  const placeholder = disabled
+    ? 'Selecciona el banco primero'
+    : mode === 'sinpe'
+      ? '0000 0000'
+      : 'CR00 0000 0000 0000 0000 00'
+
+  return (
+    <input
+      type="text"
+      inputMode={mode === 'sinpe' ? 'numeric' : 'text'}
+      autoComplete="off"
+      spellCheck={false}
+      disabled={disabled}
+      value={formatIbanGroups(raw)}
+      onChange={handleChange}
+      onBlur={onBlur}
+      name={inputName}
+      ref={ref}
+      placeholder={placeholder}
+      aria-invalid={invalid}
+      className={INPUT_CLASSES}
+    />
   )
 }
 
@@ -211,28 +319,45 @@ export function PersonalDataFields({
   )
 }
 
+interface BankingFieldsProps extends FieldGroupProps {
+  bancos: CatalogoItem[]
+}
+
 /**
  * Datos de pago (tabla sgrh_empleado_datos_pago). El basePath típico es
  * 'datos_pago.'; el nº de asegurado CCSS NO va aquí — es un identificador de
  * la persona y vive en la ficha (PersonalDataFields).
  */
-export function BankingFields({ basePath = '' }: FieldGroupProps) {
+export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
   const {
     register,
+    watch,
     formState: { errors },
   } = useFormContext()
 
   const err = (name: string) => getFieldError(errors, basePath + name)
 
+  // El número de cuenta depende del banco (define la entidad del IBAN) y del
+  // tipo (SINPE usa teléfono): sin banco elegido el campo queda deshabilitado.
+  const bancoId = watch(`${basePath}edp_banco_id`) as number | null | undefined
+  const tipoCuenta = watch(`${basePath}edp_tipo_cuenta`) as string | null | undefined
+  const hasBanco = typeof bancoId === 'number' && !Number.isNaN(bancoId)
+
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <Labeled label="Banco" error={err('edp_banco')}>
-        <input
-          type="text"
-          {...register(`${basePath}edp_banco`)}
-          aria-invalid={Boolean(err('edp_banco'))}
+      <Labeled label="Banco" error={err('edp_banco_id')}>
+        <select
+          {...register(`${basePath}edp_banco_id`, { valueAsNumber: true })}
+          aria-invalid={Boolean(err('edp_banco_id'))}
           className={INPUT_CLASSES}
-        />
+        >
+          <option value="">Sin especificar</option>
+          {bancos.map((banco) => (
+            <option key={banco.id} value={banco.id}>
+              {banco.nombre}
+            </option>
+          ))}
+        </select>
       </Labeled>
 
       <Labeled label="Tipo de cuenta" error={err('edp_tipo_cuenta')}>
@@ -250,12 +375,12 @@ export function BankingFields({ basePath = '' }: FieldGroupProps) {
         </select>
       </Labeled>
 
-      <Labeled label="Número de cuenta (IBAN)" error={err('edp_numero_cuenta')}>
-        <input
-          type="text"
-          {...register(`${basePath}edp_numero_cuenta`)}
-          aria-invalid={Boolean(err('edp_numero_cuenta'))}
-          className={INPUT_CLASSES}
+      <Labeled label="Número de cuenta (IBAN / SINPE)" error={err('edp_numero_cuenta')}>
+        <IbanInput
+          name={`${basePath}edp_numero_cuenta`}
+          invalid={Boolean(err('edp_numero_cuenta'))}
+          disabled={!hasBanco}
+          mode={tipoCuenta === 'SINPE' ? 'sinpe' : 'iban'}
         />
       </Labeled>
     </div>

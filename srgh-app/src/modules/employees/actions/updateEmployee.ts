@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { editarFichaEmpleadoSchema, type EditarFichaEmpleadoInput } from '@/modules/employees/types'
 import { mapEmployeeUniqueError } from '@/modules/employees/lib/dbErrors'
+import { ibanBankCode } from '@/modules/employees/lib/iban'
 
 export type UpdateEmployeeResult = { ok: true } | { ok: false; error: string }
 
@@ -30,6 +31,26 @@ export async function updateEmployee(
   await requirePermission(PERMISOS.EMPLEADOS_WRITE)
 
   const supabase = await createClient()
+
+  // El schema ya validó formato y checksum del IBAN; que pertenezca al banco
+  // elegido solo puede verificarse aquí (el código de entidad vive en el
+  // catálogo). Se valida ANTES de escribir para no dejar guardados parciales.
+  const pago = parsed.data.datos_pago
+  if (pago?.edp_banco_id && pago.edp_numero_cuenta && pago.edp_tipo_cuenta !== 'SINPE') {
+    const { data: banco, error: errBanco } = await supabase
+      .from('sgrh_cat_bancos')
+      .select('ban_codigo')
+      .eq('ban_id', pago.edp_banco_id)
+      .maybeSingle()
+
+    if (errBanco || !banco) {
+      return { ok: false, error: 'El banco seleccionado no es válido.' }
+    }
+    if (banco.ban_codigo && ibanBankCode(pago.edp_numero_cuenta) !== banco.ban_codigo) {
+      return { ok: false, error: 'El IBAN no corresponde al banco seleccionado.' }
+    }
+  }
+
   const { data, error } = await supabase
     .from('sgrh_empleados')
     .update(parsed.data.empleado)

@@ -49,6 +49,11 @@ export async function createEmployee(
     if (error?.code === '42501') {
       return { ok: false, error: 'No tienes permiso para crear empleados.' }
     }
+    if (error?.code === '23514') {
+      // check_violation: solo lo emiten las validaciones de coherencia de la
+      // RPC (SINPE/IBAN/banco), cuyos mensajes ya están escritos para la UI.
+      return { ok: false, error: error.message || 'Los datos de pago no son coherentes.' }
+    }
     return { ok: false, error: 'No se pudo crear el empleado.' }
   }
 

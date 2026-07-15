@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EmployeeDetail } from './EmployeeDetail'
-import { EMPLEADO_DETALLE, TIPOS_IDENTIFICACION } from './testFixtures'
+import { BANCOS, EMPLEADO_DETALLE, TIPOS_IDENTIFICACION } from './testFixtures'
 
 vi.mock('@/modules/employees/actions/updateEmployee', () => ({
   updateEmployee: vi.fn(),
@@ -22,6 +22,7 @@ describe('<EmployeeDetail />', () => {
       <EmployeeDetail
         empleado={EMPLEADO_DETALLE}
         tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
         canWrite
       />
     )
@@ -33,6 +34,8 @@ describe('<EmployeeDetail />', () => {
     expect(screen.getByText('Diurna')).toBeInTheDocument()
     expect(screen.getByText('Femenino')).toBeInTheDocument()
     expect(screen.getByText('ana@mail.com')).toBeInTheDocument()
+    // El banco se muestra por nombre (join al catálogo), no por id.
+    expect(screen.getByText('BAC Credomatic')).toBeInTheDocument()
   })
 
   it('muestra aviso cuando no hay contrato vigente', () => {
@@ -40,6 +43,7 @@ describe('<EmployeeDetail />', () => {
       <EmployeeDetail
         empleado={{ ...EMPLEADO_DETALLE, historial_activo: null }}
         tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
         canWrite
       />
     )
@@ -53,6 +57,7 @@ describe('<EmployeeDetail />', () => {
       <EmployeeDetail
         empleado={EMPLEADO_DETALLE}
         tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
         canWrite={false}
       />
     )
@@ -66,6 +71,7 @@ describe('<EmployeeDetail />', () => {
       <EmployeeDetail
         empleado={EMPLEADO_DETALLE}
         tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
         canWrite
       />
     )

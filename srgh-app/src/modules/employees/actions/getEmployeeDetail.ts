@@ -76,9 +76,14 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
   // EMPLEADOS_WRITE (y no es el propio empleado), simplemente no hay fila.
   const { data: datosPago, error: errPago } = await supabase
     .from('sgrh_empleado_datos_pago')
-    .select('edp_banco, edp_tipo_cuenta, edp_numero_cuenta')
+    .select('edp_banco_id, edp_tipo_cuenta, edp_numero_cuenta, sgrh_cat_bancos ( ban_nombre )')
     .eq('edp_empleado_id', empId)
-    .maybeSingle()
+    .maybeSingle<{
+      edp_banco_id: number | null
+      edp_tipo_cuenta: string | null
+      edp_numero_cuenta: string | null
+      sgrh_cat_bancos: { ban_nombre: string } | null
+    }>()
 
   if (errPago) {
     return { ok: false, error: 'No se pudieron cargar los datos de pago.' }
@@ -109,7 +114,14 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     ...empleadoBase,
     tipo_identificacion_nombre: sgrh_cat_tipos_identificacion?.tid_nombre ?? '—',
     historial_activo: historialActivo,
-    datos_pago: datosPago ?? null,
+    datos_pago: datosPago
+      ? {
+          edp_banco_id: datosPago.edp_banco_id,
+          edp_tipo_cuenta: datosPago.edp_tipo_cuenta,
+          edp_numero_cuenta: datosPago.edp_numero_cuenta,
+          banco_nombre: datosPago.sgrh_cat_bancos?.ban_nombre ?? null,
+        }
+      : null,
   }
 
   return { ok: true, data }

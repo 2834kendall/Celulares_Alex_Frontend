@@ -51,7 +51,7 @@ const STEP_FIELDS: Path<OnboardingEmpleadoInput>[][] = [
     'contratacion.lab_fecha_inicio',
     'contratacion.lab_salario_base',
     'contratacion.lab_salario_real',
-    'datos_pago.edp_banco',
+    'datos_pago.edp_banco_id',
     'datos_pago.edp_tipo_cuenta',
     'datos_pago.edp_numero_cuenta',
   ],
@@ -136,6 +136,7 @@ interface EmployeeWizardProps {
   sucursales: CatalogoItem[]
   tiposContrato: CatalogoItem[]
   tiposJornada: CatalogoItem[]
+  bancos: CatalogoItem[]
   roles: CatalogoItem[]
   canInviteUser: boolean
 }
@@ -146,6 +147,7 @@ export function EmployeeWizard({
   sucursales,
   tiposContrato,
   tiposJornada,
+  bancos,
   roles,
   canInviteUser,
 }: EmployeeWizardProps) {
@@ -178,7 +180,6 @@ export function EmployeeWizard({
         lab_fecha_inicio: '',
       },
       datos_pago: {
-        edp_banco: '',
         edp_numero_cuenta: '',
       },
       usuario: undefined,
@@ -267,6 +268,7 @@ export function EmployeeWizard({
               sucursales={sucursales}
               tiposContrato={tiposContrato}
               tiposJornada={tiposJornada}
+              bancos={bancos}
             />
           )}
           {step === 2 && (

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EmployeeForm } from './EmployeeForm'
 import { updateEmployee } from '@/modules/employees/actions/updateEmployee'
-import { EMPLEADO_DETALLE, TIPOS_IDENTIFICACION } from './testFixtures'
+import { BANCOS, EMPLEADO_DETALLE, TIPOS_IDENTIFICACION } from './testFixtures'
 
 vi.mock('@/modules/employees/actions/updateEmployee', () => ({
   updateEmployee: vi.fn(),
@@ -21,17 +21,30 @@ describe('<EmployeeForm />', () => {
   })
 
   it('precarga los datos del empleado', () => {
-    render(<EmployeeForm empleado={EMPLEADO_DETALLE} tiposIdentificacion={TIPOS_IDENTIFICACION} />)
+    render(
+      <EmployeeForm
+        empleado={EMPLEADO_DETALLE}
+        tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
+      />
+    )
 
     expect(screen.getByLabelText('Nombre *')).toHaveValue('Ana')
     expect(screen.getByLabelText('Primer apellido *')).toHaveValue('Mora')
     expect(screen.getByLabelText('Teléfono')).toHaveValue('8888-8888')
+    expect(screen.getByLabelText('Banco')).toHaveValue('3')
     expect(screen.getByLabelText('Tipo de cuenta')).toHaveValue('AHORRO')
   })
 
   it('bloquea el submit con datos inválidos sin llamar la action', async () => {
     const user = userEvent.setup()
-    render(<EmployeeForm empleado={EMPLEADO_DETALLE} tiposIdentificacion={TIPOS_IDENTIFICACION} />)
+    render(
+      <EmployeeForm
+        empleado={EMPLEADO_DETALLE}
+        tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
+      />
+    )
 
     await user.clear(screen.getByLabelText('Nombre *'))
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
@@ -49,6 +62,7 @@ describe('<EmployeeForm />', () => {
       <EmployeeForm
         empleado={EMPLEADO_DETALLE}
         tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
         onSuccess={onSuccess}
       />
     )
@@ -62,7 +76,7 @@ describe('<EmployeeForm />', () => {
         10,
         expect.objectContaining({
           empleado: expect.objectContaining({ emp_telefono: '7777-7777', emp_nombre: 'Ana' }),
-          datos_pago: expect.objectContaining({ edp_banco: 'BAC', edp_tipo_cuenta: 'AHORRO' }),
+          datos_pago: expect.objectContaining({ edp_banco_id: 3, edp_tipo_cuenta: 'AHORRO' }),
         })
       )
     })
@@ -73,7 +87,13 @@ describe('<EmployeeForm />', () => {
     mockUpdateEmployee.mockResolvedValue({ ok: true })
     const user = userEvent.setup()
 
-    render(<EmployeeForm empleado={EMPLEADO_DETALLE} tiposIdentificacion={TIPOS_IDENTIFICACION} />)
+    render(
+      <EmployeeForm
+        empleado={EMPLEADO_DETALLE}
+        tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
+      />
+    )
 
     await user.clear(screen.getByLabelText('Teléfono'))
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
@@ -97,6 +117,7 @@ describe('<EmployeeForm />', () => {
       <EmployeeForm
         empleado={EMPLEADO_DETALLE}
         tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
         onSuccess={onSuccess}
       />
     )

@@ -20,6 +20,7 @@ type PagoTipoCuenta = NonNullable<EditarFichaEmpleadoInput['datos_pago']>['edp_t
 interface EmployeeFormProps {
   empleado: EmpleadoDetalle
   tiposIdentificacion: CatalogoItem[]
+  bancos: CatalogoItem[]
   onSuccess?: () => void
   onCancel?: () => void
 }
@@ -28,6 +29,7 @@ interface EmployeeFormProps {
 export function EmployeeForm({
   empleado,
   tiposIdentificacion,
+  bancos,
   onSuccess,
   onCancel,
 }: EmployeeFormProps) {
@@ -56,7 +58,7 @@ export function EmployeeForm({
         emp_telefono_emergencia: empleado.emp_telefono_emergencia ?? '',
       },
       datos_pago: {
-        edp_banco: empleado.datos_pago?.edp_banco ?? '',
+        edp_banco_id: empleado.datos_pago?.edp_banco_id ?? undefined,
         edp_tipo_cuenta: (empleado.datos_pago?.edp_tipo_cuenta ?? undefined) as PagoTipoCuenta,
         edp_numero_cuenta: empleado.datos_pago?.edp_numero_cuenta ?? '',
       },
@@ -105,7 +107,7 @@ export function EmployeeForm({
           <h3 className="text-xs font-bold uppercase tracking-wide text-slate-600">
             Datos de pago
           </h3>
-          <BankingFields basePath="datos_pago." />
+          <BankingFields basePath="datos_pago." bancos={bancos} />
         </section>
 
         <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">

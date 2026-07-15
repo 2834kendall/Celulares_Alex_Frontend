@@ -2,13 +2,20 @@
 
 import { useFormContext } from 'react-hook-form'
 import type { CatalogoItem } from '@/modules/employees/types'
-import { BankingFields, getFieldError, INPUT_CLASSES, Labeled } from './EmployeeFields'
+import {
+  BankingFields,
+  CurrencyInput,
+  getFieldError,
+  INPUT_CLASSES,
+  Labeled,
+} from './EmployeeFields'
 
 interface EmployeeWizardStepNominaProps {
   puestos: CatalogoItem[]
   sucursales: CatalogoItem[]
   tiposContrato: CatalogoItem[]
   tiposJornada: CatalogoItem[]
+  bancos: CatalogoItem[]
 }
 
 function CatalogSelect({
@@ -50,6 +57,7 @@ export function EmployeeWizardStepNomina({
   sucursales,
   tiposContrato,
   tiposJornada,
+  bancos,
 }: EmployeeWizardStepNominaProps) {
   const {
     register,
@@ -96,13 +104,9 @@ export function EmployeeWizardStepNomina({
             label="Salario base (₡) *"
             error={getFieldError(errors, 'contratacion.lab_salario_base')}
           >
-            <input
-              type="number"
-              min={0}
-              step={1000}
-              {...register('contratacion.lab_salario_base', { valueAsNumber: true })}
-              aria-invalid={Boolean(getFieldError(errors, 'contratacion.lab_salario_base'))}
-              className={INPUT_CLASSES}
+            <CurrencyInput
+              name="contratacion.lab_salario_base"
+              invalid={Boolean(getFieldError(errors, 'contratacion.lab_salario_base'))}
             />
           </Labeled>
 
@@ -110,13 +114,9 @@ export function EmployeeWizardStepNomina({
             label="Salario real (₡) *"
             error={getFieldError(errors, 'contratacion.lab_salario_real')}
           >
-            <input
-              type="number"
-              min={0}
-              step={1000}
-              {...register('contratacion.lab_salario_real', { valueAsNumber: true })}
-              aria-invalid={Boolean(getFieldError(errors, 'contratacion.lab_salario_real'))}
-              className={INPUT_CLASSES}
+            <CurrencyInput
+              name="contratacion.lab_salario_real"
+              invalid={Boolean(getFieldError(errors, 'contratacion.lab_salario_real'))}
             />
           </Labeled>
         </div>
@@ -124,7 +124,7 @@ export function EmployeeWizardStepNomina({
 
       <section className="space-y-3">
         <h3 className="text-xs font-bold uppercase tracking-wide text-slate-600">Datos de pago</h3>
-        <BankingFields basePath="datos_pago." />
+        <BankingFields basePath="datos_pago." bancos={bancos} />
       </section>
     </div>
   )

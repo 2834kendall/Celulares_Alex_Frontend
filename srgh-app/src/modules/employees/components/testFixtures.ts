@@ -7,6 +7,11 @@ export const TIPOS_IDENTIFICACION: CatalogoItem[] = [
   { id: 2, nombre: 'DIMEX' },
 ]
 
+export const BANCOS: CatalogoItem[] = [
+  { id: 3, nombre: 'BAC Credomatic' },
+  { id: 5, nombre: 'Banco Nacional' },
+]
+
 export const HISTORIAL_ACTIVO: NonNullable<EmpleadoDetalle['historial_activo']> = {
   lab_id: 5,
   lab_empleado_id: 10,
@@ -50,7 +55,8 @@ export const EMPLEADO_DETALLE: EmpleadoDetalle = {
   tipo_identificacion_nombre: 'Cédula nacional',
   historial_activo: HISTORIAL_ACTIVO,
   datos_pago: {
-    edp_banco: 'BAC',
+    edp_banco_id: 3,
+    banco_nombre: 'BAC Credomatic',
     edp_tipo_cuenta: 'AHORRO',
     edp_numero_cuenta: null,
   },

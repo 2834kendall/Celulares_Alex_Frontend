@@ -97,6 +97,24 @@ export async function getTiposIdentificacion(): Promise<GetCatalogoResult> {
   return { ok: true, data: data.map((t) => ({ id: t.tid_id, nombre: t.tid_nombre })) }
 }
 
+/** Catálogo global de bancos activos (sgrh_cat_bancos). */
+export async function getBancos(): Promise<GetCatalogoResult> {
+  await requirePermission(PERMISOS.EMPLEADOS_READ)
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('sgrh_cat_bancos')
+    .select('ban_id, ban_nombre')
+    .eq('ban_activo', true)
+    .order('ban_nombre', { ascending: true })
+
+  if (error) {
+    return { ok: false, error: CATALOG_ERROR }
+  }
+
+  return { ok: true, data: data.map((b) => ({ id: b.ban_id, nombre: b.ban_nombre })) }
+}
+
 /** Roles activos del sistema — solo para el paso de usuario del onboarding. */
 export async function getRoles(): Promise<GetCatalogoResult> {
   await requirePermission(PERMISOS.USUARIOS_WRITE)

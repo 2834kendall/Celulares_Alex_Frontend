@@ -86,14 +86,14 @@ describe('createEmployee (server action)', () => {
 
     const result = await createEmployee({
       ...VALID_INPUT,
-      datos_pago: { edp_banco: 'BAC', edp_tipo_cuenta: 'AHORRO' },
+      datos_pago: { edp_banco_id: 3, edp_tipo_cuenta: 'AHORRO' },
     })
 
     expect(result).toEqual({ ok: true, empId: 10, usuarioWarning: undefined })
     expect(client.rpc).toHaveBeenCalledWith('crear_empleado_completo', {
       p_empleado: expect.objectContaining({ emp_nombre: 'Ana' }),
       p_contratacion: expect.objectContaining({ lab_puesto_id: 3 }),
-      p_datos_pago: expect.objectContaining({ edp_banco: 'BAC', edp_tipo_cuenta: 'AHORRO' }),
+      p_datos_pago: expect.objectContaining({ edp_banco_id: 3, edp_tipo_cuenta: 'AHORRO' }),
     })
     expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.EMPLEADOS_WRITE)
     expect(mockRevalidatePath).toHaveBeenCalledWith('/employees')

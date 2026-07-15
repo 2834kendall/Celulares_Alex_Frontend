@@ -26,8 +26,13 @@ const CATALOGOS = {
   sucursales: [{ id: 2, nombre: 'Central' }],
   tiposContrato: [{ id: 1, nombre: 'Indefinido' }],
   tiposJornada: [{ id: 1, nombre: 'Diurna' }],
+  bancos: [{ id: 3, nombre: 'BAC Credomatic' }],
   roles: [{ id: 4, nombre: 'Empleado' }],
 }
+
+// Mismo formato que usa CurrencyInput; el separador de miles depende del ICU
+// del entorno, así que el valor esperado se calcula, no se hardcodea.
+const MILES_FORMAT = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 0 })
 
 function renderWizard(canInviteUser = true) {
   return render(<EmployeeWizard {...CATALOGOS} canInviteUser={canInviteUser} />)
@@ -103,6 +108,8 @@ describe('<EmployeeWizard />', () => {
     await screen.findByLabelText('Puesto *')
 
     await fillStepNomina(user)
+    // El input de salario muestra separadores de miles pero envía un number.
+    expect(screen.getByLabelText('Salario base (₡) *')).toHaveValue(MILES_FORMAT.format(500000))
     await user.click(screen.getByRole('button', { name: /siguiente/i }))
     await screen.findByText('Crear cuenta de usuario del sistema')
 
@@ -135,6 +142,39 @@ describe('<EmployeeWizard />', () => {
       )
     })
     expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  it('exige elegir banco, antepone el CR solo y valida el checksum del IBAN', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+
+    // Sin banco elegido no se puede digitar la cuenta.
+    const iban = screen.getByLabelText('Número de cuenta (IBAN / SINPE)')
+    expect(iban).toBeDisabled()
+
+    await user.selectOptions(screen.getByLabelText('Banco'), '3')
+    expect(iban).toBeEnabled()
+
+    // Solo se digitan los dígitos: el prefijo CR se antepone solo. Este
+    // checksum es incorrecto (CR06… en vez de CR05…) y bloquea el "Siguiente".
+    await user.type(iban, '06015202001026284066')
+    expect(iban).toHaveValue('CR06 0152 0200 1026 2840 66')
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    expect(
+      await screen.findByText('El IBAN no es válido (dígitos verificadores incorrectos)')
+    ).toBeVisible()
+    expect(screen.getByLabelText('Puesto *')).toBeInTheDocument()
+
+    // Con el IBAN correcto sí avanza al paso 3.
+    await user.clear(iban)
+    await user.type(iban, '05015202001026284066')
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    expect(await screen.findByText('Crear cuenta de usuario del sistema')).toBeInTheDocument()
   })
 
   it('incluye el usuario cuando se activa el toggle del paso 3', async () => {

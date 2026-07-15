@@ -77,7 +77,12 @@ describe('getEmployeeDetail (server action)', () => {
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
         sgrh_historial_laboral: { data: HISTORIAL_ROW, error: null },
         sgrh_empleado_datos_pago: {
-          data: { edp_banco: 'BAC', edp_tipo_cuenta: 'AHORRO', edp_numero_cuenta: 'CR01' },
+          data: {
+            edp_banco_id: 3,
+            edp_tipo_cuenta: 'AHORRO',
+            edp_numero_cuenta: 'CR02010200000000000001',
+            sgrh_cat_bancos: { ban_nombre: 'BAC Credomatic' },
+          },
           error: null,
         },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -96,10 +101,12 @@ describe('getEmployeeDetail (server action)', () => {
       tipo_contrato_nombre: 'Indefinido',
       tipo_jornada_nombre: 'Diurna',
     })
+    // El join se aplana a banco_nombre; el objeto crudo del join no se expone.
     expect(result.data.datos_pago).toEqual({
-      edp_banco: 'BAC',
+      edp_banco_id: 3,
+      banco_nombre: 'BAC Credomatic',
       edp_tipo_cuenta: 'AHORRO',
-      edp_numero_cuenta: 'CR01',
+      edp_numero_cuenta: 'CR02010200000000000001',
     })
     expect(result.data).not.toHaveProperty('sgrh_cat_tipos_identificacion')
   })
