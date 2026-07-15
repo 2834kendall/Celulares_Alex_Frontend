@@ -16,6 +16,8 @@ const PERMISOS_EN_SUPABASE = [
   'AUSENCIAS_READ',
   'AUSENCIAS_WRITE',
   'AUSENCIAS_APPROVE',
+  'HORARIOS_READ',
+  'HORARIOS_WRITE',
   'NOMINA_READ',
   'NOMINA_WRITE',
   'NOMINA_APPROVE',
@@ -38,7 +40,7 @@ describe('catalogo de permisos', () => {
     }
   })
 
-  it('refleja exactamente los 22 permisos sembrados en Supabase', () => {
+  it('refleja exactamente los 24 permisos sembrados en Supabase', () => {
     expect(Object.values(PERMISOS).sort()).toEqual([...PERMISOS_EN_SUPABASE].sort())
   })
 })

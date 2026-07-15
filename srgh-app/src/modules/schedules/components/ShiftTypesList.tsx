@@ -4,9 +4,9 @@ import { AlertTriangle, Layers, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ShiftType } from '@/modules/schedules/actions/getShiftTypes'
 import { deleteShiftType } from '@/modules/schedules/actions/deleteShiftType'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
-import { usePagination } from '@/modules/schedules/hooks/usePagination'
+import { usePagination } from '@/hooks/usePagination'
+import { Pagination } from '@/components/ui/Pagination'
 import { ConfirmDialog } from './ConfirmDialog'
-import { Pagination } from './Pagination'
 import { ShiftTypeForm } from './ShiftTypeForm'
 
 interface ShiftTypesListProps {
