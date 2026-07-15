@@ -1,9 +1,19 @@
 'use client'
 
-import { AlertTriangle, CheckCircle2, ClipboardList, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import type { RubroRow } from '@/modules/evaluations/types'
 import { deleteRubro } from '@/modules/evaluations/actions/deleteRubro'
 import { useCrudList } from '@/modules/evaluations/hooks/useCrudList'
+import { normalizeSearchText } from '@/components/ui/SearchSelect'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Modal } from './Modal'
 import { RubroForm } from './RubroForm'
@@ -25,6 +35,17 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
     confirmDelete,
   } = useCrudList<RubroRow>(deleteRubro)
 
+  const [query, setQuery] = useState('')
+
+  const visibleRubros = useMemo(() => {
+    const q = normalizeSearchText(query.trim())
+    if (!q) return rubros
+    return rubros.filter(
+      (r) =>
+        normalizeSearchText(r.nombre).includes(q) || normalizeSearchText(r.descripcion).includes(q)
+    )
+  }, [rubros, query])
+
   const isEditing = editing !== null && editing !== 'new'
 
   return (
@@ -39,15 +60,30 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
             colaborador.
           </p>
         </div>
-        {canWrite && (
-          <button
-            type="button"
-            onClick={() => setEditing('new')}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-          >
-            <Plus className="h-3.5 w-3.5" /> Crear rubro
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {rubros.length > 0 && (
+            <div className="flex w-56 max-w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-600/10">
+              <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar rubro…"
+                aria-label="Buscar rubro"
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-slate-700 outline-none placeholder:text-slate-400"
+              />
+            </div>
+          )}
+          {canWrite && (
+            <button
+              type="button"
+              onClick={() => setEditing('new')}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
+            >
+              <Plus className="h-3.5 w-3.5" /> Crear rubro
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -112,9 +148,18 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
               </button>
             )}
           </div>
+        ) : visibleRubros.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
+              <Search className="h-4 w-4" />
+            </div>
+            <p className="text-xs text-slate-500">
+              Ningún rubro coincide con &ldquo;{query.trim()}&rdquo;.
+            </p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-            {rubros.map((rubro) => (
+            {visibleRubros.map((rubro) => (
               <div
                 key={rubro.areaId}
                 className={`group flex flex-col rounded-xl border border-slate-200 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-blue-300 hover:shadow-sm ${

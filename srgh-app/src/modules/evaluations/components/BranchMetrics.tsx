@@ -19,6 +19,7 @@ import { usePagination } from '@/modules/evaluations/hooks/usePagination'
 import { CollaboratorListModal } from './CollaboratorListModal'
 import { Modal } from './Modal'
 import { Pagination } from '@/components/ui/Pagination'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ScoreBar } from './ScoreBar'
 
@@ -29,9 +30,6 @@ interface BranchMetricsProps {
   branches: BranchOption[]
   rubros: RubroRow[]
 }
-
-const SELECT_CLASSES =
-  'rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10'
 
 export function BranchMetrics({ collaborators, branches, rubros }: BranchMetricsProps) {
   const router = useRouter()
@@ -110,18 +108,15 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
         </div>
         <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
           Sucursal:
-          <select
+          <SearchSelect
+            ariaLabel="Buscar sucursal"
             value={branchId === 'all' ? 'all' : String(branchId)}
-            onChange={(e) => setBranchId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-            className={SELECT_CLASSES}
-          >
-            <option value="all">Todas las sucursales</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setBranchId(v === 'all' ? 'all' : Number(v))}
+            options={[
+              { value: 'all', label: 'Todas las sucursales' },
+              ...branches.map((b) => ({ value: String(b.id), label: b.name })),
+            ]}
+          />
         </label>
       </div>
 

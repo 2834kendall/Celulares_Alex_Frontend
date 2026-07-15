@@ -14,6 +14,8 @@ import {
 } from 'lucide-react'
 import type { CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
 import { classifyScore, initialsOf } from '@/modules/evaluations/lib/scoring'
+import { usePagination } from '@/modules/evaluations/hooks/usePagination'
+import { Pagination } from '@/components/ui/Pagination'
 import { CollaboratorSearchSelect } from './CollaboratorSearchSelect'
 import { EditNotesModal, type NotesField } from './EditNotesModal'
 import { EvaluationHistory } from './EvaluationHistory'
@@ -38,7 +40,7 @@ interface AddNoteButtonProps {
   onClick: () => void
 }
 
-/** CTA que convierte una seccion de notas vacia en editable. */
+//CTA que convierte una seccion de notas vacia en editable.
 function AddNoteButton({ label, onClick }: AddNoteButtonProps) {
   return (
     <button
@@ -57,6 +59,8 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
   const searchParams = useSearchParams()
 
   const [editingField, setEditingField] = useState<NotesField | null>(null)
+
+  const rubrosPagination = usePagination(rubros, 8)
 
   const paramLabId = Number(searchParams.get('colaborador'))
   const selected = useMemo(
@@ -175,13 +179,13 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
 
         {evaluation ? (
           <div className="min-w-0 space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-              <h3 className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-900">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+              <h3 className="flex items-center gap-2 px-4 pt-4 text-xs font-bold uppercase tracking-wide text-slate-900">
                 <ClipboardCheck className="h-3.5 w-3.5 text-blue-600" />
                 Criterios de evaluación interna
               </h3>
-              <div className="space-y-4">
-                {rubros.map((r) => {
+              <div className="space-y-4 p-4">
+                {rubrosPagination.paginatedItems.map((r) => {
                   const observation =
                     r.criterioId !== null ? evaluation.observations[r.criterioId] : undefined
                   return (
@@ -203,6 +207,12 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
                   )
                 })}
               </div>
+              <Pagination
+                page={rubrosPagination.page}
+                totalPages={rubrosPagination.totalPages}
+                onPrevious={rubrosPagination.goToPreviousPage}
+                onNext={rubrosPagination.goToNextPage}
+              />
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
