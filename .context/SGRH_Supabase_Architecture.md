@@ -789,6 +789,12 @@ CREATE POLICY "historial_delete" ON public.sgrh_historial_laboral
 
 **Nota de modelado**: el nº de asegurado CCSS permanece en `sgrh_empleados` — es un identificador de la persona (como la cédula), no un método de pago.
 
+**Banco por catálogo** (migración `20260714120000_cat_bancos_iban_y_unicidad.sql`): el banco dejó de ser texto libre. `edp_banco_id` referencia el catálogo global `sgrh_cat_bancos (ban_id, ban_nombre UNIQUE, ban_codigo UNIQUE, ban_activo)`, con las mismas policies que el resto de catálogos globales (lectura autenticada, escritura `CATALOGOS_WRITE`). `ban_codigo` es el **código de entidad financiera del BCCR** — el que viaja en las posiciones 6-8 del IBAN CR (`CR` + 2 verificadores + `0` + código + 14 de cuenta) — y permite validar que el IBAN digitado pertenezca al banco elegido. La migración consolidó los textos libres históricos ('BCR', 'BNCR', 'BN') repuntando sus referencias al nombre estándar.
+
+**Número de cuenta**: se persiste normalizado (mayúsculas, sin espacios). Validación en capas: Zod valida formato + checksum ISO 13616 (mod 97-10) — o teléfono de 8 dígitos si el tipo es SINPE —, y el servidor (RPC / `updateEmployee`) verifica además que el código de entidad del IBAN coincida con `ban_codigo`.
+
+**Unicidad en `sgrh_empleados`** (misma migración): `emp_numero_identificacion` y `emp_numero_asegurado_ccss` ahora son UNIQUE (además del `emp_email_personal` que ya lo era). Los NULL no chocan entre sí, así que el CCSS sigue siendo opcional. Con esto, los tres ramales de `mapEmployeeUniqueError` del frontend son alcanzables.
+
 ```sql
 -- Lectura: NOMINA_READ o EMPLEADOS_WRITE (de la misma empresa), o el propio empleado.
 CREATE POLICY "datos_pago_select" ON public.sgrh_empleado_datos_pago
@@ -817,9 +823,10 @@ El alta de un empleado toca hasta 3 tablas (`sgrh_empleados`, `sgrh_historial_la
 |---|---|
 | `SECURITY DEFINER` | (a) transacción multi-tabla; (b) el `RETURNING` del insert de empleado es invisible bajo `empleados_select` para un empleado aún sin historial. |
 | Autorización interna | DEFINER no evalúa RLS: la función re-verifica `tiene_permiso('EMPLEADOS_WRITE')` (error `42501` si falta) y toma `empresa_id` **solo del JWT**, nunca del payload. |
-| Validación cruzada de catálogos | Puesto y sucursal se verifican contra la empresa del JWT — impide referencias cruzadas entre inquilinos. |
+| Validación cruzada de catálogos | Puesto y sucursal se verifican contra la empresa del JWT — impide referencias cruzadas entre inquilinos. El banco (catálogo global) se verifica existente y activo. |
+| Coherencia de datos de pago | Tipo SINPE → teléfono de 8 dígitos; otro tipo → IBAN `CR` + 20 dígitos cuyo código de entidad (posiciones 6-8) coincida con `sgrh_cat_bancos.ban_codigo`. El IBAN se normaliza (mayúsculas, sin espacios) también dentro de la RPC. |
 | Extracción explícita del jsonb | Un payload con claves extra no puede colar columnas (nada de `jsonb_populate_record` a ciegas). |
-| Errores con SQLSTATE estándar | `23505` (unicidad) llega al frontend con el nombre de la restricción → el módulo mapea el mensaje por columna; `42501` → sin permiso. |
+| Errores con SQLSTATE estándar | `23505` (unicidad) llega al frontend con el nombre de la restricción → el módulo mapea el mensaje por columna; `42501` → sin permiso; `23514` (check) → mensajes de coherencia de datos de pago, escritos para mostrarse tal cual en la UI. |
 | Grants | `REVOKE FROM PUBLIC, anon` + `GRANT TO authenticated`, igual que el resto de funciones del sistema. |
 
 **Consumo desde Next.js** (Server Action, con el cliente de **sesión** — no requiere secret key):
