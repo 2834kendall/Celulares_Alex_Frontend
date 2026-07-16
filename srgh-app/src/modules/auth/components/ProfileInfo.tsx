@@ -1,9 +1,10 @@
 import { Briefcase, Building2, Mail } from 'lucide-react'
-import { BRAND } from '@/lib/brand'
 
 interface ProfileInfoProps {
   email: string
   rol: string | null
+  /** Nombre real de la empresa (cargado server-side desde sgrh_empresas). */
+  empresaNombre: string
 }
 
 /**
@@ -11,12 +12,12 @@ interface ProfileInfoProps {
  * Cuando exista el modulo de empleados, aqui se enlazara el expediente
  * completo (datos personales, contrato, puesto).
  */
-export function ProfileInfo({ email, rol }: ProfileInfoProps) {
+export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
   const initials = email.slice(0, 2).toUpperCase()
 
   const detalles = [
     { key: 'correo', icon: Mail, etiqueta: 'Correo electronico', valor: email },
-    { key: 'empresa', icon: Building2, etiqueta: 'Empresa', valor: BRAND.empresa },
+    { key: 'empresa', icon: Building2, etiqueta: 'Empresa', valor: empresaNombre },
     { key: 'rol', icon: Briefcase, etiqueta: 'Rol en el sistema', valor: rol ?? 'Sin asignar' },
   ]
 
@@ -29,7 +30,7 @@ export function ProfileInfo({ email, rol }: ProfileInfoProps) {
           </span>
           <div className="min-w-0 leading-tight">
             <h1 className="break-all text-xl font-extrabold text-slate-900">{email}</h1>
-            <p className="mt-1 text-sm text-slate-500">{BRAND.empresa}</p>
+            <p className="mt-1 text-sm text-slate-500">{empresaNombre}</p>
           </div>
         </div>
 

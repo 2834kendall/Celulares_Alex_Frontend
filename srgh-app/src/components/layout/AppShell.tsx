@@ -13,6 +13,8 @@ interface AppShellProps {
   permisos: string[]
   email: string
   rol: string | null
+  /** Nombre real de la empresa (cargado server-side desde sgrh_empresas). */
+  empresaNombre: string
   children: React.ReactNode
 }
 
@@ -47,7 +49,7 @@ function BurgerIcon({ open }: { open: boolean }) {
  * - Movil: la hamburguesa abre el drawer lateral
  * La seguridad ya paso en el layout (server); esto es solo presentacion.
  */
-export function AppShell({ permisos, email, rol, children }: AppShellProps) {
+export function AppShell({ permisos, email, rol, empresaNombre, children }: AppShellProps) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(true) // escritorio
   const [drawerOpen, setDrawerOpen] = useState(false) // movil
@@ -121,10 +123,10 @@ export function AppShell({ permisos, email, rol, children }: AppShellProps) {
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-700 text-xs font-black text-white">
-                  {BRAND.empresa.charAt(0)}
+                  {empresaNombre.charAt(0)}
                 </span>
                 <div className="leading-tight">
-                  <p className="text-sm font-extrabold text-slate-900">{BRAND.empresa}</p>
+                  <p className="text-sm font-extrabold text-slate-900">{empresaNombre}</p>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                     {BRAND.sistema}
                   </p>
@@ -149,7 +151,7 @@ export function AppShell({ permisos, email, rol, children }: AppShellProps) {
 
       {/* Cuerpo: sidebar + contenido */}
       <div className="flex flex-1">
-        <Sidebar permisos={permisos} open={sidebarOpen} />
+        <Sidebar permisos={permisos} empresaNombre={empresaNombre} open={sidebarOpen} />
         {/* key={pathname}: reinicia la animacion de entrada en cada navegacion */}
         <main key={pathname} className="animate-page min-w-0 flex-1 p-4 md:p-6">
           {children}

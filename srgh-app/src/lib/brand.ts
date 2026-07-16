@@ -1,7 +1,8 @@
 /**
  * Identidad de marca mostrada en el shell de la aplicacion.
- * TODO: cuando el modulo de configuracion exista, cargar el nombre
- * de la empresa desde sgrh_empresas segun el empresa_id del JWT.
+ * El nombre real de la empresa se carga desde sgrh_empresas via
+ * getEmpresaNombre() (lib/empresa); `empresa` queda solo como
+ * fallback cuando la consulta falla o no hay fila visible por RLS.
  */
 export const BRAND = {
   empresa: 'Celulares Alex',
