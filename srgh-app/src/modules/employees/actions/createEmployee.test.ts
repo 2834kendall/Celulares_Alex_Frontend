@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { revalidatePath } from 'next/cache'
 import { createEmployee } from './createEmployee'
-import { inviteEmployeeUser } from './inviteEmployeeUser'
+import { inviteUser } from '@/modules/users/actions/inviteUser'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
@@ -11,12 +11,12 @@ import type { OnboardingEmpleadoInput } from '@/modules/employees/types'
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
-vi.mock('./inviteEmployeeUser', () => ({ inviteEmployeeUser: vi.fn() }))
+vi.mock('@/modules/users/actions/inviteUser', () => ({ inviteUser: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
-const mockInviteEmployeeUser = vi.mocked(inviteEmployeeUser)
+const mockInviteUser = vi.mocked(inviteUser)
 
 const CLAIMS_FULL = {
   app_metadata: { empresa_id: 1, permisos: ['EMPLEADOS_WRITE', 'USUARIOS_WRITE'] },
@@ -157,21 +157,21 @@ describe('createEmployee (server action)', () => {
     const result = await createEmployee(VALID_INPUT)
 
     expect(result).toEqual({ ok: true, empId: 10, usuarioWarning: undefined })
-    expect(mockInviteEmployeeUser).not.toHaveBeenCalled()
+    expect(mockInviteUser).not.toHaveBeenCalled()
   })
 
   it('invita al usuario cuando viene el paso 3', async () => {
-    mockInviteEmployeeUser.mockResolvedValue({ ok: true, usrId: 7 })
+    mockInviteUser.mockResolvedValue({ ok: true, usrId: 7 })
     mockRpc({ data: 10, error: null })
 
     const result = await createEmployee({ ...VALID_INPUT, usuario: USUARIO })
 
     expect(result).toEqual({ ok: true, empId: 10, usuarioWarning: undefined })
-    expect(mockInviteEmployeeUser).toHaveBeenCalledWith(10, USUARIO)
+    expect(mockInviteUser).toHaveBeenCalledWith({ ...USUARIO, empleado_id: 10 })
   })
 
   it('no revierte el alta si la invitación falla — devuelve warning', async () => {
-    mockInviteEmployeeUser.mockResolvedValue({
+    mockInviteUser.mockResolvedValue({
       ok: false,
       error: 'No se pudo enviar la invitación.',
     })
