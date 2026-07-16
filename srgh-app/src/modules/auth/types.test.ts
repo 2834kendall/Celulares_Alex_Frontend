@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loginSchema } from './types'
+import { activateAccountSchema, loginSchema } from './types'
 
 describe('loginSchema', () => {
   it('acepta credenciales validas', () => {
@@ -49,6 +49,50 @@ describe('loginSchema', () => {
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error.issues[0].message).toBe('La contraseña es requerida.')
+    }
+  })
+})
+
+describe('activateAccountSchema', () => {
+  it('acepta una contrasena valida confirmada', () => {
+    const result = activateAccountSchema.safeParse({
+      password: 'secreto123',
+      confirmPassword: 'secreto123',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rechaza contrasenas de menos de 8 caracteres', () => {
+    const result = activateAccountSchema.safeParse({
+      password: 'corta',
+      confirmPassword: 'corta',
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('La contraseña debe tener al menos 8 caracteres.')
+    }
+  })
+
+  it('rechaza cuando la confirmacion no coincide', () => {
+    const result = activateAccountSchema.safeParse({
+      password: 'secreto123',
+      confirmPassword: 'otra-cosa',
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('Las contraseñas no coinciden.')
+      expect(result.error.issues[0].path).toEqual(['confirmPassword'])
+    }
+  })
+
+  it('rechaza la confirmacion vacia', () => {
+    const result = activateAccountSchema.safeParse({
+      password: 'secreto123',
+      confirmPassword: '',
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('Confirme su contraseña.')
     }
   })
 })

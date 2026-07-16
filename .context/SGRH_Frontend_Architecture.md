@@ -378,7 +378,10 @@ Sprint 1 (actual) — Base
   ✅ Catálogo central de permisos
   ✅ Husky + commitlint con soporte de prefijo Jira
   ✅ Validación de env vars con Zod
-  ☐ Flujo de login / activación de cuenta ((auth))
+  ✅ Flujo de login / activación de cuenta ((auth)) — /auth/confirm canjea el
+     token de invitación por sesión (verifyOtp) y /activate-account define la
+     contraseña; la plantilla de email de Supabase debe apuntar a
+     {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite
   ☐ Layout de dashboard (sidebar + topbar condicionados por permisos)
 
 Sprint 2+ — Módulos
