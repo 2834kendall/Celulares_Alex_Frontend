@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
 import { PeriodoDetail } from '@/modules/payroll/components/PeriodoDetail'
+import { PlanillaImport } from '@/modules/payroll/components/PlanillaImport'
 
 function ErrorBanner({ message }: { message: string }) {
   return (
@@ -27,7 +28,9 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
     notFound()
   }
 
-  await requirePermission(PERMISOS.NOMINA_READ)
+  const claims = await requirePermission(PERMISOS.NOMINA_READ)
+  const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
+  const canWrite = permisos.includes(PERMISOS.NOMINA_WRITE)
 
   const detailResult = await getPeriodoDetail(periodoId)
 
@@ -53,6 +56,10 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
           <p className="text-xs text-slate-500">Planilla del periodo y estado de pago.</p>
         </div>
       </div>
+
+      {canWrite && (
+        <PlanillaImport periodoId={detailResult.data.id} estado={detailResult.data.estado} />
+      )}
 
       <PeriodoDetail periodo={detailResult.data} />
     </div>
