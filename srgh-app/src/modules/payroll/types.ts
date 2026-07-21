@@ -12,6 +12,9 @@ import type { Database } from '@/types/database.types'
 // ─── Aliases de tipos Supabase ────────────────────────────────────────────────
 
 type NominaPeriodoInsert = Database['public']['Tables']['sgrh_nomina_periodo']['Insert']
+type ConceptoNominaInsert = Database['public']['Tables']['sgrh_cat_conceptos_nomina']['Insert']
+
+export type ConceptoNominaRow = Database['public']['Tables']['sgrh_cat_conceptos_nomina']['Row']
 
 // ─── View models ─────────────────────────────────────────────────────────────
 
@@ -124,3 +127,50 @@ type _CrearPeriodoAlineado =
     : never
 const _alineado: _CrearPeriodoAlineado = true
 void _alineado
+
+// ─── Schema del catálogo de conceptos de nómina ──────────────────────────────
+// Catálogo global (sgrh_cat_conceptos_nomina): visible para cualquier
+// autenticado, editable solo con CATALOGOS_WRITE (misma policy "cat_*" que
+// usan tipos de jornada y rubros de evaluación).
+
+export const CONCEPTO_TIPOS = ['ingreso', 'deduccion', 'patronal'] as const
+export type ConceptoTipo = (typeof CONCEPTO_TIPOS)[number]
+
+export const conceptoNominaSchema = z.object({
+  // El input del formulario solo aplica mayúsculas por CSS (visual, no cambia
+  // el valor real), así que el código se normaliza aquí antes de validar —
+  // si no, escribir en minúscula rechazaría el formulario sin razón aparente.
+  con_codigo: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim().toUpperCase() : value),
+    z
+      .string({ error: 'El código es obligatorio' })
+      .min(2, 'El código debe tener al menos 2 caracteres')
+      .max(50, 'El código no puede superar 50 caracteres')
+      .regex(/^[A-Z0-9_]+$/, 'Usa solo letras, números y guion bajo (ej. BONO_ANUAL)')
+  ),
+
+  con_nombre: z
+    .string({ error: 'El nombre es obligatorio' })
+    .trim()
+    .min(2, 'El nombre debe tener al menos 2 caracteres')
+    .max(100, 'El nombre no puede superar 100 caracteres'),
+
+  con_tipo: z.enum(CONCEPTO_TIPOS, { error: 'Selecciona un tipo válido' }),
+
+  con_afecta_salario_bruto: z.boolean().default(false),
+  con_afecta_base_ccss: z.boolean().default(true),
+
+  con_formula_base: z.preprocess(
+    (value) => (value === '' ? null : value),
+    z.string().max(200, 'La fórmula no puede superar 200 caracteres').nullable().optional()
+  ),
+
+  con_activo: z.boolean().default(true),
+})
+
+export type ConceptoNominaInput = z.infer<typeof conceptoNominaSchema>
+
+type _ConceptoNominaAlineado =
+  ConceptoNominaInput extends Omit<ConceptoNominaInsert, 'con_id'> ? true : never
+const _conceptoAlineado: _ConceptoNominaAlineado = true
+void _conceptoAlineado

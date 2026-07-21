@@ -21,6 +21,7 @@ export default async function PayrollPage() {
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canRead = permisos.includes(PERMISOS.NOMINA_READ)
   const canWrite = permisos.includes(PERMISOS.NOMINA_WRITE)
+  const canManageConceptos = permisos.includes(PERMISOS.CATALOGOS_WRITE)
 
   // Empleados con solo COMPROBANTES_READ: su vista de comprobantes propios
   // llega en la siguiente iteración del módulo.
@@ -41,7 +42,7 @@ export default async function PayrollPage() {
 
   return (
     <div className="min-w-0 space-y-4">
-      <PayrollHeader canWrite={canWrite} />
+      <PayrollHeader canWrite={canWrite} canManageConceptos={canManageConceptos} />
       <PeriodosList periodos={periodosResult.data} />
     </div>
   )

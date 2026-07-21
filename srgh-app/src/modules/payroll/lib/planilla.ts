@@ -57,6 +57,24 @@ export function computeTotales(row: PlanillaRowInput): PlanillaRowTotales {
   return { salarioBruto, deduccionCcss, salarioNeto }
 }
 
+/**
+ * Compara los montos crudos de una fila (sin la cédula) contra lo ya guardado
+ * en el periodo. Se usa para el upsert de la planilla: si todo coincide, la
+ * fila del empleado se deja intacta (no se toca ndt_id, ndt_pagado ni fechas).
+ */
+export function sameRowValues(
+  a: Omit<PlanillaRowInput, 'cedula'>,
+  b: Omit<PlanillaRowInput, 'cedula'>
+): boolean {
+  return (
+    a.base === b.base &&
+    a.feriado === b.feriado &&
+    a.comision === b.comision &&
+    a.horasExtra === b.horasExtra &&
+    a.ajuste === b.ajuste
+  )
+}
+
 export interface PlanillaRowError {
   fila: number
   mensaje: string

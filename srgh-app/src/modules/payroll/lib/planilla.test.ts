@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeTotales, parsePlanillaRow, CCSS_RATE } from './planilla'
+import { computeTotales, parsePlanillaRow, sameRowValues, CCSS_RATE } from './planilla'
 
 const ROW_BASE = { base: 180000, feriado: 0, comision: 26250, horasExtra: 0, ajuste: 4250 }
 
@@ -118,5 +118,26 @@ describe('parsePlanillaRow', () => {
     if (result.ok === false) {
       expect(result.error.mensaje).toContain('cédula')
     }
+  })
+})
+
+describe('sameRowValues', () => {
+  const BASE = { base: 180000, feriado: 0, comision: 26250, horasExtra: 0, ajuste: 4250 }
+
+  it('es true cuando todos los montos coinciden', () => {
+    expect(sameRowValues(BASE, { ...BASE })).toBe(true)
+  })
+
+  it('es false si cambia un solo monto', () => {
+    expect(sameRowValues(BASE, { ...BASE, comision: 30000 })).toBe(false)
+  })
+
+  it('es false si un campo pasó de tener valor a cero', () => {
+    expect(sameRowValues(BASE, { ...BASE, ajuste: 0 })).toBe(false)
+  })
+
+  it('es true para dos filas en cero', () => {
+    const ceros = { base: 0, feriado: 0, comision: 0, horasExtra: 0, ajuste: 0 }
+    expect(sameRowValues(ceros, { ...ceros })).toBe(true)
   })
 })
