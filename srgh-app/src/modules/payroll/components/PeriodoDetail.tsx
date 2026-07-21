@@ -11,6 +11,8 @@ import {
   formatDate,
   periodoLabel,
 } from '@/modules/payroll/lib/format'
+import { usePagination } from '@/hooks/usePagination'
+import { Pagination } from '@/components/ui/Pagination'
 import { DetalleEditForm } from './DetalleEditForm'
 
 interface PeriodoDetailProps {
@@ -29,9 +31,16 @@ export function PeriodoDetail({ periodo, canWrite }: PeriodoDetailProps) {
 
   const puedeEditar = canWrite && periodo.estado === 'borrador'
 
+  // Los totales se calculan sobre todos los detalles del periodo, no solo
+  // sobre la página visible — son un resumen del periodo completo.
   const totalBruto = periodo.detalles.reduce((sum, d) => sum + d.salarioBruto, 0)
   const totalDeducciones = periodo.detalles.reduce((sum, d) => sum + d.totalDeducciones, 0)
   const totalNeto = periodo.detalles.reduce((sum, d) => sum + d.salarioNeto, 0)
+
+  const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
+    periodo.detalles,
+    8
+  )
 
   const resumen = [
     {
@@ -130,7 +139,7 @@ export function PeriodoDetail({ periodo, canWrite }: PeriodoDetailProps) {
                 </tr>
               </thead>
               <tbody>
-                {periodo.detalles.map((d) => (
+                {paginatedItems.map((d) => (
                   <Fragment key={d.id}>
                     <tr className="border-b border-slate-50 last:border-0">
                       <td className="px-4 py-3 font-semibold text-slate-900">{d.empleadoNombre}</td>
@@ -207,6 +216,12 @@ export function PeriodoDetail({ periodo, canWrite }: PeriodoDetailProps) {
               </tfoot>
             </table>
           </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPrevious={goToPreviousPage}
+            onNext={goToNextPage}
+          />
         </div>
       )}
     </div>
