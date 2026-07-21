@@ -75,8 +75,11 @@ export async function buildPlanillaTemplate(
     }
   })
 
-  ws.columns.forEach((column, index) => {
-    column.width = index === 1 ? 32 : 18
+  // getColumn (no `ws.columns`): la propiedad `columns` solo queda poblada si
+  // se asigna explícitamente antes, y aquí las columnas se llenan celda a
+  // celda — iterar `ws.columns` puede fallar silenciosamente o lanzar.
+  PLANILLA_HEADERS.forEach((_, index) => {
+    ws.getColumn(index + 1).width = index === 1 ? 32 : 18
   })
 
   const buffer = await wb.xlsx.writeBuffer()
@@ -110,21 +113,53 @@ function cellValue(cell: ExcelJS.Cell): RawCell {
   return String(value)
 }
 
+/**
+ * Ubica la fila del encabezado buscando la etiqueta "Cédula" en la columna A
+ * (las primeras 20 filas). Así el parseo tolera que el usuario inserte o
+ * borre una fila por accidente al editar — no depende de que el encabezado
+ * siga exactamente en la fila 4. Si no la encuentra, usa HEADER_ROW.
+ */
+function locateHeaderRow(ws: ExcelJS.Worksheet): number {
+  const maxScan = Math.min(ws.rowCount, 20)
+  for (let rowNumber = 1; rowNumber <= maxScan; rowNumber += 1) {
+    const value = cellValue(ws.getRow(rowNumber).getCell(1))
+    if (typeof value === 'string' && value.trim() === PLANILLA_HEADERS[0]) {
+      return rowNumber
+    }
+  }
+  return HEADER_ROW
+}
+
 /** Lee el Excel subido y devuelve filas normalizadas + errores por fila. */
 export async function parsePlanillaWorkbook(buffer: ArrayBuffer): Promise<ParsePlanillaResult> {
   const wb = new ExcelJS.Workbook()
-  await wb.xlsx.load(buffer)
+
+  try {
+    await wb.xlsx.load(buffer)
+  } catch {
+    return {
+      rows: [],
+      errors: [
+        {
+          fila: 0,
+          mensaje:
+            'El archivo no es un Excel válido (.xlsx) o está dañado. Descarga la plantilla de nuevo y vuelve a intentar.',
+        },
+      ],
+    }
+  }
 
   const ws = wb.getWorksheet(SHEET_NAME) ?? wb.worksheets[0]
   if (!ws) {
     return { rows: [], errors: [{ fila: 0, mensaje: 'El archivo no tiene hojas legibles.' }] }
   }
 
+  const headerRow = locateHeaderRow(ws)
   const rows: PlanillaRowInput[] = []
   const errors: PlanillaRowError[] = []
   const cedulasVistas = new Set<string>()
 
-  for (let rowNumber = HEADER_ROW + 1; rowNumber <= ws.rowCount; rowNumber += 1) {
+  for (let rowNumber = headerRow + 1; rowNumber <= ws.rowCount; rowNumber += 1) {
     const row = ws.getRow(rowNumber)
     const result = parsePlanillaRow(rowNumber, cellValue(row.getCell(1)), {
       base: cellValue(row.getCell(3)),

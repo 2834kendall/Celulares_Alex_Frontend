@@ -58,6 +58,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!empleadosResult.ok) {
     return NextResponse.json({ error: empleadosResult.error }, { status: 500 })
   }
+  if (empleadosResult.data.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          'La sucursal de este periodo no tiene empleados con contrato activo. Verifica el historial laboral antes de generar la planilla.',
+      },
+      { status: 422 }
+    )
+  }
 
   const titulo = `Planilla — ${periodoLabel(
     periodo.npe_periodo_mes,
