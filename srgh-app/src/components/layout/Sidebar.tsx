@@ -8,6 +8,8 @@ interface SidebarProps {
   permisos: string[]
   /** Nombre real de la empresa (cargado server-side desde sgrh_empresas). */
   empresaNombre: string
+  /** Sucursal asignada al usuario, o null si no tiene una fija (p.ej. ADMIN). */
+  sucursalNombre: string | null
   /** Colapsable en escritorio desde la hamburguesa del topbar. */
   open?: boolean
 }
@@ -17,7 +19,7 @@ interface SidebarProps {
  * aprovechar la pantalla completa. En movil se oculta siempre — ahi se
  * usa el drawer del AppShell.
  */
-export function Sidebar({ permisos, empresaNombre, open = true }: SidebarProps) {
+export function Sidebar({ permisos, empresaNombre, sucursalNombre, open = true }: SidebarProps) {
   return (
     <aside
       // inert al colapsar: el contenido queda para la animacion pero
@@ -38,7 +40,7 @@ export function Sidebar({ permisos, empresaNombre, open = true }: SidebarProps) 
               {empresaNombre}
             </p>
             <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-              {BRAND.sistema}
+              {sucursalNombre ?? BRAND.sistema}
             </p>
           </div>
         </div>

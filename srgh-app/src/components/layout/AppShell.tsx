@@ -15,6 +15,8 @@ interface AppShellProps {
   rol: string | null
   /** Nombre real de la empresa (cargado server-side desde sgrh_empresas). */
   empresaNombre: string
+  /** Sucursal asignada al usuario, o null si no tiene una fija (p.ej. ADMIN). */
+  sucursalNombre: string | null
   children: React.ReactNode
 }
 
@@ -49,7 +51,14 @@ function BurgerIcon({ open }: { open: boolean }) {
  * - Movil: la hamburguesa abre el drawer lateral
  * La seguridad ya paso en el layout (server); esto es solo presentacion.
  */
-export function AppShell({ permisos, email, rol, empresaNombre, children }: AppShellProps) {
+export function AppShell({
+  permisos,
+  email,
+  rol,
+  empresaNombre,
+  sucursalNombre,
+  children,
+}: AppShellProps) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(true) // escritorio
   const [drawerOpen, setDrawerOpen] = useState(false) // movil
@@ -128,7 +137,7 @@ export function AppShell({ permisos, email, rol, empresaNombre, children }: AppS
                 <div className="leading-tight">
                   <p className="text-sm font-extrabold text-slate-900">{empresaNombre}</p>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                    {BRAND.sistema}
+                    {sucursalNombre ?? BRAND.sistema}
                   </p>
                 </div>
               </div>
@@ -151,7 +160,12 @@ export function AppShell({ permisos, email, rol, empresaNombre, children }: AppS
 
       {/* Cuerpo: sidebar + contenido */}
       <div className="flex flex-1">
-        <Sidebar permisos={permisos} empresaNombre={empresaNombre} open={sidebarOpen} />
+        <Sidebar
+          permisos={permisos}
+          empresaNombre={empresaNombre}
+          sucursalNombre={sucursalNombre}
+          open={sidebarOpen}
+        />
         {/* key={pathname}: reinicia la animacion de entrada en cada navegacion */}
         <main key={pathname} className="animate-page min-w-0 flex-1 p-4 md:p-6">
           {children}

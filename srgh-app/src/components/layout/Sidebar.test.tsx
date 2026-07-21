@@ -11,6 +11,7 @@ vi.mock('next/navigation', () => ({
 
 const ALL_PERMISOS = Object.values(PERMISOS)
 const EMPRESA = 'TecnoCel'
+const SUCURSAL = 'PZ2'
 
 const ZONAS = [
   'Empleados',
@@ -29,7 +30,7 @@ describe('<Sidebar />', () => {
   })
 
   it('con todos los permisos muestra todas las zonas', () => {
-    render(<Sidebar permisos={ALL_PERMISOS} empresaNombre={EMPRESA} />)
+    render(<Sidebar permisos={ALL_PERMISOS} empresaNombre={EMPRESA} sucursalNombre={null} />)
 
     expect(screen.getByRole('link', { name: /inicio/i })).toBeInTheDocument()
     for (const zona of ZONAS) {
@@ -38,7 +39,7 @@ describe('<Sidebar />', () => {
   })
 
   it('sin permisos solo muestra Inicio', () => {
-    render(<Sidebar permisos={[]} empresaNombre={EMPRESA} />)
+    render(<Sidebar permisos={[]} empresaNombre={EMPRESA} sucursalNombre={null} />)
 
     expect(screen.getByRole('link', { name: /inicio/i })).toBeInTheDocument()
     for (const zona of ZONAS) {
@@ -51,6 +52,7 @@ describe('<Sidebar />', () => {
       <Sidebar
         permisos={[PERMISOS.ASISTENCIA_WRITE, PERMISOS.AUSENCIAS_WRITE, PERMISOS.COMPROBANTES_READ]}
         empresaNombre={EMPRESA}
+        sucursalNombre={null}
       />
     )
 
@@ -61,29 +63,45 @@ describe('<Sidebar />', () => {
   })
 
   it('muestra el nombre de la empresa recibido por props', () => {
-    render(<Sidebar permisos={[]} empresaNombre={EMPRESA} />)
+    render(<Sidebar permisos={[]} empresaNombre={EMPRESA} sucursalNombre={null} />)
 
     expect(screen.getByText(EMPRESA)).toBeInTheDocument()
     expect(screen.getByText(EMPRESA.charAt(0))).toBeInTheDocument()
   })
 
+  it('con sucursal asignada la muestra debajo del nombre de la empresa', () => {
+    render(<Sidebar permisos={[]} empresaNombre={EMPRESA} sucursalNombre={SUCURSAL} />)
+
+    expect(screen.getByText(SUCURSAL)).toBeInTheDocument()
+  })
+
+  it('sin sucursal asignada (p. ej. ADMIN) cae al nombre del sistema', () => {
+    render(<Sidebar permisos={[]} empresaNombre={EMPRESA} sucursalNombre={null} />)
+
+    expect(screen.getByText('SGRH')).toBeInTheDocument()
+  })
+
   it('marca la zona activa por coincidencia exacta', () => {
     mockUsePathname.mockReturnValue('/dashboard')
-    render(<Sidebar permisos={[]} empresaNombre={EMPRESA} />)
+    render(<Sidebar permisos={[]} empresaNombre={EMPRESA} sucursalNombre={null} />)
 
     expect(screen.getByRole('link', { name: /inicio/i })).toHaveAttribute('aria-current', 'page')
   })
 
   it('marca la zona activa en subrutas', () => {
     mockUsePathname.mockReturnValue('/employees/123')
-    render(<Sidebar permisos={[PERMISOS.EMPLEADOS_READ]} empresaNombre={EMPRESA} />)
+    render(
+      <Sidebar permisos={[PERMISOS.EMPLEADOS_READ]} empresaNombre={EMPRESA} sucursalNombre={null} />
+    )
 
     expect(screen.getByRole('link', { name: /empleados/i })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: /inicio/i })).not.toHaveAttribute('aria-current')
   })
 
   it('colapsado se anima a ancho cero y queda inerte (open=false)', () => {
-    const { container } = render(<Sidebar permisos={[]} empresaNombre={EMPRESA} open={false} />)
+    const { container } = render(
+      <Sidebar permisos={[]} empresaNombre={EMPRESA} sucursalNombre={null} open={false} />
+    )
     const aside = container.querySelector('aside')
 
     expect(aside?.className).toContain('w-0')
@@ -93,7 +111,9 @@ describe('<Sidebar />', () => {
   })
 
   it('abierto no esta inerte', () => {
-    const { container } = render(<Sidebar permisos={[]} empresaNombre={EMPRESA} />)
+    const { container } = render(
+      <Sidebar permisos={[]} empresaNombre={EMPRESA} sucursalNombre={null} />
+    )
     expect(container.querySelector('aside')?.hasAttribute('inert')).toBe(false)
   })
 })
