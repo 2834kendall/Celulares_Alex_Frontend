@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { computeTotales, parsePlanillaRow, sameRowValues, CCSS_RATE } from './planilla'
+import {
+  computeTotales,
+  construirLineas,
+  montosDeFila,
+  parsePlanillaRow,
+  sameRowValues,
+  CCSS_RATE,
+} from './planilla'
 
 const ROW_BASE = { base: 180000, feriado: 0, comision: 26250, horasExtra: 0, ajuste: 4250 }
 
@@ -139,5 +146,68 @@ describe('sameRowValues', () => {
   it('es true para dos filas en cero', () => {
     const ceros = { base: 0, feriado: 0, comision: 0, horasExtra: 0, ajuste: 0 }
     expect(sameRowValues(ceros, { ...ceros })).toBe(true)
+  })
+})
+
+describe('montosDeFila', () => {
+  it('reordena los campos por código de concepto', () => {
+    const montos = montosDeFila({
+      base: 100,
+      feriado: 200,
+      comision: 300,
+      horasExtra: 400,
+      ajuste: 500,
+    })
+
+    expect(montos).toEqual({
+      BASE: 100,
+      FERIADO: 200,
+      COMISION: 300,
+      HORAS_EXTRA: 400,
+      AJUSTE: 500,
+    })
+  })
+})
+
+describe('construirLineas', () => {
+  const conceptoId = new Map([
+    ['BASE', 1],
+    ['FERIADO', 2],
+    ['COMISION', 3],
+    ['HORAS_EXTRA', 4],
+    ['AJUSTE', 5],
+    ['CCSS_OBRERA', 6],
+  ])
+
+  it('omite los ingresos en cero y siempre incluye la deducción de CCSS', () => {
+    const { ingresos, deduccion } = construirLineas(
+      { base: 180000, feriado: 0, comision: 26250, horasExtra: 0, ajuste: 4250 },
+      99,
+      conceptoId
+    )
+
+    expect(ingresos).toEqual([
+      { ing_nomina_detalle_id: 99, ing_concepto_id: 1, ing_monto: 180000 },
+      { ing_nomina_detalle_id: 99, ing_concepto_id: 3, ing_monto: 26250 },
+      { ing_nomina_detalle_id: 99, ing_concepto_id: 5, ing_monto: 4250 },
+    ])
+    expect(deduccion).toEqual({
+      ded_nomina_detalle_id: 99,
+      ded_concepto_id: 6,
+      ded_porcentaje_aplicado: 10.83,
+      ded_base_calculo: 210500,
+      ded_monto: 22797.15,
+    })
+  })
+
+  it('devuelve un arreglo de ingresos vacío cuando todos los montos son cero', () => {
+    const { ingresos, deduccion } = construirLineas(
+      { base: 0, feriado: 0, comision: 0, horasExtra: 0, ajuste: 0 },
+      5,
+      conceptoId
+    )
+
+    expect(ingresos).toEqual([])
+    expect(deduccion.ded_monto).toBe(0)
   })
 })

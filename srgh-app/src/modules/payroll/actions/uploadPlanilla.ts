@@ -6,10 +6,12 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
   computeTotales,
+  construirLineas,
+  montosDeFila,
   sameRowValues,
   CONCEPTOS_PLANILLA,
-  CCSS_RATE,
   type PlanillaRowInput,
+  type MontosPorConcepto,
 } from '@/modules/payroll/lib/planilla'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
@@ -47,41 +49,6 @@ export type UploadPlanillaResult =
       eliminados: number
     }
   | { ok: false; error: string }
-
-type MontosPorConcepto = Record<(typeof CONCEPTOS_PLANILLA.ingresos)[number], number>
-
-function montosDeFila(row: PlanillaRowInput): MontosPorConcepto {
-  return {
-    BASE: row.base,
-    FERIADO: row.feriado,
-    COMISION: row.comision,
-    HORAS_EXTRA: row.horasExtra,
-    AJUSTE: row.ajuste,
-  }
-}
-
-/** Ingresos (>0) y la deducción de CCSS para un ndt_id ya existente, listos para insertar. */
-function construirLineas(row: PlanillaRowInput, ndtId: number, conceptoId: Map<string, number>) {
-  const montos = montosDeFila(row)
-  const ingresos = CONCEPTOS_PLANILLA.ingresos
-    .filter((codigo) => montos[codigo] > 0)
-    .map((codigo) => ({
-      ing_nomina_detalle_id: ndtId,
-      ing_concepto_id: conceptoId.get(codigo)!,
-      ing_monto: montos[codigo],
-    }))
-
-  const totales = computeTotales(row)
-  const deduccion = {
-    ded_nomina_detalle_id: ndtId,
-    ded_concepto_id: conceptoId.get(CONCEPTOS_PLANILLA.deduccion)!,
-    ded_porcentaje_aplicado: CCSS_RATE * 100,
-    ded_base_calculo: totales.salarioBruto,
-    ded_monto: totales.deduccionCcss,
-  }
-
-  return { ingresos, deduccion }
-}
 
 /**
  * Sube la planilla llena y la sincroniza con el periodo (solo en borrador).

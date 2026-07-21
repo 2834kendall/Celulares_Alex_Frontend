@@ -57,6 +57,65 @@ export function computeTotales(row: PlanillaRowInput): PlanillaRowTotales {
   return { salarioBruto, deduccionCcss, salarioNeto }
 }
 
+/** Montos crudos de ingreso indexados por código de concepto (BASE, FERIADO, ...). */
+export type MontosPorConcepto = Record<(typeof CONCEPTOS_PLANILLA.ingresos)[number], number>
+
+/** Reordena los campos de una fila al shape indexado por código de concepto. */
+export function montosDeFila(row: Omit<PlanillaRowInput, 'cedula'>): MontosPorConcepto {
+  return {
+    BASE: row.base,
+    FERIADO: row.feriado,
+    COMISION: row.comision,
+    HORAS_EXTRA: row.horasExtra,
+    AJUSTE: row.ajuste,
+  }
+}
+
+export interface LineaIngresoNueva {
+  ing_nomina_detalle_id: number
+  ing_concepto_id: number
+  ing_monto: number
+}
+
+export interface DeduccionCcssNueva {
+  ded_nomina_detalle_id: number
+  ded_concepto_id: number
+  ded_porcentaje_aplicado: number
+  ded_base_calculo: number
+  ded_monto: number
+}
+
+/**
+ * Ingresos (>0) y la deducción de CCSS para un ndt_id ya existente, listos
+ * para insertar. Compartido por la subida de Excel y la edición manual desde
+ * el detalle del periodo — misma regla de cálculo en los dos flujos.
+ */
+export function construirLineas(
+  row: Omit<PlanillaRowInput, 'cedula'>,
+  ndtId: number,
+  conceptoId: Map<string, number>
+): { ingresos: LineaIngresoNueva[]; deduccion: DeduccionCcssNueva } {
+  const montos = montosDeFila(row)
+  const ingresos = CONCEPTOS_PLANILLA.ingresos
+    .filter((codigo) => montos[codigo] > 0)
+    .map((codigo) => ({
+      ing_nomina_detalle_id: ndtId,
+      ing_concepto_id: conceptoId.get(codigo)!,
+      ing_monto: montos[codigo],
+    }))
+
+  const totales = computeTotales({ cedula: '', ...row })
+  const deduccion = {
+    ded_nomina_detalle_id: ndtId,
+    ded_concepto_id: conceptoId.get(CONCEPTOS_PLANILLA.deduccion)!,
+    ded_porcentaje_aplicado: CCSS_RATE * 100,
+    ded_base_calculo: totales.salarioBruto,
+    ded_monto: totales.deduccionCcss,
+  }
+
+  return { ingresos, deduccion }
+}
+
 /**
  * Compara los montos crudos de una fila (sin la cédula) contra lo ya guardado
  * en el periodo. Se usa para el upsert de la planilla: si todo coincide, la

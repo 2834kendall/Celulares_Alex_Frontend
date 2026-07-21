@@ -84,10 +84,25 @@ describe('getPeriodoDetail (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'No se pudo cargar la planilla del periodo.' })
   })
 
-  it('arma el detalle con nombre completo del empleado', async () => {
+  it('arma el detalle con nombre completo del empleado y los montos crudos', async () => {
     mockTables({
       sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
       sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_nomina_linea_ingreso: {
+        data: [
+          {
+            ing_nomina_detalle_id: 21,
+            ing_monto: 450000,
+            sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+          },
+          {
+            ing_nomina_detalle_id: 21,
+            ing_monto: 50000,
+            sgrh_cat_conceptos_nomina: { con_codigo: 'COMISION' },
+          },
+        ],
+        error: null,
+      },
     })
 
     const result = await getPeriodoDetail(7)
@@ -104,8 +119,34 @@ describe('getPeriodoDetail (server action)', () => {
           cargasPatronales: 133000,
           salarioNeto: 447500,
           pagado: false,
+          base: 450000,
+          feriado: 0,
+          comision: 50000,
+          horasExtra: 0,
+          ajuste: 0,
         },
       ])
+    }
+  })
+
+  it('deja los montos crudos en cero si la consulta de líneas falla (no bloquea la página)', async () => {
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_nomina_linea_ingreso: { data: null, error: { message: 'boom' } },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.detalles[0]).toMatchObject({
+        base: 0,
+        feriado: 0,
+        comision: 0,
+        horasExtra: 0,
+        ajuste: 0,
+      })
     }
   })
 })

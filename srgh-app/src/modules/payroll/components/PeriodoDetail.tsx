@@ -1,4 +1,8 @@
-import { Banknote, CalendarDays, Users } from 'lucide-react'
+'use client'
+
+import { Fragment, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Banknote, CalendarDays, Pencil, Users, X } from 'lucide-react'
 import type { PeriodoDetalle } from '@/modules/payroll/types'
 import {
   estadoBadgeClasses,
@@ -7,13 +11,24 @@ import {
   formatDate,
   periodoLabel,
 } from '@/modules/payroll/lib/format'
+import { DetalleEditForm } from './DetalleEditForm'
 
 interface PeriodoDetailProps {
   periodo: PeriodoDetalle
+  canWrite: boolean
 }
 
-/** Cabecera del periodo + tabla de planilla (server component, solo lectura). */
-export function PeriodoDetail({ periodo }: PeriodoDetailProps) {
+/**
+ * Cabecera del periodo + tabla de planilla. La edición manual de ingresos
+ * (BASE, FERIADO, COMISION, HORAS_EXTRA, AJUSTE) solo se ofrece mientras el
+ * periodo está en borrador — igual que la subida de Excel.
+ */
+export function PeriodoDetail({ periodo, canWrite }: PeriodoDetailProps) {
+  const router = useRouter()
+  const [editandoId, setEditandoId] = useState<number | null>(null)
+
+  const puedeEditar = canWrite && periodo.estado === 'borrador'
+
   const totalBruto = periodo.detalles.reduce((sum, d) => sum + d.salarioBruto, 0)
   const totalDeducciones = periodo.detalles.reduce((sum, d) => sum + d.totalDeducciones, 0)
   const totalNeto = periodo.detalles.reduce((sum, d) => sum + d.salarioNeto, 0)
@@ -95,8 +110,8 @@ export function PeriodoDetail({ periodo }: PeriodoDetailProps) {
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
           <p className="text-sm font-semibold text-slate-700">Planilla vacía</p>
           <p className="mt-1 text-xs text-slate-500">
-            Este periodo aún no tiene empleados registrados. El cálculo de la planilla se agregará
-            en la siguiente iteración del módulo.
+            Este periodo aún no tiene empleados registrados. Sube la planilla en Excel para
+            agregarlos.
           </p>
         </div>
       ) : (
@@ -111,36 +126,72 @@ export function PeriodoDetail({ periodo }: PeriodoDetailProps) {
                   <th className="px-4 py-3 text-right font-semibold">Cargas patronales</th>
                   <th className="px-4 py-3 text-right font-semibold">Salario neto</th>
                   <th className="px-4 py-3 font-semibold">Pago</th>
+                  {puedeEditar && <th className="px-4 py-3 text-right font-semibold">Acciones</th>}
                 </tr>
               </thead>
               <tbody>
                 {periodo.detalles.map((d) => (
-                  <tr key={d.id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-4 py-3 font-semibold text-slate-900">{d.empleadoNombre}</td>
-                    <td className="px-4 py-3 text-right text-slate-600">
-                      {formatCRC(d.salarioBruto)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-600">
-                      {formatCRC(d.totalDeducciones)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-600">
-                      {formatCRC(d.cargasPatronales)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                      {formatCRC(d.salarioNeto)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${
-                          d.pagado
-                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                            : 'bg-slate-50 text-slate-600 ring-slate-200'
-                        }`}
-                      >
-                        {d.pagado ? 'Pagado' : 'Pendiente'}
-                      </span>
-                    </td>
-                  </tr>
+                  <Fragment key={d.id}>
+                    <tr className="border-b border-slate-50 last:border-0">
+                      <td className="px-4 py-3 font-semibold text-slate-900">{d.empleadoNombre}</td>
+                      <td className="px-4 py-3 text-right text-slate-600">
+                        {formatCRC(d.salarioBruto)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-600">
+                        {formatCRC(d.totalDeducciones)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-600">
+                        {formatCRC(d.cargasPatronales)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                        {formatCRC(d.salarioNeto)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${
+                            d.pagado
+                              ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                              : 'bg-slate-50 text-slate-600 ring-slate-200'
+                          }`}
+                        >
+                          {d.pagado ? 'Pagado' : 'Pendiente'}
+                        </span>
+                      </td>
+                      {puedeEditar && (
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
+                            aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
+                            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                          >
+                            {editandoId === d.id ? (
+                              <X className="h-3.5 w-3.5" />
+                            ) : (
+                              <Pencil className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                    {puedeEditar && editandoId === d.id && (
+                      <tr className="border-b border-slate-100 bg-slate-50/60">
+                        <td colSpan={7} className="px-4 py-4">
+                          <p className="mb-3 text-xs font-semibold text-slate-700">
+                            Editar ingresos de {d.empleadoNombre}
+                          </p>
+                          <DetalleEditForm
+                            detalle={d}
+                            onCancel={() => setEditandoId(null)}
+                            onSuccess={() => {
+                              setEditandoId(null)
+                              router.refresh()
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
               <tfoot>
@@ -151,6 +202,7 @@ export function PeriodoDetail({ periodo }: PeriodoDetailProps) {
                   <td className="px-4 py-3 text-right">—</td>
                   <td className="px-4 py-3 text-right">{formatCRC(totalNeto)}</td>
                   <td className="px-4 py-3" />
+                  {puedeEditar && <td className="px-4 py-3" />}
                 </tr>
               </tfoot>
             </table>

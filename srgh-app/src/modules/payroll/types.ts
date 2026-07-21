@@ -39,7 +39,11 @@ export interface PeriodoListItem {
   totalEmpleados: number
 }
 
-/** Fila de la planilla: un empleado dentro de un periodo. */
+/**
+ * Fila de la planilla: un empleado dentro de un periodo. Los cinco montos
+ * crudos (base..ajuste) son los mismos que trae la plantilla de Excel — se
+ * exponen para poder editarlos a mano sin tener que volver a subir el archivo.
+ */
 export interface DetalleNominaItem {
   id: number
   empleadoNombre: string
@@ -48,6 +52,11 @@ export interface DetalleNominaItem {
   cargasPatronales: number
   salarioNeto: number
   pagado: boolean
+  base: number
+  feriado: number
+  comision: number
+  horasExtra: number
+  ajuste: number
 }
 
 export interface PeriodoDetalle {
@@ -174,3 +183,24 @@ type _ConceptoNominaAlineado =
   ConceptoNominaInput extends Omit<ConceptoNominaInsert, 'con_id'> ? true : never
 const _conceptoAlineado: _ConceptoNominaAlineado = true
 void _conceptoAlineado
+
+// ─── Schema de edición manual de un detalle de planilla ──────────────────────
+// Mismos cinco campos que la plantilla de Excel (BASE, FERIADO, COMISION,
+// HORAS_EXTRA, AJUSTE). El rebajo de CCSS nunca se edita a mano: siempre se
+// recalcula en el servidor a partir de estos montos, igual que en la subida.
+
+const montoNoNegativo = (mensaje: string) =>
+  z
+    .number({ error: mensaje })
+    .min(0, 'No puede ser negativo')
+    .max(99_999_999, 'El monto es demasiado alto')
+
+export const editarDetalleSchema = z.object({
+  base: montoNoNegativo('El monto base es obligatorio'),
+  feriado: montoNoNegativo('El monto de feriado es obligatorio'),
+  comision: montoNoNegativo('El monto de comisión es obligatorio'),
+  horasExtra: montoNoNegativo('El monto de horas extra es obligatorio'),
+  ajuste: montoNoNegativo('El monto de ajuste es obligatorio'),
+})
+
+export type EditarDetalleInput = z.infer<typeof editarDetalleSchema>

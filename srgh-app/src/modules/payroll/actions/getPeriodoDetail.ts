@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
+import { CONCEPTOS_PLANILLA, type MontosPorConcepto } from '@/modules/payroll/lib/planilla'
 
 interface PeriodoRow {
   npe_id: number
@@ -32,6 +33,20 @@ interface DetalleRow {
       emp_apellido_2: string | null
     } | null
   } | null
+}
+
+interface LineaIngresoRow {
+  ing_nomina_detalle_id: number
+  ing_monto: number
+  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+}
+
+const MONTOS_EN_CERO: MontosPorConcepto = {
+  BASE: 0,
+  FERIADO: 0,
+  COMISION: 0,
+  HORAS_EXTRA: 0,
+  AJUSTE: 0,
 }
 
 export type GetPeriodoDetailResult =
@@ -100,13 +115,36 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
     return { ok: false, error: 'No se pudo cargar la planilla del periodo.' }
   }
 
-  const items: DetalleNominaItem[] = (detalles ?? []).map((row) => {
+  // Montos crudos por concepto (para poder editarlos sin volver a subir el
+  // Excel). Es información complementaria: si esta consulta falla, se
+  // muestran los totales igual y los montos crudos quedan en cero — no se
+  // bloquea toda la pantalla por esto.
+  const idsDetalle = (detalles ?? []).map((d: DetalleRow) => d.ndt_id)
+  const montosPorNdt = new Map<number, MontosPorConcepto>()
+  if (idsDetalle.length > 0) {
+    const { data: lineasIngreso } = await supabase
+      .from('sgrh_nomina_linea_ingreso')
+      .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+      .in('ing_nomina_detalle_id', idsDetalle)
+      .returns<LineaIngresoRow[]>()
+
+    for (const linea of lineasIngreso ?? []) {
+      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+      if (!codigo || !(CONCEPTOS_PLANILLA.ingresos as readonly string[]).includes(codigo)) continue
+      const montos = montosPorNdt.get(linea.ing_nomina_detalle_id) ?? { ...MONTOS_EN_CERO }
+      montos[codigo as (typeof CONCEPTOS_PLANILLA.ingresos)[number]] = linea.ing_monto
+      montosPorNdt.set(linea.ing_nomina_detalle_id, montos)
+    }
+  }
+
+  const items: DetalleNominaItem[] = (detalles ?? []).map((row: DetalleRow) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados
     const nombre = empleado
       ? [empleado.emp_nombre, empleado.emp_apellido_1, empleado.emp_apellido_2]
           .filter(Boolean)
           .join(' ')
       : 'Empleado no disponible'
+    const montos = montosPorNdt.get(row.ndt_id) ?? MONTOS_EN_CERO
 
     return {
       id: row.ndt_id,
@@ -116,6 +154,11 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       cargasPatronales: row.ndt_total_cargas_patronales,
       salarioNeto: row.ndt_salario_neto,
       pagado: row.ndt_pagado,
+      base: montos.BASE,
+      feriado: montos.FERIADO,
+      comision: montos.COMISION,
+      horasExtra: montos.HORAS_EXTRA,
+      ajuste: montos.AJUSTE,
     }
   })
 

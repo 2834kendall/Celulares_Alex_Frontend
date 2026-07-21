@@ -61,7 +61,7 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
         <PlanillaImport periodoId={detailResult.data.id} estado={detailResult.data.estado} />
       )}
 
-      <PeriodoDetail periodo={detailResult.data} />
+      <PeriodoDetail periodo={detailResult.data} canWrite={canWrite} />
     </div>
   )
 }
