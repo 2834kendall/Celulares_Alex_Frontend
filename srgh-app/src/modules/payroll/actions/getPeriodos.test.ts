@@ -24,7 +24,7 @@ const PERIODO_BASE = {
   npe_estado: 'borrador',
   npe_fecha_pago: null,
   sgrh_sucursales: { suc_nombre: 'Central' },
-  sgrh_nomina_detalle: [{ count: 4 }],
+  sgrh_nomina_detalle: [{ ndt_id: 1 }, { ndt_id: 2 }, { ndt_id: 3 }, { ndt_id: 4 }],
 }
 
 describe('getPeriodos (server action)', () => {
