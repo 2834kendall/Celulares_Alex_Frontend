@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowLeft } from 'lucide-react'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
+import { getConceptos } from '@/modules/payroll/actions/getConceptos'
 import { PeriodoDetail } from '@/modules/payroll/components/PeriodoDetail'
 import { PlanillaImport } from '@/modules/payroll/components/PlanillaImport'
 
@@ -32,7 +33,10 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canWrite = permisos.includes(PERMISOS.NOMINA_WRITE)
 
-  const detailResult = await getPeriodoDetail(periodoId)
+  const [detailResult, conceptosResult] = await Promise.all([
+    getPeriodoDetail(periodoId),
+    getConceptos(),
+  ])
 
   if (!detailResult.ok) {
     if (detailResult.notFound) {
@@ -40,6 +44,13 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
     }
     return <ErrorBanner message={detailResult.error} />
   }
+
+  const conceptosManuales = (conceptosResult.ok ? conceptosResult.data : []).filter(
+    (c) =>
+      c.con_activo &&
+      (c.con_tipo_calculo === 'monto_manual_ingreso' ||
+        c.con_tipo_calculo === 'monto_manual_deduccion')
+  )
 
   return (
     <div className="min-w-0 space-y-4">
@@ -61,7 +72,11 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
         <PlanillaImport periodoId={detailResult.data.id} estado={detailResult.data.estado} />
       )}
 
-      <PeriodoDetail periodo={detailResult.data} canWrite={canWrite} />
+      <PeriodoDetail
+        periodo={detailResult.data}
+        canWrite={canWrite}
+        conceptosManuales={conceptosManuales}
+      />
     </div>
   )
 }

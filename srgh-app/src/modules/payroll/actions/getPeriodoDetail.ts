@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
-import { CONCEPTOS_PLANILLA, type MontosPorConcepto } from '@/modules/payroll/lib/planilla'
 
 interface PeriodoRow {
   npe_id: number
@@ -26,11 +25,15 @@ interface DetalleRow {
   ndt_total_cargas_patronales: number
   ndt_salario_neto: number
   ndt_pagado: boolean
+  ndt_fecha_pago: string | null
+  ndt_horas_ordinarias_diurnas: number
+  ndt_salario_por_hora: number
   sgrh_historial_laboral: {
     sgrh_empleados: {
       emp_nombre: string
       emp_apellido_1: string
       emp_apellido_2: string | null
+      emp_numero_identificacion: string | null
     } | null
   } | null
 }
@@ -41,12 +44,10 @@ interface LineaIngresoRow {
   sgrh_cat_conceptos_nomina: { con_codigo: string } | null
 }
 
-const MONTOS_EN_CERO: MontosPorConcepto = {
-  BASE: 0,
-  FERIADO: 0,
-  COMISION: 0,
-  HORAS_EXTRA: 0,
-  AJUSTE: 0,
+interface LineaDeduccionRow {
+  ded_nomina_detalle_id: number
+  ded_monto: number
+  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
 }
 
 export type GetPeriodoDetailResult =
@@ -102,8 +103,11 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_total_cargas_patronales,
       ndt_salario_neto,
       ndt_pagado,
+      ndt_fecha_pago,
+      ndt_horas_ordinarias_diurnas,
+      ndt_salario_por_hora,
       sgrh_historial_laboral (
-        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
+        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
       )
     `
     )
@@ -115,25 +119,40 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
     return { ok: false, error: 'No se pudo cargar la planilla del periodo.' }
   }
 
-  // Montos crudos por concepto (para poder editarlos sin volver a subir el
-  // Excel). Es información complementaria: si esta consulta falla, se
-  // muestran los totales igual y los montos crudos quedan en cero — no se
-  // bloquea toda la pantalla por esto.
+  // Montos crudos por concepto (para poder editarlos sin re-subir el Excel, y
+  // para mostrar el desglose en el comprobante). Es información
+  // complementaria: si estas consultas fallan, se muestran los totales igual
+  // y los montos crudos quedan vacíos — no se bloquea toda la pantalla.
   const idsDetalle = (detalles ?? []).map((d: DetalleRow) => d.ndt_id)
-  const montosPorNdt = new Map<number, MontosPorConcepto>()
+  const montosPorNdt = new Map<number, Record<string, number>>()
+
   if (idsDetalle.length > 0) {
-    const { data: lineasIngreso } = await supabase
-      .from('sgrh_nomina_linea_ingreso')
-      .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
-      .in('ing_nomina_detalle_id', idsDetalle)
-      .returns<LineaIngresoRow[]>()
+    const [{ data: lineasIngreso }, { data: lineasDeduccion }] = await Promise.all([
+      supabase
+        .from('sgrh_nomina_linea_ingreso')
+        .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .in('ing_nomina_detalle_id', idsDetalle)
+        .returns<LineaIngresoRow[]>(),
+      supabase
+        .from('sgrh_nomina_linea_deduccion')
+        .select('ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .in('ded_nomina_detalle_id', idsDetalle)
+        .returns<LineaDeduccionRow[]>(),
+    ])
 
     for (const linea of lineasIngreso ?? []) {
       const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
-      if (!codigo || !(CONCEPTOS_PLANILLA.ingresos as readonly string[]).includes(codigo)) continue
-      const montos = montosPorNdt.get(linea.ing_nomina_detalle_id) ?? { ...MONTOS_EN_CERO }
-      montos[codigo as (typeof CONCEPTOS_PLANILLA.ingresos)[number]] = linea.ing_monto
+      if (!codigo) continue
+      const montos = montosPorNdt.get(linea.ing_nomina_detalle_id) ?? {}
+      montos[codigo] = linea.ing_monto
       montosPorNdt.set(linea.ing_nomina_detalle_id, montos)
+    }
+    for (const linea of lineasDeduccion ?? []) {
+      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+      if (!codigo) continue
+      const montos = montosPorNdt.get(linea.ded_nomina_detalle_id) ?? {}
+      montos[codigo] = linea.ded_monto
+      montosPorNdt.set(linea.ded_nomina_detalle_id, montos)
     }
   }
 
@@ -144,21 +163,20 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
           .filter(Boolean)
           .join(' ')
       : 'Empleado no disponible'
-    const montos = montosPorNdt.get(row.ndt_id) ?? MONTOS_EN_CERO
 
     return {
       id: row.ndt_id,
       empleadoNombre: nombre,
+      empleadoCedula: empleado?.emp_numero_identificacion ?? '—',
       salarioBruto: row.ndt_salario_bruto,
       totalDeducciones: row.ndt_total_deducciones_obreras,
       cargasPatronales: row.ndt_total_cargas_patronales,
       salarioNeto: row.ndt_salario_neto,
       pagado: row.ndt_pagado,
-      base: montos.BASE,
-      feriado: montos.FERIADO,
-      comision: montos.COMISION,
-      horasExtra: montos.HORAS_EXTRA,
-      ajuste: montos.AJUSTE,
+      fechaPago: row.ndt_fecha_pago,
+      montosPorConcepto: montosPorNdt.get(row.ndt_id) ?? {},
+      horasTrabajadas: row.ndt_horas_ordinarias_diurnas,
+      salarioPorHora: row.ndt_salario_por_hora,
     }
   })
 

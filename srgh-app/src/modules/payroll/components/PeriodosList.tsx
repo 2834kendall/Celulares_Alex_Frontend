@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, CheckCircle2, FileClock } from 'lucide-react'
+import { CalendarDays, FileClock } from 'lucide-react'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 import {
   ESTADO_LABELS,
@@ -48,7 +48,6 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
 
   const total = periodos.length
   const borradores = periodos.filter((p) => p.estado === 'borrador').length
-  const pagados = periodos.filter((p) => p.estado === 'pagado').length
 
   const stats = [
     {
@@ -65,18 +64,11 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
       value: borradores,
       tone: 'bg-amber-50 text-amber-600',
     },
-    {
-      key: 'pagados',
-      icon: CheckCircle2,
-      label: 'Pagados',
-      value: pagados,
-      tone: 'bg-emerald-50 text-emerald-600',
-    },
   ]
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         {stats.map(({ key, icon: Icon, label, value, tone }) => (
           <div
             key={key}

@@ -1,9 +1,11 @@
 'use client'
 
 import { Fragment, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Banknote, CalendarDays, Pencil, Users, X } from 'lucide-react'
-import type { PeriodoDetalle } from '@/modules/payroll/types'
+import { Banknote, CalendarDays, Loader2, Pencil, Receipt, Users, X } from 'lucide-react'
+import { toast } from 'sonner'
+import type { ConceptoNominaRow, DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
 import {
   estadoBadgeClasses,
   estadoLabel,
@@ -13,11 +15,13 @@ import {
 } from '@/modules/payroll/lib/format'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
+import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
 import { DetalleEditForm } from './DetalleEditForm'
 
 interface PeriodoDetailProps {
   periodo: PeriodoDetalle
   canWrite: boolean
+  conceptosManuales: ConceptoNominaRow[]
 }
 
 /**
@@ -25,11 +29,33 @@ interface PeriodoDetailProps {
  * (BASE, FERIADO, COMISION, HORAS_EXTRA, AJUSTE) solo se ofrece mientras el
  * periodo está en borrador — igual que la subida de Excel.
  */
-export function PeriodoDetail({ periodo, canWrite }: PeriodoDetailProps) {
+export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoDetailProps) {
   const router = useRouter()
   const [editandoId, setEditandoId] = useState<number | null>(null)
+  const [pagandoId, setPagandoId] = useState<number | null>(null)
 
   const puedeEditar = canWrite && periodo.estado === 'borrador'
+
+  // Marcar/desmarcar un pago individual no depende del estado del periodo
+  // (ndt_pagado es independiente de npe_estado) — solo requiere permiso de
+  // escritura sobre nómina.
+  async function handleTogglePagado(detalle: DetalleNominaItem) {
+    setPagandoId(detalle.id)
+    const result = await marcarDetallePagado(detalle.id, !detalle.pagado)
+    setPagandoId(null)
+
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+
+    toast.success(
+      detalle.pagado
+        ? 'Pago desmarcado.'
+        : 'Pago marcado como realizado. Ya puedes ver el comprobante.'
+    )
+    router.refresh()
+  }
 
   // Los totales se calculan sobre todos los detalles del periodo, no solo
   // sobre la página visible — son un resumen del periodo completo.
@@ -156,15 +182,48 @@ export function PeriodoDetail({ periodo, canWrite }: PeriodoDetailProps) {
                         {formatCRC(d.salarioNeto)}
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${
-                            d.pagado
-                              ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                              : 'bg-slate-50 text-slate-600 ring-slate-200'
-                          }`}
-                        >
-                          {d.pagado ? 'Pagado' : 'Pendiente'}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {canWrite ? (
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePagado(d)}
+                              disabled={pagandoId === d.id}
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset outline-none transition focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
+                                d.pagado
+                                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {pagandoId === d.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                              )}
+                              {d.pagado ? 'Pagado' : 'Pendiente'}
+                            </button>
+                          ) : (
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${
+                                d.pagado
+                                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                  : 'bg-slate-50 text-slate-600 ring-slate-200'
+                              }`}
+                            >
+                              {d.pagado ? 'Pagado' : 'Pendiente'}
+                            </span>
+                          )}
+                          {d.pagado && (
+                            <Link
+                              href={`/comprobante/${periodo.id}/${d.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label="Ver comprobante de pago"
+                              className="rounded-full p-1 text-slate-400 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                            >
+                              <Receipt className="h-3.5 w-3.5" />
+                            </Link>
+                          )}
+                        </div>
                       </td>
                       {puedeEditar && (
                         <td className="px-4 py-3 text-right">
@@ -191,6 +250,7 @@ export function PeriodoDetail({ periodo, canWrite }: PeriodoDetailProps) {
                           </p>
                           <DetalleEditForm
                             detalle={d}
+                            conceptosManuales={conceptosManuales}
                             onCancel={() => setEditandoId(null)}
                             onSuccess={() => {
                               setEditandoId(null)

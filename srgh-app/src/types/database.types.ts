@@ -307,7 +307,9 @@ export type Database = {
           con_formula_base: string | null
           con_id: number
           con_nombre: string
+          con_porcentaje: number | null
           con_tipo: string
+          con_tipo_calculo: string
         }
         Insert: {
           con_activo?: boolean
@@ -317,7 +319,9 @@ export type Database = {
           con_formula_base?: string | null
           con_id?: never
           con_nombre: string
+          con_porcentaje?: number | null
           con_tipo: string
+          con_tipo_calculo?: string
         }
         Update: {
           con_activo?: boolean
@@ -327,7 +331,9 @@ export type Database = {
           con_formula_base?: string | null
           con_id?: never
           con_nombre?: string
+          con_porcentaje?: number | null
           con_tipo?: string
+          con_tipo_calculo?: string
         }
         Relationships: []
       }
@@ -1301,6 +1307,87 @@ export type Database = {
           },
         ]
       }
+      sgrh_liquidaciones: {
+        Row: {
+          liq_aguinaldo_proporcional: number
+          liq_cesantia: number
+          liq_created_at: string
+          liq_dias_cesantia: number
+          liq_dias_preaviso: number
+          liq_dias_trabajados_mes: number
+          liq_dias_vacaciones_pendientes: number
+          liq_fecha_pago: string | null
+          liq_fecha_salida: string
+          liq_historial_laboral_id: number
+          liq_id: number
+          liq_motivo_salida_id: number
+          liq_observaciones: string | null
+          liq_pagado: boolean
+          liq_preaviso: number
+          liq_salario_diario: number
+          liq_salario_proporcional: number
+          liq_total: number
+          liq_vacaciones_pagadas: number
+        }
+        Insert: {
+          liq_aguinaldo_proporcional?: number
+          liq_cesantia?: number
+          liq_created_at?: string
+          liq_dias_cesantia?: number
+          liq_dias_preaviso?: number
+          liq_dias_trabajados_mes?: number
+          liq_dias_vacaciones_pendientes?: number
+          liq_fecha_pago?: string | null
+          liq_fecha_salida: string
+          liq_historial_laboral_id: number
+          liq_id?: never
+          liq_motivo_salida_id: number
+          liq_observaciones?: string | null
+          liq_pagado?: boolean
+          liq_preaviso?: number
+          liq_salario_diario: number
+          liq_salario_proporcional?: number
+          liq_total?: number
+          liq_vacaciones_pagadas?: number
+        }
+        Update: {
+          liq_aguinaldo_proporcional?: number
+          liq_cesantia?: number
+          liq_created_at?: string
+          liq_dias_cesantia?: number
+          liq_dias_preaviso?: number
+          liq_dias_trabajados_mes?: number
+          liq_dias_vacaciones_pendientes?: number
+          liq_fecha_pago?: string | null
+          liq_fecha_salida?: string
+          liq_historial_laboral_id?: number
+          liq_id?: never
+          liq_motivo_salida_id?: number
+          liq_observaciones?: string | null
+          liq_pagado?: boolean
+          liq_preaviso?: number
+          liq_salario_diario?: number
+          liq_salario_proporcional?: number
+          liq_total?: number
+          liq_vacaciones_pagadas?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_liquidaciones_liq_historial_laboral_id_fkey"
+            columns: ["liq_historial_laboral_id"]
+            isOneToOne: true
+            referencedRelation: "sgrh_historial_laboral"
+            referencedColumns: ["lab_id"]
+          },
+          {
+            foreignKeyName: "sgrh_liquidaciones_liq_motivo_salida_id_fkey"
+            columns: ["liq_motivo_salida_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_motivos_salida"
+            referencedColumns: ["mot_id"]
+          },
+        ]
+      }
       sgrh_marcas_asistencia: {
         Row: {
           mar_created_at: string
@@ -1390,6 +1477,7 @@ export type Database = {
           ndt_pagado: boolean
           ndt_salario_bruto: number
           ndt_salario_neto: number
+          ndt_salario_por_hora: number
           ndt_total_cargas_patronales: number
           ndt_total_deducciones_obreras: number
         }
@@ -1411,6 +1499,7 @@ export type Database = {
           ndt_pagado?: boolean
           ndt_salario_bruto?: number
           ndt_salario_neto?: number
+          ndt_salario_por_hora?: number
           ndt_total_cargas_patronales?: number
           ndt_total_deducciones_obreras?: number
         }
@@ -1432,6 +1521,7 @@ export type Database = {
           ndt_pagado?: boolean
           ndt_salario_bruto?: number
           ndt_salario_neto?: number
+          ndt_salario_por_hora?: number
           ndt_total_cargas_patronales?: number
           ndt_total_deducciones_obreras?: number
         }

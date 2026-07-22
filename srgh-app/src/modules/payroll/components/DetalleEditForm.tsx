@@ -8,11 +8,14 @@ import {
   editarDetalleSchema,
   type EditarDetalleInput,
   type DetalleNominaItem,
+  type ConceptoNominaRow,
 } from '@/modules/payroll/types'
 import { updateDetalleManual } from '@/modules/payroll/actions/updateDetalleManual'
 
 interface DetalleEditFormProps {
   detalle: DetalleNominaItem
+  /** Conceptos activos tipo monto_manual_ingreso / monto_manual_deduccion (uno por input). */
+  conceptosManuales: ConceptoNominaRow[]
   onSuccess?: () => void
   onCancel?: () => void
 }
@@ -23,12 +26,19 @@ const INPUT_CLASSES =
 const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 /**
- * Edición manual de los ingresos de un empleado (BASE, FERIADO, COMISION,
- * HORAS_EXTRA, AJUSTE), sin volver a subir el Excel. El rebajo de CCSS no se
- * muestra como campo editable: siempre se recalcula en el servidor a partir
- * de estos montos.
+ * Edición manual del detalle de un empleado dentro del periodo, sin volver a
+ * subir el Excel: un input por cada concepto manual activo del catálogo
+ * (con_tipo_calculo = monto_manual_ingreso / monto_manual_deduccion), más
+ * horas trabajadas y salario por hora para el cálculo automático de horas
+ * extra. Las deducciones porcentuales (ej. CCSS) y las horas extra nunca se
+ * muestran como campo editable: siempre se recalculan en el servidor.
  */
-export function DetalleEditForm({ detalle, onSuccess, onCancel }: DetalleEditFormProps) {
+export function DetalleEditForm({
+  detalle,
+  conceptosManuales,
+  onSuccess,
+  onCancel,
+}: DetalleEditFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
 
   const {
@@ -38,11 +48,11 @@ export function DetalleEditForm({ detalle, onSuccess, onCancel }: DetalleEditFor
   } = useForm<EditarDetalleInput>({
     resolver: zodResolver(editarDetalleSchema),
     defaultValues: {
-      base: detalle.base,
-      feriado: detalle.feriado,
-      comision: detalle.comision,
-      horasExtra: detalle.horasExtra,
-      ajuste: detalle.ajuste,
+      montos: Object.fromEntries(
+        conceptosManuales.map((c) => [c.con_codigo, detalle.montosPorConcepto[c.con_codigo] ?? 0])
+      ),
+      horasTrabajadas: detalle.horasTrabajadas,
+      salarioPorHora: detalle.salarioPorHora,
     },
   })
 
@@ -70,98 +80,81 @@ export function DetalleEditForm({ detalle, onSuccess, onCancel }: DetalleEditFor
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <div>
-          <label className={LABEL_CLASSES} htmlFor={`base-${detalle.id}`}>
-            Base
-          </label>
-          <input
-            id={`base-${detalle.id}`}
-            type="number"
-            step="0.01"
-            disabled={isSubmitting}
-            aria-invalid={!!errors.base}
-            {...register('base', { valueAsNumber: true })}
-            className={INPUT_CLASSES}
-          />
-          {errors.base && <p className="mt-1 text-[11px] text-rose-600">{errors.base.message}</p>}
+      {conceptosManuales.length === 0 ? (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          No hay conceptos manuales activos en el catálogo (tipo &quot;monto manual&quot;). Crea al
+          menos uno en &quot;Conceptos de nómina&quot; para poder cargar montos aquí.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {conceptosManuales.map((concepto) => (
+            <div key={concepto.con_id}>
+              <label
+                className={LABEL_CLASSES}
+                htmlFor={`monto-${detalle.id}-${concepto.con_codigo}`}
+              >
+                {concepto.con_nombre}
+              </label>
+              <input
+                id={`monto-${detalle.id}-${concepto.con_codigo}`}
+                type="number"
+                step="0.01"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.montos?.[concepto.con_codigo]}
+                {...register(`montos.${concepto.con_codigo}`, { valueAsNumber: true })}
+                className={INPUT_CLASSES}
+              />
+              {errors.montos?.[concepto.con_codigo] && (
+                <p className="mt-1 text-[11px] text-rose-600">
+                  {errors.montos[concepto.con_codigo]?.message}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
+      )}
 
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
-          <label className={LABEL_CLASSES} htmlFor={`feriado-${detalle.id}`}>
-            Feriado
+          <label className={LABEL_CLASSES} htmlFor={`horas-${detalle.id}`}>
+            Horas trabajadas (quincena)
           </label>
           <input
-            id={`feriado-${detalle.id}`}
+            id={`horas-${detalle.id}`}
             type="number"
             step="0.01"
             disabled={isSubmitting}
-            aria-invalid={!!errors.feriado}
-            {...register('feriado', { valueAsNumber: true })}
+            aria-invalid={!!errors.horasTrabajadas}
+            {...register('horasTrabajadas', { valueAsNumber: true })}
             className={INPUT_CLASSES}
           />
-          {errors.feriado && (
-            <p className="mt-1 text-[11px] text-rose-600">{errors.feriado.message}</p>
+          {errors.horasTrabajadas && (
+            <p className="mt-1 text-[11px] text-rose-600">{errors.horasTrabajadas.message}</p>
           )}
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor={`comision-${detalle.id}`}>
-            Comisión
+          <label className={LABEL_CLASSES} htmlFor={`salario-hora-${detalle.id}`}>
+            Salario por hora
           </label>
           <input
-            id={`comision-${detalle.id}`}
+            id={`salario-hora-${detalle.id}`}
             type="number"
             step="0.01"
             disabled={isSubmitting}
-            aria-invalid={!!errors.comision}
-            {...register('comision', { valueAsNumber: true })}
+            aria-invalid={!!errors.salarioPorHora}
+            {...register('salarioPorHora', { valueAsNumber: true })}
             className={INPUT_CLASSES}
           />
-          {errors.comision && (
-            <p className="mt-1 text-[11px] text-rose-600">{errors.comision.message}</p>
-          )}
-        </div>
-
-        <div>
-          <label className={LABEL_CLASSES} htmlFor={`horasExtra-${detalle.id}`}>
-            Horas extra
-          </label>
-          <input
-            id={`horasExtra-${detalle.id}`}
-            type="number"
-            step="0.01"
-            disabled={isSubmitting}
-            aria-invalid={!!errors.horasExtra}
-            {...register('horasExtra', { valueAsNumber: true })}
-            className={INPUT_CLASSES}
-          />
-          {errors.horasExtra && (
-            <p className="mt-1 text-[11px] text-rose-600">{errors.horasExtra.message}</p>
-          )}
-        </div>
-
-        <div>
-          <label className={LABEL_CLASSES} htmlFor={`ajuste-${detalle.id}`}>
-            Ajuste
-          </label>
-          <input
-            id={`ajuste-${detalle.id}`}
-            type="number"
-            step="0.01"
-            disabled={isSubmitting}
-            aria-invalid={!!errors.ajuste}
-            {...register('ajuste', { valueAsNumber: true })}
-            className={INPUT_CLASSES}
-          />
-          {errors.ajuste && (
-            <p className="mt-1 text-[11px] text-rose-600">{errors.ajuste.message}</p>
+          {errors.salarioPorHora && (
+            <p className="mt-1 text-[11px] text-rose-600">{errors.salarioPorHora.message}</p>
           )}
         </div>
       </div>
 
       <p className="text-[11px] text-slate-400">
-        El rebajo de CCSS (10,83%) y los totales se recalculan solos a partir de estos montos.
+        Las horas extra (por encima del tope normal de la quincena) y las deducciones porcentuales
+        (ej. CCSS) se calculan solas a partir de estos datos y del catálogo de conceptos.
       </p>
 
       <div className="flex items-center justify-end gap-2">

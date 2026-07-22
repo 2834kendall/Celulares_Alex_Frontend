@@ -13,20 +13,31 @@ const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 
 const INPUT: EditarDetalleInput = {
-  base: 200000,
-  feriado: 0,
-  comision: 30000,
-  horasExtra: 0,
-  ajuste: 0,
+  montos: { BASE: 200000, COMISION: 30000 },
+  horasTrabajadas: 80,
+  salarioPorHora: 2500,
 }
 
-const CONCEPTOS = [
-  { con_id: 1, con_codigo: 'BASE' },
-  { con_id: 2, con_codigo: 'FERIADO' },
-  { con_id: 3, con_codigo: 'COMISION' },
-  { con_id: 4, con_codigo: 'HORAS_EXTRA' },
-  { con_id: 5, con_codigo: 'AJUSTE' },
-  { con_id: 6, con_codigo: 'CCSS_OBRERA' },
+const CONCEPTOS_ACTIVOS = [
+  { con_id: 1, con_codigo: 'BASE', con_tipo_calculo: 'monto_manual_ingreso', con_porcentaje: null },
+  {
+    con_id: 3,
+    con_codigo: 'COMISION',
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  },
+  {
+    con_id: 4,
+    con_codigo: 'HORAS_EXTRA',
+    con_tipo_calculo: 'horas_extra_automatico',
+    con_porcentaje: 150,
+  },
+  {
+    con_id: 6,
+    con_codigo: 'CCSS_OBRERA',
+    con_tipo_calculo: 'porcentaje_deduccion_bruto',
+    con_porcentaje: 10.83,
+  },
 ]
 
 const OK = { data: null, error: null }
@@ -55,7 +66,10 @@ describe('updateDetalleManual (server action)', () => {
   })
 
   it('rechaza montos negativos', async () => {
-    const result = await updateDetalleManual(1, { ...INPUT, comision: -100 })
+    const result = await updateDetalleManual(1, {
+      ...INPUT,
+      montos: { ...INPUT.montos, COMISION: -100 },
+    })
 
     expect(result).toEqual({ ok: false, error: 'Datos inválidos.' })
     expect(mockCreateClient).not.toHaveBeenCalled()
@@ -89,7 +103,7 @@ describe('updateDetalleManual (server action)', () => {
     })
   })
 
-  it('avisa si faltan conceptos del catálogo', async () => {
+  it('avisa si no hay conceptos activos en el catálogo', async () => {
     mockSupabase({
       sgrh_nomina_detalle: {
         data: {
@@ -123,7 +137,7 @@ describe('updateDetalleManual (server action)', () => {
         },
         OK,
       ],
-      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
       sgrh_nomina_linea_ingreso: [OK, OK],
       sgrh_nomina_linea_deduccion: [OK, OK],
     })

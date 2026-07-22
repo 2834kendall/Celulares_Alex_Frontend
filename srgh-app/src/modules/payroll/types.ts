@@ -40,23 +40,24 @@ export interface PeriodoListItem {
 }
 
 /**
- * Fila de la planilla: un empleado dentro de un periodo. Los cinco montos
- * crudos (base..ajuste) son los mismos que trae la plantilla de Excel — se
- * exponen para poder editarlos a mano sin tener que volver a subir el archivo.
+ * Fila de la planilla: un empleado dentro de un periodo.
+ * `montosPorConcepto` trae el monto crudo de cada concepto manual (código →
+ * monto) que ya tenía guardado, para poder editarlos a mano. `horasTrabajadas`
+ * y `salarioPorHora` alimentan el cálculo automático de horas extra.
  */
 export interface DetalleNominaItem {
   id: number
   empleadoNombre: string
+  empleadoCedula: string
   salarioBruto: number
   totalDeducciones: number
   cargasPatronales: number
   salarioNeto: number
   pagado: boolean
-  base: number
-  feriado: number
-  comision: number
-  horasExtra: number
-  ajuste: number
+  fechaPago: string | null
+  montosPorConcepto: Record<string, number>
+  horasTrabajadas: number
+  salarioPorHora: number
 }
 
 export interface PeriodoDetalle {
@@ -145,37 +146,87 @@ void _alineado
 export const CONCEPTO_TIPOS = ['ingreso', 'deduccion', 'patronal'] as const
 export type ConceptoTipo = (typeof CONCEPTO_TIPOS)[number]
 
-export const conceptoNominaSchema = z.object({
-  // El input del formulario solo aplica mayúsculas por CSS (visual, no cambia
-  // el valor real), así que el código se normaliza aquí antes de validar —
-  // si no, escribir en minúscula rechazaría el formulario sin razón aparente.
-  con_codigo: z.preprocess(
-    (value) => (typeof value === 'string' ? value.trim().toUpperCase() : value),
-    z
-      .string({ error: 'El código es obligatorio' })
-      .min(2, 'El código debe tener al menos 2 caracteres')
-      .max(50, 'El código no puede superar 50 caracteres')
-      .regex(/^[A-Z0-9_]+$/, 'Usa solo letras, números y guion bajo (ej. BONO_ANUAL)')
-  ),
+/**
+ * Cómo se calcula el monto de un concepto — esto es lo que hace que el
+ * catálogo describa la fórmula en vez de que el código la adivine:
+ *  - monto_manual_ingreso:       el usuario escribe el monto; suma al bruto (ej. Comisión).
+ *  - monto_manual_deduccion:     el usuario escribe el monto; resta del neto (ej. préstamo).
+ *  - porcentaje_deduccion_bruto: con_porcentaje % del salario bruto; se resta (ej. CCSS obrera).
+ *  - horas_extra_automatico:     el sistema lo calcula solo a partir de las horas trabajadas
+ *                                que superen el tope normal (ver TOPE_HORAS_NORMALES_QUINCENAL
+ *                                en lib/planilla.ts), multiplicadas por el salario por hora y
+ *                                por con_porcentaje (ej. 150% = tiempo y medio).
+ */
+export const TIPOS_CALCULO_CONCEPTO = [
+  'monto_manual_ingreso',
+  'monto_manual_deduccion',
+  'porcentaje_deduccion_bruto',
+  'horas_extra_automatico',
+] as const
+export type TipoCalculoConcepto = (typeof TIPOS_CALCULO_CONCEPTO)[number]
 
-  con_nombre: z
-    .string({ error: 'El nombre es obligatorio' })
-    .trim()
-    .min(2, 'El nombre debe tener al menos 2 caracteres')
-    .max(100, 'El nombre no puede superar 100 caracteres'),
+/** con_porcentaje es obligatorio solo para estos dos tipos; en los demás debe quedar null. */
+const TIPOS_CON_PORCENTAJE = new Set<TipoCalculoConcepto>([
+  'porcentaje_deduccion_bruto',
+  'horas_extra_automatico',
+])
 
-  con_tipo: z.enum(CONCEPTO_TIPOS, { error: 'Selecciona un tipo válido' }),
+export const conceptoNominaSchema = z
+  .object({
+    // El input del formulario solo aplica mayúsculas por CSS (visual, no cambia
+    // el valor real), así que el código se normaliza aquí antes de validar —
+    // si no, escribir en minúscula rechazaría el formulario sin razón aparente.
+    con_codigo: z.preprocess(
+      (value) => (typeof value === 'string' ? value.trim().toUpperCase() : value),
+      z
+        .string({ error: 'El código es obligatorio' })
+        .min(2, 'El código debe tener al menos 2 caracteres')
+        .max(50, 'El código no puede superar 50 caracteres')
+        .regex(/^[A-Z0-9_]+$/, 'Usa solo letras, números y guion bajo (ej. BONO_ANUAL)')
+    ),
 
-  con_afecta_salario_bruto: z.boolean().default(false),
-  con_afecta_base_ccss: z.boolean().default(true),
+    con_nombre: z
+      .string({ error: 'El nombre es obligatorio' })
+      .trim()
+      .min(2, 'El nombre debe tener al menos 2 caracteres')
+      .max(100, 'El nombre no puede superar 100 caracteres'),
 
-  con_formula_base: z.preprocess(
-    (value) => (value === '' ? null : value),
-    z.string().max(200, 'La fórmula no puede superar 200 caracteres').nullable().optional()
-  ),
+    con_tipo: z.enum(CONCEPTO_TIPOS, { error: 'Selecciona un tipo válido' }),
 
-  con_activo: z.boolean().default(true),
-})
+    con_tipo_calculo: z.enum(TIPOS_CALCULO_CONCEPTO, {
+      error: 'Selecciona cómo se calcula este concepto',
+    }),
+
+    con_porcentaje: z.preprocess(
+      (value) => (value === '' || value === undefined ? null : value),
+      z
+        .number()
+        .positive('El porcentaje debe ser mayor a 0')
+        .max(500, 'El porcentaje es demasiado alto')
+        .nullable()
+    ),
+
+    con_afecta_salario_bruto: z.boolean().default(false),
+    con_afecta_base_ccss: z.boolean().default(true),
+
+    con_formula_base: z.preprocess(
+      (value) => (value === '' ? null : value),
+      z.string().max(200, 'La fórmula no puede superar 200 caracteres').nullable().optional()
+    ),
+
+    con_activo: z.boolean().default(true),
+  })
+  .refine(
+    (data) =>
+      TIPOS_CON_PORCENTAJE.has(data.con_tipo_calculo)
+        ? data.con_porcentaje !== null
+        : data.con_porcentaje === null,
+    {
+      message:
+        'El porcentaje es obligatorio para "% del bruto" y "horas extra automático", y debe quedar vacío en los demás tipos.',
+      path: ['con_porcentaje'],
+    }
+  )
 
 export type ConceptoNominaInput = z.infer<typeof conceptoNominaSchema>
 
@@ -185,9 +236,10 @@ const _conceptoAlineado: _ConceptoNominaAlineado = true
 void _conceptoAlineado
 
 // ─── Schema de edición manual de un detalle de planilla ──────────────────────
-// Mismos cinco campos que la plantilla de Excel (BASE, FERIADO, COMISION,
-// HORAS_EXTRA, AJUSTE). El rebajo de CCSS nunca se edita a mano: siempre se
-// recalcula en el servidor a partir de estos montos, igual que en la subida.
+// Dinámico: un monto por cada concepto manual activo del catálogo (código →
+// monto), más horas trabajadas y salario por hora para las horas extra
+// automáticas. Las deducciones porcentuales (ej. CCSS) y las horas extra
+// nunca se editan a mano: siempre se recalculan en el servidor.
 
 const montoNoNegativo = (mensaje: string) =>
   z
@@ -196,11 +248,61 @@ const montoNoNegativo = (mensaje: string) =>
     .max(99_999_999, 'El monto es demasiado alto')
 
 export const editarDetalleSchema = z.object({
-  base: montoNoNegativo('El monto base es obligatorio'),
-  feriado: montoNoNegativo('El monto de feriado es obligatorio'),
-  comision: montoNoNegativo('El monto de comisión es obligatorio'),
-  horasExtra: montoNoNegativo('El monto de horas extra es obligatorio'),
-  ajuste: montoNoNegativo('El monto de ajuste es obligatorio'),
+  montos: z.record(z.string(), montoNoNegativo('El monto no puede ser negativo')),
+  horasTrabajadas: montoNoNegativo('Las horas trabajadas son obligatorias').max(
+    999,
+    'Revisa las horas trabajadas'
+  ),
+  salarioPorHora: montoNoNegativo('El salario por hora es obligatorio'),
 })
 
 export type EditarDetalleInput = z.infer<typeof editarDetalleSchema>
+
+// ─── Aguinaldo y liquidación ───────────────────────────────────────────────
+// La pestaña vive dentro de Nómina pero es un ciclo aparte: el aguinaldo se
+// acumula automáticamente (ver marcarDetallePagado) y solo se "cobra" una
+// vez al año; la liquidación es un evento único por salida de empleado.
+
+export type MotivoSalidaRow = Database['public']['Tables']['sgrh_cat_motivos_salida']['Row']
+
+export interface AguinaldoItem {
+  historialLaboralId: number
+  empleadoNombre: string
+  empleadoCedula: string
+  anio: number
+  montoAcumulado: number
+  pagado: boolean
+  fechaPago: string | null
+}
+
+export interface EmpleadoActivoItem {
+  historialLaboralId: number
+  nombre: string
+  cedula: string
+}
+
+export const procesarLiquidacionSchema = z.object({
+  historialLaboralId: z.number({ error: 'Elegí un empleado' }).int().positive(),
+  fechaSalida: z
+    .string({ error: 'La fecha de salida es obligatoria' })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+  motivoSalidaId: z.number({ error: 'Elegí un motivo de salida' }).int().positive(),
+  diasVacacionesPendientes: z
+    .number({ error: 'Los días de vacaciones son obligatorios' })
+    .min(0, 'No puede ser negativo')
+    .max(365, 'Revisá los días de vacaciones'),
+})
+
+export type ProcesarLiquidacionInput = z.infer<typeof procesarLiquidacionSchema>
+
+export interface LiquidacionCalculada {
+  liqId: number
+  salarioProporcional: number
+  aguinaldoProporcional: number
+  vacacionesPagadas: number
+  diasPreaviso: number
+  preaviso: number
+  diasCesantia: number
+  cesantia: number
+  total: number
+}

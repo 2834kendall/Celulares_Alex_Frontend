@@ -34,8 +34,16 @@ const DETALLE_ROW = {
   ndt_total_cargas_patronales: 133000,
   ndt_salario_neto: 447500,
   ndt_pagado: false,
+  ndt_fecha_pago: null,
+  ndt_horas_ordinarias_diurnas: 88,
+  ndt_salario_por_hora: 2500,
   sgrh_historial_laboral: {
-    sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Mora', emp_apellido_2: null },
+    sgrh_empleados: {
+      emp_nombre: 'Ana',
+      emp_apellido_1: 'Mora',
+      emp_apellido_2: null,
+      emp_numero_identificacion: '1-1111-1111',
+    },
   },
 }
 
@@ -103,6 +111,16 @@ describe('getPeriodoDetail (server action)', () => {
         ],
         error: null,
       },
+      sgrh_nomina_linea_deduccion: {
+        data: [
+          {
+            ded_nomina_detalle_id: 21,
+            ded_monto: 52500,
+            sgrh_cat_conceptos_nomina: { con_codigo: 'CCSS_OBRERA' },
+          },
+        ],
+        error: null,
+      },
     })
 
     const result = await getPeriodoDetail(7)
@@ -114,39 +132,34 @@ describe('getPeriodoDetail (server action)', () => {
         {
           id: 21,
           empleadoNombre: 'Ana Mora',
+          empleadoCedula: '1-1111-1111',
           salarioBruto: 500000,
           totalDeducciones: 52500,
           cargasPatronales: 133000,
           salarioNeto: 447500,
           pagado: false,
-          base: 450000,
-          feriado: 0,
-          comision: 50000,
-          horasExtra: 0,
-          ajuste: 0,
+          fechaPago: null,
+          montosPorConcepto: { BASE: 450000, COMISION: 50000, CCSS_OBRERA: 52500 },
+          horasTrabajadas: 88,
+          salarioPorHora: 2500,
         },
       ])
     }
   })
 
-  it('deja los montos crudos en cero si la consulta de líneas falla (no bloquea la página)', async () => {
+  it('deja los montos crudos vacíos si las consultas de líneas fallan (no bloquea la página)', async () => {
     mockTables({
       sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
       sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
       sgrh_nomina_linea_ingreso: { data: null, error: { message: 'boom' } },
+      sgrh_nomina_linea_deduccion: { data: null, error: { message: 'boom' } },
     })
 
     const result = await getPeriodoDetail(7)
 
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.detalles[0]).toMatchObject({
-        base: 0,
-        feriado: 0,
-        comision: 0,
-        horasExtra: 0,
-        ajuste: 0,
-      })
+      expect(result.data.detalles[0].montosPorConcepto).toEqual({})
     }
   })
 })

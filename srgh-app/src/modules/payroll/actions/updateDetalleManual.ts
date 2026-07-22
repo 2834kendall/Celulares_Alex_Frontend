@@ -5,12 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { editarDetalleSchema, type EditarDetalleInput } from '@/modules/payroll/types'
-import { computeTotales, construirLineas, CONCEPTOS_PLANILLA } from '@/modules/payroll/lib/planilla'
-
-interface ConceptoRow {
-  con_id: number
-  con_codigo: string
-}
+import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
 
 interface DetalleActualRow {
   ndt_id: number
@@ -21,12 +16,11 @@ interface DetalleActualRow {
 export type UpdateDetalleManualResult = { ok: true } | { ok: false; error: string }
 
 /**
- * Edita a mano los ingresos de un empleado dentro de un periodo (BASE,
- * FERIADO, COMISION, HORAS_EXTRA, AJUSTE) sin tener que volver a subir el
- * Excel. El rebajo de CCSS nunca se edita aquí: se recalcula siempre a partir
- * de estos montos, igual que hace la subida de planilla. Solo se permite
- * mientras el periodo esté en borrador — una vez aprobado, la planilla queda
- * fija y cualquier ajuste debería pasar por un periodo nuevo.
+ * Guarda la edición manual del detalle de un empleado dentro del periodo:
+ * recalcula bruto/deducciones/neto a partir de los conceptos activos del
+ * catálogo (calcularPlanillaPorConceptos) y reemplaza las líneas de ingreso
+ * y deducción desde cero. Solo se permite mientras el periodo está en
+ * borrador, igual que la subida de Excel.
  */
 export async function updateDetalleManual(
   ndtId: number,
@@ -63,38 +57,37 @@ export async function updateDetalleManual(
     }
   }
 
-  const codigos = [...CONCEPTOS_PLANILLA.ingresos, CONCEPTOS_PLANILLA.deduccion]
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
-    .select('con_id, con_codigo')
-    .in('con_codigo', codigos)
-    .returns<ConceptoRow[]>()
+    .select('con_id, con_codigo, con_tipo_calculo, con_porcentaje')
+    .eq('con_activo', true)
+    .returns<ConceptoCalculo[]>()
 
   if (errConceptos) {
     return { ok: false, error: 'No se pudo cargar el catálogo de conceptos de nómina.' }
   }
-
-  const conceptoId = new Map<string, number>(
-    (conceptos ?? []).map((c: ConceptoRow): [string, number] => [c.con_codigo, c.con_id])
-  )
-  const faltantes = codigos.filter((c) => !conceptoId.has(c))
-  if (faltantes.length > 0) {
+  if (!conceptos || conceptos.length === 0) {
     return {
       ok: false,
-      error: `Faltan conceptos en el catálogo (${faltantes.join(', ')}). Créalos en "Conceptos de nómina" antes de editar.`,
+      error: 'No hay conceptos activos en el catálogo. Crea al menos uno en "Conceptos de nómina".',
     }
   }
 
-  const totales = computeTotales({ cedula: '', ...parsed.data })
+  const { salarioBruto, totalDeducciones, salarioNeto, lineas } = calcularPlanillaPorConceptos(
+    conceptos,
+    parsed.data
+  )
+
   const { error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
     .update({
-      ndt_salario_bruto: totales.salarioBruto,
-      ndt_total_deducciones_obreras: totales.deduccionCcss,
-      ndt_salario_neto: totales.salarioNeto,
+      ndt_salario_bruto: salarioBruto,
+      ndt_total_deducciones_obreras: totalDeducciones,
+      ndt_salario_neto: salarioNeto,
+      ndt_horas_ordinarias_diurnas: parsed.data.horasTrabajadas,
+      ndt_salario_por_hora: parsed.data.salarioPorHora,
     })
     .eq('ndt_id', ndtId)
-
   if (errUpdate) {
     return { ok: false, error: 'No se pudieron guardar los montos.' }
   }
@@ -107,13 +100,17 @@ export async function updateDetalleManual(
     .from('sgrh_nomina_linea_deduccion')
     .delete()
     .eq('ded_nomina_detalle_id', ndtId)
-
   if (errDelIngreso || errDelDeduccion) {
     return { ok: false, error: 'No se pudieron actualizar las líneas de la planilla.' }
   }
 
-  const { ingresos, deduccion } = construirLineas(parsed.data, ndtId, conceptoId)
-
+  const ingresos = lineas
+    .filter((l) => l.esIngreso)
+    .map((l) => ({
+      ing_nomina_detalle_id: ndtId,
+      ing_concepto_id: l.con_id,
+      ing_monto: l.monto,
+    }))
   if (ingresos.length > 0) {
     const { error: errIngreso } = await supabase.from('sgrh_nomina_linea_ingreso').insert(ingresos)
     if (errIngreso) {
@@ -121,11 +118,22 @@ export async function updateDetalleManual(
     }
   }
 
-  const { error: errDeduccion } = await supabase
-    .from('sgrh_nomina_linea_deduccion')
-    .insert(deduccion)
-  if (errDeduccion) {
-    return { ok: false, error: 'No se pudo guardar la deducción.' }
+  const deducciones = lineas
+    .filter((l) => !l.esIngreso)
+    .map((l) => ({
+      ded_nomina_detalle_id: ndtId,
+      ded_concepto_id: l.con_id,
+      ded_monto: l.monto,
+      ded_porcentaje_aplicado: l.porcentajeAplicado ?? null,
+      ded_base_calculo: l.baseCalculo ?? null,
+    }))
+  if (deducciones.length > 0) {
+    const { error: errDeduccion } = await supabase
+      .from('sgrh_nomina_linea_deduccion')
+      .insert(deducciones)
+    if (errDeduccion) {
+      return { ok: false, error: 'No se pudieron guardar las deducciones.' }
+    }
   }
 
   revalidatePath('/payroll')
