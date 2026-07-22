@@ -3,7 +3,16 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Loader2, Save } from 'lucide-react'
+import {
+  AlertTriangle,
+  Building2,
+  Clock,
+  Info,
+  Loader2,
+  Save,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react'
 import {
   editarDetalleSchema,
   type EditarDetalleInput,
@@ -21,9 +30,37 @@ interface DetalleEditFormProps {
 }
 
 const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
+  'w-full rounded-xl border border-slate-200 bg-white py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
 
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
+const LABEL_CLASSES =
+  'mb-1 block text-[10px] font-semibold uppercase leading-tight tracking-wide text-slate-500'
+
+/** Agrupación visual de los conceptos manuales: cada tipo tiene su propia sección con color e icono. */
+const SECCION_CONFIG = {
+  ingreso: {
+    label: 'Ingresos',
+    hint: 'Suman al salario bruto',
+    icon: TrendingUp,
+    badge: 'bg-emerald-50 text-emerald-600',
+    text: 'text-emerald-700',
+  },
+  deduccion: {
+    label: 'Deducciones',
+    hint: 'Restan del salario neto',
+    icon: TrendingDown,
+    badge: 'bg-rose-50 text-rose-600',
+    text: 'text-rose-700',
+  },
+  patronal: {
+    label: 'Cargas patronales',
+    hint: 'Aporte a cargo de la empresa',
+    icon: Building2,
+    badge: 'bg-indigo-50 text-indigo-600',
+    text: 'text-indigo-700',
+  },
+} as const
+
+const SECCION_ORDEN = ['ingreso', 'deduccion', 'patronal'] as const
 
 /**
  * Edición manual del detalle de un empleado dentro del periodo, sin volver a
@@ -56,6 +93,11 @@ export function DetalleEditForm({
     },
   })
 
+  const grupos = SECCION_ORDEN.map((tipo) => ({
+    tipo,
+    items: conceptosManuales.filter((c) => c.con_tipo === tipo),
+  })).filter((g) => g.items.length > 0)
+
   async function onSubmit(input: EditarDetalleInput) {
     setServerError(null)
     const result = await updateDetalleManual(detalle.id, input)
@@ -86,76 +128,126 @@ export function DetalleEditForm({
           menos uno en &quot;Conceptos de nómina&quot; para poder cargar montos aquí.
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {conceptosManuales.map((concepto) => (
-            <div key={concepto.con_id}>
-              <label
-                className={LABEL_CLASSES}
-                htmlFor={`monto-${detalle.id}-${concepto.con_codigo}`}
-              >
-                {concepto.con_nombre}
-              </label>
-              <input
-                id={`monto-${detalle.id}-${concepto.con_codigo}`}
-                type="number"
-                step="0.01"
-                disabled={isSubmitting}
-                aria-invalid={!!errors.montos?.[concepto.con_codigo]}
-                {...register(`montos.${concepto.con_codigo}`, { valueAsNumber: true })}
-                className={INPUT_CLASSES}
-              />
-              {errors.montos?.[concepto.con_codigo] && (
-                <p className="mt-1 text-[11px] text-rose-600">
-                  {errors.montos[concepto.con_codigo]?.message}
-                </p>
-              )}
-            </div>
-          ))}
+        <div className="space-y-3">
+          {grupos.map(({ tipo, items }) => {
+            const config = SECCION_CONFIG[tipo]
+            const Icon = config.icon
+            return (
+              <div key={tipo} className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2">
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${config.badge}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <h4 className={`text-xs font-bold ${config.text}`}>{config.label}</h4>
+                  <span className="ml-auto hidden text-[10px] text-slate-400 sm:inline">
+                    {config.hint}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {items.map((concepto) => (
+                    <div key={concepto.con_id}>
+                      <label
+                        className={LABEL_CLASSES}
+                        htmlFor={`monto-${detalle.id}-${concepto.con_codigo}`}
+                      >
+                        {concepto.con_nombre}
+                      </label>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
+                          ₡
+                        </span>
+                        <input
+                          id={`monto-${detalle.id}-${concepto.con_codigo}`}
+                          type="number"
+                          step="0.01"
+                          disabled={isSubmitting}
+                          aria-invalid={!!errors.montos?.[concepto.con_codigo]}
+                          {...register(`montos.${concepto.con_codigo}`, { valueAsNumber: true })}
+                          className={`${INPUT_CLASSES} pl-6 pr-3`}
+                        />
+                      </div>
+                      {errors.montos?.[concepto.con_codigo] && (
+                        <p className="mt-1 text-[11px] text-rose-600">
+                          {errors.montos[concepto.con_codigo]?.message}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div>
-          <label className={LABEL_CLASSES} htmlFor={`horas-${detalle.id}`}>
-            Horas trabajadas (quincena)
-          </label>
-          <input
-            id={`horas-${detalle.id}`}
-            type="number"
-            step="0.01"
-            disabled={isSubmitting}
-            aria-invalid={!!errors.horasTrabajadas}
-            {...register('horasTrabajadas', { valueAsNumber: true })}
-            className={INPUT_CLASSES}
-          />
-          {errors.horasTrabajadas && (
-            <p className="mt-1 text-[11px] text-rose-600">{errors.horasTrabajadas.message}</p>
-          )}
+      <div className="overflow-hidden rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600">
+            <Clock className="h-3.5 w-3.5" />
+          </span>
+          <h4 className="text-xs font-bold text-blue-700">Horas y tarifa</h4>
+          <span className="ml-auto hidden text-[10px] text-slate-400 sm:inline">
+            Base para calcular las horas extra automáticas
+          </span>
         </div>
+        <div className="grid grid-cols-1 gap-3 bg-white p-3 sm:grid-cols-2">
+          <div>
+            <label className={LABEL_CLASSES} htmlFor={`horas-${detalle.id}`}>
+              Horas trabajadas (quincena)
+            </label>
+            <div className="relative">
+              <input
+                id={`horas-${detalle.id}`}
+                type="number"
+                step="0.01"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.horasTrabajadas}
+                {...register('horasTrabajadas', { valueAsNumber: true })}
+                className={`${INPUT_CLASSES} pl-3 pr-7`}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
+                h
+              </span>
+            </div>
+            {errors.horasTrabajadas && (
+              <p className="mt-1 text-[11px] text-rose-600">{errors.horasTrabajadas.message}</p>
+            )}
+          </div>
 
-        <div>
-          <label className={LABEL_CLASSES} htmlFor={`salario-hora-${detalle.id}`}>
-            Salario por hora
-          </label>
-          <input
-            id={`salario-hora-${detalle.id}`}
-            type="number"
-            step="0.01"
-            disabled={isSubmitting}
-            aria-invalid={!!errors.salarioPorHora}
-            {...register('salarioPorHora', { valueAsNumber: true })}
-            className={INPUT_CLASSES}
-          />
-          {errors.salarioPorHora && (
-            <p className="mt-1 text-[11px] text-rose-600">{errors.salarioPorHora.message}</p>
-          )}
+          <div>
+            <label className={LABEL_CLASSES} htmlFor={`salario-hora-${detalle.id}`}>
+              Salario por hora
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
+                ₡
+              </span>
+              <input
+                id={`salario-hora-${detalle.id}`}
+                type="number"
+                step="0.01"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.salarioPorHora}
+                {...register('salarioPorHora', { valueAsNumber: true })}
+                className={`${INPUT_CLASSES} pl-6 pr-3`}
+              />
+            </div>
+            {errors.salarioPorHora && (
+              <p className="mt-1 text-[11px] text-rose-600">{errors.salarioPorHora.message}</p>
+            )}
+          </div>
         </div>
       </div>
 
-      <p className="text-[11px] text-slate-400">
-        Las horas extra (por encima del tope normal de la quincena) y las deducciones porcentuales
-        (ej. CCSS) se calculan solas a partir de estos datos y del catálogo de conceptos.
-      </p>
+      <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <p>
+          Las horas extra (por encima del tope normal de la quincena) y las deducciones porcentuales
+          (ej. CCSS) se calculan solas a partir de estos datos y del catálogo de conceptos.
+        </p>
+      </div>
 
       <div className="flex items-center justify-end gap-2">
         <button

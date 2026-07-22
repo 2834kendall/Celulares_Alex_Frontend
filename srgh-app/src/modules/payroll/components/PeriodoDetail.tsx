@@ -245,9 +245,12 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     {puedeEditar && editandoId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
                         <td colSpan={7} className="px-4 py-4">
-                          <p className="mb-3 text-xs font-semibold text-slate-700">
-                            Editar ingresos de {d.empleadoNombre}
-                          </p>
+                          <div className="mb-3 flex items-center gap-2">
+                            <Pencil className="h-3.5 w-3.5 text-blue-600" />
+                            <p className="text-xs font-bold text-slate-800">
+                              Editar ingresos de {d.empleadoNombre}
+                            </p>
+                          </div>
                           <DetalleEditForm
                             detalle={d}
                             conceptosManuales={conceptosManuales}
