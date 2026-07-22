@@ -7,8 +7,10 @@ import { AlertTriangle, Coins, Loader2 } from 'lucide-react'
 import {
   conceptoNominaSchema,
   CONCEPTO_TIPOS,
+  TIPOS_CALCULO_CONCEPTO,
   type ConceptoNominaInput,
   type ConceptoNominaRow,
+  type TipoCalculoConcepto,
 } from '@/modules/payroll/types'
 import { createConcepto } from '@/modules/payroll/actions/createConcepto'
 import { updateConcepto } from '@/modules/payroll/actions/updateConcepto'
@@ -30,6 +32,18 @@ const TIPO_LABELS: Record<(typeof CONCEPTO_TIPOS)[number], string> = {
   patronal: 'Carga patronal',
 }
 
+const TIPO_CALCULO_LABELS: Record<TipoCalculoConcepto, string> = {
+  monto_manual_ingreso: 'Monto manual — suma al bruto (ej. Comisión)',
+  monto_manual_deduccion: 'Monto manual — resta del neto (ej. préstamo)',
+  porcentaje_deduccion_bruto: '% del salario bruto — se resta (ej. CCSS obrera)',
+  horas_extra_automatico: 'Horas extra automáticas (el sistema las calcula)',
+}
+
+const TIPOS_CON_PORCENTAJE = new Set<TipoCalculoConcepto>([
+  'porcentaje_deduccion_bruto',
+  'horas_extra_automatico',
+])
+
 export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
   const isEditing = Boolean(concepto)
@@ -37,6 +51,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ConceptoNominaInput>({
     resolver: zodResolver(conceptoNominaSchema),
@@ -45,6 +60,8 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           con_codigo: concepto.con_codigo,
           con_nombre: concepto.con_nombre,
           con_tipo: concepto.con_tipo as ConceptoNominaInput['con_tipo'],
+          con_tipo_calculo: concepto.con_tipo_calculo as TipoCalculoConcepto,
+          con_porcentaje: concepto.con_porcentaje,
           con_afecta_salario_bruto: concepto.con_afecta_salario_bruto,
           con_afecta_base_ccss: concepto.con_afecta_base_ccss,
           con_formula_base: concepto.con_formula_base ?? '',
@@ -54,12 +71,17 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           con_codigo: '',
           con_nombre: '',
           con_tipo: 'ingreso',
+          con_tipo_calculo: 'monto_manual_ingreso',
+          con_porcentaje: null,
           con_afecta_salario_bruto: false,
           con_afecta_base_ccss: true,
           con_formula_base: '',
           con_activo: true,
         },
   })
+
+  const tipoCalculo = watch('con_tipo_calculo')
+  const requierePorcentaje = TIPOS_CON_PORCENTAJE.has(tipoCalculo)
 
   async function onSubmit(input: ConceptoNominaInput) {
     setServerError(null)
@@ -146,6 +168,58 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           <p className="mt-1.5 text-xs text-rose-600">{errors.con_tipo.message}</p>
         )}
       </div>
+
+      <div>
+        <label className={LABEL_CLASSES} htmlFor="con_tipo_calculo">
+          Cómo se calcula
+        </label>
+        <select
+          id="con_tipo_calculo"
+          disabled={isSubmitting}
+          aria-invalid={!!errors.con_tipo_calculo}
+          {...register('con_tipo_calculo')}
+          className={INPUT_CLASSES}
+        >
+          {TIPOS_CALCULO_CONCEPTO.map((tipo) => (
+            <option key={tipo} value={tipo}>
+              {TIPO_CALCULO_LABELS[tipo]}
+            </option>
+          ))}
+        </select>
+        {errors.con_tipo_calculo && (
+          <p className="mt-1.5 text-xs text-rose-600">{errors.con_tipo_calculo.message}</p>
+        )}
+      </div>
+
+      {requierePorcentaje && (
+        <div>
+          <label className={LABEL_CLASSES} htmlFor="con_porcentaje">
+            Porcentaje
+          </label>
+          <input
+            id="con_porcentaje"
+            type="number"
+            step="0.001"
+            disabled={isSubmitting}
+            aria-invalid={!!errors.con_porcentaje}
+            {...register('con_porcentaje', { valueAsNumber: true })}
+            className={INPUT_CLASSES}
+            placeholder={
+              tipoCalculo === 'porcentaje_deduccion_bruto'
+                ? 'ej. 10.83'
+                : 'ej. 150 (tiempo y medio)'
+            }
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            {tipoCalculo === 'porcentaje_deduccion_bruto'
+              ? 'Porcentaje del salario bruto que se resta.'
+              : 'Multiplicador sobre el salario por hora de las horas que superen el tope normal (100% = una vez, 150% = tiempo y medio).'}
+          </p>
+          {errors.con_porcentaje && (
+            <p className="mt-1.5 text-xs text-rose-600">{errors.con_porcentaje.message}</p>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">

@@ -16,6 +16,8 @@ const INPUT: ConceptoNominaInput = {
   con_codigo: 'bono_anual',
   con_nombre: 'Bono anual',
   con_tipo: 'ingreso',
+  con_tipo_calculo: 'monto_manual_ingreso',
+  con_porcentaje: null,
   con_afecta_salario_bruto: true,
   con_afecta_base_ccss: true,
   con_formula_base: null,

@@ -16,6 +16,8 @@ const INPUT: ConceptoNominaInput = {
   con_codigo: 'CCSS_OBRERA',
   con_nombre: 'Rebajo CCSS',
   con_tipo: 'deduccion',
+  con_tipo_calculo: 'porcentaje_deduccion_bruto',
+  con_porcentaje: 10.83,
   con_afecta_salario_bruto: false,
   con_afecta_base_ccss: false,
   con_formula_base: null,

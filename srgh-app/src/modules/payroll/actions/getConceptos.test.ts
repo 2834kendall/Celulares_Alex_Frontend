@@ -12,6 +12,8 @@ const CONCEPTO = {
   con_codigo: 'BASE',
   con_nombre: 'Salario base',
   con_tipo: 'ingreso',
+  con_tipo_calculo: 'monto_manual_ingreso',
+  con_porcentaje: null,
   con_afecta_salario_bruto: true,
   con_afecta_base_ccss: true,
   con_formula_base: null,

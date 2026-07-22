@@ -23,6 +23,8 @@ export async function createConcepto(input: ConceptoNominaInput): Promise<Create
       con_codigo: parsed.data.con_codigo.toUpperCase(),
       con_nombre: parsed.data.con_nombre,
       con_tipo: parsed.data.con_tipo,
+      con_tipo_calculo: parsed.data.con_tipo_calculo,
+      con_porcentaje: parsed.data.con_porcentaje,
       con_afecta_salario_bruto: parsed.data.con_afecta_salario_bruto,
       con_afecta_base_ccss: parsed.data.con_afecta_base_ccss,
       con_formula_base: parsed.data.con_formula_base ?? null,
