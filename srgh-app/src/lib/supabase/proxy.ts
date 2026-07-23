@@ -34,7 +34,10 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   const isPublicPath =
-    pathname === '/login' || pathname === '/activate-account' || pathname === '/unauthorized'
+    pathname === '/login' ||
+    pathname === '/activate-account' ||
+    pathname === '/auth/confirm' ||
+    pathname === '/unauthorized'
 
   if (pathname === '/') {
     const url = request.nextUrl.clone()
@@ -52,7 +55,10 @@ export async function updateSession(request: NextRequest) {
     return response
   }
 
-  if (hasSession && isPublicPath && pathname !== '/unauthorized') {
+  // Solo /login rebota con sesión: /activate-account y /auth/confirm son parte
+  // del flujo de invitación, que establece la sesión ANTES de definir la
+  // contraseña; /unauthorized aplica justo a usuarios con sesión sin permisos.
+  if (hasSession && pathname === '/login') {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     const response = NextResponse.redirect(url)

@@ -15,6 +15,8 @@ export function createSupabaseQueryMock(result: QueryResult) {
     update: vi.fn(() => builder),
     delete: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    neq: vi.fn(() => builder),
+    not: vi.fn(() => builder),
     order: vi.fn(() => builder),
     in: vi.fn(() => builder),
     gte: vi.fn(() => builder),
@@ -66,22 +68,45 @@ export function createSupabaseClientMock(
 }
 
 type InviteResult = { data: { user: unknown }; error: unknown }
+type UserResult = { data: { user: unknown }; error: unknown }
+type ListUsersResult = { data: { users: unknown[] }; error: unknown }
+type DeleteUserResult = { data: unknown; error: unknown }
+
+interface AdminMockOptions extends ClientMockOptions {
+  inviteResult?: InviteResult
+  listUsersResult?: ListUsersResult
+  getUserResult?: UserResult
+  updateUserResult?: UserResult
+  deleteUserResult?: DeleteUserResult
+}
 
 /**
- * Mocks createAdminClient(): same query builder per table plus the Auth admin API
- * (auth.admin.inviteUserByEmail) used by user-invitation actions.
+ * Mocks createAdminClient(): same query builder per table plus the Auth admin
+ * API (inviteUserByEmail, listUsers, getUserById, updateUserById, deleteUser)
+ * used by the user-management actions.
  */
 export function createSupabaseAdminClientMock(
   responses: Record<string, QueryResult | QueryResult[]>,
-  options: ClientMockOptions & { inviteResult?: InviteResult } = {}
+  options: AdminMockOptions = {}
 ) {
   const inviteResult = options.inviteResult ?? { data: { user: { id: 'auth-uuid' } }, error: null }
+  const listUsersResult = options.listUsersResult ?? { data: { users: [] }, error: null }
+  const getUserResult = options.getUserResult ?? { data: { user: null }, error: null }
+  const updateUserResult = options.updateUserResult ?? {
+    data: { user: { id: 'auth-uuid' } },
+    error: null,
+  }
+  const deleteUserResult = options.deleteUserResult ?? { data: null, error: null }
 
   return {
     ...createSupabaseClientMock(responses, options),
     auth: {
       admin: {
         inviteUserByEmail: vi.fn(async () => inviteResult),
+        listUsers: vi.fn(async () => listUsersResult),
+        getUserById: vi.fn(async () => getUserResult),
+        updateUserById: vi.fn(async () => updateUserResult),
+        deleteUser: vi.fn(async () => deleteUserResult),
       },
     },
   }
