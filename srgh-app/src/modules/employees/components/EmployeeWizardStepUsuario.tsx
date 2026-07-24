@@ -101,7 +101,7 @@ export function EmployeeWizardStepUsuario({
       ) : (
         <p className="text-xs text-slate-500">
           El empleado se creará sin acceso al sistema. La cuenta puede crearse después desde la
-          futura sección de usuarios.
+          pestaña Usuarios del módulo de empleados.
         </p>
       )}
     </div>

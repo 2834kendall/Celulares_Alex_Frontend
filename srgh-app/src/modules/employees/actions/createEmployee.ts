@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { onboardingEmpleadoSchema, type OnboardingEmpleadoInput } from '@/modules/employees/types'
 import { mapEmployeeUniqueError } from '@/modules/employees/lib/dbErrors'
-import { inviteEmployeeUser } from './inviteEmployeeUser'
+import { inviteUser } from '@/modules/users/actions/inviteUser'
 
 export type CreateEmployeeResult =
   { ok: true; empId: number; usuarioWarning?: string } | { ok: false; error: string }
@@ -59,7 +59,7 @@ export async function createEmployee(
 
   let usuarioWarning: string | undefined
   if (parsed.data.usuario) {
-    const inviteResult = await inviteEmployeeUser(empId, parsed.data.usuario)
+    const inviteResult = await inviteUser({ ...parsed.data.usuario, empleado_id: empId })
     if (!inviteResult.ok) {
       usuarioWarning = `Empleado creado, pero la cuenta de usuario no se completó: ${inviteResult.error}`
     }
