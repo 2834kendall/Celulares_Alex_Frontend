@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AppShell } from '@/components/layout/AppShell'
+import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
+import { getSucursalActual } from '@/lib/empresa/get-sucursal-actual'
 import type { SgrhJwtClaims } from '@/types/auth'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -23,8 +25,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const email = typeof data.claims.email === 'string' ? data.claims.email : 'Usuario autenticado'
   const rol = typeof meta.rol === 'string' ? meta.rol : null
 
+  // Nombre real de la empresa del tenant (RLS devuelve solo la del JWT) y,
+  // si el usuario tiene una sucursal fija asignada, su nombre también.
+  const [empresaNombre, sucursalNombre] = await Promise.all([
+    getEmpresaNombre(),
+    getSucursalActual(meta.usr_id),
+  ])
+
   return (
-    <AppShell permisos={permisos} email={email} rol={rol}>
+    <AppShell
+      permisos={permisos}
+      email={email}
+      rol={rol}
+      empresaNombre={empresaNombre}
+      sucursalNombre={sucursalNombre}
+    >
       {children}
     </AppShell>
   )

@@ -6,6 +6,10 @@ import { BRAND } from '@/lib/brand'
 interface SidebarProps {
   /** Permisos del JWT, leidos server-side en el layout del dashboard. */
   permisos: string[]
+  /** Nombre real de la empresa (cargado server-side desde sgrh_empresas). */
+  empresaNombre: string
+  /** Sucursal asignada al usuario, o null si no tiene una fija (p.ej. ADMIN). */
+  sucursalNombre: string | null
   /** Colapsable en escritorio desde la hamburguesa del topbar. */
   open?: boolean
 }
@@ -15,7 +19,7 @@ interface SidebarProps {
  * aprovechar la pantalla completa. En movil se oculta siempre — ahi se
  * usa el drawer del AppShell.
  */
-export function Sidebar({ permisos, open = true }: SidebarProps) {
+export function Sidebar({ permisos, empresaNombre, sucursalNombre, open = true }: SidebarProps) {
   return (
     <aside
       // inert al colapsar: el contenido queda para la animacion pero
@@ -29,14 +33,14 @@ export function Sidebar({ permisos, open = true }: SidebarProps) {
       <div className="flex h-full w-64 flex-col">
         <div className="flex items-center gap-2.5 border-b border-slate-100 px-5 py-5">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-sm font-black text-white">
-            {BRAND.empresa.charAt(0)}
+            {empresaNombre.charAt(0)}
           </span>
           <div className="leading-tight">
             <p className="whitespace-nowrap text-base font-extrabold tracking-tight text-slate-900">
-              {BRAND.empresa}
+              {empresaNombre}
             </p>
             <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-              {BRAND.sistema}
+              {sucursalNombre ?? BRAND.sistema}
             </p>
           </div>
         </div>
