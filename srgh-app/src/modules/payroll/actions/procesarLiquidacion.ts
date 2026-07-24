@@ -33,13 +33,26 @@ interface MotivoRow {
 
 interface DetalleHistoricoRow {
   ndt_salario_bruto: number
-  sgrh_nomina_periodo: { npe_periodo_mes: number; npe_periodo_anio: number } | null
+  ndt_pagado: boolean
+  sgrh_nomina_periodo: {
+    npe_periodo_mes: number
+    npe_periodo_anio: number
+    npe_quincena: number
+  } | null
 }
 
 /** Interpreta 'YYYY-MM-DD' en horario local (evita el corrimiento de Date por UTC). */
 function parseFechaLocal(fecha: string): Date {
   const [anio, mes, dia] = fecha.split('-').map(Number)
   return new Date(anio, mes - 1, dia)
+}
+
+/**
+ * Clave comparable a nivel de quincena (no solo mes) para poder ordenar y
+ * filtrar periodos correctamente cuando hay dos quincenas en el mismo mes.
+ */
+function claveQuincenal(anio: number, mes: number, quincena: number): number {
+  return (anio * 12 + mes) * 2 + (quincena - 1)
 }
 
 /**
@@ -100,7 +113,9 @@ export async function procesarLiquidacion(
 
   const { data: historico, error: errHistorico } = await supabase
     .from('sgrh_nomina_detalle')
-    .select('ndt_salario_bruto, sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio )')
+    .select(
+      'ndt_salario_bruto, ndt_pagado, sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio, npe_quincena )'
+    )
     .eq('ndt_historial_laboral_id', data.historialLaboralId)
     .returns<DetalleHistoricoRow[]>()
 
@@ -112,32 +127,55 @@ export async function procesarLiquidacion(
   const fechaIngreso = parseFechaLocal(historial.lab_fecha_inicio)
   const anioSalida = fechaSalida.getFullYear()
   const mesSalida = fechaSalida.getMonth() + 1
-  const claveSalida = anioSalida * 12 + mesSalida
+  // Las quincenas del sistema se parten por día 15 del mes.
+  const quincenaSalida = fechaSalida.getDate() <= 15 ? 1 : 2
+  const claveSalida = claveQuincenal(anioSalida, mesSalida, quincenaSalida)
 
   const cicloAnio = anioCicloAguinaldo(mesSalida, anioSalida)
-  const claveInicioCiclo = (cicloAnio - 1) * 12 + 12 // diciembre del año anterior al cierre del ciclo
+  // Diciembre del año anterior al cierre del ciclo, desde la 1ra quincena.
+  const claveInicioCiclo = claveQuincenal(cicloAnio - 1, 12, 1)
 
-  const pagosVisibles = (historico ?? []).filter((p) => p.sgrh_nomina_periodo !== null)
+  // Solo cuentan las planillas ya pagadas: una en borrador o aprobada pero
+  // no pagada todavía no es un monto real devengado.
+  const pagosVisibles = (historico ?? []).filter(
+    (p) => p.sgrh_nomina_periodo !== null && p.ndt_pagado
+  )
 
   const sumaSalariosBrutosCicloAguinaldo = pagosVisibles
     .filter((p) => {
-      const clave =
-        p.sgrh_nomina_periodo!.npe_periodo_anio * 12 + p.sgrh_nomina_periodo!.npe_periodo_mes
+      const periodo = p.sgrh_nomina_periodo!
+      const clave = claveQuincenal(
+        periodo.npe_periodo_anio,
+        periodo.npe_periodo_mes,
+        periodo.npe_quincena
+      )
       return clave >= claveInicioCiclo && clave <= claveSalida
     })
     .reduce((acc, p) => acc + p.ndt_salario_bruto, 0)
 
   const ultimosSeis = pagosVisibles
     .filter((p) => {
-      const clave =
-        p.sgrh_nomina_periodo!.npe_periodo_anio * 12 + p.sgrh_nomina_periodo!.npe_periodo_mes
+      const periodo = p.sgrh_nomina_periodo!
+      const clave = claveQuincenal(
+        periodo.npe_periodo_anio,
+        periodo.npe_periodo_mes,
+        periodo.npe_quincena
+      )
       return clave <= claveSalida
     })
     .sort((a, b) => {
-      const claveA =
-        a.sgrh_nomina_periodo!.npe_periodo_anio * 12 + a.sgrh_nomina_periodo!.npe_periodo_mes
-      const claveB =
-        b.sgrh_nomina_periodo!.npe_periodo_anio * 12 + b.sgrh_nomina_periodo!.npe_periodo_mes
+      const periodoA = a.sgrh_nomina_periodo!
+      const periodoB = b.sgrh_nomina_periodo!
+      const claveA = claveQuincenal(
+        periodoA.npe_periodo_anio,
+        periodoA.npe_periodo_mes,
+        periodoA.npe_quincena
+      )
+      const claveB = claveQuincenal(
+        periodoB.npe_periodo_anio,
+        periodoB.npe_periodo_mes,
+        periodoB.npe_quincena
+      )
       return claveB - claveA
     })
     .slice(0, 6)
