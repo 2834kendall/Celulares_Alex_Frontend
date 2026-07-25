@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import type { z } from 'zod'
 import { AlertTriangle, Coins, Loader2 } from 'lucide-react'
 import {
   conceptoNominaSchema,
@@ -48,12 +49,18 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
   const isEditing = Boolean(concepto)
 
+  // Se usan los 3 genéricos de useForm (en vez de solo <ConceptoNominaInput>)
+  // porque el schema normaliza algunos campos (con_formula_base) al validar:
+  // los valores "en vivo" del formulario siguen el tipo de entrada del schema
+  // (z.input), pero lo que llega a onSubmit ya viene normalizado según
+  // ConceptoNominaInput (z.output). Si se usa un solo genérico, TypeScript
+  // exige que ambos coincidan exactamente y el build falla.
   const {
     register,
     handleSubmit,
     watch,
     formState: { errors, isSubmitting },
-  } = useForm<ConceptoNominaInput>({
+  } = useForm<z.input<typeof conceptoNominaSchema>, unknown, ConceptoNominaInput>({
     resolver: zodResolver(conceptoNominaSchema),
     defaultValues: concepto
       ? {

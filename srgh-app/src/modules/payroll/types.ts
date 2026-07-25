@@ -113,14 +113,15 @@ export const crearPeriodoSchema = z
       .string({ error: 'La fecha de fin es obligatoria' })
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de fin inválida'),
 
-    npe_observaciones: z.preprocess(
-      (value) => (value === '' ? null : value),
-      z
-        .string()
-        .max(500, 'Las observaciones no pueden superar 500 caracteres')
-        .nullable()
-        .optional()
-    ),
+    // Igual que con_formula_base: se valida en el navegador (string) y otra
+    // vez en el servidor con el valor ya transformado (puede llegar null
+    // directo, ej. createPeriodo.test.ts). .nullable() en la base mantiene el
+    // tipo de entrada concreto ("string | null", no "unknown").
+    npe_observaciones: z
+      .string()
+      .max(500, 'Las observaciones no pueden superar 500 caracteres')
+      .nullable()
+      .transform((value) => (value === '' ? null : value)),
   })
   .refine((data) => data.npe_fecha_fin_periodo >= data.npe_fecha_inicio_periodo, {
     message: 'La fecha de fin debe ser posterior o igual a la de inicio',
@@ -176,14 +177,16 @@ export const conceptoNominaSchema = z
     // El input del formulario solo aplica mayúsculas por CSS (visual, no cambia
     // el valor real), así que el código se normaliza aquí antes de validar —
     // si no, escribir en minúscula rechazaría el formulario sin razón aparente.
-    con_codigo: z.preprocess(
-      (value) => (typeof value === 'string' ? value.trim().toUpperCase() : value),
-      z
-        .string({ error: 'El código es obligatorio' })
-        .min(2, 'El código debe tener al menos 2 caracteres')
-        .max(50, 'El código no puede superar 50 caracteres')
-        .regex(/^[A-Z0-9_]+$/, 'Usa solo letras, números y guion bajo (ej. BONO_ANUAL)')
-    ),
+    // (.trim()/.toUpperCase() se encadenan directo en ZodString, sin
+    // z.preprocess, para que el tipo de entrada siga siendo "string" y no
+    // "unknown" — si no, useForm + zodResolver dejan de coincidir en tipos.)
+    con_codigo: z
+      .string({ error: 'El código es obligatorio' })
+      .trim()
+      .toUpperCase()
+      .min(2, 'El código debe tener al menos 2 caracteres')
+      .max(50, 'El código no puede superar 50 caracteres')
+      .regex(/^[A-Z0-9_]+$/, 'Usa solo letras, números y guion bajo (ej. BONO_ANUAL)'),
 
     con_nombre: z
       .string({ error: 'El nombre es obligatorio' })
@@ -197,22 +200,30 @@ export const conceptoNominaSchema = z
       error: 'Selecciona cómo se calcula este concepto',
     }),
 
-    con_porcentaje: z.preprocess(
-      (value) => (value === '' || value === undefined ? null : value),
-      z
-        .number()
-        .positive('El porcentaje debe ser mayor a 0')
-        .max(500, 'El porcentaje es demasiado alto')
-        .nullable()
-    ),
+    // Mismo motivo que con_codigo: sin z.preprocess, para que el tipo de
+    // entrada sea concreto y no "unknown". El input real de este campo (con
+    // valueAsNumber: true en el form) siempre es number|null, nunca ''/undefined,
+    // así que .nullable() ya alcanza sin necesitar normalizar nada más.
+    con_porcentaje: z
+      .number()
+      .positive('El porcentaje debe ser mayor a 0')
+      .max(500, 'El porcentaje es demasiado alto')
+      .nullable(),
 
     con_afecta_salario_bruto: z.boolean().default(false),
     con_afecta_base_ccss: z.boolean().default(true),
 
-    con_formula_base: z.preprocess(
-      (value) => (value === '' ? null : value),
-      z.string().max(200, 'La fórmula no puede superar 200 caracteres').nullable().optional()
-    ),
+    // Este campo se valida en dos momentos: en el navegador (el input de
+    // texto siempre entrega '' o un string) y otra vez en el servidor, donde
+    // llega el objeto YA transformado (con_formula_base puede venir null
+    // directo, ej. createConcepto.test.ts). Por eso .nullable() en la base
+    // -así el tipo de entrada es "string | null", concreto y no "unknown"-
+    // y .transform() solo normaliza el caso de '' a null.
+    con_formula_base: z
+      .string()
+      .max(200, 'La fórmula no puede superar 200 caracteres')
+      .nullable()
+      .transform((value) => (value === '' ? null : value)),
 
     con_activo: z.boolean().default(true),
   })
