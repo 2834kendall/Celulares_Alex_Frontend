@@ -15,7 +15,7 @@ const mockRequirePermission = vi.mocked(requirePermission)
 
 const validInput: KioskMarkInput = {
   employeeId: 10,
-  tipo: 'ENTRADA',
+  tipo: 'entrada',
   latitud: null,
   longitud: null,
   pin: null,
@@ -85,7 +85,7 @@ describe('registerKioskMark (server action)', () => {
       expect.objectContaining({
         mar_historial_laboral_id: 1,
         mar_sucursal_id: 100,
-        mar_tipo: 'ENTRADA',
+        mar_tipo: 'entrada',
         mar_metodo_verificacion: 'MANUAL',
         mar_registrado_por_id: 999,
         mar_observacion: 'Marcado con PIN de respaldo (camara no disponible).',

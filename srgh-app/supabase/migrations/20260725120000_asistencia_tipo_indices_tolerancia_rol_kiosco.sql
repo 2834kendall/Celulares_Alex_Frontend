@@ -3,31 +3,23 @@
 -- del gerente se sigue resolviendo en runtime via uer_sucursal_id, no via JWT).
 --
 -- Contiene:
--- 1. CHECK de sgrh_marcas_asistencia.mar_tipo — la tabla esta vacia hoy, es
---    el unico momento en que agregarlo es gratis (sin datos que limpiar).
--- 2. Dos indices compuestos para las dos consultas reales del modulo.
--- 3. Tolerancia a tardias en sgrh_sucursales, parametrizable por sucursal.
+-- 1. Dos indices compuestos para las dos consultas reales del modulo.
+-- 2. Tolerancia a tardias en sgrh_sucursales, parametrizable por sucursal.
 --    El calculo que la usa queda diferido (fuera de este ticket); la columna
 --    solo protege el margen para cuando se programe.
--- 4. Rol KIOSCO: solo puede leer empleados y registrar asistencia. Pensado
+-- 3. Rol KIOSCO: solo puede leer empleados y registrar asistencia. Pensado
 --    para una cuenta con sesion permanente por dispositivo de sucursal.
+--
+-- NO incluye un CHECK sobre mar_tipo: la tabla ya tenia filas de prueba con
+-- 'entrada'/'salida' en minuscula (la convencion de mayusculas propuesta no
+-- coincide con el resto del esquema, que usa minuscula en columnas de texto
+-- equivalentes — ver ntf_tipo_notificacion, aus_estado, npe_estado). El
+-- vocabulario de mar_tipo queda validado solo en la aplicacion (Zod, en
+-- modules/attendance/types.ts), no en la base de datos.
 --
 -- Toda la migracion es convergente: puede re-ejecutarse sin errores.
 
--- ─── 1. CHECK de tipo de marca ────────────────────────────────────────────
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'sgrh_marcas_asistencia_mar_tipo_check'
-  ) THEN
-    ALTER TABLE public.sgrh_marcas_asistencia
-      ADD CONSTRAINT sgrh_marcas_asistencia_mar_tipo_check
-      CHECK (mar_tipo IN ('ENTRADA', 'SALIDA', 'INICIO_ALMUERZO', 'FIN_ALMUERZO'));
-  END IF;
-END;
-$$;
-
--- ─── 2. Indices de rendimiento ────────────────────────────────────────────
+-- ─── 1. Indices de rendimiento ────────────────────────────────────────────
 -- Consulta del panel del gerente: marcas de una sucursal en un rango de fechas.
 CREATE INDEX IF NOT EXISTS idx_marcas_sucursal_fecha
   ON public.sgrh_marcas_asistencia (mar_sucursal_id, mar_fecha_hora);
@@ -36,11 +28,11 @@ CREATE INDEX IF NOT EXISTS idx_marcas_sucursal_fecha
 CREATE INDEX IF NOT EXISTS idx_marcas_historial_fecha
   ON public.sgrh_marcas_asistencia (mar_historial_laboral_id, mar_fecha_hora);
 
--- ─── 3. Tolerancia a tardias (parametrizada, calculo diferido) ────────────
+-- ─── 2. Tolerancia a tardias (parametrizada, calculo diferido) ────────────
 ALTER TABLE public.sgrh_sucursales
   ADD COLUMN IF NOT EXISTS suc_tolerancia_tardia_minutos integer NOT NULL DEFAULT 2;
 
--- ─── 4. Rol KIOSCO ─────────────────────────────────────────────────────────
+-- ─── 3. Rol KIOSCO ─────────────────────────────────────────────────────────
 -- rol_activo = false a proposito: employees/getCatalogs.ts y
 -- users/InviteUserForm filtran roles por rol_activo = true para poblar el
 -- selector de "asignar rol a un usuario humano". Sin este flag, KIOSCO

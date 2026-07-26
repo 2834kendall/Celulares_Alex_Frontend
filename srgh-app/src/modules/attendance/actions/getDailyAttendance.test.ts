@@ -96,13 +96,13 @@ describe('getDailyAttendance (server action)', () => {
             {
               mar_id: 1,
               mar_historial_laboral_id: 1,
-              mar_tipo: 'ENTRADA',
+              mar_tipo: 'entrada',
               mar_fecha_hora: `${DATE} 08:04:00`,
             },
             {
               mar_id: 2,
               mar_historial_laboral_id: 1,
-              mar_tipo: 'SALIDA',
+              mar_tipo: 'salida',
               mar_fecha_hora: `${DATE} 17:00:00`,
             },
           ],

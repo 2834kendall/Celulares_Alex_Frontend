@@ -18,7 +18,7 @@ const validInput: ManualMarkInput = {
   employmentHistoryId: 1,
   employeeId: 10,
   sucursalId: 100,
-  tipo: 'ENTRADA',
+  tipo: 'entrada',
   fecha: '2026-07-25',
   hora: '08:04',
   observacion: 'La tablet del kiosco no encendio esta mañana.',
@@ -81,7 +81,7 @@ describe('saveManualMark (server action)', () => {
       expect.objectContaining({
         mar_historial_laboral_id: 1,
         mar_sucursal_id: 100,
-        mar_tipo: 'ENTRADA',
+        mar_tipo: 'entrada',
         mar_fecha_hora: '2026-07-25 08:04:00',
         mar_metodo_verificacion: 'MANUAL',
         mar_registrado_por_id: 5,

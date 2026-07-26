@@ -67,7 +67,7 @@ describe('<KioskScreen />', () => {
 
     expect(mockRegisterKioskMark).toHaveBeenCalledWith({
       employeeId: 10,
-      tipo: 'ENTRADA',
+      tipo: 'entrada',
       latitud: 9.9333,
       longitud: -84.0833,
       pin: null,

@@ -1,5 +1,10 @@
-/** Debe coincidir exactamente con el CHECK de mar_tipo en la migracion. */
-export const MARK_TYPES = ['ENTRADA', 'SALIDA', 'INICIO_ALMUERZO', 'FIN_ALMUERZO'] as const
+/**
+ * Vocabulario de mar_tipo. En minuscula: es la convencion real del resto del
+ * esquema para columnas de texto equivalentes (ntf_tipo_notificacion,
+ * aus_estado, npe_estado, etc.) — no hay CHECK en la base de datos que lo
+ * fuerce, la validacion vive solo en la aplicacion (ver types.ts).
+ */
+export const MARK_TYPES = ['entrada', 'salida', 'inicio_almuerzo', 'fin_almuerzo'] as const
 
 export type MarkType = (typeof MARK_TYPES)[number]
 
@@ -43,10 +48,10 @@ export function groupIntoDayJourney(marks: RawMark[]): DayJourney {
   }
 
   const slotOf: Record<MarkType, keyof Omit<DayJourney, 'duplicates' | 'isOpen'>> = {
-    ENTRADA: 'entrada',
-    SALIDA: 'salida',
-    INICIO_ALMUERZO: 'inicioAlmuerzo',
-    FIN_ALMUERZO: 'finAlmuerzo',
+    entrada: 'entrada',
+    salida: 'salida',
+    inicio_almuerzo: 'inicioAlmuerzo',
+    fin_almuerzo: 'finAlmuerzo',
   }
 
   for (const mark of sorted) {

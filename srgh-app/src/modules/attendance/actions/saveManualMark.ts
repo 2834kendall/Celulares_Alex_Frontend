@@ -9,10 +9,10 @@ import { manualMarkSchema, type ManualMarkInput } from '@/modules/attendance/typ
 export type SaveManualMarkResult = { ok: true } | { ok: false; error: string }
 
 const MARK_LABEL: Record<string, string> = {
-  ENTRADA: 'entrada',
-  SALIDA: 'salida',
-  INICIO_ALMUERZO: 'inicio de almuerzo',
-  FIN_ALMUERZO: 'fin de almuerzo',
+  entrada: 'entrada',
+  salida: 'salida',
+  inicio_almuerzo: 'inicio de almuerzo',
+  fin_almuerzo: 'fin de almuerzo',
 }
 
 /**

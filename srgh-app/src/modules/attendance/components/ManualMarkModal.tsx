@@ -11,10 +11,10 @@ import type { MarkType } from '@/modules/attendance/lib/marks'
 import { timeOfDay } from '@/modules/attendance/lib/time'
 
 const MARK_LABELS: Record<MarkType, string> = {
-  ENTRADA: 'Entrada',
-  SALIDA: 'Salida',
-  INICIO_ALMUERZO: 'Inicio de almuerzo',
-  FIN_ALMUERZO: 'Fin de almuerzo',
+  entrada: 'Entrada',
+  salida: 'Salida',
+  inicio_almuerzo: 'Inicio de almuerzo',
+  fin_almuerzo: 'Fin de almuerzo',
 }
 
 const INPUT_CLASSES =

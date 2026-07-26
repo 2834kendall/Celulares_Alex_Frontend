@@ -16,10 +16,10 @@ interface KioskScreenProps {
 }
 
 const MARK_BUTTONS: { tipo: MarkType; label: string }[] = [
-  { tipo: 'ENTRADA', label: 'Entrada' },
-  { tipo: 'INICIO_ALMUERZO', label: 'Inicio de almuerzo' },
-  { tipo: 'FIN_ALMUERZO', label: 'Fin de almuerzo' },
-  { tipo: 'SALIDA', label: 'Salida' },
+  { tipo: 'entrada', label: 'Entrada' },
+  { tipo: 'inicio_almuerzo', label: 'Inicio de almuerzo' },
+  { tipo: 'fin_almuerzo', label: 'Fin de almuerzo' },
+  { tipo: 'salida', label: 'Salida' },
 ]
 
 const SUCCESS_DISPLAY_MS = 3000

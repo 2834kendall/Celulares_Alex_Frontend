@@ -8,10 +8,10 @@ function mark(id: number, tipo: RawMark['tipo'], hora: string): RawMark {
 describe('groupIntoDayJourney', () => {
   it('arma una jornada completa con las cuatro marcas', () => {
     const journey = groupIntoDayJourney([
-      mark(1, 'ENTRADA', '08:00:00'),
-      mark(2, 'INICIO_ALMUERZO', '12:00:00'),
-      mark(3, 'FIN_ALMUERZO', '13:00:00'),
-      mark(4, 'SALIDA', '17:00:00'),
+      mark(1, 'entrada', '08:00:00'),
+      mark(2, 'inicio_almuerzo', '12:00:00'),
+      mark(3, 'fin_almuerzo', '13:00:00'),
+      mark(4, 'salida', '17:00:00'),
     ])
 
     expect(journey.entrada?.id).toBe(1)
@@ -24,8 +24,8 @@ describe('groupIntoDayJourney', () => {
 
   it('no importa el orden de llegada: siempre ordena por hora', () => {
     const journey = groupIntoDayJourney([
-      mark(4, 'SALIDA', '17:00:00'),
-      mark(1, 'ENTRADA', '08:00:00'),
+      mark(4, 'salida', '17:00:00'),
+      mark(1, 'entrada', '08:00:00'),
     ])
 
     expect(journey.entrada?.id).toBe(1)
@@ -33,7 +33,7 @@ describe('groupIntoDayJourney', () => {
   })
 
   it('marca la jornada como abierta cuando hay entrada sin salida', () => {
-    const journey = groupIntoDayJourney([mark(1, 'ENTRADA', '08:00:00')])
+    const journey = groupIntoDayJourney([mark(1, 'entrada', '08:00:00')])
 
     expect(journey.isOpen).toBe(true)
     expect(journey.salida).toBeNull()
@@ -48,8 +48,8 @@ describe('groupIntoDayJourney', () => {
 
   it('toma la primera marca cronologica de un tipo repetido y el resto va a duplicates', () => {
     const journey = groupIntoDayJourney([
-      mark(1, 'ENTRADA', '08:00:00'),
-      mark(2, 'ENTRADA', '08:01:00'),
+      mark(1, 'entrada', '08:00:00'),
+      mark(2, 'entrada', '08:01:00'),
     ])
 
     expect(journey.entrada?.id).toBe(1)
@@ -59,10 +59,10 @@ describe('groupIntoDayJourney', () => {
 
   it('acumula duplicados de mas de un tipo', () => {
     const journey = groupIntoDayJourney([
-      mark(1, 'ENTRADA', '08:00:00'),
-      mark(2, 'ENTRADA', '08:01:00'),
-      mark(3, 'SALIDA', '17:00:00'),
-      mark(4, 'SALIDA', '17:05:00'),
+      mark(1, 'entrada', '08:00:00'),
+      mark(2, 'entrada', '08:01:00'),
+      mark(3, 'salida', '17:00:00'),
+      mark(4, 'salida', '17:05:00'),
     ])
 
     expect(journey.duplicates.map((m) => m.id)).toEqual([2, 4])

@@ -36,10 +36,10 @@ const MARK_FIELD: Record<
   MarkType,
   keyof Pick<DailyAttendanceRow, 'entrada' | 'salida' | 'inicioAlmuerzo' | 'finAlmuerzo'>
 > = {
-  ENTRADA: 'entrada',
-  SALIDA: 'salida',
-  INICIO_ALMUERZO: 'inicioAlmuerzo',
-  FIN_ALMUERZO: 'finAlmuerzo',
+  entrada: 'entrada',
+  salida: 'salida',
+  inicio_almuerzo: 'inicioAlmuerzo',
+  fin_almuerzo: 'finAlmuerzo',
 }
 
 function formatDay(dateISO: string) {
@@ -208,28 +208,28 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                       <MarkCell
                         mark={row.entrada}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'ENTRADA' })}
+                        onEdit={() => setEditing({ row, tipo: 'entrada' })}
                       />
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
                         mark={row.inicioAlmuerzo}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'INICIO_ALMUERZO' })}
+                        onEdit={() => setEditing({ row, tipo: 'inicio_almuerzo' })}
                       />
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
                         mark={row.finAlmuerzo}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'FIN_ALMUERZO' })}
+                        onEdit={() => setEditing({ row, tipo: 'fin_almuerzo' })}
                       />
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
                         mark={row.salida}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'SALIDA' })}
+                        onEdit={() => setEditing({ row, tipo: 'salida' })}
                       />
                     </td>
                     <td className="px-3 py-2">
