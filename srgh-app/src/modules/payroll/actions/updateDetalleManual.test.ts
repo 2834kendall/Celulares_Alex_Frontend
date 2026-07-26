@@ -5,6 +5,9 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { EditarDetalleInput } from '@/modules/payroll/types'
 
+// updateDetalleManual.ts llama a sincronizarMovimientoBancoHoras (bancoHorasAccrual.ts),
+// que importa 'server-only' — revienta en jsdom si no se mockea (ver planillaExcel.test.ts).
+vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -89,6 +92,7 @@ describe('updateDetalleManual (server action)', () => {
         data: {
           ndt_id: 1,
           ndt_nomina_periodo_id: 9,
+          ndt_historial_laboral_id: 5,
           sgrh_nomina_periodo: { npe_estado: 'aprobado' },
         },
         error: null,
@@ -109,6 +113,7 @@ describe('updateDetalleManual (server action)', () => {
         data: {
           ndt_id: 1,
           ndt_nomina_periodo_id: 9,
+          ndt_historial_laboral_id: 5,
           sgrh_nomina_periodo: { npe_estado: 'borrador' },
         },
         error: null,
@@ -131,6 +136,7 @@ describe('updateDetalleManual (server action)', () => {
           data: {
             ndt_id: 1,
             ndt_nomina_periodo_id: 9,
+            ndt_historial_laboral_id: 5,
             sgrh_nomina_periodo: { npe_estado: 'borrador' },
           },
           error: null,
@@ -140,9 +146,39 @@ describe('updateDetalleManual (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
       sgrh_nomina_linea_ingreso: [OK, OK],
       sgrh_nomina_linea_deduccion: [OK, OK],
+      // horasTrabajadas del INPUT (80) no supera el tope (88), así que
+      // sincronizarMovimientoBancoHoras solo hace un select (sin movimiento
+      // pendiente que borrar).
+      sgrh_banco_horas_movimientos: { data: null, error: null },
     })
 
     const result = await updateDetalleManual(1, INPUT)
+
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('registra un movimiento pendiente en el banco de horas si se superan las horas normales', async () => {
+    mockSupabase({
+      sgrh_nomina_detalle: [
+        {
+          data: {
+            ndt_id: 1,
+            ndt_nomina_periodo_id: 9,
+            ndt_historial_laboral_id: 5,
+            sgrh_nomina_periodo: { npe_estado: 'borrador' },
+          },
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
+      sgrh_nomina_linea_ingreso: [OK, OK],
+      sgrh_nomina_linea_deduccion: [OK, OK],
+      // Sin movimiento previo (maybeSingle → null) → se inserta uno nuevo.
+      sgrh_banco_horas_movimientos: [{ data: null, error: null }, OK],
+    })
+
+    const result = await updateDetalleManual(1, { ...INPUT, horasTrabajadas: 92 })
 
     expect(result).toEqual({ ok: true })
   })

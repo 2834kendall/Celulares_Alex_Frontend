@@ -124,6 +124,77 @@ export type Database = {
           },
         ]
       }
+      sgrh_banco_horas_movimientos: {
+        Row: {
+          bhm_created_at: string
+          bhm_estado: string
+          bhm_fecha_resolucion: string | null
+          bhm_historial_laboral_id: number
+          bhm_horas: number
+          bhm_id: number
+          bhm_monto_pagado: number | null
+          bhm_nomina_detalle_id: number
+          bhm_nomina_detalle_pago_id: number | null
+          bhm_resuelto_por_id: number | null
+          bhm_salario_por_hora: number
+        }
+        Insert: {
+          bhm_created_at?: string
+          bhm_estado?: string
+          bhm_fecha_resolucion?: string | null
+          bhm_historial_laboral_id: number
+          bhm_horas: number
+          bhm_id?: never
+          bhm_monto_pagado?: number | null
+          bhm_nomina_detalle_id: number
+          bhm_nomina_detalle_pago_id?: number | null
+          bhm_resuelto_por_id?: number | null
+          bhm_salario_por_hora?: number
+        }
+        Update: {
+          bhm_created_at?: string
+          bhm_estado?: string
+          bhm_fecha_resolucion?: string | null
+          bhm_historial_laboral_id?: number
+          bhm_horas?: number
+          bhm_id?: never
+          bhm_monto_pagado?: number | null
+          bhm_nomina_detalle_id?: number
+          bhm_nomina_detalle_pago_id?: number | null
+          bhm_resuelto_por_id?: number | null
+          bhm_salario_por_hora?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_historial_laboral_id_fkey"
+            columns: ["bhm_historial_laboral_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_historial_laboral"
+            referencedColumns: ["lab_id"]
+          },
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_nomina_detalle_id_fkey"
+            columns: ["bhm_nomina_detalle_id"]
+            isOneToOne: true
+            referencedRelation: "sgrh_nomina_detalle"
+            referencedColumns: ["ndt_id"]
+          },
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_nomina_detalle_pago_id_fkey"
+            columns: ["bhm_nomina_detalle_pago_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_nomina_detalle"
+            referencedColumns: ["ndt_id"]
+          },
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_resuelto_por_id_fkey"
+            columns: ["bhm_resuelto_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+        ]
+      }
       sgrh_beneficios_empleado: {
         Row: {
           ben_activo: boolean

@@ -6,10 +6,12 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { editarDetalleSchema, type EditarDetalleInput } from '@/modules/payroll/types'
 import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
+import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 
 interface DetalleActualRow {
   ndt_id: number
   ndt_nomina_periodo_id: number
+  ndt_historial_laboral_id: number
   sgrh_nomina_periodo: { npe_estado: string } | null
 }
 
@@ -40,7 +42,9 @@ export async function updateDetalleManual(
 
   const { data: detalle, error: errDetalle } = await supabase
     .from('sgrh_nomina_detalle')
-    .select('ndt_id, ndt_nomina_periodo_id, sgrh_nomina_periodo ( npe_estado )')
+    .select(
+      'ndt_id, ndt_nomina_periodo_id, ndt_historial_laboral_id, sgrh_nomina_periodo ( npe_estado )'
+    )
     .eq('ndt_id', ndtId)
     .maybeSingle<DetalleActualRow>()
 
@@ -136,7 +140,20 @@ export async function updateDetalleManual(
     }
   }
 
+  // Si las horas trabajadas pasan del tope normal, esas horas de más quedan
+  // pendientes en el banco de horas (ya no se pagan solas aquí).
+  const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
+    ndtId,
+    historialLaboralId: detalle.ndt_historial_laboral_id,
+    horasTrabajadas: parsed.data.horasTrabajadas,
+    salarioPorHora: parsed.data.salarioPorHora,
+  })
+  if (errBanco) {
+    return { ok: false, error: errBanco }
+  }
+
   revalidatePath('/payroll')
   revalidatePath(`/payroll/${detalle.ndt_nomina_periodo_id}`)
+  revalidatePath('/payroll/banco-horas')
   return { ok: true }
 }

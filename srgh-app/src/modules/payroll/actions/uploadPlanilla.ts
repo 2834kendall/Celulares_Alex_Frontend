@@ -14,6 +14,7 @@ import {
 } from '@/modules/payroll/lib/planilla'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
+import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos KB
 
@@ -343,6 +344,16 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     if (errLineas) {
       return { ok: false, error: errLineas }
     }
+
+    const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
+      ndtId,
+      historialLaboralId: porCedula.get(row.cedula)!.labId,
+      horasTrabajadas: row.horasTrabajadas,
+      salarioPorHora: row.salarioPorHora,
+    })
+    if (errBanco) {
+      return { ok: false, error: errBanco }
+    }
   }
 
   // 9. Insertar los empleados nuevos
@@ -405,11 +416,22 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
             'Se guardaron los totales, pero fallaron algunas líneas de la planilla. Vuelve a subir el archivo.',
         }
       }
+
+      const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
+        ndtId,
+        historialLaboralId: labId,
+        horasTrabajadas: row.horasTrabajadas,
+        salarioPorHora: row.salarioPorHora,
+      })
+      if (errBanco) {
+        return { ok: false, error: errBanco }
+      }
     }
   }
 
   revalidatePath('/payroll')
   revalidatePath(`/payroll/${periodoId}`)
+  revalidatePath('/payroll/banco-horas')
   return {
     ok: true,
     empleados: rows.length,

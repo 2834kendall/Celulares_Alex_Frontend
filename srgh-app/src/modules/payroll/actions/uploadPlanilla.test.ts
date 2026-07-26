@@ -7,6 +7,9 @@ import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { PlanillaRowInput } from '@/modules/payroll/lib/planilla'
 
+// uploadPlanilla.ts llama a sincronizarMovimientoBancoHoras (bancoHorasAccrual.ts),
+// que importa 'server-only' — revienta en jsdom si no se mockea (ver planillaExcel.test.ts).
+vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -210,6 +213,9 @@ describe('uploadPlanilla (server action)', () => {
       ],
       sgrh_nomina_linea_ingreso: OK,
       sgrh_nomina_linea_deduccion: OK,
+      // 88 horas trabajadas (helper fila()) no supera el tope: solo un select
+      // sin movimiento pendiente que crear.
+      sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
       rows: [fila('NEW', { BASE: 50000 })],
@@ -265,6 +271,7 @@ describe('uploadPlanilla (server action)', () => {
         OK,
       ],
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
       rows: [fila('CHG', { BASE: 300000 })],
@@ -320,6 +327,9 @@ describe('uploadPlanilla (server action)', () => {
         OK,
       ],
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+      // 96 horas superan el tope (88): sincronizarMovimientoBancoHoras hace un
+      // select (sin movimiento previo) y luego un insert.
+      sgrh_banco_horas_movimientos: [{ data: null, error: null }, OK],
     })
     // Mismo BASE, pero ahora sí se reportan horas y salario por hora (antes en 0).
     mockParsePlanillaWorkbook.mockResolvedValue({
@@ -425,6 +435,7 @@ describe('uploadPlanilla (server action)', () => {
       ],
       sgrh_nomina_linea_ingreso: OK,
       sgrh_nomina_linea_deduccion: OK,
+      sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
       rows: [fila('CONPRESTAMO', { BASE: 200000, PRESTAMO: 15000 })],

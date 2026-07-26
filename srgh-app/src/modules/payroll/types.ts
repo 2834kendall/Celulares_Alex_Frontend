@@ -383,3 +383,44 @@ export type RegistrarIncapacidadResult =
       diasSinPeriodo: number
     }
   | { ok: false; error: string }
+
+// ─── Banco de horas ───────────────────────────────────────────────────────
+// Cuando un empleado trabaja más de las horas normales de la quincena
+// (TOPE_HORAS_NORMALES_QUINCENAL), esas horas de más ya NO se pagan solas:
+// quedan "pendientes" acá hasta que el encargado de nómina decida, una por
+// una, pagarlas o compensarlas (ver lib/bancoHoras.ts y las acciones
+// getBancoHoras/pagarBancoHoras/compensarBancoHoras).
+
+export type EstadoBancoHoras = 'pendiente' | 'pagado' | 'compensado'
+
+export interface BancoHorasItem {
+  id: number
+  historialLaboralId: number
+  empleadoNombre: string
+  empleadoCedula: string
+  /** Periodo donde se generaron estas horas extra. */
+  periodoOrigenLabel: string
+  horas: number
+  salarioPorHora: number
+  /** Monto sugerido = horas × salario por hora × 1.5, para prellenar el pago. */
+  montoSugerido: number
+  estado: EstadoBancoHoras
+  montoPagado: number | null
+  fechaResolucion: string | null
+  createdAt: string
+}
+
+export const pagarBancoHorasSchema = z.object({
+  bhmId: z.number({ error: 'Movimiento inválido' }).int().positive(),
+  monto: z
+    .number({ error: 'El monto a pagar es obligatorio' })
+    .positive('El monto debe ser mayor a 0')
+    .max(99_999_999, 'El monto es demasiado alto'),
+})
+
+export type PagarBancoHorasInput = z.infer<typeof pagarBancoHorasSchema>
+
+export type PagarBancoHorasResult =
+  { ok: true; periodoLabel: string } | { ok: false; error: string }
+
+export type CompensarBancoHorasResult = { ok: true } | { ok: false; error: string }
