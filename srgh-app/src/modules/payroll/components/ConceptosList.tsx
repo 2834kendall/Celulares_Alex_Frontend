@@ -2,7 +2,6 @@
 
 import { AlertTriangle, Coins, FileSpreadsheet, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ConceptoNominaRow } from '@/modules/payroll/types'
-import { CONCEPTOS_PLANILLA } from '@/modules/payroll/lib/planilla'
 import { deleteConcepto } from '@/modules/payroll/actions/deleteConcepto'
 import { useCrudList } from '@/modules/payroll/hooks/useCrudList'
 import { usePagination } from '@/hooks/usePagination'
@@ -21,10 +20,10 @@ const TIPO_LABELS: Record<string, string> = {
   patronal: 'Carga patronal',
 }
 
-const USADOS_POR_PLANTILLA = new Set<string>([
-  ...CONCEPTOS_PLANILLA.ingresos,
-  CONCEPTOS_PLANILLA.deduccion,
-])
+// Un concepto de tipo "monto manual" (ingreso o deducción) se convierte en
+// una columna editable de la plantilla de Excel; los de "% del bruto" y
+// "horas extra automático" se calculan solos, no son una columna.
+const ES_COLUMNA_EXCEL = new Set(['monto_manual_ingreso', 'monto_manual_deduccion'])
 
 export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
   const {
@@ -69,11 +68,12 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
       <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs text-blue-800">
         <FileSpreadsheet className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
         <p>
-          Los conceptos marcados con{' '}
-          <span className="font-semibold">&ldquo;Usado por la plantilla de Excel&rdquo;</span> son
-          las columnas fijas de la planilla (Base, Feriado, Comisión, Horas extra, Ajuste y el
-          rebajo de CCSS). Puedes editar su nombre y tipo, pero si desactivas o eliminas alguno la
-          subida de Excel dejará de encontrarlo hasta que lo recrees con el mismo código.
+          Todo concepto <span className="font-semibold">activo</span> aparece en la próxima
+          plantilla de Excel que se descargue. Los marcados con{' '}
+          <span className="font-semibold">&ldquo;Excel&rdquo;</span> (ingreso o deducción de monto
+          manual) salen como una columna que se llena a mano; los demás (% del bruto, horas extra
+          automático) se calculan solos, igual que en la edición manual. Si desactivas un concepto,
+          deja de aparecer en la próxima planilla.
         </p>
       </div>
 
@@ -152,9 +152,9 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
                     <td className="px-3 py-2 font-medium text-slate-800">
                       <div className="flex items-center gap-1.5">
                         {concepto.con_codigo}
-                        {USADOS_POR_PLANTILLA.has(concepto.con_codigo) && (
+                        {ES_COLUMNA_EXCEL.has(concepto.con_tipo_calculo) && (
                           <span
-                            title="Usado por la plantilla de Excel"
+                            title="Es una columna editable en la plantilla de Excel"
                             className="inline-flex items-center rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700"
                           >
                             Excel

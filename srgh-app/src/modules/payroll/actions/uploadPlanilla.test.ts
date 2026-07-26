@@ -20,23 +20,31 @@ const mockGetEmpleadosActivos = vi.mocked(getEmpleadosActivos)
 
 const PERIODO_BORRADOR = { npe_id: 1, npe_estado: 'borrador', npe_sucursal_id: 2 }
 
+// Conceptos activos "base" del catálogo: un ingreso manual (BASE) y la
+// deducción porcentual de CCSS — el mínimo para que la planilla calcule algo.
 const CONCEPTOS = [
-  { con_id: 1, con_codigo: 'BASE' },
-  { con_id: 2, con_codigo: 'FERIADO' },
-  { con_id: 3, con_codigo: 'COMISION' },
-  { con_id: 4, con_codigo: 'HORAS_EXTRA' },
-  { con_id: 5, con_codigo: 'AJUSTE' },
-  { con_id: 6, con_codigo: 'CCSS_OBRERA' },
+  {
+    con_id: 1,
+    con_codigo: 'BASE',
+    con_nombre: 'Salario base',
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  },
+  {
+    con_id: 6,
+    con_codigo: 'CCSS_OBRERA',
+    con_nombre: 'Rebajo CCSS',
+    con_tipo_calculo: 'porcentaje_deduccion_bruto',
+    con_porcentaje: 10.83,
+  },
 ]
-
-const FILA_VACIA = { feriado: 0, comision: 0, horasExtra: 0, ajuste: 0 }
 
 function fila(
   cedula: string,
-  base: number,
-  extra: Partial<PlanillaRowInput> = {}
+  montos: Record<string, number>,
+  extra: Partial<Omit<PlanillaRowInput, 'cedula' | 'montos'>> = {}
 ): PlanillaRowInput {
-  return { cedula, base, ...FILA_VACIA, ...extra }
+  return { cedula, horasTrabajadas: 88, salarioPorHora: 0, ...extra, montos }
 }
 
 function buildFormData(periodoId = 1): FormData {
@@ -92,11 +100,29 @@ describe('uploadPlanilla (server action)', () => {
     })
   })
 
+  it('avisa si no hay conceptos activos en el catálogo, sin llegar a parsear el archivo', async () => {
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: [], error: null },
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('Conceptos de nómina')
+    }
+    expect(mockParsePlanillaWorkbook).not.toHaveBeenCalled()
+  })
+
   it('rechaza el archivo si trae errores de formato', async () => {
-    mockSupabase({ sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null } })
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+    })
     mockParsePlanillaWorkbook.mockResolvedValue({
       rows: [],
-      errors: [{ fila: 5, mensaje: 'El campo "base" no es un número válido.' }],
+      errors: [{ fila: 5, mensaje: 'El campo "BASE" no es un número válido.' }],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -108,8 +134,14 @@ describe('uploadPlanilla (server action)', () => {
   })
 
   it('rechaza cédulas sin contrato activo en la sucursal', async () => {
-    mockSupabase({ sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null } })
-    mockParsePlanillaWorkbook.mockResolvedValue({ rows: [fila('9-999-999', 100000)], errors: [] })
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('9-999-999', { BASE: 100000 })],
+      errors: [],
+    })
     mockGetEmpleadosActivos.mockResolvedValue({ ok: true, data: [] })
 
     const result = await uploadPlanilla(buildFormData())
@@ -120,30 +152,21 @@ describe('uploadPlanilla (server action)', () => {
     }
   })
 
-  it('avisa si faltan conceptos del catálogo, apuntando a la pantalla de conceptos', async () => {
-    mockSupabase({
-      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
-      sgrh_cat_conceptos_nomina: { data: [], error: null },
-    })
-    mockParsePlanillaWorkbook.mockResolvedValue({ rows: [fila('1-1111-1111', 100000)], errors: [] })
-    mockGetEmpleadosActivos.mockResolvedValue({
-      ok: true,
-      data: [{ labId: 55, cedula: '1-1111-1111', nombre: 'Ana', salarioBaseMensual: 200000 }],
-    })
-
-    const result = await uploadPlanilla(buildFormData())
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.error).toContain('Conceptos de nómina')
-    }
-  })
-
   it('un empleado sin cambios se deja intacto (no genera update ni insert)', async () => {
     mockSupabase({
       sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
-      sgrh_nomina_detalle: { data: [{ ndt_id: 10, ndt_historial_laboral_id: 55 }], error: null },
+      sgrh_nomina_detalle: {
+        data: [
+          {
+            ndt_id: 10,
+            ndt_historial_laboral_id: 55,
+            ndt_horas_ordinarias_diurnas: 88,
+            ndt_salario_por_hora: 0,
+          },
+        ],
+        error: null,
+      },
       sgrh_nomina_linea_ingreso: {
         data: [
           {
@@ -154,8 +177,12 @@ describe('uploadPlanilla (server action)', () => {
         ],
         error: null,
       },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
     })
-    mockParsePlanillaWorkbook.mockResolvedValue({ rows: [fila('KEEP', 100000)], errors: [] })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
       data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
@@ -184,7 +211,10 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_nomina_linea_ingreso: OK,
       sgrh_nomina_linea_deduccion: OK,
     })
-    mockParsePlanillaWorkbook.mockResolvedValue({ rows: [fila('NEW', 50000)], errors: [] })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('NEW', { BASE: 50000 })],
+      errors: [],
+    })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
       data: [{ labId: 60, cedula: 'NEW', nombre: 'Nuevo', salarioBaseMensual: 100000 }],
@@ -207,7 +237,17 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
       sgrh_nomina_detalle: [
-        { data: [{ ndt_id: 20, ndt_historial_laboral_id: 70 }], error: null },
+        {
+          data: [
+            {
+              ndt_id: 20,
+              ndt_historial_laboral_id: 70,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_salario_por_hora: 0,
+            },
+          ],
+          error: null,
+        },
         OK,
       ],
       sgrh_nomina_linea_ingreso: [
@@ -224,12 +264,71 @@ describe('uploadPlanilla (server action)', () => {
         OK,
         OK,
       ],
-      sgrh_nomina_linea_deduccion: [OK, OK],
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
     })
-    mockParsePlanillaWorkbook.mockResolvedValue({ rows: [fila('CHG', 300000)], errors: [] })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('CHG', { BASE: 300000 })],
+      errors: [],
+    })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
       data: [{ labId: 70, cedula: 'CHG', nombre: 'Cambio', salarioBaseMensual: 600000 }],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toEqual({
+      ok: true,
+      empleados: 1,
+      nuevos: 0,
+      actualizados: 1,
+      sinCambios: 0,
+      eliminados: 0,
+    })
+  })
+
+  it('un cambio solo en horas trabajadas o salario por hora también cuenta como actualización', async () => {
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 30,
+              ndt_historial_laboral_id: 71,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_salario_por_hora: 0,
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 30,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+        OK,
+      ],
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+    })
+    // Mismo BASE, pero ahora sí se reportan horas y salario por hora (antes en 0).
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('HORAS', { BASE: 100000 }, { horasTrabajadas: 96, salarioPorHora: 2500 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [{ labId: 71, cedula: 'HORAS', nombre: 'Con Horas', salarioBaseMensual: 200000 }],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -251,8 +350,18 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_nomina_detalle: [
         {
           data: [
-            { ndt_id: 10, ndt_historial_laboral_id: 55 },
-            { ndt_id: 20, ndt_historial_laboral_id: 66 },
+            {
+              ndt_id: 10,
+              ndt_historial_laboral_id: 55,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_salario_por_hora: 0,
+            },
+            {
+              ndt_id: 20,
+              ndt_historial_laboral_id: 66,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_salario_por_hora: 0,
+            },
           ],
           error: null,
         },
@@ -271,10 +380,13 @@ describe('uploadPlanilla (server action)', () => {
         },
         OK,
       ],
-      sgrh_nomina_linea_deduccion: OK,
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
       sgrh_nomina_linea_patronal: OK,
     })
-    mockParsePlanillaWorkbook.mockResolvedValue({ rows: [fila('KEEP', 100000)], errors: [] })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
       data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
@@ -289,6 +401,51 @@ describe('uploadPlanilla (server action)', () => {
       actualizados: 0,
       sinCambios: 1,
       eliminados: 1,
+    })
+  })
+
+  it('aplica conceptos del catálogo que no son los fijos históricos (ej. una deducción manual nueva)', async () => {
+    const conceptosConPrestamo = [
+      ...CONCEPTOS,
+      {
+        con_id: 9,
+        con_codigo: 'PRESTAMO',
+        con_nombre: 'Préstamo',
+        con_tipo_calculo: 'monto_manual_deduccion',
+        con_porcentaje: null,
+      },
+    ]
+
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: conceptosConPrestamo, error: null },
+      sgrh_nomina_detalle: [
+        { data: [], error: null },
+        { data: [{ ndt_id: 100, ndt_historial_laboral_id: 80 }], error: null },
+      ],
+      sgrh_nomina_linea_ingreso: OK,
+      sgrh_nomina_linea_deduccion: OK,
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('CONPRESTAMO', { BASE: 200000, PRESTAMO: 15000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [
+        { labId: 80, cedula: 'CONPRESTAMO', nombre: 'Con Préstamo', salarioBaseMensual: 400000 },
+      ],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toEqual({
+      ok: true,
+      empleados: 1,
+      nuevos: 1,
+      actualizados: 0,
+      sinCambios: 0,
+      eliminados: 0,
     })
   })
 })

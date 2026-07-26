@@ -1,229 +1,26 @@
-// Reglas de la planilla importable por Excel (machote del cliente).
-// Funciones puras — sin I/O — para poder testearlas sin exceljs.
+// Reglas de la planilla. Funciones puras — sin I/O — para poder testearlas
+// sin exceljs.
 //
-// NOTA IMPORTANTE: todo este bloque (hasta "Motor de cálculo dinámico...")
-// es el camino LEGACY que usa exclusivamente la subida de Excel
-// (uploadPlanilla.ts): 5 columnas fijas (BASE, FERIADO, COMISION,
-// HORAS_EXTRA, AJUSTE) y un CCSS_RATE fijo en código. La edición manual del
-// detalle de planilla (updateDetalleManual.ts) YA NO usa este bloque — usa el
-// motor dinámico basado en el catálogo de conceptos, más abajo en este mismo
-// archivo. Mientras el Excel siga en este modelo fijo, el % de CCSS que se
-// use al subir un Excel es el de aquí (10,83%), no el que se configure en el
-// catálogo — si cambias el % de CCSS_OBRERA en "Conceptos de nómina", eso
-// solo afecta filas editadas a mano, no las subidas por Excel.
-
-/** Rebajo obrero CCSS aplicado sobre el bruto (10,83%, tomado del machote). Solo usado por el flujo de Excel — ver nota arriba. */
-export const CCSS_RATE = 0.1083
-
-/** Códigos del catálogo sgrh_cat_conceptos_nomina que usa la planilla. */
-export const CONCEPTOS_PLANILLA = {
-  ingresos: ['BASE', 'FERIADO', 'COMISION', 'HORAS_EXTRA', 'AJUSTE'],
-  deduccion: 'CCSS_OBRERA',
-} as const
-
-/** Columnas de la hoja "Planilla" de la plantilla generada. */
-export const PLANILLA_HEADERS = [
-  'Cédula',
-  'Empleado',
-  'Base',
-  'Feriado',
-  'Comisión por ventas',
-  'Horas extra',
-  'Ajuste',
-  'Total bruto',
-  'Rebajo CCSS (10,83%)',
-  'Total neto',
-] as const
-
-/** Ingresos de un empleado en la quincena, tal como vienen del Excel. */
-export interface PlanillaRowInput {
-  cedula: string
-  base: number
-  feriado: number
-  comision: number
-  horasExtra: number
-  ajuste: number
-}
-
-export interface PlanillaRowTotales {
-  salarioBruto: number
-  deduccionCcss: number
-  salarioNeto: number
-}
+// NOTA: antes existía aquí un bloque "legacy" con 5 columnas fijas (BASE,
+// FERIADO, COMISION, HORAS_EXTRA, AJUSTE) y un CCSS_RATE quemado en código,
+// usado solo por la subida de Excel. Se eliminó porque ignoraba cualquier
+// concepto que no fuera esos 5 — si creabas un concepto nuevo en el catálogo
+// (un bono, un préstamo...), la subida de Excel simplemente no lo aplicaba.
+// Ahora la subida de Excel usa el MISMO motor dinámico de abajo
+// (calcularPlanillaPorConceptos) que ya usaba la edición manual: no hay
+// conceptos quemados en código, todo sale del catálogo activo.
 
 /** Redondeo a 2 decimales sin sorpresas de coma flotante. */
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
-/**
- * Totales de la fila, replicando las fórmulas del machote:
- * bruto = suma de ingresos; CCSS = bruto × 10,83%; neto = bruto − CCSS.
- * Siempre se recalculan en el servidor — nunca se confía en el Excel.
- */
-export function computeTotales(row: PlanillaRowInput): PlanillaRowTotales {
-  const salarioBruto = round2(row.base + row.feriado + row.comision + row.horasExtra + row.ajuste)
-  const deduccionCcss = round2(salarioBruto * CCSS_RATE)
-  const salarioNeto = round2(salarioBruto - deduccionCcss)
-  return { salarioBruto, deduccionCcss, salarioNeto }
-}
-
-/** Montos crudos de ingreso indexados por código de concepto (BASE, FERIADO, ...). */
-export type MontosPorConcepto = Record<(typeof CONCEPTOS_PLANILLA.ingresos)[number], number>
-
-/** Reordena los campos de una fila al shape indexado por código de concepto. */
-export function montosDeFila(row: Omit<PlanillaRowInput, 'cedula'>): MontosPorConcepto {
-  return {
-    BASE: row.base,
-    FERIADO: row.feriado,
-    COMISION: row.comision,
-    HORAS_EXTRA: row.horasExtra,
-    AJUSTE: row.ajuste,
-  }
-}
-
-export interface LineaIngresoNueva {
-  ing_nomina_detalle_id: number
-  ing_concepto_id: number
-  ing_monto: number
-}
-
-export interface DeduccionCcssNueva {
-  ded_nomina_detalle_id: number
-  ded_concepto_id: number
-  ded_porcentaje_aplicado: number
-  ded_base_calculo: number
-  ded_monto: number
-}
-
-/**
- * Ingresos (>0) y la deducción de CCSS para un ndt_id ya existente, listos
- * para insertar. Compartido por la subida de Excel y la edición manual desde
- * el detalle del periodo — misma regla de cálculo en los dos flujos.
- */
-export function construirLineas(
-  row: Omit<PlanillaRowInput, 'cedula'>,
-  ndtId: number,
-  conceptoId: Map<string, number>
-): { ingresos: LineaIngresoNueva[]; deduccion: DeduccionCcssNueva } {
-  const montos = montosDeFila(row)
-  const ingresos = CONCEPTOS_PLANILLA.ingresos
-    .filter((codigo) => montos[codigo] > 0)
-    .map((codigo) => ({
-      ing_nomina_detalle_id: ndtId,
-      ing_concepto_id: conceptoId.get(codigo)!,
-      ing_monto: montos[codigo],
-    }))
-
-  const totales = computeTotales({ cedula: '', ...row })
-  const deduccion = {
-    ded_nomina_detalle_id: ndtId,
-    ded_concepto_id: conceptoId.get(CONCEPTOS_PLANILLA.deduccion)!,
-    ded_porcentaje_aplicado: CCSS_RATE * 100,
-    ded_base_calculo: totales.salarioBruto,
-    ded_monto: totales.deduccionCcss,
-  }
-
-  return { ingresos, deduccion }
-}
-
-/**
- * Compara los montos crudos de una fila (sin la cédula) contra lo ya guardado
- * en el periodo. Se usa para el upsert de la planilla: si todo coincide, la
- * fila del empleado se deja intacta (no se toca ndt_id, ndt_pagado ni fechas).
- */
-export function sameRowValues(
-  a: Omit<PlanillaRowInput, 'cedula'>,
-  b: Omit<PlanillaRowInput, 'cedula'>
-): boolean {
-  return (
-    a.base === b.base &&
-    a.feriado === b.feriado &&
-    a.comision === b.comision &&
-    a.horasExtra === b.horasExtra &&
-    a.ajuste === b.ajuste
-  )
-}
-
-export interface PlanillaRowError {
-  fila: number
-  mensaje: string
-}
-
-export type ParseRowResult =
-  { ok: true; row: PlanillaRowInput } | { ok: false; error: PlanillaRowError } | { ok: 'empty' }
-
-/** Celda cruda del Excel: número, texto, fórmula ya resuelta o vacío. */
-export type RawCell = string | number | null | undefined
-
-function toNumber(value: RawCell): number | null {
-  if (value === null || value === undefined || value === '') return 0
-  const n = typeof value === 'number' ? value : Number(String(value).replace(/[₡,\s]/g, ''))
-  return Number.isFinite(n) ? n : null
-}
-
-/**
- * Valida y normaliza una fila cruda del Excel (índice 1-based para mensajes).
- * Los montos vacíos cuentan como 0; los negativos o no numéricos se rechazan.
- */
-export function parsePlanillaRow(
-  fila: number,
-  cedula: RawCell,
-  montos: {
-    base: RawCell
-    feriado: RawCell
-    comision: RawCell
-    horasExtra: RawCell
-    ajuste: RawCell
-  }
-): ParseRowResult {
-  const cedulaStr = cedula === null || cedula === undefined ? '' : String(cedula).trim()
-  const values = [montos.base, montos.feriado, montos.comision, montos.horasExtra, montos.ajuste]
-
-  // Fila totalmente vacía: se ignora sin error
-  if (!cedulaStr && values.every((v) => v === null || v === undefined || v === '')) {
-    return { ok: 'empty' }
-  }
-
-  if (!cedulaStr) {
-    return { ok: false, error: { fila, mensaje: 'Falta la cédula del empleado.' } }
-  }
-
-  const parsed = {
-    base: toNumber(montos.base),
-    feriado: toNumber(montos.feriado),
-    comision: toNumber(montos.comision),
-    horasExtra: toNumber(montos.horasExtra),
-    ajuste: toNumber(montos.ajuste),
-  }
-
-  for (const [campo, valor] of Object.entries(parsed)) {
-    if (valor === null) {
-      return { ok: false, error: { fila, mensaje: `El campo "${campo}" no es un número válido.` } }
-    }
-    if (valor < 0) {
-      return { ok: false, error: { fila, mensaje: `El campo "${campo}" no puede ser negativo.` } }
-    }
-  }
-
-  return {
-    ok: true,
-    row: {
-      cedula: cedulaStr,
-      base: parsed.base!,
-      feriado: parsed.feriado!,
-      comision: parsed.comision!,
-      horasExtra: parsed.horasExtra!,
-      ajuste: parsed.ajuste!,
-    },
-  }
-}
-
 // ─── Motor de cálculo dinámico por conceptos ─────────────────────────────────
 // Usado por la edición manual del detalle de planilla (updateDetalleManual.ts
-// / DetalleEditForm.tsx). A diferencia del bloque de arriba, este NO asume
-// qué conceptos existen: recibe la lista de conceptos activos del catálogo
-// (con su con_tipo_calculo y con_porcentaje) y calcula a partir de eso.
+// / DetalleEditForm.tsx) y por la subida de Excel (uploadPlanilla.ts /
+// planillaExcel.ts). No asume qué conceptos existen: recibe la lista de
+// conceptos activos del catálogo (con su con_tipo_calculo y con_porcentaje) y
+// calcula a partir de eso.
 
 /**
  * Tope de horas normales quincenales: las horas trabajadas por encima de
@@ -347,4 +144,156 @@ export function calcularPlanillaPorConceptos(
   const neto = round2(bruto - deducciones)
 
   return { salarioBruto: bruto, totalDeducciones: deducciones, salarioNeto: neto, lineas }
+}
+
+// ─── Excel de planilla: columnas dinámicas por concepto ──────────────────────
+// Compartido entre planillaExcel.ts (generar/leer el archivo) y
+// uploadPlanilla.ts (guardar lo leído). El Excel muestra una columna editable
+// por cada concepto activo de tipo "monto manual" (ingreso o deducción); los
+// de "% del bruto" y "horas extra automático" se calculan solos, igual que en
+// la edición manual — no son columnas que el usuario llene.
+
+/** Concepto del catálogo con los datos necesarios para armar una columna del Excel. */
+export interface ConceptoPlanillaColumna extends ConceptoCalculo {
+  con_nombre: string
+}
+
+/** Agrupa los conceptos activos por cómo se usan en el Excel (columna editable vs. calculado). */
+export function agruparConceptosPlanilla(conceptos: ConceptoPlanillaColumna[]) {
+  return {
+    ingresoManual: conceptos.filter((c) => c.con_tipo_calculo === 'monto_manual_ingreso'),
+    deduccionManual: conceptos.filter((c) => c.con_tipo_calculo === 'monto_manual_deduccion'),
+    horasExtra: conceptos.filter((c) => c.con_tipo_calculo === 'horas_extra_automatico'),
+    deduccionPorcentual: conceptos.filter(
+      (c) => c.con_tipo_calculo === 'porcentaje_deduccion_bruto'
+    ),
+  }
+}
+
+/** Celda cruda del Excel: número, texto, fórmula ya resuelta o vacío. */
+export type RawCell = string | number | null | undefined
+
+export interface PlanillaRowError {
+  fila: number
+  mensaje: string
+}
+
+/** Una fila de la planilla ya normalizada, lista para calcularPlanillaPorConceptos. */
+export interface PlanillaRowInput {
+  cedula: string
+  horasTrabajadas: number
+  salarioPorHora: number
+  /** Monto por código de concepto — solo conceptos monto_manual_ingreso / monto_manual_deduccion. */
+  montos: Record<string, number>
+}
+
+export type ParseRowResult =
+  { ok: true; row: PlanillaRowInput } | { ok: false; error: PlanillaRowError } | { ok: 'empty' }
+
+function toNumber(value: RawCell): number | null {
+  if (value === null || value === undefined || value === '') return 0
+  const n = typeof value === 'number' ? value : Number(String(value).replace(/[₡,\s]/g, ''))
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Valida y normaliza una fila cruda del Excel (índice 1-based para mensajes).
+ * `montosCrudos` trae un valor por cada columna de monto manual (código y
+ * nombre del concepto, para el mensaje de error). Los campos vacíos cuentan
+ * como 0; los negativos o no numéricos se rechazan.
+ */
+export function parsePlanillaRow(
+  fila: number,
+  cedula: RawCell,
+  horasTrabajadas: RawCell,
+  salarioPorHora: RawCell,
+  montosCrudos: { codigo: string; etiqueta: string; valor: RawCell }[]
+): ParseRowResult {
+  const cedulaStr = cedula === null || cedula === undefined ? '' : String(cedula).trim()
+  const vacio = (v: RawCell) => v === null || v === undefined || v === ''
+
+  // Fila totalmente vacía: se ignora sin error
+  if (
+    !cedulaStr &&
+    vacio(horasTrabajadas) &&
+    vacio(salarioPorHora) &&
+    montosCrudos.every((m) => vacio(m.valor))
+  ) {
+    return { ok: 'empty' }
+  }
+
+  if (!cedulaStr) {
+    return { ok: false, error: { fila, mensaje: 'Falta la cédula del empleado.' } }
+  }
+
+  const horas = toNumber(horasTrabajadas)
+  if (horas === null) {
+    return {
+      ok: false,
+      error: { fila, mensaje: 'El campo "horas trabajadas" no es un número válido.' },
+    }
+  }
+  if (horas < 0) {
+    return {
+      ok: false,
+      error: { fila, mensaje: 'El campo "horas trabajadas" no puede ser negativo.' },
+    }
+  }
+
+  const salario = toNumber(salarioPorHora)
+  if (salario === null) {
+    return {
+      ok: false,
+      error: { fila, mensaje: 'El campo "salario por hora" no es un número válido.' },
+    }
+  }
+  if (salario < 0) {
+    return {
+      ok: false,
+      error: { fila, mensaje: 'El campo "salario por hora" no puede ser negativo.' },
+    }
+  }
+
+  const montos: Record<string, number> = {}
+  for (const { codigo, etiqueta, valor } of montosCrudos) {
+    const n = toNumber(valor)
+    if (n === null) {
+      return {
+        ok: false,
+        error: { fila, mensaje: `El campo "${etiqueta}" no es un número válido.` },
+      }
+    }
+    if (n < 0) {
+      return {
+        ok: false,
+        error: { fila, mensaje: `El campo "${etiqueta}" no puede ser negativo.` },
+      }
+    }
+    montos[codigo] = n
+  }
+
+  return {
+    ok: true,
+    row: { cedula: cedulaStr, horasTrabajadas: horas, salarioPorHora: salario, montos },
+  }
+}
+
+/**
+ * Compara los valores crudos de una fila (sin la cédula) contra lo ya
+ * guardado en el periodo. Se usa para el upsert de la planilla: si todo
+ * coincide, la fila del empleado se deja intacta (no se toca ndt_id,
+ * ndt_pagado ni fechas).
+ */
+export function sameRowValues(
+  a: Omit<PlanillaRowInput, 'cedula'>,
+  b: Omit<PlanillaRowInput, 'cedula'>
+): boolean {
+  if (a.horasTrabajadas !== b.horasTrabajadas) return false
+  if (a.salarioPorHora !== b.salarioPorHora) return false
+
+  const codigos = new Set([...Object.keys(a.montos), ...Object.keys(b.montos)])
+  for (const codigo of codigos) {
+    if ((a.montos[codigo] ?? 0) !== (b.montos[codigo] ?? 0)) return false
+  }
+  return true
 }
