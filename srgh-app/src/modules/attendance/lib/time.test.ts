@@ -4,6 +4,7 @@ import {
   formatInCostaRica,
   isValidISODate,
   nowInCostaRica,
+  shiftISODate,
   timeOfDay,
   todayInCostaRica,
   toMinutes,
@@ -33,6 +34,24 @@ describe('nowInCostaRica', () => {
 describe('todayInCostaRica', () => {
   it('devuelve solo la fecha, en formato "YYYY-MM-DD"', () => {
     expect(todayInCostaRica()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+describe('shiftISODate', () => {
+  it('resta dias correctamente', () => {
+    expect(shiftISODate('2026-07-25', -14)).toBe('2026-07-11')
+  })
+
+  it('suma dias correctamente', () => {
+    expect(shiftISODate('2026-07-25', 1)).toBe('2026-07-26')
+  })
+
+  it('cruza el limite de mes hacia atras', () => {
+    expect(shiftISODate('2026-08-01', -1)).toBe('2026-07-31')
+  })
+
+  it('con delta 0 devuelve la misma fecha', () => {
+    expect(shiftISODate('2026-07-25', 0)).toBe('2026-07-25')
   })
 })
 
