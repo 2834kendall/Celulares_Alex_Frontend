@@ -47,10 +47,15 @@ export interface PeriodoListItem {
  */
 export interface DetalleNominaItem {
   id: number
+  historialLaboralId: number
   empleadoNombre: string
   empleadoCedula: string
   salarioBruto: number
   totalDeducciones: number
+  /** Parte de totalDeducciones calculada como % del bruto (ej. CCSS obrera). */
+  deduccionPorcentual: number
+  /** Parte de totalDeducciones que es un monto fijo decidido por el patrono (ej. préstamo). */
+  deduccionManual: number
   cargasPatronales: number
   salarioNeto: number
   pagado: boolean
@@ -58,6 +63,22 @@ export interface DetalleNominaItem {
   montosPorConcepto: Record<string, number>
   horasTrabajadas: number
   salarioPorHora: number
+  /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
+  incapacidad: IncapacidadItem | null
+}
+
+/**
+ * Desglose de la incapacidad por enfermedad (INC_ENF) de un empleado dentro
+ * de un periodo. `monto` es lo que paga la EMPRESA (días del patrono × salario
+ * diario × % del catálogo) — no incluye lo que paga la CCSS, eso no pasa por
+ * nuestra planilla. Nunca se suma a salarioBruto: se muestra como línea aparte
+ * después del salario neto (por eso no afecta aguinaldo/vacaciones/liquidación).
+ */
+export interface IncapacidadItem {
+  diasEmpleador: number
+  diasCcss: number
+  porcentajePagoEmpleador: number
+  monto: number
 }
 
 export interface PeriodoDetalle {
@@ -317,3 +338,48 @@ export interface LiquidacionCalculada {
   cesantia: number
   total: number
 }
+
+// ─── Incapacidades ────────────────────────────────────────────────────────
+// Por ahora solo incapacidad por enfermedad (INC_ENF): 3 días paga el
+// patrono al 50%, tope por mes calendario, el resto lo paga la CCSS aparte.
+// Se registra desde nómina (no desde empleados), en sgrh_ausencias.
+
+export const registrarIncapacidadSchema = z
+  .object({
+    historialLaboralId: z.number({ error: 'Elegí un empleado' }).int().positive(),
+    fechaInicio: z
+      .string({ error: 'La fecha de inicio es obligatoria' })
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+    fechaFin: z
+      .string({ error: 'La fecha de fin es obligatoria' })
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+    // Puede llegar '' desde el input de texto, o null si se re-valida en el
+    // servidor un objeto ya transformado — igual que con_formula_base.
+    numeroBoletaCcss: z
+      .string()
+      .max(50, 'El número de boleta no puede superar 50 caracteres')
+      .nullable()
+      .transform((value) => (value === '' ? null : value)),
+  })
+  .refine((data) => data.fechaFin >= data.fechaInicio, {
+    message: 'La fecha de fin debe ser posterior o igual a la de inicio',
+    path: ['fechaFin'],
+  })
+
+export type RegistrarIncapacidadInput = z.infer<typeof registrarIncapacidadSchema>
+
+export interface PeriodoAfectadoIncapacidad {
+  periodoId: number
+  periodoLabel: string
+  diasEmpleador: number
+  diasCcss: number
+}
+
+export type RegistrarIncapacidadResult =
+  | {
+      ok: true
+      periodosActualizados: PeriodoAfectadoIncapacidad[]
+      /** Días de la incapacidad que cayeron en periodos que todavía no existen. */
+      diasSinPeriodo: number
+    }
+  | { ok: false; error: string }

@@ -49,6 +49,14 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
   const isEditing = Boolean(concepto)
 
+  // "Carga patronal" existe en el catálogo pero no está conectada al motor
+  // de cálculo (siempre da ₡0), así que ya no se ofrece para conceptos
+  // nuevos. Si se está editando uno que YA tenía ese tipo, se deja la opción
+  // visible para no romper el <select> ni cambiarle el tipo sin querer.
+  const tiposDisponibles = CONCEPTO_TIPOS.filter(
+    (tipo) => tipo !== 'patronal' || concepto?.con_tipo === 'patronal'
+  )
+
   // Se usan los 3 genéricos de useForm (en vez de solo <ConceptoNominaInput>)
   // porque el schema normaliza algunos campos (con_formula_base) al validar:
   // los valores "en vivo" del formulario siguen el tipo de entrada del schema
@@ -165,7 +173,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           {...register('con_tipo')}
           className={INPUT_CLASSES}
         >
-          {CONCEPTO_TIPOS.map((tipo) => (
+          {tiposDisponibles.map((tipo) => (
             <option key={tipo} value={tipo}>
               {TIPO_LABELS[tipo]}
             </option>

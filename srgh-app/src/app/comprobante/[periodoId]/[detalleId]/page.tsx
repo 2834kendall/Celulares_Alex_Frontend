@@ -172,6 +172,38 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
             <span>Salario neto pagado</span>
             <span className="tabular-nums">{formatCRC(detalle.salarioNeto)}</span>
           </div>
+
+          {detalle.incapacidad && (
+            <>
+              <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Incapacidad por enfermedad
+              </p>
+              <Linea
+                label={`Días pagados por la empresa (${detalle.incapacidad.porcentajePagoEmpleador}% del salario)`}
+                value={`${detalle.incapacidad.diasEmpleador} día(s)`}
+              />
+              {detalle.incapacidad.diasCcss > 0 && (
+                <Linea
+                  label="Días pagados por la CCSS"
+                  value={`${detalle.incapacidad.diasCcss} día(s)`}
+                />
+              )}
+              <div className="my-2 border-t border-slate-100" />
+              <Linea
+                label="Monto de incapacidad"
+                value={formatCRC(detalle.incapacidad.monto)}
+                strong
+              />
+
+              <div className="my-2 border-t border-slate-100" />
+              <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-base font-extrabold text-emerald-800">
+                <span>Total a pagar</span>
+                <span className="tabular-nums">
+                  {formatCRC(detalle.salarioNeto + detalle.incapacidad.monto)}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="mt-10 grid grid-cols-2 gap-8 pt-4 text-center text-[11px] text-slate-500">

@@ -3,16 +3,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  AlertTriangle,
-  Building2,
-  Clock,
-  Info,
-  Loader2,
-  Save,
-  TrendingDown,
-  TrendingUp,
-} from 'lucide-react'
+import { AlertTriangle, Clock, Info, Loader2, Save, TrendingDown, TrendingUp } from 'lucide-react'
 import {
   editarDetalleSchema,
   type EditarDetalleInput,
@@ -35,6 +26,11 @@ const INPUT_CLASSES =
 const LABEL_CLASSES =
   'mb-1 block text-[10px] font-semibold uppercase leading-tight tracking-wide text-slate-500'
 
+// Nota: "carga patronal" existe en el catálogo (con_tipo = 'patronal') pero
+// no está conectada al motor de cálculo (siempre queda en ₡0) — por eso no
+// tiene sección aquí. Los conceptos ya creados con ese tipo simplemente no
+// aparecen para editar; no se borran del catálogo.
+
 /** Agrupación visual de los conceptos manuales: cada tipo tiene su propia sección con color e icono. */
 const SECCION_CONFIG = {
   ingreso: {
@@ -51,16 +47,9 @@ const SECCION_CONFIG = {
     badge: 'bg-rose-50 text-rose-600',
     text: 'text-rose-700',
   },
-  patronal: {
-    label: 'Cargas patronales',
-    hint: 'Aporte a cargo de la empresa',
-    icon: Building2,
-    badge: 'bg-indigo-50 text-indigo-600',
-    text: 'text-indigo-700',
-  },
 } as const
 
-const SECCION_ORDEN = ['ingreso', 'deduccion', 'patronal'] as const
+const SECCION_ORDEN = ['ingreso', 'deduccion'] as const
 
 /**
  * Edición manual del detalle de un empleado dentro del periodo, sin volver a
