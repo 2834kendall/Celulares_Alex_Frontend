@@ -35,12 +35,19 @@ interface DetalleRow {
   sgrh_historial_laboral: {
     lab_salario_base: number
     sgrh_empleados: {
+      emp_id: number
       emp_nombre: string
       emp_apellido_1: string
       emp_apellido_2: string | null
       emp_numero_identificacion: string | null
     } | null
   } | null
+}
+
+interface DatosPagoRow {
+  edp_empleado_id: number
+  edp_numero_cuenta: string | null
+  sgrh_cat_bancos: { ban_nombre: string } | null
 }
 
 interface TipoAusenciaRow {
@@ -121,7 +128,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_dias_incapacidad_ccss,
       sgrh_historial_laboral (
         lab_salario_base,
-        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
+        sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
       )
     `
       )
@@ -197,6 +204,35 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
     }
   }
 
+  // Cuenta IBAN + banco para la transferencia (sgrh_empleado_datos_pago). Es
+  // informativo: si el empleado no cargó sus datos de pago o la consulta
+  // falla, simplemente no se muestra — no bloquea el resto de la pantalla.
+  const empIds = Array.from(
+    new Set(
+      (detalles ?? [])
+        .map((d: DetalleRow) => d.sgrh_historial_laboral?.sgrh_empleados?.emp_id)
+        .filter((id): id is number => typeof id === 'number')
+    )
+  )
+  const datosPagoPorEmpleado = new Map<
+    number,
+    { numeroCuenta: string | null; bancoNombre: string | null }
+  >()
+  if (empIds.length > 0) {
+    const { data: datosPago } = await supabase
+      .from('sgrh_empleado_datos_pago')
+      .select('edp_empleado_id, edp_numero_cuenta, sgrh_cat_bancos ( ban_nombre )')
+      .in('edp_empleado_id', empIds)
+      .returns<DatosPagoRow[]>()
+
+    for (const row of datosPago ?? []) {
+      datosPagoPorEmpleado.set(row.edp_empleado_id, {
+        numeroCuenta: row.edp_numero_cuenta,
+        bancoNombre: row.sgrh_cat_bancos?.ban_nombre ?? null,
+      })
+    }
+  }
+
   const items: DetalleNominaItem[] = (detalles ?? []).map((row: DetalleRow) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados
     const nombre = empleado
@@ -225,6 +261,8 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       }
     }
 
+    const datosPago = empleado ? datosPagoPorEmpleado.get(empleado.emp_id) : undefined
+
     return {
       id: row.ndt_id,
       historialLaboralId: row.ndt_historial_laboral_id,
@@ -242,6 +280,8 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       horasTrabajadas: row.ndt_horas_ordinarias_diurnas,
       salarioPorHora: row.ndt_salario_por_hora,
       incapacidad,
+      numeroCuenta: datosPago?.numeroCuenta ?? null,
+      bancoNombre: datosPago?.bancoNombre ?? null,
     }
   })
 

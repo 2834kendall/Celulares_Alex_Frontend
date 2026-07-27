@@ -43,6 +43,7 @@ const DETALLE_ROW = {
   sgrh_historial_laboral: {
     lab_salario_base: 500000,
     sgrh_empleados: {
+      emp_id: 501,
       emp_nombre: 'Ana',
       emp_apellido_1: 'Mora',
       emp_apellido_2: null,
@@ -143,6 +144,16 @@ describe('getPeriodoDetail (server action)', () => {
         ],
         error: null,
       },
+      sgrh_empleado_datos_pago: {
+        data: [
+          {
+            edp_empleado_id: 501,
+            edp_numero_cuenta: 'CR05015202001026284066',
+            sgrh_cat_bancos: { ban_nombre: 'Banco Nacional' },
+          },
+        ],
+        error: null,
+      },
     })
 
     const result = await getPeriodoDetail(7)
@@ -168,6 +179,8 @@ describe('getPeriodoDetail (server action)', () => {
           horasTrabajadas: 88,
           salarioPorHora: 2500,
           incapacidad: null,
+          numeroCuenta: 'CR05015202001026284066',
+          bancoNombre: 'Banco Nacional',
         },
       ])
     }
@@ -180,6 +193,7 @@ describe('getPeriodoDetail (server action)', () => {
       sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
       sgrh_nomina_linea_ingreso: { data: null, error: { message: 'boom' } },
       sgrh_nomina_linea_deduccion: { data: null, error: { message: 'boom' } },
+      sgrh_empleado_datos_pago: { data: null, error: { message: 'boom' } },
     })
 
     const result = await getPeriodoDetail(7)
@@ -187,6 +201,10 @@ describe('getPeriodoDetail (server action)', () => {
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.data.detalles[0].montosPorConcepto).toEqual({})
+      // Los datos de pago también son informativos: si la consulta falla, no
+      // bloquea la página, simplemente no se muestra la cuenta.
+      expect(result.data.detalles[0].numeroCuenta).toBeNull()
+      expect(result.data.detalles[0].bancoNombre).toBeNull()
     }
   })
 
@@ -200,6 +218,7 @@ describe('getPeriodoDetail (server action)', () => {
       sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
       sgrh_nomina_linea_ingreso: { data: [], error: null },
       sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
     })
 
     const result = await getPeriodoDetail(7)

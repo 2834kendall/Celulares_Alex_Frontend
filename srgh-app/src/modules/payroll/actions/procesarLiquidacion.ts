@@ -220,10 +220,19 @@ export async function procesarLiquidacion(
     .single<{ liq_id: number }>()
 
   if (errInsert) {
+    // 23505 = violación de UNIQUE: liq_historial_laboral_id ya tiene una
+    // liquidación guardada. Cualquier otro código es un problema distinto
+    // (tabla, permisos, motivo inválido, etc.) — no asumimos que ya se
+    // procesó si no es exactamente ese caso.
+    if (errInsert.code === '23505') {
+      return {
+        ok: false,
+        error: 'Ya existe una liquidación guardada para este empleado.',
+      }
+    }
     return {
       ok: false,
-      error:
-        'No se pudo guardar la liquidación (¿ya se procesó una liquidación para este empleado?).',
+      error: `No se pudo guardar la liquidación: ${errInsert.message}`,
     }
   }
 

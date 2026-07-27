@@ -65,6 +65,10 @@ export interface DetalleNominaItem {
   salarioPorHora: number
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
   incapacidad: IncapacidadItem | null
+  /** Cuenta IBAN para la transferencia (sgrh_empleado_datos_pago.edp_numero_cuenta). Null si el empleado no tiene datos de pago cargados. */
+  numeroCuenta: string | null
+  /** Nombre del banco de esa cuenta (sgrh_cat_bancos.ban_nombre). Null si no hay cuenta o el banco no está definido. */
+  bancoNombre: string | null
 }
 
 /**

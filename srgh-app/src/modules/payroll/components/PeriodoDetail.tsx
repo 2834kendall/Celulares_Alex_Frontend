@@ -3,7 +3,16 @@
 import { Fragment, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Banknote, CalendarDays, Loader2, Pencil, Receipt, Stethoscope, Users, X } from 'lucide-react'
+import {
+  Banknote,
+  CalendarDays,
+  Loader2,
+  Pencil,
+  Receipt,
+  Stethoscope,
+  Users,
+  X,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import type { ConceptoNominaRow, DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
 import {
@@ -11,6 +20,7 @@ import {
   estadoLabel,
   formatCRC,
   formatDate,
+  formatIban,
   periodoLabel,
 } from '@/modules/payroll/lib/format'
 import { usePagination } from '@/hooks/usePagination'
@@ -68,10 +78,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   )
   const totalDeduccionManual = periodo.detalles.reduce((sum, d) => sum + d.deduccionManual, 0)
   const totalNeto = periodo.detalles.reduce((sum, d) => sum + d.salarioNeto, 0)
-  const totalIncapacidad = periodo.detalles.reduce(
-    (sum, d) => sum + (d.incapacidad?.monto ?? 0),
-    0
-  )
+  const totalIncapacidad = periodo.detalles.reduce((sum, d) => sum + (d.incapacidad?.monto ?? 0), 0)
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     periodo.detalles,
@@ -167,10 +174,16 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                 <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">
                   <th className="px-4 py-3 font-semibold">Empleado</th>
                   <th className="px-4 py-3 text-right font-semibold">Salario bruto</th>
-                  <th className="px-4 py-3 text-right font-semibold" title="% del salario bruto, ej. CCSS obrera">
+                  <th
+                    className="px-4 py-3 text-right font-semibold"
+                    title="% del salario bruto, ej. CCSS obrera"
+                  >
                     Deducc. % (bruto)
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold" title="Monto fijo decidido por el patrono, ej. préstamo">
+                  <th
+                    className="px-4 py-3 text-right font-semibold"
+                    title="Monto fijo decidido por el patrono, ej. préstamo"
+                  >
                     Deducc. manual (neto)
                   </th>
                   <th className="px-4 py-3 text-right font-semibold">Cargas patronales</th>
@@ -189,7 +202,19 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                 {paginatedItems.map((d) => (
                   <Fragment key={d.id}>
                     <tr className="border-b border-slate-50 last:border-0">
-                      <td className="px-4 py-3 font-semibold text-slate-900">{d.empleadoNombre}</td>
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-900">{d.empleadoNombre}</p>
+                        {d.numeroCuenta ? (
+                          <p className="mt-0.5 text-[11px] font-normal text-slate-400">
+                            {d.bancoNombre ? `${d.bancoNombre} · ` : ''}
+                            {formatIban(d.numeroCuenta)}
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-[11px] font-normal text-slate-400">
+                            Sin cuenta IBAN registrada
+                          </p>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right text-slate-600">
                         {formatCRC(d.salarioBruto)}
                       </td>
@@ -207,7 +232,9 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                       </td>
                       <td className="px-4 py-3 text-right text-slate-600">
                         {d.incapacidad ? (
-                          <span title={`${d.incapacidad.diasEmpleador}d patrono / ${d.incapacidad.diasCcss}d CCSS`}>
+                          <span
+                            title={`${d.incapacidad.diasEmpleador}d patrono / ${d.incapacidad.diasCcss}d CCSS`}
+                          >
                             {formatCRC(d.incapacidad.monto)}
                           </span>
                         ) : (
@@ -265,7 +292,9 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                               <button
                                 type="button"
                                 onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
-                                aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
+                                aria-label={
+                                  editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'
+                                }
                                 className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
                               >
                                 {editandoId === d.id ? (
