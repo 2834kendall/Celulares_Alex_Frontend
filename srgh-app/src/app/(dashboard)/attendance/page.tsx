@@ -3,6 +3,7 @@ import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { ACCESO_ASISTENCIA } from '@/lib/permissions/zones'
 import { getDailyAttendance } from '@/modules/attendance/actions/getDailyAttendance'
+import { checkMonthlyInfractions } from '@/modules/attendance/actions/checkMonthlyInfractions'
 import { DailyAttendanceTable } from '@/modules/attendance/components/DailyAttendanceTable'
 import { isValidISODate, todayInCostaRica } from '@/modules/attendance/lib/time'
 
@@ -31,7 +32,13 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const dateParam = resolvedSearchParams?.date
   const dateISO = dateParam && isValidISODate(dateParam) ? dateParam : todayInCostaRica()
 
-  const result = await getDailyAttendance(dateISO)
+  // Bajo demanda, mejor esfuerzo: revisa tardias/ausencias del mes y dispara
+  // la advertencia en sgrh_notificaciones si corresponde (RF-07/RF-08). No
+  // debe romper el panel diario si falla, por eso se ignora su resultado.
+  const [result] = await Promise.all([
+    getDailyAttendance(dateISO),
+    checkMonthlyInfractions().catch(() => undefined),
+  ])
 
   if (!result.ok) {
     return (
