@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -5,6 +6,10 @@ import { KioskScreen } from './KioskScreen'
 import { registerKioskMark } from '@/modules/attendance/actions/registerKioskMark'
 import { getCurrentCoordinates } from '@/modules/attendance/components/kiosk/geolocation'
 import { getOrCreateDeviceId } from '@/modules/attendance/components/kiosk/deviceId'
+import {
+  getQueuedMarks,
+  removeQueuedMark,
+} from '@/modules/attendance/components/kiosk/offlineQueue'
 
 vi.mock('@/modules/attendance/actions/registerKioskMark', () => ({
   registerKioskMark: vi.fn(),
@@ -26,11 +31,19 @@ const employees = [
   { employeeId: 20, fullName: 'Bruno Mora', birthDateISO: null },
 ]
 
+function setOnline(value: boolean) {
+  Object.defineProperty(window.navigator, 'onLine', { value, configurable: true })
+}
+
 describe('<KioskScreen />', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
+    setOnline(true)
     mockGetCurrentCoordinates.mockResolvedValue(null)
     mockGetOrCreateDeviceId.mockReturnValue('device-123')
+    for (const m of await getQueuedMarks()) {
+      await removeQueuedMark(m.id)
+    }
   })
 
   afterEach(() => {
@@ -115,5 +128,44 @@ describe('<KioskScreen />', () => {
     await user.click(screen.getByRole('button', { name: 'Entrada' }))
 
     expect(mockRegisterKioskMark).toHaveBeenCalledWith(expect.objectContaining({ pin: '1990' }))
+  })
+
+  it('muestra el aviso de sin conexion y pide el PIN automaticamente al elegir empleado', async () => {
+    setOnline(false)
+    const user = userEvent.setup()
+
+    render(<KioskScreen employees={employees} />)
+
+    expect(screen.getByText(/Sin conexion/)).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Selecciona tu nombre'))
+    await user.click(screen.getByText('Ana Perez'))
+
+    expect(screen.getByRole('dialog', { name: 'Ingresa tu año de nacimiento' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
+  })
+
+  it('offline: guarda la marca localmente y no llama al servidor', async () => {
+    setOnline(false)
+    const user = userEvent.setup()
+
+    render(<KioskScreen employees={employees} />)
+
+    await user.click(screen.getByLabelText('Selecciona tu nombre'))
+    await user.click(screen.getByText('Ana Perez'))
+
+    await user.click(screen.getByRole('button', { name: '1' }))
+    await user.click(screen.getByRole('button', { name: '9' }))
+    await user.click(screen.getByRole('button', { name: '9' }))
+    await user.click(screen.getByRole('button', { name: '0' }))
+
+    await user.click(screen.getByRole('button', { name: 'Entrada' }))
+
+    expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+    expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+
+    const queued = await getQueuedMarks()
+    expect(queued).toHaveLength(1)
+    expect(queued[0]).toMatchObject({ employeeId: 10, tipo: 'entrada', pin: '1990' })
   })
 })
