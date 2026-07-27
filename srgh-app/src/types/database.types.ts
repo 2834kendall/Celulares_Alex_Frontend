@@ -124,6 +124,77 @@ export type Database = {
           },
         ]
       }
+      sgrh_banco_horas_movimientos: {
+        Row: {
+          bhm_created_at: string
+          bhm_estado: string
+          bhm_fecha_resolucion: string | null
+          bhm_historial_laboral_id: number
+          bhm_horas: number
+          bhm_id: number
+          bhm_monto_pagado: number | null
+          bhm_nomina_detalle_id: number
+          bhm_nomina_detalle_pago_id: number | null
+          bhm_resuelto_por_id: number | null
+          bhm_salario_por_hora: number
+        }
+        Insert: {
+          bhm_created_at?: string
+          bhm_estado?: string
+          bhm_fecha_resolucion?: string | null
+          bhm_historial_laboral_id: number
+          bhm_horas: number
+          bhm_id?: never
+          bhm_monto_pagado?: number | null
+          bhm_nomina_detalle_id: number
+          bhm_nomina_detalle_pago_id?: number | null
+          bhm_resuelto_por_id?: number | null
+          bhm_salario_por_hora?: number
+        }
+        Update: {
+          bhm_created_at?: string
+          bhm_estado?: string
+          bhm_fecha_resolucion?: string | null
+          bhm_historial_laboral_id?: number
+          bhm_horas?: number
+          bhm_id?: never
+          bhm_monto_pagado?: number | null
+          bhm_nomina_detalle_id?: number
+          bhm_nomina_detalle_pago_id?: number | null
+          bhm_resuelto_por_id?: number | null
+          bhm_salario_por_hora?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_historial_laboral_id_fkey"
+            columns: ["bhm_historial_laboral_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_historial_laboral"
+            referencedColumns: ["lab_id"]
+          },
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_nomina_detalle_id_fkey"
+            columns: ["bhm_nomina_detalle_id"]
+            isOneToOne: true
+            referencedRelation: "sgrh_nomina_detalle"
+            referencedColumns: ["ndt_id"]
+          },
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_nomina_detalle_pago_id_fkey"
+            columns: ["bhm_nomina_detalle_pago_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_nomina_detalle"
+            referencedColumns: ["ndt_id"]
+          },
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_resuelto_por_id_fkey"
+            columns: ["bhm_resuelto_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+        ]
+      }
       sgrh_beneficios_empleado: {
         Row: {
           ben_activo: boolean
@@ -909,6 +980,38 @@ export type Database = {
           },
         ]
       }
+      sgrh_direcciones: {
+        Row: {
+          dir_codigo_postal: string
+          dir_created_at: string
+          dir_distrito_id: number
+          dir_id: number
+          dir_senas_exactas: string | null
+        }
+        Insert: {
+          dir_codigo_postal?: string
+          dir_created_at?: string
+          dir_distrito_id: number
+          dir_id?: number
+          dir_senas_exactas?: string | null
+        }
+        Update: {
+          dir_codigo_postal?: string
+          dir_created_at?: string
+          dir_distrito_id?: number
+          dir_id?: number
+          dir_senas_exactas?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_direcciones_dir_distrito_id_fkey"
+            columns: ["dir_distrito_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_distritos"
+            referencedColumns: ["dis_id"]
+          },
+        ]
+      }
       sgrh_empleado_datos_pago: {
         Row: {
           edp_banco_id: number | null
@@ -956,6 +1059,7 @@ export type Database = {
           emp_apellido_1: string
           emp_apellido_2: string | null
           emp_created_at: string
+          emp_direccion_id: number
           emp_email_personal: string | null
           emp_fecha_ingreso_original: string
           emp_fecha_nacimiento: string | null
@@ -975,6 +1079,7 @@ export type Database = {
           emp_apellido_1: string
           emp_apellido_2?: string | null
           emp_created_at?: string
+          emp_direccion_id: number
           emp_email_personal?: string | null
           emp_fecha_ingreso_original: string
           emp_fecha_nacimiento?: string | null
@@ -994,6 +1099,7 @@ export type Database = {
           emp_apellido_1?: string
           emp_apellido_2?: string | null
           emp_created_at?: string
+          emp_direccion_id?: number
           emp_email_personal?: string | null
           emp_fecha_ingreso_original?: string
           emp_fecha_nacimiento?: string | null
@@ -1017,6 +1123,13 @@ export type Database = {
             referencedRelation: "sgrh_cat_tipos_identificacion"
             referencedColumns: ["tid_id"]
           },
+          {
+            foreignKeyName: "sgrh_empleados_emp_direccion_id_fkey"
+            columns: ["emp_direccion_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_direcciones"
+            referencedColumns: ["dir_id"]
+          },
         ]
       }
       sgrh_empresas: {
@@ -1027,8 +1140,7 @@ export type Database = {
           org_created_at: string
           org_dia_pago_1: number | null
           org_dia_pago_2: number | null
-          org_direccion_exacta: string | null
-          org_distrito_id: number | null
+          org_direccion_id: number | null
           org_email_corporativo: string | null
           org_id: number
           org_logo_url: string | null
@@ -1045,8 +1157,7 @@ export type Database = {
           org_created_at?: string
           org_dia_pago_1?: number | null
           org_dia_pago_2?: number | null
-          org_direccion_exacta?: string | null
-          org_distrito_id?: number | null
+          org_direccion_id?: number | null
           org_email_corporativo?: string | null
           org_id?: never
           org_logo_url?: string | null
@@ -1063,8 +1174,7 @@ export type Database = {
           org_created_at?: string
           org_dia_pago_1?: number | null
           org_dia_pago_2?: number | null
-          org_direccion_exacta?: string | null
-          org_distrito_id?: number | null
+          org_direccion_id?: number | null
           org_email_corporativo?: string | null
           org_id?: never
           org_logo_url?: string | null
@@ -1076,11 +1186,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "sgrh_org_distrito_id_fkey"
-            columns: ["org_distrito_id"]
+            foreignKeyName: "sgrh_empresas_org_direccion_id_fkey"
+            columns: ["org_direccion_id"]
             isOneToOne: false
-            referencedRelation: "sgrh_cat_distritos"
-            referencedColumns: ["dis_id"]
+            referencedRelation: "sgrh_direcciones"
+            referencedColumns: ["dir_id"]
           },
         ]
       }
@@ -2146,8 +2256,7 @@ export type Database = {
           suc_activa: boolean
           suc_codigo_interno: string | null
           suc_created_at: string
-          suc_direccion_exacta: string | null
-          suc_distrito_id: number | null
+          suc_direccion_id: number | null
           suc_email_sucursal: string | null
           suc_empresa_id: number
           suc_id: number
@@ -2156,13 +2265,13 @@ export type Database = {
           suc_nombre: string
           suc_radio_geocerca_metros: number
           suc_telefono: string | null
+          suc_tolerancia_tardia_minutos: number
         }
         Insert: {
           suc_activa?: boolean
           suc_codigo_interno?: string | null
           suc_created_at?: string
-          suc_direccion_exacta?: string | null
-          suc_distrito_id?: number | null
+          suc_direccion_id?: number | null
           suc_email_sucursal?: string | null
           suc_empresa_id: number
           suc_id?: never
@@ -2171,13 +2280,13 @@ export type Database = {
           suc_nombre: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
+          suc_tolerancia_tardia_minutos?: number
         }
         Update: {
           suc_activa?: boolean
           suc_codigo_interno?: string | null
           suc_created_at?: string
-          suc_direccion_exacta?: string | null
-          suc_distrito_id?: number | null
+          suc_direccion_id?: number | null
           suc_email_sucursal?: string | null
           suc_empresa_id?: number
           suc_id?: never
@@ -2186,21 +2295,22 @@ export type Database = {
           suc_nombre?: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
+          suc_tolerancia_tardia_minutos?: number
         }
         Relationships: [
-          {
-            foreignKeyName: "sgrh_org_suc_distrito_id_fkey"
-            columns: ["suc_distrito_id"]
-            isOneToOne: false
-            referencedRelation: "sgrh_cat_distritos"
-            referencedColumns: ["dis_id"]
-          },
           {
             foreignKeyName: "sgrh_org_suc_empresa_id_fkey"
             columns: ["suc_empresa_id"]
             isOneToOne: false
             referencedRelation: "sgrh_empresas"
             referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_sucursales_suc_direccion_id_fkey"
+            columns: ["suc_direccion_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_direcciones"
+            referencedColumns: ["dir_id"]
           },
         ]
       }
@@ -2310,7 +2420,12 @@ export type Database = {
     }
     Functions: {
       crear_empleado_completo: {
-        Args: { p_contratacion: Json; p_datos_pago?: Json; p_empleado: Json }
+        Args: {
+          p_contratacion: Json
+          p_datos_pago?: Json
+          p_direccion?: Json
+          p_empleado: Json
+        }
         Returns: number
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }

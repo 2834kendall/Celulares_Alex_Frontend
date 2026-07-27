@@ -1,4 +1,4 @@
-import type { CatalogoItem, EmpleadoDetalle } from '@/modules/employees/types'
+import type { CatalogoItem, EmpleadoDetalle, TerritorioCatalogo } from '@/modules/employees/types'
 
 /** Fixtures compartidos por los tests de componentes del módulo. */
 
@@ -11,6 +11,29 @@ export const BANCOS: CatalogoItem[] = [
   { id: 3, nombre: 'BAC Credomatic' },
   { id: 5, nombre: 'Banco Nacional' },
 ]
+
+/**
+ * Recorte del catálogo del IGN con dos provincias y dos cantones cada una, lo
+ * mínimo para ejercitar la cascada: filtrar hijos y comprobar que cambiar de
+ * padre limpia la selección.
+ */
+export const TERRITORIO: TerritorioCatalogo = {
+  provincias: [
+    { id: 1, nombre: 'San José' },
+    { id: 2, nombre: 'Alajuela' },
+  ],
+  cantones: [
+    { id: 11, nombre: 'San José', provinciaId: 1 },
+    { id: 12, nombre: 'Escazú', provinciaId: 1 },
+    { id: 21, nombre: 'Alajuela', provinciaId: 2 },
+  ],
+  distritos: [
+    { id: 101, nombre: 'Carmen', cantonId: 11, codigoPostal: '10101' },
+    { id: 102, nombre: 'Merced', cantonId: 11, codigoPostal: '10102' },
+    { id: 121, nombre: 'Escazú', cantonId: 12, codigoPostal: '10201' },
+    { id: 201, nombre: 'Alajuela', cantonId: 21, codigoPostal: '20101' },
+  ],
+}
 
 export const HISTORIAL_ACTIVO: NonNullable<EmpleadoDetalle['historial_activo']> = {
   lab_id: 5,
@@ -52,6 +75,7 @@ export const EMPLEADO_DETALLE: EmpleadoDetalle = {
   emp_telefono_emergencia: null,
   emp_rostro_hash: null,
   emp_created_at: '2024-01-01T00:00:00Z',
+  emp_direccion_id: 7,
   tipo_identificacion_nombre: 'Cédula nacional',
   historial_activo: HISTORIAL_ACTIVO,
   datos_pago: {
@@ -59,5 +83,13 @@ export const EMPLEADO_DETALLE: EmpleadoDetalle = {
     banco_nombre: 'BAC Credomatic',
     edp_tipo_cuenta: 'AHORRO',
     edp_numero_cuenta: null,
+  },
+  direccion: {
+    dir_distrito_id: 121,
+    dir_codigo_postal: '10201',
+    dir_senas_exactas: '200 m norte de la iglesia',
+    distrito_nombre: 'Escazú',
+    canton_nombre: 'Escazú',
+    provincia_nombre: 'San José',
   },
 }

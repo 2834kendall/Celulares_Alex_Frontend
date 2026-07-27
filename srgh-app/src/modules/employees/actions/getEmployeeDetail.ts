@@ -9,8 +9,22 @@ import type { EmpleadoDetalle } from '@/modules/employees/types'
 type EmpleadoRow = Database['public']['Tables']['sgrh_empleados']['Row']
 type HistorialRow = Database['public']['Tables']['sgrh_historial_laboral']['Row']
 
+type DireccionQueryRow = {
+  dir_distrito_id: number
+  dir_codigo_postal: string
+  dir_senas_exactas: string | null
+  sgrh_cat_distritos: {
+    dis_nombre: string
+    sgrh_cat_cantones: {
+      can_nombre: string
+      sgrh_cat_provincias: { prv_nombre: string } | null
+    } | null
+  } | null
+}
+
 type EmpleadoQueryRow = EmpleadoRow & {
   sgrh_cat_tipos_identificacion: { tid_nombre: string } | null
+  sgrh_direcciones: DireccionQueryRow | null
 }
 
 type HistorialQueryRow = HistorialRow & {
@@ -40,7 +54,19 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
 
   const { data: empleado, error: errEmpleado } = await supabase
     .from('sgrh_empleados')
-    .select('*, sgrh_cat_tipos_identificacion ( tid_nombre )')
+    .select(
+      `
+      *,
+      sgrh_cat_tipos_identificacion ( tid_nombre ),
+      sgrh_direcciones (
+        dir_distrito_id, dir_codigo_postal, dir_senas_exactas,
+        sgrh_cat_distritos (
+          dis_nombre,
+          sgrh_cat_cantones ( can_nombre, sgrh_cat_provincias ( prv_nombre ) )
+        )
+      )
+    `
+    )
     .eq('emp_id', empId)
     .maybeSingle<EmpleadoQueryRow>()
 
@@ -89,7 +115,21 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     return { ok: false, error: 'No se pudieron cargar los datos de pago.' }
   }
 
-  const { sgrh_cat_tipos_identificacion, ...empleadoBase } = empleado
+  const { sgrh_cat_tipos_identificacion, sgrh_direcciones, ...empleadoBase } = empleado
+
+  // null para empleados creados antes de que el formulario capturara dirección.
+  const direccion: EmpleadoDetalle['direccion'] = sgrh_direcciones
+    ? {
+        dir_distrito_id: sgrh_direcciones.dir_distrito_id,
+        dir_codigo_postal: sgrh_direcciones.dir_codigo_postal,
+        dir_senas_exactas: sgrh_direcciones.dir_senas_exactas,
+        distrito_nombre: sgrh_direcciones.sgrh_cat_distritos?.dis_nombre ?? '—',
+        canton_nombre: sgrh_direcciones.sgrh_cat_distritos?.sgrh_cat_cantones?.can_nombre ?? '—',
+        provincia_nombre:
+          sgrh_direcciones.sgrh_cat_distritos?.sgrh_cat_cantones?.sgrh_cat_provincias?.prv_nombre ??
+          '—',
+      }
+    : null
 
   let historialActivo: EmpleadoDetalle['historial_activo'] = null
   if (historial) {
@@ -114,6 +154,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     ...empleadoBase,
     tipo_identificacion_nombre: sgrh_cat_tipos_identificacion?.tid_nombre ?? '—',
     historial_activo: historialActivo,
+    direccion,
     datos_pago: datosPago
       ? {
           edp_banco_id: datosPago.edp_banco_id,

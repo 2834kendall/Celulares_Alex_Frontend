@@ -7,6 +7,7 @@ import {
   getPuestos,
   getRoles,
   getSucursales,
+  getTerritorio,
   getTiposContrato,
   getTiposIdentificacion,
   getTiposJornada,
@@ -34,6 +35,7 @@ export default async function NewEmployeePage() {
     tiposContratoResult,
     tiposJornadaResult,
     bancosResult,
+    territorioResult,
     rolesResult,
   ] = await Promise.all([
     getTiposIdentificacion(),
@@ -42,6 +44,7 @@ export default async function NewEmployeePage() {
     getTiposContrato(),
     getTiposJornada(),
     getBancos(),
+    getTerritorio(),
     canInviteUser ? getRoles() : Promise.resolve(null),
   ])
 
@@ -52,6 +55,7 @@ export default async function NewEmployeePage() {
     tiposContratoResult,
     tiposJornadaResult,
     bancosResult,
+    territorioResult,
   ]
   const failed = results.find((result) => !result.ok)
   if (failed && !failed.ok) {
@@ -87,6 +91,11 @@ export default async function NewEmployeePage() {
         tiposContrato={tiposContratoResult.ok ? tiposContratoResult.data : []}
         tiposJornada={tiposJornadaResult.ok ? tiposJornadaResult.data : []}
         bancos={bancosResult.ok ? bancosResult.data : []}
+        territorio={
+          territorioResult.ok
+            ? territorioResult.data
+            : { provincias: [], cantones: [], distritos: [] }
+        }
         roles={rolesResult?.ok ? rolesResult.data : []}
         canInviteUser={canInviteUser}
       />
