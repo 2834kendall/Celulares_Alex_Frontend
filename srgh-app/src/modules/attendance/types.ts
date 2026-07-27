@@ -57,6 +57,36 @@ export const kioskMarkSchema = z.object({
     .regex(/^\d{4}$/, 'El PIN debe tener 4 digitos.')
     .nullable(),
   dispositivoId: z.string().trim().max(100).nullable(),
+  // Ticket HMAC emitido por verifyFace cuando el rostro hizo MATCH. Si viene
+  // y la firma es valida, la marca se guarda como FACIAL; si no, MANUAL.
+  // Opcional para no romper a los llamadores previos (cola offline incluida).
+  ticketFacial: z.string().max(500).nullable().default(null),
 })
 
 export type KioskMarkInput = z.input<typeof kioskMarkSchema>
+
+/**
+ * Vector facial cifrado en el cliente (AES-256-GCM, Web Crypto) antes de
+ * viajar al Server Action. La foto nunca sale del dispositivo: esto es solo
+ * el embedding numerico, y ni siquiera ese viaja en claro.
+ */
+export const encryptedVectorSchema = z.object({
+  iv: z.string().min(1).max(64),
+  data: z.string().min(1).max(10_000),
+})
+
+export type EncryptedVectorInput = z.input<typeof encryptedVectorSchema>
+
+export const verifyFaceSchema = z.object({
+  vector: encryptedVectorSchema,
+  dispositivoId: z.string().trim().max(100).nullable(),
+})
+
+export type VerifyFaceInput = z.input<typeof verifyFaceSchema>
+
+export const enrollFaceSchema = z.object({
+  employeeId: z.number().int().positive(),
+  vector: encryptedVectorSchema,
+})
+
+export type EnrollFaceInput = z.input<typeof enrollFaceSchema>
