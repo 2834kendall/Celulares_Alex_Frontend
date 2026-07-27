@@ -227,6 +227,116 @@ export type Database = {
           },
         ]
       }
+      sgrh_biometria_auditoria: {
+        Row: {
+          bia_created_at: string
+          bia_dispositivo_id: string | null
+          bia_empresa_id: number
+          bia_id: number
+          bia_mejor_distancia: number | null
+          bia_mejor_empleado_id: number | null
+          bia_resultado: string
+          bia_sucursal_id: number | null
+        }
+        Insert: {
+          bia_created_at?: string
+          bia_dispositivo_id?: string | null
+          bia_empresa_id: number
+          bia_id?: never
+          bia_mejor_distancia?: number | null
+          bia_mejor_empleado_id?: number | null
+          bia_resultado: string
+          bia_sucursal_id?: number | null
+        }
+        Update: {
+          bia_created_at?: string
+          bia_dispositivo_id?: string | null
+          bia_empresa_id?: number
+          bia_id?: never
+          bia_mejor_distancia?: number | null
+          bia_mejor_empleado_id?: number | null
+          bia_resultado?: string
+          bia_sucursal_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_biometria_auditoria_bia_empresa_id_fkey"
+            columns: ["bia_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_biometria_auditoria_bia_mejor_empleado_id_fkey"
+            columns: ["bia_mejor_empleado_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+          {
+            foreignKeyName: "sgrh_biometria_auditoria_bia_sucursal_id_fkey"
+            columns: ["bia_sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_sucursales"
+            referencedColumns: ["suc_id"]
+          },
+        ]
+      }
+      sgrh_biometria_empleado: {
+        Row: {
+          bio_created_at: string
+          bio_creado_por: number | null
+          bio_empleado_id: number
+          bio_empresa_id: number
+          bio_id: number
+          bio_modelo: string
+          bio_updated_at: string
+          bio_vector: Json
+        }
+        Insert: {
+          bio_created_at?: string
+          bio_creado_por?: number | null
+          bio_empleado_id: number
+          bio_empresa_id: number
+          bio_id?: never
+          bio_modelo?: string
+          bio_updated_at?: string
+          bio_vector: Json
+        }
+        Update: {
+          bio_created_at?: string
+          bio_creado_por?: number | null
+          bio_empleado_id?: number
+          bio_empresa_id?: number
+          bio_id?: never
+          bio_modelo?: string
+          bio_updated_at?: string
+          bio_vector?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_biometria_empleado_bio_creado_por_fkey"
+            columns: ["bio_creado_por"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+          {
+            foreignKeyName: "sgrh_biometria_empleado_bio_empleado_id_fkey"
+            columns: ["bio_empleado_id"]
+            isOneToOne: true
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+          {
+            foreignKeyName: "sgrh_biometria_empleado_bio_empresa_id_fkey"
+            columns: ["bio_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       sgrh_cat_areas_evaluacion: {
         Row: {
           are_activo: boolean
