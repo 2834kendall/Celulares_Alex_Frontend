@@ -8,6 +8,7 @@ import { kioskMarkSchema, type KioskMarkInput } from '@/modules/attendance/types
 import { isValidPin } from '@/modules/attendance/lib/pin'
 import { haversineDistanceMeters } from '@/modules/attendance/lib/geofence'
 import { nowInCostaRica } from '@/modules/attendance/lib/time'
+import { verifyFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 
 export type RegisterKioskMarkResult = { ok: true } | { ok: false; error: string }
 
@@ -31,10 +32,12 @@ interface SucursalCoordsRow {
  * employeeId elegido en el selector — hoy mock de la camara, mañana
  * reconocimiento facial sin cambiar este contrato.
  *
- * Toda marca del kiosco se guarda como MANUAL, con o sin PIN: sin camara
- * real, marcarla como FACIAL seria una afirmacion falsa sobre como se
- * verifico la identidad. Cuando exista biometria real, ese es el unico punto
- * a cambiar aca.
+ * Metodo de verificacion: FACIAL solo si viene un ticket HMAC valido emitido
+ * por verifyFace para ESTE empleado (la palabra del cliente no basta — un
+ * fetch a mano podria decir "fue facial"). Cualquier otro caso, incluido un
+ * ticket expirado de una marca que paso por la cola offline, se degrada a
+ * MANUAL sin rechazar la marca: el metodo describe la verificacion, no
+ * condiciona el registro.
  */
 export async function registerKioskMark(input: KioskMarkInput): Promise<RegisterKioskMarkResult> {
   const parsed = kioskMarkSchema.safeParse(input)
@@ -50,7 +53,15 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
   }
 
-  const { employeeId, tipo, latitud, longitud, pin, dispositivoId } = parsed.data
+  const { employeeId, tipo, latitud, longitud, pin, dispositivoId, ticketFacial } = parsed.data
+
+  let metodoVerificacion: 'FACIAL' | 'MANUAL' = 'MANUAL'
+  const ticketSecret = process.env.FACE_TICKET_SECRET
+  if (ticketFacial && ticketSecret) {
+    if (await verifyFaceTicket(ticketFacial, employeeId, ticketSecret)) {
+      metodoVerificacion = 'FACIAL'
+    }
+  }
 
   const supabase = await createClient()
 
@@ -106,7 +117,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
     mar_latitud_marcada: latitud,
     mar_longitud_marcada: longitud,
     mar_distancia_geocerca_metros: distancia,
-    mar_metodo_verificacion: 'MANUAL',
+    mar_metodo_verificacion: metodoVerificacion,
     mar_dispositivo_id: dispositivoId,
     mar_registrado_por_id: meta.usr_id ?? null,
     mar_observacion: pin ? 'Marcado con PIN de respaldo (camara no disponible).' : null,

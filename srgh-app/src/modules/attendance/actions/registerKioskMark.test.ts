@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { registerKioskMark } from './registerKioskMark'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { signFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 import type { KioskMarkInput } from '@/modules/attendance/types'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
@@ -140,6 +141,87 @@ describe('registerKioskMark (server action)', () => {
     expect(markBuilder.insert).toHaveBeenCalledWith(
       expect.objectContaining({ mar_distancia_geocerca_metros: 0 })
     )
+  })
+
+  describe('metodo de verificacion con ticket facial', () => {
+    const TICKET_SECRET = 'secreto-tickets-test'
+
+    beforeEach(() => {
+      vi.stubEnv('FACE_TICKET_SECRET', TICKET_SECRET)
+    })
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    function clientWithMark() {
+      return createSupabaseClientMock({
+        sgrh_historial_laboral: { data: { lab_id: 1, lab_sucursal_id: 100 }, error: null },
+        sgrh_marcas_asistencia: { data: null, error: null },
+      })
+    }
+
+    function insertedMark(client: ReturnType<typeof createSupabaseClientMock>) {
+      const markBuilder = (client.from as ReturnType<typeof vi.fn>).mock.results.find(
+        (_r: unknown, i: number) =>
+          (client.from as ReturnType<typeof vi.fn>).mock.calls[i][0] === 'sgrh_marcas_asistencia'
+      )!.value
+      return (markBuilder.insert as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    }
+
+    it('guarda FACIAL con un ticket valido del mismo empleado', async () => {
+      const client = clientWithMark()
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+      const ticket = await signFaceTicket(10, TICKET_SECRET)
+      const result = await registerKioskMark({ ...validInput, ticketFacial: ticket })
+
+      expect(result).toEqual({ ok: true })
+      expect(insertedMark(client).mar_metodo_verificacion).toBe('FACIAL')
+    })
+
+    it('degrada a MANUAL si el ticket es de OTRO empleado (no rechaza la marca)', async () => {
+      const client = clientWithMark()
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+      const ticket = await signFaceTicket(99, TICKET_SECRET)
+      const result = await registerKioskMark({ ...validInput, ticketFacial: ticket })
+
+      expect(result).toEqual({ ok: true })
+      expect(insertedMark(client).mar_metodo_verificacion).toBe('MANUAL')
+    })
+
+    it('degrada a MANUAL con un ticket expirado (marca que durmio en la cola offline)', async () => {
+      const client = clientWithMark()
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+      const ticket = await signFaceTicket(10, TICKET_SECRET, Date.now() - 10 * 60 * 1000)
+      const result = await registerKioskMark({ ...validInput, ticketFacial: ticket })
+
+      expect(result).toEqual({ ok: true })
+      expect(insertedMark(client).mar_metodo_verificacion).toBe('MANUAL')
+    })
+
+    it('degrada a MANUAL con un ticket falsificado', async () => {
+      const client = clientWithMark()
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+      const result = await registerKioskMark({
+        ...validInput,
+        ticketFacial: '10.99999999999999.firma-falsa',
+      })
+
+      expect(result).toEqual({ ok: true })
+      expect(insertedMark(client).mar_metodo_verificacion).toBe('MANUAL')
+    })
   })
 
   it('devuelve error generico si supabase falla al insertar', async () => {
