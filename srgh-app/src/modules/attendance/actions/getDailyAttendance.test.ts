@@ -127,6 +127,53 @@ describe('getDailyAttendance (server action)', () => {
     expect(row.duplicateMarksCount).toBe(0)
   })
 
+  it('lee correctamente una marca con "T" como separador (formato real de lectura de Supabase)', async () => {
+    // Bug real encontrado probando en el navegador: se inserta con espacio
+    // ("YYYY-MM-DD HH:mm:ss") pero Postgres/PostgREST devuelve el timestamp
+    // con 'T' al leerlo — la tabla mostraba "2026-" en vez de la hora.
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_historial_laboral: {
+          data: [
+            {
+              lab_id: 1,
+              lab_empleado_id: 10,
+              lab_sucursal_id: 100,
+              sgrh_empleados: {
+                emp_id: 10,
+                emp_nombre: 'Ana',
+                emp_apellido_1: 'Perez',
+                emp_apellido_2: null,
+              },
+              sgrh_cat_puestos: { pue_nombre: 'Cajera' },
+            },
+          ],
+          error: null,
+        },
+        sgrh_programacion_semanal: { data: [], error: null },
+        sgrh_marcas_asistencia: {
+          data: [
+            {
+              mar_id: 1,
+              mar_historial_laboral_id: 1,
+              mar_tipo: 'entrada',
+              mar_fecha_hora: `${DATE}T08:04:00`,
+            },
+          ],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getDailyAttendance(DATE)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data[0].entrada).toEqual({ id: 1, time: '08:04', diffMinutes: null })
+  })
+
   it('ignora una marca cuyo tipo no calza con el vocabulario valido', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({

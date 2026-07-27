@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  dateOfDay,
   diffMinutes,
   formatInCostaRica,
   isValidISODate,
+  monthBoundsInCostaRica,
   nowInCostaRica,
   shiftISODate,
   timeOfDay,
@@ -71,12 +73,29 @@ describe('isValidISODate', () => {
 })
 
 describe('timeOfDay', () => {
-  it('extrae HH:mm de un valor "YYYY-MM-DD HH:mm:ss"', () => {
+  it('extrae HH:mm de un valor "YYYY-MM-DD HH:mm:ss" (formato con el que este modulo escribe)', () => {
     expect(timeOfDay('2026-01-15 08:04:32')).toBe('08:04')
+  })
+
+  // Bug real encontrado probando en el navegador: Postgres/PostgREST
+  // devuelve el timestamp con 'T' al leerlo, aunque se haya insertado con
+  // espacio — timeOfDay debe tolerar ambos, no solo el formato de escritura.
+  it('extrae HH:mm de un valor "YYYY-MM-DDTHH:mm:ss" (formato con el que Supabase lo devuelve al leer)', () => {
+    expect(timeOfDay('2026-01-15T08:04:32')).toBe('08:04')
   })
 
   it('extrae HH:mm de un valor "HH:mm:ss" suelto', () => {
     expect(timeOfDay('08:04:32')).toBe('08:04')
+  })
+})
+
+describe('dateOfDay', () => {
+  it('extrae la fecha de un valor con espacio', () => {
+    expect(dateOfDay('2026-01-15 08:04:32')).toBe('2026-01-15')
+  })
+
+  it('extrae la fecha de un valor con "T" (formato de lectura de Supabase)', () => {
+    expect(dateOfDay('2026-01-15T08:04:32')).toBe('2026-01-15')
   })
 })
 
@@ -105,5 +124,19 @@ describe('diffMinutes', () => {
 
   it('es cero cuando coincide exactamente', () => {
     expect(diffMinutes('08:00', '08:00')).toBe(0)
+  })
+})
+
+describe('monthBoundsInCostaRica', () => {
+  it('devuelve el primer y ultimo dia de un mes de 31 dias', () => {
+    expect(monthBoundsInCostaRica('2026-07-15')).toEqual({ start: '2026-07-01', end: '2026-07-31' })
+  })
+
+  it('devuelve el ultimo dia correcto para febrero (no bisiesto)', () => {
+    expect(monthBoundsInCostaRica('2026-02-10')).toEqual({ start: '2026-02-01', end: '2026-02-28' })
+  })
+
+  it('devuelve el ultimo dia correcto para febrero bisiesto', () => {
+    expect(monthBoundsInCostaRica('2028-02-10')).toEqual({ start: '2028-02-01', end: '2028-02-29' })
   })
 })

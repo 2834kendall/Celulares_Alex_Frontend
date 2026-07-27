@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   AlertTriangle,
   CalendarDays,
@@ -94,8 +94,9 @@ function MarkCell({
 }
 
 export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanceTableProps) {
-  const { isNavigating, goToPreviousDay, goToNextDay } = useDateNavigation(dateISO)
+  const { isNavigating, goToPreviousDay, goToNextDay, goToDate } = useDateNavigation(dateISO)
   const [editing, setEditing] = useState<EditingTarget | null>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
 
   const total = rows.length
   const conEntrada = rows.filter((r) => r.entrada !== null).length
@@ -163,6 +164,35 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
           >
             <ChevronRight className="h-4 w-4" />
           </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                const input = dateInputRef.current
+                if (!input) return
+                if (typeof input.showPicker === 'function') {
+                  input.showPicker()
+                } else {
+                  input.focus()
+                }
+              }}
+              disabled={isNavigating}
+              aria-label="Elegir fecha"
+              className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-50"
+            >
+              <CalendarDays className="h-4 w-4" />
+            </button>
+            <input
+              ref={dateInputRef}
+              type="date"
+              value={dateISO}
+              onChange={(e) => {
+                if (e.target.value) goToDate(e.target.value)
+              }}
+              aria-label="Fecha"
+              className="sr-only"
+            />
+          </div>
         </div>
       </div>
 

@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
-import { shiftISODate, timeOfDay, todayInCostaRica } from '@/modules/attendance/lib/time'
+import { dateOfDay, shiftISODate, timeOfDay, todayInCostaRica } from '@/modules/attendance/lib/time'
 import { marcaTipoSchema } from '@/modules/attendance/types'
 import type { SgrhJwtClaims } from '@/types/auth'
 
@@ -70,7 +70,7 @@ export async function getMyMarks(): Promise<GetMyMarksResult> {
     const parsedTipo = marcaTipoSchema.safeParse(m.mar_tipo)
     if (!parsedTipo.success) continue
 
-    const date = m.mar_fecha_hora.split(' ')[0]
+    const date = dateOfDay(m.mar_fecha_hora)
     const list = marksByDate.get(date) ?? []
     list.push({ id: m.mar_id, tipo: parsedTipo.data, fechaHora: m.mar_fecha_hora })
     marksByDate.set(date, list)

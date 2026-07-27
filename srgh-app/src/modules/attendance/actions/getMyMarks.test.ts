@@ -91,6 +91,36 @@ describe('getMyMarks (server action)', () => {
     })
   })
 
+  it('junta entrada y salida del mismo dia aunque vengan con "T" (formato real de Supabase)', async () => {
+    // Bug real: con 'T' como separador, extraer la fecha con split(' ')[0]
+    // devuelve el timestamp completo (distinto por marca, por la hora) en
+    // vez de "YYYY-MM-DD" — cada marca terminaba en un "dia" separado.
+    mockClient(
+      { app_metadata: { emp_id: 10 } },
+      {
+        data: [
+          { mar_id: 1, mar_tipo: 'entrada', mar_fecha_hora: '2026-07-20T08:00:00' },
+          { mar_id: 2, mar_tipo: 'salida', mar_fecha_hora: '2026-07-20T17:00:00' },
+        ],
+        error: null,
+      }
+    )
+
+    const result = await getMyMarks()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0]).toEqual({
+      date: '2026-07-20',
+      entrada: { time: '08:00' },
+      inicioAlmuerzo: null,
+      finAlmuerzo: null,
+      salida: { time: '17:00' },
+    })
+  })
+
   it('ignora una marca cuyo tipo no calza con el vocabulario valido', async () => {
     mockClient(
       { app_metadata: { emp_id: 10 } },

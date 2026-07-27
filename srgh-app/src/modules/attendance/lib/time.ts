@@ -69,10 +69,30 @@ export function isValidISODate(value: string): boolean {
   return !Number.isNaN(new Date(`${value}T00:00:00`).getTime())
 }
 
-/** Extrae "HH:mm" de un valor "YYYY-MM-DD HH:mm:ss" (o "HH:mm:ss" suelto). */
+/**
+ * Separa la parte de fecha y de hora de un timestamp naive. Existen DOS
+ * formatos validos segun quien lo produjo: con espacio ("YYYY-MM-DD
+ * HH:mm:ss"), que es lo que este modulo escribe al insertar, o con 'T'
+ * ("YYYY-MM-DDTHH:mm:ss"), que es como Postgres/PostgREST serializa el
+ * mismo dato al leerlo de vuelta via la API — el separador de ESCRITURA no
+ * sobrevive la vuelta por la base de datos. Hay que tolerar ambos siempre
+ * que el valor pueda venir de una lectura real (no solo de un valor recien
+ * construido en el propio codigo).
+ */
+function splitFechaHora(fechaHora: string): { date: string; time: string | null } {
+  const parts = fechaHora.split(/[ T]/)
+  return { date: parts[0], time: parts[1] ?? null }
+}
+
+/** Extrae "YYYY-MM-DD" de un timestamp naive, con espacio o con 'T'. */
+export function dateOfDay(fechaHora: string): string {
+  return splitFechaHora(fechaHora).date
+}
+
+/** Extrae "HH:mm" de un timestamp naive, con espacio o con 'T' (o "HH:mm:ss" suelto). */
 export function timeOfDay(fechaHora: string): string {
-  const timePart = fechaHora.includes(' ') ? fechaHora.split(' ')[1] : fechaHora
-  return timePart.slice(0, 5)
+  const { date, time } = splitFechaHora(fechaHora)
+  return (time ?? date).slice(0, 5)
 }
 
 /** Convierte "HH:mm" (o "HH:mm:ss") a minutos desde medianoche. */
@@ -83,9 +103,22 @@ export function toMinutes(hhmm: string): number {
 
 /**
  * Diferencia en minutos entre la hora marcada y la esperada. Positivo = tarde,
- * negativo = temprano. Es un dato neutro: NO clasifica la marca como tardia
- * ni aplica ninguna tolerancia — ese calculo queda fuera de este ticket.
+ * negativo = temprano. Por si sola es un dato neutro (no aplica tolerancia);
+ * quien la usa decide si eso cuenta como tardanza — ver lib/infractions.ts.
  */
 export function diffMinutes(actualHHMM: string, expectedHHMM: string): number {
   return toMinutes(actualHHMM) - toMinutes(expectedHHMM)
+}
+
+/** Primer y ultimo dia del mes calendario al que pertenece dateISO ("YYYY-MM-DD" ambos). */
+export function monthBoundsInCostaRica(dateISO: string): { start: string; end: string } {
+  const [yearStr, monthStr] = dateISO.split('-')
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const lastDay = new Date(year, month, 0).getDate()
+
+  return {
+    start: `${yearStr}-${monthStr}-01`,
+    end: `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`,
+  }
 }
