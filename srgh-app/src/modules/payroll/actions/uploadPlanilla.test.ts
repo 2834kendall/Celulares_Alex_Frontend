@@ -92,7 +92,7 @@ describe('uploadPlanilla (server action)', () => {
 
   it('rechaza si el periodo no está en borrador', async () => {
     mockSupabase({
-      sgrh_nomina_periodo: { data: { ...PERIODO_BORRADOR, npe_estado: 'aprobado' }, error: null },
+      sgrh_nomina_periodo: { data: { ...PERIODO_BORRADOR, npe_estado: 'pagado' }, error: null },
     })
 
     const result = await uploadPlanilla(buildFormData())

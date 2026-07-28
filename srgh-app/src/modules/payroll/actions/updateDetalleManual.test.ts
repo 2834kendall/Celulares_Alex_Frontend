@@ -93,7 +93,7 @@ describe('updateDetalleManual (server action)', () => {
           ndt_id: 1,
           ndt_nomina_periodo_id: 9,
           ndt_historial_laboral_id: 5,
-          sgrh_nomina_periodo: { npe_estado: 'aprobado' },
+          sgrh_nomina_periodo: { npe_estado: 'pagado' },
         },
         error: null,
       },

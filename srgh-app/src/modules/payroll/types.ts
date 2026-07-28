@@ -23,8 +23,15 @@ export interface CatalogoItem {
   nombre: string
 }
 
-/** Estados del ciclo de vida de un periodo (npe_estado, default 'borrador'). */
-export type PeriodoEstado = 'borrador' | 'aprobado' | 'pagado'
+/**
+ * Estados del ciclo de vida de un periodo (npe_estado, default 'borrador').
+ * Solo 2: mientras falte pagarle a algún empleado es 'borrador' (editable:
+ * se puede subir Excel, editar montos a mano); pasa a 'pagado' solo, sin
+ * botón, en cuanto TODOS los empleados del periodo quedan marcados como
+ * pagados (ver sincronizarEstadoPeriodo en marcarDetallePagado.ts). Si se
+ * desmarca a alguien, vuelve a 'borrador'.
+ */
+export type PeriodoEstado = 'borrador' | 'pagado'
 
 export interface PeriodoListItem {
   id: number

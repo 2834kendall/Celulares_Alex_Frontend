@@ -17,14 +17,12 @@ export const MESES = [
 
 export const ESTADO_LABELS: Record<string, string> = {
   borrador: 'Borrador',
-  aprobado: 'Aprobado',
   pagado: 'Pagado',
 }
 
 /** Clases del badge de estado; gris por defecto para estados desconocidos. */
 export const ESTADO_BADGE_CLASSES: Record<string, string> = {
   borrador: 'bg-amber-50 text-amber-700 ring-amber-200',
-  aprobado: 'bg-blue-50 text-blue-700 ring-blue-200',
   pagado: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
 }
 
