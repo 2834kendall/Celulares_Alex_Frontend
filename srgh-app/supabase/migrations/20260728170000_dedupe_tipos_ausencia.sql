@@ -11,6 +11,8 @@
 --     borra el duplicado sembrado por esta app.
 --   - Si no existe un tipo previo equivalente (empresa nueva sin catalogo
 --     propio): no hace nada, el tipo sembrado por esta app queda como esta.
+--
+-- tau_referencia_legal es varchar(100): los textos deben mantenerse breves.
 DO $$
 DECLARE
   dup_id integer;
@@ -31,7 +33,7 @@ BEGIN
       tau_descuenta_vacaciones = false,
       tau_es_protegida = false,
       tau_es_intradia = false,
-      tau_referencia_legal = 'Reglamento del Seguro de Salud CCSS, arts. 36-40 (dias 1-3: 50% patrono + 50% CCSS; desde el dia 4: 60% CCSS)'
+      tau_referencia_legal = 'Reglamento del Seguro de Salud CCSS, arts. 36-40'
     WHERE tau_id = dup_id;
 
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'INC_ENF_CCSS';
@@ -53,7 +55,7 @@ BEGIN
       tau_descuenta_vacaciones = false,
       tau_es_protegida = true,
       tau_es_intradia = false,
-      tau_referencia_legal = 'Codigo de Trabajo Titulo IV; Ley de Riesgos del Trabajo (subsidio INS: 60% del salario desde el dia 1 hasta el dia 45; el patrono no cubre dias iniciales)'
+      tau_referencia_legal = 'Codigo de Trabajo Titulo IV; Ley de Riesgos del Trabajo (INS, subsidio 60% desde dia 1)'
     WHERE tau_id = dup_id;
 
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'INC_RIESGO_INS';
@@ -75,7 +77,7 @@ BEGIN
       tau_descuenta_vacaciones = false,
       tau_es_protegida = true,
       tau_es_intradia = false,
-      tau_referencia_legal = 'Codigo de Trabajo, art. 95 (4 meses: 1 antes + 3 despues del parto; 50% patrono + 50% CCSS = 100% del salario)'
+      tau_referencia_legal = 'Codigo de Trabajo, art. 95 (4 meses; 50% patrono + 50% CCSS)'
     WHERE tau_id = dup_id;
 
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'LIC_MATERNIDAD';
@@ -97,7 +99,7 @@ BEGIN
       tau_descuenta_vacaciones = false,
       tau_es_protegida = true,
       tau_es_intradia = false,
-      tau_referencia_legal = 'Ley N.º 10211 (2022), reforma al Codigo de Trabajo — sector privado: 8 dias (2 dias/semana durante las 4 semanas posteriores al nacimiento), pago 50% CCSS / 50% patrono'
+      tau_referencia_legal = 'Ley N. 10211 (2022); Codigo de Trabajo (8 dias, 50% CCSS + 50% patrono)'
     WHERE tau_id = dup_id;
 
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'LIC_PATERNIDAD';
@@ -119,7 +121,7 @@ BEGIN
       tau_descuenta_vacaciones = false,
       tau_es_protegida = true,
       tau_es_intradia = true,
-      tau_referencia_legal = 'Codigo de Trabajo, art. 97 (1 hora diaria pagada al 100% por el patrono, durante el primer año de vida, prorrogable en bloques de 3 meses con certificado medico)'
+      tau_referencia_legal = 'Codigo de Trabajo, art. 97 (1 hora diaria, 100% pagada por patrono)'
     WHERE tau_id = dup_id;
 
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'PERM_LACTANCIA';
