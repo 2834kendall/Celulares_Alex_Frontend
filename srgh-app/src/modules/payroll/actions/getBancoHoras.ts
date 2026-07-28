@@ -61,7 +61,7 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
       sgrh_historial_laboral (
         sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
       ),
-      sgrh_nomina_detalle (
+      sgrh_nomina_detalle!sgrh_banco_horas_movimientos_bhm_nomina_detalle_id_fkey (
         sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio, npe_quincena )
       )
     `
