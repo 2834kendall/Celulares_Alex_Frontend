@@ -9,6 +9,7 @@ import {
   parseOptionalTime,
   type AssignDayInput,
 } from '@/modules/schedules/types'
+import { upsertDayAssignment } from '@/modules/schedules/lib/dayAssignment'
 
 export type AssignDayResult = { ok: true } | { ok: false; error: string }
 
@@ -59,20 +60,15 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
     prg_horario_id: data.isDayOff || isCustom ? null : data.scheduleId,
     prg_fecha: data.date,
     prg_es_dia_libre: data.isDayOff,
-    prg_hora_entrada_custom: isCustom ? data.customStartTime : null,
-    prg_hora_salida_custom: isCustom ? data.customEndTime : null,
+    prg_hora_entrada_custom: isCustom ? (data.customStartTime ?? null) : null,
+    prg_hora_salida_custom: isCustom ? (data.customEndTime ?? null) : null,
     prg_hora_inicio_almuerzo_custom: isCustom ? customLunchStart : null,
     prg_hora_fin_almuerzo_custom: isCustom ? customLunchEnd : null,
     prg_hora_inicio_break_custom: isCustom ? customBreakStart : null,
     prg_hora_fin_break_custom: isCustom ? customBreakEnd : null,
   }
 
-  const { error } = data.assignmentId
-    ? await supabase
-        .from('sgrh_programacion_semanal')
-        .update(payload)
-        .eq('prg_id', data.assignmentId)
-    : await supabase.from('sgrh_programacion_semanal').insert(payload)
+  const { error } = await upsertDayAssignment(supabase, data.assignmentId, payload)
 
   if (error) {
     return { ok: false, error: 'No se pudo guardar la asignacion.' }

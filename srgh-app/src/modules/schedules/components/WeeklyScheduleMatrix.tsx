@@ -1,15 +1,30 @@
 'use client'
 
-import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Pencil, Users } from 'lucide-react'
-import type { DayAssignment, EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
+import { useMemo, useState } from 'react'
+import {
+  AlertTriangle,
+  Baby,
+  CalendarClock,
+  HeartPulse,
+  Loader2,
+  Pencil,
+  RotateCcw,
+  Users,
+} from 'lucide-react'
+import type { EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
 import type { ScheduleRow } from '@/modules/schedules/types'
-import { WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
+import { WEEKDAY_NAMES, currentMondayISO, getWeekDates } from '@/modules/schedules/lib/week'
 import { stripSeconds } from '@/modules/schedules/lib/time'
 import { useWeekNavigation } from '@/modules/schedules/hooks/useWeekNavigation'
-import { useWeeklyScheduleMatrix } from '@/modules/schedules/hooks/useWeeklyScheduleMatrix'
+import {
+  useWeeklyScheduleMatrix,
+  type DayAssignmentWithAusencia,
+} from '@/modules/schedules/hooks/useWeeklyScheduleMatrix'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
+import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
 
 interface WeeklyScheduleMatrixProps {
   weekStartISO: string
@@ -17,6 +32,7 @@ interface WeeklyScheduleMatrixProps {
   rows: EmployeeWeekRow[]
   schedules: ScheduleRow[]
   canWrite: boolean
+  ausencias?: AusenciaOverlayEntry[]
 }
 
 const SELECT_CLASSES =
@@ -46,10 +62,20 @@ function initialsOf(fullName: string) {
     .join('')
 }
 
-function assignmentLabel(assignment: DayAssignment) {
+function assignmentLabel(assignment: DayAssignmentWithAusencia) {
   if (assignment.isDayOff) return 'Descanso'
   if (assignment.customStartTime) return 'Personalizado'
   return assignment.scheduleName ?? 'Sin asignar'
+}
+
+/** Insignia compacta para el tipo de ausencia — misma idea que la de lactancia, reutilizada para incapacidades/licencias que bloquean el dia. */
+function AusenciaBadge({ tipoNombre }: { tipoNombre: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-1 text-center text-[10px] font-bold leading-tight text-rose-700">
+      <HeartPulse className="h-3 w-3 shrink-0" />
+      {tipoNombre}
+    </span>
+  )
 }
 
 function AssignmentOptions({ scheduleOptions }: { scheduleOptions: ScheduleRow[] }) {
@@ -68,14 +94,14 @@ function AssignmentOptions({ scheduleOptions }: { scheduleOptions: ScheduleRow[]
 }
 
 interface AssignmentHoursLineProps {
-  assignment: DayAssignment
+  assignment: DayAssignmentWithAusencia
   canWrite: boolean
   isSaving: boolean
   onEditCustom: () => void
   variant: 'mobile' | 'desktop'
 }
 
-/** Cell's hours line (range, custom-edit pencil, and saving spinner). */
+/** Cell's hours line (range, custom-edit pencil, lactancia badge, and saving spinner). */
 function AssignmentHoursLine({
   assignment,
   canWrite,
@@ -83,10 +109,18 @@ function AssignmentHoursLine({
   onEditCustom,
   variant,
 }: AssignmentHoursLineProps) {
+  const isBlocked = Boolean(assignment.ausencia && !assignment.ausencia.isIntraday)
+
+  // La insignia del tipo de ausencia ya se muestra donde iria el select; no
+  // hay horas que mostrar debajo para un dia bloqueado.
+  if (isBlocked) {
+    return null
+  }
+
   const containerClass =
     variant === 'mobile'
-      ? 'mt-1.5 flex items-center justify-center gap-1.5 text-[10px] font-semibold tabular-nums text-slate-500'
-      : `flex items-center gap-1 text-[10px] tabular-nums ${
+      ? 'mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[10px] font-semibold tabular-nums text-slate-500'
+      : `flex flex-wrap items-center gap-1 text-[10px] tabular-nums ${
           assignment.isDayOff
             ? 'text-amber-700'
             : assignment.customStartTime
@@ -126,6 +160,12 @@ function AssignmentHoursLine({
         <span>Sin horario</span>
       )}
 
+      {assignment.ausencia?.isIntraday && (
+        <span className="inline-flex items-center gap-0.5 rounded-full bg-pink-100 px-1.5 py-0.5 text-[9px] font-bold text-pink-700">
+          <Baby className="h-2.5 w-2.5" /> Lactancia
+        </span>
+      )}
+
       {isSaving && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
     </div>
   )
@@ -137,8 +177,9 @@ export function WeeklyScheduleMatrix({
   rows,
   schedules,
   canWrite,
+  ausencias,
 }: WeeklyScheduleMatrixProps) {
-  const { isNavigating, goToPreviousWeek, goToNextWeek } = useWeekNavigation(weekStartISO)
+  const { isNavigating, goToWeekStart } = useWeekNavigation(weekStartISO)
   const {
     rows: scheduleRows,
     scheduleOptions,
@@ -150,7 +191,44 @@ export function WeeklyScheduleMatrix({
     closeCustomModal,
     handleCustomConfirm,
     handleAssignmentChange,
-  } = useWeeklyScheduleMatrix({ rows, schedules, canWrite })
+  } = useWeeklyScheduleMatrix({ rows, schedules, canWrite, ausencias })
+
+  const [branchFilter, setBranchFilter] = useState<'all' | number>('all')
+  const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>([])
+
+  const branchOptions = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const row of scheduleRows) {
+      if (!map.has(row.branchId)) map.set(row.branchId, row.branchName ?? 'Sin sucursal')
+    }
+    return Array.from(map, ([id, name]) => ({ id, name }))
+  }, [scheduleRows])
+
+  const filteredRows = useMemo(
+    () =>
+      branchFilter === 'all'
+        ? scheduleRows
+        : scheduleRows.filter((row) => row.branchId === branchFilter),
+    [scheduleRows, branchFilter]
+  )
+
+  const visibleColumns = useMemo(
+    () =>
+      weekDates
+        .map((dateISO, index) => ({ dateISO, index }))
+        .filter(
+          (column) => selectedDayIndexes.length === 0 || selectedDayIndexes.includes(column.index)
+        ),
+    [weekDates, selectedDayIndexes]
+  )
+
+  function toggleDayIndex(index: number) {
+    setSelectedDayIndexes((prev) =>
+      prev.includes(index)
+        ? prev.filter((i) => i !== index)
+        : [...prev, index].sort((a, b) => a - b)
+    )
+  }
 
   const {
     page,
@@ -158,11 +236,13 @@ export function WeeklyScheduleMatrix({
     paginatedItems: paginatedRows,
     goToPreviousPage,
     goToNextPage,
-  } = usePagination(scheduleRows, 8)
+  } = usePagination(filteredRows, 6)
+
+  const isCurrentWeek = weekStartISO === currentMondayISO()
 
   return (
     <div className="min-w-0 space-y-3">
-      <div className="rounded-xl border border-slate-200 bg-linear-to-br from-white via-white to-blue-50/50 p-3.5 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <div className="relative z-30 rounded-xl border border-slate-200 bg-linear-to-br from-white via-white to-blue-50/50 p-3.5 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -171,22 +251,10 @@ export function WeeklyScheduleMatrix({
             <h3 className="mt-1 text-base font-bold tracking-tight text-slate-900 sm:text-lg">
               Planificación y edición individual
             </h3>
-            <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">
-              Edita directamente cada día por colaborador. Los cambios se guardan al instante.
-            </p>
           </div>
 
-          <div className="flex items-center gap-1 self-start rounded-full border border-slate-200 bg-white p-0.5 shadow-sm">
-            <button
-              type="button"
-              onClick={goToPreviousWeek}
-              aria-label="Semana anterior"
-              className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-40"
-              disabled={isNavigating}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
-            <div className="flex min-w-[140px] items-center justify-center gap-1.5 rounded-full px-2 text-center">
+          <div className="flex flex-wrap items-center gap-1.5 self-start">
+            <div className="flex min-w-[140px] items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-center shadow-sm">
               {isNavigating ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-blue-500" />
               ) : (
@@ -196,14 +264,33 @@ export function WeeklyScheduleMatrix({
                 {formatDay(weekDates[0])} – {formatDay(weekDates[6])}
               </p>
             </div>
+
+            <label
+              className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-slate-500 shadow-sm outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-within:ring-2 focus-within:ring-blue-500/60"
+              aria-label="Ir a una semana especifica"
+            >
+              <CalendarClock className="h-3.5 w-3.5" />
+              <input
+                type="date"
+                value={weekStartISO}
+                disabled={isNavigating}
+                onChange={(event) => {
+                  const picked = event.target.value
+                  if (!picked) return
+                  goToWeekStart(getWeekDates(picked)[0])
+                }}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
+
             <button
               type="button"
-              onClick={goToNextWeek}
-              aria-label="Semana siguiente"
-              className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-40"
-              disabled={isNavigating}
+              onClick={() => goToWeekStart(currentMondayISO())}
+              disabled={isNavigating || isCurrentWeek}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-500 shadow-sm outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <ChevronRight className="h-3.5 w-3.5" />
+              <RotateCcw className="h-3 w-3" />
+              Semana actual
             </button>
           </div>
         </div>
@@ -214,6 +301,44 @@ export function WeeklyScheduleMatrix({
             <p>{serverError}</p>
           </div>
         )}
+
+        <div className="mt-3.5 flex flex-col gap-3 border-t border-slate-100 pt-3.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+            Sucursal:
+            <SearchSelect
+              ariaLabel="Filtrar por sucursal"
+              className="w-48"
+              value={branchFilter === 'all' ? 'all' : String(branchFilter)}
+              onChange={(v) => setBranchFilter(v === 'all' ? 'all' : Number(v))}
+              options={[
+                { value: 'all', label: 'Todas las sucursales' },
+                ...branchOptions.map((b) => ({ value: String(b.id), label: b.name })),
+              ]}
+            />
+          </label>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-500">Días:</span>
+            {WEEKDAY_NAMES.map((name, index) => {
+              const active = selectedDayIndexes.includes(index)
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => toggleDayIndex(index)}
+                  aria-pressed={active}
+                  className={`rounded-lg px-2 py-1 text-[10px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+                    active
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  {name.slice(0, 3)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
@@ -227,8 +352,8 @@ export function WeeklyScheduleMatrix({
         </div>
 
         <div className="space-y-2 p-2.5 md:hidden">
-          {scheduleRows.length === 0 ? (
-            <EmptyState />
+          {filteredRows.length === 0 ? (
+            <EmptyState hasUnfilteredRows={scheduleRows.length > 0} />
           ) : (
             paginatedRows.map((row) => (
               <div
@@ -248,9 +373,13 @@ export function WeeklyScheduleMatrix({
                 </div>
 
                 <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {row.days.map((assignment, index) => {
+                  {visibleColumns.map(({ index }) => {
+                    const assignment = row.days[index]
                     const isSaving = savingCell === `${row.employmentHistoryId}-${assignment.date}`
-                    const isDisabled = !canWrite || isSaving
+                    const isBlocked = Boolean(
+                      assignment.ausencia && !assignment.ausencia.isIntraday
+                    )
+                    const isDisabled = !canWrite || isSaving || isBlocked
                     const isFree = assignment.isDayOff
                     const isCustom = Boolean(assignment.customStartTime)
 
@@ -290,7 +419,9 @@ export function WeeklyScheduleMatrix({
                         </div>
 
                         <div className="mt-2.5 space-y-2">
-                          {canWrite ? (
+                          {isBlocked ? (
+                            <AusenciaBadge tipoNombre={assignment.ausencia!.tipoNombre} />
+                          ) : canWrite ? (
                             <select
                               className={SELECT_CLASSES}
                               value={getAssignmentValue(assignment)}
@@ -338,7 +469,7 @@ export function WeeklyScheduleMatrix({
                   <th className="sticky left-0 z-20 min-w-[160px] border-b border-slate-200 bg-slate-50/95 px-3 py-2 text-left font-bold backdrop-blur-sm">
                     Colaborador
                   </th>
-                  {weekDates.map((dateISO, index) => (
+                  {visibleColumns.map(({ dateISO, index }) => (
                     <th
                       key={dateISO}
                       className="min-w-[88px] border-b border-slate-200 px-2 py-2 text-center font-bold"
@@ -359,10 +490,10 @@ export function WeeklyScheduleMatrix({
                 </tr>
               </thead>
               <tbody>
-                {scheduleRows.length === 0 ? (
+                {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10">
-                      <EmptyState />
+                    <td colSpan={visibleColumns.length + 2} className="px-4 py-10">
+                      <EmptyState hasUnfilteredRows={scheduleRows.length > 0} />
                     </td>
                   </tr>
                 ) : (
@@ -385,10 +516,14 @@ export function WeeklyScheduleMatrix({
                         </div>
                       </td>
 
-                      {row.days.map((assignment, index) => {
+                      {visibleColumns.map(({ index }) => {
+                        const assignment = row.days[index]
                         const isSaving =
                           savingCell === `${row.employmentHistoryId}-${assignment.date}`
-                        const isDisabled = !canWrite || isSaving
+                        const isBlocked = Boolean(
+                          assignment.ausencia && !assignment.ausencia.isIntraday
+                        )
+                        const isDisabled = !canWrite || isSaving || isBlocked
                         const isFree = assignment.isDayOff
                         const isCustom = Boolean(assignment.customStartTime)
 
@@ -407,7 +542,9 @@ export function WeeklyScheduleMatrix({
                                       : 'border-slate-200 bg-white'
                                 }`}
                               >
-                                {canWrite ? (
+                                {isBlocked ? (
+                                  <AusenciaBadge tipoNombre={assignment.ausencia!.tipoNombre} />
+                                ) : canWrite ? (
                                   <select
                                     className={`w-full appearance-none bg-transparent text-center text-[12px] font-semibold outline-none ${
                                       isFree
@@ -465,7 +602,7 @@ export function WeeklyScheduleMatrix({
           </div>
         </div>
 
-        {scheduleRows.length > 0 && (
+        {filteredRows.length > 0 && (
           <Pagination
             page={page}
             totalPages={totalPages}
@@ -478,6 +615,11 @@ export function WeeklyScheduleMatrix({
           <CustomHoursModal
             employeeName={customModalFor.row.fullName}
             dayLabel={WEEKDAY_NAMES[weekDates.indexOf(customModalFor.assignment.date)] ?? 'Día'}
+            weekDates={weekDates}
+            initialDate={customModalFor.assignment.date}
+            unavailableDates={customModalFor.row.days
+              .filter((d) => d.ausencia && !d.ausencia.isIntraday)
+              .map((d) => d.date)}
             initialStartTime={stripSeconds(customModalFor.assignment.customStartTime) ?? '08:00'}
             initialEndTime={stripSeconds(customModalFor.assignment.customEndTime) ?? '17:00'}
             initialLunchStart={stripSeconds(customModalFor.assignment.customLunchStart)}
@@ -493,7 +635,7 @@ export function WeeklyScheduleMatrix({
   )
 }
 
-function EmptyState() {
+function EmptyState({ hasUnfilteredRows = false }: { hasUnfilteredRows?: boolean }) {
   return (
     <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center">
       <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
@@ -501,10 +643,14 @@ function EmptyState() {
       </div>
       <div>
         <p className="text-sm font-semibold text-slate-700">
-          No hay colaboradores activos para esta semana
+          {hasUnfilteredRows
+            ? 'Ningún colaborador coincide con los filtros'
+            : 'No hay colaboradores activos para esta semana'}
         </p>
         <p className="mt-1 max-w-sm text-xs text-slate-500">
-          Cuando el equipo tenga historial laboral activo, la matriz semanal aparecerá aquí.
+          {hasUnfilteredRows
+            ? 'Ajusta el filtro de sucursal o de días para ver resultados.'
+            : 'Cuando el equipo tenga historial laboral activo, la matriz semanal aparecerá aquí.'}
         </p>
       </div>
     </div>

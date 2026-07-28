@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWeeklyScheduleMatrix } from './useWeeklyScheduleMatrix'
 import { assignDaySchedule } from '@/modules/schedules/actions/assignDaySchedule'
+import { assignCustomScheduleBulk } from '@/modules/schedules/actions/assignCustomScheduleBulk'
+import { clearDayAssignment } from '@/modules/schedules/actions/clearDayAssignment'
 import type { EmployeeWeekRow, DayAssignment } from '@/modules/schedules/actions/getWeeklySchedule'
 import type { ScheduleRow } from '@/modules/schedules/types'
 
@@ -9,7 +11,17 @@ vi.mock('@/modules/schedules/actions/assignDaySchedule', () => ({
   assignDaySchedule: vi.fn(),
 }))
 
+vi.mock('@/modules/schedules/actions/assignCustomScheduleBulk', () => ({
+  assignCustomScheduleBulk: vi.fn(),
+}))
+
+vi.mock('@/modules/schedules/actions/clearDayAssignment', () => ({
+  clearDayAssignment: vi.fn(),
+}))
+
 const mockAssignDaySchedule = vi.mocked(assignDaySchedule)
+const mockAssignCustomScheduleBulk = vi.mocked(assignCustomScheduleBulk)
+const mockClearDayAssignment = vi.mocked(clearDayAssignment)
 
 function makeAssignment(overrides: Partial<DayAssignment> = {}): DayAssignment {
   return {
@@ -30,6 +42,7 @@ function makeRow(overrides: Partial<EmployeeWeekRow> = {}): EmployeeWeekRow {
     employmentHistoryId: 1,
     employeeId: 10,
     branchId: 100,
+    branchName: 'Sucursal Central',
     fullName: 'Ana Perez',
     position: 'Cajera',
     days: [makeAssignment()],
@@ -108,13 +121,17 @@ describe('useWeeklyScheduleMatrix', () => {
   describe('modal de horas personalizadas', () => {
     it('openCustomModal / closeCustomModal controlan customModalFor', () => {
       const row = makeRow()
-      const assignment = row.days[0]
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
+      const transformedAssignment = transformedRow.days[0]
 
-      act(() => result.current.openCustomModal(row, assignment))
-      expect(result.current.customModalFor).toEqual({ row, assignment })
+      act(() => result.current.openCustomModal(transformedRow, transformedAssignment))
+      expect(result.current.customModalFor).toEqual({
+        row: transformedRow,
+        assignment: transformedAssignment,
+      })
 
       act(() => result.current.closeCustomModal())
       expect(result.current.customModalFor).toBeNull()
@@ -127,8 +144,11 @@ describe('useWeeklyScheduleMatrix', () => {
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: false })
       )
+      const transformedRow = result.current.rows[0]
 
-      await act(() => result.current.handleAssignmentChange(row, row.days[0], '__free__'))
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '__free__')
+      )
 
       expect(mockAssignDaySchedule).not.toHaveBeenCalled()
     })
@@ -138,22 +158,69 @@ describe('useWeeklyScheduleMatrix', () => {
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
 
-      await act(() => result.current.handleAssignmentChange(row, row.days[0], '__custom__'))
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '__custom__')
+      )
 
       expect(mockAssignDaySchedule).not.toHaveBeenCalled()
-      expect(result.current.customModalFor).toEqual({ row, assignment: row.days[0] })
+      expect(result.current.customModalFor).toEqual({
+        row: transformedRow,
+        assignment: transformedRow.days[0],
+      })
     })
 
-    it('no llama a la action cuando el valor esta vacio (sin seleccion)', async () => {
+    it('no hace nada con valor vacio si la celda ya estaba sin asignar', async () => {
       const row = makeRow()
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
 
-      await act(() => result.current.handleAssignmentChange(row, row.days[0], ''))
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '')
+      )
 
       expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+      expect(mockClearDayAssignment).not.toHaveBeenCalled()
+    })
+
+    it('"Asignar horario" (valor vacio) limpia la celda cuando ya tenia una asignacion', async () => {
+      mockClearDayAssignment.mockResolvedValue({ ok: true })
+      const row = makeRow({
+        days: [makeAssignment({ assignmentId: 7, scheduleId: 4, scheduleName: 'Turno A' })],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '')
+      )
+
+      expect(mockClearDayAssignment).toHaveBeenCalledWith(7)
+      expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+      expect(result.current.savingCell).toBeNull()
+      expect(result.current.serverError).toBeNull()
+    })
+
+    it('expone el error del servidor si falla al limpiar la celda', async () => {
+      mockClearDayAssignment.mockResolvedValue({ ok: false, error: 'No se pudo quitar.' })
+      const row = makeRow({
+        days: [makeAssignment({ assignmentId: 7, scheduleId: 4, scheduleName: 'Turno A' })],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '')
+      )
+
+      expect(result.current.serverError).toBe('No se pudo quitar.')
     })
 
     it('marca el dia como libre cuando se elige "__free__"', async () => {
@@ -162,8 +229,11 @@ describe('useWeeklyScheduleMatrix', () => {
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
 
-      await act(() => result.current.handleAssignmentChange(row, row.days[0], '__free__'))
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '__free__')
+      )
 
       expect(mockAssignDaySchedule).toHaveBeenCalledWith(
         expect.objectContaining({ isDayOff: true, scheduleId: null })
@@ -178,8 +248,11 @@ describe('useWeeklyScheduleMatrix', () => {
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
 
-      await act(() => result.current.handleAssignmentChange(row, row.days[0], '4'))
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '4')
+      )
 
       expect(mockAssignDaySchedule).toHaveBeenCalledWith(
         expect.objectContaining({ isDayOff: false, scheduleId: 4 })
@@ -197,13 +270,16 @@ describe('useWeeklyScheduleMatrix', () => {
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
 
       act(() => {
-        result.current.handleAssignmentChange(row, row.days[0], '__free__')
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '__free__')
       })
 
       await waitFor(() =>
-        expect(result.current.savingCell).toBe(`${row.employmentHistoryId}-${row.days[0].date}`)
+        expect(result.current.savingCell).toBe(
+          `${transformedRow.employmentHistoryId}-${transformedRow.days[0].date}`
+        )
       )
 
       await act(async () => resolveAssign({ ok: true }))
@@ -216,8 +292,11 @@ describe('useWeeklyScheduleMatrix', () => {
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
 
-      await act(() => result.current.handleAssignmentChange(row, row.days[0], '__free__'))
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '__free__')
+      )
 
       expect(result.current.serverError).toBe('No se pudo guardar.')
     })
@@ -237,20 +316,22 @@ describe('useWeeklyScheduleMatrix', () => {
           lunchEnd: null,
           breakStart: null,
           breakEnd: null,
+          applyToDates: [],
         })
       )
 
-      expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+      expect(mockAssignCustomScheduleBulk).not.toHaveBeenCalled()
     })
 
     it('guarda las horas personalizadas y cierra el modal en exito', async () => {
-      mockAssignDaySchedule.mockResolvedValue({ ok: true })
+      mockAssignCustomScheduleBulk.mockResolvedValue({ ok: true })
       const row = makeRow()
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
 
-      act(() => result.current.openCustomModal(row, row.days[0]))
+      act(() => result.current.openCustomModal(transformedRow, transformedRow.days[0]))
 
       await act(() =>
         result.current.handleCustomConfirm({
@@ -260,31 +341,61 @@ describe('useWeeklyScheduleMatrix', () => {
           lunchEnd: '13:00',
           breakStart: null,
           breakEnd: null,
+          applyToDates: [transformedRow.days[0].date],
         })
       )
 
-      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+      expect(mockAssignCustomScheduleBulk).toHaveBeenCalledWith(
         expect.objectContaining({
           customStartTime: '09:00',
           customEndTime: '18:00',
           customLunchStart: '12:00',
           customLunchEnd: '13:00',
-          isDayOff: false,
-          scheduleId: null,
+          days: [{ assignmentId: null, date: transformedRow.days[0].date }],
         })
       )
       expect(result.current.customModalFor).toBeNull()
       expect(result.current.serverError).toBeNull()
     })
 
-    it('mantiene el error del servidor visible si falla, con el modal ya cerrado', async () => {
-      mockAssignDaySchedule.mockResolvedValue({ ok: false, error: 'Horas invalidas.' })
+    it('sin applyToDates aplica por defecto al dia que abrio el modal', async () => {
+      mockAssignCustomScheduleBulk.mockResolvedValue({ ok: true })
       const row = makeRow()
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
       )
+      const transformedRow = result.current.rows[0]
 
-      act(() => result.current.openCustomModal(row, row.days[0]))
+      act(() => result.current.openCustomModal(transformedRow, transformedRow.days[0]))
+
+      await act(() =>
+        result.current.handleCustomConfirm({
+          startTime: '09:00',
+          endTime: '18:00',
+          lunchStart: null,
+          lunchEnd: null,
+          breakStart: null,
+          breakEnd: null,
+          applyToDates: [],
+        })
+      )
+
+      expect(mockAssignCustomScheduleBulk).toHaveBeenCalledWith(
+        expect.objectContaining({
+          days: [{ assignmentId: null, date: transformedRow.days[0].date }],
+        })
+      )
+    })
+
+    it('mantiene el error del servidor visible si falla, con el modal ya cerrado', async () => {
+      mockAssignCustomScheduleBulk.mockResolvedValue({ ok: false, error: 'Horas invalidas.' })
+      const row = makeRow()
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      act(() => result.current.openCustomModal(transformedRow, transformedRow.days[0]))
 
       await act(() =>
         result.current.handleCustomConfirm({
@@ -294,6 +405,7 @@ describe('useWeeklyScheduleMatrix', () => {
           lunchEnd: null,
           breakStart: null,
           breakEnd: null,
+          applyToDates: [transformedRow.days[0].date],
         })
       )
 

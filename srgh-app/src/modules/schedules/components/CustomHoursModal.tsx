@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from 'react'
 import { X } from 'lucide-react'
 import { TimeSelect } from './TimeSelect'
+import { WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
 
 export interface CustomHoursValues {
   startTime: string
@@ -11,11 +12,19 @@ export interface CustomHoursValues {
   lunchEnd: string | null
   breakStart: string | null
   breakEnd: string | null
+  /** Fechas ISO de la semana visible a las que se debe aplicar este horario. */
+  applyToDates: string[]
 }
 
 interface CustomHoursModalProps {
   employeeName: string
   dayLabel: string
+  /** Fechas ISO (Lunes..Domingo) de la semana visible, para el selector de dias. */
+  weekDates: string[]
+  /** Fecha ISO que abrio el modal — viene pre-marcada. */
+  initialDate: string
+  /** Fechas ISO que no se pueden marcar (p. ej. cubiertas por una incapacidad). */
+  unavailableDates?: string[]
   initialStartTime: string
   initialEndTime: string
   initialLunchStart?: string | null
@@ -90,6 +99,9 @@ function OptionalPeriod({
 export function CustomHoursModal({
   employeeName,
   dayLabel,
+  weekDates,
+  initialDate,
+  unavailableDates = [],
   initialStartTime,
   initialEndTime,
   initialLunchStart,
@@ -110,10 +122,19 @@ export function CustomHoursModal({
   const [breakStart, setBreakStart] = useState(initialBreakStart ?? '10:00')
   const [breakEnd, setBreakEnd] = useState(initialBreakEnd ?? '10:15')
 
+  const [applyToDates, setApplyToDates] = useState<string[]>([initialDate])
+
   const [isSaving, setIsSaving] = useState(false)
+
+  function toggleDate(date: string) {
+    setApplyToDates((prev) =>
+      prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date]
+    )
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (applyToDates.length === 0) return
     setIsSaving(true)
     await onConfirm({
       startTime,
@@ -122,6 +143,7 @@ export function CustomHoursModal({
       lunchEnd: hasLunch ? lunchEnd : null,
       breakStart: hasBreak ? breakStart : null,
       breakEnd: hasBreak ? breakEnd : null,
+      applyToDates,
     })
     setIsSaving(false)
   }
@@ -163,6 +185,42 @@ export function CustomHoursModal({
             <TimeSelect value={endTime} onChange={setEndTime} />
           </div>
 
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Aplicar a estos días
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {weekDates.map((date, index) => {
+                const isSelected = applyToDates.includes(date)
+                const isUnavailable = unavailableDates.includes(date)
+                return (
+                  <button
+                    key={date}
+                    type="button"
+                    disabled={isUnavailable}
+                    onClick={() => toggleDate(date)}
+                    aria-pressed={isSelected}
+                    title={
+                      isUnavailable ? 'Día cubierto por una incapacidad o licencia' : undefined
+                    }
+                    className={`rounded-lg px-2 py-1 text-[10px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+                      isUnavailable
+                        ? 'cursor-not-allowed bg-slate-100 text-slate-300'
+                        : isSelected
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {WEEKDAY_NAMES[index].slice(0, 3)}
+                  </button>
+                )
+              })}
+            </div>
+            {applyToDates.length === 0 && (
+              <p className="mt-1 text-[10px] text-rose-600">Seleccione al menos un día.</p>
+            )}
+          </div>
+
           <OptionalPeriod
             idPrefix="custom-lunch"
             label="Incluye almuerzo"
@@ -195,7 +253,7 @@ export function CustomHoursModal({
             </button>
             <button
               type="submit"
-              disabled={isSaving}
+              disabled={isSaving || applyToDates.length === 0}
               className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
             >
               {isSaving ? 'Guardando...' : 'Guardar'}

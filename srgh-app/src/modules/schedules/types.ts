@@ -108,3 +108,33 @@ export const assignDayScheduleSchema = z.object({
 })
 
 export type AssignDayInput = z.input<typeof assignDayScheduleSchema>
+
+const customTimeFields = {
+  customStartTime: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+  customEndTime: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+  customLunchStart: optionalTime,
+  customLunchEnd: optionalTime,
+  customBreakStart: optionalTime,
+  customBreakEnd: optionalTime,
+}
+
+/**
+ * Aplica un horario personalizado a varios dias de la semana visible en una
+ * sola confirmacion (en vez de repetir el flujo de assignDaySchedule dia por dia).
+ */
+export const assignCustomScheduleBulkSchema = z.object({
+  employmentHistoryId: z.number().int().positive(),
+  employeeId: z.number().int().positive(),
+  branchId: z.number().int().positive(),
+  days: z
+    .array(
+      z.object({
+        assignmentId: z.number().int().positive().nullable(),
+        date: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+      })
+    )
+    .min(1, 'Seleccione al menos un dia.'),
+  ...customTimeFields,
+})
+
+export type AssignCustomScheduleBulkInput = z.input<typeof assignCustomScheduleBulkSchema>

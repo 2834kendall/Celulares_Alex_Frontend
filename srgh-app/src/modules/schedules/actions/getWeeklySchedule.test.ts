@@ -209,4 +209,93 @@ describe('getWeeklySchedule (server action)', () => {
       customEndTime: '18:00:00',
     })
   })
+
+  it('el break paga los primeros 10 minutos: solo resta el exceso de las horas trabajadas', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: {
+          data: [
+            {
+              lab_id: 1,
+              lab_empleado_id: 10,
+              lab_sucursal_id: 100,
+              sgrh_empleados: {
+                emp_id: 10,
+                emp_nombre: 'Ana',
+                emp_apellido_1: 'Perez',
+                emp_apellido_2: null,
+              },
+              sgrh_cat_puestos: { pue_nombre: 'Cajera' },
+            },
+          ],
+          error: null,
+        },
+        sgrh_programacion_semanal: {
+          data: [
+            {
+              // Break de 20 min (08:00-08:20): resta solo 10 min de exceso.
+              prg_id: 1,
+              prg_historial_laboral_id: 1,
+              prg_fecha: '2026-01-05',
+              prg_es_dia_libre: false,
+              prg_horario_id: 5,
+              sgrh_cat_horarios: {
+                hor_id: 5,
+                hor_nombre: 'Turno A',
+                hor_hora_entrada: '08:00:00',
+                hor_hora_salida: '17:00:00',
+                hor_hora_inicio_almuerzo: '12:00:00',
+                hor_hora_fin_almuerzo: '13:00:00',
+                hor_hora_inicio_break: '08:00:00',
+                hor_hora_fin_break: '08:20:00',
+              },
+              prg_hora_entrada_custom: null,
+              prg_hora_salida_custom: null,
+              prg_hora_inicio_almuerzo_custom: null,
+              prg_hora_fin_almuerzo_custom: null,
+              prg_hora_inicio_break_custom: null,
+              prg_hora_fin_break_custom: null,
+            },
+            {
+              // Break de 8 min (08:00-08:08): no resta nada.
+              prg_id: 2,
+              prg_historial_laboral_id: 1,
+              prg_fecha: '2026-01-06',
+              prg_es_dia_libre: false,
+              prg_horario_id: 5,
+              sgrh_cat_horarios: {
+                hor_id: 5,
+                hor_nombre: 'Turno A',
+                hor_hora_entrada: '08:00:00',
+                hor_hora_salida: '17:00:00',
+                hor_hora_inicio_almuerzo: '12:00:00',
+                hor_hora_fin_almuerzo: '13:00:00',
+                hor_hora_inicio_break: '08:00:00',
+                hor_hora_fin_break: '08:08:00',
+              },
+              prg_hora_entrada_custom: null,
+              prg_hora_salida_custom: null,
+              prg_hora_inicio_almuerzo_custom: null,
+              prg_hora_fin_almuerzo_custom: null,
+              prg_hora_inicio_break_custom: null,
+              prg_hora_fin_break_custom: null,
+            },
+          ],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [mon, tue] = result.data[0].days
+
+    // 9h de jornada - 1h de almuerzo - 10min de exceso de break (20-10) = 7h50 => 7.83
+    expect(mon.hours).toBeCloseTo(7.8333, 3)
+    // 9h de jornada - 1h de almuerzo - 0min de break (8min < 10min pagados) = 8h
+    expect(tue.hours).toBe(8)
+  })
 })
