@@ -7,6 +7,7 @@ import { FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
 import { getFaceLandmarker } from './faceLandmarker'
 import { computeEmbedding, preloadEmbeddingModel } from './embedding'
 import { createLivenessTracker, type LivenessTracker } from './liveness'
+import { createMotionLivenessTracker, type MotionLivenessTracker } from './motionLiveness'
 import { extractBlinkScores, faceCropBox, firstFaceLandmarks } from './landmarks'
 
 export interface FaceScanProps {
@@ -23,26 +24,38 @@ export interface FaceScanProps {
   onUnavailable: (reason: string) => void
 }
 
-type ScanStatus = 'iniciando' | 'buscando_rostro' | 'esperando_parpadeo' | 'procesando'
+type ScanStatus =
+  'iniciando' | 'buscando_rostro' | 'verificando' | 'esperando_parpadeo' | 'procesando'
 
 const STATUS_TEXT: Record<ScanStatus, string> = {
   iniciando: 'Preparando la camara…',
   buscando_rostro: 'Coloca tu rostro frente a la camara',
+  verificando: 'Mantén la mirada en la camara…',
   esperando_parpadeo: 'Parpadea para continuar',
   procesando: 'Verificando…',
 }
 
 /**
  * Captura facial con prueba de vida. Todo el procesamiento pesado ocurre en
- * el cliente: MediaPipe ubica el rostro y da los blendshapes del parpadeo,
- * el recorte pasa por MobileFaceNet (ONNX Runtime Web) y el vector sale
- * cifrado (AES-256-GCM). La foto jamas abandona este componente.
+ * el cliente: MediaPipe ubica el rostro y da los landmarks/blendshapes, el
+ * recorte pasa por MobileFaceNet (ONNX Runtime Web) y el vector sale cifrado
+ * (AES-256-GCM). La foto jamas abandona este componente.
+ *
+ * Prueba de vida en dos etapas: PRIMERO micro-movimiento pasivo
+ * (motionLiveness.ts) — no le pide nada a la persona, solo mira que la cara
+ * se deforme de forma no-rigida entre frames (una foto sostenida con la mano
+ * se mueve como un bloque rigido). Si eso no logra confianza a tiempo, cae a
+ * pedir un parpadeo explicito (liveness.ts) — mas lento para el usuario, pero
+ * imposible de falsificar con una foto impresa. El respaldo solo se activa si
+ * el chequeo pasivo no alcanza, nunca al reves.
  */
 export function FaceScan({ onEmbedding, onUnavailable }: FaceScanProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const rafRef = useRef<number | null>(null)
+  const motionTrackerRef = useRef<MotionLivenessTracker>(createMotionLivenessTracker())
   const trackerRef = useRef<LivenessTracker>(createLivenessTracker())
+  const phaseRef = useRef<'movimiento' | 'parpadeo'>('movimiento')
   const doneRef = useRef(false)
   const unavailableRef = useRef(false)
 
@@ -55,7 +68,9 @@ export function FaceScan({ onEmbedding, onUnavailable }: FaceScanProps) {
   useEffect(() => {
     let cancelled = false
     doneRef.current = false
+    motionTrackerRef.current = createMotionLivenessTracker()
     trackerRef.current = createLivenessTracker()
+    phaseRef.current = 'movimiento'
 
     function fail(reason: string) {
       if (unavailableRef.current || cancelled) return
@@ -134,22 +149,50 @@ export function FaceScan({ onEmbedding, onUnavailable }: FaceScanProps) {
           return
         }
 
-        const liveness = trackerRef.current.push({
-          blinkLeft: blink.blinkLeft,
-          blinkRight: blink.blinkRight,
-          timestampMs: performance.now(),
-        })
+        const now = performance.now()
+        let isAlive = false
 
-        if (liveness === 'sin_parpadeo') {
-          // Regla de los lentes oscuros: sin ojos visibles no hay prueba de
-          // vida — se falla a proposito y se pide descubrirse el rostro.
-          doneRef.current = true
-          setLivenessFailed(true)
-          return
+        if (phaseRef.current === 'movimiento') {
+          const motionStatus = motionTrackerRef.current.push({ landmarks, timestampMs: now })
+
+          if (motionStatus === 'vivo') {
+            isAlive = true
+          } else if (motionStatus === 'requiere_parpadeo') {
+            // El chequeo pasivo no logro confianza a tiempo: cae al parpadeo
+            // explicito, mas lento pero imposible de falsificar con una foto.
+            phaseRef.current = 'parpadeo'
+          } else {
+            setStatus('verificando')
+            rafRef.current = requestAnimationFrame(loop)
+            return
+          }
         }
 
-        if (liveness !== 'vivo') {
-          setStatus('esperando_parpadeo')
+        if (!isAlive && phaseRef.current === 'parpadeo') {
+          const liveness = trackerRef.current.push({
+            blinkLeft: blink.blinkLeft,
+            blinkRight: blink.blinkRight,
+            timestampMs: now,
+          })
+
+          if (liveness === 'sin_parpadeo') {
+            // Regla de los lentes oscuros: sin ojos visibles no hay prueba de
+            // vida — se falla a proposito y se pide descubrirse el rostro.
+            doneRef.current = true
+            setLivenessFailed(true)
+            return
+          }
+
+          if (liveness !== 'vivo') {
+            setStatus('esperando_parpadeo')
+            rafRef.current = requestAnimationFrame(loop)
+            return
+          }
+
+          isAlive = true
+        }
+
+        if (!isAlive) {
           rafRef.current = requestAnimationFrame(loop)
           return
         }
