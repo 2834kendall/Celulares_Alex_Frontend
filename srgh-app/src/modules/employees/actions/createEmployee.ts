@@ -39,6 +39,8 @@ export async function createEmployee(
     p_empleado: parsed.data.empleado,
     p_contratacion: parsed.data.contratacion,
     p_datos_pago: parsed.data.datos_pago,
+    // Sin dir_codigo_postal: lo calcula el trigger desde el distrito.
+    p_direccion: parsed.data.direccion,
   })
 
   if (error || typeof empId !== 'number') {

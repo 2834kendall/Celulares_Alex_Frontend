@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getPuestos,
   getSucursales,
+  getTerritorio,
   getTiposContrato,
   getTiposJornada,
   getTiposIdentificacion,
@@ -106,5 +107,44 @@ describe('getCatalogs (server actions)', () => {
 
     expect(result).toEqual({ ok: true, data: [{ id: 6, nombre: 'Empleado' }] })
     expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.USUARIOS_WRITE)
+  })
+
+  it('getTerritorio arma el árbol con el id del padre en cada nivel', async () => {
+    mockClient({
+      sgrh_cat_provincias: { data: [{ prv_id: 1, prv_nombre: 'San José' }], error: null },
+      sgrh_cat_cantones: {
+        data: [{ can_id: 11, can_nombre: 'Escazú', can_provincia_id: 1 }],
+        error: null,
+      },
+      sgrh_cat_distritos: {
+        data: [{ dis_id: 101, dis_nombre: 'Carmen', dis_canton_id: 11, dis_codigo: '10101' }],
+        error: null,
+      },
+    })
+
+    const result = await getTerritorio()
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        provincias: [{ id: 1, nombre: 'San José' }],
+        cantones: [{ id: 11, nombre: 'Escazú', provinciaId: 1 }],
+        // codigoPostal sale de dis_codigo: en CR son el mismo número.
+        distritos: [{ id: 101, nombre: 'Carmen', cantonId: 11, codigoPostal: '10101' }],
+      },
+    })
+    expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.EMPLEADOS_READ)
+  })
+
+  it('getTerritorio falla si cualquiera de los tres niveles falla', async () => {
+    mockClient({
+      sgrh_cat_provincias: { data: [{ prv_id: 1, prv_nombre: 'San José' }], error: null },
+      sgrh_cat_cantones: { data: null, error: { message: 'boom' } },
+      sgrh_cat_distritos: { data: [], error: null },
+    })
+
+    const result = await getTerritorio()
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo cargar el catálogo.' })
   })
 })

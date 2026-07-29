@@ -4,6 +4,7 @@ import { useFormContext } from 'react-hook-form'
 import type { CatalogoItem } from '@/modules/employees/types'
 import {
   BankingFields,
+  CatalogSelect,
   CurrencyInput,
   getFieldError,
   INPUT_CLASSES,
@@ -16,39 +17,6 @@ interface EmployeeWizardStepNominaProps {
   tiposContrato: CatalogoItem[]
   tiposJornada: CatalogoItem[]
   bancos: CatalogoItem[]
-}
-
-function CatalogSelect({
-  name,
-  label,
-  options,
-}: {
-  name: string
-  label: string
-  options: CatalogoItem[]
-}) {
-  const {
-    register,
-    formState: { errors },
-  } = useFormContext()
-  const error = getFieldError(errors, name)
-
-  return (
-    <Labeled label={label} error={error}>
-      <select
-        {...register(name, { valueAsNumber: true })}
-        aria-invalid={Boolean(error)}
-        className={INPUT_CLASSES}
-      >
-        <option value="">Seleccionar…</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.nombre}
-          </option>
-        ))}
-      </select>
-    </Labeled>
-  )
 }
 
 /** Paso 2 del onboarding: contrato (historial laboral) + datos bancarios/CCSS. */

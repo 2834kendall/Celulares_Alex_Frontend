@@ -1,8 +1,8 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useController, useFormContext, type FieldErrors } from 'react-hook-form'
-import type { CatalogoItem } from '@/modules/employees/types'
+import type { CatalogoItem, TerritorioCatalogo } from '@/modules/employees/types'
 import { GENERO_LABELS, TIPO_CUENTA_LABELS } from '@/modules/employees/lib/format'
 import { formatIbanGroups, IBAN_CR_LENGTH, normalizeIban } from '@/modules/employees/lib/iban'
 
@@ -51,6 +51,66 @@ export function Labeled({ label, error, children }: LabeledProps) {
         </p>
       )}
     </div>
+  )
+}
+
+interface CatalogSelectProps {
+  name: string
+  label: string
+  options: CatalogoItem[]
+  disabled?: boolean
+  placeholder?: string
+  /**
+   * Se ejecuta después de propagar el cambio a react-hook-form. Lo usan las
+   * cascadas para limpiar los campos que dependen de este (ver AddressFields).
+   */
+  onAfterChange?: (value: number | null) => void
+}
+
+/**
+ * Select de catálogo con `valueAsNumber`: el vacío emite NaN, que el schema
+ * rechaza con el mensaje de obligatorio. No usar `setValueAs` — react-hook-form
+ * también lo aplica al defaultValue y `Number(null) === 0` rompería `.positive()`.
+ */
+export function CatalogSelect({
+  name,
+  label,
+  options,
+  disabled,
+  placeholder = 'Seleccionar…',
+  onAfterChange,
+}: CatalogSelectProps) {
+  const {
+    register,
+    formState: { errors },
+  } = useFormContext()
+  const error = getFieldError(errors, name)
+  const { onChange, ...field } = register(name, { valueAsNumber: true })
+
+  return (
+    <Labeled label={label} error={error}>
+      <select
+        {...field}
+        disabled={disabled}
+        onChange={async (event) => {
+          await onChange(event)
+          // El hijo se limpia en el onChange y NO en un efecto que observe el
+          // valor: un efecto correría también al montar el formulario de
+          // edición y borraría lo que el empleado ya tiene guardado.
+          const raw = event.target.value
+          onAfterChange?.(raw === '' ? null : Number(raw))
+        }}
+        aria-invalid={Boolean(error)}
+        className={INPUT_CLASSES}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.nombre}
+          </option>
+        ))}
+      </select>
+    </Labeled>
   )
 }
 
@@ -332,6 +392,7 @@ export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
   const {
     register,
     watch,
+    setValue,
     formState: { errors },
   } = useFormContext()
 
@@ -343,26 +404,33 @@ export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
   const tipoCuenta = watch(`${basePath}edp_tipo_cuenta`) as string | null | undefined
   const hasBanco = typeof bancoId === 'number' && !Number.isNaN(bancoId)
 
+  // Un IBAN pertenece a una entidad concreta, y SINPE usa un formato distinto
+  // (teléfono de 8 dígitos vs CR + 20). Al cambiar cualquiera de los dos, el
+  // número anterior deja de ser válido: se limpia en vez de dejar que el
+  // servidor lo rechace después.
+  const limpiarCuenta = () => {
+    setValue(`${basePath}edp_numero_cuenta`, '', { shouldValidate: false, shouldDirty: true })
+  }
+
+  const tipoCuentaField = register(`${basePath}edp_tipo_cuenta`)
+
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <Labeled label="Banco" error={err('edp_banco_id')}>
-        <select
-          {...register(`${basePath}edp_banco_id`, { valueAsNumber: true })}
-          aria-invalid={Boolean(err('edp_banco_id'))}
-          className={INPUT_CLASSES}
-        >
-          <option value="">Sin especificar</option>
-          {bancos.map((banco) => (
-            <option key={banco.id} value={banco.id}>
-              {banco.nombre}
-            </option>
-          ))}
-        </select>
-      </Labeled>
+      <CatalogSelect
+        name={`${basePath}edp_banco_id`}
+        label="Banco"
+        options={bancos}
+        placeholder="Sin especificar"
+        onAfterChange={limpiarCuenta}
+      />
 
       <Labeled label="Tipo de cuenta" error={err('edp_tipo_cuenta')}>
         <select
-          {...register(`${basePath}edp_tipo_cuenta`)}
+          {...tipoCuentaField}
+          onChange={async (event) => {
+            await tipoCuentaField.onChange(event)
+            limpiarCuenta()
+          }}
           aria-invalid={Boolean(err('edp_tipo_cuenta'))}
           className={INPUT_CLASSES}
         >
@@ -383,6 +451,170 @@ export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
           mode={tipoCuenta === 'SINPE' ? 'sinpe' : 'iban'}
         />
       </Labeled>
+    </div>
+  )
+}
+
+interface AddressFieldsProps extends FieldGroupProps {
+  territorio: TerritorioCatalogo
+}
+
+interface LocalSelectProps {
+  label: string
+  options: CatalogoItem[]
+  value: number | null
+  onChange: (value: number | null) => void
+  disabled?: boolean
+  placeholder?: string
+}
+
+/**
+ * Select controlado por estado de React, no por react-hook-form. Para valores
+ * que la UI necesita pero el formulario no persiste — hoy, provincia y cantón
+ * de la cascada de dirección.
+ */
+function LocalSelect({
+  label,
+  options,
+  value,
+  onChange,
+  disabled,
+  placeholder = 'Seleccionar…',
+}: LocalSelectProps) {
+  return (
+    <Labeled label={label}>
+      <select
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(event) =>
+          onChange(event.target.value === '' ? null : Number(event.target.value))
+        }
+        className={INPUT_CLASSES}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.nombre}
+          </option>
+        ))}
+      </select>
+    </Labeled>
+  )
+}
+
+/**
+ * Remonta la cadena distrito → cantón → provincia. Se usa una sola vez, al
+ * montar, para posicionar la cascada en la dirección ya guardada (el formulario
+ * solo persiste el distrito).
+ */
+function ubicacionDelDistrito(territorio: TerritorioCatalogo, distritoId: unknown) {
+  if (typeof distritoId !== 'number' || Number.isNaN(distritoId)) {
+    return { provinciaId: null, cantonId: null }
+  }
+  const distrito = territorio.distritos.find((d) => d.id === distritoId)
+  const canton = distrito ? territorio.cantones.find((c) => c.id === distrito.cantonId) : undefined
+  return { provinciaId: canton?.provinciaId ?? null, cantonId: canton?.id ?? null }
+}
+
+/**
+ * Dirección (tabla sgrh_direcciones). El basePath típico es 'direccion.'.
+ *
+ * Solo el distrito se guarda: provincia y cantón viven en estado local porque
+ * se derivan por la cadena de FKs. Persistirlos permitiría estados incoherentes
+ * (un distrito que no pertenece al cantón elegido).
+ */
+export function AddressFields({ basePath = '', territorio }: AddressFieldsProps) {
+  const {
+    register,
+    watch,
+    setValue,
+    getValues,
+    formState: { errors },
+  } = useFormContext()
+
+  const err = (name: string) => getFieldError(errors, basePath + name)
+  const distritoField = `${basePath}dir_distrito_id`
+
+  // Inicialización perezosa: en edición arranca posicionada en la dirección
+  // guardada; en el alta, en null.
+  const [ubicacion, setUbicacion] = useState(() =>
+    ubicacionDelDistrito(territorio, getValues(distritoField))
+  )
+
+  const cantonesVisibles = territorio.cantones.filter(
+    (c) => c.provinciaId === ubicacion.provinciaId
+  )
+  const distritosVisibles = territorio.distritos.filter((d) => d.cantonId === ubicacion.cantonId)
+
+  // El código postal no se captura: es el código del distrito y lo recalcula un
+  // trigger al guardar. Se muestra para que se vea de dónde sale.
+  const distritoId = watch(distritoField) as number | null | undefined
+  const codigoPostal = territorio.distritos.find((d) => d.id === distritoId)?.codigoPostal
+
+  // Limpiar el hijo va en el onChange, nunca en un efecto sobre el valor: un
+  // efecto correría también al montar la edición y borraría el distrito guardado.
+  const limpiarDistrito = () => {
+    setValue(distritoField, '' as unknown as number, {
+      shouldValidate: false,
+      shouldDirty: true,
+    })
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Provincia y cantón NO se registran en react-hook-form: no se persisten
+          y su valor sale del estado local, que ya viene posicionado en edición. */}
+      <LocalSelect
+        label="Provincia *"
+        options={territorio.provincias}
+        value={ubicacion.provinciaId}
+        onChange={(provinciaId) => {
+          setUbicacion({ provinciaId, cantonId: null })
+          limpiarDistrito()
+        }}
+      />
+
+      <LocalSelect
+        label="Cantón *"
+        options={cantonesVisibles}
+        value={ubicacion.cantonId}
+        disabled={ubicacion.provinciaId === null}
+        placeholder={ubicacion.provinciaId === null ? 'Elige la provincia primero' : 'Seleccionar…'}
+        onChange={(cantonId) => {
+          setUbicacion((actual) => ({ ...actual, cantonId }))
+          limpiarDistrito()
+        }}
+      />
+
+      <CatalogSelect
+        name={distritoField}
+        label="Distrito *"
+        options={distritosVisibles}
+        disabled={ubicacion.cantonId === null}
+        placeholder={ubicacion.cantonId === null ? 'Elige el cantón primero' : 'Seleccionar…'}
+      />
+
+      <Labeled label="Código postal">
+        <input
+          type="text"
+          readOnly
+          value={codigoPostal ?? ''}
+          placeholder="Se calcula con el distrito"
+          className={`${INPUT_CLASSES} bg-slate-50 text-slate-500`}
+        />
+      </Labeled>
+
+      <div className="sm:col-span-2 lg:col-span-3">
+        <Labeled label="Señas exactas *" error={err('dir_senas_exactas')}>
+          <textarea
+            rows={2}
+            {...register(`${basePath}dir_senas_exactas`)}
+            placeholder="Ej. 200 m norte de la iglesia, casa portón verde"
+            aria-invalid={Boolean(err('dir_senas_exactas'))}
+            className={INPUT_CLASSES}
+          />
+        </Labeled>
+      </div>
     </div>
   )
 }

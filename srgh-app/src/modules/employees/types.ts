@@ -28,6 +28,9 @@ type HistorialLaboralInsert = Database['public']['Tables']['sgrh_historial_labor
 type DatosPagoRow = Database['public']['Tables']['sgrh_empleado_datos_pago']['Row']
 type DatosPagoInsert = Database['public']['Tables']['sgrh_empleado_datos_pago']['Insert']
 
+type DireccionRow = Database['public']['Tables']['sgrh_direcciones']['Row']
+type DireccionInsert = Database['public']['Tables']['sgrh_direcciones']['Insert']
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 // Los inputs HTML emiten '' cuando están vacíos; los campos opcionales de la DB
 // esperan null. Sin esto, los regex de teléfono/email rechazarían el string vacío.
@@ -108,7 +111,11 @@ export const crearEmpleadoSchema = z.object({
       .nullable()
       .optional()
   ),
-}) satisfies z.ZodType<Omit<EmpleadoInsert, 'emp_id' | 'emp_created_at' | 'emp_rostro_hash'>>
+  // emp_direccion_id queda fuera: el cliente manda la dirección en su propio
+  // bloque (direccionSchema) y es la RPC la que crea la fila y enlaza el id.
+}) satisfies z.ZodType<
+  Omit<EmpleadoInsert, 'emp_id' | 'emp_created_at' | 'emp_rostro_hash' | 'emp_direccion_id'>
+>
 
 export type CrearEmpleadoInput = z.infer<typeof crearEmpleadoSchema>
 
@@ -192,11 +199,43 @@ export const datosPagoSchema = z
 
 export type DatosPagoInput = z.infer<typeof datosPagoSchema>
 
+// ─── Schema de dirección ─────────────────────────────────────────────────────
+// Vive en sgrh_direcciones, tabla genérica compartida con empresas y sucursales.
+//
+// Solo se captura el distrito: provincia y cantón se derivan por la cadena de
+// FKs y existen únicamente como estado de la cascada en la UI. Guardarlos
+// permitiría estados incoherentes (un distrito que no pertenece al cantón).
+//
+// dir_codigo_postal no entra al schema a propósito: lo calcula un trigger desde
+// el distrito, así que lo que mande el cliente se ignora.
+
+export const direccionSchema = z.object({
+  // El select emite NaN (valueAsNumber) cuando está sin elegir; z.number() lo
+  // rechaza y muestra el mensaje de obligatorio.
+  dir_distrito_id: z
+    .number({ error: 'El distrito es obligatorio' })
+    .int()
+    .positive('Seleccione un distrito válido'),
+
+  // En Costa Rica las señas SON la dirección: sin ellas provincia/cantón/distrito
+  // no alcanzan para ubicar a nadie. La columna es nullable en la DB, así que la
+  // obligatoriedad vive solo aquí y se puede relajar sin tocar el esquema.
+  dir_senas_exactas: z
+    .string({ error: 'Las señas exactas son obligatorias' })
+    .trim()
+    .min(10, 'Describe la ubicación con más detalle')
+    .max(300, 'Máximo 300 caracteres'),
+}) satisfies z.ZodType<Omit<DireccionInsert, 'dir_id' | 'dir_codigo_postal' | 'dir_created_at'>>
+
+export type DireccionInput = z.infer<typeof direccionSchema>
+
 // ─── Schema de edición de ficha completa ─────────────────────────────────────
-// La pantalla de edición guarda la ficha personal + los datos de pago juntos.
+// La pantalla de edición guarda la ficha personal + dirección + datos de pago.
 
 export const editarFichaEmpleadoSchema = z.object({
   empleado: editarEmpleadoSchema,
+  // Obligatoria: si se abre el formulario, se guarda una dirección válida.
+  direccion: direccionSchema,
   datos_pago: datosPagoSchema.optional(),
 })
 
@@ -279,6 +318,7 @@ export type CrearUsuarioEmpleadoInput = z.infer<typeof crearUsuarioEmpleadoSchem
 
 export const onboardingEmpleadoSchema = z.object({
   empleado: crearEmpleadoSchema,
+  direccion: direccionSchema,
   contratacion: crearHistorialLaboralSchema,
   datos_pago: datosPagoSchema.optional(),
   usuario: crearUsuarioEmpleadoSchema.optional(),
@@ -292,6 +332,21 @@ export type OnboardingEmpleadoInput = z.infer<typeof onboardingEmpleadoSchema>
 export interface CatalogoItem {
   id: number
   nombre: string
+}
+
+// ─── View Model — Catálogo territorial ───────────────────────────────────────
+// Las tres tablas del IGN completas (7 / 84 / 492). Se carga de una sola vez en
+// el Server Component y la cascada filtra en memoria: son ~5 KB comprimidos, y
+// pedir cada nivel por separado costaría un round-trip por select mientras el
+// usuario llena el formulario. Los hijos llevan el id del padre para filtrar.
+
+export interface TerritorioCatalogo {
+  provincias: CatalogoItem[]
+  cantones: (CatalogoItem & { provinciaId: number })[]
+  // codigoPostal es dis_codigo: en Costa Rica el código de distrito de 5 dígitos
+  // ES el código postal. Viaja en el catálogo para poder mostrarlo en el
+  // formulario sin esperar a que el trigger lo calcule al guardar.
+  distritos: (CatalogoItem & { cantonId: number; codigoPostal: string })[]
 }
 
 // ─── View Model — Listado de empleados ───────────────────────────────────────
@@ -339,6 +394,16 @@ export type EmpleadoDetalle = EmpleadoRow & {
   datos_pago:
     | (Pick<DatosPagoRow, 'edp_banco_id' | 'edp_tipo_cuenta' | 'edp_numero_cuenta'> & {
         banco_nombre: string | null
+      })
+    | null
+  // null solo para empleados creados antes de que el formulario capturara
+  // dirección; una vez que emp_direccion_id sea NOT NULL, siempre viene.
+  // Provincia y cantón llegan resueltos por el join, no se guardan en la fila.
+  direccion:
+    | (Pick<DireccionRow, 'dir_distrito_id' | 'dir_codigo_postal' | 'dir_senas_exactas'> & {
+        distrito_nombre: string
+        canton_nombre: string
+        provincia_nombre: string
       })
     | null
 }

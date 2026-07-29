@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Briefcase, Pencil } from 'lucide-react'
-import type { CatalogoItem, EmpleadoDetalle } from '@/modules/employees/types'
+import type { CatalogoItem, EmpleadoDetalle, TerritorioCatalogo } from '@/modules/employees/types'
 import {
   formatCRC,
   formatDate,
@@ -18,14 +18,28 @@ interface EmployeeDetailProps {
   empleado: EmpleadoDetalle
   tiposIdentificacion: CatalogoItem[]
   bancos: CatalogoItem[]
+  territorio: TerritorioCatalogo
   canWrite: boolean
 }
 
-function InfoItem({ label, value }: { label: string; value: string }) {
+function InfoItem({
+  label,
+  value,
+  wrap = false,
+}: {
+  label: string
+  value: string
+  /** Para textos largos (señas exactas): envuelve en vez de recortar. */
+  wrap?: boolean
+}) {
   return (
     <div className="min-w-0">
       <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="truncate text-sm text-slate-800">{value}</dd>
+      <dd
+        className={`text-sm text-slate-800 ${wrap ? 'whitespace-pre-line break-words' : 'truncate'}`}
+      >
+        {value}
+      </dd>
     </div>
   )
 }
@@ -43,11 +57,13 @@ export function EmployeeDetail({
   empleado,
   tiposIdentificacion,
   bancos,
+  territorio,
   canWrite,
 }: EmployeeDetailProps) {
   const [editing, setEditing] = useState(false)
 
   const historial = empleado.historial_activo
+  const direccion = empleado.direccion
 
   return (
     <div className="min-w-0 space-y-4">
@@ -91,6 +107,7 @@ export function EmployeeDetail({
             empleado={empleado}
             tiposIdentificacion={tiposIdentificacion}
             bancos={bancos}
+            territorio={territorio}
             onSuccess={() => setEditing(false)}
             onCancel={() => setEditing(false)}
           />
@@ -136,6 +153,20 @@ export function EmployeeDetail({
                 label="Teléfono de emergencia"
                 value={empleado.emp_telefono_emergencia ?? '—'}
               />
+            </dl>
+          </SectionCard>
+
+          <SectionCard title="Dirección">
+            {/* direccion llega null solo para empleados creados antes de que el
+                formulario capturara dirección. */}
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <InfoItem label="Provincia" value={direccion?.provincia_nombre ?? '—'} />
+              <InfoItem label="Cantón" value={direccion?.canton_nombre ?? '—'} />
+              <InfoItem label="Distrito" value={direccion?.distrito_nombre ?? '—'} />
+              <InfoItem label="Código postal" value={direccion?.dir_codigo_postal ?? '—'} />
+              <div className="sm:col-span-2 lg:col-span-4">
+                <InfoItem label="Señas exactas" value={direccion?.dir_senas_exactas ?? '—'} wrap />
+              </div>
             </dl>
           </SectionCard>
 

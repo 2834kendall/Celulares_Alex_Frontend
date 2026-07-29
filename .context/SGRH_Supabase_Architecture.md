@@ -815,9 +815,33 @@ CREATE POLICY "datos_pago_select" ON public.sgrh_empleado_datos_pago
 --  mismas condiciones; ver la migración para el texto completo.)
 ```
 
-### RPC de onboarding — `crear_empleado_completo(p_empleado, p_contratacion, p_datos_pago)`
+### Dirección (`sgrh_direcciones`)
 
-El alta de un empleado toca hasta 3 tablas (`sgrh_empleados`, `sgrh_historial_laboral`, `sgrh_empleado_datos_pago`). Hacerlo con inserts encadenados desde el frontend obligaba a compensación manual (sin transacción real) y dejaba una ventana de "empleados huérfanos" invisibles bajo RLS. La RPC lo resuelve como **una transacción atómica**: si cualquier insert falla, todo se revierte solo.
+Tabla **genérica**: la misma fila sirve para un empleado, una empresa o una sucursal. Las tres entidades apuntan a ella por FK (`emp_direccion_id`, `org_direccion_id`, `suc_direccion_id`). Antes, empresas y sucursales guardaban la dirección como dos columnas inline (`*_distrito_id` + `*_direccion_exacta`) y los empleados no la guardaban del todo; la migración `20260726130000_direcciones_y_rpc_onboarding.sql` unifica los tres casos y retira las columnas viejas.
+
+**Dirección es padre, no hijo.** A diferencia de `sgrh_empleado_datos_pago`, el FK sale de la entidad hacia la dirección. Eso es lo que permite que `emp_direccion_id` llegue a ser `NOT NULL`, y obliga a la RPC a insertar la dirección **antes** que el empleado.
+
+**Provincia y cantón no se guardan.** Se derivan por la cadena de FKs desde `dir_distrito_id` (`distrito → cantón → provincia`). Guardarlos permitiría estados incoherentes: un distrito que no pertenece al cantón registrado. En la UI son solo estado de la cascada de selects.
+
+**El código postal es derivado, no capturado.** En Costa Rica el código de distrito de 5 dígitos (PCCDD) **es** el código postal — verificado sobre los 492 distritos del IGN, coincidencia del 100%. Se materializa en `dir_codigo_postal` para reportes y exports que no quieran el join de tres niveles, pero nunca se acepta el valor que mande el cliente: un trigger `BEFORE INSERT OR UPDATE` lo recalcula siempre desde `dis_codigo`. Se dispara en cualquier UPDATE (no solo al cambiar el distrito) para que tampoco se pueda escribir un postal incoherente a mano.
+
+```sql
+CREATE TABLE public.sgrh_direcciones (
+  dir_id            serial PRIMARY KEY,
+  dir_distrito_id   int NOT NULL REFERENCES public.sgrh_cat_distritos(dis_id),
+  dir_codigo_postal varchar(5) NOT NULL DEFAULT '',  -- lo llena el trigger
+  dir_senas_exactas varchar(300),
+  dir_created_at    timestamptz NOT NULL DEFAULT now()
+);
+```
+
+**Policies**: una dirección es visible si la referencia una entidad que el usuario ya puede ver — su propio expediente, un empleado de su empresa (vía `sgrh_historial_laboral`, mismo idiom que `empleados_select`), su empresa o una de sus sucursales. El `INSERT` es la excepción: la fila todavía no la referencia nadie, así que no hay pertenencia que verificar y se gatea solo por permiso (`EMPLEADOS_WRITE` o `EMPRESAS_WRITE`) — mismo compromiso consciente que `empleados_insert`. El alta real pasa por la RPC, donde dirección y empleado se crean en la misma transacción.
+
+**Catálogo territorial**: `sgrh_cat_provincias / cantones / distritos` ya existían en el esquema pero estaban vacíos. La migración `20260726120000_seed_cat_territorio_cr.sql` los siembra con la División Territorial Administrativa del IGN 2025 (7 / 84 / 492). El seed resuelve las referencias entre niveles **por código** (`JOIN` sobre `*_codigo`) y no por id, porque los ids son `GENERATED ALWAYS AS IDENTITY`: así no depende de que las tablas estuvieran vacías ni del orden de inserción, y es re-ejecutable vía `ON CONFLICT`.
+
+### RPC de onboarding — `crear_empleado_completo(p_empleado, p_contratacion, p_datos_pago, p_direccion)`
+
+El alta de un empleado toca hasta 4 tablas (`sgrh_direcciones`, `sgrh_empleados`, `sgrh_historial_laboral`, `sgrh_empleado_datos_pago`). Hacerlo con inserts encadenados desde el frontend obligaba a compensación manual (sin transacción real) y dejaba una ventana de "empleados huérfanos" invisibles bajo RLS. La RPC lo resuelve como **una transacción atómica**: si cualquier insert falla, todo se revierte solo.
 
 | Decisión | Por qué |
 |---|---|
@@ -825,6 +849,7 @@ El alta de un empleado toca hasta 3 tablas (`sgrh_empleados`, `sgrh_historial_la
 | Autorización interna | DEFINER no evalúa RLS: la función re-verifica `tiene_permiso('EMPLEADOS_WRITE')` (error `42501` si falta) y toma `empresa_id` **solo del JWT**, nunca del payload. |
 | Validación cruzada de catálogos | Puesto y sucursal se verifican contra la empresa del JWT — impide referencias cruzadas entre inquilinos. El banco (catálogo global) se verifica existente y activo. |
 | Coherencia de datos de pago | Tipo SINPE → teléfono de 8 dígitos; otro tipo → IBAN `CR` + 20 dígitos cuyo código de entidad (posiciones 6-8) coincida con `sgrh_cat_bancos.ban_codigo`. El IBAN se normaliza (mayúsculas, sin espacios) también dentro de la RPC. |
+| Dirección primero | El FK sale de `sgrh_empleados`, así que `p_direccion` se inserta antes del empleado. El distrito se verifica existente (catálogo global, sin dueño → no hay chequeo de empresa). `dir_codigo_postal` se omite a propósito en el INSERT: lo calcula el trigger, de modo que un postal en el payload del cliente no tiene efecto. |
 | Extracción explícita del jsonb | Un payload con claves extra no puede colar columnas (nada de `jsonb_populate_record` a ciegas). |
 | Errores con SQLSTATE estándar | `23505` (unicidad) llega al frontend con el nombre de la restricción → el módulo mapea el mensaje por columna; `42501` → sin permiso; `23514` (check) → mensajes de coherencia de datos de pago, escritos para mostrarse tal cual en la UI. |
 | Grants | `REVOKE FROM PUBLIC, anon` + `GRANT TO authenticated`, igual que el resto de funciones del sistema. |
@@ -836,8 +861,11 @@ const { data: empId, error } = await supabase.rpc('crear_empleado_completo', {
   p_empleado: parsed.data.empleado,        // validado antes con Zod (safeParse)
   p_contratacion: parsed.data.contratacion,
   p_datos_pago: parsed.data.datos_pago,    // opcional
+  p_direccion: parsed.data.direccion,      // opcional (obligatorio al cerrar la UI)
 })
 ```
+
+> **Al agregar parámetros a esta RPC**: `CREATE OR REPLACE` no reemplaza nada — crea una función *nueva* y deja viva la firma anterior, produciendo una sobrecarga ambigua en PostgREST. Hay que `DROP FUNCTION` la firma vieja explícitamente y volver a declarar el trío `REVOKE PUBLIC / REVOKE anon / GRANT authenticated` sobre la nueva.
 
 La invitación del usuario del sistema (paso opcional del onboarding) queda **fuera** de la RPC: requiere la API admin de Auth (`inviteUserByEmail`, secret key) que no existe en SQL. Si esa parte falla, el alta no se revierte — se reporta como advertencia y se puede reintentar.
 
@@ -1213,7 +1241,8 @@ FASE 2 — Auth setup
 
 FASE 3 — Seed de catálogos
 ☐ sgrh_cat_tipos_identificacion  (CEDULA, DIMEX, PASAPORTE)
-☐ sgrh_cat_provincias / cantones / distritos (CR completo)
+☑ sgrh_cat_provincias / cantones / distritos (CR completo — IGN 2025: 7/84/492,
+   migración 20260726120000_seed_cat_territorio_cr.sql)
 ☐ sgrh_cat_tipos_jornada         (DIURNA, NOCTURNA, MIXTA)
 ☐ sgrh_cat_tipos_contrato        (INDEFINIDO, PLAZO_FIJO, OBRA)
 ☐ sgrh_cat_motivos_salida
