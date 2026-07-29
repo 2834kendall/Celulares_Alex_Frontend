@@ -10,9 +10,10 @@ import {
   type CatalogoItem,
   type EditarFichaEmpleadoInput,
   type EmpleadoDetalle,
+  type TerritorioCatalogo,
 } from '@/modules/employees/types'
 import { updateEmployee } from '@/modules/employees/actions/updateEmployee'
-import { BankingFields, PersonalDataFields } from './EmployeeFields'
+import { AddressFields, BankingFields, PersonalDataFields } from './EmployeeFields'
 
 type FichaGenero = EditarFichaEmpleadoInput['empleado']['emp_genero']
 type PagoTipoCuenta = NonNullable<EditarFichaEmpleadoInput['datos_pago']>['edp_tipo_cuenta']
@@ -21,15 +22,17 @@ interface EmployeeFormProps {
   empleado: EmpleadoDetalle
   tiposIdentificacion: CatalogoItem[]
   bancos: CatalogoItem[]
+  territorio: TerritorioCatalogo
   onSuccess?: () => void
   onCancel?: () => void
 }
 
-/** Edición de la ficha personal + datos de pago (el contrato no se toca aquí). */
+/** Edición de la ficha personal + dirección + datos de pago (el contrato no se toca aquí). */
 export function EmployeeForm({
   empleado,
   tiposIdentificacion,
   bancos,
+  territorio,
   onSuccess,
   onCancel,
 }: EmployeeFormProps) {
@@ -56,6 +59,11 @@ export function EmployeeForm({
         emp_numero_asegurado_ccss: empleado.emp_numero_asegurado_ccss ?? '',
         emp_nombre_contacto_emergencia: empleado.emp_nombre_contacto_emergencia ?? '',
         emp_telefono_emergencia: empleado.emp_telefono_emergencia ?? '',
+      },
+      // AddressFields deriva provincia y cantón desde este distrito al montar.
+      direccion: {
+        dir_distrito_id: empleado.direccion?.dir_distrito_id ?? undefined,
+        dir_senas_exactas: empleado.direccion?.dir_senas_exactas ?? '',
       },
       datos_pago: {
         edp_banco_id: empleado.datos_pago?.edp_banco_id ?? undefined,
@@ -101,6 +109,11 @@ export function EmployeeForm({
             Datos personales y contacto
           </h3>
           <PersonalDataFields basePath="empleado." tiposIdentificacion={tiposIdentificacion} />
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-slate-600">Dirección</h3>
+          <AddressFields basePath="direccion." territorio={territorio} />
         </section>
 
         <section className="space-y-3">
