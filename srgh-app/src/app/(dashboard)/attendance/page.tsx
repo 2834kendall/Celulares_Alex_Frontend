@@ -3,12 +3,28 @@ import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { ACCESO_ASISTENCIA } from '@/lib/permissions/zones'
 import { getDailyAttendance } from '@/modules/attendance/actions/getDailyAttendance'
+import { getMonthlyAttendanceSummary } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
 import { checkMonthlyInfractions } from '@/modules/attendance/actions/checkMonthlyInfractions'
+import { AttendanceTabs } from '@/modules/attendance/components/AttendanceTabs'
 import { DailyAttendanceTable } from '@/modules/attendance/components/DailyAttendanceTable'
-import { isValidISODate, todayInCostaRica } from '@/modules/attendance/lib/time'
+import { MonthlySummaryTable } from '@/modules/attendance/components/MonthlySummaryTable'
+import {
+  isValidISODate,
+  monthBoundsInCostaRica,
+  todayInCostaRica,
+} from '@/modules/attendance/lib/time'
 
 interface AttendancePageProps {
-  searchParams?: { date?: string } | Promise<{ date?: string }>
+  searchParams?: { date?: string; month?: string } | Promise<{ date?: string; month?: string }>
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+      <p>{message}</p>
+    </div>
+  )
 }
 
 export default async function AttendancePage({ searchParams }: AttendancePageProps) {
@@ -32,24 +48,34 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const dateParam = resolvedSearchParams?.date
   const dateISO = dateParam && isValidISODate(dateParam) ? dateParam : todayInCostaRica()
 
-  // Bajo demanda, mejor esfuerzo: revisa tardias/ausencias del mes y dispara
-  // la advertencia en sgrh_notificaciones si corresponde (RF-07/RF-08). No
-  // debe romper el panel diario si falla, por eso se ignora su resultado.
-  const [result] = await Promise.all([
+  const monthParam = resolvedSearchParams?.month
+  const monthISO =
+    monthParam && isValidISODate(monthParam)
+      ? monthParam
+      : monthBoundsInCostaRica(todayInCostaRica()).start
+
+  // Bajo demanda, mejor esfuerzo: revisa tardias/ausencias del mes en curso y
+  // dispara la advertencia en sgrh_notificaciones si corresponde (RF-07/RF-08).
+  // No debe romper el panel si falla, por eso se ignora su resultado.
+  const [dailyResult, monthlyResult] = await Promise.all([
     getDailyAttendance(dateISO),
+    getMonthlyAttendanceSummary({ fecha: monthISO }),
     checkMonthlyInfractions().catch(() => undefined),
   ])
 
-  if (!result.ok) {
-    return (
-      <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-        <p>{result.error}</p>
-      </div>
-    )
-  }
-
   const canWrite = permisos.includes(PERMISOS.ASISTENCIA_WRITE)
 
-  return <DailyAttendanceTable dateISO={result.date} rows={result.data} canWrite={canWrite} />
+  const diarioContent = dailyResult.ok ? (
+    <DailyAttendanceTable dateISO={dailyResult.date} rows={dailyResult.data} canWrite={canWrite} />
+  ) : (
+    <ErrorBanner message={dailyResult.error} />
+  )
+
+  const resumenContent = monthlyResult.ok ? (
+    <MonthlySummaryTable monthISO={monthISO} rows={monthlyResult.data} />
+  ) : (
+    <ErrorBanner message={monthlyResult.error} />
+  )
+
+  return <AttendanceTabs diarioContent={diarioContent} resumenContent={resumenContent} />
 }
