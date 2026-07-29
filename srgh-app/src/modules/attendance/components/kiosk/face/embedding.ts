@@ -2,16 +2,25 @@ import * as ort from 'onnxruntime-web'
 import { l2Normalize } from '@/modules/attendance/lib/face/faceMath'
 import { FACE_EMBEDDING_DIM, FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
 import { rgbaToNchwFloat32 } from './preprocess'
+import { computeTestEmbedding } from './testEmbedding'
 
 /**
  * Embedding facial con MobileFaceNet (.onnx) via ONNX Runtime Web. La imagen
  * recortada del rostro NUNCA sale de esta funcion: entra como pixeles de un
  * canvas y sale como un arreglo de 128 numeros. El unico dato que viaja al
  * servidor es ese vector, y ademas cifrado (faceCrypto).
+ *
+ * Modo de prueba (NEXT_PUBLIC_FACE_TEST_MODE=true): mientras no exista
+ * mobilefacenet.onnx en el servidor, este flag salta el ONNX por completo y
+ * usa computeTestEmbedding (testEmbedding.ts) — un calculo determinista de
+ * luminancia, NO reconocimiento facial real. Sirve para probar el resto del
+ * pipeline (camara, cifrado, umbrales, ticket, marca) de punta a punta.
+ * Jamas debe activarse en produccion.
  */
 
 const MODEL_URL = '/models/mobilefacenet.onnx'
 const ORT_WASM_PATH = '/models/ort-wasm/'
+const TEST_MODE = process.env.NEXT_PUBLIC_FACE_TEST_MODE === 'true'
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null
 
@@ -30,6 +39,7 @@ function getSession(): Promise<ort.InferenceSession> {
 
 /** Precarga el modelo (para pagar el costo al abrir el kiosco, no al marcar). */
 export function preloadEmbeddingModel(): Promise<unknown> {
+  if (TEST_MODE) return Promise.resolve()
   return getSession()
 }
 
@@ -42,6 +52,11 @@ export async function computeEmbedding(faceCanvas: HTMLCanvasElement): Promise<n
   if (!ctx) throw new Error('Canvas sin contexto 2d.')
 
   const { data } = ctx.getImageData(0, 0, FACE_INPUT_SIZE, FACE_INPUT_SIZE)
+
+  if (TEST_MODE) {
+    return computeTestEmbedding(data)
+  }
+
   const tensorData = rgbaToNchwFloat32(data)
 
   const session = await getSession()
