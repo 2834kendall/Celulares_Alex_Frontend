@@ -1,0 +1,184 @@
+import { describe, expect, it } from 'vitest'
+import { gatherMonthlyAttendanceDays } from './monthlySummary'
+import { createSupabaseClientMock } from '@/test/supabaseMock'
+import type { createClient } from '@/lib/supabase/server'
+
+describe('gatherMonthlyAttendanceDays', () => {
+  it('devuelve vacio y no consulta el resto si no hay colaboradores', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: { data: [], error: null },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({ ok: true, data: [] })
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_sucursales')
+  })
+
+  it('no consulta la sucursal fija si no hay usuarioId', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_historial_laboral: { data: [], error: null },
+    })
+
+    await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      undefined,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_usuarios_empresa_rol')
+  })
+
+  it('devuelve error si falla la carga de colaboradores', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los colaboradores.' })
+  })
+
+  it('junta nombre, tolerancia y hora real de entrada por dia, con la fecha, filtrando por la sucursal fija del usuario', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_sucursales: {
+        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }],
+        error: null,
+      },
+      sgrh_programacion_semanal: {
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_fecha: '2026-07-01',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+          },
+        ],
+        error: null,
+      },
+      sgrh_marcas_asistencia: {
+        data: [
+          {
+            mar_historial_laboral_id: 1,
+            mar_tipo: 'entrada',
+            mar_fecha_hora: '2026-07-01T08:20:00',
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      data: [
+        {
+          employeeId: 10,
+          employmentHistoryId: 1,
+          fullName: 'Ana Perez',
+          days: [
+            {
+              date: '2026-07-01',
+              isDayOff: false,
+              isHoliday: false,
+              expectedStart: '08:00',
+              entradaTime: '08:20',
+              toleranciaMinutos: 5,
+            },
+          ],
+        },
+      ],
+    })
+
+    const historialCall = client.from.mock.results.find(
+      (_r, i) => client.from.mock.calls[i][0] === 'sgrh_historial_laboral'
+    )!.value
+    expect(historialCall.eq).toHaveBeenCalledWith('lab_sucursal_id', 100)
+  })
+
+  it('usa "Sin nombre" si el empleado no viene en el join', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: {
+        data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100, sgrh_empleados: null }],
+        error: null,
+      },
+      sgrh_sucursales: { data: [], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
+      sgrh_marcas_asistencia: { data: [], error: null },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      data: [{ employeeId: 10, employmentHistoryId: 1, fullName: 'Sin nombre', days: [] }],
+    })
+  })
+
+  it('devuelve error generico si falla alguna de las consultas del mes', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: {
+        data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100, sgrh_empleados: null }],
+        error: null,
+      },
+      sgrh_sucursales: { data: null, error: { message: 'boom' } },
+      sgrh_programacion_semanal: { data: [], error: null },
+      sgrh_marcas_asistencia: { data: [], error: null },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' })
+  })
+})

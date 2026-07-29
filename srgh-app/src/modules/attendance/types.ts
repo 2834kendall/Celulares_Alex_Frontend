@@ -90,3 +90,14 @@ export const enrollFaceSchema = z.object({
 })
 
 export type EnrollFaceInput = z.input<typeof enrollFaceSchema>
+
+/**
+ * Resumen mensual de tardias/ausencias (panel del gerente). `fecha` es
+ * cualquier dia dentro del mes a consultar — el servidor calcula los limites
+ * del mes calendario a partir de ella, igual que el "?date=" del panel diario.
+ */
+export const getMonthlyAttendanceSummarySchema = z.object({
+  fecha: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+})
+
+export type GetMonthlyAttendanceSummaryInput = z.input<typeof getMonthlyAttendanceSummarySchema>
