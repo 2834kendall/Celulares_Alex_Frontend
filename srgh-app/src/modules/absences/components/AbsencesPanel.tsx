@@ -7,6 +7,7 @@ import {
   Info,
   Loader2,
   Pencil,
+  Plus,
   Trash2,
   X,
 } from 'lucide-react'
@@ -47,6 +48,9 @@ export function AbsencesPanel({
   const {
     form,
     setField,
+    setRangeField,
+    addRange,
+    removeRange,
     selectedType,
     editingId,
     startEdit,
@@ -160,32 +164,79 @@ export function AbsencesPanel({
               )}
             </div>
 
-            <div>
-              <label className={LABEL_CLASSES} htmlFor="aus_fecha_inicio">
-                Desde
-              </label>
-              <input
-                id="aus_fecha_inicio"
-                type="date"
-                className={`${INPUT_CLASSES} tabular-nums`}
-                value={form.fechaInicio}
-                max={form.fechaFin || undefined}
-                onChange={(e) => setField('fechaInicio', e.target.value)}
-              />
-            </div>
+            <div className="sm:col-span-2">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <label className={`${LABEL_CLASSES} mb-0`} htmlFor="aus_fecha_inicio_0">
+                  {editingId ? 'Periodo' : 'Periodos'}
+                </label>
+                {!editingId && (
+                  <button
+                    type="button"
+                    onClick={addRange}
+                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-blue-600 outline-none transition hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                  >
+                    <Plus className="h-3 w-3" /> Agregar periodo
+                  </button>
+                )}
+              </div>
 
-            <div>
-              <label className={LABEL_CLASSES} htmlFor="aus_fecha_fin">
-                Hasta
-              </label>
-              <input
-                id="aus_fecha_fin"
-                type="date"
-                className={`${INPUT_CLASSES} tabular-nums`}
-                value={form.fechaFin}
-                min={form.fechaInicio || undefined}
-                onChange={(e) => setField('fechaFin', e.target.value)}
-              />
+              <div className="space-y-2">
+                {form.ranges.map((range, index) => (
+                  <div key={index} className="flex items-end gap-2">
+                    <div className="min-w-0 flex-1">
+                      <label
+                        className="mb-0.5 block text-[10px] text-slate-400"
+                        htmlFor={`aus_fecha_inicio_${index}`}
+                      >
+                        Desde
+                      </label>
+                      <input
+                        id={`aus_fecha_inicio_${index}`}
+                        type="date"
+                        className={`${INPUT_CLASSES} tabular-nums`}
+                        value={range.fechaInicio}
+                        max={range.fechaFin || undefined}
+                        onChange={(e) => setRangeField(index, 'fechaInicio', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <label
+                        className="mb-0.5 block text-[10px] text-slate-400"
+                        htmlFor={`aus_fecha_fin_${index}`}
+                      >
+                        Hasta
+                      </label>
+                      <input
+                        id={`aus_fecha_fin_${index}`}
+                        type="date"
+                        className={`${INPUT_CLASSES} tabular-nums`}
+                        value={range.fechaFin}
+                        min={range.fechaInicio || undefined}
+                        onChange={(e) => setRangeField(index, 'fechaFin', e.target.value)}
+                      />
+                    </div>
+
+                    {!editingId && form.ranges.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeRange(index)}
+                        aria-label={`Quitar periodo ${index + 1}`}
+                        className="mb-1 shrink-0 rounded-full p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {!editingId && form.ranges.length > 1 && (
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Cada periodo se guarda como un registro independiente y se puede editar o eliminar
+                  por separado.
+                </p>
+              )}
             </div>
 
             {selectedType?.tau_requiere_documento_ccss && (

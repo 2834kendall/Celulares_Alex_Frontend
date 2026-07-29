@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { WEEKDAY_NAMES, currentMondayISO, getWeekDates, isValidISODate, toISODate } from './week'
+import {
+  WEEKDAY_NAMES,
+  currentMondayISO,
+  getWeekDates,
+  isValidISODate,
+  shiftWeekISO,
+  toISODate,
+} from './week'
 
 describe('toISODate', () => {
   it('formatea usando el calendario local, sin desplazamiento UTC', () => {
@@ -61,6 +68,20 @@ describe('currentMondayISO', () => {
   it('retrocede correctamente cuando hoy es domingo', () => {
     vi.setSystemTime(new Date(2026, 0, 11))
     expect(currentMondayISO()).toBe('2026-01-05')
+  })
+})
+
+describe('shiftWeekISO', () => {
+  it('avanza una semana', () => {
+    expect(shiftWeekISO('2026-01-05', 1)).toBe('2026-01-12')
+  })
+
+  it('retrocede una semana', () => {
+    expect(shiftWeekISO('2026-01-05', -1)).toBe('2025-12-29')
+  })
+
+  it('cruza el cambio de mes y de año sin desplazamiento', () => {
+    expect(shiftWeekISO('2026-12-28', 1)).toBe('2027-01-04')
   })
 })
 

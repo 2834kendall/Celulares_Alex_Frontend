@@ -67,7 +67,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           hor_duracion_almuerzo_min: 60,
           hor_hora_inicio_break: '',
           hor_hora_fin_break: '',
-          hor_duracion_break_min: 15,
+          hor_duracion_break_min: 10,
           hor_activo: true,
         },
   })
@@ -79,7 +79,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
       setValue('hor_hora_fin_break', '')
     } else if (!getValues('hor_hora_inicio_break')) {
       setValue('hor_hora_inicio_break', '10:00')
-      setValue('hor_hora_fin_break', '10:15')
+      setValue('hor_hora_fin_break', '10:10')
     }
   }
 
