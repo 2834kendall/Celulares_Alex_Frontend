@@ -1,14 +1,15 @@
 'use client'
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Clock, Layers, Users, type LucideIcon } from 'lucide-react'
+import { CalendarHeart, Clock, Layers, Users, type LucideIcon } from 'lucide-react'
 
-type Tab = 'plantilla' | 'especiales' | 'jornadas'
+type Tab = 'plantilla' | 'especiales' | 'jornadas' | 'ausencias'
 
 interface ScheduleTabsProps {
   plantillaContent: React.ReactNode
   especialesContent: React.ReactNode
   jornadasContent: React.ReactNode
+  ausenciasContent: React.ReactNode
 }
 
 interface Section {
@@ -33,14 +34,20 @@ const SECTIONS: Section[] = [
     label: 'Tipos de jornada',
     icon: Layers,
   },
+  {
+    id: 'ausencias',
+    label: 'Incapacidades y periodos de lactancia',
+    icon: CalendarHeart,
+  },
 ]
 
-const VALID_TABS: Tab[] = ['plantilla', 'especiales', 'jornadas']
+const VALID_TABS: Tab[] = ['plantilla', 'especiales', 'jornadas', 'ausencias']
 
 export function ScheduleTabs({
   plantillaContent,
   especialesContent,
   jornadasContent,
+  ausenciasContent,
 }: ScheduleTabsProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -109,7 +116,9 @@ export function ScheduleTabs({
           ? plantillaContent
           : activeTab === 'especiales'
             ? especialesContent
-            : jornadasContent}
+            : activeTab === 'jornadas'
+              ? jornadasContent
+              : ausenciasContent}
       </div>
     </div>
   )

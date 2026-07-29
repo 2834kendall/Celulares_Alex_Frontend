@@ -32,6 +32,13 @@ export function currentMondayISO(): string {
   return toISODate(now)
 }
 
+/** Corre el lunes de referencia N semanas (negativo hacia atras) para las flechas del navegador. */
+export function shiftWeekISO(mondayISO: string, weeks: number): string {
+  const d = new Date(`${mondayISO}T00:00:00`)
+  d.setDate(d.getDate() + weeks * 7)
+  return toISODate(d)
+}
+
 /** Validates the format and real existence of a YYYY-MM-DD date (e.g. the URL's ?week=). */
 export function isValidISODate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {

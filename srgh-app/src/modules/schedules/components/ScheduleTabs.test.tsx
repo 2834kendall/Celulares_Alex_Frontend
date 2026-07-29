@@ -18,6 +18,7 @@ function renderTabs() {
       plantillaContent={<div>Contenido plantilla</div>}
       especialesContent={<div>Contenido especiales</div>}
       jornadasContent={<div>Contenido jornadas</div>}
+      ausenciasContent={<div>Contenido ausencias</div>}
     />
   )
 }

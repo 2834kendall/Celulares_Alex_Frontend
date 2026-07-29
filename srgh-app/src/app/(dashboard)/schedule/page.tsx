@@ -8,7 +8,12 @@ import { SchedulesList } from '@/modules/schedules/components/SchedulesList'
 import { ScheduleTabs } from '@/modules/schedules/components/ScheduleTabs'
 import { ShiftTypesList } from '@/modules/schedules/components/ShiftTypesList'
 import { WeeklyScheduleMatrix } from '@/modules/schedules/components/WeeklyScheduleMatrix'
-import { currentMondayISO, isValidISODate } from '@/modules/schedules/lib/week'
+import { currentMondayISO, getWeekDates, isValidISODate } from '@/modules/schedules/lib/week'
+import { getAusenciaTypes } from '@/modules/absences/actions/getAusenciaTypes'
+import { getAusenciasForWeek } from '@/modules/absences/actions/getAusenciasForWeek'
+import { buildAusenciaOverlayEntries } from '@/modules/absences/lib/overlay'
+import { AbsencesPanel } from '@/modules/absences/components/AbsencesPanel'
+import type { EmployeeOption } from '@/modules/absences/types'
 
 function ErrorBanner({ message }: { message: string }) {
   return (
@@ -33,6 +38,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
   const resolvedSearchParams = await Promise.resolve(searchParams)
   const weekParam = resolvedSearchParams?.week
   const weekStartISO = weekParam && isValidISODate(weekParam) ? weekParam : currentMondayISO()
+  const weekDates = getWeekDates(weekStartISO)
 
   const claims = await requirePermission(PERMISOS.HORARIOS_READ)
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
@@ -42,11 +48,21 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
   // permissions; the app follows the same criteria.
   const canReadMatrix = permisos.includes(PERMISOS.ASISTENCIA_READ)
   const canWriteMatrix = permisos.includes(PERMISOS.ASISTENCIA_WRITE)
+  const canReadAusencias = permisos.includes(PERMISOS.AUSENCIAS_READ)
+  const canManageAbsences = permisos.includes(PERMISOS.AUSENCIAS_APPROVE)
 
-  const [schedulesResult, shiftTypesResult, weeklyScheduleResult] = await Promise.all([
+  const [
+    schedulesResult,
+    shiftTypesResult,
+    weeklyScheduleResult,
+    ausenciaTypesResult,
+    ausenciasResult,
+  ] = await Promise.all([
     getSchedules(),
     getShiftTypes(),
     canReadMatrix ? getWeeklySchedule(weekStartISO) : Promise.resolve(null),
+    getAusenciaTypes(),
+    canReadAusencias ? getAusenciasForWeek(weekDates[0], weekDates[6]) : Promise.resolve(null),
   ])
 
   if (!schedulesResult.ok) {
@@ -61,6 +77,28 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
     return <ErrorBanner message={weeklyScheduleResult.error} />
   }
 
+  if (!ausenciaTypesResult.ok) {
+    return <ErrorBanner message={ausenciaTypesResult.error} />
+  }
+
+  // Un fallo al cargar las ausencias (ej. la migracion de tau_es_intradia aun
+  // no aplicada) no debe tumbar toda la pagina de horarios: se degrada a
+  // "sin ausencias" para la matriz y el error solo se muestra en su propia
+  // pestaña, donde es accionable.
+  const ausenciasError = ausenciasResult && !ausenciasResult.ok ? ausenciasResult.error : null
+  const ausenciasData = ausenciasResult?.ok ? ausenciasResult.data : []
+
+  const ausenciaOverlay = weeklyScheduleResult
+    ? buildAusenciaOverlayEntries(ausenciasData, weeklyScheduleResult.weekDates)
+    : []
+
+  const employeeOptions: EmployeeOption[] = (weeklyScheduleResult?.data ?? []).map((row) => ({
+    employmentHistoryId: row.employmentHistoryId,
+    fullName: row.fullName,
+    position: row.position,
+    branchName: row.branchName,
+  }))
+
   return (
     <div className="min-w-0 space-y-4">
       <ScheduleTabs
@@ -72,6 +110,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
               rows={weeklyScheduleResult.data}
               schedules={schedulesResult.data}
               canWrite={canWriteMatrix}
+              ausencias={ausenciaOverlay}
             />
           ) : (
             <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -92,6 +131,25 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
         }
         jornadasContent={
           <ShiftTypesList shiftTypes={shiftTypesResult.data} canWrite={canWriteShiftTypes} />
+        }
+        ausenciasContent={
+          canReadAusencias ? (
+            ausenciasError ? (
+              <ErrorBanner message={ausenciasError} />
+            ) : (
+              <AbsencesPanel
+                employees={employeeOptions}
+                ausenciaTypes={ausenciaTypesResult.data}
+                ausencias={ausenciasData}
+                canManageAbsences={canManageAbsences}
+              />
+            )
+          ) : (
+            <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+              <p>Tu rol no tiene permiso para ver incapacidades y periodos de lactancia.</p>
+            </div>
+          )
         }
       />
     </div>

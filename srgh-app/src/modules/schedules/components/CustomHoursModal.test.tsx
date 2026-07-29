@@ -3,9 +3,21 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CustomHoursModal } from './CustomHoursModal'
 
+const WEEK_DATES = [
+  '2026-01-05',
+  '2026-01-06',
+  '2026-01-07',
+  '2026-01-08',
+  '2026-01-09',
+  '2026-01-10',
+  '2026-01-11',
+]
+
 const baseProps = {
   employeeName: 'Ana Perez',
   dayLabel: 'Lunes 05 ene.',
+  weekDates: WEEK_DATES,
+  initialDate: '2026-01-05',
   initialStartTime: '08:00',
   initialEndTime: '17:00',
   onClose: vi.fn(),
@@ -57,6 +69,7 @@ describe('<CustomHoursModal />', () => {
       lunchEnd: null,
       breakStart: null,
       breakEnd: null,
+      applyToDates: ['2026-01-05'],
     })
   })
 
