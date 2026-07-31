@@ -38,8 +38,8 @@ const STATUS_TEXT: Record<ScanStatus, string> = {
 /**
  * Captura facial con prueba de vida. Todo el procesamiento pesado ocurre en
  * el cliente: MediaPipe ubica el rostro y da los landmarks/blendshapes, el
- * recorte pasa por MobileFaceNet (ONNX Runtime Web) y el vector sale cifrado
- * (AES-256-GCM). La foto jamas abandona este componente.
+ * recorte pasa por la red de reconocimiento de face-api.js (TensorFlow.js) y
+ * el vector sale cifrado (AES-256-GCM). La foto jamas abandona este componente.
  *
  * Prueba de vida en dos etapas: PRIMERO micro-movimiento pasivo
  * (motionLiveness.ts) — no le pide nada a la persona, solo mira que la cara

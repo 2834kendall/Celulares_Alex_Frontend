@@ -45,8 +45,9 @@ export interface CropBox {
 /**
  * Caja CUADRADA (en pixeles) que aisla el rostro para el modelo de
  * embeddings: bounding box de los landmarks + margen, centrada y recortada a
- * los bordes del frame. Cuadrada porque MobileFaceNet espera 112x112 y
- * estirar un rectangulo deformaria la cara (y el embedding).
+ * los bordes del frame. Cuadrada porque face-api.js espera una entrada
+ * cuadrada (150x150) y estirar un rectangulo deformaria la cara (y el
+ * embedding).
  */
 export function faceCropBox(
   landmarks: { x: number; y: number }[],

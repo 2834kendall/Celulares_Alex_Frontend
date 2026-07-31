@@ -6,7 +6,7 @@ import { FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
  * "imagen -> 128 numeros" con una cuenta determinista de luminancia por
  * celda de una grilla, para poder probar el resto del sistema (camara,
  * parpadeo, cifrado, comparacion, umbrales MATCH/REQUIRE_PIN/DENIED, ticket,
- * marca) mientras no exista `mobilefacenet.onnx` en el servidor.
+ * marca) mientras no esten los pesos de face-api.js en public/models/face-api/.
  *
  * Solo sustituye ESTE paso: la imagen sigue sin salir nunca del dispositivo
  * (no se guarda, no se envia — el vector resultante se cifra exactamente

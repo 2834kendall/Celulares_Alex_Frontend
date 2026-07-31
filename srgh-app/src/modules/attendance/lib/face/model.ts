@@ -1,13 +1,17 @@
 /**
  * Identidad del modelo de embeddings. Vectores generados por modelos
  * distintos NO son comparables: todo lo que guarda o compara vectores filtra
- * por FACE_MODEL_ID, y si algun dia se cambia el .onnx hay que subir la
+ * por FACE_MODEL_ID, y si algun dia se cambia el modelo hay que subir la
  * version y re-enrolar (los vectores viejos quedan ignorados, no corruptos).
  */
-export const FACE_MODEL_ID = 'mobilefacenet-v1'
+export const FACE_MODEL_ID = 'face-api-resnet34-v1'
 
-/** Dimension del embedding de MobileFaceNet. */
+/** Dimension del embedding de la red de reconocimiento de face-api.js. */
 export const FACE_EMBEDDING_DIM = 128
 
-/** Lado (px) de la cara recortada que espera el modelo como entrada. */
-export const FACE_INPUT_SIZE = 112
+/**
+ * Lado (px) de la cara recortada que se le pasa al modelo. face-api.js
+ * reescala internamente a 150x150 — se captura ya a ese tamaño para no
+ * perder calidad con un downscale-then-upscale innecesario.
+ */
+export const FACE_INPUT_SIZE = 150

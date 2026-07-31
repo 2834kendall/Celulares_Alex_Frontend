@@ -3,38 +3,47 @@
 Este directorio aloja los assets que el kiosco usa EN EL NAVEGADOR (la foto
 nunca sale del dispositivo; al servidor solo viaja el embedding cifrado).
 
-## Archivos versionados (descargar una vez, commitear)
+## Archivos versionados (se autodescargan si faltan)
 
-| Archivo                | Que es                                              | Fuente                                                                                                              |
-| ---------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `face_landmarker.task` | MediaPipe Face Landmarker (deteccion + blendshapes) | Bucket oficial de Google. `scripts/setup-face-assets.mjs` lo descarga solo si falta — no hace falta tocarlo a mano. |
-| `mobilefacenet.onnx`   | MobileFaceNet, embeddings de 128 dimensiones        | `scripts/export_mobilefacenet.py` (ver abajo) — a proposito SIN autodescarga.                                       |
+| Archivo                             | Que es                                               | Fuente                                          |
+| ----------------------------------- | ---------------------------------------------------- | ----------------------------------------------- |
+| `face_landmarker.task`              | MediaPipe Face Landmarker (deteccion + blendshapes)  | Bucket oficial de Google.                       |
+| `face-api/face_recognition_model-*` | Red de reconocimiento, embeddings de 128 dimensiones | `@vladmandic/face-api` (ver procedencia abajo). |
 
-### Como generar `mobilefacenet.onnx`
+`scripts/setup-face-assets.mjs` los descarga solos si faltan (corre en
+`predev`/`prebuild`) — no hace falta tocarlos a mano.
 
-No existe una fuente oficial unica de MobileFaceNet en ONNX (son conversiones
-de comunidad de procedencia variable), y este vector es literalmente el dato
-que decide "es este empleado o no" — por eso no se autodescarga un binario de
-terceros. En su lugar:
+### Procedencia del modelo de reconocimiento (por que se pudo automatizar)
 
-```bash
-pip install torch onnx onnxruntime numpy
-python scripts/export_mobilefacenet.py --weights /ruta/a/tus_pesos.pth
-```
+A diferencia de MobileFaceNet (que se investigo primero y se descarto: sin
+fuente oficial unica, puros repos de terceros de procedencia dudosa — algunos
+literalmente copias identicas entre cuentas sin relacion, señal clasica de
+repos espejo/spam), estos pesos SI se verificaron de punta a punta antes de
+automatizar la descarga:
 
-El script construye la arquitectura estandar de MobileFaceNet (Chen et al., 2018) localmente y solo la exporta a partir de pesos (`--weights`) que tu
-elijas y puedas auditar — nunca descarga nada por su cuenta. Verifica el
-export en dos niveles antes de terminar: la forma de salida (1x128) y que el
-resultado del `.onnx` coincida numericamente con el de PyTorch.
+- **Los pesos en si**: entrenados por `davisking` (creador de `dlib`, una
+  libreria de vision por computadora con mas de una decada de trayectoria).
+  Licencia **Boost Software License 1.0** — uso comercial explicitamente
+  permitido.
+- **face-api.js** (quien los empaqueta para el navegador): licencia **MIT**.
+  El propio mantenedor confirmo por escrito que el uso comercial esta
+  permitido ([issue #338](https://github.com/justadudewhohacks/face-api.js/issues/338)).
+- Se usa el fork **`@vladmandic/face-api`** (no el paquete original) porque
+  el original quedo sin publicar en npm desde 2020; el fork sigue mantenido
+  activamente.
 
-Debe quedar con entrada `float32[1,3,112,112]` (NCHW, normalizacion
-(x-127.5)/128) y salida de 128 dimensiones — el script ya lo garantiza. Si
-algun dia se usa un modelo con otra dimension de salida, ajustar
-`FACE_EMBEDDING_DIM` en `src/modules/attendance/lib/face/model.ts` y subir la
-version de `FACE_MODEL_ID` (los vectores enrolados con el modelo viejo se
-ignoran y hay que re-enrolar).
+Arquitectura: ResNet-34 tipo dlib, entrada 150x150 (face-api.js reescala
+internamente — el recorte que arma `faceCropBox` no necesita cambiar),
+salida de 128 dimensiones (`FACE_EMBEDDING_DIM`).
+
+## Modo de prueba (si falta el modelo)
+
+Con `NEXT_PUBLIC_FACE_TEST_MODE=true`, el kiosco usa `testEmbedding.ts` — un
+calculo determinista de luminancia, NO reconocimiento facial real — para
+poder probar el resto del pipeline (camara, cifrado, umbrales, ticket,
+marca) sin el modelo. Nunca debe quedar activo en produccion.
 
 ## Archivos generados (NO versionar)
 
-`mediapipe-wasm/` y `ort-wasm/` los copia `scripts/setup-face-assets.mjs`
-desde node_modules (corre solo en `predev`/`prebuild`). Estan en .gitignore.
+`mediapipe-wasm/` lo copia `scripts/setup-face-assets.mjs` desde
+node_modules (corre solo en `predev`/`prebuild`). Esta en `.gitignore`.
