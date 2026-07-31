@@ -53,6 +53,18 @@ describe('login (server action)', () => {
     expect(result).toEqual({ ok: true, destination: '/dashboard' })
   })
 
+  it('redirige a /kiosco cuando el rol del JWT es KIOSCO, aunque tenga permisos de dashboard', async () => {
+    mockSupabase({
+      claims: {
+        app_metadata: { rol: 'KIOSCO', permisos: ['EMPLEADOS_READ', 'ASISTENCIA_WRITE'] },
+      },
+    })
+
+    const result = await login(validInput)
+
+    expect(result).toEqual({ ok: true, destination: '/kiosco' })
+  })
+
   it('redirige a /unauthorized cuando el JWT trae permisos vacios', async () => {
     mockSupabase({ claims: { app_metadata: { permisos: [] } } })
     const result = await login(validInput)
