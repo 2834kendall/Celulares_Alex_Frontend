@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { gatherMonthlyAttendanceDays } from './monthlySummary'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { createClient } from '@/lib/supabase/server'
 
 describe('gatherMonthlyAttendanceDays', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('devuelve vacio y no consulta el resto si no hay colaboradores', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
@@ -131,6 +135,166 @@ describe('gatherMonthlyAttendanceDays', () => {
       (_r, i) => client.from.mock.calls[i][0] === 'sgrh_historial_laboral'
     )!.value
     expect(historialCall.eq).toHaveBeenCalledWith('lab_sucursal_id', 100)
+  })
+
+  it('ignora dias futuros: un horario ya asignado para manana no cuenta como ausencia', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
+      sgrh_programacion_semanal: {
+        // Fecha bien en el futuro respecto a "hoy" real — sin marca posible.
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_fecha: '2099-01-01',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            sgrh_cat_horarios: { hor_hora_entrada: '11:00:00' },
+          },
+        ],
+        error: null,
+      },
+      sgrh_marcas_asistencia: { data: [], error: null },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2099-01-31'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      data: [{ employeeId: 10, employmentHistoryId: 1, fullName: 'Ana Perez', days: [] }],
+    })
+  })
+
+  it('el turno de HOY que todavia no llega a su hora+tolerancia no cuenta como ausencia', async () => {
+    // "Ahora" en Costa Rica: 31-jul 08:05 a. m. — el turno empieza a las 11am.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-31T14:05:00.000Z')) // 08:05 CR (UTC-6)
+
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
+      sgrh_programacion_semanal: {
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_fecha: '2026-07-31',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            sgrh_cat_horarios: { hor_hora_entrada: '11:00:00' },
+          },
+        ],
+        error: null,
+      },
+      sgrh_marcas_asistencia: { data: [], error: null },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      data: [{ employeeId: 10, employmentHistoryId: 1, fullName: 'Ana Perez', days: [] }],
+    })
+  })
+
+  it('el turno de HOY ya vencido (hora+tolerancia pasada) sin marca si cuenta como ausencia', async () => {
+    // "Ahora" en Costa Rica: 31-jul 11:10 a. m. — turno 11am + tolerancia 5min = 11:05.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-31T17:10:00.000Z')) // 11:10 CR (UTC-6)
+
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
+      sgrh_programacion_semanal: {
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_fecha: '2026-07-31',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            sgrh_cat_horarios: { hor_hora_entrada: '11:00:00' },
+          },
+        ],
+        error: null,
+      },
+      sgrh_marcas_asistencia: { data: [], error: null },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      data: [
+        {
+          employeeId: 10,
+          employmentHistoryId: 1,
+          fullName: 'Ana Perez',
+          days: [
+            {
+              date: '2026-07-31',
+              isDayOff: false,
+              isHoliday: false,
+              expectedStart: '11:00',
+              entradaTime: null,
+              toleranciaMinutos: 5,
+            },
+          ],
+        },
+      ],
+    })
   })
 
   it('usa "Sin nombre" si el empleado no viene en el join', async () => {

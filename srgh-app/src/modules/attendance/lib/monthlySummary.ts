@@ -1,6 +1,12 @@
 import type { createClient } from '@/lib/supabase/server'
 import type { DayForInfraction } from '@/modules/attendance/lib/infractions'
-import { dateOfDay, timeOfDay } from '@/modules/attendance/lib/time'
+import {
+  dateOfDay,
+  diffMinutes,
+  nowInCostaRica,
+  timeOfDay,
+  todayInCostaRica,
+} from '@/modules/attendance/lib/time'
 import { marcaTipoSchema } from '@/modules/attendance/types'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -164,8 +170,19 @@ export async function gatherMonthlyAttendanceDays(
     (tolerancias ?? []).map((t) => [t.suc_id, t.suc_tolerancia_tardia_minutos])
   )
 
+  // Dias futuros (ej. un horario ya asignado para mañana) todavia no
+  // pudieron marcarse — no cuentan como tardia ni ausencia hasta que
+  // efectivamente lleguen. Sin este filtro, cualquier dia programado del
+  // resto del mes se veia como "ausente" apenas se le asignaba horario.
+  const today = todayInCostaRica()
+  // Hora actual de Costa Rica: el DIA de hoy entra al calculo, pero un turno
+  // de hoy que todavia no llego a su hora+tolerancia tampoco es ausencia
+  // todavia — recien se sabe al cerrarse esa ventana.
+  const nowTime = timeOfDay(nowInCostaRica())
+
   const assignmentsByHist = new Map<number, AssignmentRow[]>()
   for (const a of assignments ?? []) {
+    if (a.prg_fecha > today) continue
     const list = assignmentsByHist.get(a.prg_historial_laboral_id) ?? []
     list.push(a)
     assignmentsByHist.set(a.prg_historial_laboral_id, list)
@@ -192,17 +209,26 @@ export async function gatherMonthlyAttendanceDays(
     const myAssignments = assignmentsByHist.get(h.lab_id) ?? []
     const employee = h.sgrh_empleados
 
-    const days: DayForInfractionWithDate[] = myAssignments.map((a) => {
-      const expectedRaw = a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
-      return {
-        date: a.prg_fecha,
-        isDayOff: a.prg_es_dia_libre,
-        isHoliday: a.prg_es_feriado,
-        expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,
-        entradaTime: entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null,
-        toleranciaMinutos: tolerancia,
-      }
-    })
+    const days: DayForInfractionWithDate[] = myAssignments
+      .map((a) => {
+        const expectedRaw = a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
+        return {
+          date: a.prg_fecha,
+          isDayOff: a.prg_es_dia_libre,
+          isHoliday: a.prg_es_feriado,
+          expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,
+          entradaTime: entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null,
+          toleranciaMinutos: tolerancia,
+        }
+      })
+      .filter((day) => {
+        // Solo se filtra el dia de HOY, sin marca todavia, con horario real
+        // (dia libre/feriado/sin programacion ya son 'no_aplica', no hace
+        // falta tocarlos aca). Si la hora esperada + tolerancia ya paso,
+        // se deja pasar — recien ahi es una ausencia/tardanza real.
+        if (day.date !== today || day.entradaTime || !day.expectedStart) return true
+        return diffMinutes(nowTime, day.expectedStart) > day.toleranciaMinutos
+      })
 
     return {
       employeeId: h.lab_empleado_id,
