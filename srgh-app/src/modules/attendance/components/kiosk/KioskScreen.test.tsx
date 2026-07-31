@@ -27,7 +27,7 @@ vi.mock('@/modules/attendance/components/kiosk/deviceId', () => ({
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), message: vi.fn() } }))
 
-// FaceScan arrastra MediaPipe e onnxruntime-web (camara y WASM reales): se
+// FaceScan arrastra MediaPipe y face-api.js (camara y modelo reales): se
 // sustituye por un stub que expone sus callbacks para dispararlos a mano.
 let faceScanProps: FaceScanProps | null = null
 vi.mock('@/modules/attendance/components/kiosk/face/FaceScan', () => ({
@@ -157,7 +157,7 @@ describe('<KioskScreen />', () => {
 
     render(<KioskScreen employees={employees} />)
 
-    expect(screen.getByText(/Sin conexion/)).toBeInTheDocument()
+    expect(await screen.findByText(/Sin conexion/)).toBeInTheDocument()
 
     await user.click(screen.getByLabelText('Selecciona tu nombre'))
     await user.click(screen.getByText('Ana Perez'))
@@ -211,12 +211,12 @@ describe('<KioskScreen />', () => {
       expect(screen.queryByLabelText('Selecciona tu nombre')).not.toBeInTheDocument()
     })
 
-    it('offline deshabilita la camara de inmediato y cae al flujo de PIN', () => {
+    it('offline deshabilita la camara de inmediato y cae al flujo de PIN', async () => {
       setOnline(false)
       render(<KioskScreen employees={employees} />)
 
+      expect(await screen.findByLabelText('Selecciona tu nombre')).toBeInTheDocument()
       expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
-      expect(screen.getByLabelText('Selecciona tu nombre')).toBeInTheDocument()
     })
 
     it('MATCH: muestra el nombre verificado y marca con el ticket facial, sin PIN', async () => {

@@ -27,11 +27,15 @@ export type SubmitMarkOutcome =
  *     encola, porque encolarlo solo pospondria un error que ya conocemos.
  */
 export function useOfflineSync() {
-  // Lazy init en vez de useState(true) + corregir en un efecto: evita un
-  // setState sincrono en el cuerpo del efecto (react-hooks/set-state-in-effect).
-  const [isOnline, setIsOnline] = useState(() =>
-    typeof navigator === 'undefined' ? true : navigator.onLine
-  )
+  // SIEMPRE arranca en true, tanto en el servidor como en el primer render
+  // del cliente — nunca se lee navigator.onLine aca. Node 21+ ya expone un
+  // navigator global propio (sin onLine real), asi que el viejo chequeo
+  // `typeof navigator === 'undefined'` dejo de proteger nada: en el servidor
+  // navigator.onLine daba `undefined` (falsy), la SSR renderizaba "offline",
+  // y el cliente (con navigator.onLine real) renderizaba "online" — mismatch
+  // de hidratacion en CADA carga de /kiosco. El valor real se corrige recien
+  // en el efecto de abajo (deferido, ver nota del initialLoad).
+  const [isOnline, setIsOnline] = useState(true)
   const [pendingCount, setPendingCount] = useState(0)
   const backoffRef = useRef(BASE_BACKOFF_MS)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -104,12 +108,16 @@ export function useOfflineSync() {
   }, [attemptSync])
 
   useEffect(() => {
-    // setTimeout(0, ...) en vez de invocar refreshPendingCount() directo: el
-    // linter marca como sospechoso llamar, dentro del cuerpo del efecto, a
-    // cualquier funcion que termine en un setState — incluso si es async y el
-    // setState ocurre despues de un await. Diferirlo vía un callback real
-    // (igual que el timeout de la pantalla de exito) lo deja conforme.
+    // setTimeout(0, ...) en vez de invocar refreshPendingCount()/setIsOnline
+    // directo: el linter marca como sospechoso llamar, dentro del cuerpo del
+    // efecto, a cualquier funcion que termine en un setState — incluso si es
+    // async y el setState ocurre despues de un await. Diferirlo vía un
+    // callback real (igual que el timeout de la pantalla de exito) lo deja
+    // conforme. De paso, corrige aca el valor real de isOnline (ver el
+    // useState de arriba: siempre arranca en true para no romper la
+    // hidratacion) — recien el cliente conoce navigator.onLine de verdad.
     const initialLoad = setTimeout(() => {
+      setIsOnline(navigator.onLine)
       void refreshPendingCount()
     }, 0)
 
