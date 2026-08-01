@@ -1,11 +1,5 @@
 import { z } from 'zod'
 
-/**
- * Un "rubro" de evaluacion se persiste como un area de evaluacion
- * (sgrh_cat_areas_evaluacion) junto a un criterio hijo
- * (sgrh_cat_criterios_evaluacion) que guarda la descripcion corta y al
- * que se asocian los puntajes de cada evaluacion.
- */
 export interface RubroRow {
   areaId: number
   criterioId: number | null
@@ -78,6 +72,7 @@ const scoreSchema = z
     criterioId: z.number().int().positive(),
     puntaje: z
       .number({ message: 'Ingrese una nota de 0 a 10.' })
+      .int('La nota debe ser un numero entero.')
       .min(0, 'La nota minima es 0.')
       .max(10, 'La nota maxima es 10.')
       .nullable(),

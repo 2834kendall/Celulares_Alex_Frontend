@@ -141,7 +141,7 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
               Promedio total
             </p>
             <p className="mt-0.5 text-lg font-bold tabular-nums text-blue-700">
-              {evaluation?.promedio != null ? `${evaluation.promedio.toFixed(1)}/10` : '—'}
+              {evaluation?.promedio != null ? `${Math.round(evaluation.promedio)}/10` : '—'}
             </p>
             {classification && (
               <span

@@ -207,8 +207,7 @@ export function EvaluationForm({
           </p>
           {promedio !== null && (
             <p className="text-[11px] font-semibold text-slate-500">
-              Promedio:{' '}
-              <span className="font-bold tabular-nums text-blue-700">{promedio.toFixed(1)}/10</span>{' '}
+              Promedio: <span className="font-bold tabular-nums text-blue-700">{promedio}/10</span>{' '}
               · {classifyScore(promedio).label}
             </p>
           )}
@@ -241,7 +240,7 @@ export function EvaluationForm({
                   type="range"
                   min={0}
                   max={10}
-                  step={0.5}
+                  step={1}
                   value={entry.puntaje}
                   disabled={isSubmitting || entry.noAplica}
                   onChange={(e) => patchScore(r.criterioId!, { puntaje: Number(e.target.value) })}

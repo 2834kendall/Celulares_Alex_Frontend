@@ -59,6 +59,15 @@ describe('createEvaluation (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'Datos de la evaluacion invalidos.' })
   })
 
+  it('rechaza notas con decimales', async () => {
+    const result = await createEvaluation({
+      ...validInput,
+      scores: [{ criterioId: 1, puntaje: 8.5, observacion: '', noAplica: false }],
+    })
+
+    expect(result).toEqual({ ok: false, error: 'Datos de la evaluacion invalidos.' })
+  })
+
   it('rechaza una evaluacion donde ningun rubro aplica', async () => {
     const result = await createEvaluation({
       ...validInput,
