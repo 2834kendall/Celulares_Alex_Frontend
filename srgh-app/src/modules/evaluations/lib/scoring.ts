@@ -5,7 +5,7 @@ export const LOW_PERFORMANCE_THRESHOLD = 7
 export function averageScore(scores: number[]): number | null {
   if (scores.length === 0) return null
   const sum = scores.reduce((acc, s) => acc + s, 0)
-  return Math.round((sum / scores.length) * 10) / 10
+  return Math.round(sum / scores.length)
 }
 
 export interface Classification {
@@ -19,6 +19,16 @@ export function classifyScore(promedio: number): Classification {
   if (promedio >= 7) return { label: 'Bueno (C)', tone: 'amber' }
   if (promedio >= 6) return { label: 'Regular (D)', tone: 'orange' }
   return { label: 'Deficiente (E)', tone: 'rose' }
+}
+
+const TINT_ALPHA = 0.13
+
+export function scoreTint(score: number): string {
+  const channels = parseInt(scoreColor(score).slice(1), 16)
+  const r = (channels >> 16) & 255
+  const g = (channels >> 8) & 255
+  const b = channels & 255
+  return `rgba(${r}, ${g}, ${b}, ${TINT_ALPHA})`
 }
 
 export function scoreColor(score: number): string {

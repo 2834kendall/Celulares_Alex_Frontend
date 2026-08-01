@@ -13,16 +13,11 @@ interface EvaluationHistoryProps {
   rubros: RubroRow[]
 }
 
-/*
-  Tendencia respecto a la evaluacion anterior (el historico viene ordenado
-  de la mas reciente a la mas antigua).
- */
 function trendOf(history: EvaluationDetail[], index: number) {
   const current = history[index]?.promedio
   const previous = history[index + 1]?.promedio
   if (current == null || previous == null) return null
-  const delta = Math.round((current - previous) * 10) / 10
-  return delta
+  return Math.round(current) - Math.round(previous)
 }
 
 export function EvaluationHistory({ collaborator, rubros }: EvaluationHistoryProps) {
@@ -94,15 +89,15 @@ export function EvaluationHistory({ collaborator, rubros }: EvaluationHistoryPro
                       <span className="text-slate-300">—</span>
                     ) : delta > 0 ? (
                       <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-emerald-600">
-                        <TrendingUp className="h-3 w-3" /> +{delta.toFixed(1)}
+                        <TrendingUp className="h-3 w-3" /> +{delta}
                       </span>
                     ) : delta < 0 ? (
                       <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-rose-600">
-                        <TrendingDown className="h-3 w-3" /> {delta.toFixed(1)}
+                        <TrendingDown className="h-3 w-3" /> {delta}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-slate-400">
-                        <Minus className="h-3 w-3" /> 0.0
+                        <Minus className="h-3 w-3" /> 0
                       </span>
                     )}
                   </td>
