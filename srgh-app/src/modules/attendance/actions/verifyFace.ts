@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { decryptVector } from '@/modules/attendance/lib/face/faceCrypto'
-import { classifyDistance, cosineDistance } from '@/modules/attendance/lib/face/faceMath'
+import { classifyDistance, euclideanDistance } from '@/modules/attendance/lib/face/faceMath'
 import { signFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 import { FACE_EMBEDDING_DIM, FACE_MODEL_ID } from '@/modules/attendance/lib/face/model'
 import { verifyFaceSchema, type VerifyFaceInput } from '@/modules/attendance/types'
@@ -41,12 +41,12 @@ interface BiometriaRow {
  * Identificacion facial 1:N del kiosco. Recibe el embedding CIFRADO (la foto
  * nunca llega aca), lo descifra, baja de la base de datos unicamente los
  * vectores de los empleados activos de la sucursal del kiosco y calcula la
- * distancia coseno en TypeScript puro — cero pgvector, cero SQL de
- * similitud, por diseño.
+ * distancia euclidea en TypeScript puro — cero pgvector, cero SQL de
+ * similitud, por diseño (y euclidea, NO coseno: ver faceMath.ts).
  *
  * Estados segun la mejor distancia: MATCH (< 0.5, con confianza alta si
- * < 0.3), REQUIRE_PIN (0.5 a 0.7: el frontend abre el teclado de PIN) y
- * DENIED (> 0.7: se guarda log de auditoria). Sin vectores enrolados en la
+ * < 0.4), REQUIRE_PIN (0.5 a 0.6: el frontend abre el teclado de PIN) y
+ * DENIED (> 0.6: se guarda log de auditoria). Sin vectores enrolados en la
  * sucursal se responde REQUIRE_PIN: identidad no verificable ≠ intruso.
  */
 export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResult> {
@@ -147,7 +147,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     if (!Array.isArray(stored) || stored.length !== FACE_EMBEDDING_DIM) continue
     if (!stored.every((x) => typeof x === 'number')) continue
 
-    const distance = cosineDistance(probe, stored)
+    const distance = euclideanDistance(probe, stored)
     if (distance < bestDistance) {
       bestDistance = distance
       bestEmployeeId = row.bio_empleado_id

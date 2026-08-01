@@ -16,7 +16,9 @@ const mockRequirePermission = vi.mocked(requirePermission)
 const KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)))
 
 const RAW_VECTOR = (() => {
-  // Sin normalizar a proposito: el action debe guardarlo L2-normalizado.
+  // Con magnitud no-unitaria a proposito: el action debe guardarlo TAL CUAL
+  // (la distancia euclidea de dlib necesita la magnitud original — si alguien
+  // reintroduce una normalizacion, este vector la delata).
   const v = new Array<number>(FACE_EMBEDDING_DIM).fill(0)
   v[0] = 3
   v[1] = 4
@@ -74,7 +76,7 @@ describe('enrollFace (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'El empleado no tiene un contrato activo.' })
   })
 
-  it('guarda el vector normalizado con upsert por empleado', async () => {
+  it('guarda el vector crudo (sin normalizar) con upsert por empleado', async () => {
     const client = createSupabaseClientMock({
       sgrh_historial_laboral: { data: { lab_id: 7 }, error: null },
       sgrh_biometria_empleado: { data: null, error: null },
@@ -108,9 +110,9 @@ describe('enrollFace (server action)', () => {
 
     const stored = upsert.mock.calls[0][0].bio_vector as number[]
     expect(stored).toHaveLength(FACE_EMBEDDING_DIM)
-    // 3-4-5: normalizado queda 0.6 / 0.8, norma 1.
-    expect(stored[0]).toBeCloseTo(0.6)
-    expect(stored[1]).toBeCloseTo(0.8)
+    // Crudo, sin normalizar: la magnitud 3-4 sobrevive intacta.
+    expect(stored[0]).toBeCloseTo(3)
+    expect(stored[1]).toBeCloseTo(4)
   })
 
   it('devuelve error generico si el upsert falla', async () => {

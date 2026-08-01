@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { decryptVector } from '@/modules/attendance/lib/face/faceCrypto'
-import { l2Normalize } from '@/modules/attendance/lib/face/faceMath'
 import { FACE_EMBEDDING_DIM, FACE_MODEL_ID } from '@/modules/attendance/lib/face/model'
 import { enrollFaceSchema, type EnrollFaceInput } from '@/modules/attendance/types'
 
@@ -14,8 +13,9 @@ export type EnrollFaceResult = { ok: true } | { ok: false; error: string }
  * Enrolamiento: guarda (o reemplaza) el vector facial de un empleado. Solo
  * gerentes (EMPLEADOS_WRITE) — el kiosco no puede escribir vectores, y la
  * pagina /kiosco/enrolar esta gated con el mismo permiso. El vector llega
- * cifrado igual que en la verificacion; aca se descifra, se normaliza L2
- * (forma canonica: la distancia coseno es invariante a escala) y se upserta.
+ * cifrado igual que en la verificacion; aca se descifra y se upserta TAL
+ * CUAL (sin normalizar: la distancia euclidea de dlib necesita la magnitud
+ * original del descriptor — ver faceMath.ts).
  */
 export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResult> {
   const parsed = enrollFaceSchema.safeParse(input)
@@ -67,7 +67,7 @@ export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResu
     {
       bio_empleado_id: parsed.data.employeeId,
       bio_empresa_id: meta.empresa_id,
-      bio_vector: l2Normalize(vector),
+      bio_vector: vector,
       bio_modelo: FACE_MODEL_ID,
       bio_creado_por: meta.usr_id ?? null,
       bio_updated_at: new Date().toISOString(),

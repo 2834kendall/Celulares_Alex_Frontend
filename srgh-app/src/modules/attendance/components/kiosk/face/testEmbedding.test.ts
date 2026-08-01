@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { computeTestEmbedding } from './testEmbedding'
-import { cosineDistance } from '@/modules/attendance/lib/face/faceMath'
+import { euclideanDistance } from '@/modules/attendance/lib/face/faceMath'
 import { FACE_EMBEDDING_DIM, FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
 
 function solidFrame(value: number, size = FACE_INPUT_SIZE): Uint8ClampedArray {
@@ -29,7 +29,7 @@ describe('computeTestEmbedding', () => {
   it('imagenes identicas (misma "cara") quedan a distancia 0', () => {
     const a = computeTestEmbedding(solidFrame(140))
     const b = computeTestEmbedding(solidFrame(140))
-    expect(cosineDistance(a, b)).toBeCloseTo(0)
+    expect(euclideanDistance(a, b)).toBeCloseTo(0)
   })
 
   it('imagenes bien distintas quedan mas lejos que casi identicas', () => {
@@ -41,8 +41,8 @@ describe('computeTestEmbedding', () => {
     const vAlmostSame = computeTestEmbedding(almostSame)
     const vVeryDifferent = computeTestEmbedding(veryDifferent)
 
-    const distSame = cosineDistance(vBase, vAlmostSame)
-    const distDifferent = cosineDistance(vBase, vVeryDifferent)
+    const distSame = euclideanDistance(vBase, vAlmostSame)
+    const distDifferent = euclideanDistance(vBase, vVeryDifferent)
 
     expect(distDifferent).toBeGreaterThan(distSame)
   })
@@ -73,6 +73,6 @@ describe('computeTestEmbedding', () => {
     const vHalf = computeTestEmbedding(half)
     const vUniform = computeTestEmbedding(uniform)
 
-    expect(cosineDistance(vHalf, vUniform)).toBeGreaterThan(0.05)
+    expect(euclideanDistance(vHalf, vUniform)).toBeGreaterThan(0.05)
   })
 })

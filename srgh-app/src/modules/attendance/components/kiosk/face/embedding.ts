@@ -67,8 +67,9 @@ export async function computeEmbedding(faceCanvas: HTMLCanvasElement): Promise<n
     )
   }
 
-  // La distancia coseno (faceMath.ts) ya es invariante a la magnitud del
-  // vector, asi que no hace falta L2-normalizar aca — el servidor tampoco lo
-  // exige para el vector de verificacion (solo el de enrolamiento).
+  // El descriptor viaja CRUDO, sin normalizar: la comparacion del servidor
+  // es distancia euclidea (la metrica con la que dlib entreno esta red, con
+  // su umbral canonico 0.6) y normalizar destruiria la magnitud que esa
+  // metrica necesita — ver faceMath.ts.
   return Array.from(descriptor)
 }

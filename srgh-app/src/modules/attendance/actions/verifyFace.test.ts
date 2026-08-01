@@ -17,17 +17,16 @@ const KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i +
 const TICKET_SECRET = 'secreto-tickets-test'
 
 /**
- * Vector unitario de 128 dims cuyo coseno contra la sonda e1 es `cos`:
- * distancia coseno resultante = 1 - cos.
+ * Vector de 128 dims a distancia euclidea exacta `d` de la sonda (que es el
+ * vector cero): basta poner `d` en la primera coordenada.
  */
-function vecWithCosine(cos: number): number[] {
+function vecAtDistance(d: number): number[] {
   const v = new Array<number>(FACE_EMBEDDING_DIM).fill(0)
-  v[0] = cos
-  v[1] = Math.sqrt(Math.max(0, 1 - cos * cos))
+  v[0] = d
   return v
 }
 
-const PROBE = vecWithCosine(1)
+const PROBE = vecAtDistance(0)
 
 async function encryptedProbe() {
   return encryptVector(PROBE, KEY)
@@ -99,7 +98,7 @@ describe('verifyFace (server action)', () => {
         sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
-          data: [{ bio_empleado_id: 10, bio_vector: vecWithCosine(1) }],
+          data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],
           error: null,
         },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -115,13 +114,13 @@ describe('verifyFace (server action)', () => {
     expect(await verifyFaceTicket(result.ticket, 10, TICKET_SECRET)).toBe(true)
   })
 
-  it('MATCH con tolerancia en la banda 0.3-0.5 (luz/angulo)', async () => {
+  it('MATCH con tolerancia en la banda 0.4-0.5 (luz/angulo)', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
-          data: [{ bio_empleado_id: 10, bio_vector: vecWithCosine(0.65) }],
+          data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.45) }],
           error: null,
         },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -134,13 +133,13 @@ describe('verifyFace (server action)', () => {
     expect(result.confianza).toBe('tolerancia')
   })
 
-  it('REQUIRE_PIN en la zona de incertidumbre 0.5-0.7', async () => {
+  it('REQUIRE_PIN en la zona de incertidumbre 0.5-0.6', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
-          data: [{ bio_empleado_id: 10, bio_vector: vecWithCosine(0.4) }],
+          data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.55) }],
           error: null,
         },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -151,12 +150,12 @@ describe('verifyFace (server action)', () => {
     expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
   })
 
-  it('DENIED sobre 0.7 y guarda el log de auditoria', async () => {
+  it('DENIED sobre 0.6 y guarda el log de auditoria', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
       sgrh_historial_laboral: HISTORIAL,
       sgrh_biometria_empleado: {
-        data: [{ bio_empleado_id: 11, bio_vector: vecWithCosine(0.1) }],
+        data: [{ bio_empleado_id: 11, bio_vector: vecAtDistance(0.8) }],
         error: null,
       },
       sgrh_biometria_auditoria: { data: null, error: null },
@@ -205,8 +204,8 @@ describe('verifyFace (server action)', () => {
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [
-            { bio_empleado_id: 10, bio_vector: vecWithCosine(0.85) },
-            { bio_empleado_id: 11, bio_vector: vecWithCosine(0.99) },
+            { bio_empleado_id: 10, bio_vector: vecAtDistance(0.3) },
+            { bio_empleado_id: 11, bio_vector: vecAtDistance(0.05) },
           ],
           error: null,
         },
