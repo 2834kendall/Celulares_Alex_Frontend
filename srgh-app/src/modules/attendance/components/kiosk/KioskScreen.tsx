@@ -266,9 +266,19 @@ export function KioskScreen({ employees }: KioskScreenProps) {
       {(verified || selectedEmployee) && (
         <>
           {verified && (
-            <p className="text-center text-lg font-semibold text-emerald-400">
-              {verified.fullName}
-            </p>
+            <div className="flex flex-col items-center gap-1">
+              <p className="text-center text-lg font-semibold text-emerald-400">
+                {verified.fullName}
+              </p>
+              <button
+                type="button"
+                onClick={() => setVerified(null)}
+                disabled={submittingTipo !== null}
+                className="flex items-center gap-2 text-xs text-slate-400 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/60 disabled:opacity-50"
+              >
+                <ScanFace className="h-3.5 w-3.5" /> No soy yo / Cancelar
+              </button>
+            </div>
           )}
 
           {!verified && !readyToMark ? (

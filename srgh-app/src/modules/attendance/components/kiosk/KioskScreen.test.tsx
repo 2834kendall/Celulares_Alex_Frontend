@@ -247,6 +247,29 @@ describe('<KioskScreen />', () => {
       )
     })
 
+    it('MATCH: "No soy yo" cancela y vuelve a mostrar la camara sin marcar', async () => {
+      mockVerifyFace.mockResolvedValue({
+        ok: true,
+        status: 'MATCH',
+        employeeId: 10,
+        fullName: 'Ana Perez',
+        confianza: 'alta',
+        ticket: '10.999.firma',
+      })
+      const user = userEvent.setup()
+
+      render(<KioskScreen employees={employees} />)
+      await emitEmbedding()
+
+      expect(screen.getByText('Ana Perez')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /No soy yo/ }))
+
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+      expect(screen.queryByText('Ana Perez')).not.toBeInTheDocument()
+      expect(screen.getByTestId('face-scan')).toBeInTheDocument()
+    })
+
     it('REQUIRE_PIN: cae al selector manual y el PIN es obligatorio', async () => {
       mockVerifyFace.mockResolvedValue({ ok: true, status: 'REQUIRE_PIN' })
       const user = userEvent.setup()
