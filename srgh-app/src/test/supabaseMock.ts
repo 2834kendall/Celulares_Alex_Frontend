@@ -31,9 +31,62 @@ export function createSupabaseQueryMock(result: QueryResult) {
   return builder
 }
 
+type StorageUploadResult = { data: { path: string } | null; error: unknown }
+type StorageSignedUrlResult = { data: { signedUrl: string } | null; error: unknown }
+type StorageSignedUrlsResult = {
+  data: Array<{ path: string | null; signedUrl: string | null; error: string | null }> | null
+  error: unknown
+}
+type StorageListResult = {
+  data: Array<{
+    id: string | null
+    name: string
+    created_at?: string | null
+    metadata?: { size?: number; mimetype?: string } | null
+  }> | null
+  error: unknown
+}
+type StorageRemoveResult = { data: unknown; error: unknown }
+
+interface StorageMockOptions {
+  uploadResult?: StorageUploadResult
+  signedUrlResult?: StorageSignedUrlResult
+  signedUrlsResult?: StorageSignedUrlsResult
+  listResult?: StorageListResult
+  removeResult?: StorageRemoveResult
+}
+
 interface ClientMockOptions {
   /** Resultado por nombre de función para supabase.rpc('fn', args). */
   rpcResponses?: Record<string, QueryResult>
+  /** Resultados de la API de storage (supabase.storage.from(bucket).*). */
+  storage?: StorageMockOptions
+}
+
+/**
+ * Superficie storage del cliente (supabase.storage.from(bucket)): un unico
+ * builder compartido para poder asertar sobre las llamadas sin importar el
+ * bucket, igual que la API admin de Auth.
+ */
+function createStorageMock(options: StorageMockOptions = {}) {
+  const uploadResult = options.uploadResult ?? { data: { path: 'mock/path' }, error: null }
+  const signedUrlResult = options.signedUrlResult ?? {
+    data: { signedUrl: 'https://signed.example/mock' },
+    error: null,
+  }
+  const signedUrlsResult = options.signedUrlsResult ?? { data: [], error: null }
+  const listResult = options.listResult ?? { data: [], error: null }
+  const removeResult = options.removeResult ?? { data: null, error: null }
+
+  const bucketApi = {
+    upload: vi.fn(async () => uploadResult),
+    createSignedUrl: vi.fn(async () => signedUrlResult),
+    createSignedUrls: vi.fn(async () => signedUrlsResult),
+    list: vi.fn(async () => listResult),
+    remove: vi.fn(async () => removeResult),
+  }
+
+  return { from: vi.fn(() => bucketApi), bucketApi }
 }
 
 /**
@@ -65,6 +118,7 @@ export function createSupabaseClientMock(
     rpc: vi.fn(async (fnName: string) => {
       return options.rpcResponses?.[fnName] ?? { data: null, error: null }
     }),
+    storage: createStorageMock(options.storage),
   }
 }
 

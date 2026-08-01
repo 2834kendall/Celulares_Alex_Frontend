@@ -77,6 +77,7 @@ src/
 │   │   ├── hooks/                    # hooks específicos del módulo
 │   │   └── types.ts                  # DTOs / view models del módulo
 │   ├── users/                        # cuentas de acceso — su UI vive como tab "Usuarios" en /employees
+│   ├── storage/                      # archivos (fotos/documentos) — mensajes de error y lab temporal
 │   ├── payroll/
 │   ├── attendance/
 │   ├── recruitment/
@@ -90,6 +91,13 @@ src/
 │   │   ├── client.ts                 # cliente para Client Components
 │   │   ├── server.ts                 # cliente para Server Components / Actions
 │   │   └── proxy.ts                  # sincronización de sesión por request (ayudante)
+│   ├── storage/                      # port de archivos agnóstico del proveedor (SGRH-60)
+│   │   ├── types.ts                  # contrato StorageProvider — sin imports de Supabase
+│   │   ├── containers.ts             # contenedor lógico → bucket real, límites, TTLs de firma
+│   │   ├── paths.ts                  # rutas multi-tenant (<empresaId>/ SIEMPRE) + sanitizeFileName
+│   │   ├── validation.ts             # MIME real por magic bytes — jamás se confía en file.type
+│   │   ├── supabase-provider.ts      # ÚNICO archivo del repo que importa supabase.storage
+│   │   └── index.ts                  # getStorageProvider() — la costura para cambiar de proveedor
 │   ├── permissions/
 │   │   └── catalog.ts                # fuente única de verdad de strings de permisos
 │   ├── auth/
@@ -388,6 +396,15 @@ Sprint 2+ — Módulos
   ✅ Employees (CRUD base, primer módulo — sienta el patrón a replicar)
   ✅ Users (cuentas de acceso: invitar/vincular empleado, rol y sucursal,
      desactivar con ban en Auth, reenviar invitación — tab "Usuarios" en /employees)
+  ✅ Storage core (SGRH-60 fases 1A/1B): port agnóstico del proveedor en
+     lib/storage, buckets privados fotos-empleados y documentos-empleados con
+     RLS por empresa (primer segmento del path = empresa_id del JWT), permisos
+     FOTOS_READ y DOCUMENTOS_READ/WRITE (KIOSCO excluido a propósito),
+     validación por magic bytes, URLs firmadas (fotos: firma en lote; documentos:
+     NUNCA inline, solo descarga forzada de 60 s con Content-Disposition).
+     Lab temporal en /settings/storage-lab — se elimina en fase 2.
+     Pendiente: fase 2 (emp_foto_path + <EmployeeAvatar/>), fase 3
+     (sgrh_documentos + wizard + /api/documents/[id]/download)
   ☐ Attendance
   ☐ Payroll (requiere Server Actions con service_role — mayor cuidado de seguridad)
   ☐ Recruitment
