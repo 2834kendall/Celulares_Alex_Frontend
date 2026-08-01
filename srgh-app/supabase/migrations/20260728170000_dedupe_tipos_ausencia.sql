@@ -11,6 +11,11 @@
 --     borra el duplicado sembrado por esta app.
 --   - Si no existe un tipo previo equivalente (empresa nueva sin catalogo
 --     propio): no hace nada, el tipo sembrado por esta app queda como esta.
+--   - Si YA EXISTEN ausencias que referencian el duplicado sembrado (paso en
+--     produccion: se registraron ausencias con los tipos sembrados antes de
+--     aplicar esta migracion), se repuntan al tipo consolidado ANTES del
+--     DELETE — sin esto el borrado viola la FK de sgrh_ausencias (mismo
+--     patron repuntar-y-borrar que la consolidacion de bancos, 20260714).
 --
 -- tau_referencia_legal es varchar(100): los textos deben mantenerse breves.
 DO $$
@@ -36,6 +41,13 @@ BEGIN
       tau_referencia_legal = 'Reglamento del Seguro de Salud CCSS, arts. 36-40'
     WHERE tau_id = dup_id;
 
+    -- Repuntar ausencias que ya usan el duplicado sembrado antes de borrarlo.
+    UPDATE public.sgrh_ausencias a
+    SET aus_tipo_ausencia_id = dup_id
+    FROM public.sgrh_cat_tipos_ausencia t
+    WHERE t.tau_codigo = 'INC_ENF_CCSS'
+      AND a.aus_tipo_ausencia_id = t.tau_id;
+
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'INC_ENF_CCSS';
   END IF;
 
@@ -57,6 +69,13 @@ BEGIN
       tau_es_intradia = false,
       tau_referencia_legal = 'Codigo de Trabajo Titulo IV; Ley de Riesgos del Trabajo (INS, subsidio 60% desde dia 1)'
     WHERE tau_id = dup_id;
+
+    -- Repuntar ausencias que ya usan el duplicado sembrado antes de borrarlo.
+    UPDATE public.sgrh_ausencias a
+    SET aus_tipo_ausencia_id = dup_id
+    FROM public.sgrh_cat_tipos_ausencia t
+    WHERE t.tau_codigo = 'INC_RIESGO_INS'
+      AND a.aus_tipo_ausencia_id = t.tau_id;
 
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'INC_RIESGO_INS';
   END IF;
@@ -80,6 +99,13 @@ BEGIN
       tau_referencia_legal = 'Codigo de Trabajo, art. 95 (4 meses; 50% patrono + 50% CCSS)'
     WHERE tau_id = dup_id;
 
+    -- Repuntar ausencias que ya usan el duplicado sembrado antes de borrarlo.
+    UPDATE public.sgrh_ausencias a
+    SET aus_tipo_ausencia_id = dup_id
+    FROM public.sgrh_cat_tipos_ausencia t
+    WHERE t.tau_codigo = 'LIC_MATERNIDAD'
+      AND a.aus_tipo_ausencia_id = t.tau_id;
+
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'LIC_MATERNIDAD';
   END IF;
 
@@ -102,6 +128,13 @@ BEGIN
       tau_referencia_legal = 'Ley N. 10211 (2022); Codigo de Trabajo (8 dias, 50% CCSS + 50% patrono)'
     WHERE tau_id = dup_id;
 
+    -- Repuntar ausencias que ya usan el duplicado sembrado antes de borrarlo.
+    UPDATE public.sgrh_ausencias a
+    SET aus_tipo_ausencia_id = dup_id
+    FROM public.sgrh_cat_tipos_ausencia t
+    WHERE t.tau_codigo = 'LIC_PATERNIDAD'
+      AND a.aus_tipo_ausencia_id = t.tau_id;
+
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'LIC_PATERNIDAD';
   END IF;
 
@@ -123,6 +156,13 @@ BEGIN
       tau_es_intradia = true,
       tau_referencia_legal = 'Codigo de Trabajo, art. 97 (1 hora diaria, 100% pagada por patrono)'
     WHERE tau_id = dup_id;
+
+    -- Repuntar ausencias que ya usan el duplicado sembrado antes de borrarlo.
+    UPDATE public.sgrh_ausencias a
+    SET aus_tipo_ausencia_id = dup_id
+    FROM public.sgrh_cat_tipos_ausencia t
+    WHERE t.tau_codigo = 'PERM_LACTANCIA'
+      AND a.aus_tipo_ausencia_id = t.tau_id;
 
     DELETE FROM public.sgrh_cat_tipos_ausencia WHERE tau_codigo = 'PERM_LACTANCIA';
   END IF;
