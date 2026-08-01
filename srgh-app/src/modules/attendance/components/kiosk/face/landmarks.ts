@@ -100,3 +100,30 @@ export function firstFaceLandmarks(
   const landmarks = result.faceLandmarks?.[0]
   return landmarks && landmarks.length > 0 ? landmarks : null
 }
+
+// Mismos indices que motionLiveness.ts: esquina externa de cada ojo.
+const RIGHT_EYE_OUTER = 33
+const LEFT_EYE_OUTER = 263
+
+/**
+ * Angulo (radianes) de la linea entre los ojos respecto a la horizontal, o
+ * null si el rostro detectado no trae esos landmarks. La red de
+ * reconocimiento de face-api.js (arquitectura dlib) espera un recorte
+ * ALINEADO — mismo criterio que dlib's get_face_chip: ojos nivelados —, no
+ * un bounding-box crudo. Sin este paso el embedding pierde discriminacion
+ * (dos personas distintas pueden verse "parecidas" al modelo), sobre todo
+ * con fotos sostenidas a mano en un angulo distinto al de la camara.
+ */
+export function eyeTiltAngle(
+  landmarks: { x: number; y: number }[],
+  frameWidth: number,
+  frameHeight: number
+): number | null {
+  const right = landmarks[RIGHT_EYE_OUTER]
+  const left = landmarks[LEFT_EYE_OUTER]
+  if (!right || !left || frameWidth <= 0 || frameHeight <= 0) return null
+
+  const dx = (left.x - right.x) * frameWidth
+  const dy = (left.y - right.y) * frameHeight
+  return Math.atan2(dy, dx)
+}

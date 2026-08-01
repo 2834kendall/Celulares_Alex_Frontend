@@ -1,14 +1,15 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Eye, RefreshCcw, ScanFace } from 'lucide-react'
+import { ScanFace } from 'lucide-react'
 import { encryptVector, type EncryptedVector } from '@/modules/attendance/lib/face/faceCrypto'
 import { FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
 import { getFaceLandmarker } from './faceLandmarker'
 import { computeEmbedding, preloadEmbeddingModel } from './embedding'
-import { createLivenessTracker, type LivenessTracker } from './liveness'
-import { createMotionLivenessTracker, type MotionLivenessTracker } from './motionLiveness'
-import { extractBlinkScores, faceCropBox, firstFaceLandmarks } from './landmarks'
+import { eyeTiltAngle, faceCropBox, firstFaceLandmarks } from './landmarks'
+
+/** Frames consecutivos con rostro detectado antes de capturar (evita un frame borroso/de transicion). */
+const STABLE_FRAMES_REQUIRED = 5
 
 export interface FaceScanProps {
   /**
@@ -24,53 +25,45 @@ export interface FaceScanProps {
   onUnavailable: (reason: string) => void
 }
 
-type ScanStatus =
-  'iniciando' | 'buscando_rostro' | 'verificando' | 'esperando_parpadeo' | 'procesando'
+type ScanStatus = 'iniciando' | 'buscando_rostro' | 'procesando'
 
 const STATUS_TEXT: Record<ScanStatus, string> = {
   iniciando: 'Preparando la camara…',
   buscando_rostro: 'Coloca tu rostro frente a la camara',
-  verificando: 'Mantén la mirada en la camara…',
-  esperando_parpadeo: 'Parpadea para continuar',
   procesando: 'Verificando…',
 }
 
 /**
- * Captura facial con prueba de vida. Todo el procesamiento pesado ocurre en
- * el cliente: MediaPipe ubica el rostro y da los landmarks/blendshapes, el
- * recorte pasa por la red de reconocimiento de face-api.js (TensorFlow.js) y
- * el vector sale cifrado (AES-256-GCM). La foto jamas abandona este componente.
+ * Captura facial. Todo el procesamiento pesado ocurre en el cliente:
+ * MediaPipe ubica el rostro y da los landmarks, el recorte pasa por la red
+ * de reconocimiento de face-api.js (TensorFlow.js) y el vector sale cifrado
+ * (AES-256-GCM). La foto jamas abandona este componente.
  *
- * Prueba de vida en dos etapas: PRIMERO micro-movimiento pasivo
- * (motionLiveness.ts) — no le pide nada a la persona, solo mira que la cara
- * se deforme de forma no-rigida entre frames (una foto sostenida con la mano
- * se mueve como un bloque rigido). Si eso no logra confianza a tiempo, cae a
- * pedir un parpadeo explicito (liveness.ts) — mas lento para el usuario, pero
- * imposible de falsificar con una foto impresa. El respaldo solo se activa si
- * el chequeo pasivo no alcanza, nunca al reves.
+ * SIN prueba de vida (decision explicita del negocio, 2026-07-31): se
+ * probaron dos chequeos — movimiento pasivo (motionLiveness.ts) y parpadeo
+ * explicito (liveness.ts) — y ambos quedan en el repo pero NINGUNO esta
+ * conectado aca. Motivo del negocio: friccion inaceptable en el kiosco.
+ * Consecuencia conocida y aceptada: una foto de alguien ya enrolado puede
+ * marcar como esa persona — reconocer BIEN de quien es una cara (align de
+ * ojos, ver landmarks.ts/embedding.ts) no resuelve esto, porque reconocer
+ * "quien" y verificar "vivo o foto" son preguntas distintas. Si el negocio
+ * cambia de postura, liveness.ts es el camino mas simple para reactivar
+ * (ver el commit que quito su uso de aca).
  */
 export function FaceScan({ onEmbedding, onUnavailable }: FaceScanProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const rafRef = useRef<number | null>(null)
-  const motionTrackerRef = useRef<MotionLivenessTracker>(createMotionLivenessTracker())
-  const trackerRef = useRef<LivenessTracker>(createLivenessTracker())
-  const phaseRef = useRef<'movimiento' | 'parpadeo'>('movimiento')
+  const stableCountRef = useRef(0)
   const doneRef = useRef(false)
   const unavailableRef = useRef(false)
 
   const [status, setStatus] = useState<ScanStatus>('iniciando')
-  const [livenessFailed, setLivenessFailed] = useState(false)
-  // Cambiar la key reinicia el efecto completo (camara + tracker): es el
-  // boton de reintentar despues de un fallo de parpadeo.
-  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     doneRef.current = false
-    motionTrackerRef.current = createMotionLivenessTracker()
-    trackerRef.current = createLivenessTracker()
-    phaseRef.current = 'movimiento'
+    stableCountRef.current = 0
 
     function fail(reason: string) {
       if (unavailableRef.current || cancelled) return
@@ -141,68 +134,27 @@ export function FaceScan({ onEmbedding, onUnavailable }: FaceScanProps) {
 
         const result = landmarker.detectForVideo(v, performance.now())
         const landmarks = firstFaceLandmarks(result)
-        const blink = extractBlinkScores(result)
 
-        if (!landmarks || !blink) {
+        if (!landmarks) {
+          stableCountRef.current = 0
           setStatus('buscando_rostro')
           rafRef.current = requestAnimationFrame(loop)
           return
         }
 
-        const now = performance.now()
-        let isAlive = false
-
-        if (phaseRef.current === 'movimiento') {
-          const motionStatus = motionTrackerRef.current.push({ landmarks, timestampMs: now })
-
-          if (motionStatus === 'vivo') {
-            isAlive = true
-          } else if (motionStatus === 'requiere_parpadeo') {
-            // El chequeo pasivo no logro confianza a tiempo: cae al parpadeo
-            // explicito, mas lento pero imposible de falsificar con una foto.
-            phaseRef.current = 'parpadeo'
-          } else {
-            setStatus('verificando')
-            rafRef.current = requestAnimationFrame(loop)
-            return
-          }
-        }
-
-        if (!isAlive && phaseRef.current === 'parpadeo') {
-          const liveness = trackerRef.current.push({
-            blinkLeft: blink.blinkLeft,
-            blinkRight: blink.blinkRight,
-            timestampMs: now,
-          })
-
-          if (liveness === 'sin_parpadeo') {
-            // Regla de los lentes oscuros: sin ojos visibles no hay prueba de
-            // vida — se falla a proposito y se pide descubrirse el rostro.
-            doneRef.current = true
-            setLivenessFailed(true)
-            return
-          }
-
-          if (liveness !== 'vivo') {
-            setStatus('esperando_parpadeo')
-            rafRef.current = requestAnimationFrame(loop)
-            return
-          }
-
-          isAlive = true
-        }
-
-        if (!isAlive) {
+        stableCountRef.current += 1
+        if (stableCountRef.current < STABLE_FRAMES_REQUIRED) {
           rafRef.current = requestAnimationFrame(loop)
           return
         }
 
-        // Persona viva: recortar el rostro y generar el embedding.
+        // Rostro detectado de forma estable: recortar y generar el embedding.
         doneRef.current = true
         setStatus('procesando')
 
         const box = faceCropBox(landmarks, v.videoWidth, v.videoHeight)
-        if (!box) {
+        const angle = eyeTiltAngle(landmarks, v.videoWidth, v.videoHeight)
+        if (!box || angle === null) {
           fail('No se pudo aislar el rostro.')
           return
         }
@@ -215,7 +167,26 @@ export function FaceScan({ onEmbedding, onUnavailable }: FaceScanProps) {
           fail('No se pudo procesar la imagen.')
           return
         }
-        ctx.drawImage(v, box.x, box.y, box.size, box.size, 0, 0, FACE_INPUT_SIZE, FACE_INPUT_SIZE)
+        // Nivelar los ojos antes de recortar: face-api.js espera un chip
+        // alineado (igual que dlib), no un bounding-box crudo — ver
+        // eyeTiltAngle en landmarks.ts.
+        const centerX = box.x + box.size / 2
+        const centerY = box.y + box.size / 2
+        ctx.save()
+        ctx.translate(FACE_INPUT_SIZE / 2, FACE_INPUT_SIZE / 2)
+        ctx.rotate(-angle)
+        ctx.drawImage(
+          v,
+          centerX - box.size / 2,
+          centerY - box.size / 2,
+          box.size,
+          box.size,
+          -FACE_INPUT_SIZE / 2,
+          -FACE_INPUT_SIZE / 2,
+          FACE_INPUT_SIZE,
+          FACE_INPUT_SIZE
+        )
+        ctx.restore()
 
         void (async () => {
           try {
@@ -239,31 +210,7 @@ export function FaceScan({ onEmbedding, onUnavailable }: FaceScanProps) {
       streamRef.current?.getTracks().forEach((t) => t.stop())
       streamRef.current = null
     }
-    // attempt: reiniciar el escaneo es exactamente re-ejecutar este efecto.
-  }, [attempt, onEmbedding, onUnavailable])
-
-  if (livenessFailed) {
-    return (
-      <div className="flex w-full flex-col items-center gap-4 text-center">
-        <Eye className="h-12 w-12 text-amber-300" />
-        <p className="text-sm text-amber-300">
-          No pudimos ver tus ojos. Si usas lentes oscuros o algo cubre tu rostro, descubrelo e
-          intenta de nuevo.
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setLivenessFailed(false)
-            setStatus('iniciando')
-            setAttempt((a) => a + 1)
-          }}
-          className="flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-bold text-white outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-white/60"
-        >
-          <RefreshCcw className="h-4 w-4" /> Reintentar
-        </button>
-      </div>
-    )
-  }
+  }, [onEmbedding, onUnavailable])
 
   return (
     <div className="flex w-full flex-col items-center gap-4">

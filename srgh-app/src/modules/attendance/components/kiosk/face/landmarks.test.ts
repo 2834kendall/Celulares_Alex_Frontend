@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { extractBlinkScores, faceCropBox, firstFaceLandmarks } from './landmarks'
+import { extractBlinkScores, eyeTiltAngle, faceCropBox, firstFaceLandmarks } from './landmarks'
+
+/** Arma un arreglo de landmarks con solo los ojos en los indices que usa eyeTiltAngle. */
+function withEyes(right: { x: number; y: number }, left: { x: number; y: number }) {
+  const landmarks: { x: number; y: number }[] = []
+  landmarks[33] = right
+  landmarks[263] = left
+  return landmarks
+}
 
 describe('extractBlinkScores', () => {
   it('extrae los scores de parpadeo del primer rostro', () => {
@@ -80,6 +88,38 @@ describe('faceCropBox', () => {
   it('devuelve null sin landmarks o con dimensiones invalidas', () => {
     expect(faceCropBox([], 640, 480)).toBeNull()
     expect(faceCropBox([{ x: 0.5, y: 0.5 }], 0, 480)).toBeNull()
+  })
+})
+
+describe('eyeTiltAngle', () => {
+  it('devuelve ~0 con los ojos nivelados', () => {
+    const landmarks = withEyes({ x: 0.3, y: 0.5 }, { x: 0.7, y: 0.5 })
+    expect(eyeTiltAngle(landmarks, 1000, 1000)).toBeCloseTo(0)
+  })
+
+  it('detecta la cabeza inclinada (ojo izquierdo mas abajo)', () => {
+    const landmarks = withEyes({ x: 0.3, y: 0.4 }, { x: 0.7, y: 0.6 })
+    const angle = eyeTiltAngle(landmarks, 1000, 1000)
+    expect(angle).not.toBeNull()
+    expect(angle!).toBeGreaterThan(0)
+  })
+
+  it('pondera el ancho y el alto del frame por separado (no cuadrado)', () => {
+    // Mismo delta normalizado en x e y, pero frame 1000x500: en pixeles el
+    // delta horizontal pesa el doble, asi que el angulo no deberia ser 45°.
+    const landmarks = withEyes({ x: 0.4, y: 0.4 }, { x: 0.6, y: 0.6 })
+    const angle = eyeTiltAngle(landmarks, 1000, 500)
+    expect(angle).not.toBeNull()
+    expect(Math.abs(angle!)).toBeLessThan(Math.PI / 4)
+  })
+
+  it('devuelve null si faltan los landmarks de los ojos', () => {
+    expect(eyeTiltAngle([{ x: 0.5, y: 0.5 }], 1000, 1000)).toBeNull()
+  })
+
+  it('devuelve null con dimensiones de frame invalidas', () => {
+    const landmarks = withEyes({ x: 0.3, y: 0.5 }, { x: 0.7, y: 0.5 })
+    expect(eyeTiltAngle(landmarks, 0, 1000)).toBeNull()
   })
 })
 

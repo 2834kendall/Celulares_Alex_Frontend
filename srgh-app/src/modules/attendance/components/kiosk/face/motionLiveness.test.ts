@@ -105,6 +105,23 @@ describe('createMotionLivenessTracker', () => {
     expect(tracker.status()).toBe('vivo')
   })
 
+  it('con el umbral por defecto, un temblor leve (paralaje de foto sostenida a mano) no alcanza "vivo"', () => {
+    // Antes del endurecimiento (0.012) esto alcanzaba para "vivo": una foto
+    // sostenida a mano vibra/se ladea un poco, lo que via paralaje se ve
+    // como una deformacion no-rigida pequeña aunque el objeto sea rigido.
+    const tracker = createMotionLivenessTracker({ timeoutMs: 300, minFrames: 3 })
+    const base = baseLandmarks()
+
+    let lastStatus
+    for (let t = 0; t <= 300; t += 100) {
+      const landmarks = [...base]
+      landmarks[MOUTH_LEFT] = { x: 0.55 + Math.sin(t) * 0.0015, y: 0.6 }
+      lastStatus = tracker.push(frame(landmarks, t))
+    }
+
+    expect(lastStatus).not.toBe('vivo')
+  })
+
   it('cae a "requiere_parpadeo" si nunca hay suficiente deformacion no-rigida (foto rigida)', () => {
     const tracker = createMotionLivenessTracker({ timeoutMs: 500, minFrames: 3 })
     const base = baseLandmarks()

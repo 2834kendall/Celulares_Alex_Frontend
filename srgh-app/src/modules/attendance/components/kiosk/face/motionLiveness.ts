@@ -60,10 +60,18 @@ export interface MotionLivenessTracker {
   status(): MotionLivenessStatus
 }
 
+// nonRigidThreshold subio de 0.012 a 0.035 (2026-07-31): una foto sostenida
+// a mano se detecto pasando el chequeo en pruebas reales — el temblor de
+// mano introduce un tilt fuera de plano frente a la camara (paralaje) que
+// toLocalFrame no puede cancelar del todo, ya que solo normaliza traslacion,
+// rotacion y escala EN el plano, no perspectiva. Subir el umbral achica esa
+// ventana de falso positivo a costa de mas casos que caen al respaldo de
+// parpadeo. Sigue siendo un chequeo 2D sin profundidad: mitiga, no elimina
+// el riesgo, y puede necesitar mas ajuste con pruebas reales de camara.
 const DEFAULTS: Required<MotionLivenessOptions> = {
   windowMs: 900,
   minFrames: 5,
-  nonRigidThreshold: 0.012,
+  nonRigidThreshold: 0.035,
   timeoutMs: 2500,
 }
 
