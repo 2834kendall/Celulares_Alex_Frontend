@@ -22,6 +22,7 @@ export function createSupabaseQueryMock(result: QueryResult) {
     gte: vi.fn(() => builder),
     lte: vi.fn(() => builder),
     is: vi.fn(() => builder),
+    limit: vi.fn(() => builder),
     single: vi.fn(() => builder),
     maybeSingle: vi.fn(() => builder),
     returns: vi.fn(() => builder),

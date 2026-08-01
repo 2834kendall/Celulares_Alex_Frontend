@@ -44,10 +44,17 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     return { ok: false, error: getLoginMessage(error) }
   }
 
-  // Los permisos viven en el JWT (los inyecta el hook de Supabase)
+  // Los permisos y el rol viven en el JWT (los inyecta el hook de Supabase)
   const { data } = await supabase.auth.getClaims()
   const meta = (data?.claims?.app_metadata ?? {}) as Partial<SgrhJwtClaims>
   const permisos = Array.isArray(meta.permisos) ? meta.permisos : []
+
+  // La cuenta KIOSCO es un dispositivo compartido, no una persona: jamas debe
+  // aterrizar en el dashboard administrativo (aunque sus permisos alcancen
+  // para ver algo ahi) — va directo a la pantalla de marcado.
+  if (meta.rol === 'KIOSCO') {
+    return { ok: true, destination: '/kiosco' }
+  }
 
   return { ok: true, destination: permisos.length > 0 ? '/dashboard' : '/unauthorized' }
 }

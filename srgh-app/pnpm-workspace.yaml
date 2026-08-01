@@ -1,3 +1,6 @@
 allowBuilds:
+  # Dependencia transitiva de onnxruntime-web. Su postinstall solo imprime
+  # una advertencia informativa; no compila nada, asi que no se ejecuta.
+  protobufjs: false
   sharp: true
   unrs-resolver: true
