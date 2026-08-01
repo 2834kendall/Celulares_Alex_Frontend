@@ -12,6 +12,20 @@ export const PERMISOS = {
   EMPLEADOS_READ: 'EMPLEADOS_READ',
   EMPLEADOS_WRITE: 'EMPLEADOS_WRITE',
 
+  // Storage (SGRH-60): lectura de fotos de empleado (URLs firmadas).
+  // Permiso propio y NO derivado de EMPLEADOS_READ a propósito: el rol KIOSCO
+  // (dispositivo compartido, físicamente expuesto) tiene EMPLEADOS_READ para
+  // poblar su buscador y no debe poder firmar fotos. La escritura de fotos usa
+  // EMPLEADOS_WRITE (KIOSCO no lo tiene).
+  FOTOS_READ: 'FOTOS_READ',
+
+  // Storage (SGRH-60): documentos del expediente (CCSS, contratos,
+  // incapacidades). Más sensibles que la ficha del empleado: permisos propios,
+  // sembrados solo a ADMIN/SUPERADMIN/RRHH — nunca a KIOSCO ni a los roles de
+  // solo-lectura de empleados.
+  DOCUMENTOS_READ: 'DOCUMENTOS_READ',
+  DOCUMENTOS_WRITE: 'DOCUMENTOS_WRITE',
+
   // Historial Laboral
   HISTORIAL_READ: 'HISTORIAL_READ',
   HISTORIAL_WRITE: 'HISTORIAL_WRITE',
