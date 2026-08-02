@@ -25,7 +25,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '>=22.13'
           cache: pnpm
           cache-dependency-path: srgh-app/pnpm-lock.yaml
 
@@ -39,4 +39,4 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
-        run: pnpm test -- --run
+        run: pnpm test
