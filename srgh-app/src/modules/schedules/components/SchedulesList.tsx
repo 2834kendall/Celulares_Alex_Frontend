@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useMemo, useState } from 'react'
 import {
   AlertTriangle,
   Pencil,
@@ -12,6 +13,7 @@ import {
   Clock,
   CalendarX,
   ChevronRight,
+  Search,
 } from 'lucide-react'
 import type { ScheduleRow } from '@/modules/schedules/types'
 import { deleteSchedule } from '@/modules/schedules/actions/deleteSchedule'
@@ -20,6 +22,7 @@ import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { normalizeSearchText } from '@/components/ui/SearchSelect'
 import { ScheduleForm } from './ScheduleForm'
 
 interface ShiftTypeOption {
@@ -48,13 +51,21 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
   const total = schedules.length
   const activeCount = schedules.filter((s) => s.hor_activo).length
 
+  const [nameFilter, setNameFilter] = useState('')
+
+  const filteredSchedules = useMemo(() => {
+    const query = normalizeSearchText(nameFilter.trim())
+    if (!query) return schedules
+    return schedules.filter((s) => normalizeSearchText(s.hor_nombre).includes(query))
+  }, [schedules, nameFilter])
+
   const {
     page,
     totalPages,
     paginatedItems: paginatedSchedules,
     goToPreviousPage,
     goToNextPage,
-  } = usePagination(schedules, 8)
+  } = usePagination(filteredSchedules, 8)
 
   function shiftTypeName(id: number | null | undefined) {
     return shiftTypes.find((t) => t.tjo_id === id)?.tjo_nombre ?? '—'
@@ -143,6 +154,20 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
         </div>
       )}
 
+      {schedules.length > 0 && (
+        <div className="relative max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.target.value)}
+            placeholder="Buscar por nombre..."
+            aria-label="Buscar plantilla por nombre"
+            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs font-medium text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
+          />
+        </div>
+      )}
+
       {schedules.length === 0 ? (
         <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
@@ -164,6 +189,13 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
               <Plus className="h-3.5 w-3.5" /> Crear la primera plantilla
             </button>
           )}
+        </div>
+      ) : filteredSchedules.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center">
+          <p className="text-sm font-semibold text-slate-700">
+            Ningún horario coincide con &ldquo;{nameFilter}&rdquo;
+          </p>
+          <p className="text-xs text-slate-500">Prueba con otro nombre.</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">

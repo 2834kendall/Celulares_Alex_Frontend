@@ -30,7 +30,7 @@ export function ScoreBadge({ score }: ScoreBadgeProps) {
     <span
       className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`}
     >
-      {score.toFixed(1)}/10
+      {Math.round(score)}/10
     </span>
   )
 }

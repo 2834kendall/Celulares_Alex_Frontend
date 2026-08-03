@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { EmployeeWizard } from './EmployeeWizard'
+import { TERRITORIO } from './testFixtures'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
 
 const push = vi.fn()
@@ -27,6 +28,7 @@ const CATALOGOS = {
   tiposContrato: [{ id: 1, nombre: 'Indefinido' }],
   tiposJornada: [{ id: 1, nombre: 'Diurna' }],
   bancos: [{ id: 3, nombre: 'BAC Credomatic' }],
+  territorio: TERRITORIO,
   roles: [{ id: 4, nombre: 'Empleado' }],
 }
 
@@ -46,6 +48,15 @@ async function fillStepPersonal(user: UserEvent) {
   fireEvent.change(screen.getByLabelText('Fecha de ingreso *'), {
     target: { value: '2024-01-01' },
   })
+  await fillDireccion(user)
+}
+
+/** La dirección vive en el paso 1: sin ella «Siguiente» no avanza. */
+async function fillDireccion(user: UserEvent) {
+  await user.selectOptions(screen.getByLabelText('Provincia *'), '1')
+  await user.selectOptions(screen.getByLabelText('Cantón *'), '12')
+  await user.selectOptions(screen.getByLabelText('Distrito *'), '121')
+  await user.type(screen.getByLabelText('Señas exactas *'), '200 m norte de la iglesia')
 }
 
 async function fillStepNomina(user: UserEvent) {

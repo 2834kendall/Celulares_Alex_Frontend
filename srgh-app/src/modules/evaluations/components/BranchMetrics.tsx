@@ -22,6 +22,7 @@ import { Pagination } from '@/components/ui/Pagination'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ScoreBar } from './ScoreBar'
+import { ScoreCell } from './ScoreCell'
 
 type OpenModal = 'promedios' | 'pendientes' | 'bajo' | null
 
@@ -135,7 +136,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
             </span>
           </div>
           <p className="mt-1.5 text-base font-bold tabular-nums text-slate-900">
-            {branchAverage !== null ? `${branchAverage.toFixed(1)}/10` : '—'}
+            {branchAverage !== null ? `${branchAverage}/10` : '—'}
             <span className="ml-1.5 text-xs font-semibold text-emerald-600">
               {branchId === 'all' ? 'Global' : 'Sucursal'}
             </span>
@@ -162,7 +163,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
           </div>
           <p className="mt-1.5 truncate text-sm font-bold text-slate-900">
             {bestRated
-              ? `${bestRated.fullName} (${bestRated.evaluation!.promedio!.toFixed(1)}/10)`
+              ? `${bestRated.fullName} (${Math.round(bestRated.evaluation!.promedio!)}/10)`
               : 'Sin evaluaciones'}
           </p>
           <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
@@ -218,7 +219,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
             </span>
           </p>
           <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
-            Colaboradores con rendimiento menor a {LOW_PERFORMANCE_THRESHOLD.toFixed(1)} / 10.
+            Colaboradores con rendimiento menor a {LOW_PERFORMANCE_THRESHOLD} / 10.
             <ChevronRight className="h-3 w-3 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-rose-500" />
           </p>
         </button>
@@ -281,11 +282,12 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-        <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-100 px-4 py-3">
           <span className="h-4 w-1 rounded-full bg-blue-600" />
           <h3 className="text-xs font-bold uppercase tracking-wide text-slate-900">
             Tabla general de calificaciones
           </h3>
+          <p className="ml-auto text-[10px] font-medium text-slate-400">Escala 0–10</p>
         </div>
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
@@ -300,18 +302,24 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
               <table className="w-full text-xs">
                 <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="sticky left-0 z-10 border-r border-slate-100 bg-slate-50 px-3 py-2 text-left font-semibold">
+                    <th className="sticky left-0 z-10 border-r border-slate-100 bg-slate-50 px-3 py-2 text-left align-bottom font-semibold">
                       Colaborador
                     </th>
                     {rubros.map((r) => (
-                      <th key={r.areaId} className="px-3 py-2 text-center font-semibold">
-                        <span className="block max-w-[7rem] truncate" title={r.nombre}>
+                      <th
+                        key={r.areaId}
+                        className="px-3 py-2 text-center align-bottom font-semibold"
+                      >
+                        <span
+                          className="mx-auto block w-[6.5rem] break-words leading-tight"
+                          title={r.descripcion}
+                        >
                           {r.nombre}
                         </span>
                       </th>
                     ))}
-                    <th className="px-3 py-2 text-center font-semibold">Promedio</th>
-                    <th className="px-3 py-2 text-right font-semibold">Acciones</th>
+                    <th className="px-3 py-2 text-center align-bottom font-semibold">Promedio</th>
+                    <th className="px-3 py-2 text-right align-bottom font-semibold">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -330,18 +338,15 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
                           </span>
                         </p>
                       </td>
-                      {rubros.map((r) => {
-                        const score =
-                          r.criterioId !== null ? c.evaluation?.scores[r.criterioId] : undefined
-                        return (
-                          <td
-                            key={r.areaId}
-                            className="px-3 py-2 text-center tabular-nums text-slate-600"
-                          >
-                            {score !== undefined ? `${score}/10` : '—'}
-                          </td>
-                        )
-                      })}
+                      {rubros.map((r) => (
+                        <ScoreCell
+                          key={r.areaId}
+                          label={r.nombre}
+                          score={
+                            r.criterioId !== null ? c.evaluation?.scores[r.criterioId] : undefined
+                          }
+                        />
+                      ))}
                       <td className="px-3 py-2 text-center">
                         <ScoreBadge score={c.evaluation?.promedio ?? null} />
                       </td>
@@ -415,7 +420,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
       {openModal === 'bajo' && (
         <CollaboratorListModal
           title="Plan de bajo rendimiento"
-          subtitle={`Colaboradores con promedio menor a ${LOW_PERFORMANCE_THRESHOLD.toFixed(1)}/10 que requieren seguimiento.`}
+          subtitle={`Colaboradores con promedio menor a ${LOW_PERFORMANCE_THRESHOLD}/10 que requieren seguimiento.`}
           emptyMessage="Ningún colaborador se encuentra bajo el umbral de rendimiento."
           collaborators={lowPerformers}
           onClose={() => setOpenModal(null)}

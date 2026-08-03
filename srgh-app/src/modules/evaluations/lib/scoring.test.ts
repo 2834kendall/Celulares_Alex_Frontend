@@ -6,6 +6,7 @@ import {
   initialsOf,
   parseNotes,
   scoreColor,
+  scoreTint,
   serializeNotes,
 } from './scoring'
 
@@ -14,10 +15,11 @@ describe('averageScore', () => {
     expect(averageScore([])).toBeNull()
   })
 
-  it('promedia y redondea a 1 decimal', () => {
-    expect(averageScore([10, 9, 9.2, 9, 8])).toBe(9)
-    expect(averageScore([8, 7])).toBe(7.5)
-    expect(averageScore([7, 7, 8])).toBe(7.3)
+  it('promedia y redondea a numero entero', () => {
+    expect(averageScore([10, 9, 9, 9, 8])).toBe(9)
+    expect(averageScore([8, 7])).toBe(8)
+    expect(averageScore([7, 7, 8])).toBe(7)
+    expect(averageScore([10, 9])).toBe(10)
   })
 })
 
@@ -41,6 +43,14 @@ describe('scoreColor', () => {
     expect(scoreColor(6.5)).toBe('#f97316')
     expect(scoreColor(5)).toBe('#ef4444')
     expect(scoreColor(2)).toBe('#dc2626')
+  })
+})
+
+describe('scoreTint', () => {
+  it('traduce el color de la nota a un fondo tenue', () => {
+    expect(scoreTint(10)).toBe('rgba(34, 197, 94, 0.13)')
+    expect(scoreTint(7)).toBe('rgba(234, 179, 8, 0.13)')
+    expect(scoreTint(2)).toBe('rgba(220, 38, 38, 0.13)')
   })
 })
 

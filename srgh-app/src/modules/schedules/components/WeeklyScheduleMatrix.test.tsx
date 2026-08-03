@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WeeklyScheduleMatrix } from './WeeklyScheduleMatrix'
 import { assignDaySchedule } from '@/modules/schedules/actions/assignDaySchedule'
+import { assignCustomScheduleBulk } from '@/modules/schedules/actions/assignCustomScheduleBulk'
+import { clearDayAssignment } from '@/modules/schedules/actions/clearDayAssignment'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import type { DayAssignment, EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
 import type { ScheduleRow } from '@/modules/schedules/types'
@@ -18,7 +20,17 @@ vi.mock('@/modules/schedules/actions/assignDaySchedule', () => ({
   assignDaySchedule: vi.fn(),
 }))
 
+vi.mock('@/modules/schedules/actions/assignCustomScheduleBulk', () => ({
+  assignCustomScheduleBulk: vi.fn(),
+}))
+
+vi.mock('@/modules/schedules/actions/clearDayAssignment', () => ({
+  clearDayAssignment: vi.fn(),
+}))
+
 const mockAssignDaySchedule = vi.mocked(assignDaySchedule)
+const mockAssignCustomScheduleBulk = vi.mocked(assignCustomScheduleBulk)
+const mockClearDayAssignment = vi.mocked(clearDayAssignment)
 
 const WEEK_START = '2026-01-05'
 const WEEK_DATES = getWeekDates(WEEK_START)
@@ -48,6 +60,7 @@ function makeRow(overrides: Partial<EmployeeWeekRow> = {}): EmployeeWeekRow {
     employmentHistoryId: 1,
     employeeId: 10,
     branchId: 100,
+    branchName: 'Sucursal Central',
     fullName: 'Ana Perez',
     position: 'Cajera',
     days: makeDays(),
@@ -91,14 +104,36 @@ describe('<WeeklyScheduleMatrix />', () => {
     expect(screen.getAllByText('7.5 Hrs').length).toBeGreaterThan(0)
   })
 
-  it('navega a la semana siguiente y anterior', async () => {
+  it('el input de fecha navega a la semana que contiene la fecha elegida', () => {
+    const { container } = renderMatrix([makeRow()])
+
+    const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement
+    fireEvent.change(dateInput, { target: { value: '2026-01-14' } })
+
+    expect(push).toHaveBeenCalledWith('/schedule?week=2026-01-12')
+  })
+
+  it('el boton "Semana actual" se deshabilita si ya se esta viendo esa semana', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 0, 7)) // miercoles de la semana de WEEK_START
+
     renderMatrix([makeRow()])
 
-    await userEvent.click(screen.getByLabelText('Semana siguiente'))
-    expect(push).toHaveBeenCalledWith(`/schedule?week=2026-01-12`)
+    expect(screen.getByRole('button', { name: /Semana actual/ })).toBeDisabled()
 
-    await userEvent.click(screen.getByLabelText('Semana anterior'))
-    expect(push).toHaveBeenCalledWith(`/schedule?week=2025-12-29`)
+    vi.useRealTimers()
+  })
+
+  it('el boton "Semana actual" navega a la semana de hoy cuando se ve otra semana', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 1, 11)) // semana del 2026-02-09
+
+    renderMatrix([makeRow()])
+    fireEvent.click(screen.getByRole('button', { name: /Semana actual/ }))
+
+    expect(push).toHaveBeenCalledWith('/schedule?week=2026-02-09')
+
+    vi.useRealTimers()
   })
 
   it('sin permiso de escritura muestra la etiqueta en vez del select', () => {
@@ -107,7 +142,7 @@ describe('<WeeklyScheduleMatrix />', () => {
       false
     )
 
-    expect(screen.queryAllByRole('combobox')).toHaveLength(0)
+    expect(screen.queryAllByRole('combobox', { name: /Asignar horario/ })).toHaveLength(0)
     expect(screen.getAllByText('Turno A').length).toBeGreaterThan(0)
   })
 
@@ -150,7 +185,7 @@ describe('<WeeklyScheduleMatrix />', () => {
   })
 
   it('guardar horas personalizadas desde el modal llama a la action y lo cierra', async () => {
-    mockAssignDaySchedule.mockResolvedValue({ ok: true })
+    mockAssignCustomScheduleBulk.mockResolvedValue({ ok: true })
     renderMatrix([makeRow()])
 
     const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
@@ -159,8 +194,11 @@ describe('<WeeklyScheduleMatrix />', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Guardar' }))
 
     await waitFor(() =>
-      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
-        expect.objectContaining({ customStartTime: expect.any(String) })
+      expect(mockAssignCustomScheduleBulk).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customStartTime: expect.any(String),
+          days: [{ assignmentId: null, date: WEEK_DATES[0] }],
+        })
       )
     )
     await waitFor(() => expect(screen.queryByText('Horario personalizado')).not.toBeInTheDocument())
@@ -176,8 +214,8 @@ describe('<WeeklyScheduleMatrix />', () => {
     expect(await screen.findByText('No se pudo guardar.')).toBeInTheDocument()
   })
 
-  it('muestra la paginacion cuando hay mas de 8 colaboradores', () => {
-    const rows = Array.from({ length: 9 }, (_, i) =>
+  it('muestra la paginacion cuando hay mas de 6 colaboradores', () => {
+    const rows = Array.from({ length: 7 }, (_, i) =>
       makeRow({ employmentHistoryId: i + 1, fullName: `Empleado ${i + 1}` })
     )
     renderMatrix(rows)
@@ -185,8 +223,11 @@ describe('<WeeklyScheduleMatrix />', () => {
     expect(screen.getAllByText(/Página 1 de 2/).length).toBeGreaterThan(0)
   })
 
-  it('no muestra paginacion con 8 colaboradores o menos', () => {
-    renderMatrix([makeRow()])
+  it('no muestra paginacion con 6 colaboradores o menos', () => {
+    const rows = Array.from({ length: 6 }, (_, i) =>
+      makeRow({ employmentHistoryId: i + 1, fullName: `Empleado ${i + 1}` })
+    )
+    renderMatrix(rows)
     expect(screen.queryByText(/Página/)).not.toBeInTheDocument()
   })
 })

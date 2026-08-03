@@ -11,9 +11,10 @@ import { ibanBankCode } from '@/modules/employees/lib/iban'
 export type UpdateEmployeeResult = { ok: true } | { ok: false; error: string }
 
 /**
- * Edición de la ficha personal + datos de pago. Usa el cliente de sesión:
- * la RLS de sgrh_empleados pasa (el empleado ya tiene historial) y la de
- * sgrh_empleado_datos_pago exige EMPLEADOS_WRITE de la misma empresa.
+ * Edición de la ficha personal + dirección + datos de pago. Usa el cliente de
+ * sesión: la RLS de sgrh_empleados pasa (el empleado ya tiene historial) y las
+ * de sgrh_empleado_datos_pago / sgrh_direcciones exigen EMPLEADOS_WRITE de la
+ * misma empresa.
  */
 export async function updateEmployee(
   empId: number,
@@ -55,7 +56,7 @@ export async function updateEmployee(
     .from('sgrh_empleados')
     .update(parsed.data.empleado)
     .eq('emp_id', empId)
-    .select('emp_id')
+    .select('emp_id, emp_direccion_id')
     .single()
 
   if (error || !data) {
@@ -64,6 +65,44 @@ export async function updateEmployee(
       return { ok: false, error: uniqueError }
     }
     return { ok: false, error: 'No se pudo actualizar el empleado.' }
+  }
+
+  // La dirección es PADRE del empleado (el FK sale de sgrh_empleados), así que
+  // no es un upsert como los datos de pago: o se actualiza la fila existente, o
+  // se crea y se enlaza. dir_codigo_postal nunca se envía — lo recalcula el
+  // trigger desde el distrito.
+  const direccionError =
+    'Los datos personales se guardaron, pero la dirección no. Intenta de nuevo.'
+
+  if (data.emp_direccion_id) {
+    const { error: errDireccion } = await supabase
+      .from('sgrh_direcciones')
+      .update(parsed.data.direccion)
+      .eq('dir_id', data.emp_direccion_id)
+
+    if (errDireccion) {
+      return { ok: false, error: direccionError }
+    }
+  } else {
+    // Empleado creado antes de que el formulario capturara dirección.
+    const { data: nueva, error: errInsert } = await supabase
+      .from('sgrh_direcciones')
+      .insert(parsed.data.direccion)
+      .select('dir_id')
+      .single()
+
+    if (errInsert || !nueva) {
+      return { ok: false, error: direccionError }
+    }
+
+    const { error: errEnlace } = await supabase
+      .from('sgrh_empleados')
+      .update({ emp_direccion_id: nueva.dir_id })
+      .eq('emp_id', empId)
+
+    if (errEnlace) {
+      return { ok: false, error: direccionError }
+    }
   }
 
   if (parsed.data.datos_pago) {

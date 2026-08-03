@@ -39,6 +39,10 @@ yarn-error.log*
 # Supabase
 supabase/.temp/
 
+# Runtime WASM del reconocimiento facial: lo copia
+# scripts/setup-face-assets.mjs desde node_modules (predev/prebuild).
+/public/models/mediapipe-wasm/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

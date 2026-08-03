@@ -60,7 +60,9 @@ function toDetail(row: EvaluationRow): EvaluationDetail {
   const observations: Record<number, string> = {}
   for (const r of row.sgrh_evaluacion_resultados) {
     if (!r.evr_no_aplica && r.evr_puntaje !== null) {
-      scores[r.evr_criterio_id] = Number(r.evr_puntaje)
+      // Las notas se manejan como enteros; se redondean los registros
+      // historicos que quedaron con decimales.
+      scores[r.evr_criterio_id] = Math.round(Number(r.evr_puntaje))
     }
     if (r.evr_observacion) {
       observations[r.evr_criterio_id] = r.evr_observacion
@@ -74,7 +76,7 @@ function toDetail(row: EvaluationRow): EvaluationDetail {
 
   const promedio =
     row.eve_promedio_final !== null
-      ? Number(row.eve_promedio_final)
+      ? Math.round(Number(row.eve_promedio_final))
       : averageScore(Object.values(scores))
 
   return {
@@ -91,11 +93,6 @@ function toDetail(row: EvaluationRow): EvaluationDetail {
   }
 }
 
-/*
-  Carga la planilla activa de la empresa junto con la ultima evaluacion de
-  desempeno de cada colaborador. Es la fuente de datos de las pestanas de
-  metricas, vista individual y nueva evaluacion.
- */
 export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewResult> {
   const claims = await requireAnyPermission(ACCESO_EVALUACIONES)
   const empresaId = (claims.app_metadata as { empresa_id?: number })?.empresa_id

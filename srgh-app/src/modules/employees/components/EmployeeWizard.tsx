@@ -10,6 +10,7 @@ import {
   onboardingEmpleadoSchema,
   type CatalogoItem,
   type OnboardingEmpleadoInput,
+  type TerritorioCatalogo,
 } from '@/modules/employees/types'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
 import { formatCRC, formatDate, fullName } from '@/modules/employees/lib/format'
@@ -42,6 +43,8 @@ const STEP_FIELDS: Path<OnboardingEmpleadoInput>[][] = [
     'empleado.emp_numero_asegurado_ccss',
     'empleado.emp_nombre_contacto_emergencia',
     'empleado.emp_telefono_emergencia',
+    'direccion.dir_distrito_id',
+    'direccion.dir_senas_exactas',
   ],
   [
     'contratacion.lab_puesto_id',
@@ -77,6 +80,7 @@ interface OnboardingSummaryProps {
   sucursales: CatalogoItem[]
   tiposContrato: CatalogoItem[]
   tiposJornada: CatalogoItem[]
+  territorio: TerritorioCatalogo
 }
 
 /** Resumen de lo capturado en los pasos 1 y 2, para revisar antes de crear. */
@@ -86,8 +90,17 @@ function OnboardingSummary({
   sucursales,
   tiposContrato,
   tiposJornada,
+  territorio,
 }: OnboardingSummaryProps) {
-  const { empleado, contratacion } = values
+  const { empleado, contratacion, direccion } = values
+
+  // El resumen muestra la cadena completa aunque solo se guarde el distrito.
+  const distrito = territorio.distritos.find((d) => d.id === direccion?.dir_distrito_id)
+  const canton = distrito && territorio.cantones.find((c) => c.id === distrito.cantonId)
+  const provincia = canton && territorio.provincias.find((p) => p.id === canton.provinciaId)
+  const ubicacion = distrito
+    ? `${provincia?.nombre ?? '—'}, ${canton?.nombre ?? '—'}, ${distrito.nombre} (${distrito.codigoPostal})`
+    : '—'
 
   return (
     <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
@@ -121,6 +134,12 @@ function OnboardingSummary({
         <SummaryItem label="Inicio de contrato" value={formatDate(contratacion.lab_fecha_inicio)} />
         <SummaryItem label="Salario base" value={formatCRC(contratacion.lab_salario_base)} />
         <SummaryItem label="Salario real" value={formatCRC(contratacion.lab_salario_real)} />
+        <div className="sm:col-span-2 lg:col-span-4">
+          <SummaryItem label="Dirección" value={ubicacion} />
+        </div>
+        <div className="sm:col-span-2 lg:col-span-4">
+          <SummaryItem label="Señas exactas" value={direccion?.dir_senas_exactas || '—'} />
+        </div>
       </dl>
       <p className="mt-3 text-[11px] text-slate-500">
         Usa «Anterior» si necesitas corregir algo. El empleado se crea únicamente al presionar
@@ -137,6 +156,7 @@ interface EmployeeWizardProps {
   tiposContrato: CatalogoItem[]
   tiposJornada: CatalogoItem[]
   bancos: CatalogoItem[]
+  territorio: TerritorioCatalogo
   roles: CatalogoItem[]
   canInviteUser: boolean
 }
@@ -148,6 +168,7 @@ export function EmployeeWizard({
   tiposContrato,
   tiposJornada,
   bancos,
+  territorio,
   roles,
   canInviteUser,
 }: EmployeeWizardProps) {
@@ -175,6 +196,9 @@ export function EmployeeWizard({
         emp_numero_asegurado_ccss: '',
         emp_nombre_contacto_emergencia: '',
         emp_telefono_emergencia: '',
+      },
+      direccion: {
+        dir_senas_exactas: '',
       },
       contratacion: {
         lab_fecha_inicio: '',
@@ -261,7 +285,12 @@ export function EmployeeWizard({
             </div>
           )}
 
-          {step === 0 && <EmployeeWizardStepPersonal tiposIdentificacion={tiposIdentificacion} />}
+          {step === 0 && (
+            <EmployeeWizardStepPersonal
+              tiposIdentificacion={tiposIdentificacion}
+              territorio={territorio}
+            />
+          )}
           {step === 1 && (
             <EmployeeWizardStepNomina
               puestos={puestos}
@@ -279,6 +308,7 @@ export function EmployeeWizard({
                 sucursales={sucursales}
                 tiposContrato={tiposContrato}
                 tiposJornada={tiposJornada}
+                territorio={territorio}
               />
               <EmployeeWizardStepUsuario
                 roles={roles}

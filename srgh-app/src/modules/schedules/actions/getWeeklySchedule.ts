@@ -16,12 +16,18 @@ interface PositionJoin {
   pue_nombre: string | null
 }
 
+interface BranchJoin {
+  suc_id: number
+  suc_nombre: string
+}
+
 interface EmploymentHistoryRow {
   lab_id: number
   lab_empleado_id: number
   lab_sucursal_id: number
   sgrh_empleados: EmployeeJoin | null
   sgrh_cat_puestos: PositionJoin | null
+  sgrh_sucursales: BranchJoin | null
 }
 
 interface ScheduleJoin {
@@ -71,6 +77,7 @@ export interface EmployeeWeekRow {
   employmentHistoryId: number
   employeeId: number
   branchId: number
+  branchName: string | null
   fullName: string
   position: string | null
   days: DayAssignment[]
@@ -90,9 +97,20 @@ function subtractPeriod(minutes: number, start?: string | null, end?: string | n
   return minutes - (toMinutes(end) - toMinutes(start))
 }
 
+/** Los primeros 10 minutos de break estan pagados; solo el exceso se resta de las horas trabajadas. */
+const PAID_BREAK_MINUTES = 10
+
+function subtractBreakExcess(minutes: number, start?: string | null, end?: string | null) {
+  if (!start || !end) return minutes
+  const breakMinutes = toMinutes(end) - toMinutes(start)
+  const excess = Math.max(0, breakMinutes - PAID_BREAK_MINUTES)
+  return minutes - excess
+}
+
 /**
- * Worked hours = full span minus lunch minus the separate break. Both
- * deductions are optional: pass null/undefined when a period isn't set.
+ * Worked hours = full span minus lunch minus the break's excess over the
+ * paid allowance. Both deductions are optional: pass null/undefined when a
+ * period isn't set.
  */
 function hoursBetween(
   startTime: string,
@@ -104,7 +122,7 @@ function hoursBetween(
 ) {
   let minutes = toMinutes(endTime) - toMinutes(startTime)
   minutes = subtractPeriod(minutes, lunchStart, lunchEnd)
-  minutes = subtractPeriod(minutes, breakStart, breakEnd)
+  minutes = subtractBreakExcess(minutes, breakStart, breakEnd)
   return Math.max(0, minutes / 60)
 }
 
@@ -128,7 +146,8 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       lab_empleado_id,
       lab_sucursal_id,
       sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2 ),
-      sgrh_cat_puestos ( pue_nombre )
+      sgrh_cat_puestos ( pue_nombre ),
+      sgrh_sucursales ( suc_id, suc_nombre )
     `
     )
     .eq('lab_empresa_id', empresaId)
@@ -256,6 +275,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       employmentHistoryId: h.lab_id,
       employeeId: h.lab_empleado_id,
       branchId: h.lab_sucursal_id,
+      branchName: h.sgrh_sucursales?.suc_nombre ?? null,
       fullName,
       position: position?.pue_nombre ?? null,
       days,

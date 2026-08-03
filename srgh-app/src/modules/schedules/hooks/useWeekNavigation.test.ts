@@ -14,27 +14,27 @@ describe('useWeekNavigation', () => {
     vi.clearAllMocks()
   })
 
-  it('goToNextWeek navega 7 dias adelante manteniendo el pathname', async () => {
+  it('goToWeekStart navega a la semana indicada', async () => {
     const { result } = renderHook(() => useWeekNavigation('2026-01-05'))
 
-    act(() => result.current.goToNextWeek())
+    act(() => result.current.goToWeekStart('2026-01-12'))
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/schedule?week=2026-01-12'))
   })
 
-  it('goToPreviousWeek navega 7 dias atras', async () => {
-    const { result } = renderHook(() => useWeekNavigation('2026-01-05'))
-
-    act(() => result.current.goToPreviousWeek())
-
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/schedule?week=2025-12-29'))
-  })
-
-  it('cruza correctamente el limite de mes/anio', async () => {
+  it('goToWeekStart funciona cruzando el limite de mes/anio', async () => {
     const { result } = renderHook(() => useWeekNavigation('2025-12-29'))
 
-    act(() => result.current.goToNextWeek())
+    act(() => result.current.goToWeekStart('2026-01-05'))
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/schedule?week=2026-01-05'))
+  })
+
+  it('goToWeekStart no navega si ya se esta en esa semana', () => {
+    const { result } = renderHook(() => useWeekNavigation('2026-01-05'))
+
+    act(() => result.current.goToWeekStart('2026-01-05'))
+
+    expect(push).not.toHaveBeenCalled()
   })
 })

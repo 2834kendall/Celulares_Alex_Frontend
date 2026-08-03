@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from 'react'
 import { X } from 'lucide-react'
 import { TimeSelect } from './TimeSelect'
+import { WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
 
 export interface CustomHoursValues {
   startTime: string
@@ -11,11 +12,19 @@ export interface CustomHoursValues {
   lunchEnd: string | null
   breakStart: string | null
   breakEnd: string | null
+  /** Fechas ISO de la semana visible a las que se debe aplicar este horario. */
+  applyToDates: string[]
 }
 
 interface CustomHoursModalProps {
   employeeName: string
   dayLabel: string
+  /** Fechas ISO (Lunes..Domingo) de la semana visible, para el selector de dias. */
+  weekDates: string[]
+  /** Fecha ISO que abrio el modal — viene pre-marcada. */
+  initialDate: string
+  /** Fechas ISO que no se pueden marcar (p. ej. cubiertas por una incapacidad). */
+  unavailableDates?: string[]
   initialStartTime: string
   initialEndTime: string
   initialLunchStart?: string | null
@@ -90,6 +99,9 @@ function OptionalPeriod({
 export function CustomHoursModal({
   employeeName,
   dayLabel,
+  weekDates,
+  initialDate,
+  unavailableDates = [],
   initialStartTime,
   initialEndTime,
   initialLunchStart,
@@ -108,12 +120,23 @@ export function CustomHoursModal({
 
   const [hasBreak, setHasBreak] = useState(Boolean(initialBreakStart && initialBreakEnd))
   const [breakStart, setBreakStart] = useState(initialBreakStart ?? '10:00')
-  const [breakEnd, setBreakEnd] = useState(initialBreakEnd ?? '10:15')
+  // 10 min es el break estandar: coincide con los minutos pagados que
+  // getWeeklySchedule no descuenta de las horas trabajadas.
+  const [breakEnd, setBreakEnd] = useState(initialBreakEnd ?? '10:10')
+
+  const [applyToDates, setApplyToDates] = useState<string[]>([initialDate])
 
   const [isSaving, setIsSaving] = useState(false)
 
+  function toggleDate(date: string) {
+    setApplyToDates((prev) =>
+      prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date]
+    )
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (applyToDates.length === 0) return
     setIsSaving(true)
     await onConfirm({
       startTime,
@@ -122,14 +145,20 @@ export function CustomHoursModal({
       lunchEnd: hasLunch ? lunchEnd : null,
       breakStart: hasBreak ? breakStart : null,
       breakEnd: hasBreak ? breakEnd : null,
+      applyToDates,
     })
     setIsSaving(false)
   }
 
   return (
-    <div className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 px-4 py-4 backdrop-blur-[2px] sm:items-center sm:py-5">
-      <div className="animate-fade-in w-full max-w-[19rem] overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/5">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-[2px]">
+      {/*
+        El panel se limita a la altura de la ventana y solo scrollea el cuerpo,
+        para que la cabecera y los botones queden siempre visibles aunque el
+        formulario crezca (almuerzo + break desplegados).
+      */}
+      <div className="animate-fade-in flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[21rem] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-600">
               Horario personalizado
@@ -148,44 +177,82 @@ export function CustomHoursModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-3.5 space-y-3">
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Hora de entrada
-            </label>
-            <TimeSelect value={startTime} onChange={setStartTime} />
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Hora de entrada
+              </label>
+              <TimeSelect value={startTime} onChange={setStartTime} />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Hora de salida
+              </label>
+              <TimeSelect value={endTime} onChange={setEndTime} />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Aplicar a estos días
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {weekDates.map((date, index) => {
+                  const isSelected = applyToDates.includes(date)
+                  const isUnavailable = unavailableDates.includes(date)
+                  return (
+                    <button
+                      key={date}
+                      type="button"
+                      disabled={isUnavailable}
+                      onClick={() => toggleDate(date)}
+                      aria-pressed={isSelected}
+                      title={
+                        isUnavailable ? 'Día cubierto por una incapacidad o licencia' : undefined
+                      }
+                      className={`rounded-lg px-2 py-1 text-[10px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+                        isUnavailable
+                          ? 'cursor-not-allowed bg-slate-100 text-slate-300'
+                          : isSelected
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {WEEKDAY_NAMES[index].slice(0, 3)}
+                    </button>
+                  )
+                })}
+              </div>
+              {applyToDates.length === 0 && (
+                <p className="mt-1 text-[10px] text-rose-600">Seleccione al menos un día.</p>
+              )}
+            </div>
+
+            <OptionalPeriod
+              idPrefix="custom-lunch"
+              label="Incluye almuerzo"
+              enabled={hasLunch}
+              onToggle={setHasLunch}
+              start={lunchStart}
+              end={lunchEnd}
+              onChangeStart={setLunchStart}
+              onChangeEnd={setLunchEnd}
+            />
+
+            <OptionalPeriod
+              idPrefix="custom-break"
+              label="Incluye break"
+              enabled={hasBreak}
+              onToggle={setHasBreak}
+              start={breakStart}
+              end={breakEnd}
+              onChangeStart={setBreakStart}
+              onChangeEnd={setBreakEnd}
+            />
           </div>
 
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Hora de salida
-            </label>
-            <TimeSelect value={endTime} onChange={setEndTime} />
-          </div>
-
-          <OptionalPeriod
-            idPrefix="custom-lunch"
-            label="Incluye almuerzo"
-            enabled={hasLunch}
-            onToggle={setHasLunch}
-            start={lunchStart}
-            end={lunchEnd}
-            onChangeStart={setLunchStart}
-            onChangeEnd={setLunchEnd}
-          />
-
-          <OptionalPeriod
-            idPrefix="custom-break"
-            label="Incluye break"
-            enabled={hasBreak}
-            onToggle={setHasBreak}
-            start={breakStart}
-            end={breakEnd}
-            onChangeStart={setBreakStart}
-            onChangeEnd={setBreakEnd}
-          />
-
-          <div className="flex items-center justify-end gap-2 pt-1">
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 px-4 py-3">
             <button
               type="button"
               onClick={onClose}
@@ -195,7 +262,7 @@ export function CustomHoursModal({
             </button>
             <button
               type="submit"
-              disabled={isSaving}
+              disabled={isSaving || applyToDates.length === 0}
               className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
             >
               {isSaving ? 'Guardando...' : 'Guardar'}

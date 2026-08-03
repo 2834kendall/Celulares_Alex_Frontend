@@ -31,6 +31,10 @@ const VALID_INPUT: OnboardingEmpleadoInput = {
     emp_fecha_ingreso_original: '2024-01-01',
     emp_nacionalidad: 'Costarricense',
   },
+  direccion: {
+    dir_distrito_id: 121,
+    dir_senas_exactas: '200 m norte de la iglesia',
+  },
   contratacion: {
     lab_puesto_id: 3,
     lab_sucursal_id: 2,
@@ -94,6 +98,11 @@ describe('createEmployee (server action)', () => {
       p_empleado: expect.objectContaining({ emp_nombre: 'Ana' }),
       p_contratacion: expect.objectContaining({ lab_puesto_id: 3 }),
       p_datos_pago: expect.objectContaining({ edp_banco_id: 3, edp_tipo_cuenta: 'AHORRO' }),
+      // El código postal no viaja: lo calcula el trigger desde el distrito.
+      p_direccion: {
+        dir_distrito_id: 121,
+        dir_senas_exactas: '200 m norte de la iglesia',
+      },
     })
     expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.EMPLEADOS_WRITE)
     expect(mockRevalidatePath).toHaveBeenCalledWith('/employees')

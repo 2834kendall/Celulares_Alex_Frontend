@@ -14,7 +14,12 @@ const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 
-const VALID_INPUT = { empleado: { emp_telefono: '8888-8888' } }
+const DIRECCION = { dir_distrito_id: 121, dir_senas_exactas: '200 m norte de la iglesia' }
+const VALID_INPUT = { empleado: { emp_telefono: '8888-8888' }, direccion: DIRECCION }
+
+// El empleado ya tiene dirección: la rama normal es UPDATE sobre la fila existente.
+const EMPLEADO_CON_DIRECCION = { data: { emp_id: 10, emp_direccion_id: 7 }, error: null }
+const DIRECCION_OK = { data: null, error: null }
 
 function mockClient(responses: Parameters<typeof createSupabaseClientMock>[0]) {
   const client = createSupabaseClientMock(responses)
@@ -33,6 +38,7 @@ describe('updateEmployee (server action)', () => {
   it('rechaza input inválido antes de tocar permisos o DB', async () => {
     const result = await updateEmployee(10, {
       empleado: { emp_telefono: 'no-es-telefono' },
+      direccion: DIRECCION,
     })
 
     expect(result).toEqual({ ok: false, error: 'Datos del empleado inválidos.' })
@@ -49,10 +55,14 @@ describe('updateEmployee (server action)', () => {
 
   it('convierte strings vacíos en null antes de guardar', async () => {
     const client = mockClient({
-      sgrh_empleados: { data: { emp_id: 10 }, error: null },
+      sgrh_empleados: EMPLEADO_CON_DIRECCION,
+      sgrh_direcciones: DIRECCION_OK,
     })
 
-    const result = await updateEmployee(10, { empleado: { emp_telefono: '' } })
+    const result = await updateEmployee(10, {
+      empleado: { emp_telefono: '' },
+      direccion: DIRECCION,
+    })
 
     expect(result).toEqual({ ok: true })
     const builder = client.from.mock.results[0].value
@@ -110,19 +120,22 @@ describe('updateEmployee (server action)', () => {
 
   it('actualiza la ficha y hace upsert de los datos de pago', async () => {
     const client = mockClient({
-      sgrh_empleados: { data: { emp_id: 10 }, error: null },
+      sgrh_empleados: EMPLEADO_CON_DIRECCION,
+      sgrh_direcciones: DIRECCION_OK,
       sgrh_empleado_datos_pago: { data: null, error: null },
     })
 
     const result = await updateEmployee(10, {
       empleado: { emp_telefono: '8888-8888' },
+      direccion: DIRECCION,
       datos_pago: { edp_banco_id: 3, edp_tipo_cuenta: 'AHORRO' },
     })
 
     expect(result).toEqual({ ok: true })
     expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.EMPLEADOS_WRITE)
 
-    const pagoBuilder = client.from.mock.results[1].value
+    // Orden de tablas: empleados → direcciones → datos_pago.
+    const pagoBuilder = client.from.mock.results[2].value
     expect(pagoBuilder.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ edp_empleado_id: 10, edp_banco_id: 3 }),
       { onConflict: 'edp_empleado_id' }
@@ -139,6 +152,7 @@ describe('updateEmployee (server action)', () => {
 
     const result = await updateEmployee(10, {
       empleado: { emp_telefono: '8888-8888' },
+      direccion: DIRECCION,
       datos_pago: { edp_banco_id: 5, edp_numero_cuenta: 'CR02 0102 0000 0000 0000 01' },
     })
 
@@ -150,12 +164,14 @@ describe('updateEmployee (server action)', () => {
   it('acepta el IBAN cuando el código de entidad coincide con el banco', async () => {
     mockClient({
       sgrh_cat_bancos: { data: { ban_codigo: '102' }, error: null },
-      sgrh_empleados: { data: { emp_id: 10 }, error: null },
+      sgrh_empleados: EMPLEADO_CON_DIRECCION,
+      sgrh_direcciones: DIRECCION_OK,
       sgrh_empleado_datos_pago: { data: null, error: null },
     })
 
     const result = await updateEmployee(10, {
       empleado: { emp_telefono: '8888-8888' },
+      direccion: DIRECCION,
       datos_pago: { edp_banco_id: 3, edp_numero_cuenta: 'CR02010200000000000001' },
     })
 
@@ -165,17 +181,20 @@ describe('updateEmployee (server action)', () => {
   it('normaliza el número de cuenta (mayúsculas, sin espacios) antes de guardar', async () => {
     const client = mockClient({
       sgrh_cat_bancos: { data: { ban_codigo: '102' }, error: null },
-      sgrh_empleados: { data: { emp_id: 10 }, error: null },
+      sgrh_empleados: EMPLEADO_CON_DIRECCION,
+      sgrh_direcciones: DIRECCION_OK,
       sgrh_empleado_datos_pago: { data: null, error: null },
     })
 
     const result = await updateEmployee(10, {
       empleado: { emp_telefono: '8888-8888' },
+      direccion: DIRECCION,
       datos_pago: { edp_banco_id: 3, edp_numero_cuenta: ' cr02 0102 0000 0000 0000 01 ' },
     })
 
     expect(result).toEqual({ ok: true })
-    const pagoBuilder = client.from.mock.results[2].value
+    // bancos → empleados → direcciones → datos_pago.
+    const pagoBuilder = client.from.mock.results[3].value
     expect(pagoBuilder.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ edp_numero_cuenta: 'CR02010200000000000001' }),
       { onConflict: 'edp_empleado_id' }
@@ -185,6 +204,7 @@ describe('updateEmployee (server action)', () => {
   it('rechaza una cuenta sin banco seleccionado antes de tocar la DB', async () => {
     const result = await updateEmployee(10, {
       empleado: { emp_telefono: '8888-8888' },
+      direccion: DIRECCION,
       datos_pago: { edp_numero_cuenta: 'CR05015202001026284066' },
     })
 
@@ -194,23 +214,28 @@ describe('updateEmployee (server action)', () => {
 
   it('omite el upsert cuando no vienen datos de pago', async () => {
     const client = mockClient({
-      sgrh_empleados: { data: { emp_id: 10 }, error: null },
+      sgrh_empleados: EMPLEADO_CON_DIRECCION,
+      sgrh_direcciones: DIRECCION_OK,
     })
 
     const result = await updateEmployee(10, VALID_INPUT)
 
     expect(result).toEqual({ ok: true })
-    expect(client.from).toHaveBeenCalledTimes(1)
+    // Solo empleados y direcciones: nunca se toca sgrh_empleado_datos_pago.
+    expect(client.from).toHaveBeenCalledTimes(2)
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_empleado_datos_pago')
   })
 
   it('avisa si la ficha se guardó pero los datos de pago fallaron', async () => {
     mockClient({
-      sgrh_empleados: { data: { emp_id: 10 }, error: null },
+      sgrh_empleados: EMPLEADO_CON_DIRECCION,
+      sgrh_direcciones: DIRECCION_OK,
       sgrh_empleado_datos_pago: { data: null, error: { message: 'boom' } },
     })
 
     const result = await updateEmployee(10, {
       empleado: { emp_telefono: '8888-8888' },
+      direccion: DIRECCION,
       datos_pago: { edp_banco_id: 3 },
     })
 
@@ -219,5 +244,99 @@ describe('updateEmployee (server action)', () => {
       error: 'Los datos personales se guardaron, pero los datos de pago no. Intenta de nuevo.',
     })
     expect(mockRevalidatePath).not.toHaveBeenCalled()
+  })
+
+  // ── Dirección ──────────────────────────────────────────────────────────────
+  // Es padre del empleado (el FK sale de sgrh_empleados), así que no hay upsert:
+  // o se actualiza la fila existente, o se crea y se enlaza.
+
+  it('actualiza la dirección existente sin tocar el código postal', async () => {
+    const client = mockClient({
+      sgrh_empleados: EMPLEADO_CON_DIRECCION,
+      sgrh_direcciones: DIRECCION_OK,
+    })
+
+    const result = await updateEmployee(10, VALID_INPUT)
+
+    expect(result).toEqual({ ok: true })
+    const direccionBuilder = client.from.mock.results[1].value
+    expect(direccionBuilder.update).toHaveBeenCalledWith(DIRECCION)
+    // El postal lo recalcula el trigger: enviarlo desde el cliente no tendría efecto.
+    expect(direccionBuilder.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ dir_codigo_postal: expect.anything() })
+    )
+    expect(direccionBuilder.eq).toHaveBeenCalledWith('dir_id', 7)
+    expect(direccionBuilder.insert).not.toHaveBeenCalled()
+  })
+
+  it('crea y enlaza la dirección si el empleado no tenía (creado antes de la UI)', async () => {
+    const client = mockClient({
+      sgrh_empleados: [
+        { data: { emp_id: 10, emp_direccion_id: null }, error: null },
+        { data: null, error: null },
+      ],
+      sgrh_direcciones: { data: { dir_id: 42 }, error: null },
+    })
+
+    const result = await updateEmployee(10, VALID_INPUT)
+
+    expect(result).toEqual({ ok: true })
+    const direccionBuilder = client.from.mock.results[1].value
+    expect(direccionBuilder.insert).toHaveBeenCalledWith(DIRECCION)
+
+    const enlaceBuilder = client.from.mock.results[2].value
+    expect(enlaceBuilder.update).toHaveBeenCalledWith({ emp_direccion_id: 42 })
+  })
+
+  it('avisa si la ficha se guardó pero la dirección no', async () => {
+    mockClient({
+      sgrh_empleados: EMPLEADO_CON_DIRECCION,
+      sgrh_direcciones: { data: null, error: { message: 'boom' } },
+    })
+
+    const result = await updateEmployee(10, VALID_INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Los datos personales se guardaron, pero la dirección no. Intenta de nuevo.',
+    })
+    expect(mockRevalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('avisa si la dirección se creó pero el enlace al empleado falló', async () => {
+    mockClient({
+      sgrh_empleados: [
+        { data: { emp_id: 10, emp_direccion_id: null }, error: null },
+        { data: null, error: { message: 'boom' } },
+      ],
+      sgrh_direcciones: { data: { dir_id: 42 }, error: null },
+    })
+
+    const result = await updateEmployee(10, VALID_INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Los datos personales se guardaron, pero la dirección no. Intenta de nuevo.',
+    })
+  })
+
+  it('rechaza una dirección sin distrito antes de tocar la DB', async () => {
+    const result = await updateEmployee(10, {
+      empleado: { emp_telefono: '8888-8888' },
+      direccion: { dir_senas_exactas: '200 m norte de la iglesia' },
+    } as unknown as Parameters<typeof updateEmployee>[1])
+
+    expect(result).toEqual({ ok: false, error: 'Datos del empleado inválidos.' })
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
+  it('rechaza señas demasiado cortas para ubicar la casa', async () => {
+    const result = await updateEmployee(10, {
+      empleado: { emp_telefono: '8888-8888' },
+      direccion: { dir_distrito_id: 121, dir_senas_exactas: 'casa 2' },
+    })
+
+    expect(result).toEqual({ ok: false, error: 'Datos del empleado inválidos.' })
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })
