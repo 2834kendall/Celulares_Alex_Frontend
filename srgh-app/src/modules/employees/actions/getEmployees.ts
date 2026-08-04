@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { getStorageProvider } from '@/lib/storage'
+import { TTL_FOTO } from '@/lib/storage/containers'
 import type { EmpleadoListItem } from '@/modules/employees/types'
 
 interface EmpleadoQueryRow {
@@ -16,6 +18,7 @@ interface EmpleadoQueryRow {
   emp_fecha_ingreso_original: string
   emp_genero: string | null
   emp_nacionalidad: string
+  emp_foto_path: string | null
 }
 
 interface HistorialActivoRow {
@@ -58,7 +61,8 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
       emp_email_personal,
       emp_fecha_ingreso_original,
       emp_genero,
-      emp_nacionalidad
+      emp_nacionalidad,
+      emp_foto_path
     `
     )
     .order('emp_apellido_1', { ascending: true })
@@ -93,17 +97,36 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
     historialPorEmpleado.set(historial.lab_empleado_id, historial)
   }
 
+  // Firmado EN LOTE: una sola llamada al proveedor para toda la lista, no una
+  // por fila (ver TTL_FOTO — se re-firma en cada carga de la página). Si el
+  // firmado falla, la lista igual se muestra sin fotos: el storage nunca
+  // tumba el listado de empleados.
+  const paths = (empleados ?? [])
+    .map((empleado) => empleado.emp_foto_path)
+    .filter((path): path is string => Boolean(path))
+
+  let fotoUrls: Record<string, string> = {}
+  if (paths.length > 0) {
+    const signed = await getStorageProvider().getSignedUrls('FOTOS_EMPLEADO', paths, TTL_FOTO)
+    if (signed.ok) {
+      fotoUrls = signed.data
+    }
+  }
+
   const data: EmpleadoListItem[] = (empleados ?? []).map((empleado) => {
     const historial = historialPorEmpleado.get(empleado.emp_id)
+    // emp_foto_path nunca sale hacia el cliente: solo la URL firmada opaca.
+    const { emp_foto_path, ...empleadoSinFoto } = empleado
 
     return {
-      ...empleado,
+      ...empleadoSinFoto,
       puesto_nombre: historial?.sgrh_cat_puestos?.pue_nombre ?? null,
       sucursal_nombre: historial?.sgrh_sucursales?.suc_nombre ?? null,
       tipo_contrato_nombre: historial?.sgrh_cat_tipos_contrato?.tco_nombre ?? null,
       salario_base: historial?.lab_salario_base ?? null,
       fecha_inicio_contrato: historial?.lab_fecha_inicio ?? null,
       activo: Boolean(historial),
+      foto_url: emp_foto_path ? (fotoUrls[emp_foto_path] ?? null) : null,
     }
   })
 
