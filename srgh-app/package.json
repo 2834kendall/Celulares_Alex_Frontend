@@ -2,6 +2,9 @@
   "name": "srgh-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "predev": "node scripts/setup-face-assets.mjs",
     "dev": "next dev",
@@ -9,6 +12,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
