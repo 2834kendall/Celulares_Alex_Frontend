@@ -28,6 +28,7 @@ function empleado(overrides: Partial<EmpleadoListItem>): EmpleadoListItem {
     salario_base: 500000,
     fecha_inicio_contrato: '2024-02-01',
     activo: true,
+    foto_url: null,
     ...overrides,
   }
 }
@@ -66,6 +67,29 @@ describe('<EmployeesList />', () => {
     expect(screen.getAllByText('01/02/2024')).toHaveLength(2)
     expect(screen.getAllByText('Activo')).toHaveLength(2)
     expect(screen.getByText('Inactivo')).toBeInTheDocument()
+  })
+
+  it('muestra avatar con foto o iniciales según cada empleado', () => {
+    render(
+      <EmployeesList
+        employees={[
+          empleado({ emp_id: 1, emp_nombre: 'Ana', emp_apellido_1: 'Mora', foto_url: null }),
+          empleado({
+            emp_id: 2,
+            emp_nombre: 'José',
+            emp_apellido_1: 'Pérez',
+            foto_url: 'https://cdn.example/jose.jpg?token=t',
+          }),
+        ]}
+        canWrite
+      />
+    )
+
+    // Sin foto: iniciales.
+    expect(screen.getByText('AM')).toBeInTheDocument()
+    // Con foto: <img> con la URL firmada, sin exponer nada del proveedor.
+    const img = screen.getByAltText('Foto de José Pérez')
+    expect(img).toHaveAttribute('src', 'https://cdn.example/jose.jpg?token=t')
   })
 
   it('muestra estado vacío con CTA cuando no hay empleados y canWrite', () => {

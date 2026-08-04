@@ -9,24 +9,31 @@ import { toast } from 'sonner'
 import {
   onboardingEmpleadoSchema,
   type CatalogoItem,
+  type DocumentoPendiente,
   type OnboardingEmpleadoInput,
   type TerritorioCatalogo,
 } from '@/modules/employees/types'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
+import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
+import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
 import { formatCRC, formatDate, fullName } from '@/modules/employees/lib/format'
 import { WizardStepper, type WizardStep } from './WizardStepper'
 import { EmployeeWizardStepPersonal } from './EmployeeWizardStepPersonal'
 import { EmployeeWizardStepNomina } from './EmployeeWizardStepNomina'
+import { EmployeeWizardStepDocumentos } from './EmployeeWizardStepDocumentos'
 import { EmployeeWizardStepUsuario } from './EmployeeWizardStepUsuario'
 
 const STEPS: WizardStep[] = [
   { id: 'personal', label: 'Información principal' },
   { id: 'nomina', label: 'Datos de nómina' },
+  { id: 'documentos', label: 'Documentos' },
   { id: 'usuario', label: 'Revisión y usuario' },
 ]
 
-// Campos que valida el botón "Siguiente" de cada paso. El paso 3 se valida
-// completo en el submit (sus campos solo existen si el toggle está activo).
+// Campos que valida el botón "Siguiente" de cada paso. Documentos (paso 3) y
+// usuario (paso 4) se validan completos en el submit: sus campos no viven en
+// este mismo schema (documentos) o solo existen si el toggle está activo
+// (usuario).
 const STEP_FIELDS: Path<OnboardingEmpleadoInput>[][] = [
   [
     'empleado.emp_nombre',
@@ -58,6 +65,7 @@ const STEP_FIELDS: Path<OnboardingEmpleadoInput>[][] = [
     'datos_pago.edp_tipo_cuenta',
     'datos_pago.edp_numero_cuenta',
   ],
+  [],
   [],
 ]
 
@@ -157,6 +165,8 @@ interface EmployeeWizardProps {
   tiposJornada: CatalogoItem[]
   bancos: CatalogoItem[]
   territorio: TerritorioCatalogo
+  tiposDocumento: CatalogoItem[]
+  canManageDocs: boolean
   roles: CatalogoItem[]
   canInviteUser: boolean
 }
@@ -169,6 +179,8 @@ export function EmployeeWizard({
   tiposJornada,
   bancos,
   territorio,
+  tiposDocumento,
+  canManageDocs,
   roles,
   canInviteUser,
 }: EmployeeWizardProps) {
@@ -176,6 +188,10 @@ export function EmployeeWizard({
   const [step, setStep] = useState(0)
   const [crearUsuario, setCrearUsuario] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  // Fuera de RHF: un File no viaja por el schema Zod ni por createEmployee
+  // (que aún no tiene emp_id). Se sube en onSubmit, tras crear el empleado.
+  const [foto, setFoto] = useState<File | null>(null)
+  const [documentos, setDocumentos] = useState<DocumentoPendiente[]>([])
 
   const methods = useForm<OnboardingEmpleadoInput>({
     // z.preprocess vuelve `unknown` el lado input del schema; el formulario
@@ -247,6 +263,46 @@ export function EmployeeWizard({
     if (result.usuarioWarning) {
       toast.warning(result.usuarioWarning)
     }
+
+    // La foto NUNCA bloquea el alta: si falla, el empleado ya existe y se
+    // avisa que puede agregarla después desde su perfil.
+    if (foto) {
+      const formData = new FormData()
+      formData.set('file', foto)
+      const fotoResult = await setEmployeePhoto(result.empId, formData)
+      if (!fotoResult.ok) {
+        toast.warning(
+          `Empleado creado, pero la foto no se pudo subir: ${fotoResult.error} Puedes agregarla desde su perfil.`
+        )
+      }
+    }
+
+    // Los documentos, igual que la foto, nunca bloquean el alta: se suben
+    // secuencialmente (uno por request, mismo orden en que se agregaron) y
+    // los fallos se acumulan en un solo aviso al final.
+    const documentosFallidos: string[] = []
+    for (const documento of documentos) {
+      const formData = new FormData()
+      formData.set('file', documento.file)
+      formData.set('doc_nombre', documento.metadata.doc_nombre)
+      formData.set('doc_tipo_id', String(documento.metadata.doc_tipo_id))
+      if (documento.metadata.doc_descripcion) {
+        formData.set('doc_descripcion', documento.metadata.doc_descripcion)
+      }
+      if (documento.metadata.doc_fecha_vencimiento) {
+        formData.set('doc_fecha_vencimiento', documento.metadata.doc_fecha_vencimiento)
+      }
+      const documentoResult = await addEmployeeDocument(result.empId, formData)
+      if (!documentoResult.ok) {
+        documentosFallidos.push(documento.metadata.doc_nombre)
+      }
+    }
+    if (documentosFallidos.length > 0) {
+      toast.warning(
+        `Empleado creado, pero no se pudieron subir: ${documentosFallidos.join(', ')}. Puedes agregarlos desde su perfil.`
+      )
+    }
+
     toast.success('Empleado creado correctamente.')
     router.push(`/employees/${result.empId}`)
   }
@@ -289,6 +345,8 @@ export function EmployeeWizard({
             <EmployeeWizardStepPersonal
               tiposIdentificacion={tiposIdentificacion}
               territorio={territorio}
+              foto={foto}
+              onFotoChange={setFoto}
             />
           )}
           {step === 1 && (
@@ -301,6 +359,14 @@ export function EmployeeWizard({
             />
           )}
           {step === 2 && (
+            <EmployeeWizardStepDocumentos
+              tiposDocumento={tiposDocumento}
+              documentos={documentos}
+              onChange={setDocumentos}
+              canManageDocs={canManageDocs}
+            />
+          )}
+          {step === 3 && (
             <div className="space-y-4">
               <OnboardingSummary
                 values={methods.getValues()}

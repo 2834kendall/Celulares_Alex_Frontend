@@ -7,6 +7,7 @@ import type { EmpleadoListItem } from '@/modules/employees/types'
 import { useEmployeeFilters, type EstadoFiltro } from '@/modules/employees/hooks/useEmployeeFilters'
 import { formatDate, fullName } from '@/modules/employees/lib/format'
 import { usePagination } from '@/hooks/usePagination'
+import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 
 const SELECT_CLASSES =
@@ -163,16 +164,21 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
                     className="cursor-pointer border-t border-slate-100 transition hover:bg-slate-50/70"
                   >
                     <td className="px-3 py-2">
-                      <Link
-                        href={`/employees/${employee.emp_id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="font-medium text-slate-800 outline-none transition hover:text-blue-700 focus-visible:underline"
-                      >
-                        {fullName(employee)}
-                      </Link>
-                      <p className="text-[11px] text-slate-500">
-                        {employee.emp_numero_identificacion}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <Avatar size="sm" fotoUrl={employee.foto_url} nombre={fullName(employee)} />
+                        <div className="min-w-0">
+                          <Link
+                            href={`/employees/${employee.emp_id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-medium text-slate-800 outline-none transition hover:text-blue-700 focus-visible:underline"
+                          >
+                            {fullName(employee)}
+                          </Link>
+                          <p className="text-[11px] text-slate-500">
+                            {employee.emp_numero_identificacion}
+                          </p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-slate-600">{employee.puesto_nombre ?? '—'}</td>
                     <td className="px-3 py-2 text-slate-600">{employee.sucursal_nombre ?? '—'}</td>

@@ -21,6 +21,7 @@ function empleado(overrides: Partial<EmpleadoListItem>): EmpleadoListItem {
     salario_base: 500000,
     fecha_inicio_contrato: '2024-02-01',
     activo: true,
+    foto_url: null,
     ...overrides,
   }
 }

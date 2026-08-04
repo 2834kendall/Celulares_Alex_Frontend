@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { EmployeeWizard } from './EmployeeWizard'
 import { TERRITORIO } from './testFixtures'
+import { toast } from 'sonner'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
+import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
+import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
 
 const push = vi.fn()
 
@@ -15,11 +18,32 @@ vi.mock('@/modules/employees/actions/createEmployee', () => ({
   createEmployee: vi.fn(),
 }))
 
+vi.mock('@/modules/employees/actions/setEmployeePhoto', () => ({
+  setEmployeePhoto: vi.fn(),
+}))
+
+vi.mock('@/modules/employees/actions/addEmployeeDocument', () => ({
+  addEmployeeDocument: vi.fn(),
+}))
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))
 
 const mockCreateEmployee = vi.mocked(createEmployee)
+const mockSetEmployeePhoto = vi.mocked(setEmployeePhoto)
+const mockAddEmployeeDocument = vi.mocked(addEmployeeDocument)
+const mockToastWarning = vi.mocked(toast.warning)
+
+function jpegFile(name = 'foto.jpg'): File {
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0])
+  return new File([bytes], name, { type: 'image/jpeg' })
+}
+
+function pdfFile(name = 'contrato.pdf'): File {
+  const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0, 0, 0])
+  return new File([bytes], name, { type: 'application/pdf' })
+}
 
 const CATALOGOS = {
   tiposIdentificacion: [{ id: 1, nombre: 'Cédula nacional' }],
@@ -29,6 +53,7 @@ const CATALOGOS = {
   tiposJornada: [{ id: 1, nombre: 'Diurna' }],
   bancos: [{ id: 3, nombre: 'BAC Credomatic' }],
   territorio: TERRITORIO,
+  tiposDocumento: [{ id: 5, nombre: 'Contrato' }],
   roles: [{ id: 4, nombre: 'Empleado' }],
 }
 
@@ -36,8 +61,10 @@ const CATALOGOS = {
 // del entorno, así que el valor esperado se calcula, no se hardcodea.
 const MILES_FORMAT = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 0 })
 
-function renderWizard(canInviteUser = true) {
-  return render(<EmployeeWizard {...CATALOGOS} canInviteUser={canInviteUser} />)
+function renderWizard(canInviteUser = true, canManageDocs = true) {
+  return render(
+    <EmployeeWizard {...CATALOGOS} canInviteUser={canInviteUser} canManageDocs={canManageDocs} />
+  )
 }
 
 async function fillStepPersonal(user: UserEvent) {
@@ -69,6 +96,19 @@ async function fillStepNomina(user: UserEvent) {
   })
   await user.type(screen.getByLabelText('Salario base (₡) *'), '500000')
   await user.type(screen.getByLabelText('Salario real (₡) *'), '550000')
+}
+
+/** Del paso de nómina (2) al de documentos (3, opcional). */
+async function goToStepDocumentos(user: UserEvent) {
+  await user.click(screen.getByRole('button', { name: /siguiente/i }))
+  await screen.findByText('Documentos del expediente')
+}
+
+/** Del paso de nómina (2), pasando por documentos, hasta revisión/usuario (4). */
+async function goToStepUsuario(user: UserEvent) {
+  await goToStepDocumentos(user)
+  await user.click(screen.getByRole('button', { name: /siguiente/i }))
+  await screen.findByText('Crear cuenta de usuario del sistema')
 }
 
 describe('<EmployeeWizard />', () => {
@@ -121,10 +161,9 @@ describe('<EmployeeWizard />', () => {
     await fillStepNomina(user)
     // El input de salario muestra separadores de miles pero envía un number.
     expect(screen.getByLabelText('Salario base (₡) *')).toHaveValue(MILES_FORMAT.format(500000))
-    await user.click(screen.getByRole('button', { name: /siguiente/i }))
-    await screen.findByText('Crear cuenta de usuario del sistema')
+    await goToStepUsuario(user)
 
-    // Regresión: llegar al paso 3 NO debe crear el empleado todavía,
+    // Regresión: llegar al último paso NO debe crear el empleado todavía,
     // y el resumen debe mostrar lo capturado en los pasos anteriores.
     expect(mockCreateEmployee).not.toHaveBeenCalled()
     expect(screen.getByText('Ana Mora')).toBeInTheDocument()
@@ -181,14 +220,14 @@ describe('<EmployeeWizard />', () => {
     ).toBeVisible()
     expect(screen.getByLabelText('Puesto *')).toBeInTheDocument()
 
-    // Con el IBAN correcto sí avanza al paso 3.
+    // Con el IBAN correcto sí avanza al paso de documentos y luego al de usuario.
     await user.clear(iban)
     await user.type(iban, '05015202001026284066')
-    await user.click(screen.getByRole('button', { name: /siguiente/i }))
-    expect(await screen.findByText('Crear cuenta de usuario del sistema')).toBeInTheDocument()
+    await goToStepUsuario(user)
+    expect(screen.getByText('Crear cuenta de usuario del sistema')).toBeInTheDocument()
   })
 
-  it('incluye el usuario cuando se activa el toggle del paso 3', async () => {
+  it('incluye el usuario cuando se activa el toggle del último paso', async () => {
     mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
     const user = userEvent.setup()
     renderWizard()
@@ -197,8 +236,7 @@ describe('<EmployeeWizard />', () => {
     await user.click(screen.getByRole('button', { name: /siguiente/i }))
     await screen.findByLabelText('Puesto *')
     await fillStepNomina(user)
-    await user.click(screen.getByRole('button', { name: /siguiente/i }))
-    await screen.findByText('Crear cuenta de usuario del sistema')
+    await goToStepUsuario(user)
 
     await user.click(screen.getByRole('checkbox'))
     await user.type(screen.getByLabelText('Email de acceso *'), 'ana@empresa.com')
@@ -227,8 +265,7 @@ describe('<EmployeeWizard />', () => {
     await user.click(screen.getByRole('button', { name: /siguiente/i }))
     await screen.findByLabelText('Puesto *')
     await fillStepNomina(user)
-    await user.click(screen.getByRole('button', { name: /siguiente/i }))
-    await screen.findByText('Crear cuenta de usuario del sistema')
+    await goToStepUsuario(user)
 
     await user.click(screen.getByRole('button', { name: /crear empleado/i }))
 
@@ -246,10 +283,199 @@ describe('<EmployeeWizard />', () => {
     await user.click(screen.getByRole('button', { name: /siguiente/i }))
     await screen.findByLabelText('Puesto *')
     await fillStepNomina(user)
-    await user.click(screen.getByRole('button', { name: /siguiente/i }))
-    await screen.findByText('Crear cuenta de usuario del sistema')
+    await goToStepUsuario(user)
 
     expect(screen.getByRole('checkbox')).toBeDisabled()
     expect(screen.getByText(/tu rol no tiene permiso de gestión de usuarios/i)).toBeVisible()
+  })
+
+  it('sin foto elegida no llama a setEmployeePhoto', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith('/employees/10')
+    })
+    expect(mockSetEmployeePhoto).not.toHaveBeenCalled()
+  })
+
+  it('con foto elegida en el paso 1, la sube con el empId devuelto por createEmployee', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    mockSetEmployeePhoto.mockResolvedValue({ ok: true, path: '1/empleados/10/x.jpg' })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await user.upload(screen.getByTestId('photo-dropzone-input'), jpegFile())
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(mockSetEmployeePhoto).toHaveBeenCalledTimes(1)
+    })
+    const [empId, formData] = mockSetEmployeePhoto.mock.calls[0]
+    expect(empId).toBe(10)
+    expect(formData.get('file')).toBeInstanceOf(File)
+    expect(push).toHaveBeenCalledWith('/employees/10')
+    expect(mockToastWarning).not.toHaveBeenCalled()
+  })
+
+  it('si la foto falla al subir, avisa con un warning pero igual navega al detalle', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    mockSetEmployeePhoto.mockResolvedValue({
+      ok: false,
+      error: 'El archivo supera el tamaño máximo permitido.',
+    })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await user.upload(screen.getByTestId('photo-dropzone-input'), jpegFile())
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(mockToastWarning).toHaveBeenCalledWith(
+        expect.stringContaining('El archivo supera el tamaño máximo permitido.')
+      )
+    })
+    expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  it('sin canManageDocs muestra el aviso en el paso de documentos y permite continuar', async () => {
+    const user = userEvent.setup()
+    renderWizard(true, false)
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    expect(
+      await screen.findByText(/tu rol no tiene permiso de gestión de documentos/i)
+    ).toBeVisible()
+    expect(screen.queryByTestId('document-dropzone-input')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    expect(await screen.findByText('Crear cuenta de usuario del sistema')).toBeInTheDocument()
+  })
+
+  it('agrega un documento en el paso de documentos: dropzone → modal → card visible', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepDocumentos(user)
+
+    await user.upload(screen.getByTestId('document-dropzone-input'), pdfFile('cedula.pdf'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText(/nombre del documento/i)).toHaveValue('cedula')
+    await user.selectOptions(within(dialog).getByLabelText(/tipo de documento/i), '5')
+    await user.click(within(dialog).getByRole('button', { name: /guardar/i }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('cedula')).toBeInTheDocument()
+  })
+
+  it('sin documentos agregados no llama a addEmployeeDocument', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith('/employees/10')
+    })
+    expect(mockAddEmployeeDocument).not.toHaveBeenCalled()
+  })
+
+  it('con un documento agregado, lo sube con el empId devuelto por createEmployee', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    mockAddEmployeeDocument.mockResolvedValue({ ok: true, docId: 1 })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepDocumentos(user)
+
+    await user.upload(screen.getByTestId('document-dropzone-input'), pdfFile('cedula.pdf'))
+    const dialog = await screen.findByRole('dialog')
+    await user.selectOptions(within(dialog).getByLabelText(/tipo de documento/i), '5')
+    await user.click(within(dialog).getByRole('button', { name: /guardar/i }))
+
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByText('Crear cuenta de usuario del sistema')
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(mockAddEmployeeDocument).toHaveBeenCalledTimes(1)
+    })
+    const [empId, formData] = mockAddEmployeeDocument.mock.calls[0]
+    expect(empId).toBe(10)
+    expect(formData.get('file')).toBeInstanceOf(File)
+    expect(formData.get('doc_nombre')).toBe('cedula')
+    expect(formData.get('doc_tipo_id')).toBe('5')
+    expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  it('si un documento falla al subir, avisa con un warning con su nombre pero igual navega', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    mockAddEmployeeDocument.mockResolvedValue({
+      ok: false,
+      error: 'No se pudo guardar el documento.',
+    })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepDocumentos(user)
+
+    await user.upload(screen.getByTestId('document-dropzone-input'), pdfFile('cedula.pdf'))
+    const dialog = await screen.findByRole('dialog')
+    await user.selectOptions(within(dialog).getByLabelText(/tipo de documento/i), '5')
+    await user.click(within(dialog).getByRole('button', { name: /guardar/i }))
+
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByText('Crear cuenta de usuario del sistema')
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(mockToastWarning).toHaveBeenCalledWith(expect.stringContaining('cedula'))
+    })
+    expect(push).toHaveBeenCalledWith('/employees/10')
   })
 })
