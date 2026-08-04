@@ -8,13 +8,21 @@
 // original que manda el usuario jamás se usa como ruta (entrada hostil:
 // traversal, unicode, dobles extensiones — se maneja en fase 1B como metadato).
 
-/** `<empresaId>/_lab/<uuid>.<ext>` — archivos del laboratorio temporal (fase 1). */
-export function buildLabPath(empresaId: number, extension: string): string {
-  return `${empresaId}/_lab/${crypto.randomUUID()}.${extension}`
-}
-
 /** `<empresaId>/empleados/<empId>/<uuid>.<ext>` — foto de empleado (la usa la fase 2). */
 export function buildEmployeePhotoPath(
+  empresaId: number,
+  empleadoId: number,
+  extension: string
+): string {
+  return `${empresaId}/empleados/${empleadoId}/${crypto.randomUUID()}.${extension}`
+}
+
+/**
+ * `<empresaId>/empleados/<empId>/<uuid>.<ext>` — documento del expediente
+ * (fase 2B). Misma forma que la foto: bucket distinto (documentos-empleados),
+ * así que no hay colisión de rutas entre ambos.
+ */
+export function buildEmployeeDocumentPath(
   empresaId: number,
   empleadoId: number,
   extension: string
