@@ -6,6 +6,12 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { createAusenciaSchema, type CreateAusenciaInput } from '@/modules/absences/types'
 import { countDays } from '@/modules/absences/lib/dateRange'
+import { sincronizarAusenciaEnNomina } from '@/modules/payroll/lib/ausenciaNominaSync'
+
+interface TipoAusenciaPagoRow {
+  tau_paga_empleador_dias: number
+  tau_es_intradia: boolean
+}
 
 export type CreateAusenciaResult = { ok: true } | { ok: false; error: string }
 
@@ -56,6 +62,31 @@ export async function createAusencia(input: CreateAusenciaInput): Promise<Create
 
   if (error) {
     return { ok: false, error: 'No se pudo registrar la ausencia.' }
+  }
+
+  // Si el tipo afecta el pago (no es un permiso intradia como lactancia), se
+  // reparte automáticamente en los periodos de nómina que se traslapan con
+  // estas fechas. Mejor esfuerzo: si falla, la ausencia ya quedó guardada
+  // igual.
+  const { data: tipo } = await supabase
+    .from('sgrh_cat_tipos_ausencia')
+    .select('tau_paga_empleador_dias, tau_es_intradia')
+    .eq('tau_id', data.tipoAusenciaId)
+    .maybeSingle<TipoAusenciaPagoRow>()
+
+  if (tipo && !tipo.tau_es_intradia) {
+    const sync = await sincronizarAusenciaEnNomina(supabase, {
+      historialLaboralId: data.employmentHistoryId,
+      fechaInicio: data.fechaInicio,
+      fechaFin: data.fechaFin,
+      topeMensualEmpleador: tipo.tau_paga_empleador_dias,
+    })
+    revalidatePath('/payroll')
+    if (sync.ok) {
+      for (const p of sync.periodosActualizados) {
+        revalidatePath(`/payroll/${p.periodoId}`)
+      }
+    }
   }
 
   revalidatePath('/schedule')

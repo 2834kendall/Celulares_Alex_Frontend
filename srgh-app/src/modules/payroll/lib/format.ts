@@ -17,14 +17,12 @@ export const MESES = [
 
 export const ESTADO_LABELS: Record<string, string> = {
   borrador: 'Borrador',
-  aprobado: 'Aprobado',
   pagado: 'Pagado',
 }
 
 /** Clases del badge de estado; gris por defecto para estados desconocidos. */
 export const ESTADO_BADGE_CLASSES: Record<string, string> = {
   borrador: 'bg-amber-50 text-amber-700 ring-amber-200',
-  aprobado: 'bg-blue-50 text-blue-700 ring-blue-200',
   pagado: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
 }
 
@@ -53,4 +51,10 @@ export function formatDate(iso: string | null | undefined) {
 export function formatCRC(amount: number | null | undefined) {
   if (amount === null || amount === undefined) return '—'
   return `₡${new Intl.NumberFormat('es-CR', { maximumFractionDigits: 2 }).format(amount)}`
+}
+
+/** Agrupa de 4 en 4 para lectura: 'CR05015202001026284066' → 'CR05 0152 0200 1026 2840 66'. */
+export function formatIban(numeroCuenta: string | null | undefined) {
+  if (!numeroCuenta) return null
+  return numeroCuenta.replace(/(.{4})/g, '$1 ').trim()
 }

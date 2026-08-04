@@ -23,8 +23,15 @@ export interface CatalogoItem {
   nombre: string
 }
 
-/** Estados del ciclo de vida de un periodo (npe_estado, default 'borrador'). */
-export type PeriodoEstado = 'borrador' | 'aprobado' | 'pagado'
+/**
+ * Estados del ciclo de vida de un periodo (npe_estado, default 'borrador').
+ * Solo 2: mientras falte pagarle a algún empleado es 'borrador' (editable:
+ * se puede subir Excel, editar montos a mano); pasa a 'pagado' solo, sin
+ * botón, en cuanto TODOS los empleados del periodo quedan marcados como
+ * pagados (ver sincronizarEstadoPeriodo en marcarDetallePagado.ts). Si se
+ * desmarca a alguien, vuelve a 'borrador'.
+ */
+export type PeriodoEstado = 'borrador' | 'pagado'
 
 export interface PeriodoListItem {
   id: number
@@ -47,10 +54,15 @@ export interface PeriodoListItem {
  */
 export interface DetalleNominaItem {
   id: number
+  historialLaboralId: number
   empleadoNombre: string
   empleadoCedula: string
   salarioBruto: number
   totalDeducciones: number
+  /** Parte de totalDeducciones calculada como % del bruto (ej. CCSS obrera). */
+  deduccionPorcentual: number
+  /** Parte de totalDeducciones que es un monto fijo decidido por el patrono (ej. préstamo). */
+  deduccionManual: number
   cargasPatronales: number
   salarioNeto: number
   pagado: boolean
@@ -58,6 +70,26 @@ export interface DetalleNominaItem {
   montosPorConcepto: Record<string, number>
   horasTrabajadas: number
   salarioPorHora: number
+  /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
+  incapacidad: IncapacidadItem | null
+  /** Cuenta IBAN para la transferencia (sgrh_empleado_datos_pago.edp_numero_cuenta). Null si el empleado no tiene datos de pago cargados. */
+  numeroCuenta: string | null
+  /** Nombre del banco de esa cuenta (sgrh_cat_bancos.ban_nombre). Null si no hay cuenta o el banco no está definido. */
+  bancoNombre: string | null
+}
+
+/**
+ * Desglose de la incapacidad por enfermedad (INC_ENF) de un empleado dentro
+ * de un periodo. `monto` es lo que paga la EMPRESA (días del patrono × salario
+ * diario × % del catálogo) — no incluye lo que paga la CCSS, eso no pasa por
+ * nuestra planilla. Nunca se suma a salarioBruto: se muestra como línea aparte
+ * después del salario neto (por eso no afecta aguinaldo/vacaciones/liquidación).
+ */
+export interface IncapacidadItem {
+  diasEmpleador: number
+  diasCcss: number
+  porcentajePagoEmpleador: number
+  monto: number
 }
 
 export interface PeriodoDetalle {
@@ -113,14 +145,15 @@ export const crearPeriodoSchema = z
       .string({ error: 'La fecha de fin es obligatoria' })
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de fin inválida'),
 
-    npe_observaciones: z.preprocess(
-      (value) => (value === '' ? null : value),
-      z
-        .string()
-        .max(500, 'Las observaciones no pueden superar 500 caracteres')
-        .nullable()
-        .optional()
-    ),
+    // Igual que con_formula_base: se valida en el navegador (string) y otra
+    // vez en el servidor con el valor ya transformado (puede llegar null
+    // directo, ej. createPeriodo.test.ts). .nullable() en la base mantiene el
+    // tipo de entrada concreto ("string | null", no "unknown").
+    npe_observaciones: z
+      .string()
+      .max(500, 'Las observaciones no pueden superar 500 caracteres')
+      .nullable()
+      .transform((value) => (value === '' ? null : value)),
   })
   .refine((data) => data.npe_fecha_fin_periodo >= data.npe_fecha_inicio_periodo, {
     message: 'La fecha de fin debe ser posterior o igual a la de inicio',
@@ -176,14 +209,16 @@ export const conceptoNominaSchema = z
     // El input del formulario solo aplica mayúsculas por CSS (visual, no cambia
     // el valor real), así que el código se normaliza aquí antes de validar —
     // si no, escribir en minúscula rechazaría el formulario sin razón aparente.
-    con_codigo: z.preprocess(
-      (value) => (typeof value === 'string' ? value.trim().toUpperCase() : value),
-      z
-        .string({ error: 'El código es obligatorio' })
-        .min(2, 'El código debe tener al menos 2 caracteres')
-        .max(50, 'El código no puede superar 50 caracteres')
-        .regex(/^[A-Z0-9_]+$/, 'Usa solo letras, números y guion bajo (ej. BONO_ANUAL)')
-    ),
+    // (.trim()/.toUpperCase() se encadenan directo en ZodString, sin
+    // z.preprocess, para que el tipo de entrada siga siendo "string" y no
+    // "unknown" — si no, useForm + zodResolver dejan de coincidir en tipos.)
+    con_codigo: z
+      .string({ error: 'El código es obligatorio' })
+      .trim()
+      .toUpperCase()
+      .min(2, 'El código debe tener al menos 2 caracteres')
+      .max(50, 'El código no puede superar 50 caracteres')
+      .regex(/^[A-Z0-9_]+$/, 'Usa solo letras, números y guion bajo (ej. BONO_ANUAL)'),
 
     con_nombre: z
       .string({ error: 'El nombre es obligatorio' })
@@ -197,22 +232,30 @@ export const conceptoNominaSchema = z
       error: 'Selecciona cómo se calcula este concepto',
     }),
 
-    con_porcentaje: z.preprocess(
-      (value) => (value === '' || value === undefined ? null : value),
-      z
-        .number()
-        .positive('El porcentaje debe ser mayor a 0')
-        .max(500, 'El porcentaje es demasiado alto')
-        .nullable()
-    ),
+    // Mismo motivo que con_codigo: sin z.preprocess, para que el tipo de
+    // entrada sea concreto y no "unknown". El input real de este campo (con
+    // valueAsNumber: true en el form) siempre es number|null, nunca ''/undefined,
+    // así que .nullable() ya alcanza sin necesitar normalizar nada más.
+    con_porcentaje: z
+      .number()
+      .positive('El porcentaje debe ser mayor a 0')
+      .max(500, 'El porcentaje es demasiado alto')
+      .nullable(),
 
     con_afecta_salario_bruto: z.boolean().default(false),
     con_afecta_base_ccss: z.boolean().default(true),
 
-    con_formula_base: z.preprocess(
-      (value) => (value === '' ? null : value),
-      z.string().max(200, 'La fórmula no puede superar 200 caracteres').nullable().optional()
-    ),
+    // Este campo se valida en dos momentos: en el navegador (el input de
+    // texto siempre entrega '' o un string) y otra vez en el servidor, donde
+    // llega el objeto YA transformado (con_formula_base puede venir null
+    // directo, ej. createConcepto.test.ts). Por eso .nullable() en la base
+    // -así el tipo de entrada es "string | null", concreto y no "unknown"-
+    // y .transform() solo normaliza el caso de '' a null.
+    con_formula_base: z
+      .string()
+      .max(200, 'La fórmula no puede superar 200 caracteres')
+      .nullable()
+      .transform((value) => (value === '' ? null : value)),
 
     con_activo: z.boolean().default(true),
   })
@@ -306,3 +349,101 @@ export interface LiquidacionCalculada {
   cesantia: number
   total: number
 }
+
+/** Una fila del historial de liquidaciones ya generadas (sección de solo lectura). */
+export interface LiquidacionListItem {
+  liqId: number
+  empleadoNombre: string
+  empleadoCedula: string
+  fechaSalida: string
+  motivoNombre: string
+  total: number
+  pagado: boolean
+  createdAt: string
+}
+
+// ─── Incapacidades ────────────────────────────────────────────────────────
+// Por ahora solo incapacidad por enfermedad (INC_ENF): 3 días paga el
+// patrono al 50%, tope por mes calendario, el resto lo paga la CCSS aparte.
+// Se registra desde nómina (no desde empleados), en sgrh_ausencias.
+
+export const registrarIncapacidadSchema = z
+  .object({
+    historialLaboralId: z.number({ error: 'Elegí un empleado' }).int().positive(),
+    fechaInicio: z
+      .string({ error: 'La fecha de inicio es obligatoria' })
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+    fechaFin: z
+      .string({ error: 'La fecha de fin es obligatoria' })
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+    // Puede llegar '' desde el input de texto, o null si se re-valida en el
+    // servidor un objeto ya transformado — igual que con_formula_base.
+    numeroBoletaCcss: z
+      .string()
+      .max(50, 'El número de boleta no puede superar 50 caracteres')
+      .nullable()
+      .transform((value) => (value === '' ? null : value)),
+  })
+  .refine((data) => data.fechaFin >= data.fechaInicio, {
+    message: 'La fecha de fin debe ser posterior o igual a la de inicio',
+    path: ['fechaFin'],
+  })
+
+export type RegistrarIncapacidadInput = z.infer<typeof registrarIncapacidadSchema>
+
+export interface PeriodoAfectadoIncapacidad {
+  periodoId: number
+  periodoLabel: string
+  diasEmpleador: number
+  diasCcss: number
+}
+
+export type RegistrarIncapacidadResult =
+  | {
+      ok: true
+      periodosActualizados: PeriodoAfectadoIncapacidad[]
+      /** Días de la incapacidad que cayeron en periodos que todavía no existen. */
+      diasSinPeriodo: number
+    }
+  | { ok: false; error: string }
+
+// ─── Banco de horas ───────────────────────────────────────────────────────
+// Cuando un empleado trabaja más de las horas normales de la quincena
+// (TOPE_HORAS_NORMALES_QUINCENAL), esas horas de más ya NO se pagan solas:
+// quedan "pendientes" acá hasta que el encargado de nómina decida, una por
+// una, pagarlas o compensarlas (ver lib/bancoHoras.ts y las acciones
+// getBancoHoras/pagarBancoHoras/compensarBancoHoras).
+
+export type EstadoBancoHoras = 'pendiente' | 'pagado' | 'compensado'
+
+export interface BancoHorasItem {
+  id: number
+  historialLaboralId: number
+  empleadoNombre: string
+  empleadoCedula: string
+  /** Periodo donde se generaron estas horas extra. */
+  periodoOrigenLabel: string
+  horas: number
+  salarioPorHora: number
+  /** Monto sugerido = horas × salario por hora × 1.5, para prellenar el pago. */
+  montoSugerido: number
+  estado: EstadoBancoHoras
+  montoPagado: number | null
+  fechaResolucion: string | null
+  createdAt: string
+}
+
+export const pagarBancoHorasSchema = z.object({
+  bhmId: z.number({ error: 'Movimiento inválido' }).int().positive(),
+  monto: z
+    .number({ error: 'El monto a pagar es obligatorio' })
+    .positive('El monto debe ser mayor a 0')
+    .max(99_999_999, 'El monto es demasiado alto'),
+})
+
+export type PagarBancoHorasInput = z.infer<typeof pagarBancoHorasSchema>
+
+export type PagarBancoHorasResult =
+  { ok: true; periodoLabel: string } | { ok: false; error: string }
+
+export type CompensarBancoHorasResult = { ok: true } | { ok: false; error: string }

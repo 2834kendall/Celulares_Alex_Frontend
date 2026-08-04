@@ -67,8 +67,13 @@ describe('marcarDetallePagado (server action)', () => {
 
   it('marca como pagado y crea la provisión de aguinaldo (no existía fila del año)', async () => {
     const client = mockSupabase({
-      sgrh_nomina_detalle: [{ data: { ...DETALLE_BASE, ndt_pagado: false }, error: null }, OK],
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+        OK,
+        { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
+      ],
       sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: OK,
     })
 
     const result = await marcarDetallePagado(1, true)
@@ -79,11 +84,16 @@ describe('marcarDetallePagado (server action)', () => {
 
   it('desmarca un pago y resta de una provisión existente', async () => {
     mockSupabase({
-      sgrh_nomina_detalle: [{ data: { ...DETALLE_BASE, ndt_pagado: true }, error: null }, OK],
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null },
+        OK,
+        { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
+      ],
       sgrh_provisiones_anuales: [
         { data: { pra_id: 5, pra_monto_acumulado_aguinaldo: 300000 }, error: null },
         OK,
       ],
+      sgrh_nomina_periodo: OK,
     })
 
     const result = await marcarDetallePagado(1, false)
@@ -93,11 +103,76 @@ describe('marcarDetallePagado (server action)', () => {
 
   it('no toca la provisión si el estado no cambia (llamada redundante)', async () => {
     mockSupabase({
-      sgrh_nomina_detalle: [{ data: { ...DETALLE_BASE, ndt_pagado: true }, error: null }, OK],
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null },
+        OK,
+        { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
+      ],
+      sgrh_nomina_periodo: OK,
     })
 
     const result = await marcarDetallePagado(1, true)
 
     expect(result).toEqual({ ok: true })
+  })
+
+  it('el periodo pasa a "pagado" cuando el último empleado queda marcado (todos pagados)', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+        OK,
+        // Tras marcar este, TODOS los empleados del periodo quedan pagados.
+        {
+          data: [
+            { ndt_pagado: true, ndt_fecha_pago: '2026-07-20' },
+            { ndt_pagado: true, ndt_fecha_pago: '2026-07-28' },
+          ],
+          error: null,
+        },
+      ],
+      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: OK,
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result).toEqual({ ok: true })
+    const llamadaPeriodo = client.from.mock.results.find(
+      (r, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_periodo'
+    )
+    expect(llamadaPeriodo?.value.update).toHaveBeenCalledWith({
+      npe_estado: 'pagado',
+      npe_fecha_pago: '2026-07-28', // la más reciente entre los dos empleados
+    })
+  })
+
+  it('el periodo se queda en "borrador" si todavía falta pagarle a otro empleado', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+        OK,
+        // Este empleado ya quedó pagado, pero otro del mismo periodo no.
+        {
+          data: [
+            { ndt_pagado: true, ndt_fecha_pago: '2026-07-28' },
+            { ndt_pagado: false, ndt_fecha_pago: null },
+          ],
+          error: null,
+        },
+      ],
+      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: OK,
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result).toEqual({ ok: true })
+    const llamadaPeriodo = client.from.mock.results.find(
+      (r, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_periodo'
+    )
+    expect(llamadaPeriodo?.value.update).toHaveBeenCalledWith({
+      npe_estado: 'borrador',
+      npe_fecha_pago: null,
+    })
   })
 })

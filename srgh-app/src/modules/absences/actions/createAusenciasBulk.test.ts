@@ -91,6 +91,11 @@ describe('createAusenciasBulk (server action)', () => {
           },
           { data: null, error: null },
         ],
+        // Intradia: no debe intentar sincronizar con nómina.
+        sgrh_cat_tipos_ausencia: {
+          data: { tau_paga_empleador_dias: 0, tau_es_intradia: true },
+          error: null,
+        },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
@@ -105,7 +110,14 @@ describe('createAusenciasBulk (server action)', () => {
       from: vi
         .fn()
         .mockReturnValueOnce(createSupabaseQueryMock({ data: [], error: null }))
-        .mockReturnValueOnce(insertBuilder),
+        .mockReturnValueOnce(insertBuilder)
+        // Intradia: no debe intentar sincronizar con nómina.
+        .mockReturnValueOnce(
+          createSupabaseQueryMock({
+            data: { tau_paga_empleador_dias: 0, tau_es_intradia: true },
+            error: null,
+          })
+        ),
     }
     mockCreateClient.mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>
@@ -146,5 +158,52 @@ describe('createAusenciasBulk (server action)', () => {
 
     expect(result).toEqual({ ok: false, error: 'No se pudo registrar la ausencia.' })
     expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('sincroniza cada periodo con nómina cuando el tipo afecta el pago', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_ausencias: [
+        { data: [], error: null },
+        { data: null, error: null },
+      ],
+      sgrh_cat_tipos_ausencia: {
+        data: { tau_paga_empleador_dias: 3, tau_es_intradia: false },
+        error: null,
+      },
+      sgrh_nomina_detalle: { data: [], error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await createAusenciasBulk(baseInput)
+
+    expect(result).toEqual({ ok: true })
+    // Una consulta a sgrh_nomina_detalle por cada uno de los dos rangos.
+    const llamadasDetalle = client.from.mock.calls.filter(
+      (call) => call[0] === 'sgrh_nomina_detalle'
+    )
+    expect(llamadasDetalle.length).toBe(2)
+    expect(revalidatePath).toHaveBeenCalledWith('/payroll')
+  })
+
+  it('las ausencias quedan guardadas aunque falle la sincronización con nómina', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_ausencias: [
+          { data: [], error: null },
+          { data: null, error: null },
+        ],
+        sgrh_cat_tipos_ausencia: {
+          data: { tau_paga_empleador_dias: 3, tau_es_intradia: false },
+          error: null,
+        },
+        sgrh_nomina_detalle: { data: null, error: { message: 'boom' } },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await createAusenciasBulk(baseInput)
+
+    expect(result).toEqual({ ok: true })
   })
 })

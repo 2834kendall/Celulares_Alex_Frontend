@@ -5,27 +5,24 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
-  computeTotales,
-  construirLineas,
-  montosDeFila,
+  agruparConceptosPlanilla,
+  calcularPlanillaPorConceptos,
   sameRowValues,
-  CONCEPTOS_PLANILLA,
+  type ConceptoPlanillaColumna,
+  type LineaCalculada,
   type PlanillaRowInput,
-  type MontosPorConcepto,
 } from '@/modules/payroll/lib/planilla'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
+import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos KB
-
-interface ConceptoRow {
-  con_id: number
-  con_codigo: string
-}
 
 interface DetalleExistenteRow {
   ndt_id: number
   ndt_historial_laboral_id: number
+  ndt_horas_ordinarias_diurnas: number
+  ndt_salario_por_hora: number
 }
 
 interface LineaIngresoExistenteRow {
@@ -34,9 +31,22 @@ interface LineaIngresoExistenteRow {
   sgrh_cat_conceptos_nomina: { con_codigo: string } | null
 }
 
+interface LineaDeduccionExistenteRow {
+  ded_nomina_detalle_id: number
+  ded_monto: number
+  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+}
+
 interface DetalleInsertadoRow {
   ndt_id: number
   ndt_historial_laboral_id: number
+}
+
+/** Valores previos de una fila, en el mismo shape que PlanillaRowInput (sin cédula) para comparar con sameRowValues. */
+interface ValoresPrevios {
+  horasTrabajadas: number
+  salarioPorHora: number
+  montos: Record<string, number>
 }
 
 export type UploadPlanillaResult =
@@ -55,8 +65,14 @@ export type UploadPlanillaResult =
  * En vez de reemplazar todo, compara cada fila del Excel contra lo ya
  * guardado: si un empleado no cambió se deja intacto (no se toca su ndt_id,
  * ndt_pagado ni fechas); solo se inserta, actualiza o elimina lo que
- * realmente cambió. Los totales SIEMPRE se recalculan en el servidor (bruto,
- * CCSS 10,83%, neto); no se confía en las fórmulas del Excel.
+ * realmente cambió.
+ *
+ * Los montos SIEMPRE se recalculan en el servidor con
+ * calcularPlanillaPorConceptos — el mismo motor dinámico que usa la edición
+ * manual del detalle. No hay conceptos fijos quemados en código: cualquier
+ * concepto activo del catálogo (bono, préstamo, etc.) se aplica solo, y las
+ * horas extra / el % de CCSS salen de cómo esté configurado el catálogo, no
+ * de un valor fijo en el código.
  */
 export async function uploadPlanilla(formData: FormData): Promise<UploadPlanillaResult> {
   const periodoId = Number(formData.get('periodoId'))
@@ -92,8 +108,31 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return { ok: false, error: 'Solo se puede subir planilla a un periodo en borrador.' }
   }
 
-  // 2. Leer y validar el Excel
-  const { rows, errors } = await parsePlanillaWorkbook(await file.arrayBuffer())
+  // 2. Conceptos activos del catálogo — definen las columnas del Excel y el
+  // cálculo. Se cargan antes de parsear porque el parseo necesita saber qué
+  // columnas de monto manual buscar (por el nombre del concepto).
+  const { data: conceptos, error: errConceptos } = await supabase
+    .from('sgrh_cat_conceptos_nomina')
+    .select('con_id, con_codigo, con_nombre, con_tipo_calculo, con_porcentaje')
+    .eq('con_activo', true)
+    .returns<ConceptoPlanillaColumna[]>()
+
+  if (errConceptos) {
+    return { ok: false, error: 'No se pudo cargar el catálogo de conceptos de nómina.' }
+  }
+  if (!conceptos || conceptos.length === 0) {
+    return {
+      ok: false,
+      error:
+        'No hay conceptos activos en el catálogo. Crea al menos uno en "Conceptos de nómina" antes de subir la planilla.',
+    }
+  }
+
+  const { ingresoManual, deduccionManual } = agruparConceptosPlanilla(conceptos)
+  const codigosManuales = [...ingresoManual, ...deduccionManual].map((c) => c.con_codigo)
+
+  // 3. Leer y validar el Excel
+  const { rows, errors } = await parsePlanillaWorkbook(await file.arrayBuffer(), conceptos)
 
   if (errors.length > 0) {
     const detalle = errors
@@ -106,7 +145,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return { ok: false, error: 'El archivo no tiene filas de empleados.' }
   }
 
-  // 3. Resolver cédulas contra los contratos activos de la sucursal
+  // 4. Resolver cédulas contra los contratos activos de la sucursal
   const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id)
   if (!empleadosResult.ok) {
     return { ok: false, error: empleadosResult.error }
@@ -121,33 +160,10 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
   }
 
-  // 4. Conceptos del catálogo
-  const codigos = [...CONCEPTOS_PLANILLA.ingresos, CONCEPTOS_PLANILLA.deduccion]
-  const { data: conceptos, error: errConceptos } = await supabase
-    .from('sgrh_cat_conceptos_nomina')
-    .select('con_id, con_codigo')
-    .in('con_codigo', codigos)
-    .returns<ConceptoRow[]>()
-
-  if (errConceptos) {
-    return { ok: false, error: 'No se pudo cargar el catálogo de conceptos de nómina.' }
-  }
-
-  const conceptoId = new Map<string, number>(
-    (conceptos ?? []).map((c: ConceptoRow): [string, number] => [c.con_codigo, c.con_id])
-  )
-  const faltantes = codigos.filter((c) => !conceptoId.has(c))
-  if (faltantes.length > 0) {
-    return {
-      ok: false,
-      error: `Faltan conceptos en el catálogo (${faltantes.join(', ')}). Créalos en "Conceptos de nómina" antes de subir la planilla.`,
-    }
-  }
-
   // 5. Planilla ya guardada en el periodo (para comparar, no para borrar de una vez)
   const { data: detallesPrevios, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
-    .select('ndt_id, ndt_historial_laboral_id')
+    .select('ndt_id, ndt_historial_laboral_id, ndt_horas_ordinarias_diurnas, ndt_salario_por_hora')
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
 
@@ -163,36 +179,52 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   )
   const idsPrevios = (detallesPrevios ?? []).map((d: DetalleExistenteRow) => d.ndt_id)
 
-  // Ingresos de cada ndt_id previo, para reconstruir los montos crudos que ya
-  // había (los códigos ausentes cuentan como 0, igual que un campo vacío del Excel).
-  const valoresPreviosPorNdt = new Map<number, MontosPorConcepto>()
+  // Valores previos de cada ndt_id (horas, salario por hora, montos por
+  // concepto manual), para reconstruir qué había y compararlo contra el
+  // Excel. Los códigos ausentes cuentan como 0, igual que un campo vacío.
+  const valoresPreviosPorNdt = new Map<number, ValoresPrevios>()
   if (idsPrevios.length > 0) {
-    const { data: lineasPrevias, error: errLineas } = await supabase
-      .from('sgrh_nomina_linea_ingreso')
-      .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
-      .in('ing_nomina_detalle_id', idsPrevios)
-      .returns<LineaIngresoExistenteRow[]>()
+    for (const d of detallesPrevios ?? []) {
+      const montos: Record<string, number> = {}
+      for (const codigo of codigosManuales) montos[codigo] = 0
+      valoresPreviosPorNdt.set(d.ndt_id, {
+        horasTrabajadas: d.ndt_horas_ordinarias_diurnas,
+        salarioPorHora: d.ndt_salario_por_hora,
+        montos,
+      })
+    }
 
-    if (errLineas) {
+    const [
+      { data: lineasIngresoPrevias, error: errLI },
+      { data: lineasDeduccionPrevias, error: errLD },
+    ] = await Promise.all([
+      supabase
+        .from('sgrh_nomina_linea_ingreso')
+        .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .in('ing_nomina_detalle_id', idsPrevios)
+        .returns<LineaIngresoExistenteRow[]>(),
+      supabase
+        .from('sgrh_nomina_linea_deduccion')
+        .select('ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .in('ded_nomina_detalle_id', idsPrevios)
+        .returns<LineaDeduccionExistenteRow[]>(),
+    ])
+
+    if (errLI || errLD) {
       return { ok: false, error: 'No se pudo revisar la planilla existente.' }
     }
 
-    for (const ndtId of idsPrevios) {
-      valoresPreviosPorNdt.set(ndtId, {
-        BASE: 0,
-        FERIADO: 0,
-        COMISION: 0,
-        HORAS_EXTRA: 0,
-        AJUSTE: 0,
-      })
-    }
-    for (const linea of lineasPrevias ?? []) {
+    for (const linea of lineasIngresoPrevias ?? []) {
       const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
-      const montos = valoresPreviosPorNdt.get(linea.ing_nomina_detalle_id)
-      if (!montos || !codigo) continue
-      if ((CONCEPTOS_PLANILLA.ingresos as readonly string[]).includes(codigo)) {
-        montos[codigo as (typeof CONCEPTOS_PLANILLA.ingresos)[number]] = linea.ing_monto
-      }
+      const previo = valoresPreviosPorNdt.get(linea.ing_nomina_detalle_id)
+      if (!previo || !codigo || !(codigo in previo.montos)) continue
+      previo.montos[codigo] = linea.ing_monto
+    }
+    for (const linea of lineasDeduccionPrevias ?? []) {
+      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+      const previo = valoresPreviosPorNdt.get(linea.ded_nomina_detalle_id)
+      if (!previo || !codigo || !(codigo in previo.montos)) continue
+      previo.montos[codigo] = linea.ded_monto
     }
   }
 
@@ -212,22 +244,17 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       continue
     }
 
-    const montosNuevos = montosDeFila(row)
-    const montosPrevios = valoresPreviosPorNdt.get(ndtId)!
+    const previo = valoresPreviosPorNdt.get(ndtId)!
     const valoresIguales = sameRowValues(
       {
-        base: montosPrevios.BASE,
-        feriado: montosPrevios.FERIADO,
-        comision: montosPrevios.COMISION,
-        horasExtra: montosPrevios.HORAS_EXTRA,
-        ajuste: montosPrevios.AJUSTE,
+        horasTrabajadas: previo.horasTrabajadas,
+        salarioPorHora: previo.salarioPorHora,
+        montos: previo.montos,
       },
       {
-        base: montosNuevos.BASE,
-        feriado: montosNuevos.FERIADO,
-        comision: montosNuevos.COMISION,
-        horasExtra: montosNuevos.HORAS_EXTRA,
-        ajuste: montosNuevos.AJUSTE,
+        horasTrabajadas: row.horasTrabajadas,
+        salarioPorHora: row.salarioPorHora,
+        montos: row.montos,
       }
     )
 
@@ -278,13 +305,23 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
   // 8. Actualizar los que cambiaron: totales recalculados + líneas desde cero
   for (const { row, ndtId } of filasActualizar) {
-    const totales = computeTotales(row)
+    const { salarioBruto, totalDeducciones, salarioNeto, lineas } = calcularPlanillaPorConceptos(
+      conceptos,
+      {
+        montos: row.montos,
+        horasTrabajadas: row.horasTrabajadas,
+        salarioPorHora: row.salarioPorHora,
+      }
+    )
+
     const { error: errUpdate } = await supabase
       .from('sgrh_nomina_detalle')
       .update({
-        ndt_salario_bruto: totales.salarioBruto,
-        ndt_total_deducciones_obreras: totales.deduccionCcss,
-        ndt_salario_neto: totales.salarioNeto,
+        ndt_salario_bruto: salarioBruto,
+        ndt_total_deducciones_obreras: totalDeducciones,
+        ndt_salario_neto: salarioNeto,
+        ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
+        ndt_salario_por_hora: row.salarioPorHora,
       })
       .eq('ndt_id', ndtId)
     if (errUpdate) {
@@ -303,35 +340,47 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       return { ok: false, error: 'No se pudieron actualizar las líneas de la planilla.' }
     }
 
-    const { ingresos, deduccion } = construirLineas(row, ndtId, conceptoId)
-    if (ingresos.length > 0) {
-      const { error: errIngreso } = await supabase
-        .from('sgrh_nomina_linea_ingreso')
-        .insert(ingresos)
-      if (errIngreso) {
-        return { ok: false, error: 'No se pudieron guardar las líneas de ingreso actualizadas.' }
-      }
+    const { error: errLineas } = await insertarLineas(supabase, ndtId, lineas)
+    if (errLineas) {
+      return { ok: false, error: errLineas }
     }
-    const { error: errDeduccion } = await supabase
-      .from('sgrh_nomina_linea_deduccion')
-      .insert(deduccion)
-    if (errDeduccion) {
-      return { ok: false, error: 'No se pudo guardar la deducción actualizada.' }
+
+    const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
+      ndtId,
+      historialLaboralId: porCedula.get(row.cedula)!.labId,
+      horasTrabajadas: row.horasTrabajadas,
+      salarioPorHora: row.salarioPorHora,
+    })
+    if (errBanco) {
+      return { ok: false, error: errBanco }
     }
   }
 
   // 9. Insertar los empleados nuevos
   if (filasNuevas.length > 0) {
     const hoy = new Date().toISOString().slice(0, 10)
+    const totalesPorFila = new Map(
+      filasNuevas.map((row) => [
+        row.cedula,
+        calcularPlanillaPorConceptos(conceptos, {
+          montos: row.montos,
+          horasTrabajadas: row.horasTrabajadas,
+          salarioPorHora: row.salarioPorHora,
+        }),
+      ])
+    )
+
     const detalles = filasNuevas.map((row) => {
-      const totales = computeTotales(row)
+      const totales = totalesPorFila.get(row.cedula)!
       return {
         ndt_nomina_periodo_id: periodoId,
         ndt_historial_laboral_id: porCedula.get(row.cedula)!.labId,
         ndt_salario_bruto: totales.salarioBruto,
-        ndt_total_deducciones_obreras: totales.deduccionCcss,
+        ndt_total_deducciones_obreras: totales.totalDeducciones,
         ndt_total_cargas_patronales: 0,
         ndt_salario_neto: totales.salarioNeto,
+        ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
+        ndt_salario_por_hora: row.salarioPorHora,
         ndt_fecha_registro: hoy,
       }
     })
@@ -353,58 +402,36 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       ])
     )
 
-    const ingresosNuevos: {
-      ing_nomina_detalle_id: number
-      ing_concepto_id: number
-      ing_monto: number
-    }[] = []
-    const deduccionesNuevas: {
-      ded_nomina_detalle_id: number
-      ded_concepto_id: number
-      ded_porcentaje_aplicado: number
-      ded_base_calculo: number
-      ded_monto: number
-    }[] = []
-
     for (const row of filasNuevas) {
       const labId = porCedula.get(row.cedula)!.labId
       const ndtId = ndtIdPorLabNuevo.get(labId)
       if (!ndtId) continue
 
-      const { ingresos, deduccion } = construirLineas(row, ndtId, conceptoId)
-      ingresosNuevos.push(...ingresos)
-      deduccionesNuevas.push(deduccion)
-    }
-
-    if (ingresosNuevos.length > 0) {
-      const { error: errIngresos } = await supabase
-        .from('sgrh_nomina_linea_ingreso')
-        .insert(ingresosNuevos)
-      if (errIngresos) {
+      const { lineas } = totalesPorFila.get(row.cedula)!
+      const { error: errLineas } = await insertarLineas(supabase, ndtId, lineas)
+      if (errLineas) {
         return {
           ok: false,
           error:
-            'Se guardaron los totales, pero fallaron las líneas de ingreso. Vuelve a subir el archivo.',
+            'Se guardaron los totales, pero fallaron algunas líneas de la planilla. Vuelve a subir el archivo.',
         }
       }
-    }
 
-    if (deduccionesNuevas.length > 0) {
-      const { error: errDeducciones } = await supabase
-        .from('sgrh_nomina_linea_deduccion')
-        .insert(deduccionesNuevas)
-      if (errDeducciones) {
-        return {
-          ok: false,
-          error:
-            'Se guardaron los totales, pero fallaron las deducciones. Vuelve a subir el archivo.',
-        }
+      const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
+        ndtId,
+        historialLaboralId: labId,
+        horasTrabajadas: row.horasTrabajadas,
+        salarioPorHora: row.salarioPorHora,
+      })
+      if (errBanco) {
+        return { ok: false, error: errBanco }
       }
     }
   }
 
   revalidatePath('/payroll')
   revalidatePath(`/payroll/${periodoId}`)
+  revalidatePath('/payroll/banco-horas')
   return {
     ok: true,
     empleados: rows.length,
@@ -413,4 +440,43 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     sinCambios,
     eliminados: ndtIdsEliminar.length,
   }
+}
+
+/**
+ * Inserta las líneas de ingreso y deducción calculadas para un ndt_id.
+ * Compartido entre "actualizar" e "insertar nuevo" — misma forma que usa
+ * updateDetalleManual.ts para la edición manual.
+ */
+async function insertarLineas(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ndtId: number,
+  lineas: LineaCalculada[]
+): Promise<{ error: string | null }> {
+  const ingresos = lineas
+    .filter((l) => l.esIngreso)
+    .map((l) => ({
+      ing_nomina_detalle_id: ndtId,
+      ing_concepto_id: l.con_id,
+      ing_monto: l.monto,
+    }))
+  if (ingresos.length > 0) {
+    const { error } = await supabase.from('sgrh_nomina_linea_ingreso').insert(ingresos)
+    if (error) return { error: 'No se pudieron guardar las líneas de ingreso.' }
+  }
+
+  const deducciones = lineas
+    .filter((l) => !l.esIngreso)
+    .map((l) => ({
+      ded_nomina_detalle_id: ndtId,
+      ded_concepto_id: l.con_id,
+      ded_monto: l.monto,
+      ded_porcentaje_aplicado: l.porcentajeAplicado ?? null,
+      ded_base_calculo: l.baseCalculo ?? null,
+    }))
+  if (deducciones.length > 0) {
+    const { error } = await supabase.from('sgrh_nomina_linea_deduccion').insert(deducciones)
+    if (error) return { error: 'No se pudieron guardar las líneas de deducción.' }
+  }
+
+  return { error: null }
 }

@@ -5,6 +5,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { buildPlanillaTemplate } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { periodoLabel } from '@/modules/payroll/lib/format'
+import type { ConceptoPlanillaColumna } from '@/modules/payroll/lib/planilla'
 
 interface PeriodoRow {
   npe_id: number
@@ -68,6 +69,30 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     )
   }
 
+  // Conceptos activos del catálogo: cada uno de tipo "monto manual" (ingreso
+  // o deducción) se convierte en una columna editable de la plantilla.
+  const { data: conceptos, error: errConceptos } = await supabase
+    .from('sgrh_cat_conceptos_nomina')
+    .select('con_id, con_codigo, con_nombre, con_tipo_calculo, con_porcentaje')
+    .eq('con_activo', true)
+    .returns<ConceptoPlanillaColumna[]>()
+
+  if (errConceptos) {
+    return NextResponse.json(
+      { error: 'No se pudo cargar el catálogo de conceptos de nómina.' },
+      { status: 500 }
+    )
+  }
+  if (!conceptos || conceptos.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          'No hay conceptos activos en el catálogo. Crea al menos uno en "Conceptos de nómina" antes de generar la planilla.',
+      },
+      { status: 422 }
+    )
+  }
+
   const titulo = `Planilla — ${periodoLabel(
     periodo.npe_periodo_mes,
     periodo.npe_periodo_anio,
@@ -75,7 +100,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   )}`
   const subtitulo = `Sucursal: ${periodo.sgrh_sucursales?.suc_nombre ?? '—'} · Montos por quincena en colones`
 
-  const buffer = await buildPlanillaTemplate({ titulo, subtitulo }, empleadosResult.data)
+  const buffer = await buildPlanillaTemplate({ titulo, subtitulo }, empleadosResult.data, conceptos)
 
   const filename = `planilla-${periodo.npe_periodo_anio}-${String(periodo.npe_periodo_mes).padStart(2, '0')}-q${periodo.npe_quincena}.xlsx`
 

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { CalendarPlus, Coins, Gift } from 'lucide-react'
+import { CalendarPlus, Clock, Coins, Gift } from 'lucide-react'
 
 interface PayrollHeaderProps {
   canWrite: boolean
@@ -24,6 +24,14 @@ export function PayrollHeader({ canWrite, canManageConceptos }: PayrollHeaderPro
             className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-blue-300 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
           >
             <Gift className="h-3.5 w-3.5" /> Aguinaldo y liquidación
+          </Link>
+        )}
+        {canWrite && (
+          <Link
+            href="/payroll/banco-horas"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-blue-300 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+          >
+            <Clock className="h-3.5 w-3.5" /> Banco de horas
           </Link>
         )}
         {canManageConceptos && (

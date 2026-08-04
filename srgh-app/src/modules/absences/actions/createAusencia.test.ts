@@ -50,12 +50,16 @@ describe('createAusencia (server action)', () => {
     })
   })
 
-  it('calcula dias naturales/habiles e inserta en exito', async () => {
+  it('calcula dias naturales/habiles e inserta en exito (tipo intradia: no toca nómina)', async () => {
     const client = createSupabaseClientMock({
       sgrh_ausencias: [
         { data: [], error: null },
         { data: null, error: null },
       ],
+      sgrh_cat_tipos_ausencia: {
+        data: { tau_paga_empleador_dias: 0, tau_es_intradia: true },
+        error: null,
+      },
     })
     mockCreateClient.mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>
@@ -65,5 +69,51 @@ describe('createAusencia (server action)', () => {
 
     expect(result).toEqual({ ok: true })
     expect(revalidatePath).toHaveBeenCalledWith('/schedule')
+    expect(revalidatePath).not.toHaveBeenCalledWith('/payroll')
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_nomina_detalle')
+  })
+
+  it('inserta y sincroniza con nómina cuando el tipo afecta el pago', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_ausencias: [
+        { data: [], error: null },
+        { data: null, error: null },
+      ],
+      sgrh_cat_tipos_ausencia: {
+        data: { tau_paga_empleador_dias: 3, tau_es_intradia: false },
+        error: null,
+      },
+      sgrh_nomina_detalle: { data: [], error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await createAusencia(baseInput)
+
+    expect(result).toEqual({ ok: true })
+    expect(client.from).toHaveBeenCalledWith('sgrh_nomina_detalle')
+    expect(revalidatePath).toHaveBeenCalledWith('/payroll')
+  })
+
+  it('la ausencia queda guardada aunque falle la sincronización con nómina', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_ausencias: [
+        { data: [], error: null },
+        { data: null, error: null },
+      ],
+      sgrh_cat_tipos_ausencia: {
+        data: { tau_paga_empleador_dias: 3, tau_es_intradia: false },
+        error: null,
+      },
+      sgrh_nomina_detalle: { data: null, error: { message: 'boom' } },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await createAusencia(baseInput)
+
+    expect(result).toEqual({ ok: true })
   })
 })

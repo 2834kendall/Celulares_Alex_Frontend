@@ -77,12 +77,60 @@ async function acumularProvisionAguinaldo(
   }
 }
 
+interface DetallePagadoRow {
+  ndt_pagado: boolean
+  ndt_fecha_pago: string | null
+}
+
 /**
- * Marca (o desmarca) el pago de un empleado dentro de un periodo. No depende
- * del estado del periodo: es un campo independiente (ndt_pagado) que solo
- * indica si ese pago individual ya se desembolsó. Al marcarlo, también
- * acumula la parte proporcional de aguinaldo de este período en la
- * provisión anual del empleado.
+ * Recalcula el estado del periodo a partir de sus propios empleados: si
+ * TODOS están marcados como pagados, el periodo pasa a 'pagado' (con
+ * npe_fecha_pago = la fecha de pago más reciente entre los empleados). Si
+ * falta alguno, vuelve a 'borrador'. Un periodo sin empleados nunca pasa a
+ * 'pagado' solo. Es mejor esfuerzo: si falla, no bloquea el marcado
+ * individual que ya se guardó.
+ */
+async function sincronizarEstadoPeriodo(
+  supabase: SupabaseServerClient,
+  periodoId: number
+): Promise<void> {
+  const { data: detalles } = await supabase
+    .from('sgrh_nomina_detalle')
+    .select('ndt_pagado, ndt_fecha_pago')
+    .eq('ndt_nomina_periodo_id', periodoId)
+    .returns<DetallePagadoRow[]>()
+
+  const lista = detalles ?? []
+  const todosPagados = lista.length > 0 && lista.every((d) => d.ndt_pagado)
+
+  if (todosPagados) {
+    const fechaPago =
+      lista.reduce<string | null>((max, d) => {
+        if (!d.ndt_fecha_pago) return max
+        return !max || d.ndt_fecha_pago > max ? d.ndt_fecha_pago : max
+      }, null) ?? hoyLocal()
+
+    await supabase
+      .from('sgrh_nomina_periodo')
+      .update({ npe_estado: 'pagado', npe_fecha_pago: fechaPago })
+      .eq('npe_id', periodoId)
+  } else {
+    await supabase
+      .from('sgrh_nomina_periodo')
+      .update({ npe_estado: 'borrador', npe_fecha_pago: null })
+      .eq('npe_id', periodoId)
+  }
+}
+
+/**
+ * Marca (o desmarca) el pago de un empleado dentro de un periodo
+ * (ndt_pagado). Después de guardarlo, recalcula el estado del periodo
+ * completo (npe_estado): pasa solo a 'pagado' cuando TODOS sus empleados
+ * quedan pagados, y vuelve a 'borrador' si se desmarca alguno — así el
+ * estado del periodo siempre refleja lo que realmente se pagó, sin
+ * necesidad de un botón aparte. Al marcarlo, también acumula la parte
+ * proporcional de aguinaldo de este período en la provisión anual del
+ * empleado.
  */
 export async function marcarDetallePagado(
   ndtId: number,
@@ -141,6 +189,8 @@ export async function marcarDetallePagado(
       pagado ? 1 : -1
     )
   }
+
+  await sincronizarEstadoPeriodo(supabase, detalle.ndt_nomina_periodo_id)
 
   revalidatePath('/payroll')
   revalidatePath(`/payroll/${detalle.ndt_nomina_periodo_id}`)

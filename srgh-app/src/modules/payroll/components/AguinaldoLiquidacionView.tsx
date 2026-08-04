@@ -1,9 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import type { AguinaldoItem, EmpleadoActivoItem, MotivoSalidaRow } from '@/modules/payroll/types'
+import type {
+  AguinaldoItem,
+  EmpleadoActivoItem,
+  LiquidacionListItem,
+  MotivoSalidaRow,
+} from '@/modules/payroll/types'
 import { AguinaldoTab } from './AguinaldoTab'
 import { LiquidacionTab } from './LiquidacionTab'
+import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 
 interface AguinaldoLiquidacionViewProps {
   anio: number
@@ -11,6 +17,7 @@ interface AguinaldoLiquidacionViewProps {
   canWrite: boolean
   empleadosActivos: EmpleadoActivoItem[]
   motivos: MotivoSalidaRow[]
+  liquidaciones: LiquidacionListItem[]
 }
 
 const TABS = [
@@ -26,6 +33,7 @@ export function AguinaldoLiquidacionView({
   canWrite,
   empleadosActivos,
   motivos,
+  liquidaciones,
 }: AguinaldoLiquidacionViewProps) {
   const [tab, setTab] = useState<TabId>('aguinaldo')
 
@@ -51,11 +59,18 @@ export function AguinaldoLiquidacionView({
       {tab === 'aguinaldo' && <AguinaldoTab anio={anio} items={aguinaldos} canWrite={canWrite} />}
       {tab === 'liquidacion' &&
         (canWrite ? (
-          <LiquidacionTab empleados={empleadosActivos} motivos={motivos} />
+          <LiquidacionTab
+            empleados={empleadosActivos}
+            motivos={motivos}
+            historial={liquidaciones}
+          />
         ) : (
-          <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-            No tenés permiso para procesar liquidaciones.
-          </p>
+          <div className="space-y-4">
+            <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
+              No tenés permiso para procesar liquidaciones.
+            </p>
+            <LiquidacionesHistorial items={liquidaciones} />
+          </div>
         ))}
     </div>
   )

@@ -71,9 +71,26 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
 
   const lineasIngreso: { label: string; value: number }[] = []
   const lineasDeduccion: { label: string; value: number }[] = []
+  const codigosMostrados = new Set<string>()
 
+  // Todos los conceptos de ingreso ACTIVOS del catálogo se muestran siempre,
+  // aunque el empleado no haya ganado nada ahí este periodo — así "0" queda
+  // explícito (ej. Feriado) en vez de que el rubro simplemente desaparezca.
+  for (const concepto of conceptosResult.ok ? conceptosResult.data : []) {
+    if (!concepto.con_activo || !TIPOS_CALCULO_INGRESO.has(concepto.con_tipo_calculo)) continue
+    lineasIngreso.push({
+      label: concepto.con_nombre,
+      value: detalle.montosPorConcepto[concepto.con_codigo] ?? 0,
+    })
+    codigosMostrados.add(concepto.con_codigo)
+  }
+
+  // Cualquier otro monto real guardado: deducciones (solo si tienen monto,
+  // no tiene sentido listar cada deducción posible en 0) y conceptos de
+  // ingreso ya desactivados del catálogo que igual quedaron pagados en este
+  // periodo (ej. un pago de banco de horas con HORAS_EXTRA).
   for (const [codigo, monto] of Object.entries(detalle.montosPorConcepto)) {
-    if (monto <= 0) continue
+    if (codigosMostrados.has(codigo) || monto <= 0) continue
     const concepto = conceptoPorCodigo.get(codigo)
     const label = concepto?.con_nombre ?? codigo
     if (concepto && TIPOS_CALCULO_INGRESO.has(concepto.con_tipo_calculo)) {
@@ -172,6 +189,38 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
             <span>Salario neto pagado</span>
             <span className="tabular-nums">{formatCRC(detalle.salarioNeto)}</span>
           </div>
+
+          {detalle.incapacidad && (
+            <>
+              <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Incapacidad por enfermedad
+              </p>
+              <Linea
+                label={`Días pagados por la empresa (${detalle.incapacidad.porcentajePagoEmpleador}% del salario)`}
+                value={`${detalle.incapacidad.diasEmpleador} día(s)`}
+              />
+              {detalle.incapacidad.diasCcss > 0 && (
+                <Linea
+                  label="Días pagados por la CCSS"
+                  value={`${detalle.incapacidad.diasCcss} día(s)`}
+                />
+              )}
+              <div className="my-2 border-t border-slate-100" />
+              <Linea
+                label="Monto de incapacidad"
+                value={formatCRC(detalle.incapacidad.monto)}
+                strong
+              />
+
+              <div className="my-2 border-t border-slate-100" />
+              <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-base font-extrabold text-emerald-800">
+                <span>Total a pagar</span>
+                <span className="tabular-nums">
+                  {formatCRC(detalle.salarioNeto + detalle.incapacidad.monto)}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="mt-10 grid grid-cols-2 gap-8 pt-4 text-center text-[11px] text-slate-500">
