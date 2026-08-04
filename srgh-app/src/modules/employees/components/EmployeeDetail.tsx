@@ -2,8 +2,15 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Briefcase, Pencil } from 'lucide-react'
-import type { CatalogoItem, EmpleadoDetalle, TerritorioCatalogo } from '@/modules/employees/types'
+import { useSearchParams } from 'next/navigation'
+import { ArrowLeft, Briefcase, Camera, Pencil } from 'lucide-react'
+import { Avatar } from '@/components/ui/Avatar'
+import type {
+  CatalogoItem,
+  DocumentoEmpleado,
+  EmpleadoDetalle,
+  TerritorioCatalogo,
+} from '@/modules/employees/types'
 import {
   formatCRC,
   formatDate,
@@ -13,6 +20,9 @@ import {
 } from '@/modules/employees/lib/format'
 import { formatIbanGroups } from '@/modules/employees/lib/iban'
 import { EmployeeForm } from './EmployeeForm'
+import { EmployeePhotoModal } from './EmployeePhotoModal'
+import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
+import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
 
 interface EmployeeDetailProps {
   empleado: EmpleadoDetalle
@@ -20,6 +30,13 @@ interface EmployeeDetailProps {
   bancos: CatalogoItem[]
   territorio: TerritorioCatalogo
   canWrite: boolean
+  // Documentos (SGRH-67, fase 2B): null = sin DOCUMENTOS_READ, el tab no se
+  // muestra. Undefined solo para no romper llamadas/tests que aún no pasan
+  // estas props — se comporta igual que null.
+  documentos?: DocumentoEmpleado[] | null
+  tiposDocumento?: CatalogoItem[]
+  canWriteDocs?: boolean
+  documentosError?: string | null
 }
 
 function InfoItem({
@@ -59,48 +76,27 @@ export function EmployeeDetail({
   bancos,
   territorio,
   canWrite,
+  documentos = null,
+  tiposDocumento = [],
+  canWriteDocs = false,
+  documentosError = null,
 }: EmployeeDetailProps) {
   const [editing, setEditing] = useState(false)
+  const [editingPhoto, setEditingPhoto] = useState(false)
 
   const historial = empleado.historial_activo
   const direccion = empleado.direccion
+  const nombreCompleto = fullName(empleado)
 
-  return (
-    <div className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Link
-            href="/employees"
-            aria-label="Volver al listado"
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-bold text-slate-900">{fullName(empleado)}</h1>
-            <p className="text-xs text-slate-500">
-              {empleado.tipo_identificacion_nombre} · {empleado.emp_numero_identificacion}
-            </p>
-          </div>
-          <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              historial ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-            }`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {historial ? 'Activo' : 'Sin contrato vigente'}
-          </span>
-        </div>
-        {canWrite && !editing && (
-          <button
-            onClick={() => setEditing(true)}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-          >
-            <Pencil className="h-3.5 w-3.5" /> Editar
-          </button>
-        )}
-      </div>
+  // El tab activo sale de la URL (misma fuente de verdad que el tablist): el
+  // botón "Editar" y el overlay de cámara solo aplican al perfil, y no deben
+  // quedar colgando si se cambia de tab en medio de una edición.
+  const searchParams = useSearchParams()
+  const activeTab = resolveProfileTab(searchParams.get('tab'), documentos !== null)
+  const enPerfil = activeTab === 'perfil'
 
+  const perfilContent = (
+    <div className="space-y-4">
       {editing ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <EmployeeForm
@@ -116,7 +112,7 @@ export function EmployeeDetail({
         <>
           <SectionCard title="Datos personales">
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <InfoItem label="Nombre completo" value={fullName(empleado)} />
+              <InfoItem label="Nombre completo" value={nombreCompleto} />
               <InfoItem
                 label="Identificación"
                 value={`${empleado.tipo_identificacion_nombre} · ${empleado.emp_numero_identificacion}`}
@@ -217,6 +213,83 @@ export function EmployeeDetail({
             )}
           </SectionCard>
         </>
+      )}
+    </div>
+  )
+
+  // Los documentos viven en su propio tab: CRUD independiente del modo edición
+  // de la ficha, con sus propios permisos. null = sin DOCUMENTOS_READ → el
+  // tablist ni siquiera se renderiza.
+  const documentosContent =
+    documentos === null ? null : (
+      <EmployeeDocumentsSection
+        empId={empleado.emp_id}
+        documentos={documentos}
+        tiposDocumento={tiposDocumento}
+        canWrite={canWriteDocs}
+        listError={documentosError}
+      />
+    )
+
+  return (
+    <div className="min-w-0 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            href="/employees"
+            aria-label="Volver al listado"
+            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div className="relative shrink-0">
+            <Avatar size="xl" fotoUrl={empleado.foto_url} nombre={nombreCompleto} />
+            {/* Simétrico con el resto de la ficha: nada es editable fuera de
+                modo edición; el botón de foto solo aparece DENTRO de él. */}
+            {canWrite && editing && enPerfil && (
+              <button
+                type="button"
+                onClick={() => setEditingPhoto(true)}
+                aria-label="Editar foto"
+                className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-600 text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+              >
+                <Camera className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-bold text-slate-900">{nombreCompleto}</h1>
+            <p className="text-xs text-slate-500">
+              {empleado.tipo_identificacion_nombre} · {empleado.emp_numero_identificacion}
+            </p>
+          </div>
+          <span
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              historial ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+            }`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {historial ? 'Activo' : 'Sin contrato vigente'}
+          </span>
+        </div>
+        {canWrite && !editing && enPerfil && (
+          <button
+            onClick={() => setEditing(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
+          >
+            <Pencil className="h-3.5 w-3.5" /> Editar
+          </button>
+        )}
+      </div>
+
+      <EmployeeProfileTabs perfilContent={perfilContent} documentosContent={documentosContent} />
+
+      {editingPhoto && (
+        <EmployeePhotoModal
+          empId={empleado.emp_id}
+          currentUrl={empleado.foto_url}
+          onClose={() => setEditingPhoto(false)}
+        />
       )}
     </div>
   )

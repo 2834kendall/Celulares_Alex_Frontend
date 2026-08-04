@@ -74,9 +74,11 @@ export const EMPLEADO_DETALLE: EmpleadoDetalle = {
   emp_nombre_contacto_emergencia: null,
   emp_telefono_emergencia: null,
   emp_rostro_hash: null,
+  emp_foto_path: null,
   emp_created_at: '2024-01-01T00:00:00Z',
   emp_direccion_id: 7,
   tipo_identificacion_nombre: 'Cédula nacional',
+  foto_url: null,
   historial_activo: HISTORIAL_ACTIVO,
   datos_pago: {
     edp_banco_id: 3,

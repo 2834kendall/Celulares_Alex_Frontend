@@ -248,6 +248,116 @@ export type Database = {
           },
         ]
       }
+      sgrh_biometria_auditoria: {
+        Row: {
+          bia_created_at: string
+          bia_dispositivo_id: string | null
+          bia_empresa_id: number
+          bia_id: number
+          bia_mejor_distancia: number | null
+          bia_mejor_empleado_id: number | null
+          bia_resultado: string
+          bia_sucursal_id: number | null
+        }
+        Insert: {
+          bia_created_at?: string
+          bia_dispositivo_id?: string | null
+          bia_empresa_id: number
+          bia_id?: number
+          bia_mejor_distancia?: number | null
+          bia_mejor_empleado_id?: number | null
+          bia_resultado: string
+          bia_sucursal_id?: number | null
+        }
+        Update: {
+          bia_created_at?: string
+          bia_dispositivo_id?: string | null
+          bia_empresa_id?: number
+          bia_id?: number
+          bia_mejor_distancia?: number | null
+          bia_mejor_empleado_id?: number | null
+          bia_resultado?: string
+          bia_sucursal_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_biometria_auditoria_bia_empresa_id_fkey"
+            columns: ["bia_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_biometria_auditoria_bia_mejor_empleado_id_fkey"
+            columns: ["bia_mejor_empleado_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+          {
+            foreignKeyName: "sgrh_biometria_auditoria_bia_sucursal_id_fkey"
+            columns: ["bia_sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_sucursales"
+            referencedColumns: ["suc_id"]
+          },
+        ]
+      }
+      sgrh_biometria_empleado: {
+        Row: {
+          bio_creado_por: number | null
+          bio_created_at: string
+          bio_empleado_id: number
+          bio_empresa_id: number
+          bio_id: number
+          bio_modelo: string
+          bio_updated_at: string
+          bio_vector: Json
+        }
+        Insert: {
+          bio_creado_por?: number | null
+          bio_created_at?: string
+          bio_empleado_id: number
+          bio_empresa_id: number
+          bio_id?: number
+          bio_modelo?: string
+          bio_updated_at?: string
+          bio_vector: Json
+        }
+        Update: {
+          bio_creado_por?: number | null
+          bio_created_at?: string
+          bio_empleado_id?: number
+          bio_empresa_id?: number
+          bio_id?: number
+          bio_modelo?: string
+          bio_updated_at?: string
+          bio_vector?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_biometria_empleado_bio_creado_por_fkey"
+            columns: ["bio_creado_por"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+          {
+            foreignKeyName: "sgrh_biometria_empleado_bio_empleado_id_fkey"
+            columns: ["bio_empleado_id"]
+            isOneToOne: true
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+          {
+            foreignKeyName: "sgrh_biometria_empleado_bio_empresa_id_fkey"
+            columns: ["bio_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       sgrh_candidatos: {
         Row: {
           cdt_apellido_1: string
@@ -295,116 +405,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "sgrh_cat_tipos_identificacion"
             referencedColumns: ["tid_id"]
-          },
-        ]
-      }
-      sgrh_biometria_auditoria: {
-        Row: {
-          bia_created_at: string
-          bia_dispositivo_id: string | null
-          bia_empresa_id: number
-          bia_id: number
-          bia_mejor_distancia: number | null
-          bia_mejor_empleado_id: number | null
-          bia_resultado: string
-          bia_sucursal_id: number | null
-        }
-        Insert: {
-          bia_created_at?: string
-          bia_dispositivo_id?: string | null
-          bia_empresa_id: number
-          bia_id?: never
-          bia_mejor_distancia?: number | null
-          bia_mejor_empleado_id?: number | null
-          bia_resultado: string
-          bia_sucursal_id?: number | null
-        }
-        Update: {
-          bia_created_at?: string
-          bia_dispositivo_id?: string | null
-          bia_empresa_id?: number
-          bia_id?: never
-          bia_mejor_distancia?: number | null
-          bia_mejor_empleado_id?: number | null
-          bia_resultado?: string
-          bia_sucursal_id?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sgrh_biometria_auditoria_bia_empresa_id_fkey"
-            columns: ["bia_empresa_id"]
-            isOneToOne: false
-            referencedRelation: "sgrh_empresas"
-            referencedColumns: ["org_id"]
-          },
-          {
-            foreignKeyName: "sgrh_biometria_auditoria_bia_mejor_empleado_id_fkey"
-            columns: ["bia_mejor_empleado_id"]
-            isOneToOne: false
-            referencedRelation: "sgrh_empleados"
-            referencedColumns: ["emp_id"]
-          },
-          {
-            foreignKeyName: "sgrh_biometria_auditoria_bia_sucursal_id_fkey"
-            columns: ["bia_sucursal_id"]
-            isOneToOne: false
-            referencedRelation: "sgrh_sucursales"
-            referencedColumns: ["suc_id"]
-          },
-        ]
-      }
-      sgrh_biometria_empleado: {
-        Row: {
-          bio_created_at: string
-          bio_creado_por: number | null
-          bio_empleado_id: number
-          bio_empresa_id: number
-          bio_id: number
-          bio_modelo: string
-          bio_updated_at: string
-          bio_vector: Json
-        }
-        Insert: {
-          bio_created_at?: string
-          bio_creado_por?: number | null
-          bio_empleado_id: number
-          bio_empresa_id: number
-          bio_id?: never
-          bio_modelo?: string
-          bio_updated_at?: string
-          bio_vector: Json
-        }
-        Update: {
-          bio_created_at?: string
-          bio_creado_por?: number | null
-          bio_empleado_id?: number
-          bio_empresa_id?: number
-          bio_id?: never
-          bio_modelo?: string
-          bio_updated_at?: string
-          bio_vector?: Json
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sgrh_biometria_empleado_bio_creado_por_fkey"
-            columns: ["bio_creado_por"]
-            isOneToOne: false
-            referencedRelation: "sgrh_usuarios"
-            referencedColumns: ["usr_id"]
-          },
-          {
-            foreignKeyName: "sgrh_biometria_empleado_bio_empleado_id_fkey"
-            columns: ["bio_empleado_id"]
-            isOneToOne: true
-            referencedRelation: "sgrh_empleados"
-            referencedColumns: ["emp_id"]
-          },
-          {
-            foreignKeyName: "sgrh_biometria_empleado_bio_empresa_id_fkey"
-            columns: ["bio_empresa_id"]
-            isOneToOne: false
-            referencedRelation: "sgrh_empresas"
-            referencedColumns: ["org_id"]
           },
         ]
       }
@@ -865,6 +865,7 @@ export type Database = {
         Row: {
           tau_codigo: string
           tau_descuenta_vacaciones: boolean
+          tau_es_intradia: boolean
           tau_es_protegida: boolean
           tau_id: number
           tau_nombre: string
@@ -878,6 +879,7 @@ export type Database = {
         Insert: {
           tau_codigo: string
           tau_descuenta_vacaciones?: boolean
+          tau_es_intradia?: boolean
           tau_es_protegida?: boolean
           tau_id?: never
           tau_nombre: string
@@ -891,6 +893,7 @@ export type Database = {
         Update: {
           tau_codigo?: string
           tau_descuenta_vacaciones?: boolean
+          tau_es_intradia?: boolean
           tau_es_protegida?: boolean
           tau_id?: never
           tau_nombre?: string
@@ -927,6 +930,27 @@ export type Database = {
           tco_nota_legal?: string | null
           tco_permite_cesantia?: boolean
           tco_permite_preaviso?: boolean
+        }
+        Relationships: []
+      }
+      sgrh_cat_tipos_documento: {
+        Row: {
+          tdo_activo: boolean
+          tdo_codigo: string
+          tdo_id: number
+          tdo_nombre: string
+        }
+        Insert: {
+          tdo_activo?: boolean
+          tdo_codigo: string
+          tdo_id?: number
+          tdo_nombre: string
+        }
+        Update: {
+          tdo_activo?: boolean
+          tdo_codigo?: string
+          tdo_id?: number
+          tdo_nombre?: string
         }
         Relationships: []
       }
@@ -1122,6 +1146,77 @@ export type Database = {
           },
         ]
       }
+      sgrh_documentos: {
+        Row: {
+          doc_creado_por: number | null
+          doc_created_at: string
+          doc_descripcion: string | null
+          doc_empleado_id: number
+          doc_empresa_id: number
+          doc_fecha_vencimiento: string | null
+          doc_id: number
+          doc_mime: string
+          doc_nombre: string
+          doc_path: string
+          doc_tipo_id: number
+        }
+        Insert: {
+          doc_creado_por?: number | null
+          doc_created_at?: string
+          doc_descripcion?: string | null
+          doc_empleado_id: number
+          doc_empresa_id: number
+          doc_fecha_vencimiento?: string | null
+          doc_id?: number
+          doc_mime: string
+          doc_nombre: string
+          doc_path: string
+          doc_tipo_id: number
+        }
+        Update: {
+          doc_creado_por?: number | null
+          doc_created_at?: string
+          doc_descripcion?: string | null
+          doc_empleado_id?: number
+          doc_empresa_id?: number
+          doc_fecha_vencimiento?: string | null
+          doc_id?: number
+          doc_mime?: string
+          doc_nombre?: string
+          doc_path?: string
+          doc_tipo_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_documentos_doc_creado_por_fkey"
+            columns: ["doc_creado_por"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+          {
+            foreignKeyName: "sgrh_documentos_doc_empleado_id_fkey"
+            columns: ["doc_empleado_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+          {
+            foreignKeyName: "sgrh_documentos_doc_empresa_id_fkey"
+            columns: ["doc_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_documentos_doc_tipo_id_fkey"
+            columns: ["doc_tipo_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_tipos_documento"
+            referencedColumns: ["tdo_id"]
+          },
+        ]
+      }
       sgrh_empleado_datos_pago: {
         Row: {
           edp_banco_id: number | null
@@ -1173,6 +1268,7 @@ export type Database = {
           emp_email_personal: string | null
           emp_fecha_ingreso_original: string
           emp_fecha_nacimiento: string | null
+          emp_foto_path: string | null
           emp_genero: string | null
           emp_id: number
           emp_nacionalidad: string
@@ -1193,6 +1289,7 @@ export type Database = {
           emp_email_personal?: string | null
           emp_fecha_ingreso_original: string
           emp_fecha_nacimiento?: string | null
+          emp_foto_path?: string | null
           emp_genero?: string | null
           emp_id?: never
           emp_nacionalidad?: string
@@ -1213,6 +1310,7 @@ export type Database = {
           emp_email_personal?: string | null
           emp_fecha_ingreso_original?: string
           emp_fecha_nacimiento?: string | null
+          emp_foto_path?: string | null
           emp_genero?: string | null
           emp_id?: never
           emp_nacionalidad?: string

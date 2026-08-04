@@ -2,13 +2,30 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getEmployeeDetail } from './getEmployeeDetail'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { getStorageProvider } from '@/lib/storage'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import type { StorageProvider } from '@/lib/storage/types'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+vi.mock('@/lib/storage', () => ({ getStorageProvider: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
+const mockGetStorageProvider = vi.mocked(getStorageProvider)
+
+function mockProvider(overrides: Partial<StorageProvider> = {}) {
+  const provider = {
+    upload: vi.fn(),
+    getSignedUrl: vi.fn(async () => ({ ok: true as const, data: 'https://cdn/foto.jpg?token=t' })),
+    getSignedUrls: vi.fn(),
+    list: vi.fn(),
+    remove: vi.fn(),
+    ...overrides,
+  }
+  mockGetStorageProvider.mockReturnValue(provider as unknown as StorageProvider)
+  return provider
+}
 
 const CLAIMS = { app_metadata: { empresa_id: 1 } } as unknown as Awaited<
   ReturnType<typeof requirePermission>
@@ -127,5 +144,69 @@ describe('getEmployeeDetail (server action)', () => {
 
     expect(result.data.historial_activo).toBeNull()
     expect(result.data.datos_pago).toBeNull()
+  })
+
+  it('sin emp_foto_path no llama al proveedor y foto_url es null', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: { ...EMPLEADO_ROW, emp_foto_path: null }, error: null },
+        sgrh_historial_laboral: { data: null, error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(mockGetStorageProvider).not.toHaveBeenCalled()
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.foto_url).toBeNull()
+  })
+
+  it('con emp_foto_path firma UNA url y la expone como foto_url', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: {
+          data: { ...EMPLEADO_ROW, emp_foto_path: '1/empleados/10/a.jpg' },
+          error: null,
+        },
+        sgrh_historial_laboral: { data: null, error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    const provider = mockProvider()
+
+    const result = await getEmployeeDetail(10)
+
+    expect(provider.getSignedUrl).toHaveBeenCalledWith(
+      'FOTOS_EMPLEADO',
+      '1/empleados/10/a.jpg',
+      expect.any(Number)
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.foto_url).toBe('https://cdn/foto.jpg?token=t')
+  })
+
+  it('si el firmado falla, la ficha igual se muestra con foto_url null', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: {
+          data: { ...EMPLEADO_ROW, emp_foto_path: '1/empleados/10/a.jpg' },
+          error: null,
+        },
+        sgrh_historial_laboral: { data: null, error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    mockProvider({
+      getSignedUrl: vi.fn(async () => ({ ok: false as const, error: 'NOT_FOUND' as const })),
+    })
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.foto_url).toBeNull()
   })
 })

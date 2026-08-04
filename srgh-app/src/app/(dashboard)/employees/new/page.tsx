@@ -9,6 +9,7 @@ import {
   getSucursales,
   getTerritorio,
   getTiposContrato,
+  getTiposDocumento,
   getTiposIdentificacion,
   getTiposJornada,
 } from '@/modules/employees/actions/getCatalogs'
@@ -27,6 +28,7 @@ export default async function NewEmployeePage() {
   const claims = await requirePermission(PERMISOS.EMPLEADOS_WRITE)
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canInviteUser = permisos.includes(PERMISOS.USUARIOS_WRITE)
+  const canManageDocs = permisos.includes(PERMISOS.DOCUMENTOS_WRITE)
 
   const [
     tiposIdentificacionResult,
@@ -37,6 +39,7 @@ export default async function NewEmployeePage() {
     bancosResult,
     territorioResult,
     rolesResult,
+    tiposDocumentoResult,
   ] = await Promise.all([
     getTiposIdentificacion(),
     getPuestos(),
@@ -46,6 +49,9 @@ export default async function NewEmployeePage() {
     getBancos(),
     getTerritorio(),
     canInviteUser ? getRoles() : Promise.resolve(null),
+    // getTiposDocumento exige DOCUMENTOS_READ (via requirePermission): sin el
+    // permiso, llamarla redirigiría la página entera a /unauthorized.
+    canManageDocs ? getTiposDocumento() : Promise.resolve(null),
   ])
 
   const results = [
@@ -66,6 +72,10 @@ export default async function NewEmployeePage() {
     return <ErrorBanner message={rolesResult.error} />
   }
 
+  if (tiposDocumentoResult && !tiposDocumentoResult.ok) {
+    return <ErrorBanner message={tiposDocumentoResult.error} />
+  }
+
   return (
     <div className="min-w-0 space-y-4">
       <div className="flex items-center gap-3">
@@ -79,7 +89,8 @@ export default async function NewEmployeePage() {
         <div className="min-w-0">
           <h1 className="text-base font-bold text-slate-900">Nuevo empleado</h1>
           <p className="text-xs text-slate-500">
-            Alta en tres pasos: información principal, datos de nómina y cuenta de usuario.
+            Alta en cuatro pasos: información principal, datos de nómina, documentos y cuenta de
+            usuario.
           </p>
         </div>
       </div>
@@ -96,6 +107,8 @@ export default async function NewEmployeePage() {
             ? territorioResult.data
             : { provincias: [], cantones: [], distritos: [] }
         }
+        tiposDocumento={tiposDocumentoResult?.ok ? tiposDocumentoResult.data : []}
+        canManageDocs={canManageDocs}
         roles={rolesResult?.ok ? rolesResult.data : []}
         canInviteUser={canInviteUser}
       />

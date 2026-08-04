@@ -31,6 +31,9 @@ type DatosPagoInsert = Database['public']['Tables']['sgrh_empleado_datos_pago'][
 type DireccionRow = Database['public']['Tables']['sgrh_direcciones']['Row']
 type DireccionInsert = Database['public']['Tables']['sgrh_direcciones']['Insert']
 
+type DocumentoRow = Database['public']['Tables']['sgrh_documentos']['Row']
+type DocumentoInsert = Database['public']['Tables']['sgrh_documentos']['Insert']
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 // Los inputs HTML emiten '' cuando están vacíos; los campos opcionales de la DB
 // esperan null. Sin esto, los regex de teléfono/email rechazarían el string vacío.
@@ -374,6 +377,10 @@ export type EmpleadoListItem = Pick<
   salario_base: number | null
   fecha_inicio_contrato: string | null
   activo: boolean
+  // URL firmada (SGRH-67), null sin foto o si el firmado en lote falló —
+  // Avatar cae a iniciales en ambos casos. NUNCA se persiste, se firma en
+  // cada carga de la lista.
+  foto_url: string | null
 }
 
 // ─── View Model — Detalle de empleado ────────────────────────────────────────
@@ -381,6 +388,9 @@ export type EmpleadoListItem = Pick<
 
 export type EmpleadoDetalle = EmpleadoRow & {
   tipo_identificacion_nombre: string
+  // URL firmada (SGRH-67) de emp_foto_path, null sin foto. Avatar cae a
+  // iniciales si es null o si el firmado falló.
+  foto_url: string | null
   historial_activo:
     | (HistorialLaboralRow & {
         puesto_nombre: string
@@ -406,4 +416,74 @@ export type EmpleadoDetalle = EmpleadoRow & {
         provincia_nombre: string
       })
     | null
+}
+
+// ─── Schema de metadata de documento (SGRH-67, fase 2B) ──────────────────────
+// Solo la metadata que captura el usuario: doc_path/doc_mime/doc_creado_por
+// los completa el servidor (provienen del archivo subido y del JWT, nunca
+// del cliente).
+
+export const documentoMetadataSchema = z.object({
+  doc_nombre: z
+    .string({ error: 'El nombre del documento es obligatorio' })
+    .trim()
+    .min(2, 'El nombre debe tener al menos 2 caracteres')
+    .max(150, 'Máximo 150 caracteres'),
+
+  doc_tipo_id: z
+    .number({ error: 'El tipo de documento es obligatorio' })
+    .int()
+    .positive('Seleccione un tipo de documento válido'),
+
+  doc_descripcion: emptyToNull(z.string().max(300, 'Máximo 300 caracteres').nullable().optional()),
+
+  doc_fecha_vencimiento: emptyToNull(
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
+      .nullable()
+      .optional()
+  ),
+}) satisfies z.ZodType<
+  Omit<
+    DocumentoInsert,
+    | 'doc_id'
+    | 'doc_empresa_id'
+    | 'doc_empleado_id'
+    | 'doc_path'
+    | 'doc_mime'
+    | 'doc_creado_por'
+    | 'doc_created_at'
+  >
+>
+
+export type DocumentoMetadataInput = z.infer<typeof documentoMetadataSchema>
+
+// ─── View Model — Documento de empleado ──────────────────────────────────────
+// DTO de la lista de documentos del expediente. Nunca expone doc_path: la
+// descarga se pide por doc_id y el servidor firma la URL al vuelo.
+
+export type DocumentoEmpleado = Pick<
+  DocumentoRow,
+  | 'doc_id'
+  | 'doc_empleado_id'
+  | 'doc_tipo_id'
+  | 'doc_nombre'
+  | 'doc_descripcion'
+  | 'doc_fecha_vencimiento'
+  | 'doc_mime'
+  | 'doc_created_at'
+> & {
+  tipo_nombre: string
+}
+
+// ─── Documento pendiente del wizard (solo cliente) ───────────────────────────
+// Antes de crear el empleado no hay doc_empleado_id: el archivo y su metadata
+// viven en memoria (fuera de react-hook-form, igual que la foto) y se suben
+// recién en el onSubmit, con el empId que devuelve createEmployee.
+
+export interface DocumentoPendiente {
+  key: string
+  file: File
+  metadata: DocumentoMetadataInput
 }

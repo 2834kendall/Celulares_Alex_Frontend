@@ -48,9 +48,6 @@ export const CONTAINERS: Readonly<Record<StorageContainer, ContainerConfig>> = {
  */
 export const TTL_FOTO = 3600
 
-/** Laboratorio de pruebas: corta a propósito (facilita probar la expiración). */
-export const TTL_LAB = 300
-
 /**
  * Descargas de documentos (fase 1B): se pide al hacer clic y se consume al
  * instante — minimiza la exposición del enlace.

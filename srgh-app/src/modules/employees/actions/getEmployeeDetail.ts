@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { getStorageProvider } from '@/lib/storage'
+import { TTL_FOTO } from '@/lib/storage/containers'
 import type { Database } from '@/types/database.types'
 import type { EmpleadoDetalle } from '@/modules/employees/types'
 
@@ -115,6 +117,18 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     return { ok: false, error: 'No se pudieron cargar los datos de pago.' }
   }
 
+  // Una sola foto: getSignedUrl (no el batch). Si falla o no hay path, la
+  // ficha igual se muestra — Avatar cae a iniciales.
+  let fotoUrl: string | null = null
+  if (empleado.emp_foto_path) {
+    const signed = await getStorageProvider().getSignedUrl(
+      'FOTOS_EMPLEADO',
+      empleado.emp_foto_path,
+      TTL_FOTO
+    )
+    fotoUrl = signed.ok ? signed.data : null
+  }
+
   const { sgrh_cat_tipos_identificacion, sgrh_direcciones, ...empleadoBase } = empleado
 
   // null para empleados creados antes de que el formulario capturara dirección.
@@ -153,6 +167,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
   const data: EmpleadoDetalle = {
     ...empleadoBase,
     tipo_identificacion_nombre: sgrh_cat_tipos_identificacion?.tid_nombre ?? '—',
+    foto_url: fotoUrl,
     historial_activo: historialActivo,
     direccion,
     datos_pago: datosPago
