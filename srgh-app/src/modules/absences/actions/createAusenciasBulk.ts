@@ -129,15 +129,24 @@ export async function createAusenciasBulk(
   if (tipo && !tipo.tau_es_intradia) {
     // Secuencial (no Promise.all): cada llamada lee cuánto tope mensual ya
     // se usó a partir de lo que la anterior acaba de guardar.
+    const periodoIdsActualizados = new Set<number>()
     for (const range of data.ranges) {
-      await sincronizarAusenciaEnNomina(supabase, {
+      const sync = await sincronizarAusenciaEnNomina(supabase, {
         historialLaboralId: data.employmentHistoryId,
         fechaInicio: range.fechaInicio,
         fechaFin: range.fechaFin,
         topeMensualEmpleador: tipo.tau_paga_empleador_dias,
       })
+      if (sync.ok) {
+        for (const p of sync.periodosActualizados) {
+          periodoIdsActualizados.add(p.periodoId)
+        }
+      }
     }
     revalidatePath('/payroll')
+    for (const periodoId of periodoIdsActualizados) {
+      revalidatePath(`/payroll/${periodoId}`)
+    }
   }
 
   revalidatePath('/schedule')

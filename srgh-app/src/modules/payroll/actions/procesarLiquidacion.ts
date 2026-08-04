@@ -230,9 +230,12 @@ export async function procesarLiquidacion(
         error: 'Ya existe una liquidación guardada para este empleado.',
       }
     }
+    // No se expone errInsert.message al cliente: puede filtrar nombres de
+    // tabla/constraint. Queda en el log del servidor para diagnóstico.
+    console.error('procesarLiquidacion: error al insertar liquidación', errInsert)
     return {
       ok: false,
-      error: `No se pudo guardar la liquidación: ${errInsert.message}`,
+      error: 'No se pudo guardar la liquidación. Intentá de nuevo o avisá a soporte.',
     }
   }
 

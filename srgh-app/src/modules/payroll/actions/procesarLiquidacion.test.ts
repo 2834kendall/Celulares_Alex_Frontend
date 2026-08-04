@@ -151,7 +151,8 @@ describe('procesarLiquidacion (server action)', () => {
     })
   })
 
-  it('si falla el guardado por otro motivo, muestra el mensaje real en vez de asumir que ya existía', async () => {
+  it('si falla el guardado por otro motivo, avisa con un mensaje genérico en vez de asumir que ya existía o filtrar el error interno', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     mockSupabase({
       sgrh_historial_laboral: { data: HISTORIAL, error: null },
       sgrh_cat_motivos_salida: { data: MOTIVO_SIN_DERECHOS, error: null },
@@ -166,8 +167,9 @@ describe('procesarLiquidacion (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo guardar la liquidación: permission denied for table sgrh_liquidaciones',
+      error: 'No se pudo guardar la liquidación. Intentá de nuevo o avisá a soporte.',
     })
+    consoleErrorSpy.mockRestore()
   })
 
   it('si se guarda pero no se puede cerrar el expediente, avisa para revisarlo a mano', async () => {

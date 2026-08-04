@@ -75,13 +75,18 @@ export async function createAusencia(input: CreateAusenciaInput): Promise<Create
     .maybeSingle<TipoAusenciaPagoRow>()
 
   if (tipo && !tipo.tau_es_intradia) {
-    await sincronizarAusenciaEnNomina(supabase, {
+    const sync = await sincronizarAusenciaEnNomina(supabase, {
       historialLaboralId: data.employmentHistoryId,
       fechaInicio: data.fechaInicio,
       fechaFin: data.fechaFin,
       topeMensualEmpleador: tipo.tau_paga_empleador_dias,
     })
     revalidatePath('/payroll')
+    if (sync.ok) {
+      for (const p of sync.periodosActualizados) {
+        revalidatePath(`/payroll/${p.periodoId}`)
+      }
+    }
   }
 
   revalidatePath('/schedule')
