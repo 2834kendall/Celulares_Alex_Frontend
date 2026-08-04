@@ -4,15 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import {
-  diasSuperpuestos,
-  parseFechaLocal,
-  repartirDiasIncapacidad,
-} from '@/modules/payroll/lib/incapacidad'
-import { periodoLabel } from '@/modules/payroll/lib/format'
+import { sincronizarAusenciaEnNomina } from '@/modules/payroll/lib/ausenciaNominaSync'
 import {
   registrarIncapacidadSchema,
-  type PeriodoAfectadoIncapacidad,
   type RegistrarIncapacidadInput,
   type RegistrarIncapacidadResult,
 } from '@/modules/payroll/types'
@@ -26,20 +20,6 @@ interface TipoAusenciaRow {
   tau_id: number
   tau_paga_empleador_dias: number
   tau_porcentaje_pago_empleador: number
-}
-
-interface DetalleConPeriodoRow {
-  ndt_id: number
-  ndt_dias_incapacidad_empleador: number
-  ndt_dias_incapacidad_ccss: number
-  sgrh_nomina_periodo: {
-    npe_id: number
-    npe_periodo_mes: number
-    npe_periodo_anio: number
-    npe_quincena: number
-    npe_fecha_inicio_periodo: string | null
-    npe_fecha_fin_periodo: string | null
-  } | null
 }
 
 /**
@@ -117,144 +97,27 @@ export async function registrarIncapacidad(
     return { ok: false, error: 'No se pudo guardar la incapacidad.' }
   }
 
-  const { data: detalles, error: errDetalles } = await supabase
-    .from('sgrh_nomina_detalle')
-    .select(
-      `
-      ndt_id,
-      ndt_dias_incapacidad_empleador,
-      ndt_dias_incapacidad_ccss,
-      sgrh_nomina_periodo (
-        npe_id, npe_periodo_mes, npe_periodo_anio, npe_quincena,
-        npe_fecha_inicio_periodo, npe_fecha_fin_periodo
-      )
-    `
-    )
-    .eq('ndt_historial_laboral_id', data.historialLaboralId)
-    .returns<DetalleConPeriodoRow[]>()
+  const sync = await sincronizarAusenciaEnNomina(supabase, {
+    historialLaboralId: data.historialLaboralId,
+    fechaInicio: data.fechaInicio,
+    fechaFin: data.fechaFin,
+    topeMensualEmpleador: tipoAusencia.tau_paga_empleador_dias,
+  })
 
-  if (errDetalles) {
+  if (!sync.ok) {
     // La incapacidad ya quedó guardada (para el historial); solo no se pudo
     // repartir en la planilla. Se avisa para que se revise a mano.
-    return {
-      ok: false,
-      error:
-        'La incapacidad se guardó, pero no se pudieron actualizar los periodos de nómina. Revisalo manualmente.',
-    }
+    return { ok: false, error: `La incapacidad se guardó. ${sync.error}` }
   }
-
-  const fechaInicioInc = parseFechaLocal(data.fechaInicio)
-  const fechaFinInc = parseFechaLocal(data.fechaFin)
-  const totalDiasIncapacidad = diasSuperpuestos(
-    fechaInicioInc,
-    fechaFinInc,
-    fechaInicioInc,
-    fechaFinInc
-  )
-
-  const filas = (detalles ?? []).filter(
-    (d): d is DetalleConPeriodoRow & { sgrh_nomina_periodo: NonNullable<DetalleConPeriodoRow['sgrh_nomina_periodo']> } =>
-      d.sgrh_nomina_periodo !== null
-  )
-
-  // Días de esta incapacidad que caen dentro de cada periodo existente.
-  const diasNuevosPorNdt = new Map<number, number>()
-  for (const fila of filas) {
-    const p = fila.sgrh_nomina_periodo
-    if (!p.npe_fecha_inicio_periodo || !p.npe_fecha_fin_periodo) continue
-    const dias = diasSuperpuestos(
-      parseFechaLocal(p.npe_fecha_inicio_periodo),
-      parseFechaLocal(p.npe_fecha_fin_periodo),
-      fechaInicioInc,
-      fechaFinInc
-    )
-    if (dias > 0) diasNuevosPorNdt.set(fila.ndt_id, dias)
-  }
-
-  const mesesTocados = new Set(
-    filas
-      .filter((f) => diasNuevosPorNdt.has(f.ndt_id))
-      .map((f) => `${f.sgrh_nomina_periodo.npe_periodo_anio}-${f.sgrh_nomina_periodo.npe_periodo_mes}`)
-  )
-
-  const actualizaciones: { ndt_id: number; empleador: number; ccss: number }[] = []
-  const periodosActualizados: PeriodoAfectadoIncapacidad[] = []
-
-  for (const claveMes of mesesTocados) {
-    const [anioStr, mesStr] = claveMes.split('-')
-    const anio = Number(anioStr)
-    const mes = Number(mesStr)
-
-    const filasDelMes = filas
-      .filter(
-        (f) => f.sgrh_nomina_periodo.npe_periodo_anio === anio && f.sgrh_nomina_periodo.npe_periodo_mes === mes
-      )
-      .sort((a, b) => a.sgrh_nomina_periodo.npe_quincena - b.sgrh_nomina_periodo.npe_quincena)
-
-    let usadoEsteMes = 0
-    for (const fila of filasDelMes) {
-      const diasNuevos = diasNuevosPorNdt.get(fila.ndt_id) ?? 0
-
-      if (diasNuevos === 0) {
-        // No tocado por esta incapacidad: su valor ya guardado cuenta para
-        // el tope del mes, pero no se actualiza.
-        usadoEsteMes += fila.ndt_dias_incapacidad_empleador
-        continue
-      }
-
-      const totalPrevioEnPeriodo =
-        fila.ndt_dias_incapacidad_empleador + fila.ndt_dias_incapacidad_ccss
-      const nuevoTotalEnPeriodo = totalPrevioEnPeriodo + diasNuevos
-
-      const reparto = repartirDiasIncapacidad(
-        nuevoTotalEnPeriodo,
-        usadoEsteMes,
-        tipoAusencia.tau_paga_empleador_dias
-      )
-      usadoEsteMes += reparto.diasEmpleador
-
-      actualizaciones.push({
-        ndt_id: fila.ndt_id,
-        empleador: reparto.diasEmpleador,
-        ccss: reparto.diasCcss,
-      })
-      periodosActualizados.push({
-        periodoId: fila.sgrh_nomina_periodo.npe_id,
-        periodoLabel: periodoLabel(
-          fila.sgrh_nomina_periodo.npe_periodo_mes,
-          fila.sgrh_nomina_periodo.npe_periodo_anio,
-          fila.sgrh_nomina_periodo.npe_quincena
-        ),
-        diasEmpleador: reparto.diasEmpleador,
-        diasCcss: reparto.diasCcss,
-      })
-    }
-  }
-
-  const resultados = await Promise.all(
-    actualizaciones.map(({ ndt_id, empleador, ccss }) =>
-      supabase
-        .from('sgrh_nomina_detalle')
-        .update({ ndt_dias_incapacidad_empleador: empleador, ndt_dias_incapacidad_ccss: ccss })
-        .eq('ndt_id', ndt_id)
-    )
-  )
-  const errActualizacion = resultados.find((r) => r.error)
-  if (errActualizacion) {
-    return {
-      ok: false,
-      error:
-        'La incapacidad se guardó, pero no se pudieron actualizar todos los periodos de nómina. Revisalo manualmente.',
-    }
-  }
-
-  const diasCubiertos = [...diasNuevosPorNdt.values()].reduce((acc, d) => acc + d, 0)
-  const diasSinPeriodo = Math.max(0, totalDiasIncapacidad - diasCubiertos)
 
   revalidatePath('/payroll')
-  for (const p of periodosActualizados) {
+  for (const p of sync.periodosActualizados) {
     revalidatePath(`/payroll/${p.periodoId}`)
   }
 
-  return { ok: true, periodosActualizados, diasSinPeriodo }
+  return {
+    ok: true,
+    periodosActualizados: sync.periodosActualizados,
+    diasSinPeriodo: sync.diasSinPeriodo,
+  }
 }

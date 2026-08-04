@@ -6,6 +6,12 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { createAusenciasBulkSchema, type CreateAusenciasBulkInput } from '@/modules/absences/types'
 import { countDays } from '@/modules/absences/lib/dateRange'
+import { sincronizarAusenciaEnNomina } from '@/modules/payroll/lib/ausenciaNominaSync'
+
+interface TipoAusenciaPagoRow {
+  tau_paga_empleador_dias: number
+  tau_es_intradia: boolean
+}
 
 export type CreateAusenciasBulkResult = { ok: true } | { ok: false; error: string }
 
@@ -106,6 +112,32 @@ export async function createAusenciasBulk(
 
   if (error) {
     return { ok: false, error: 'No se pudo registrar la ausencia.' }
+  }
+
+  // Si el tipo afecta el pago (no es un permiso intradia como lactancia, que
+  // no reemplaza el día), se reparte automáticamente en los periodos de
+  // nómina que se traslapan con cada rango — así nómina se entera sin que
+  // alguien tenga que repetir el registro desde "Registrar incapacidad". Es
+  // mejor esfuerzo: si falla, la ausencia ya quedó guardada igual, solo no
+  // se reflejó en la planilla (se puede revisar/registrar a mano después).
+  const { data: tipo } = await supabase
+    .from('sgrh_cat_tipos_ausencia')
+    .select('tau_paga_empleador_dias, tau_es_intradia')
+    .eq('tau_id', data.tipoAusenciaId)
+    .maybeSingle<TipoAusenciaPagoRow>()
+
+  if (tipo && !tipo.tau_es_intradia) {
+    // Secuencial (no Promise.all): cada llamada lee cuánto tope mensual ya
+    // se usó a partir de lo que la anterior acaba de guardar.
+    for (const range of data.ranges) {
+      await sincronizarAusenciaEnNomina(supabase, {
+        historialLaboralId: data.employmentHistoryId,
+        fechaInicio: range.fechaInicio,
+        fechaFin: range.fechaFin,
+        topeMensualEmpleador: tipo.tau_paga_empleador_dias,
+      })
+    }
+    revalidatePath('/payroll')
   }
 
   revalidatePath('/schedule')
