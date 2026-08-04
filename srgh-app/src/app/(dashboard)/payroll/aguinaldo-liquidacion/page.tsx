@@ -5,6 +5,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getProvisionesAguinaldo } from '@/modules/payroll/actions/getProvisionesAguinaldo'
 import { getMotivosSalida } from '@/modules/payroll/actions/getMotivosSalida'
 import { getEmpleadosActivosParaLiquidacion } from '@/modules/payroll/actions/getEmpleadosActivosParaLiquidacion'
+import { getLiquidaciones } from '@/modules/payroll/actions/getLiquidaciones'
 import { AguinaldoLiquidacionView } from '@/modules/payroll/components/AguinaldoLiquidacionView'
 
 function ErrorBanner({ message }: { message: string }) {
@@ -21,13 +22,16 @@ export default async function AguinaldoLiquidacionPage() {
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canWrite = permisos.includes(PERMISOS.NOMINA_WRITE)
 
-  const [aguinaldosResult, motivosResult, empleadosResult] = await Promise.all([
-    getProvisionesAguinaldo(),
-    getMotivosSalida(),
-    canWrite
-      ? getEmpleadosActivosParaLiquidacion()
-      : Promise.resolve({ ok: true as const, data: [] }),
-  ])
+  const [aguinaldosResult, motivosResult, empleadosResult, liquidacionesResult] = await Promise.all(
+    [
+      getProvisionesAguinaldo(),
+      getMotivosSalida(),
+      canWrite
+        ? getEmpleadosActivosParaLiquidacion()
+        : Promise.resolve({ ok: true as const, data: [] }),
+      getLiquidaciones(),
+    ]
+  )
 
   if (!aguinaldosResult.ok) {
     return <ErrorBanner message={aguinaldosResult.error} />
@@ -37,6 +41,9 @@ export default async function AguinaldoLiquidacionPage() {
   }
   if (!empleadosResult.ok) {
     return <ErrorBanner message={empleadosResult.error} />
+  }
+  if (!liquidacionesResult.ok) {
+    return <ErrorBanner message={liquidacionesResult.error} />
   }
 
   return (
@@ -63,6 +70,7 @@ export default async function AguinaldoLiquidacionPage() {
         canWrite={canWrite}
         empleadosActivos={empleadosResult.data}
         motivos={motivosResult.data}
+        liquidaciones={liquidacionesResult.data}
       />
     </div>
   )

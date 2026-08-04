@@ -350,6 +350,18 @@ export interface LiquidacionCalculada {
   total: number
 }
 
+/** Una fila del historial de liquidaciones ya generadas (sección de solo lectura). */
+export interface LiquidacionListItem {
+  liqId: number
+  empleadoNombre: string
+  empleadoCedula: string
+  fechaSalida: string
+  motivoNombre: string
+  total: number
+  pagado: boolean
+  createdAt: string
+}
+
 // ─── Incapacidades ────────────────────────────────────────────────────────
 // Por ahora solo incapacidad por enfermedad (INC_ENF): 3 días paga el
 // patrono al 50%, tope por mes calendario, el resto lo paga la CCSS aparte.
