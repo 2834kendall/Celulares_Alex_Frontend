@@ -167,6 +167,30 @@ export async function getTerritorio(): Promise<GetTerritorioResult> {
   }
 }
 
+/**
+ * Catálogo global de tipos de documento (SGRH-67, fase 2B). Gated por
+ * DOCUMENTOS_READ (no EMPLEADOS_READ) — mismo criterio que getRoles con
+ * USUARIOS_WRITE: es el permiso de dominio, no el genérico de empleados.
+ *
+ * Sin order alfabético a propósito: el orden natural (tdo_id) es el orden
+ * del seed, que deja "Otro" al final.
+ */
+export async function getTiposDocumento(): Promise<GetCatalogoResult> {
+  await requirePermission(PERMISOS.DOCUMENTOS_READ)
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('sgrh_cat_tipos_documento')
+    .select('tdo_id, tdo_nombre')
+    .eq('tdo_activo', true)
+
+  if (error) {
+    return { ok: false, error: CATALOG_ERROR }
+  }
+
+  return { ok: true, data: data.map((t) => ({ id: t.tdo_id, nombre: t.tdo_nombre })) }
+}
+
 /** Roles activos del sistema — solo para el paso de usuario del onboarding. */
 export async function getRoles(): Promise<GetCatalogoResult> {
   await requirePermission(PERMISOS.USUARIOS_WRITE)

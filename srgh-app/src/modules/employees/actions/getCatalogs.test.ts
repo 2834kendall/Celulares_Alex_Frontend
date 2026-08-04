@@ -4,6 +4,7 @@ import {
   getSucursales,
   getTerritorio,
   getTiposContrato,
+  getTiposDocumento,
   getTiposJornada,
   getTiposIdentificacion,
   getRoles,
@@ -96,6 +97,25 @@ describe('getCatalogs (server actions)', () => {
     const result = await getTiposIdentificacion()
 
     expect(result).toEqual({ ok: true, data: [{ id: 5, nombre: 'Cédula nacional' }] })
+  })
+
+  it('getTiposDocumento exige DOCUMENTOS_READ y mapea al DTO CatalogoItem', async () => {
+    mockClient({
+      sgrh_cat_tipos_documento: { data: [{ tdo_id: 7, tdo_nombre: 'Contrato' }], error: null },
+    })
+
+    const result = await getTiposDocumento()
+
+    expect(result).toEqual({ ok: true, data: [{ id: 7, nombre: 'Contrato' }] })
+    expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.DOCUMENTOS_READ)
+  })
+
+  it('getTiposDocumento devuelve error generico si supabase falla', async () => {
+    mockClient({ sgrh_cat_tipos_documento: { data: null, error: { message: 'boom' } } })
+
+    const result = await getTiposDocumento()
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo cargar el catálogo.' })
   })
 
   it('getRoles exige USUARIOS_WRITE y mapea al DTO CatalogoItem', async () => {
