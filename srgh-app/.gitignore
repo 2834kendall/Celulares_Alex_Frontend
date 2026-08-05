@@ -46,3 +46,7 @@ supabase/.temp/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Caches incrementales de lint/typecheck (se recrean solos; en CI se
+# restauran con actions/cache para no reanalizar todo en cada corrida).
+.eslintcache

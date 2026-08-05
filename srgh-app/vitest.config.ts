@@ -2,11 +2,58 @@ import path from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
+/**
+ * Tests que SI tocan el DOM (React Testing Library, localStorage, IndexedDB)
+ * y por lo tanto necesitan jsdom. Todo lo demas — logica pura, server actions
+ * con Supabase mockeado, schemas de Zod — corre en Node.
+ *
+ * Motivo: montar un jsdom por archivo era el mayor costo de la suite. De 160
+ * archivos de test solo 60 tocan el DOM; los otros 100 pagaban ese arranque
+ * sin usarlo.
+ *
+ * Los tests de subida de archivos (storage) quedan del lado de Node aunque
+ * usen File y FormData: son globales nativos desde Node 20, verificado
+ * corriendolos con environment=node.
+ *
+ * Los .tsx entran completos aunque no vivan en components/: un .tsx implica
+ * React, y equivocarse hacia jsdom solo cuesta tiempo, mientras que
+ * equivocarse hacia Node rompe el test.
+ */
+const DOM_TEST_GLOBS = [
+  'src/**/components/**/*.test.{ts,tsx}',
+  'src/**/hooks/**/*.test.{ts,tsx}',
+  'src/**/*.test.tsx',
+]
+
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    // Workers como hilos en vez de procesos: mismo aislamiento por archivo,
+    // menos costo de arranque.
+    pool: 'threads',
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          environment: 'node',
+          include: ['src/**/*.test.{ts,tsx}'],
+          exclude: DOM_TEST_GLOBS,
+          // Sin setup: estos tests no usan Testing Library ni matchers de
+          // jest-dom (verificado), cargarlos aca era costo puro.
+          setupFiles: [],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'dom',
+          environment: 'jsdom',
+          include: DOM_TEST_GLOBS,
+          setupFiles: ['./src/test/setup.ts'],
+        },
+      },
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
