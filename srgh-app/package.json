@@ -11,7 +11,7 @@
     "prebuild": "node scripts/setup-face-assets.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint . --cache --cache-strategy content",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
