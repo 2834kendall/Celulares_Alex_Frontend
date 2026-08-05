@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+# Empujar un commit nuevo cancela la corrida anterior de la misma rama/PR.
+# Sin esto, tres pushes seguidos dejan tres CI compitiendo por los runners y
+# el ultimo — el unico que importa — es el que mas tarda en arrancar.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Lint y typecheck comparten instalacion y son rapidos; corren en paralelo
+  # con los tests, que son el paso mas lento.
+  static:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: srgh-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ">=22.13"
+          cache: pnpm
+          cache-dependency-path: srgh-app/pnpm-lock.yaml
+
+      # Acelerador, no fuente de verdad: `pnpm install` corre igual despues y
+      # corrige cualquier cache incompleto o corrupto.
+      - name: Restore node_modules
+        uses: actions/cache@v4
+        with:
+          path: srgh-app/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}
+
+      # Caches incrementales de ESLint y TypeScript. La clave incluye el hash
+      # del lockfile y de las configuraciones: si cambia una dependencia,
+      # eslint.config.mjs o tsconfig.json, el cache se descarta entero en vez
+      # de arrastrar resultados que ya no aplican. El sufijo con el SHA hace
+      # que cada corrida guarde su propio cache y restore-keys recupere el
+      # mas reciente de la misma configuracion.
+      - name: Restore lint/typecheck caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            srgh-app/.eslintcache
+            srgh-app/tsconfig.tsbuildinfo
+          key: static-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml', 'srgh-app/eslint.config.mjs', 'srgh-app/tsconfig.json') }}-${{ github.sha }}
+          restore-keys: |
+            static-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml', 'srgh-app/eslint.config.mjs', 'srgh-app/tsconfig.json') }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  # Los tests se reparten en shards que corren en paralelo: el paso pasa a
+  # durar lo que el shard mas lento, no la suma. Vitest reparte los archivos
+  # entre shards, asi que 1/2 + 2/2 cubre la suite completa.
+  test:
+    name: Tests (shard ${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: srgh-app
+    strategy:
+      # Un shard que falla no cancela al otro: asi el reporte muestra todos
+      # los fallos de una vez en lugar de obligar a arreglar de a uno.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ">=22.13"
+          cache: pnpm
+          cache-dependency-path: srgh-app/pnpm-lock.yaml
+
+      - name: Restore node_modules
+        uses: actions/cache@v4
+        with:
+          path: srgh-app/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # Sin `--` antes del flag: pnpm 11 se lo traga y vitest terminaria
+      # corriendo la suite completa en cada shard (verificado: con `--` daba
+      # 128 archivos por shard en vez de 64).
+      - name: Test
+        run: pnpm test --shard=${{ matrix.shard }}/2
+
+  # Compuerta unica para la proteccion de rama: en vez de exigir cada job y
+  # cada shard por separado (y tener que actualizar esa lista al cambiar la
+  # cantidad de shards), la regla de `dev` exige solo este check.
+  ci:
+    name: CI passed
+    if: always()
+    needs: [static, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all jobs succeeded
+        run: |
+          echo "static: ${{ needs.static.result }}"
+          echo "test:   ${{ needs.test.result }}"
+          if [ "${{ needs.static.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ]; then
+            echo "::error::Algun job del CI no paso."
+            exit 1
+          fi
+          echo "Todo en verde."

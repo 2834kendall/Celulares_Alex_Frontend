@@ -1,0 +1,25 @@
+allowBuilds:
+  # Dependencia transitiva de onnxruntime-web. Su postinstall solo imprime
+  # una advertencia informativa; no compila nada, asi que no se ejecuta.
+  protobufjs: false
+  sharp: true
+  unrs-resolver: true
+
+# Fuerza versiones parchadas de dependencias transitivas con vulnerabilidades
+# conocidas (pnpm audit), aunque el paquete que las arrastra (exceljs, next)
+# todavia no haya subido su propia version internamente.
+#
+# OJO con brace-expansion: hay minimatch viejos en el arbol (3.1.5, usado por
+# ESLint mismo via @eslint/config-array, y por exceljs via glob@7; y 5.1.9,
+# usado por exceljs via readdir-glob) que esperan la API vieja de
+# brace-expansion (funcion .expand()). Un override "a lo bruto" sin apuntar a
+# un consumidor especifico fuerza TODO el arbol a una sola version nueva
+# (5.x) y rompe esos minimatch viejos con "expand is not a function". Por
+# eso el override va apuntado a cada minimatch especifico (sintaxis
+# "paquete@version>hijo"), no a brace-expansion en general.
+overrides:
+  minimatch@3.1.5>brace-expansion: '>=1.1.18 <2.0.0'
+  minimatch@5.1.9>brace-expansion: '>=2.1.4 <3.0.0'
+  uuid: '>=11.1.1'
+  postcss: '>=8.5.23'
+  sharp: '>=0.35.0'

@@ -1,0 +1,60 @@
+// Helpers de presentación del módulo Payroll (listado y detalle de periodos).
+
+export const MESES = [
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
+] as const
+
+export const ESTADO_LABELS: Record<string, string> = {
+  borrador: 'Borrador',
+  pagado: 'Pagado',
+}
+
+/** Clases del badge de estado; gris por defecto para estados desconocidos. */
+export const ESTADO_BADGE_CLASSES: Record<string, string> = {
+  borrador: 'bg-amber-50 text-amber-700 ring-amber-200',
+  pagado: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+}
+
+export function estadoLabel(estado: string) {
+  return ESTADO_LABELS[estado] ?? estado
+}
+
+export function estadoBadgeClasses(estado: string) {
+  return ESTADO_BADGE_CLASSES[estado] ?? 'bg-slate-50 text-slate-600 ring-slate-200'
+}
+
+/** 'Enero 2026 · 1ª quincena' — encabezado legible del periodo. */
+export function periodoLabel(mes: number, anio: number, quincena: number) {
+  const nombreMes = MESES[mes - 1] ?? `Mes ${mes}`
+  return `${nombreMes} ${anio} · ${quincena === 1 ? '1ª' : '2ª'} quincena`
+}
+
+/** '2024-02-01' → '01/02/2024' sin pasar por Date (evita el corrimiento UTC). */
+export function formatDate(iso: string | null | undefined) {
+  if (!iso) return '—'
+  const [year, month, day] = iso.split('-')
+  return `${day}/${month}/${year}`
+}
+
+/** Monto en colones con separador de miles; '—' cuando no hay dato. */
+export function formatCRC(amount: number | null | undefined) {
+  if (amount === null || amount === undefined) return '—'
+  return `₡${new Intl.NumberFormat('es-CR', { maximumFractionDigits: 2 }).format(amount)}`
+}
+
+/** Agrupa de 4 en 4 para lectura: 'CR05015202001026284066' → 'CR05 0152 0200 1026 2840 66'. */
+export function formatIban(numeroCuenta: string | null | undefined) {
+  if (!numeroCuenta) return null
+  return numeroCuenta.replace(/(.{4})/g, '$1 ').trim()
+}
