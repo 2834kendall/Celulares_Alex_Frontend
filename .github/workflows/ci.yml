@@ -113,9 +113,73 @@ jobs:
 
       # Sin `--` antes del flag: pnpm 11 se lo traga y vitest terminaria
       # corriendo la suite completa en cada shard (verificado: con `--` daba
-      # 128 archivos por shard en vez de 64).
+      # 160 archivos por shard en vez de 80).
       - name: Test
         run: pnpm test --shard=${{ matrix.shard }}/2
+
+  # Compila la app. Atrapa lo que lint, typecheck y tests
+  # no ven: limites Server/Client mal puestos, imports que solo revientan al
+  # empaquetar, rutas que no prerenderizan.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: srgh-app
+    env:
+      # Solo las NEXT_PUBLIC_*: son las unicas que Next incrusta en el bundle
+      # durante el build. Las de servidor (SUPABASE_SECRET_KEY,
+      # FACE_VECTOR_KEY, FACE_TICKET_SECRET) se leen dentro de funciones en
+      # runtime — pasarlas aca solo ampliaria la superficie de exposicion sin
+      # que el build las use.
+      #
+      # Se usan los secrets reales si existen, con respaldo ficticio si no:
+      #   - Con los reales, el build ademas valida que esten bien formados
+      #     (src/lib/env.ts exige URL valida y string no vacio al importarse).
+      #   - El respaldo evita que el CI se caiga por un secret renombrado,
+      #     rotado, o por un PR desde un fork (los forks no reciben secrets).
+      # Verificado: el build compila igual sin ningun .env, porque no consulta
+      # Supabase — todas las rutas salen dinamicas, nada se prerenderiza.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://example.supabase.co' }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'dummy_key_for_build' }}
+      NEXT_PUBLIC_FACE_VECTOR_KEY: ${{ secrets.NEXT_PUBLIC_FACE_VECTOR_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ">=22.13"
+          cache: pnpm
+          cache-dependency-path: srgh-app/pnpm-lock.yaml
+
+      - name: Restore node_modules
+        uses: actions/cache@v4
+        with:
+          path: srgh-app/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}
+
+      # Cache de compilacion de Next: pesa poco (~350 KB) y bajo la
+      # compilacion de 20.4s a 9.9s en la medicion local.
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: srgh-app/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Build
+        run: pnpm build
 
   # Compuerta unica para la proteccion de rama: en vez de exigir cada job y
   # cada shard por separado (y tener que actualizar esa lista al cambiar la
@@ -123,14 +187,17 @@ jobs:
   ci:
     name: CI passed
     if: always()
-    needs: [static, test]
+    needs: [static, test, build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs succeeded
         run: |
           echo "static: ${{ needs.static.result }}"
           echo "test:   ${{ needs.test.result }}"
-          if [ "${{ needs.static.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ]; then
+          echo "build:  ${{ needs.build.result }}"
+          if [ "${{ needs.static.result }}" != "success" ] \
+            || [ "${{ needs.test.result }}" != "success" ] \
+            || [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::Algun job del CI no paso."
             exit 1
           fi
