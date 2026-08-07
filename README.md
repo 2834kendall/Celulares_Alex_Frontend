@@ -86,8 +86,3 @@ npm run test
 - `main`: production-ready code
 - `dev`: integration branch for ongoing development
 - `feature/*`: new features, branched from and merged into `dev`
-
-
-## License
-
-This project is for academic purposes.
