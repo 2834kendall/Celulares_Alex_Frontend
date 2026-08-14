@@ -20,6 +20,10 @@ import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { ManualMarkModal } from '@/modules/attendance/components/ManualMarkModal'
 import type { MarkType } from '@/modules/attendance/lib/marks'
+import { IconButton } from '@/components/ui/IconButton'
+import { TABLE_HEAD, TABLE_ROW, TABLE_TH, TABLE_WRAP } from '@/components/ui/styles'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { StatCard } from '@/components/ui/StatCard'
 
 interface DailyAttendanceTableProps {
   dateISO: string
@@ -80,14 +84,13 @@ function MarkCell({
         <span className="text-slate-300">—</span>
       )}
       {canWrite && (
-        <button
-          type="button"
+        <IconButton
           onClick={onEdit}
           aria-label={mark ? 'Corregir marca' : 'Agregar marca'}
-          className="rounded-full p-1 text-slate-400 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+          tone="blue"
         >
           {mark ? <Pencil className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-        </button>
+        </IconButton>
       )}
     </div>
   )
@@ -110,33 +113,19 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-            <Users className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Colaboradores</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{total}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-            <CalendarDays className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Con entrada marcada</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{conEntrada}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-            <AlertTriangle className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Jornadas sin salida</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{jornadasAbiertas}</p>
-          </div>
-        </div>
+        <StatCard icon={Users} label="Colaboradores" value={total} />
+        <StatCard
+          icon={CalendarDays}
+          tone="emerald"
+          label="Con entrada marcada"
+          value={conEntrada}
+        />
+        <StatCard
+          icon={AlertTriangle}
+          tone="amber"
+          label="Jornadas sin salida"
+          value={jornadasAbiertas}
+        />
       </div>
 
       <div className="flex items-center justify-between gap-3">
@@ -145,28 +134,15 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
           <p className="truncate text-xs text-slate-500">Marcas de asistencia del dia.</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={goToPreviousDay}
-            disabled={isNavigating}
-            aria-label="Dia anterior"
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-50"
-          >
+          <IconButton onClick={goToPreviousDay} disabled={isNavigating} aria-label="Dia anterior">
             <ChevronLeft className="h-4 w-4" />
-          </button>
+          </IconButton>
           {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-          <button
-            type="button"
-            onClick={goToNextDay}
-            disabled={isNavigating}
-            aria-label="Dia siguiente"
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-50"
-          >
+          <IconButton onClick={goToNextDay} disabled={isNavigating} aria-label="Dia siguiente">
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </IconButton>
           <div className="relative">
-            <button
-              type="button"
+            <IconButton
               onClick={() => {
                 const input = dateInputRef.current
                 if (!input) return
@@ -178,10 +154,9 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
               }}
               disabled={isNavigating}
               aria-label="Elegir fecha"
-              className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-50"
             >
               <CalendarDays className="h-4 w-4" />
-            </button>
+            </IconButton>
             <input
               ref={dateInputRef}
               type="date"
@@ -197,39 +172,28 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
       </div>
 
       {rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-            <Users className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-700">
-              No hay colaboradores activos en esta sucursal
-            </p>
-            <p className="mt-1 max-w-sm text-xs text-slate-500">
-              Verifica que existan contratos activos asignados a esta sucursal.
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          icon={Users}
+          title="No hay colaboradores activos en esta sucursal"
+          description="Verifica que existan contratos activos asignados a esta sucursal."
+        />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+        <div className={TABLE_WRAP}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+              <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Colaborador</th>
-                  <th className="px-3 py-2 text-left font-semibold">Entrada</th>
-                  <th className="px-3 py-2 text-left font-semibold">Inicio almuerzo</th>
-                  <th className="px-3 py-2 text-left font-semibold">Fin almuerzo</th>
-                  <th className="px-3 py-2 text-left font-semibold">Salida</th>
-                  <th className="px-3 py-2 text-left font-semibold">Estado</th>
+                  <th className={TABLE_TH}>Colaborador</th>
+                  <th className={TABLE_TH}>Entrada</th>
+                  <th className={TABLE_TH}>Inicio almuerzo</th>
+                  <th className={TABLE_TH}>Fin almuerzo</th>
+                  <th className={TABLE_TH}>Salida</th>
+                  <th className={TABLE_TH}>Estado</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedItems.map((row) => (
-                  <tr
-                    key={row.employmentHistoryId}
-                    className="border-t border-slate-100 transition hover:bg-slate-50/70"
-                  >
+                  <tr key={row.employmentHistoryId} className={TABLE_ROW}>
                     <td className="px-3 py-2">
                       <p className="font-medium text-slate-800">{row.fullName}</p>
                       {row.position && <p className="text-[11px] text-slate-500">{row.position}</p>}

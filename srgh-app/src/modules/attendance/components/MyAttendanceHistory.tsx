@@ -1,5 +1,6 @@
 import { CalendarClock, Inbox } from 'lucide-react'
 import type { MyAttendanceDay } from '@/modules/attendance/actions/getMyMarks'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface MyAttendanceHistoryProps {
   data: MyAttendanceDay[]
@@ -39,10 +40,7 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
         </div>
 
         {data.length === 0 ? (
-          <div className="mt-6 flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center">
-            <Inbox className="h-5 w-5 text-slate-400" />
-            <p className="text-xs text-slate-500">Todavia no tienes marcas registradas.</p>
-          </div>
+          <EmptyState icon={Inbox} title="Todavia no tienes marcas registradas." className="mt-6" />
         ) : (
           <div className="mt-6 overflow-x-auto">
             <table className="w-full text-xs">
