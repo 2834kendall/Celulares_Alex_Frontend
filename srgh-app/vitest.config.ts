@@ -31,6 +31,12 @@ export default defineConfig({
     // Workers como hilos en vez de procesos: mismo aislamiento por archivo,
     // menos costo de arranque.
     pool: 'threads',
+    // Los tests de componentes pesados (EmployeeWizard valida ~10 campos con
+    // Zod por paso) tardan segundos en jsdom. Con la suite completa en paralelo
+    // el limite de 5 s por test se quedaba corto y fallaban de forma
+    // intermitente; va de la mano con `asyncUtilTimeout` en test/setup.ts.
+    // Los proyectos lo heredan por `extends: true`.
+    testTimeout: 20000,
     projects: [
       {
         extends: true,
