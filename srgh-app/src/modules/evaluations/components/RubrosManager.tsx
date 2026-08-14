@@ -1,22 +1,18 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import {
-  AlertTriangle,
-  CheckCircle2,
-  ClipboardList,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-} from 'lucide-react'
+import { CheckCircle2, ClipboardList, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import type { RubroRow } from '@/modules/evaluations/types'
 import { deleteRubro } from '@/modules/evaluations/actions/deleteRubro'
 import { useCrudList } from '@/modules/evaluations/hooks/useCrudList'
 import { normalizeSearchText } from '@/components/ui/SearchSelect'
-import { ConfirmDialog } from './ConfirmDialog'
-import { Modal } from './Modal'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 import { RubroForm } from './RubroForm'
+import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { StatCard } from '@/components/ui/StatCard'
 
 interface RubrosManagerProps {
   rubros: RubroRow[]
@@ -75,27 +71,15 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
             </div>
           )}
           {canWrite && (
-            <button
-              type="button"
-              onClick={() => setEditing('new')}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-            >
+            <Button onClick={() => setEditing('new')} className="shrink-0">
               <Plus className="h-3.5 w-3.5" /> Crear rubro
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-slate-300">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-            <ClipboardList className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Rubros activos</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{rubros.length}</p>
-          </div>
-        </div>
+        <StatCard icon={ClipboardList} label="Rubros activos" value={rubros.length} hoverable />
         <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-slate-300">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
             <CheckCircle2 className="h-4 w-4" />
@@ -110,13 +94,9 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
       </div>
 
       {deleteError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{deleteError}</div>
-        </div>
+        </Alert>
       )}
 
       <div className="min-w-0 space-y-2.5">
@@ -125,38 +105,20 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
         </h3>
 
         {rubros.length === 0 ? (
-          <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-              <ClipboardList className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-700">
-                Todavía no hay rubros definidos
-              </p>
-              <p className="mt-1 max-w-sm text-xs text-slate-500">
-                Cree el primer rubro para poder calificar a los colaboradores en las evaluaciones de
-                desempeño.
-              </p>
-            </div>
-            {canWrite && (
-              <button
-                type="button"
-                onClick={() => setEditing('new')}
-                className="mt-1 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-              >
-                <Plus className="h-3.5 w-3.5" /> Crear el primer rubro
-              </button>
-            )}
-          </div>
+          <EmptyState
+            icon={ClipboardList}
+            title="Todavía no hay rubros definidos"
+            description="Cree el primer rubro para poder calificar a los colaboradores en las evaluaciones de desempeño."
+            action={
+              canWrite && (
+                <Button onClick={() => setEditing('new')} className="mt-1">
+                  <Plus className="h-3.5 w-3.5" /> Crear el primer rubro
+                </Button>
+              )
+            }
+          />
         ) : visibleRubros.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-              <Search className="h-4 w-4" />
-            </div>
-            <p className="text-xs text-slate-500">
-              Ningún rubro coincide con &ldquo;{query.trim()}&rdquo;.
-            </p>
-          </div>
+          <EmptyState icon={Search} title={`Ningún rubro coincide con “${query.trim()}”.`} />
         ) : (
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
             {visibleRubros.map((rubro) => (

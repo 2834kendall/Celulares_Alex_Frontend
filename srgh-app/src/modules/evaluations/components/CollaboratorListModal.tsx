@@ -4,9 +4,10 @@ import { UserRound } from 'lucide-react'
 import type { CollaboratorRow } from '@/modules/evaluations/types'
 import { initialsOf } from '@/modules/evaluations/lib/scoring'
 import { usePagination } from '@/modules/evaluations/hooks/usePagination'
-import { Modal } from './Modal'
+import { Modal } from '@/components/ui/Modal'
 import { Pagination } from '@/components/ui/Pagination'
 import { ScoreBadge } from './ScoreBadge'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface CollaboratorListModalProps {
   title: string
@@ -34,12 +35,7 @@ export function CollaboratorListModal({
   return (
     <Modal title={title} subtitle={subtitle} onClose={onClose}>
       {collaborators.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-            <UserRound className="h-4 w-4" />
-          </div>
-          <p className="text-xs text-slate-500">{emptyMessage}</p>
-        </div>
+        <EmptyState icon={UserRound} title={emptyMessage} />
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-200">
           <ul className="divide-y divide-slate-100">
