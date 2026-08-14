@@ -12,6 +12,10 @@ export interface SearchSelectOption {
   value: string
   label: string
   sublabel?: string
+  /** Adorno opcional a la izquierda de la opcion (avatar, iniciales, icono). */
+  avatar?: React.ReactNode
+  /** Texto extra por el que tambien se puede buscar (cedula, codigo). */
+  searchTerms?: string
 }
 
 interface SearchSelectProps {
@@ -44,7 +48,8 @@ export function SearchSelect({
     return options.filter(
       (o) =>
         normalizeSearchText(o.label).includes(q) ||
-        (o.sublabel !== undefined && normalizeSearchText(o.sublabel).includes(q))
+        (o.sublabel !== undefined && normalizeSearchText(o.sublabel).includes(q)) ||
+        (o.searchTerms !== undefined && normalizeSearchText(o.searchTerms).includes(q))
     )
   }, [options, query])
 
@@ -110,7 +115,7 @@ export function SearchSelect({
         />
       </div>
       {open && (
-        <div className="absolute right-0 z-20 mt-1.5 w-full min-w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+        <div className="absolute right-0 z-20 mt-1.5 w-full min-w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
           {filtered.length === 0 ? (
             <p className="px-3 py-4 text-center text-xs text-slate-500">
               Sin resultados para &ldquo;{query.trim()}&rdquo;
@@ -127,6 +132,7 @@ export function SearchSelect({
                       i === highlighted ? 'bg-blue-50' : ''
                     }`}
                   >
+                    {o.avatar}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs font-semibold text-slate-800">
                         {o.label}
