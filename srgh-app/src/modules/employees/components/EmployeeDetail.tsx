@@ -23,6 +23,8 @@ import { EmployeeForm } from './EmployeeForm'
 import { EmployeePhotoModal } from './EmployeePhotoModal'
 import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
 import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
+import { Button } from '@/components/ui/Button'
+import { META_LABEL } from '@/components/ui/styles'
 
 interface EmployeeDetailProps {
   empleado: EmpleadoDetalle
@@ -51,7 +53,7 @@ function InfoItem({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dt className={META_LABEL}>{label}</dt>
       <dd
         className={`text-sm text-slate-800 ${wrap ? 'whitespace-pre-line break-words' : 'truncate'}`}
       >
@@ -273,12 +275,9 @@ export function EmployeeDetail({
           </span>
         </div>
         {canWrite && !editing && enPerfil && (
-          <button
-            onClick={() => setEditing(true)}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-          >
+          <Button onClick={() => setEditing(true)} className="shrink-0">
             <Pencil className="h-3.5 w-3.5" /> Editar
-          </button>
+          </Button>
         )}
       </div>
 

@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { AlertTriangle } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DocumentDropzone } from '@/components/ui/DocumentDropzone'
@@ -20,6 +19,7 @@ import { useCrudList } from '@/modules/employees/hooks/useCrudList'
 import { formatDate, nombreSinExtension } from '@/modules/employees/lib/format'
 import { DocumentMetadataForm } from './DocumentMetadataForm'
 import { EmployeeDocumentsGrid, type DocumentoCardItem } from './EmployeeDocumentsGrid'
+import { Alert } from '@/components/ui/Alert'
 
 interface EmployeeDocumentsSectionProps {
   empId: number
@@ -134,23 +134,15 @@ export function EmployeeDocumentsSection({
   return (
     <div className="space-y-3">
       {listError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{listError}</div>
-        </div>
+        </Alert>
       )}
 
       {deleteError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{deleteError}</div>
-        </div>
+        </Alert>
       )}
 
       {/* Sin header: el tab de la ficha ya dice "Documentos". */}

@@ -2,12 +2,15 @@
 
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import {
   documentoMetadataSchema,
   type CatalogoItem,
   type DocumentoMetadataInput,
 } from '@/modules/employees/types'
+import { Button } from '@/components/ui/Button'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface DocumentMetadataFormProps {
   tiposDocumento: CatalogoItem[]
@@ -17,11 +20,6 @@ interface DocumentMetadataFormProps {
   onCancel: () => void
   onSubmit: (values: DocumentoMetadataInput) => void | Promise<void>
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 /**
  * Formulario puro de metadata de un documento (SGRH-67, fase 2B): NO llama
@@ -78,17 +76,13 @@ export function DocumentMetadataForm({
       }}
     >
       {serverError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{serverError}</div>
-        </div>
+        </Alert>
       )}
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="doc_nombre">
+        <label className={LABEL} htmlFor="doc_nombre">
           Nombre del documento
         </label>
         <input
@@ -96,16 +90,14 @@ export function DocumentMetadataForm({
           disabled={isSubmitting}
           aria-invalid={!!errors.doc_nombre}
           {...register('doc_nombre')}
-          className={INPUT_CLASSES}
+          className={INPUT}
           placeholder="Ej: Contrato firmado 2026"
         />
-        {errors.doc_nombre && (
-          <p className="mt-1.5 text-xs text-rose-600">{errors.doc_nombre.message}</p>
-        )}
+        {errors.doc_nombre && <p className={FIELD_ERROR}>{errors.doc_nombre.message}</p>}
       </div>
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="doc_tipo_id">
+        <label className={LABEL} htmlFor="doc_tipo_id">
           Tipo de documento
         </label>
         <select
@@ -113,7 +105,7 @@ export function DocumentMetadataForm({
           disabled={isSubmitting}
           aria-invalid={!!errors.doc_tipo_id}
           {...register('doc_tipo_id', { valueAsNumber: true })}
-          className={INPUT_CLASSES}
+          className={INPUT}
         >
           <option value="">Seleccionar…</option>
           {tiposDocumento.map((tipo) => (
@@ -122,13 +114,11 @@ export function DocumentMetadataForm({
             </option>
           ))}
         </select>
-        {errors.doc_tipo_id && (
-          <p className="mt-1.5 text-xs text-rose-600">{errors.doc_tipo_id.message}</p>
-        )}
+        {errors.doc_tipo_id && <p className={FIELD_ERROR}>{errors.doc_tipo_id.message}</p>}
       </div>
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="doc_descripcion">
+        <label className={LABEL} htmlFor="doc_descripcion">
           Descripción (opcional)
         </label>
         <textarea
@@ -137,16 +127,14 @@ export function DocumentMetadataForm({
           disabled={isSubmitting}
           aria-invalid={!!errors.doc_descripcion}
           {...register('doc_descripcion')}
-          className={`${INPUT_CLASSES} resize-none`}
+          className={`${INPUT} resize-none`}
           placeholder="Notas sobre este documento…"
         />
-        {errors.doc_descripcion && (
-          <p className="mt-1.5 text-xs text-rose-600">{errors.doc_descripcion.message}</p>
-        )}
+        {errors.doc_descripcion && <p className={FIELD_ERROR}>{errors.doc_descripcion.message}</p>}
       </div>
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="doc_fecha_vencimiento">
+        <label className={LABEL} htmlFor="doc_fecha_vencimiento">
           Fecha de vencimiento (opcional)
         </label>
         <input
@@ -155,33 +143,23 @@ export function DocumentMetadataForm({
           disabled={isSubmitting}
           aria-invalid={!!errors.doc_fecha_vencimiento}
           {...register('doc_fecha_vencimiento')}
-          className={INPUT_CLASSES}
+          className={INPUT}
         />
         {errors.doc_fecha_vencimiento && (
-          <p className="mt-1.5 text-xs text-rose-600">{errors.doc_fecha_vencimiento.message}</p>
+          <p className={FIELD_ERROR}>{errors.doc_fecha_vencimiento.message}</p>
         )}
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-1">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={isSubmitting}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-60"
-        >
+        <Button onClick={onCancel} disabled={isSubmitting} variant="secondary" size="md">
           Cancelar
-        </button>
+        </Button>
         {/* type="button": este bloque no es un <form>, y en el wizard un
             submit real enviaría el formulario del onboarding. */}
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={isSubmitting}
-          className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        <Button onClick={() => void submit()} disabled={isSubmitting} size="md">
+          {isSubmitting && <Loader2 className={SPINNER} />}
           {submitLabel}
-        </button>
+        </Button>
       </div>
     </div>
   )

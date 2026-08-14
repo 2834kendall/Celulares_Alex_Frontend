@@ -9,6 +9,8 @@ import { Modal } from '@/components/ui/Modal'
 import { PhotoDropzone } from '@/components/ui/PhotoDropzone'
 import { removeEmployeePhoto } from '@/modules/employees/actions/removeEmployeePhoto'
 import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
+import { Button } from '@/components/ui/Button'
+import { SPINNER } from '@/components/ui/styles'
 
 interface EmployeePhotoModalProps {
   empId: number
@@ -98,23 +100,13 @@ export function EmployeePhotoModal({ empId, currentUrl, onClose }: EmployeePhoto
             )}
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={busy}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-60"
-              >
+              <Button onClick={onClose} disabled={busy} variant="secondary" size="md">
                 Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!foto || busy}
-                className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              </Button>
+              <Button onClick={handleSave} disabled={!foto || busy} size="md">
+                {saving && <Loader2 className={SPINNER} />}
                 Guardar
-              </button>
+              </Button>
             </div>
           </div>
         </div>
