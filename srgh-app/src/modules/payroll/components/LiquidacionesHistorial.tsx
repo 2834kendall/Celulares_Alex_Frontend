@@ -4,6 +4,15 @@ import type { LiquidacionListItem } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
+import {
+  TABLE_HEAD,
+  TABLE_TD,
+  TABLE_TD_STRONG,
+  TABLE_TH,
+  TABLE_TH_RIGHT,
+  TABLE_WRAP,
+} from '@/components/ui/styles'
+import { Badge } from '@/components/ui/Badge'
 
 interface LiquidacionesHistorialProps {
   items: LiquidacionListItem[]
@@ -27,41 +36,33 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
           Todavía no se ha generado ninguna liquidación.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className={TABLE_WRAP}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-xs">
-              <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-4 py-2.5">Empleado</th>
-                  <th className="px-4 py-2.5">Cédula</th>
-                  <th className="px-4 py-2.5">Fecha de salida</th>
-                  <th className="px-4 py-2.5">Motivo</th>
-                  <th className="px-4 py-2.5 text-right">Total</th>
-                  <th className="px-4 py-2.5">Estado</th>
+                  <th className={TABLE_TH}>Empleado</th>
+                  <th className={TABLE_TH}>Cédula</th>
+                  <th className={TABLE_TH}>Fecha de salida</th>
+                  <th className={TABLE_TH}>Motivo</th>
+                  <th className={TABLE_TH_RIGHT}>Total</th>
+                  <th className={TABLE_TH}>Estado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {paginatedItems.map((item) => (
                   <tr key={item.liqId}>
-                    <td className="px-4 py-2.5 font-medium text-slate-800">
-                      {item.empleadoNombre}
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-500">{item.empleadoCedula}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{formatDate(item.fechaSalida)}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{item.motivoNombre}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-800">
+                    <td className={TABLE_TD_STRONG}>{item.empleadoNombre}</td>
+                    <td className={TABLE_TD}>{item.empleadoCedula}</td>
+                    <td className={TABLE_TD}>{formatDate(item.fechaSalida)}</td>
+                    <td className={TABLE_TD}>{item.motivoNombre}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800">
                       {formatCRC(item.total)}
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${
-                          item.pagado
-                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                            : 'bg-amber-50 text-amber-700 ring-amber-200'
-                        }`}
-                      >
+                    <td className="px-3 py-2">
+                      <Badge tone={item.pagado ? 'emerald' : 'amber'} size="xs">
                         {item.pagado ? 'Pagada' : 'Pendiente de pago'}
-                      </span>
+                      </Badge>
                     </td>
                   </tr>
                 ))}
