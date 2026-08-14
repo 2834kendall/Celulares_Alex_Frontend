@@ -20,6 +20,8 @@ import {
 import { loginSchema, type LoginInput } from '@/modules/auth/types'
 import { brandConfig, loginScreenContent } from '@/modules/auth/constants'
 import { login } from '@/modules/auth/actions/login'
+import { cn } from '@/lib/utils/cn'
+import { FIELD_ERROR, INPUT } from '@/components/ui/styles'
 
 const FEATURES: { key: string; label: string; icon: LucideIcon }[] =
   loginScreenContent.features.map((feature) => ({
@@ -31,9 +33,6 @@ const FEATURES: { key: string; label: string; icon: LucideIcon }[] =
 const FEATURE_ICON_CLASS = 'text-slate-200 bg-white/10'
 
 const FLOAT_CLASSES = ['animate-float', 'animate-float-delay-1', 'animate-float-delay-2']
-
-const INPUT_CLASSES =
-  'w-full pl-10 pr-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-700/25 focus:border-blue-700 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
 
 export function LoginForm() {
   const router = useRouter()
@@ -185,13 +184,11 @@ export function LoginForm() {
                     disabled={isSubmitting}
                     aria-invalid={!!errors.email}
                     {...register('email')}
-                    className={INPUT_CLASSES}
+                    className={cn(INPUT, 'py-3 pl-10')}
                     placeholder="correo@sucursal.com"
                   />
                 </div>
-                {errors.email && (
-                  <p className="mt-1.5 text-xs text-rose-600">{errors.email.message}</p>
-                )}
+                {errors.email && <p className={FIELD_ERROR}>{errors.email.message}</p>}
               </div>
 
               <div>
@@ -210,7 +207,7 @@ export function LoginForm() {
                     disabled={isSubmitting}
                     aria-invalid={!!errors.password}
                     {...register('password')}
-                    className={`${INPUT_CLASSES} pr-11`}
+                    className={cn(INPUT, 'py-3 pl-10 pr-11')}
                     placeholder="********"
                   />
                   <button
@@ -223,9 +220,7 @@ export function LoginForm() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                {errors.password && (
-                  <p className="mt-1.5 text-xs text-rose-600">{errors.password.message}</p>
-                )}
+                {errors.password && <p className={FIELD_ERROR}>{errors.password.message}</p>}
               </div>
 
               <button
