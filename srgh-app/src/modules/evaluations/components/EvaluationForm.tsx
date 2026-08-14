@@ -8,6 +8,9 @@ import { evaluationSchema, EVALUATION_TYPES } from '@/modules/evaluations/types'
 import { averageScore, classifyScore, scoreColor } from '@/modules/evaluations/lib/scoring'
 import { createEvaluation } from '@/modules/evaluations/actions/createEvaluation'
 import { NotesListInput } from './NotesListInput'
+import { Button } from '@/components/ui/Button'
+import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface EvaluationFormProps {
   collaborators: CollaboratorRow[]
@@ -15,11 +18,6 @@ interface EvaluationFormProps {
   initialLabId?: number
   onSuccess?: () => void
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 interface ScoreEntry {
   puntaje: number
@@ -123,18 +121,14 @@ export function EvaluationForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       {error && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{error}</div>
-        </div>
+        </Alert>
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div>
-          <label className={LABEL_CLASSES} htmlFor="eval_colaborador">
+          <label className={LABEL} htmlFor="eval_colaborador">
             Colaborador
           </label>
           <select
@@ -142,7 +136,7 @@ export function EvaluationForm({
             value={labId}
             disabled={isSubmitting}
             onChange={(e) => setLabId(e.target.value === '' ? '' : Number(e.target.value))}
-            className={INPUT_CLASSES}
+            className={INPUT}
           >
             <option value="">Seleccione un colaborador...</option>
             {collaborators.map((c) => (
@@ -153,7 +147,7 @@ export function EvaluationForm({
           </select>
         </div>
         <div>
-          <label className={LABEL_CLASSES} htmlFor="eval_tipo">
+          <label className={LABEL} htmlFor="eval_tipo">
             Tipo de evaluación
           </label>
           <select
@@ -161,7 +155,7 @@ export function EvaluationForm({
             value={tipo}
             disabled={isSubmitting}
             onChange={(e) => setTipo(e.target.value as (typeof EVALUATION_TYPES)[number])}
-            className={INPUT_CLASSES}
+            className={INPUT}
           >
             {EVALUATION_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -171,7 +165,7 @@ export function EvaluationForm({
           </select>
         </div>
         <div>
-          <label className={LABEL_CLASSES} htmlFor="eval_periodo_inicio">
+          <label className={LABEL} htmlFor="eval_periodo_inicio">
             Período evaluado — desde
           </label>
           <input
@@ -181,11 +175,11 @@ export function EvaluationForm({
             disabled={isSubmitting}
             max={periodoFin || undefined}
             onChange={(e) => setPeriodoInicio(e.target.value)}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
           />
         </div>
         <div>
-          <label className={LABEL_CLASSES} htmlFor="eval_periodo_fin">
+          <label className={LABEL} htmlFor="eval_periodo_fin">
             Período evaluado — hasta
           </label>
           <input
@@ -195,7 +189,7 @@ export function EvaluationForm({
             disabled={isSubmitting}
             min={periodoInicio || undefined}
             onChange={(e) => setPeriodoFin(e.target.value)}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
           />
         </div>
       </div>
@@ -290,7 +284,7 @@ export function EvaluationForm({
       </div>
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="eval_comentarios">
+        <label className={LABEL} htmlFor="eval_comentarios">
           Comentarios de liderazgo
         </label>
         <textarea
@@ -299,26 +293,22 @@ export function EvaluationForm({
           value={comentarios}
           disabled={isSubmitting}
           onChange={(e) => setComentarios(e.target.value)}
-          className={`${INPUT_CLASSES} resize-none`}
+          className={`${INPUT} resize-none`}
           placeholder="Observaciones generales sobre la proyección del colaborador..."
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition-all hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
-      >
+      <Button type="submit" disabled={isSubmitting} size="lg" block>
         {isSubmitting ? (
           <>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Registrando evaluación
+            <Loader2 className={SPINNER} /> Registrando evaluación
           </>
         ) : (
           <>
             <Star className="h-3.5 w-3.5" /> Guardar evaluación
           </>
         )}
-      </button>
+      </Button>
     </form>
   )
 }

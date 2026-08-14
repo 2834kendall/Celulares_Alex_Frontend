@@ -2,11 +2,7 @@
 
 import { useState } from 'react'
 import { Plus, X } from 'lucide-react'
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
+import { INPUT, LABEL } from '@/components/ui/styles'
 
 interface NotesListInputProps {
   label: string
@@ -35,7 +31,7 @@ export function NotesListInput({
 
   return (
     <div>
-      <span className={LABEL_CLASSES}>{label}</span>
+      <span className={LABEL}>{label}</span>
       {items.length > 0 && (
         <ul className="mb-2 flex flex-wrap gap-1.5">
           {items.map((item, i) => (
@@ -68,7 +64,7 @@ export function NotesListInput({
               addDraft()
             }
           }}
-          className={INPUT_CLASSES}
+          className={INPUT}
           placeholder={placeholder}
         />
         <button
