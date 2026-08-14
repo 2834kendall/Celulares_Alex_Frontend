@@ -1,4 +1,3 @@
-import { AlertTriangle, Info } from 'lucide-react'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getSchedules } from '@/modules/schedules/actions/getSchedules'
@@ -14,15 +13,7 @@ import { getAusenciasForWeek } from '@/modules/absences/actions/getAusenciasForW
 import { buildAusenciaOverlayEntries } from '@/modules/absences/lib/overlay'
 import { AbsencesPanel } from '@/modules/absences/components/AbsencesPanel'
 import type { EmployeeOption } from '@/modules/absences/types'
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-      <p>{message}</p>
-    </div>
-  )
-}
+import { Alert } from '@/components/ui/Alert'
 
 interface SchedulePageProps {
   searchParams?:
@@ -66,19 +57,19 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
   ])
 
   if (!schedulesResult.ok) {
-    return <ErrorBanner message={schedulesResult.error} />
+    return <Alert size="md">{schedulesResult.error}</Alert>
   }
 
   if (!shiftTypesResult.ok) {
-    return <ErrorBanner message={shiftTypesResult.error} />
+    return <Alert size="md">{shiftTypesResult.error}</Alert>
   }
 
   if (weeklyScheduleResult && !weeklyScheduleResult.ok) {
-    return <ErrorBanner message={weeklyScheduleResult.error} />
+    return <Alert size="md">{weeklyScheduleResult.error}</Alert>
   }
 
   if (!ausenciaTypesResult.ok) {
-    return <ErrorBanner message={ausenciaTypesResult.error} />
+    return <Alert size="md">{ausenciaTypesResult.error}</Alert>
   }
 
   // Un fallo al cargar las ausencias (ej. la migracion de tau_es_intradia aun
@@ -113,13 +104,12 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
               ausencias={ausenciaOverlay}
             />
           ) : (
-            <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <Alert tone="info" size="md">
               <p>
                 Tu rol no tiene permiso de asistencia, necesario para ver la programación semanal de
                 los colaboradores.
               </p>
-            </div>
+            </Alert>
           )
         }
         especialesContent={
@@ -135,7 +125,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
         ausenciasContent={
           canReadAusencias ? (
             ausenciasError ? (
-              <ErrorBanner message={ausenciasError} />
+              <Alert size="md">{ausenciasError}</Alert>
             ) : (
               <AbsencesPanel
                 employees={employeeOptions}
@@ -145,10 +135,9 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
               />
             )
           ) : (
-            <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <Alert tone="info" size="md">
               <p>Tu rol no tiene permiso para ver incapacidades y periodos de lactancia.</p>
-            </div>
+            </Alert>
           )
         }
       />
