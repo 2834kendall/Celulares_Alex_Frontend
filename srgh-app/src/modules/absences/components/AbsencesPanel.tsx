@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   CalendarHeart,
   CheckCircle2,
-  Info,
   Loader2,
   Pencil,
   Plus,
@@ -16,6 +15,10 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useAbsencesPanel } from '@/modules/absences/hooks/useAbsencesPanel'
 import type { AusenciaTypeRow, EmployeeOption } from '@/modules/absences/types'
 import type { AusenciaWeekRow } from '@/modules/absences/actions/getAusenciasForWeek'
+import { Button } from '@/components/ui/Button'
+import { IconButton } from '@/components/ui/IconButton'
+import { INPUT, LABEL, SPINNER, TABLE_WRAP } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface AbsencesPanelProps {
   employees: EmployeeOption[]
@@ -23,11 +26,6 @@ interface AbsencesPanelProps {
   ausencias: AusenciaWeekRow[]
   canManageAbsences: boolean
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 function formatRange(fechaInicio: string, fechaFin: string) {
   const format = (iso: string) =>
@@ -122,7 +120,7 @@ export function AbsencesPanel({
 
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className={LABEL_CLASSES}>Colaborador</label>
+              <label className={LABEL}>Colaborador</label>
               <SearchSelect
                 ariaLabel="Buscar colaborador"
                 className="w-full"
@@ -137,12 +135,12 @@ export function AbsencesPanel({
             </div>
 
             <div>
-              <label className={LABEL_CLASSES} htmlFor="aus_tipo">
+              <label className={LABEL} htmlFor="aus_tipo">
                 Tipo
               </label>
               <select
                 id="aus_tipo"
-                className={INPUT_CLASSES}
+                className={INPUT}
                 value={form.tipoAusenciaId}
                 onChange={(e) => setField('tipoAusenciaId', e.target.value)}
               >
@@ -166,7 +164,7 @@ export function AbsencesPanel({
 
             <div className="sm:col-span-2">
               <div className="mb-1 flex items-center justify-between gap-2">
-                <label className={`${LABEL_CLASSES} mb-0`} htmlFor="aus_fecha_inicio_0">
+                <label className={`${LABEL} mb-0`} htmlFor="aus_fecha_inicio_0">
                   {editingId ? 'Periodo' : 'Periodos'}
                 </label>
                 {!editingId && (
@@ -193,7 +191,7 @@ export function AbsencesPanel({
                       <input
                         id={`aus_fecha_inicio_${index}`}
                         type="date"
-                        className={`${INPUT_CLASSES} tabular-nums`}
+                        className={`${INPUT} tabular-nums`}
                         value={range.fechaInicio}
                         max={range.fechaFin || undefined}
                         onChange={(e) => setRangeField(index, 'fechaInicio', e.target.value)}
@@ -210,7 +208,7 @@ export function AbsencesPanel({
                       <input
                         id={`aus_fecha_fin_${index}`}
                         type="date"
-                        className={`${INPUT_CLASSES} tabular-nums`}
+                        className={`${INPUT} tabular-nums`}
                         value={range.fechaFin}
                         min={range.fechaInicio || undefined}
                         onChange={(e) => setRangeField(index, 'fechaFin', e.target.value)}
@@ -241,13 +239,13 @@ export function AbsencesPanel({
 
             {selectedType?.tau_requiere_documento_ccss && (
               <div>
-                <label className={LABEL_CLASSES} htmlFor="aus_boleta">
+                <label className={LABEL} htmlFor="aus_boleta">
                   Numero de boleta CCSS
                 </label>
                 <input
                   id="aus_boleta"
                   type="text"
-                  className={INPUT_CLASSES}
+                  className={INPUT}
                   value={form.numeroBoletaCcss}
                   onChange={(e) => setField('numeroBoletaCcss', e.target.value)}
                   placeholder="Ej: 1234567890"
@@ -256,13 +254,13 @@ export function AbsencesPanel({
             )}
 
             <div className="sm:col-span-2">
-              <label className={LABEL_CLASSES} htmlFor="aus_observaciones">
+              <label className={LABEL} htmlFor="aus_observaciones">
                 Observaciones (opcional)
               </label>
               <textarea
                 id="aus_observaciones"
                 rows={2}
-                className={INPUT_CLASSES}
+                className={INPUT}
                 value={form.observaciones}
                 onChange={(e) => setField('observaciones', e.target.value)}
               />
@@ -270,25 +268,19 @@ export function AbsencesPanel({
           </div>
 
           <div className="mt-3.5 flex justify-end">
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleSubmit}
-              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
-            >
-              {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            <Button disabled={isSubmitting} onClick={handleSubmit} size="md">
+              {isSubmitting && <Loader2 className={SPINNER} />}
               {isSubmitting ? 'Guardando...' : editingId ? 'Guardar cambios' : 'Registrar'}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
-        <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+        <Alert tone="info" size="md">
           <p>Tu rol no tiene permiso para registrar o eliminar incapacidades y licencias.</p>
-        </div>
+        </Alert>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <div className={TABLE_WRAP}>
         <div className="border-b border-slate-100 px-4 py-3">
           <h4 className="text-xs font-bold uppercase tracking-wide text-slate-900">
             Registradas en la semana visible de la matriz
@@ -326,23 +318,17 @@ export function AbsencesPanel({
                 </div>
                 {canManageAbsences && (
                   <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(a)}
-                      aria-label="Editar"
-                      className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
-                    >
+                    <IconButton onClick={() => startEdit(a)} aria-label="Editar" tone="blue">
                       <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
+                    </IconButton>
+                    <IconButton
                       onClick={() => requestDelete(a.ausenciaId)}
                       disabled={deletingId === a.ausenciaId}
                       aria-label="Eliminar"
-                      className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
+                      tone="rose"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    </IconButton>
                   </div>
                 )}
               </li>

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
 
 /**
@@ -37,6 +37,16 @@ if (typeof window !== 'undefined' && typeof window.localStorage?.clear !== 'func
     configurable: true,
   })
 }
+
+/**
+ * `findBy*` / `waitFor` esperan 1 s por defecto. Componentes pesados como
+ * EmployeeWizard (validacion Zod de ~10 campos por paso) resuelven de sobra en
+ * ese margen cuando el archivo corre solo, pero con la suite completa en
+ * paralelo la contencion entre workers lo excede y el test falla de forma
+ * intermitente. Subir el margen no cambia lo que se afirma, solo cuanto se
+ * espera antes de darlo por fallado.
+ */
+configure({ asyncUtilTimeout: 5000 })
 
 afterEach(() => {
   cleanup()

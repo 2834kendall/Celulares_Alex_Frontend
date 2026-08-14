@@ -3,21 +3,19 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Layers, Loader2 } from 'lucide-react'
+import { Layers, Loader2 } from 'lucide-react'
 import { shiftTypeSchema, type ShiftTypeInput, type ShiftTypeRow } from '@/modules/schedules/types'
 import { createShiftType } from '@/modules/schedules/actions/createShiftType'
 import { updateShiftType } from '@/modules/schedules/actions/updateShiftType'
+import { Button } from '@/components/ui/Button'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface ShiftTypeFormProps {
   /** If an existing shift type is passed, the form enters edit mode. */
   shiftType?: ShiftTypeRow
   onSuccess?: () => void
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
@@ -65,18 +63,14 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
       {serverError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{serverError}</div>
-        </div>
+        </Alert>
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className={LABEL_CLASSES} htmlFor="tjo_codigo">
+          <label className={LABEL} htmlFor="tjo_codigo">
             Código
           </label>
           <input
@@ -84,16 +78,14 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
             disabled={isSubmitting}
             aria-invalid={!!errors.tjo_codigo}
             {...register('tjo_codigo')}
-            className={`${INPUT_CLASSES} uppercase`}
+            className={`${INPUT} uppercase`}
             placeholder="JORNADA_MIXTA"
           />
-          {errors.tjo_codigo && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.tjo_codigo.message}</p>
-          )}
+          {errors.tjo_codigo && <p className={FIELD_ERROR}>{errors.tjo_codigo.message}</p>}
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="tjo_nombre">
+          <label className={LABEL} htmlFor="tjo_nombre">
             Nombre
           </label>
           <input
@@ -101,18 +93,16 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
             disabled={isSubmitting}
             aria-invalid={!!errors.tjo_nombre}
             {...register('tjo_nombre')}
-            className={INPUT_CLASSES}
+            className={INPUT}
             placeholder="Jornada Mixta"
           />
-          {errors.tjo_nombre && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.tjo_nombre.message}</p>
-          )}
+          {errors.tjo_nombre && <p className={FIELD_ERROR}>{errors.tjo_nombre.message}</p>}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
-          <label className={LABEL_CLASSES} htmlFor="tjo_horas_max_diarias">
+          <label className={LABEL} htmlFor="tjo_horas_max_diarias">
             Horas máx. diarias
           </label>
           <input
@@ -123,16 +113,16 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
             disabled={isSubmitting}
             aria-invalid={!!errors.tjo_horas_max_diarias}
             {...register('tjo_horas_max_diarias')}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
             placeholder="Sin límite"
           />
           {errors.tjo_horas_max_diarias && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.tjo_horas_max_diarias.message}</p>
+            <p className={FIELD_ERROR}>{errors.tjo_horas_max_diarias.message}</p>
           )}
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="tjo_horas_max_semanales">
+          <label className={LABEL} htmlFor="tjo_horas_max_semanales">
             Horas máx. semanales
           </label>
           <input
@@ -143,16 +133,16 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
             disabled={isSubmitting}
             aria-invalid={!!errors.tjo_horas_max_semanales}
             {...register('tjo_horas_max_semanales')}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
             placeholder="Sin límite"
           />
           {errors.tjo_horas_max_semanales && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.tjo_horas_max_semanales.message}</p>
+            <p className={FIELD_ERROR}>{errors.tjo_horas_max_semanales.message}</p>
           )}
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="tjo_recargo_porcentaje">
+          <label className={LABEL} htmlFor="tjo_recargo_porcentaje">
             Recargo %
           </label>
           <input
@@ -164,22 +154,18 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
             disabled={isSubmitting}
             aria-invalid={!!errors.tjo_recargo_porcentaje}
             {...register('tjo_recargo_porcentaje', { valueAsNumber: true })}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
           />
           {errors.tjo_recargo_porcentaje && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.tjo_recargo_porcentaje.message}</p>
+            <p className={FIELD_ERROR}>{errors.tjo_recargo_porcentaje.message}</p>
           )}
         </div>
       </div>
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition-all hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
-      >
+      <Button type="submit" disabled={isSubmitting} size="lg" block>
         {isSubmitting ? (
           <>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Guardando
+            <Loader2 className={SPINNER} /> Guardando
           </>
         ) : (
           <>
@@ -187,7 +173,7 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
             {isEditing ? 'Actualizar tipo de jornada' : 'Crear tipo de jornada'}
           </>
         )}
-      </button>
+      </Button>
     </form>
   )
 }

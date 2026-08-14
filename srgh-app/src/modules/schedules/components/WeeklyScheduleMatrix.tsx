@@ -35,6 +35,8 @@ import { Pagination } from '@/components/ui/Pagination'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
 import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
+import { IconButton } from '@/components/ui/IconButton'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface WeeklyScheduleMatrixProps {
   weekStartISO: string
@@ -426,15 +428,13 @@ export function WeeklyScheduleMatrix({
               className="inline-flex items-center rounded-full border border-slate-200 p-0.5"
               style={{ backgroundColor: RAIL_BG }}
             >
-              <button
-                type="button"
+              <IconButton
                 onClick={() => goToWeekStart(shiftWeekISO(weekStartISO, -1))}
                 disabled={isNavigating}
                 aria-label="Semana anterior"
-                className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-white hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-slate-400/50 disabled:opacity-40"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
+              </IconButton>
 
               <label
                 className="relative inline-flex min-w-[124px] cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 py-1 outline-none transition hover:bg-white focus-within:ring-2 focus-within:ring-slate-400/50"
@@ -461,15 +461,13 @@ export function WeeklyScheduleMatrix({
                 />
               </label>
 
-              <button
-                type="button"
+              <IconButton
                 onClick={() => goToWeekStart(shiftWeekISO(weekStartISO, 1))}
                 disabled={isNavigating}
                 aria-label="Semana siguiente"
-                className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-white hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-slate-400/50 disabled:opacity-40"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+              </IconButton>
             </div>
 
             {/*
@@ -566,7 +564,7 @@ export function WeeklyScheduleMatrix({
 
         <div className="space-y-2 p-2.5 md:hidden">
           {filteredRows.length === 0 ? (
-            <EmptyState hasUnfilteredRows={scheduleRows.length > 0} />
+            <MatrixEmptyState hasUnfilteredRows={scheduleRows.length > 0} />
           ) : (
             paginatedRows.map((row) => {
               const stripe = rowStripeColor(row)
@@ -669,7 +667,7 @@ export function WeeklyScheduleMatrix({
                 {filteredRows.length === 0 ? (
                   <tr>
                     <td colSpan={visibleColumns.length + 1} className="px-4 py-10">
-                      <EmptyState hasUnfilteredRows={scheduleRows.length > 0} />
+                      <MatrixEmptyState hasUnfilteredRows={scheduleRows.length > 0} />
                     </td>
                   </tr>
                 ) : (
@@ -770,24 +768,21 @@ export function WeeklyScheduleMatrix({
   )
 }
 
-function EmptyState({ hasUnfilteredRows = false }: { hasUnfilteredRows?: boolean }) {
+function MatrixEmptyState({ hasUnfilteredRows = false }: { hasUnfilteredRows?: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center">
-      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-        <Users className="h-4 w-4" />
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-slate-700">
-          {hasUnfilteredRows
-            ? 'Ningún colaborador coincide con los filtros'
-            : 'No hay colaboradores activos para esta semana'}
-        </p>
-        <p className="mt-1 max-w-sm text-xs text-slate-500">
-          {hasUnfilteredRows
-            ? 'Ajusta el filtro de sucursal o de días para ver resultados.'
-            : 'Cuando el equipo tenga historial laboral activo, la matriz semanal aparecerá aquí.'}
-        </p>
-      </div>
-    </div>
+    <EmptyState
+      icon={Users}
+      title={
+        hasUnfilteredRows
+          ? 'Ningún colaborador coincide con los filtros'
+          : 'No hay colaboradores activos para esta semana'
+      }
+      description={
+        hasUnfilteredRows
+          ? 'Ajusta el filtro de sucursal o de días para ver resultados.'
+          : 'Cuando el equipo tenga historial laboral activo, la matriz semanal aparecerá aquí.'
+      }
+      className="px-4 py-8"
+    />
   )
 }

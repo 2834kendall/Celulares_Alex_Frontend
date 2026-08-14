@@ -1,9 +1,9 @@
 'use client'
 
 import { useFormContext } from 'react-hook-form'
-import { Info } from 'lucide-react'
 import type { CatalogoItem } from '@/modules/employees/types'
 import { getFieldError, INPUT_CLASSES, Labeled } from './EmployeeFields'
+import { Alert } from '@/components/ui/Alert'
 
 interface EmployeeWizardStepUsuarioProps {
   roles: CatalogoItem[]
@@ -32,13 +32,12 @@ export function EmployeeWizardStepUsuario({
   return (
     <div className="space-y-4">
       {!canInviteUser && (
-        <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+        <Alert tone="info" size="md">
           <p>
             Tu rol no tiene permiso de gestión de usuarios. Puedes crear el empleado sin cuenta; un
             administrador podrá invitarlo más adelante.
           </p>
-        </div>
+        </Alert>
       )}
 
       <label className="flex items-center gap-2.5">

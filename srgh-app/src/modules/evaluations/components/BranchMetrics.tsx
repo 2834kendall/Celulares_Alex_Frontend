@@ -17,12 +17,13 @@ import type { BranchOption, CollaboratorRow, RubroRow } from '@/modules/evaluati
 import { averageScore, LOW_PERFORMANCE_THRESHOLD } from '@/modules/evaluations/lib/scoring'
 import { usePagination } from '@/modules/evaluations/hooks/usePagination'
 import { CollaboratorListModal } from './CollaboratorListModal'
-import { Modal } from './Modal'
+import { Modal } from '@/components/ui/Modal'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ScoreBar } from './ScoreBar'
 import { ScoreCell } from './ScoreCell'
+import { CARD, META_LABEL, TABLE_HEAD, TABLE_WRAP } from '@/components/ui/styles'
 
 type OpenModal = 'promedios' | 'pendientes' | 'bajo' | null
 
@@ -128,9 +129,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
           className="group rounded-xl border border-slate-200 bg-white p-3 text-left shadow-[0_1px_2px_rgba(15,23,42,.04)] outline-none transition hover:border-blue-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
         >
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Promedio de la sucursal
-            </p>
+            <p className={META_LABEL}>Promedio de la sucursal</p>
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
               <Award className="h-3.5 w-3.5" />
             </span>
@@ -154,9 +153,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
           className="group rounded-xl border border-slate-200 bg-white p-3 text-left shadow-[0_1px_2px_rgba(15,23,42,.04)] outline-none transition hover:border-blue-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:border-slate-200"
         >
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Mejor calificado
-            </p>
+            <p className={META_LABEL}>Mejor calificado</p>
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
               <UserRoundCheck className="h-3.5 w-3.5" />
             </span>
@@ -178,9 +175,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
           className="group rounded-xl border border-slate-200 bg-white p-3 text-left shadow-[0_1px_2px_rgba(15,23,42,.04)] outline-none transition hover:border-blue-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
         >
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Índice evaluación
-            </p>
+            <p className={META_LABEL}>Índice evaluación</p>
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
               <CheckCircle2 className="h-3.5 w-3.5" />
             </span>
@@ -203,9 +198,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
           className="group rounded-xl border border-slate-200 bg-white p-3 text-left shadow-[0_1px_2px_rgba(15,23,42,.04)] outline-none transition hover:border-rose-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-rose-500/60 focus-visible:ring-offset-2"
         >
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Bajo rendimiento-plan
-            </p>
+            <p className={META_LABEL}>Bajo rendimiento-plan</p>
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
               <AlertTriangle className="h-3.5 w-3.5" />
             </span>
@@ -225,7 +218,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
         </button>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <div className={CARD}>
         <button
           type="button"
           onClick={() => setShowChart((v) => !v)}
@@ -281,7 +274,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <div className={TABLE_WRAP}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-100 px-4 py-3">
           <span className="h-4 w-1 rounded-full bg-blue-600" />
           <h3 className="text-xs font-bold uppercase tracking-wide text-slate-900">
@@ -300,7 +293,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+                <thead className={TABLE_HEAD}>
                   <tr>
                     <th className="sticky left-0 z-10 border-r border-slate-100 bg-slate-50 px-3 py-2 text-left align-bottom font-semibold">
                       Colaborador

@@ -1,4 +1,3 @@
-import { AlertTriangle } from 'lucide-react'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getEmployees } from '@/modules/employees/actions/getEmployees'
@@ -9,15 +8,7 @@ import { EmployeeTabs } from '@/modules/employees/components/EmployeeTabs'
 import { getEmployeesWithoutUser } from '@/modules/users/actions/getEmployeesWithoutUser'
 import { getUsers } from '@/modules/users/actions/getUsers'
 import { UsersList } from '@/modules/users/components/UsersList'
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-      <p>{message}</p>
-    </div>
-  )
-}
+import { Alert } from '@/components/ui/Alert'
 
 /** Carga del tab Usuarios (solo con USUARIOS_WRITE): lista + apoyos del form. */
 async function loadUsersTab() {
@@ -32,7 +23,7 @@ async function loadUsersTab() {
     (result) => !result.ok
   )
   if (firstError && !firstError.ok) {
-    return <ErrorBanner message={firstError.error} />
+    return <Alert size="md">{firstError.error}</Alert>
   }
   if (!usersResult.ok || !sinUsuarioResult.ok || !rolesResult.ok || !sucursalesResult.ok) {
     return null
@@ -63,7 +54,7 @@ export default async function EmployeesPage() {
   ])
 
   if (!employeesResult.ok) {
-    return <ErrorBanner message={employeesResult.error} />
+    return <Alert size="md">{employeesResult.error}</Alert>
   }
 
   return (

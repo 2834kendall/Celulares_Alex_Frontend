@@ -2,8 +2,11 @@
 
 import { type FormEvent, useState } from 'react'
 import { X } from 'lucide-react'
-import { TimeSelect } from './TimeSelect'
+import { TimeSelect } from '@/components/ui/TimeSelect'
 import { WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
+import { IconButton } from '@/components/ui/IconButton'
+import { Button } from '@/components/ui/Button'
+import { LABEL } from '@/components/ui/styles'
 
 export interface CustomHoursValues {
   startTime: string
@@ -79,15 +82,11 @@ function OptionalPeriod({
       {enabled && (
         <div className="mt-3 space-y-2.5">
           <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Inicio
-            </label>
+            <label className={LABEL}>Inicio</label>
             <TimeSelect value={start} onChange={onChangeStart} />
           </div>
           <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Fin
-            </label>
+            <label className={LABEL}>Fin</label>
             <TimeSelect value={end} onChange={onChangeEnd} />
           </div>
         </div>
@@ -167,36 +166,29 @@ export function CustomHoursModal({
             <p className="text-xs text-slate-500">{dayLabel}</p>
           </div>
 
-          <button
-            type="button"
+          <IconButton
             onClick={onClose}
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+
             aria-label="Cerrar modal"
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </IconButton>
         </div>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
             <div>
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                Hora de entrada
-              </label>
+              <label className={LABEL}>Hora de entrada</label>
               <TimeSelect value={startTime} onChange={setStartTime} />
             </div>
 
             <div>
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                Hora de salida
-              </label>
+              <label className={LABEL}>Hora de salida</label>
               <TimeSelect value={endTime} onChange={setEndTime} />
             </div>
 
             <div>
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                Aplicar a estos días
-              </label>
+              <label className={LABEL}>Aplicar a estos días</label>
               <div className="flex flex-wrap gap-1.5">
                 {weekDates.map((date, index) => {
                   const isSelected = applyToDates.includes(date)
@@ -253,20 +245,12 @@ export function CustomHoursModal({
           </div>
 
           <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 px-4 py-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
-            >
+            <Button onClick={onClose} variant="secondary" size="md">
               Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving || applyToDates.length === 0}
-              className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
-            >
+            </Button>
+            <Button type="submit" disabled={isSaving || applyToDates.length === 0} size="md">
               {isSaving ? 'Guardando...' : 'Guardar'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

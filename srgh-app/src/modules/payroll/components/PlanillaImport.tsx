@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { AlertTriangle, FileDown, FileUp, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { uploadPlanilla } from '@/modules/payroll/actions/uploadPlanilla'
+import { SPINNER } from '@/components/ui/styles'
 
 interface PlanillaImportProps {
   periodoId: number
@@ -112,11 +113,7 @@ export function PlanillaImport({ periodoId, estado }: PlanillaImportProps) {
           disabled={isDownloading}
           className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-blue-300 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-60"
         >
-          {isDownloading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <FileDown className="h-3.5 w-3.5" />
-          )}
+          {isDownloading ? <Loader2 className={SPINNER} /> : <FileDown className="h-3.5 w-3.5" />}
           {isDownloading ? 'Descargando…' : 'Descargar plantilla'}
         </button>
 
@@ -127,11 +124,7 @@ export function PlanillaImport({ periodoId, estado }: PlanillaImportProps) {
               : 'cursor-not-allowed bg-slate-300'
           }`}
         >
-          {isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <FileUp className="h-3.5 w-3.5" />
-          )}
+          {isPending ? <Loader2 className={SPINNER} /> : <FileUp className="h-3.5 w-3.5" />}
           {isPending ? 'Guardando…' : 'Subir planilla llena'}
           <input
             ref={inputRef}

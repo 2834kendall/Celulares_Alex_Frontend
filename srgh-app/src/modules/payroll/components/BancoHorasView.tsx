@@ -9,7 +9,16 @@ import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
 import { pagarBancoHoras } from '@/modules/payroll/actions/pagarBancoHoras'
 import { compensarBancoHoras } from '@/modules/payroll/actions/compensarBancoHoras'
 import { PagarBancoHorasModal } from './PagarBancoHorasModal'
-import { ConfirmDialog } from './ConfirmDialog'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import {
+  TABLE_HEAD,
+  TABLE_TD,
+  TABLE_TD_NUM,
+  TABLE_TD_STRONG,
+  TABLE_TH,
+  TABLE_WRAP,
+} from '@/components/ui/styles'
+import { Badge, type BadgeTone } from '@/components/ui/Badge'
 
 interface BancoHorasViewProps {
   pendientes: BancoHorasItem[]
@@ -24,10 +33,10 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id']
 
-const ESTADO_BADGE: Record<BancoHorasItem['estado'], string> = {
-  pendiente: 'bg-amber-50 text-amber-700 ring-amber-200',
-  pagado: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  compensado: 'bg-blue-50 text-blue-700 ring-blue-200',
+const ESTADO_TONE: Record<BancoHorasItem['estado'], BadgeTone> = {
+  pendiente: 'amber',
+  pagado: 'emerald',
+  compensado: 'blue',
 }
 
 const ESTADO_LABEL: Record<BancoHorasItem['estado'], string> = {
@@ -115,54 +124,48 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
             : 'Todavía no hay movimientos pagados ni compensados.'}
         </p>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className={TABLE_WRAP}>
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-4 py-2.5">Empleado</th>
-                <th className="px-4 py-2.5">Cédula</th>
-                <th className="px-4 py-2.5">Periodo de origen</th>
-                <th className="px-4 py-2.5">Horas</th>
-                <th className="px-4 py-2.5">Monto sugerido</th>
-                <th className="px-4 py-2.5">Estado</th>
+                <th className={TABLE_TH}>Empleado</th>
+                <th className={TABLE_TH}>Cédula</th>
+                <th className={TABLE_TH}>Periodo de origen</th>
+                <th className={TABLE_TH}>Horas</th>
+                <th className={TABLE_TH}>Monto sugerido</th>
+                <th className={TABLE_TH}>Estado</th>
                 {tab === 'historial' && (
                   <>
-                    <th className="px-4 py-2.5">Monto pagado</th>
-                    <th className="px-4 py-2.5">Fecha</th>
+                    <th className={TABLE_TH}>Monto pagado</th>
+                    <th className={TABLE_TH}>Fecha</th>
                   </>
                 )}
-                {canWrite && tab === 'pendientes' && <th className="px-4 py-2.5" />}
+                {canWrite && tab === 'pendientes' && <th className={TABLE_TH} />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-4 py-2.5 font-medium text-slate-800">{item.empleadoNombre}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{item.empleadoCedula}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{item.periodoOrigenLabel}</td>
-                  <td className="px-4 py-2.5 tabular-nums text-slate-800">{item.horas}</td>
-                  <td className="px-4 py-2.5 tabular-nums text-slate-800">
-                    {formatCRC(item.montoSugerido)}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${ESTADO_BADGE[item.estado]}`}
-                    >
+                  <td className={TABLE_TD_STRONG}>{item.empleadoNombre}</td>
+                  <td className={TABLE_TD}>{item.empleadoCedula}</td>
+                  <td className={TABLE_TD}>{item.periodoOrigenLabel}</td>
+                  <td className={TABLE_TD_NUM}>{item.horas}</td>
+                  <td className={TABLE_TD_NUM}>{formatCRC(item.montoSugerido)}</td>
+                  <td className="px-3 py-2">
+                    <Badge tone={ESTADO_TONE[item.estado]} size="xs">
                       {ESTADO_LABEL[item.estado]}
-                    </span>
+                    </Badge>
                   </td>
                   {tab === 'historial' && (
                     <>
-                      <td className="px-4 py-2.5 tabular-nums text-slate-800">
+                      <td className={TABLE_TD_NUM}>
                         {item.estado === 'pagado' ? formatCRC(item.montoPagado) : '—'}
                       </td>
-                      <td className="px-4 py-2.5 text-slate-500">
-                        {formatDate(item.fechaResolucion?.slice(0, 10))}
-                      </td>
+                      <td className={TABLE_TD}>{formatDate(item.fechaResolucion?.slice(0, 10))}</td>
                     </>
                   )}
                   {canWrite && tab === 'pendientes' && (
-                    <td className="px-4 py-2.5">
+                    <td className="px-3 py-2">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"

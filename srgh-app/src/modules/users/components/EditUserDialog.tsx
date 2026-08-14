@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { AlertTriangle, Info, Loader2, Save } from 'lucide-react'
+import { Info, Loader2, Save } from 'lucide-react'
 import type { CatalogoItem } from '@/modules/employees/types'
 import {
   editarAsignacionSchema,
@@ -14,7 +14,10 @@ import {
 } from '@/modules/users/types'
 import { updateUserAssignment } from '@/modules/users/actions/updateUserAssignment'
 import { INPUT_CLASSES, Labeled, toOptionalNumber } from './fields'
-import { UserModal } from './UserModal'
+import { Modal } from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
+import { SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface EditUserDialogProps {
   usuario: UsuarioListItem
@@ -78,16 +81,12 @@ export function EditUserDialog({
   }
 
   return (
-    <UserModal title="Editar usuario" subtitle={usuario.email} onClose={onClose}>
+    <Modal title="Editar usuario" subtitle={usuario.email} onClose={onClose}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
         {serverError && (
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-          >
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+          <Alert>
             <div>{serverError}</div>
-          </div>
+          </Alert>
         )}
 
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
@@ -145,27 +144,15 @@ export function EditUserDialog({
         </Labeled>
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
-          >
+          <Button onClick={onClose} variant="secondary" size="md">
             Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSubmitting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
-            )}
+          </Button>
+          <Button type="submit" disabled={isSubmitting} size="md">
+            {isSubmitting ? <Loader2 className={SPINNER} /> : <Save className="h-3.5 w-3.5" />}
             Guardar cambios
-          </button>
+          </Button>
         </div>
       </form>
-    </UserModal>
+    </Modal>
   )
 }

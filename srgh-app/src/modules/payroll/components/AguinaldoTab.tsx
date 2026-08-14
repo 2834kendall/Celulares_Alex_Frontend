@@ -7,6 +7,15 @@ import { toast } from 'sonner'
 import type { AguinaldoItem } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
 import { pagarAguinaldo } from '@/modules/payroll/actions/pagarAguinaldo'
+import {
+  TABLE_HEAD,
+  TABLE_TD,
+  TABLE_TD_NUM,
+  TABLE_TD_STRONG,
+  TABLE_TH,
+  TABLE_WRAP,
+} from '@/components/ui/styles'
+import { Badge } from '@/components/ui/Badge'
 
 interface AguinaldoTabProps {
   anio: number
@@ -54,40 +63,32 @@ export function AguinaldoTab({ anio, items, canWrite }: AguinaldoTabProps) {
           No hay empleados activos.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className={TABLE_WRAP}>
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-4 py-2.5">Empleado</th>
-                <th className="px-4 py-2.5">Cédula</th>
-                <th className="px-4 py-2.5">Acumulado</th>
-                <th className="px-4 py-2.5">Estado</th>
-                <th className="px-4 py-2.5">Fecha de pago</th>
-                {canWrite && <th className="px-4 py-2.5" />}
+                <th className={TABLE_TH}>Empleado</th>
+                <th className={TABLE_TH}>Cédula</th>
+                <th className={TABLE_TH}>Acumulado</th>
+                <th className={TABLE_TH}>Estado</th>
+                <th className={TABLE_TH}>Fecha de pago</th>
+                {canWrite && <th className={TABLE_TH} />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map((item) => (
                 <tr key={item.historialLaboralId}>
-                  <td className="px-4 py-2.5 font-medium text-slate-800">{item.empleadoNombre}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{item.empleadoCedula}</td>
-                  <td className="px-4 py-2.5 tabular-nums text-slate-800">
-                    {formatCRC(item.montoAcumulado)}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${
-                        item.pagado
-                          ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                          : 'bg-amber-50 text-amber-700 ring-amber-200'
-                      }`}
-                    >
+                  <td className={TABLE_TD_STRONG}>{item.empleadoNombre}</td>
+                  <td className={TABLE_TD}>{item.empleadoCedula}</td>
+                  <td className={TABLE_TD_NUM}>{formatCRC(item.montoAcumulado)}</td>
+                  <td className="px-3 py-2">
+                    <Badge tone={item.pagado ? 'emerald' : 'amber'} size="xs">
                       {item.pagado ? 'Pagado' : 'Pendiente'}
-                    </span>
+                    </Badge>
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">{formatDate(item.fechaPago)}</td>
+                  <td className={TABLE_TD}>{formatDate(item.fechaPago)}</td>
                   {canWrite && (
-                    <td className="px-4 py-2.5 text-right">
+                    <td className="px-3 py-2 text-right">
                       {!item.pagado && item.montoAcumulado > 0 && (
                         <button
                           type="button"

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { FormProvider, useForm, type Path, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, ArrowLeft, ArrowRight, Loader2, UserPlus } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Loader2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   onboardingEmpleadoSchema,
@@ -22,6 +22,9 @@ import { EmployeeWizardStepPersonal } from './EmployeeWizardStepPersonal'
 import { EmployeeWizardStepNomina } from './EmployeeWizardStepNomina'
 import { EmployeeWizardStepDocumentos } from './EmployeeWizardStepDocumentos'
 import { EmployeeWizardStepUsuario } from './EmployeeWizardStepUsuario'
+import { Button } from '@/components/ui/Button'
+import { META_LABEL, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 const STEPS: WizardStep[] = [
   { id: 'personal', label: 'Información principal' },
@@ -76,7 +79,7 @@ function nombreDe(items: CatalogoItem[], id: number | undefined) {
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dt className={META_LABEL}>{label}</dt>
       <dd className="truncate text-sm text-slate-800">{value}</dd>
     </div>
   )
@@ -332,13 +335,9 @@ export function EmployeeWizard({
           className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]"
         >
           {serverError && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-            >
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+            <Alert>
               <div>{serverError}</div>
-            </div>
+            </Alert>
           )}
 
           {step === 0 && (
@@ -400,28 +399,22 @@ export function EmployeeWizard({
                 el click de "Siguiente" mutaría a type=submit durante el evento
                 y el navegador enviaría el form al llegar al último paso. */}
             {isLastStep ? (
-              <button
-                key="submit"
-                type="submit"
-                disabled={isSubmitting}
-                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
-              >
+              <Button key="submit" type="submit" disabled={isSubmitting}>
                 {isSubmitting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className={SPINNER} />
                 ) : (
                   <UserPlus className="h-3.5 w-3.5" />
                 )}
                 Crear empleado
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
                 key="next"
-                type="button"
+
                 onClick={goNext}
-                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
               >
                 Siguiente <ArrowRight className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             )}
           </div>
         </form>

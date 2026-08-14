@@ -7,6 +7,14 @@ import { usePagination } from '@/modules/evaluations/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { EvaluationDetailModal } from './EvaluationDetailModal'
 import { ScoreBadge } from './ScoreBadge'
+import {
+  TABLE_HEAD,
+  TABLE_ROW_CLICKABLE,
+  TABLE_TD,
+  TABLE_TH,
+  TABLE_TH_CENTER,
+  TABLE_WRAP,
+} from '@/components/ui/styles'
 
 interface EvaluationHistoryProps {
   collaborator: CollaboratorRow
@@ -34,7 +42,7 @@ export function EvaluationHistory({ collaborator, rubros }: EvaluationHistoryPro
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+    <div className={TABLE_WRAP}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="h-4 w-1 rounded-full bg-blue-600" />
@@ -50,15 +58,15 @@ export function EvaluationHistory({ collaborator, rubros }: EvaluationHistoryPro
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+          <thead className={TABLE_HEAD}>
             <tr>
-              <th className="px-3 py-2 text-left font-semibold">Fecha</th>
-              <th className="px-3 py-2 text-left font-semibold">Tipo</th>
-              <th className="px-3 py-2 text-left font-semibold">Período evaluado</th>
-              <th className="px-3 py-2 text-left font-semibold">Evaluador</th>
-              <th className="px-3 py-2 text-left font-semibold">Resultado</th>
-              <th className="px-3 py-2 text-center font-semibold">Tendencia</th>
-              <th className="px-3 py-2 text-center font-semibold">Promedio</th>
+              <th className={TABLE_TH}>Fecha</th>
+              <th className={TABLE_TH}>Tipo</th>
+              <th className={TABLE_TH}>Período evaluado</th>
+              <th className={TABLE_TH}>Evaluador</th>
+              <th className={TABLE_TH}>Resultado</th>
+              <th className={TABLE_TH_CENTER}>Tendencia</th>
+              <th className={TABLE_TH_CENTER}>Promedio</th>
             </tr>
           </thead>
           <tbody>
@@ -70,7 +78,7 @@ export function EvaluationHistory({ collaborator, rubros }: EvaluationHistoryPro
                 <tr
                   key={detail.id}
                   onClick={() => setSelected(detail)}
-                  className="cursor-pointer border-t border-slate-100 transition hover:bg-slate-50/70"
+                  className={TABLE_ROW_CLICKABLE}
                 >
                   <td className="px-3 py-2 font-semibold tabular-nums text-slate-800">
                     {detail.fecha}
@@ -80,10 +88,10 @@ export function EvaluationHistory({ collaborator, rubros }: EvaluationHistoryPro
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-slate-600">{detail.tipo}</td>
-                  <td className="px-3 py-2 text-slate-600">{detail.periodo}</td>
-                  <td className="px-3 py-2 text-slate-600">{detail.evaluador ?? '—'}</td>
-                  <td className="px-3 py-2 text-slate-600">{detail.resultado ?? '—'}</td>
+                  <td className={TABLE_TD}>{detail.tipo}</td>
+                  <td className={TABLE_TD}>{detail.periodo}</td>
+                  <td className={TABLE_TD}>{detail.evaluador ?? '—'}</td>
+                  <td className={TABLE_TD}>{detail.resultado ?? '—'}</td>
                   <td className="px-3 py-2 text-center">
                     {delta === null ? (
                       <span className="text-slate-300">—</span>

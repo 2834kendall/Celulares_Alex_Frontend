@@ -1,3 +1,5 @@
+import type { BadgeTone } from '@/components/ui/Badge'
+
 // Helpers de presentación del módulo Payroll (listado y detalle de periodos).
 
 export const MESES = [
@@ -20,18 +22,23 @@ export const ESTADO_LABELS: Record<string, string> = {
   pagado: 'Pagado',
 }
 
-/** Clases del badge de estado; gris por defecto para estados desconocidos. */
-export const ESTADO_BADGE_CLASSES: Record<string, string> = {
-  borrador: 'bg-amber-50 text-amber-700 ring-amber-200',
-  pagado: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+/**
+ * Tono del badge de estado; gris por defecto para estados desconocidos.
+ *
+ * Devuelve un `BadgeTone` y no un string de clases: la paleta vive una sola vez
+ * en `components/ui/Badge`, aca solo se decide que estado va con que tono.
+ */
+const ESTADO_BADGE_TONES: Record<string, BadgeTone> = {
+  borrador: 'amber',
+  pagado: 'emerald',
 }
 
 export function estadoLabel(estado: string) {
   return ESTADO_LABELS[estado] ?? estado
 }
 
-export function estadoBadgeClasses(estado: string) {
-  return ESTADO_BADGE_CLASSES[estado] ?? 'bg-slate-50 text-slate-600 ring-slate-200'
+export function estadoBadgeTone(estado: string): BadgeTone {
+  return ESTADO_BADGE_TONES[estado] ?? 'slate'
 }
 
 /** 'Enero 2026 · 1ª quincena' — encabezado legible del periodo. */

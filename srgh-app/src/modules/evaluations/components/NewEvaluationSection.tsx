@@ -8,6 +8,16 @@ import { usePagination } from '@/modules/evaluations/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { EvaluationForm } from './EvaluationForm'
 import { ScoreBadge } from './ScoreBadge'
+import { Button } from '@/components/ui/Button'
+import {
+  TABLE_HEAD,
+  TABLE_ROW_CLICKABLE,
+  TABLE_TD,
+  TABLE_TD_NUM,
+  TABLE_TH,
+  TABLE_TH_CENTER,
+  TABLE_WRAP,
+} from '@/components/ui/styles'
 
 interface NewEvaluationSectionProps {
   collaborators: CollaboratorRow[]
@@ -56,11 +66,7 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
             cada rubro.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowForm((v) => !v)}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-        >
+        <Button onClick={() => setShowForm((v) => !v)} className="shrink-0">
           {showForm ? (
             <>
               <X className="h-3.5 w-3.5" /> Cancelar
@@ -70,7 +76,7 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
               <Star className="h-3.5 w-3.5" /> Realizar evaluación a colaborador
             </>
           )}
-        </button>
+        </Button>
       </div>
 
       {showForm && (
@@ -87,7 +93,7 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <div className={TABLE_WRAP}>
         <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
           <span className="h-4 w-1 rounded-full bg-blue-600" />
           <h3 className="text-xs font-bold uppercase tracking-wide text-slate-900">
@@ -107,14 +113,14 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+                <thead className={TABLE_HEAD}>
                   <tr>
-                    <th className="px-3 py-2 text-left font-semibold">Colaborador</th>
-                    <th className="px-3 py-2 text-left font-semibold">Tipo</th>
-                    <th className="px-3 py-2 text-left font-semibold">Fecha</th>
-                    <th className="px-3 py-2 text-left font-semibold">Período evaluado</th>
-                    <th className="px-3 py-2 text-left font-semibold">Evaluador</th>
-                    <th className="px-3 py-2 text-center font-semibold">Promedio</th>
+                    <th className={TABLE_TH}>Colaborador</th>
+                    <th className={TABLE_TH}>Tipo</th>
+                    <th className={TABLE_TH}>Fecha</th>
+                    <th className={TABLE_TH}>Período evaluado</th>
+                    <th className={TABLE_TH}>Evaluador</th>
+                    <th className={TABLE_TH_CENTER}>Promedio</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -122,7 +128,7 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
                     <tr
                       key={c.labId}
                       onClick={() => goToIndividual(c.labId)}
-                      className="cursor-pointer border-t border-slate-100 transition hover:bg-slate-50/70"
+                      className={TABLE_ROW_CLICKABLE}
                     >
                       <td className="px-3 py-2">
                         <p className="font-semibold text-slate-800">{c.fullName}</p>
@@ -130,12 +136,10 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
                           {c.position ?? 'Sin puesto'} • {c.branchName}
                         </p>
                       </td>
-                      <td className="px-3 py-2 text-slate-600">{c.evaluation!.tipo}</td>
-                      <td className="px-3 py-2 tabular-nums text-slate-600">
-                        {c.evaluation!.fecha}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">{c.evaluation!.periodo}</td>
-                      <td className="px-3 py-2 text-slate-600">{c.evaluation!.evaluador ?? '—'}</td>
+                      <td className={TABLE_TD}>{c.evaluation!.tipo}</td>
+                      <td className={TABLE_TD_NUM}>{c.evaluation!.fecha}</td>
+                      <td className={TABLE_TD}>{c.evaluation!.periodo}</td>
+                      <td className={TABLE_TD}>{c.evaluation!.evaluador ?? '—'}</td>
                       <td className="px-3 py-2 text-center">
                         <ScoreBadge score={c.evaluation!.promedio} />
                       </td>

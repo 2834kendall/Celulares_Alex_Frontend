@@ -1,4 +1,3 @@
-import { AlertTriangle } from 'lucide-react'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { ACCESO_NOMINA } from '@/lib/permissions/zones'
@@ -6,15 +5,7 @@ import { ModulePlaceholder } from '@/components/ui/ModulePlaceholder'
 import { getPeriodos } from '@/modules/payroll/actions/getPeriodos'
 import { PayrollHeader } from '@/modules/payroll/components/PayrollHeader'
 import { PeriodosList } from '@/modules/payroll/components/PeriodosList'
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-      <p>{message}</p>
-    </div>
-  )
-}
+import { Alert } from '@/components/ui/Alert'
 
 export default async function PayrollPage() {
   const claims = await requireAnyPermission(ACCESO_NOMINA)
@@ -37,7 +28,7 @@ export default async function PayrollPage() {
   const periodosResult = await getPeriodos()
 
   if (!periodosResult.ok) {
-    return <ErrorBanner message={periodosResult.error} />
+    return <Alert size="md">{periodosResult.error}</Alert>
   }
 
   return (

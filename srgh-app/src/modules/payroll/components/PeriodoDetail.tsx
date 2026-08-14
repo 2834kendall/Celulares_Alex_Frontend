@@ -16,7 +16,7 @@ import {
 import { toast } from 'sonner'
 import type { ConceptoNominaRow, DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
 import {
-  estadoBadgeClasses,
+  estadoBadgeTone,
   estadoLabel,
   formatCRC,
   formatDate,
@@ -28,6 +28,9 @@ import { Pagination } from '@/components/ui/Pagination'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
+import { IconButton } from '@/components/ui/IconButton'
+import { TABLE_TH, TABLE_TH_RIGHT, TABLE_WRAP } from '@/components/ui/styles'
+import { Badge } from '@/components/ui/Badge'
 
 interface PeriodoDetailProps {
   periodo: PeriodoDetalle
@@ -122,11 +125,9 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               {formatDate(periodo.fechaFin)}
             </p>
           </div>
-          <span
-            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${estadoBadgeClasses(periodo.estado)}`}
-          >
+          <Badge tone={estadoBadgeTone(periodo.estado)} className="px-2.5 py-1 text-xs">
             {estadoLabel(periodo.estado)}
-          </span>
+          </Badge>
         </div>
 
         {periodo.fechaPago && (
@@ -167,42 +168,39 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className={TABLE_WRAP}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">
-                  <th className="px-4 py-3 font-semibold">Empleado</th>
-                  <th className="px-4 py-3 text-right font-semibold">Salario bruto</th>
-                  <th
-                    className="px-4 py-3 text-right font-semibold"
-                    title="% del salario bruto, ej. CCSS obrera"
-                  >
+                  <th className={TABLE_TH}>Empleado</th>
+                  <th className={TABLE_TH_RIGHT}>Salario bruto</th>
+                  <th className={TABLE_TH_RIGHT} title="% del salario bruto, ej. CCSS obrera">
                     Deducc. % (bruto)
                   </th>
                   <th
-                    className="px-4 py-3 text-right font-semibold"
+                    className={TABLE_TH_RIGHT}
                     title="Monto fijo decidido por el patrono, ej. préstamo"
                   >
                     Deducc. manual (neto)
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold">Cargas patronales</th>
-                  <th className="px-4 py-3 text-right font-semibold">Salario neto</th>
+                  <th className={TABLE_TH_RIGHT}>Cargas patronales</th>
+                  <th className={TABLE_TH_RIGHT}>Salario neto</th>
                   <th
-                    className="px-4 py-3 text-right font-semibold"
+                    className={TABLE_TH_RIGHT}
                     title="Incapacidad por enfermedad: lo que paga la empresa, aparte del salario"
                   >
                     Incapacidad
                   </th>
-                  <th className="px-4 py-3 font-semibold">Pago</th>
-                  {canWrite && <th className="px-4 py-3 text-right font-semibold">Acciones</th>}
+                  <th className={TABLE_TH}>Pago</th>
+                  {canWrite && <th className={TABLE_TH_RIGHT}>Acciones</th>}
                 </tr>
               </thead>
               <tbody>
                 {paginatedItems.map((d) => (
                   <Fragment key={d.id}>
                     <tr className="border-b border-slate-50 last:border-0">
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         <p className="font-semibold text-slate-900">{d.empleadoNombre}</p>
                         {d.numeroCuenta ? (
                           <p className="mt-0.5 text-[11px] font-normal text-slate-400">
@@ -215,22 +213,22 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                           </p>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-600">
+                      <td className="px-3 py-2 text-right text-slate-600">
                         {formatCRC(d.salarioBruto)}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-600">
+                      <td className="px-3 py-2 text-right text-slate-600">
                         {formatCRC(d.deduccionPorcentual)}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-600">
+                      <td className="px-3 py-2 text-right text-slate-600">
                         {formatCRC(d.deduccionManual)}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-600">
+                      <td className="px-3 py-2 text-right text-slate-600">
                         {formatCRC(d.cargasPatronales)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900">
                         {formatCRC(d.salarioNeto)}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-600">
+                      <td className="px-3 py-2 text-right text-slate-600">
                         {d.incapacidad ? (
                           <span
                             title={`${d.incapacidad.diasEmpleador}d patrono / ${d.incapacidad.diasCcss}d CCSS`}
@@ -241,7 +239,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                           '—'
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5">
                           {canWrite ? (
                             <button
@@ -262,15 +260,9 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                               {d.pagado ? 'Pagado' : 'Pendiente'}
                             </button>
                           ) : (
-                            <span
-                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${
-                                d.pagado
-                                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                                  : 'bg-slate-50 text-slate-600 ring-slate-200'
-                              }`}
-                            >
+                            <Badge tone={d.pagado ? 'emerald' : 'slate'}>
                               {d.pagado ? 'Pagado' : 'Pendiente'}
-                            </span>
+                            </Badge>
                           )}
                           {d.pagado && (
                             <Link
@@ -286,26 +278,24 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                         </div>
                       </td>
                       {canWrite && (
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           <div className="flex items-center justify-end gap-1">
                             {puedeEditar && (
-                              <button
-                                type="button"
+                              <IconButton
                                 onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
                                 aria-label={
                                   editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'
                                 }
-                                className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                                tone="blue"
                               >
                                 {editandoId === d.id ? (
                                   <X className="h-3.5 w-3.5" />
                                 ) : (
                                   <Pencil className="h-3.5 w-3.5" />
                                 )}
-                              </button>
+                              </IconButton>
                             )}
-                            <button
-                              type="button"
+                            <IconButton
                               onClick={() =>
                                 setRegistrandoIncapacidadId(
                                   registrandoIncapacidadId === d.id ? null : d.id
@@ -316,14 +306,14 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                                   ? 'Cerrar registro de incapacidad'
                                   : 'Registrar incapacidad'
                               }
-                              className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60"
+                              tone="rose"
                             >
                               {registrandoIncapacidadId === d.id ? (
                                 <X className="h-3.5 w-3.5" />
                               ) : (
                                 <Stethoscope className="h-3.5 w-3.5" />
                               )}
-                            </button>
+                            </IconButton>
                           </div>
                         </td>
                       )}
@@ -366,15 +356,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </tbody>
               <tfoot>
                 <tr className="border-t border-slate-100 bg-slate-50/60 text-sm font-bold text-slate-900">
-                  <td className="px-4 py-3">Totales</td>
-                  <td className="px-4 py-3 text-right">{formatCRC(totalBruto)}</td>
-                  <td className="px-4 py-3 text-right">{formatCRC(totalDeduccionPorcentual)}</td>
-                  <td className="px-4 py-3 text-right">{formatCRC(totalDeduccionManual)}</td>
-                  <td className="px-4 py-3 text-right">—</td>
-                  <td className="px-4 py-3 text-right">{formatCRC(totalNeto)}</td>
-                  <td className="px-4 py-3 text-right">{formatCRC(totalIncapacidad)}</td>
-                  <td className="px-4 py-3" />
-                  {canWrite && <td className="px-4 py-3" />}
+                  <td className="px-3 py-2">Totales</td>
+                  <td className="px-3 py-2 text-right">{formatCRC(totalBruto)}</td>
+                  <td className="px-3 py-2 text-right">{formatCRC(totalDeduccionPorcentual)}</td>
+                  <td className="px-3 py-2 text-right">{formatCRC(totalDeduccionManual)}</td>
+                  <td className="px-3 py-2 text-right">—</td>
+                  <td className="px-3 py-2 text-right">{formatCRC(totalNeto)}</td>
+                  <td className="px-3 py-2 text-right">{formatCRC(totalIncapacidad)}</td>
+                  <td className="px-3 py-2" />
+                  {canWrite && <td className="px-3 py-2" />}
                 </tr>
               </tfoot>
             </table>
