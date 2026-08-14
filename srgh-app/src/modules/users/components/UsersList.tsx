@@ -2,7 +2,17 @@
 
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { KeyRound, Loader2, Pencil, Search, Send, UserCheck, UserPlus, UserX } from 'lucide-react'
+import {
+  KeyRound,
+  Loader2,
+  Pencil,
+  Search,
+  SearchX,
+  Send,
+  UserCheck,
+  UserPlus,
+  UserX,
+} from 'lucide-react'
 import type { CatalogoItem } from '@/modules/employees/types'
 import type { EmpleadoSinUsuario, UsuarioEstado, UsuarioListItem } from '@/modules/users/types'
 import { resendInvitation } from '@/modules/users/actions/resendInvitation'
@@ -13,6 +23,19 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { EmployeesWithoutUserBanner } from './EmployeesWithoutUserBanner'
 import { InviteUserForm } from './InviteUserForm'
 import { EditUserDialog } from './EditUserDialog'
+import { Button } from '@/components/ui/Button'
+import { IconButton } from '@/components/ui/IconButton'
+import {
+  TABLE_HEAD,
+  TABLE_ROW,
+  TABLE_TD,
+  TABLE_TD_NUM,
+  TABLE_TD_STRONG,
+  TABLE_TH,
+  TABLE_TH_RIGHT,
+  TABLE_WRAP,
+} from '@/components/ui/styles'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 const SELECT_CLASSES =
   'rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10'
@@ -123,47 +146,36 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
             <option value="desactivado">Desactivados</option>
           </select>
         </label>
-        <button
-          type="button"
-          onClick={() => setInvite({ open: true })}
-          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-        >
+        <Button onClick={() => setInvite({ open: true })}>
           <UserPlus className="h-3.5 w-3.5" /> Invitar usuario
-        </button>
+        </Button>
       </div>
 
       {usuarios.length === 0 ? (
-        <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-            <KeyRound className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-700">Todavía no hay usuarios</p>
-            <p className="mt-1 max-w-sm text-xs text-slate-500">
-              Invita al primer usuario para darle acceso al sistema.
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          icon={KeyRound}
+          title="Todavía no hay usuarios"
+          description="Invita al primer usuario para darle acceso al sistema."
+        />
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
-          <p className="text-sm font-semibold text-slate-700">Sin resultados</p>
-          <p className="max-w-sm text-xs text-slate-500">
-            Ningún usuario coincide con la búsqueda o el filtro seleccionado.
-          </p>
-        </div>
+        <EmptyState
+          icon={SearchX}
+          title="Sin resultados"
+          description="Ningún usuario coincide con la búsqueda o el filtro seleccionado."
+        />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+        <div className={TABLE_WRAP}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+              <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Usuario</th>
-                  <th className="px-3 py-2 text-left font-semibold">Empleado</th>
-                  <th className="px-3 py-2 text-left font-semibold">Rol</th>
-                  <th className="px-3 py-2 text-left font-semibold">Sucursal</th>
-                  <th className="px-3 py-2 text-left font-semibold">Estado</th>
-                  <th className="px-3 py-2 text-left font-semibold">Último acceso</th>
-                  <th className="px-3 py-2 text-right font-semibold">Acciones</th>
+                  <th className={TABLE_TH}>Usuario</th>
+                  <th className={TABLE_TH}>Empleado</th>
+                  <th className={TABLE_TH}>Rol</th>
+                  <th className={TABLE_TH}>Sucursal</th>
+                  <th className={TABLE_TH}>Estado</th>
+                  <th className={TABLE_TH}>Último acceso</th>
+                  <th className={TABLE_TH_RIGHT}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -173,16 +185,11 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
                   const desactivado = usuario.estado === 'desactivado'
 
                   return (
-                    <tr
-                      key={usuario.usr_id}
-                      className="border-t border-slate-100 transition hover:bg-slate-50/70"
-                    >
-                      <td className="px-3 py-2 font-medium text-slate-800">{usuario.email}</td>
-                      <td className="px-3 py-2 text-slate-600">{usuario.empleado_nombre ?? '—'}</td>
-                      <td className="px-3 py-2 text-slate-600">{usuario.rol_nombre}</td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {usuario.sucursal_nombre ?? 'Todas'}
-                      </td>
+                    <tr key={usuario.usr_id} className={TABLE_ROW}>
+                      <td className={TABLE_TD_STRONG}>{usuario.email}</td>
+                      <td className={TABLE_TD}>{usuario.empleado_nombre ?? '—'}</td>
+                      <td className={TABLE_TD}>{usuario.rol_nombre}</td>
+                      <td className={TABLE_TD}>{usuario.sucursal_nombre ?? 'Todas'}</td>
                       <td className="px-3 py-2">
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.classes}`}
@@ -191,7 +198,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
                           {badge.label}
                         </span>
                       </td>
-                      <td className="px-3 py-2 tabular-nums text-slate-600">
+                      <td className={TABLE_TD_NUM}>
                         {usuario.ultimo_acceso
                           ? FECHA_ACCESO.format(new Date(usuario.ultimo_acceso))
                           : 'Nunca'}
@@ -202,25 +209,22 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
                             <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
                           ) : (
                             <>
-                              <button
-                                type="button"
+                              <IconButton
                                 onClick={() => setEditing(usuario)}
                                 aria-label={`Editar a ${usuario.email}`}
                                 title="Editar rol y vínculo"
-                                className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
-                              </button>
+                              </IconButton>
                               {usuario.estado === 'pendiente' && (
-                                <button
-                                  type="button"
+                                <IconButton
                                   onClick={() => handleResend(usuario)}
                                   aria-label={`Reenviar invitación a ${usuario.email}`}
                                   title="Reenviar invitación"
-                                  className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                                  tone="blue"
                                 >
                                   <Send className="h-3.5 w-3.5" />
-                                </button>
+                                </IconButton>
                               )}
                               <button
                                 type="button"
