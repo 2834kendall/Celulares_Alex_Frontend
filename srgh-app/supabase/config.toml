@@ -68,7 +68,24 @@ schema_paths = []
 enabled = true
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
-sql_paths = ["./seed.sql"]
+#
+# SGRH: migrations/ es 100% DDL, los datos viven aca. Estos seeds NO son data
+# de demo: son configuracion sin la cual la app no arranca (roles, permisos,
+# matriz rol->permiso, buckets) mas los catalogos globales/legales de CR.
+# Se aplican con `supabase db push --include-seed` (ver pnpm supabase:migrate:push).
+#
+# OJO: el push solo corre los seeds si hay MIGRACIONES PENDIENTES. Si cambias
+# un seed sin agregar una migracion, el push responde "Remote database is up to
+# date" y no aplica nada. En ese caso hay que correrlo a mano:
+#   supabase db query --linked -f supabase/seeds/01_sistema/02_permisos.sql
+#
+# Todo lo de aca es convergente (ON CONFLICT DO NOTHING / anti-join): se puede
+# re-ejecutar N veces. Los seeds no tienen ledger, asi que esa es la unica
+# garantia — si agregas un seed nuevo, tiene que cumplirla.
+#
+# ./seeds/99_demo/ queda FUERA a proposito: crea una empresa real de ejemplo y
+# no debe viajar a produccion. Se aplica aparte con `pnpm supabase:seed:demo`.
+sql_paths = ["./seeds/01_sistema/*.sql", "./seeds/02_catalogos/*.sql"]
 
 [db.network_restrictions]
 # Enable management of network restrictions.
@@ -243,10 +260,23 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# SGRH: la plantilla de invitacion NO puede quedar en la de fabrica. El link
+# por defecto ({{ .ConfirmationURL }}) entrega la sesion en el fragmento de la
+# URL, que el servidor nunca ve — y con @supabase/ssr la sesion vive en
+# cookies. Hay que usar token_hash + verifyOtp contra /auth/confirm.
+# Ver el comentario dentro de templates/invite.html.
+#
+# OJO: esto aplica al entorno LOCAL. En un proyecto remoto hay que replicar la
+# plantilla a mano en Dashboard -> Authentication -> Email Templates -> Invite user.
+#
+# OJO con la ruta: content_path se resuelve relativo a la RAIZ DEL PROYECTO
+# (el directorio desde donde se corre el CLI, o sea srgh-app/), NO relativo a
+# supabase/. Es inconsistente con [db.seed] sql_paths, que si es relativo a
+# supabase/. Poner "./templates/invite.html" falla con
+#   Invalid config for auth.email.template.invite.content_path
+[auth.email.template.invite]
+subject = "Activa tu cuenta de SGRH"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
@@ -281,9 +311,21 @@ max_frequency = "5s"
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
-# [auth.hook.custom_access_token]
-# enabled = true
-# uri = "pg-functions://<database>/<schema>/<hook_name>"
+#
+# SGRH: este hook NO es opcional. Es lo que inyecta rol, empresa_id, usr_id,
+# emp_id y permisos dentro de app_metadata del JWT. Sin el, tiene_permiso()
+# devuelve false para todo, la RLS bloquea absolutamente todo y la app queda
+# muerta aunque las migraciones y los seeds hayan corrido perfecto.
+#
+# La funcion se crea en migrations/20260101000400_funciones_auth.sql.
+#
+# OJO: esto solo habilita el hook en el entorno LOCAL. En un proyecto remoto
+# hay que activarlo a mano en Dashboard -> Authentication -> Hooks ->
+# Customize Access Token, apuntando a public.custom_access_token_hook.
+# Es el paso manual que mas veces se olvida al levantar un entorno nuevo.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]

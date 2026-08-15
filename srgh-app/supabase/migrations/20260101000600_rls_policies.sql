@@ -1,253 +1,24 @@
 -- =====================================================================
--- SGRH - SUPABASE MASTER SECURITY & CONFIGURATION SCRIPT
+-- SGRH — Baseline: Row Level Security
 -- =====================================================================
--- Este script es completamente IDEMPOTENTE y seguro de ejecutar
--- múltiples veces tanto en desarrollo como en producción (migraciones).
+-- Tercera y última capa de seguridad del sistema (proxy/middleware →
+-- requirePermission en Server Actions → RLS aquí). Es la única que no se
+-- puede saltar desde el cliente, así que es la que realmente garantiza el
+-- aislamiento multi-empresa.
+--
+-- Dos idioms que se repiten y no son cosméticos:
+--   * (SELECT public.tiene_permiso('X')) — el SELECT envuelve la llamada
+--     para que Postgres la evalúe UNA vez por query en vez de una vez por
+--     fila. Sin él, una tabla con 10k filas hace 10k llamadas.
+--   * La pertenencia a la empresa se resuelve vía sgrh_historial_laboral,
+--     porque sgrh_empleados no tiene columna de empresa.
+--
+-- Todo el archivo es idempotente: la sección 2 borra las policies previas
+-- antes de recrearlas.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- 1. ESQUEMAS Y LIMPIEZA DE OBJETOS DESPLAZADOS/DUPLICADOS
--- ---------------------------------------------------------------------
--- Crear esquema para funciones privadas/administrativas no expuestas por la API PostgREST
-CREATE SCHEMA IF NOT EXISTS sgrh_private;
-
--- Eliminar la función antigua en el esquema público para evitar su exposición a la API REST (PostgREST)
-DROP FUNCTION IF EXISTS public.asignar_permisos(text, text[]);
-
--- Eliminar índice duplicado detectado en public.sgrh_historial_laboral
-DROP INDEX IF EXISTS public.idx_sgrh_his_lab_empleado;
-
--- ---------------------------------------------------------------------
--- 2. FUNCIONES BASE (HELPERS & HOOKS)
--- ---------------------------------------------------------------------
-
--- Hook para inyectar claims personalizados dentro de app_metadata en el JWT de forma segura
-CREATE OR REPLACE FUNCTION public.custom_access_token_hook(event jsonb)
-RETURNS jsonb AS $$
-DECLARE
-  claims         jsonb;
-  v_app_metadata jsonb;
-  v_rol          text;
-  v_empresa      int;
-  v_usr_id       int;
-  v_emp_id       int;
-  v_permisos     text[];
-  v_user_id_raw  text;
-BEGIN
-  -- 1. Asegurar que event no sea nulo
-  IF event IS NULL THEN
-    RETURN '{"claims":{}}'::jsonb;
-  END IF;
-
-  -- 2. Asegurar que event->'claims' sea siempre un objeto JSON válido (nunca null ni escalar)
-  IF event->'claims' IS NULL OR jsonb_typeof(event->'claims') <> 'object' THEN
-    event := jsonb_set(event, '{claims}', '{}'::jsonb);
-  END IF;
-
-  -- 3. Validar user_id de forma segura
-  v_user_id_raw := event->>'user_id';
-  IF v_user_id_raw IS NULL THEN
-    RETURN event;
-  END IF;
-
-  -- 4. Bloque seguro para evitar caídas catastróficas en el login
-  BEGIN
-    -- Obtener usr_id y emp_id desde usr_auth_id
-    SELECT usr_id, usr_empleado_id
-    INTO v_usr_id, v_emp_id
-    FROM public.sgrh_usuarios
-    WHERE usr_auth_id = v_user_id_raw::uuid;
-
-    -- Si el usuario no existe en la base de datos de negocio, retornar sin claims extras
-    IF v_usr_id IS NULL THEN
-      RETURN event;
-    END IF;
-
-    -- Rol y empresa activos del usuario
-    SELECT r.rol_codigo, uer.uer_empresa_id
-    INTO v_rol, v_empresa
-    FROM public.sgrh_usuarios_empresa_rol uer
-    JOIN public.sgrh_cat_roles r ON r.rol_id = uer.uer_rol_id
-    WHERE uer.uer_usuario_id = v_usr_id
-      AND uer.uer_activo = true
-    LIMIT 1;
-
-    -- Lista de códigos de permisos asignados al rol activo
-    SELECT ARRAY_AGG(p.per_codigo)
-    INTO v_permisos
-    FROM public.sgrh_rol_permisos rp
-    JOIN public.sgrh_cat_permisos p ON p.per_id = rp.rpe_permiso_id
-    JOIN public.sgrh_cat_roles r    ON r.rol_id = rp.rpe_rol_id
-    WHERE r.rol_codigo = v_rol;
-
-    claims := event->'claims';
-    
-    -- Obtener app_metadata existente u objeto vacío
-    v_app_metadata := coalesce(claims->'app_metadata', '{}'::jsonb);
-    
-    -- Guardar claims de negocio dentro de app_metadata para alineación con session.user en Next.js
-    -- Se protege cada to_jsonb con coalesce para evitar que retorne NULL de base de datos (lo que anularía todo jsonb_set)
-    v_app_metadata := jsonb_set(v_app_metadata, '{usr_id}',
-                        coalesce(to_jsonb(v_usr_id), 'null'::jsonb));
-    v_app_metadata := jsonb_set(v_app_metadata, '{emp_id}',
-                        coalesce(to_jsonb(v_emp_id), 'null'::jsonb));
-    v_app_metadata := jsonb_set(v_app_metadata, '{rol}',
-                        to_jsonb(coalesce(v_rol, 'SIN_ROL')));
-    v_app_metadata := jsonb_set(v_app_metadata, '{empresa_id}',
-                        coalesce(to_jsonb(v_empresa), 'null'::jsonb));
-    v_app_metadata := jsonb_set(v_app_metadata, '{permisos}',
-                        to_jsonb(coalesce(v_permisos, '{}'::text[])));
-    
-    claims := jsonb_set(claims, '{app_metadata}', v_app_metadata);
-
-    RETURN jsonb_set(event, '{claims}', claims);
-  EXCEPTION WHEN OTHERS THEN
-    -- En caso de error imprevisto, retornar el evento original intacto para no bloquear el inicio de sesión
-    RETURN event;
-  END;
-END;
-$$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public;
-
--- Helpers optimizados (SECURITY INVOKER) para leer claims del JWT en las policies RLS
-CREATE OR REPLACE FUNCTION public.get_rol()
-RETURNS text AS $$
-  SELECT (auth.jwt() -> 'app_metadata' ->> 'rol');
-$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
-
-CREATE OR REPLACE FUNCTION public.get_empresa_id()
-RETURNS int AS $$
-  SELECT (auth.jwt() -> 'app_metadata' ->> 'empresa_id')::int;
-$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
-
-CREATE OR REPLACE FUNCTION public.get_usr_id()
-RETURNS int AS $$
-  SELECT (auth.jwt() -> 'app_metadata' ->> 'usr_id')::int;
-$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
-
-CREATE OR REPLACE FUNCTION public.get_emp_id()
-RETURNS int AS $$
-  SELECT (auth.jwt() -> 'app_metadata' ->> 'emp_id')::int;
-$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
-
--- Validador de permisos en memoria de JWT (Optimizada y segura ante nulos o no-arrays)
-CREATE OR REPLACE FUNCTION public.tiene_permiso(p_codigo text)
-RETURNS boolean AS $$
-  SELECT coalesce(
-    (auth.jwt() -> 'app_metadata' -> 'permisos') @> to_jsonb(p_codigo),
-    false
-  );
-$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
-
--- Helper administrativo privado para asignar permisos
-CREATE OR REPLACE FUNCTION sgrh_private.asignar_permisos(p_rol_codigo text, p_permisos text[])
-RETURNS void AS $$
-  INSERT INTO public.sgrh_rol_permisos (rpe_rol_id, rpe_permiso_id)
-  SELECT r.rol_id, p.per_id
-  FROM public.sgrh_cat_roles r
-  CROSS JOIN public.sgrh_cat_permisos p
-  WHERE r.rol_codigo = p_rol_codigo
-    AND p.per_codigo = ANY(p_permisos)
-  ON CONFLICT DO NOTHING;
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
-
--- Trigger para autocreación de usuarios vinculados a Auth (Manejo seguro de conflictos de correo)
-CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.sgrh_usuarios (usr_auth_id, usr_email, usr_password_hash, usr_activo)
-  VALUES (NEW.id, NEW.email, '', true)
-  ON CONFLICT (usr_email) DO UPDATE
-  SET usr_auth_id = EXCLUDED.usr_auth_id;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
--- ---------------------------------------------------------------------
--- 3. ASOCIAR TRIGGERS E INTEGRACIONES
--- ---------------------------------------------------------------------
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
-
--- ---------------------------------------------------------------------
--- 4. GRANTS Y ACCESOS DE SISTEMA
--- ---------------------------------------------------------------------
--- Otorgar accesos al servicio de autenticación de Supabase (Admin Hook)
-GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
-
-GRANT
-SELECT ON public.sgrh_usuarios TO supabase_auth_admin;
-
-GRANT
-SELECT ON public.sgrh_usuarios_empresa_rol TO supabase_auth_admin;
-
-GRANT
-SELECT ON public.sgrh_cat_roles TO supabase_auth_admin;
-
-GRANT
-SELECT ON public.sgrh_rol_permisos TO supabase_auth_admin;
-
-GRANT
-SELECT ON public.sgrh_cat_permisos TO supabase_auth_admin;
-
--- Revocar permisos de ejecución por defecto a PUBLIC de manera explícita
-REVOKE
-EXECUTE ON FUNCTION public.handle_new_auth_user ()
-FROM PUBLIC, anon, authenticated;
-
-REVOKE
-EXECUTE ON FUNCTION public.custom_access_token_hook (jsonb)
-FROM PUBLIC, anon, authenticated;
-
-REVOKE
-EXECUTE ON FUNCTION public.get_rol ()
-FROM PUBLIC, anon, authenticated;
-
-REVOKE
-EXECUTE ON FUNCTION public.get_empresa_id ()
-FROM PUBLIC, anon, authenticated;
-
-REVOKE
-EXECUTE ON FUNCTION public.get_usr_id ()
-FROM PUBLIC, anon, authenticated;
-
-REVOKE
-EXECUTE ON FUNCTION public.get_emp_id ()
-FROM PUBLIC, anon, authenticated;
-
-REVOKE
-EXECUTE ON FUNCTION public.tiene_permiso (text)
-FROM PUBLIC, anon, authenticated;
-
--- Restituir a authenticated el acceso a los helpers que usan las policies RLS
-GRANT
-EXECUTE ON FUNCTION public.get_rol ()
-TO authenticated;
-
-GRANT
-EXECUTE ON FUNCTION public.get_empresa_id ()
-TO authenticated;
-
-GRANT
-EXECUTE ON FUNCTION public.get_usr_id ()
-TO authenticated;
-
-GRANT
-EXECUTE ON FUNCTION public.get_emp_id ()
-TO authenticated;
-
-GRANT
-EXECUTE ON FUNCTION public.tiene_permiso (text)
-TO authenticated;
-
-REVOKE
-EXECUTE ON FUNCTION sgrh_private.asignar_permisos (text, text [])
-FROM PUBLIC, anon, authenticated;
-
--- ---------------------------------------------------------------------
--- 5. HABILITAR ROW LEVEL SECURITY (RLS)
+-- 1. HABILITAR ROW LEVEL SECURITY (RLS)
 -- ---------------------------------------------------------------------
 -- Habilita RLS de forma dinámica en todas las tablas con prefijo sgrh_
 DO $$
@@ -263,7 +34,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------
--- 6. LIMPIEZA DE POLÍTICAS PREVIAS (Para Re-ejecución)
+-- 2. LIMPIEZA DE POLÍTICAS PREVIAS (Para Re-ejecución)
 -- ---------------------------------------------------------------------
 DO $$
 DECLARE
@@ -340,7 +111,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------
--- 7. CREACIÓN DE NUEVAS POLÍTICAS OPTIMIZADAS
+-- 3. CREACIÓN DE NUEVAS POLÍTICAS OPTIMIZADAS
 -- ---------------------------------------------------------------------
 
 -- Catálogos Globales (Lectura autenticada, Escritura administrador)
@@ -478,8 +249,16 @@ CREATE POLICY "sucursales_delete" ON public.sgrh_sucursales FOR DELETE TO authen
 );
 
 -- Empleados (Lectura de sucursal/empresa o datos propios)
+-- El expediente se lee a nivel EMPRESA, no sucursal, a propósito: una persona
+-- no le pertenece a una sucursal, y un gerente necesita poder leer el nombre y
+-- el contrato de alguien que fue trasladado para interpretar los registros que
+-- esa persona dejó en su sucursal. El scoping por sucursal vive en las tablas
+-- operativas, sobre el registro y no sobre la persona.
+--
+-- La excepción es el kiosco, que sí va acotado: ver la tercera rama.
 CREATE POLICY "empleados_select" ON public.sgrh_empleados FOR
 SELECT TO authenticated USING (
+        -- 1. Lectura general del expediente, dentro de la empresa.
         (
             (
                 SELECT public.tiene_permiso ('EMPLEADOS_READ')
@@ -493,8 +272,27 @@ SELECT TO authenticated USING (
                     )
             )
         )
+        -- 2. Autoservicio: el empleado siempre se ve a sí mismo.
         OR emp_id = (
             SELECT public.get_emp_id ()
+        )
+        -- 3. Kiosco: SOLO empleados con asignación ACTIVA en su propia
+        --    sucursal. Es un dispositivo compartido y físicamente expuesto,
+        --    así que no se le da la empresa entera ni el historial cerrado.
+        OR (
+            (
+                SELECT public.tiene_permiso ('ASISTENCIA_KIOSCO')
+            )
+            AND emp_id IN (
+                SELECT lab_empleado_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+                    AND lab_fecha_fin IS NULL
+                    AND (SELECT public.sucursal_visible (lab_sucursal_id))
+            )
         )
     );
 
@@ -564,6 +362,7 @@ SELECT TO authenticated USING (
                     lab_empresa_id = (
                         SELECT public.get_empresa_id ()
                     )
+                    AND (SELECT public.sucursal_visible (lab_sucursal_id))
             )
         )
         OR aus_historial_laboral_id IN (
@@ -576,9 +375,14 @@ SELECT TO authenticated USING (
         )
     );
 
+-- Mismo arreglo que en marcas_insert: la rama de AUSENCIAS_APPROVE validaba
+-- solo el permiso, así que permitía crear una ausencia contra el historial de
+-- otra empresa. Ahora va acotada a empresa + sucursal visible.
 CREATE POLICY "ausencias_insert" ON public.sgrh_ausencias FOR INSERT TO authenticated
 WITH
     CHECK (
+        -- 1. El empleado solicitando su propia ausencia (no necesita permiso:
+        --    el rol EMPLEADO no tiene ninguno a propósito).
         (
             aus_historial_laboral_id IN (
                 SELECT lab_id
@@ -592,8 +396,20 @@ WITH
                     )
             )
         )
+        -- 2. Quien aprueba, registrando por un empleado de su sucursal.
         OR (
-            SELECT public.tiene_permiso ('AUSENCIAS_APPROVE')
+            (
+                SELECT public.tiene_permiso ('AUSENCIAS_APPROVE')
+            )
+            AND aus_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+                    AND (SELECT public.sucursal_visible (lab_sucursal_id))
+            )
         )
     );
 
@@ -610,6 +426,7 @@ FOR UPDATE
                 lab_empresa_id = (
                     SELECT public.get_empresa_id ()
                 )
+                    AND (SELECT public.sucursal_visible (lab_sucursal_id))
         )
     )
 WITH
@@ -624,6 +441,7 @@ WITH
                 lab_empresa_id = (
                     SELECT public.get_empresa_id ()
                 )
+                    AND (SELECT public.sucursal_visible (lab_sucursal_id))
         )
     );
 
@@ -638,6 +456,7 @@ CREATE POLICY "ausencias_delete" ON public.sgrh_ausencias FOR DELETE TO authenti
             lab_empresa_id = (
                 SELECT public.get_empresa_id ()
             )
+                    AND (SELECT public.sucursal_visible (lab_sucursal_id))
     )
 );
 
@@ -648,14 +467,7 @@ SELECT TO authenticated USING (
             (
                 SELECT public.tiene_permiso ('ASISTENCIA_READ')
             )
-            AND mar_sucursal_id IN (
-                SELECT suc_id
-                FROM public.sgrh_sucursales
-                WHERE
-                    suc_empresa_id = (
-                        SELECT public.get_empresa_id ()
-                    )
-            )
+            AND (SELECT public.sucursal_visible(mar_sucursal_id))
         )
         OR mar_historial_laboral_id IN (
             SELECT lab_id
@@ -667,9 +479,16 @@ SELECT TO authenticated USING (
         )
     );
 
+-- Dos caminos para registrar una marca, y los dos acotados al inquilino.
+--
+-- La rama de ASISTENCIA_WRITE antes NO validaba nada más que el permiso: se
+-- podía insertar una marca contra el mar_historial_laboral_id de un empleado
+-- de OTRA empresa llamando a PostgREST directo. Ahora exige que la marca caiga
+-- en una sucursal visible y que el historial sea de la propia empresa.
 CREATE POLICY "marcas_insert" ON public.sgrh_marcas_asistencia FOR INSERT TO authenticated
 WITH
     CHECK (
+        -- 1. El propio empleado marcando para sí mismo (no necesita permiso).
         (
             mar_historial_laboral_id IN (
                 SELECT lab_id
@@ -683,8 +502,20 @@ WITH
                     )
             )
         )
+        -- 2. Kiosco o supervisor registrando por otro, dentro de su sucursal.
         OR (
-            SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
+            (
+                SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
+            )
+            AND (SELECT public.sucursal_visible (mar_sucursal_id))
+            AND mar_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
         )
     );
 
@@ -694,42 +525,21 @@ FOR UPDATE
         (
             SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
         )
-        AND mar_sucursal_id IN (
-            SELECT suc_id
-            FROM public.sgrh_sucursales
-            WHERE
-                suc_empresa_id = (
-                    SELECT public.get_empresa_id ()
-                )
-        )
+        AND (SELECT public.sucursal_visible(mar_sucursal_id))
     )
 WITH
     CHECK (
         (
             SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
         )
-        AND mar_sucursal_id IN (
-            SELECT suc_id
-            FROM public.sgrh_sucursales
-            WHERE
-                suc_empresa_id = (
-                    SELECT public.get_empresa_id ()
-                )
-        )
+        AND (SELECT public.sucursal_visible(mar_sucursal_id))
     );
 
 CREATE POLICY "marcas_delete" ON public.sgrh_marcas_asistencia FOR DELETE TO authenticated USING (
     (
         SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
     )
-    AND mar_sucursal_id IN (
-        SELECT suc_id
-        FROM public.sgrh_sucursales
-        WHERE
-            suc_empresa_id = (
-                SELECT public.get_empresa_id ()
-            )
-    )
+    AND (SELECT public.sucursal_visible(mar_sucursal_id))
 );
 
 -- Nómina Periodo (Segregando FOR ALL a políticas individuales)
@@ -738,6 +548,7 @@ SELECT TO authenticated USING (
         npe_empresa_id = (
             SELECT public.get_empresa_id ()
         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
         AND (
             SELECT public.tiene_permiso ('NOMINA_READ')
         )
@@ -749,6 +560,7 @@ WITH
         npe_empresa_id = (
             SELECT public.get_empresa_id ()
         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
         AND (
             SELECT public.tiene_permiso ('NOMINA_WRITE')
         )
@@ -760,6 +572,7 @@ FOR UPDATE
         npe_empresa_id = (
             SELECT public.get_empresa_id ()
         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
         AND (
             SELECT public.tiene_permiso ('NOMINA_WRITE')
         )
@@ -769,6 +582,7 @@ WITH
         npe_empresa_id = (
             SELECT public.get_empresa_id ()
         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
         AND (
             SELECT public.tiene_permiso ('NOMINA_WRITE')
         )
@@ -778,6 +592,7 @@ CREATE POLICY "nomina_periodo_delete" ON public.sgrh_nomina_periodo FOR DELETE T
     npe_empresa_id = (
         SELECT public.get_empresa_id ()
     )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
     AND (
         SELECT public.tiene_permiso ('NOMINA_WRITE')
     )
@@ -797,6 +612,7 @@ SELECT TO authenticated USING (
                     npe_empresa_id = (
                         SELECT public.get_empresa_id ()
                     )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
             )
         )
         OR ndt_historial_laboral_id IN (
@@ -822,6 +638,7 @@ WITH
                 npe_empresa_id = (
                     SELECT public.get_empresa_id ()
                 )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
         )
     );
 
@@ -838,6 +655,7 @@ FOR UPDATE
                 npe_empresa_id = (
                     SELECT public.get_empresa_id ()
                 )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
         )
     )
 WITH
@@ -852,6 +670,7 @@ WITH
                 npe_empresa_id = (
                     SELECT public.get_empresa_id ()
                 )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
         )
     );
 
@@ -866,6 +685,7 @@ CREATE POLICY "nomina_detalle_delete" ON public.sgrh_nomina_detalle FOR DELETE T
             npe_empresa_id = (
                 SELECT public.get_empresa_id ()
             )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
     )
 );
 
@@ -919,16 +739,36 @@ CREATE POLICY "usuarios_delete" ON public.sgrh_usuarios FOR DELETE TO authentica
 );
 
 -- Usuarios Empresa Rol (Asociación Tenant-Rol)
+-- ─────────────────────────────────────────────────────────────────────
+-- sgrh_usuarios_empresa_rol es la tabla que decide QUIÉN ES QUIÉN: una fila
+-- acá es un rol efectivo en una empresa. Es la superficie de escalada de
+-- privilegios del sistema, y por eso las cuatro policies exigen
+-- uer_empresa_id = get_empresa_id() SIN excepción.
+--
+-- Sin ese chequeo (como estaba antes), cualquiera con USUARIOS_WRITE podía
+-- insertarse una fila dándose el rol que quisiera en la empresa que quisiera
+-- llamando a PostgREST directo. Las Server Actions sí filtraban, pero la RLS
+-- es justamente la capa que no se puede saltar desde el cliente.
+-- ─────────────────────────────────────────────────────────────────────
 CREATE POLICY "uer_select" ON public.sgrh_usuarios_empresa_rol FOR
 SELECT TO authenticated USING (
+        -- El usuario siempre ve su propia asignación (la necesita para saber
+        -- quién es); el resto solo dentro de su empresa.
         uer_usuario_id = (
             SELECT public.get_usr_id ()
         )
         OR (
-            SELECT public.tiene_permiso ('USUARIOS_WRITE')
-        )
-        OR (
-            SELECT public.tiene_permiso ('ROLES_WRITE')
+            (
+                (
+                    SELECT public.tiene_permiso ('USUARIOS_WRITE')
+                )
+                OR (
+                    SELECT public.tiene_permiso ('ROLES_WRITE')
+                )
+            )
+            AND uer_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
         )
     );
 
@@ -936,39 +776,72 @@ CREATE POLICY "uer_insert" ON public.sgrh_usuarios_empresa_rol FOR INSERT TO aut
 WITH
     CHECK (
         (
-            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+            (
+                SELECT public.tiene_permiso ('USUARIOS_WRITE')
+            )
+            OR (
+                SELECT public.tiene_permiso ('ROLES_WRITE')
+            )
         )
-        OR (
-            SELECT public.tiene_permiso ('ROLES_WRITE')
+        AND uer_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        -- La sucursal, si viene, tiene que ser de la misma empresa. NULL es
+        -- válido y significa "opera a nivel empresa" (ver get_sucursal_id).
+        AND (
+            uer_sucursal_id IS NULL
+            OR (SELECT public.sucursal_visible (uer_sucursal_id))
         )
     );
 
+-- USING acota qué filas se pueden tocar; WITH CHECK acota en qué se pueden
+-- convertir. Las dos son necesarias: sin WITH CHECK se podría tomar una fila
+-- propia y reescribirle uer_empresa_id apuntando a otra empresa.
 CREATE POLICY "uer_update" ON public.sgrh_usuarios_empresa_rol
 FOR UPDATE
     TO authenticated USING (
         (
-            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+            (
+                SELECT public.tiene_permiso ('USUARIOS_WRITE')
+            )
+            OR (
+                SELECT public.tiene_permiso ('ROLES_WRITE')
+            )
         )
-        OR (
-            SELECT public.tiene_permiso ('ROLES_WRITE')
+        AND uer_empresa_id = (
+            SELECT public.get_empresa_id ()
         )
     )
 WITH
     CHECK (
         (
-            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+            (
+                SELECT public.tiene_permiso ('USUARIOS_WRITE')
+            )
+            OR (
+                SELECT public.tiene_permiso ('ROLES_WRITE')
+            )
         )
-        OR (
-            SELECT public.tiene_permiso ('ROLES_WRITE')
+        AND uer_empresa_id = (
+            SELECT public.get_empresa_id ()
+        )
+        AND (
+            uer_sucursal_id IS NULL
+            OR (SELECT public.sucursal_visible (uer_sucursal_id))
         )
     );
 
 CREATE POLICY "uer_delete" ON public.sgrh_usuarios_empresa_rol FOR DELETE TO authenticated USING (
     (
-        SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        (
+            SELECT public.tiene_permiso ('USUARIOS_WRITE')
+        )
+        OR (
+            SELECT public.tiene_permiso ('ROLES_WRITE')
+        )
     )
-    OR (
-        SELECT public.tiene_permiso ('ROLES_WRITE')
+    AND uer_empresa_id = (
+        SELECT public.get_empresa_id ()
     )
 );
 
@@ -1236,14 +1109,7 @@ SELECT TO authenticated USING (
             (
                 SELECT public.tiene_permiso ('ASISTENCIA_READ')
             )
-            AND prg_sucursal_id IN (
-                SELECT suc_id
-                FROM public.sgrh_sucursales
-                WHERE
-                    suc_empresa_id = (
-                        SELECT public.get_empresa_id ()
-                    )
-            )
+            AND (SELECT public.sucursal_visible(prg_sucursal_id))
         )
     );
 
@@ -1253,14 +1119,7 @@ WITH
         (
             SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
         )
-        AND prg_sucursal_id IN (
-            SELECT suc_id
-            FROM public.sgrh_sucursales
-            WHERE
-                suc_empresa_id = (
-                    SELECT public.get_empresa_id ()
-                )
-        )
+        AND (SELECT public.sucursal_visible(prg_sucursal_id))
     );
 
 CREATE POLICY "programacion_update" ON public.sgrh_programacion_semanal
@@ -1269,42 +1128,21 @@ FOR UPDATE
         (
             SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
         )
-        AND prg_sucursal_id IN (
-            SELECT suc_id
-            FROM public.sgrh_sucursales
-            WHERE
-                suc_empresa_id = (
-                    SELECT public.get_empresa_id ()
-                )
-        )
+        AND (SELECT public.sucursal_visible(prg_sucursal_id))
     )
 WITH
     CHECK (
         (
             SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
         )
-        AND prg_sucursal_id IN (
-            SELECT suc_id
-            FROM public.sgrh_sucursales
-            WHERE
-                suc_empresa_id = (
-                    SELECT public.get_empresa_id ()
-                )
-        )
+        AND (SELECT public.sucursal_visible(prg_sucursal_id))
     );
 
 CREATE POLICY "programacion_delete" ON public.sgrh_programacion_semanal FOR DELETE TO authenticated USING (
     (
         SELECT public.tiene_permiso ('ASISTENCIA_WRITE')
     )
-    AND prg_sucursal_id IN (
-        SELECT suc_id
-        FROM public.sgrh_sucursales
-        WHERE
-            suc_empresa_id = (
-                SELECT public.get_empresa_id ()
-            )
-    )
+    AND (SELECT public.sucursal_visible(prg_sucursal_id))
 );
 
 -- Comprobantes de Pago
@@ -1338,6 +1176,7 @@ SELECT TO authenticated USING (
                             npe_empresa_id = (
                                 SELECT public.get_empresa_id ()
                             )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                     )
             )
         )
@@ -1360,6 +1199,7 @@ WITH
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     );
@@ -1381,6 +1221,7 @@ FOR UPDATE
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     )
@@ -1400,6 +1241,7 @@ WITH
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     );
@@ -1419,6 +1261,7 @@ CREATE POLICY "comprobantes_delete" ON public.sgrh_comprobantes_pago FOR DELETE 
                     npe_empresa_id = (
                         SELECT public.get_empresa_id ()
                     )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
             )
     )
 );
@@ -1717,6 +1560,7 @@ SELECT TO authenticated USING (
                             npe_empresa_id = (
                                 SELECT public.get_empresa_id ()
                             )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                     )
             )
         )
@@ -1739,6 +1583,7 @@ WITH
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     );
@@ -1760,6 +1605,7 @@ FOR UPDATE
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     )
@@ -1779,6 +1625,7 @@ WITH
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     );
@@ -1798,6 +1645,7 @@ CREATE POLICY "nomina_lineas_ingreso_delete" ON public.sgrh_nomina_linea_ingreso
                     npe_empresa_id = (
                         SELECT public.get_empresa_id ()
                     )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
             )
     )
 );
@@ -1833,6 +1681,7 @@ SELECT TO authenticated USING (
                             npe_empresa_id = (
                                 SELECT public.get_empresa_id ()
                             )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                     )
             )
         )
@@ -1855,6 +1704,7 @@ WITH
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     );
@@ -1876,6 +1726,7 @@ FOR UPDATE
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     )
@@ -1895,6 +1746,7 @@ WITH
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     );
@@ -1914,6 +1766,7 @@ CREATE POLICY "nomina_lineas_deduccion_delete" ON public.sgrh_nomina_linea_deduc
                     npe_empresa_id = (
                         SELECT public.get_empresa_id ()
                     )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
             )
     )
 );
@@ -1949,6 +1802,7 @@ SELECT TO authenticated USING (
                             npe_empresa_id = (
                                 SELECT public.get_empresa_id ()
                             )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                     )
             )
         )
@@ -1971,6 +1825,7 @@ WITH
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     );
@@ -1992,6 +1847,7 @@ FOR UPDATE
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     )
@@ -2011,6 +1867,7 @@ WITH
                         npe_empresa_id = (
                             SELECT public.get_empresa_id ()
                         )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
                 )
         )
     );
@@ -2030,6 +1887,7 @@ CREATE POLICY "nomina_lineas_patronal_delete" ON public.sgrh_nomina_linea_patron
                     npe_empresa_id = (
                         SELECT public.get_empresa_id ()
                     )
+                    AND (SELECT public.sucursal_visible (npe_sucursal_id))
             )
     )
 );
@@ -2403,5 +2261,530 @@ CREATE POLICY "notificaciones_delete" ON public.sgrh_notificaciones FOR DELETE T
     )
     OR ntf_empleado_id = (
         SELECT public.get_emp_id ()
+    )
+);
+
+-- ---------------------------------------------------------------------
+-- 4. POLÍTICAS DE TABLAS AÑADIDAS DESPUÉS DEL DISEÑO ORIGINAL
+-- ---------------------------------------------------------------------
+-- Estas tablas nacieron en migraciones posteriores al script maestro, así
+-- que sus policies vivían dispersas en cada una. Aquí quedan consolidadas.
+--
+-- Ojo con la sección 2: su DROP dinámico solo alcanza las policies creadas
+-- en la sección 3, así que estas se recrean con su propio DROP explícito.
+
+-- ─── sgrh_empleado_datos_pago ───────────────────────────────────────
+
+DROP POLICY IF EXISTS "datos_pago_select" ON public.sgrh_empleado_datos_pago;
+CREATE POLICY "datos_pago_select" ON public.sgrh_empleado_datos_pago
+  FOR SELECT TO authenticated
+  USING (
+    edp_empleado_id = (SELECT public.get_emp_id()) OR
+    (
+      ((SELECT public.tiene_permiso('NOMINA_READ')) OR (SELECT public.tiene_permiso('EMPLEADOS_WRITE')))
+      AND edp_empleado_id IN (
+        SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+        WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+      )
+    )
+  );
+
+DROP POLICY IF EXISTS "datos_pago_insert" ON public.sgrh_empleado_datos_pago;
+CREATE POLICY "datos_pago_insert" ON public.sgrh_empleado_datos_pago
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    (SELECT public.tiene_permiso('EMPLEADOS_WRITE')) AND edp_empleado_id IN (
+      SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+    )
+  );
+
+DROP POLICY IF EXISTS "datos_pago_update" ON public.sgrh_empleado_datos_pago;
+CREATE POLICY "datos_pago_update" ON public.sgrh_empleado_datos_pago
+  FOR UPDATE TO authenticated
+  USING (
+    (SELECT public.tiene_permiso('EMPLEADOS_WRITE')) AND edp_empleado_id IN (
+      SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+    )
+  )
+  WITH CHECK (
+    (SELECT public.tiene_permiso('EMPLEADOS_WRITE')) AND edp_empleado_id IN (
+      SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+    )
+  );
+
+DROP POLICY IF EXISTS "datos_pago_delete" ON public.sgrh_empleado_datos_pago;
+CREATE POLICY "datos_pago_delete" ON public.sgrh_empleado_datos_pago
+  FOR DELETE TO authenticated
+  USING (
+    (SELECT public.tiene_permiso('EMPLEADOS_WRITE')) AND edp_empleado_id IN (
+      SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+      WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+    )
+  );
+
+-- ─── 3. Migración de datos existentes ─────────────────────────────────────────
+-- Guardada tras un chequeo de existencia de columna para que la migración sea
+-- re-ejecutable después del DROP (idempotencia).
+
+
+-- ─── sgrh_cat_bancos (catalogo global) ───────────────────────────────────────
+
+DROP POLICY IF EXISTS "cat_select" ON public.sgrh_cat_bancos;
+CREATE POLICY "cat_select" ON public.sgrh_cat_bancos
+  FOR SELECT TO authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "cat_insert" ON public.sgrh_cat_bancos;
+CREATE POLICY "cat_insert" ON public.sgrh_cat_bancos
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+
+DROP POLICY IF EXISTS "cat_update" ON public.sgrh_cat_bancos;
+CREATE POLICY "cat_update" ON public.sgrh_cat_bancos
+  FOR UPDATE TO authenticated
+  USING ((SELECT public.tiene_permiso('CATALOGOS_WRITE')))
+  WITH CHECK ((SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+
+DROP POLICY IF EXISTS "cat_delete" ON public.sgrh_cat_bancos;
+CREATE POLICY "cat_delete" ON public.sgrh_cat_bancos
+  FOR DELETE TO authenticated
+  USING ((SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+
+-- Seed: un solo nombre estándar por entidad + su código IBAN. Solo entidades
+
+-- ─── sgrh_direcciones ───────────────────────────────────────
+
+-- Una dirección es visible si la referencia una entidad que el usuario ya puede
+-- ver: su propio expediente, un empleado de su empresa, su empresa o una de sus
+-- sucursales. El chequeo multi-tenant va explícito vía sgrh_historial_laboral
+-- (mismo idiom que empleados_select) en vez de apoyarse en la RLS anidada de las
+-- tablas referenciadas.
+
+ALTER TABLE public.sgrh_direcciones ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "direcciones_select" ON public.sgrh_direcciones;
+CREATE POLICY "direcciones_select" ON public.sgrh_direcciones
+  FOR SELECT TO authenticated
+  USING (
+    dir_id IN (
+      SELECT emp_direccion_id FROM public.sgrh_empleados
+      WHERE emp_direccion_id IS NOT NULL AND (
+        emp_id = (SELECT public.get_emp_id())
+        OR (
+          (SELECT public.tiene_permiso('EMPLEADOS_READ'))
+          AND emp_id IN (
+            SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+            WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+          )
+        )
+      )
+    )
+    OR dir_id IN (
+      SELECT org_direccion_id FROM public.sgrh_empresas
+      WHERE org_direccion_id IS NOT NULL
+        AND org_id = (SELECT public.get_empresa_id())
+    )
+    OR dir_id IN (
+      SELECT suc_direccion_id FROM public.sgrh_sucursales
+      WHERE suc_direccion_id IS NOT NULL
+        AND suc_empresa_id = (SELECT public.get_empresa_id())
+    )
+  );
+
+-- En el INSERT la fila todavía no la referencia nadie, así que no hay pertenencia
+-- que verificar: se gatea solo por permiso. Mismo compromiso consciente que
+-- empleados_insert. El alta real pasa por la RPC (SECURITY DEFINER), donde la
+-- dirección y el empleado se crean en la misma transacción.
+DROP POLICY IF EXISTS "direcciones_insert" ON public.sgrh_direcciones;
+CREATE POLICY "direcciones_insert" ON public.sgrh_direcciones
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+    OR (SELECT public.tiene_permiso('EMPRESAS_WRITE'))
+  );
+
+DROP POLICY IF EXISTS "direcciones_update" ON public.sgrh_direcciones;
+CREATE POLICY "direcciones_update" ON public.sgrh_direcciones
+  FOR UPDATE TO authenticated
+  USING (
+    (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+    AND dir_id IN (
+      SELECT emp_direccion_id FROM public.sgrh_empleados
+      WHERE emp_direccion_id IS NOT NULL
+        AND emp_id IN (
+          SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+          WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+        )
+    )
+  )
+  WITH CHECK (
+    (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+    AND dir_id IN (
+      SELECT emp_direccion_id FROM public.sgrh_empleados
+      WHERE emp_direccion_id IS NOT NULL
+        AND emp_id IN (
+          SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+          WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "direcciones_delete" ON public.sgrh_direcciones;
+CREATE POLICY "direcciones_delete" ON public.sgrh_direcciones
+  FOR DELETE TO authenticated
+  USING (
+    (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+    AND dir_id IN (
+      SELECT emp_direccion_id FROM public.sgrh_empleados
+      WHERE emp_direccion_id IS NOT NULL
+        AND emp_id IN (
+          SELECT lab_empleado_id FROM public.sgrh_historial_laboral
+          WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+        )
+    )
+  );
+
+-- ─── sgrh_biometria_empleado / sgrh_biometria_auditoria ───────────────────────────────────────
+
+-- Lectura: el kiosco (ASISTENCIA_WRITE) necesita bajar los vectores de su
+-- empresa para comparar en el Server Action; el gerente (EMPLEADOS_WRITE)
+-- los necesita para saber quien esta enrolado.
+DROP POLICY IF EXISTS "biometria_select" ON public.sgrh_biometria_empleado;
+CREATE POLICY "biometria_select" ON public.sgrh_biometria_empleado
+  FOR SELECT TO authenticated
+  USING (
+    bio_empresa_id = (SELECT public.get_empresa_id())
+    AND (
+      (SELECT public.tiene_permiso('ASISTENCIA_WRITE'))
+      OR (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+    )
+    -- Los vectores faciales son el dato más sensible de la tabla: un usuario
+    -- adscrito a una sucursal (kiosco, gerente) solo lee los de SU personal
+    -- activo. Sin esto, un kiosco podía descargarse la biometría completa de
+    -- la empresa. Quien opera a nivel empresa (ADMIN) no queda restringido.
+    AND (
+      (SELECT public.get_sucursal_id()) IS NULL
+      OR bio_empleado_id IN (
+        SELECT lab_empleado_id
+        FROM public.sgrh_historial_laboral
+        WHERE lab_empresa_id = (SELECT public.get_empresa_id())
+          AND lab_fecha_fin IS NULL
+          AND lab_sucursal_id = (SELECT public.get_sucursal_id())
+      )
+    )
+  );
+
+-- Escritura: SOLO el enrolamiento del gerente. El kiosco nunca escribe
+-- vectores (solo los lee para comparar).
+DROP POLICY IF EXISTS "biometria_insert" ON public.sgrh_biometria_empleado;
+CREATE POLICY "biometria_insert" ON public.sgrh_biometria_empleado
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bio_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+  );
+
+DROP POLICY IF EXISTS "biometria_update" ON public.sgrh_biometria_empleado;
+CREATE POLICY "biometria_update" ON public.sgrh_biometria_empleado
+  FOR UPDATE TO authenticated
+  USING (
+    bio_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+  )
+  WITH CHECK (
+    bio_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+  );
+
+DROP POLICY IF EXISTS "biometria_delete" ON public.sgrh_biometria_empleado;
+CREATE POLICY "biometria_delete" ON public.sgrh_biometria_empleado
+  FOR DELETE TO authenticated
+  USING (
+    bio_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('EMPLEADOS_WRITE'))
+  );
+
+-- ─── 2. Auditoria de rechazos faciales ─────────────────────────────────────
+-- Solo se registran los intentos DENIED (distancia > 0.7: persona diferente),
+-- que es lo que exige auditoria segun el diseño. bia_mejor_empleado_id es el
+-- candidato mas cercano (informativo para el gerente), NO una acusacion.
+ALTER TABLE public.sgrh_biometria_auditoria ENABLE ROW LEVEL SECURITY;
+
+-- Inserta el kiosco (ASISTENCIA_WRITE) cuando verifyFace devuelve DENIED.
+DROP POLICY IF EXISTS "biometria_auditoria_insert" ON public.sgrh_biometria_auditoria;
+CREATE POLICY "biometria_auditoria_insert" ON public.sgrh_biometria_auditoria
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bia_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('ASISTENCIA_WRITE'))
+  );
+
+-- Lee el gerente desde el panel de asistencia. Sin UPDATE/DELETE: un log de
+-- auditoria es inmutable por definicion.
+DROP POLICY IF EXISTS "biometria_auditoria_select" ON public.sgrh_biometria_auditoria;
+CREATE POLICY "biometria_auditoria_select" ON public.sgrh_biometria_auditoria
+  FOR SELECT TO authenticated
+  USING (
+    bia_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('ASISTENCIA_READ'))
+  );
+
+-- ─── sgrh_cat_tipos_documento + sgrh_documentos ───────────────────────────────────────
+
+DROP POLICY IF EXISTS "cat_select" ON public.sgrh_cat_tipos_documento;
+CREATE POLICY "cat_select" ON public.sgrh_cat_tipos_documento
+  FOR SELECT TO authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "cat_insert" ON public.sgrh_cat_tipos_documento;
+CREATE POLICY "cat_insert" ON public.sgrh_cat_tipos_documento
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+
+DROP POLICY IF EXISTS "cat_update" ON public.sgrh_cat_tipos_documento;
+CREATE POLICY "cat_update" ON public.sgrh_cat_tipos_documento
+  FOR UPDATE TO authenticated
+  USING ((SELECT public.tiene_permiso('CATALOGOS_WRITE')))
+  WITH CHECK ((SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+
+DROP POLICY IF EXISTS "cat_delete" ON public.sgrh_cat_tipos_documento;
+CREATE POLICY "cat_delete" ON public.sgrh_cat_tipos_documento
+  FOR DELETE TO authenticated
+  USING ((SELECT public.tiene_permiso('CATALOGOS_WRITE')));
+
+ALTER TABLE public.sgrh_documentos ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "documentos_select" ON public.sgrh_documentos;
+CREATE POLICY "documentos_select" ON public.sgrh_documentos
+  FOR SELECT TO authenticated
+  USING (
+    doc_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('DOCUMENTOS_READ'))
+  );
+
+DROP POLICY IF EXISTS "documentos_insert" ON public.sgrh_documentos;
+CREATE POLICY "documentos_insert" ON public.sgrh_documentos
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    doc_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('DOCUMENTOS_WRITE'))
+  );
+
+DROP POLICY IF EXISTS "documentos_update" ON public.sgrh_documentos;
+CREATE POLICY "documentos_update" ON public.sgrh_documentos
+  FOR UPDATE TO authenticated
+  USING (
+    doc_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('DOCUMENTOS_WRITE'))
+  )
+  WITH CHECK (
+    doc_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('DOCUMENTOS_WRITE'))
+  );
+
+DROP POLICY IF EXISTS "documentos_delete" ON public.sgrh_documentos;
+CREATE POLICY "documentos_delete" ON public.sgrh_documentos
+  FOR DELETE TO authenticated
+  USING (
+    doc_empresa_id = (SELECT public.get_empresa_id())
+    AND (SELECT public.tiene_permiso('DOCUMENTOS_WRITE'))
+  );
+
+-- ─── sgrh_banco_horas_movimientos ───────────────────────────────────────
+
+-- Mismo patrón de RLS que sgrh_beneficios_empleado / sgrh_liquidaciones: el
+-- empleado dueño del historial puede ver sus propios movimientos;
+-- NOMINA_READ/WRITE ve y administra los de su empresa.
+DROP POLICY IF EXISTS "banco_horas_select" ON public.sgrh_banco_horas_movimientos;
+
+CREATE POLICY "banco_horas_select" ON public.sgrh_banco_horas_movimientos FOR
+SELECT TO authenticated USING (
+        bhm_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empleado_id = (
+                    SELECT public.get_emp_id ()
+                )
+        )
+        OR (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND bhm_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS "banco_horas_insert" ON public.sgrh_banco_horas_movimientos;
+
+CREATE POLICY "banco_horas_insert" ON public.sgrh_banco_horas_movimientos FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND bhm_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
+
+DROP POLICY IF EXISTS "banco_horas_update" ON public.sgrh_banco_horas_movimientos;
+
+CREATE POLICY "banco_horas_update" ON public.sgrh_banco_horas_movimientos
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND bhm_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    )
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND bhm_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
+
+DROP POLICY IF EXISTS "banco_horas_delete" ON public.sgrh_banco_horas_movimientos;
+
+CREATE POLICY "banco_horas_delete" ON public.sgrh_banco_horas_movimientos FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
+    )
+    AND bhm_historial_laboral_id IN (
+        SELECT lab_id
+        FROM public.sgrh_historial_laboral
+        WHERE
+            lab_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
+    )
+);
+
+-- ─── sgrh_liquidaciones ───────────────────────────────────────
+
+-- Mismo patrón de RLS que sgrh_provisiones_anuales: el empleado dueño del
+-- historial puede ver su propia liquidación; NOMINA_READ/WRITE ve y
+-- administra las de su empresa.
+DROP POLICY IF EXISTS "liquidaciones_select" ON public.sgrh_liquidaciones;
+
+CREATE POLICY "liquidaciones_select" ON public.sgrh_liquidaciones FOR
+SELECT TO authenticated USING (
+        liq_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empleado_id = (
+                    SELECT public.get_emp_id ()
+                )
+        )
+        OR (
+            (
+                SELECT public.tiene_permiso ('NOMINA_READ')
+            )
+            AND liq_historial_laboral_id IN (
+                SELECT lab_id
+                FROM public.sgrh_historial_laboral
+                WHERE
+                    lab_empresa_id = (
+                        SELECT public.get_empresa_id ()
+                    )
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS "liquidaciones_insert" ON public.sgrh_liquidaciones;
+
+CREATE POLICY "liquidaciones_insert" ON public.sgrh_liquidaciones FOR INSERT TO authenticated
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND liq_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
+
+DROP POLICY IF EXISTS "liquidaciones_update" ON public.sgrh_liquidaciones;
+
+CREATE POLICY "liquidaciones_update" ON public.sgrh_liquidaciones
+FOR UPDATE
+    TO authenticated USING (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND liq_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    )
+WITH
+    CHECK (
+        (
+            SELECT public.tiene_permiso ('NOMINA_WRITE')
+        )
+        AND liq_historial_laboral_id IN (
+            SELECT lab_id
+            FROM public.sgrh_historial_laboral
+            WHERE
+                lab_empresa_id = (
+                    SELECT public.get_empresa_id ()
+                )
+        )
+    );
+
+DROP POLICY IF EXISTS "liquidaciones_delete" ON public.sgrh_liquidaciones;
+
+CREATE POLICY "liquidaciones_delete" ON public.sgrh_liquidaciones FOR DELETE TO authenticated USING (
+    (
+        SELECT public.tiene_permiso ('NOMINA_WRITE')
+    )
+    AND liq_historial_laboral_id IN (
+        SELECT lab_id
+        FROM public.sgrh_historial_laboral
+        WHERE
+            lab_empresa_id = (
+                SELECT public.get_empresa_id ()
+            )
     )
 );

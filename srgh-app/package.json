@@ -23,7 +23,12 @@
     "supabase:link": "supabase link --project-ref paupjapsxvufinozlhss",
     "supabase:types": "supabase gen types typescript --linked > src/types/database.types.ts",
     "supabase:migrate:pull": "supabase db pull",
-    "supabase:migrate:push": "supabase db push"
+    "supabase:migrate:push": "supabase db push --linked --include-seed",
+    "supabase:migrate:new": "supabase migration new",
+    "supabase:seed:demo": "supabase db query --linked -f supabase/seeds/99_demo/01_empresa_sucursales.sql && supabase db query --linked -f supabase/seeds/99_demo/02_usuarios_roles.sql",
+    "supabase:db:reset": "supabase db reset",
+    "supabase:db:diff": "supabase db diff --linked",
+    "supabase:diagnose": "node scripts/diagnose-target-db.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

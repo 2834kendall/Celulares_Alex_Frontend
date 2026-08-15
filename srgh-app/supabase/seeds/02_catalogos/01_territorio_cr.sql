@@ -622,3 +622,25 @@ JOIN public.sgrh_cat_cantones c ON c.can_codigo = v.canton_codigo
 ON CONFLICT (dis_codigo) DO UPDATE SET
   dis_nombre    = EXCLUDED.dis_nombre,
   dis_canton_id = EXCLUDED.dis_canton_id;
+
+-- ─── 4. Verificacion ──────────────────────────────────────────────────
+-- El catalogo territorial es la unica dependencia dura del alta de empleados
+-- (emp_direccion_id es NOT NULL y apunta a un distrito). Si este seed queda a
+-- medias, el sintoma aparece mucho despues y en otro lado: "Distrito
+-- inexistente" al crear el primer empleado. Mejor fallar aca.
+
+DO $$
+DECLARE
+  v_prv int; v_can int; v_dis int;
+BEGIN
+  SELECT count(*) INTO v_prv FROM public.sgrh_cat_provincias;
+  SELECT count(*) INTO v_can FROM public.sgrh_cat_cantones;
+  SELECT count(*) INTO v_dis FROM public.sgrh_cat_distritos;
+
+  IF v_prv <> 7 OR v_can <> 84 OR v_dis <> 492 THEN
+    RAISE EXCEPTION
+      'Catalogo territorial incompleto: % provincias (esperadas 7), % cantones (84), % distritos (492)',
+      v_prv, v_can, v_dis;
+  END IF;
+END;
+$$;

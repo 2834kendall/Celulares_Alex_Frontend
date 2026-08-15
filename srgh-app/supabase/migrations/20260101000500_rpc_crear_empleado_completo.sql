@@ -1,54 +1,39 @@
--- Cierre de la dirección de empleados: la columna pasa a obligatoria.
+-- =====================================================================
+-- SGRH — Baseline: RPC de onboarding de empleados
+-- =====================================================================
+-- Alta atómica de empleado: dirección + empleado + historial laboral +
+-- datos de pago en una sola transacción. Existe porque supabase-js no puede
+-- hacer transacciones multi-statement: sin la RPC, un fallo a mitad dejaría
+-- un empleado sin contrato o una dirección huérfana.
 --
--- emp_direccion_id nació nullable en 20260726130000 a propósito: entre aquella
--- migración y la interfaz que captura la dirección, el wizard todavía no la
--- enviaba y un NOT NULL habría roto el alta de empleados. Ya con el formulario
--- en su lugar, se cierra el ciclo.
+-- ── Por qué SECURITY DEFINER (y por qué NO cambiarlo a INVOKER) ──────────
+-- Parece un candidato obvio a SECURITY INVOKER, pero no lo es. Las cuatro
+-- inserciones usan RETURNING para encadenar los ids, y en Postgres un
+-- INSERT ... RETURNING con RLS activa aplica también la policy de SELECT a
+-- la fila devuelta. Ahí está el problema:
 --
--- Idempotente: el relleno solo toca lo que quedó sin dirección y SET NOT NULL
--- sobre una columna que ya lo es no falla.
-
--- ─── 1. Red de seguridad ──────────────────────────────────────────────────────
--- Cualquier empleado creado entre ambas migraciones quedó sin dirección y
--- bloquearía el ALTER. Mismo relleno de desarrollo que usó 20260726130000, con
--- las señas marcadas para poder depurarlas antes de producción:
---   SELECT * FROM sgrh_direcciones WHERE dir_senas_exactas LIKE '[DEV]%';
-
-DO $$
-DECLARE
-  r        record;
-  v_dir_id int;
-BEGIN
-  FOR r IN
-    SELECT emp_id FROM public.sgrh_empleados
-    WHERE emp_direccion_id IS NULL
-    ORDER BY emp_id
-  LOOP
-    INSERT INTO public.sgrh_direcciones (dir_distrito_id, dir_senas_exactas)
-    SELECT dis_id, '[DEV] Dirección generada automáticamente'
-    FROM public.sgrh_cat_distritos
-    WHERE length(dis_codigo) = 5
-    ORDER BY random()
-    LIMIT 1
-    RETURNING dir_id INTO v_dir_id;
-
-    UPDATE public.sgrh_empleados
-    SET emp_direccion_id = v_dir_id
-    WHERE emp_id = r.emp_id;
-  END LOOP;
-END;
-$$;
-
--- ─── 2. La dirección pasa a obligatoria ───────────────────────────────────────
-
-ALTER TABLE public.sgrh_empleados
-  ALTER COLUMN emp_direccion_id SET NOT NULL;
-
--- ─── 3. RPC: error legible en vez de violación de NOT NULL ────────────────────
--- Misma firma que 20260726130000 (CREATE OR REPLACE basta, no hace falta DROP).
--- Único cambio: p_direccion deja de ser opcional en la práctica y se rechaza con
--- 23514, el código que el frontend ya muestra tal cual, en lugar del 23502 que
--- produciría el NOT NULL con un mensaje de columna.
+--   * empleados_select exige que el emp_id ya aparezca en
+--     sgrh_historial_laboral — pero el historial se inserta DESPUÉS, porque
+--     necesita el emp_id. Bajo INVOKER el RETURNING devolvería vacío,
+--     v_emp_id quedaría NULL y el INSERT del historial fallaría.
+--   * direcciones_select exige que la dirección ya esté referenciada por un
+--     empleado, empresa o sucursal — y en ese punto no lo está por nadie.
+--
+-- Es un grafo de objetos cuyas policies de lectura solo se satisfacen una
+-- vez que el grafo está completo. DEFINER es la respuesta correcta acá, no
+-- un atajo.
+--
+-- ── Consecuencia: los chequeos de abajo son la ÚNICA capa ────────────────
+-- Al saltarse la RLS, esta función es responsable de replicar TODO lo que
+-- las policies habrían exigido. Antes no lo hacía: validaba EMPLEADOS_WRITE
+-- pero no HISTORIAL_WRITE, y sin embargo escribe en sgrh_historial_laboral
+-- (donde viven lab_salario_base y lab_salario_real). Eso convertía un
+-- permiso de "crear empleados" en uno de "escribir salarios" para cualquier
+-- rol que tuviera el primero sin el segundo. Se exigen los dos.
+--
+-- Si algún día se agrega una tabla más a esta RPC, hay que agregar acá el
+-- permiso que pide su policy de INSERT. No hay red de seguridad detrás.
+-- =====================================================================
 
 CREATE OR REPLACE FUNCTION public.crear_empleado_completo(
   p_empleado     jsonb,
@@ -66,7 +51,9 @@ DECLARE
   v_distrito_id  int;
   v_direccion_id int;
 BEGIN
-  IF NOT public.tiene_permiso('EMPLEADOS_WRITE') THEN
+  -- Los dos permisos que exigirían empleados_insert e historial_insert si la
+  -- RLS estuviera activa. Ver la nota de cabecera.
+  IF NOT (public.tiene_permiso('EMPLEADOS_WRITE') AND public.tiene_permiso('HISTORIAL_WRITE')) THEN
     RAISE EXCEPTION 'Sin permiso para crear empleados'
       USING ERRCODE = '42501'; -- insufficient_privilege
   END IF;
@@ -226,7 +213,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public;
 
--- Igual que el resto de funciones del sistema: nada de EXECUTE implícito.
+-- search_path fijo arriba + nada de EXECUTE implícito acá: las dos mitades de
+-- endurecer una función SECURITY DEFINER.
 REVOKE EXECUTE ON FUNCTION public.crear_empleado_completo(jsonb, jsonb, jsonb, jsonb) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.crear_empleado_completo(jsonb, jsonb, jsonb, jsonb) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.crear_empleado_completo(jsonb, jsonb, jsonb, jsonb) TO authenticated;
