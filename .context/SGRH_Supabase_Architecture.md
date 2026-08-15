@@ -1226,47 +1226,63 @@ El archivo `sgrh_rls_final.sql` contiene el script completo ejecutable múltiple
 
 ---
 
-## 11. Checklist de recreación
+## 11. Recreación del entorno
+
+Esta sección era una lista manual de pasos a ejecutar a mano en el Dashboard. Ya no aplica:
+el esquema completo se reconstruye desde `supabase/`, que es la única fuente de verdad.
+
+### Estructura
 
 ```
-FASE 1 — Schema
-☐ Ejecutar DDL completo
-☐ Verificar tablas en Table Editor
-
-FASE 2 — Auth setup
-☐ Habilitar Email/Password en Authentication → Providers
-☐ ALTER TABLE sgrh_usuarios ADD COLUMN usr_auth_id
-☐ Ejecutar sgrh_rls_final.sql completo
-☐ Activar hook: Authentication → Hooks → custom_access_token_hook
-
-FASE 3 — Seed de catálogos
-☐ sgrh_cat_tipos_identificacion  (CEDULA, DIMEX, PASAPORTE)
-☑ sgrh_cat_provincias / cantones / distritos (CR completo — IGN 2025: 7/84/492,
-   migración 20260726120000_seed_cat_territorio_cr.sql)
-☐ sgrh_cat_tipos_jornada         (DIURNA, NOCTURNA, MIXTA)
-☐ sgrh_cat_tipos_contrato        (INDEFINIDO, PLAZO_FIJO, OBRA)
-☐ sgrh_cat_motivos_salida
-☐ sgrh_cat_tipos_ausencia
-☐ sgrh_cat_etapas_seleccion
-☐ sgrh_cat_areas_evaluacion + criterios
-☐ sgrh_cat_conceptos_nomina      (SALARIO_BASE, CCSS, etc.)
-☐ sgrh_cat_feriados              (año en curso)
-☐ sgrh_cat_roles + asignar_permisos()
-
-FASE 4 — Storage
-☐ Bucket: logos-empresa   (público)
-☐ Bucket: cv-candidatos   (privado)
-☐ Bucket: documentos-ccss (privado)
-☐ Bucket: comprobantes-pago (privado)
-
-FASE 5 — Realtime
-☐ ALTER PUBLICATION supabase_realtime ADD TABLE sgrh_notificaciones
-
-FASE 6 — Usuario inicial
-☐ Insertar empresa y sucursal base
-☐ Invitar primer ADMIN vía supabase.auth.admin.inviteUserByEmail()
-☐ Asignar rol en sgrh_usuarios_empresa_rol
+supabase/
+  migrations/     100% DDL — 9 archivos, reconstruyen el esquema desde cero.
+                  Cero INSERT/UPDATE/DELETE a nivel de sentencia. El ultimo
+                  lleva el COMMENT ON de las 52 tablas y sus columnas.
+  seeds/
+    01_sistema/   roles, permisos, matriz rol→permiso, buckets. NO es demo:
+                  es configuración sin la cual la app no arranca.
+    02_catalogos/ catálogos globales y legales de CR.
+    99_demo/      empresa de ejemplo. Fuera de sql_paths a propósito.
+  scripts/        correcciones one-off sobre datos existentes. Manuales.
+  templates/      plantillas de email de Auth.
 ```
+
+Todo lo de `seeds/` es convergente (`ON CONFLICT DO NOTHING` o anti-join): no hay ledger que
+registre qué seed se aplicó, se re-ejecutan enteros en cada push.
+
+### Levantar un proyecto desde cero
+
+```
+1. Crear el proyecto en Supabase.
+2. pnpm supabase:link --project-ref <nuevo>     (o editar el script)
+3. pnpm supabase:migrate:push                    migraciones + seeds de sistema y catálogos
+4. Dashboard → Authentication → Hooks → Customize Access Token
+   → public.custom_access_token_hook                                    ⚠️ OBLIGATORIO
+5. Dashboard → Authentication → Email Templates → Invite user
+   → contenido de supabase/templates/invite.html                        ⚠️ OBLIGATORIO
+6. pnpm supabase:seed:demo                       (opcional, solo desarrollo)
+7. Invitar el primer ADMIN desde la app, o vía inviteUserByEmail().
+```
+
+Los pasos 4 y 5 son configuración del proyecto Supabase, no del esquema: no viajan en las
+migraciones y hay que repetirlos en cada proyecto. Si se olvidan, todo lo demás corre sin
+error y la app igual queda inutilizable — el JWT sale sin claims y la RLS bloquea todo.
+
+### Verificar que el resultado es fiel
+
+`pnpm supabase:types` contra el proyecto nuevo y diff contra `src/types/database.types.ts`:
+si no hay diferencias en tablas, columnas ni funciones, el esquema es correcto. Correr
+`pnpm supabase:migrate:push` una segunda vez debe ser un no-op limpio — es la única prueba
+de que los seeds son convergentes.
+
+Nota: el diff de tipos **no** cubre triggers, constraints ni índices. Para una comparación
+exhaustiva hace falta `supabase db dump --linked` (requiere la contraseña de la base).
+
+### Realtime
+
+`sgrh_notificaciones` todavía no está publicada en `supabase_realtime`. Cuando el módulo de
+notificaciones se implemente, eso es DDL y va en una migración nueva:
+`ALTER PUBLICATION supabase_realtime ADD TABLE public.sgrh_notificaciones;`
 
 ---
 
