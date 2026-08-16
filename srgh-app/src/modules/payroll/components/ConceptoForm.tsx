@@ -16,7 +16,7 @@ import {
 import { createConcepto } from '@/modules/payroll/actions/createConcepto'
 import { updateConcepto } from '@/modules/payroll/actions/updateConcepto'
 import { Button } from '@/components/ui/Button'
-import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface ConceptoFormProps {
@@ -161,7 +161,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           disabled={isSubmitting}
           aria-invalid={!!errors.con_tipo}
           {...register('con_tipo')}
-          className={INPUT}
+          className={SELECT}
         >
           {tiposDisponibles.map((tipo) => (
             <option key={tipo} value={tipo}>
@@ -181,7 +181,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           disabled={isSubmitting}
           aria-invalid={!!errors.con_tipo_calculo}
           {...register('con_tipo_calculo')}
-          className={INPUT}
+          className={SELECT}
         >
           {TIPOS_CALCULO_CONCEPTO.map((tipo) => (
             <option key={tipo} value={tipo}>
@@ -228,7 +228,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             type="checkbox"
             disabled={isSubmitting}
             {...register('con_afecta_salario_bruto')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
           />
           Afecta el salario bruto
         </label>
@@ -238,7 +238,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             type="checkbox"
             disabled={isSubmitting}
             {...register('con_afecta_base_ccss')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
           />
           Afecta la base de CCSS
         </label>
@@ -250,7 +250,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             type="checkbox"
             disabled={isSubmitting}
             {...register('con_activo')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
           />
           Activo (disponible para nuevas planillas)
         </label>

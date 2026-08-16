@@ -17,7 +17,7 @@ import type { AusenciaTypeRow, EmployeeOption } from '@/modules/absences/types'
 import type { AusenciaWeekRow } from '@/modules/absences/actions/getAusenciasForWeek'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { INPUT, LABEL, SPINNER, TABLE_WRAP } from '@/components/ui/styles'
+import { INPUT, LABEL, SELECT, SPINNER, TABLE_WRAP } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface AbsencesPanelProps {
@@ -97,7 +97,7 @@ export function AbsencesPanel({
               <button
                 type="button"
                 onClick={cancelEdit}
-                className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-brand-500/60"
               >
                 <X className="h-3 w-3" /> Cancelar edición
               </button>
@@ -140,7 +140,7 @@ export function AbsencesPanel({
               </label>
               <select
                 id="aus_tipo"
-                className={INPUT}
+                className={SELECT}
                 value={form.tipoAusenciaId}
                 onChange={(e) => setField('tipoAusenciaId', e.target.value)}
               >
@@ -171,7 +171,7 @@ export function AbsencesPanel({
                   <button
                     type="button"
                     onClick={addRange}
-                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-blue-600 outline-none transition hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-brand-600 outline-none transition hover:bg-brand-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
                   >
                     <Plus className="h-3 w-3" /> Agregar periodo
                   </button>

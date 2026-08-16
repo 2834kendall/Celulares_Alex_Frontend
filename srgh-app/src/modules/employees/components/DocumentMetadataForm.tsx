@@ -9,7 +9,7 @@ import {
   type DocumentoMetadataInput,
 } from '@/modules/employees/types'
 import { Button } from '@/components/ui/Button'
-import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface DocumentMetadataFormProps {
@@ -105,7 +105,7 @@ export function DocumentMetadataForm({
           disabled={isSubmitting}
           aria-invalid={!!errors.doc_tipo_id}
           {...register('doc_tipo_id', { valueAsNumber: true })}
-          className={INPUT}
+          className={SELECT}
         >
           <option value="">Seleccionar…</option>
           {tiposDocumento.map((tipo) => (

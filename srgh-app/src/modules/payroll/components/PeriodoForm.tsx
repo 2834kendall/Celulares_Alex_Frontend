@@ -14,7 +14,7 @@ import {
 import { createPeriodo } from '@/modules/payroll/actions/createPeriodo'
 import { MESES } from '@/modules/payroll/lib/format'
 import { Button } from '@/components/ui/Button'
-import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
 
 const ERROR_CLASSES = 'mt-1 text-[11px] font-medium text-rose-600'
 
@@ -75,7 +75,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
               id="npe_sucursal_id"
               {...register('npe_sucursal_id', { valueAsNumber: true })}
               defaultValue=""
-              className={INPUT}
+              className={SELECT}
             >
               <option value="" disabled>
                 Selecciona una sucursal
@@ -98,7 +98,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
             <select
               id="npe_periodo_mes"
               {...register('npe_periodo_mes', { valueAsNumber: true })}
-              className={INPUT}
+              className={SELECT}
             >
               {MESES.map((mes, index) => (
                 <option key={mes} value={index + 1}>
@@ -133,7 +133,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
             <select
               id="npe_quincena"
               {...register('npe_quincena', { valueAsNumber: true })}
-              className={INPUT}
+              className={SELECT}
             >
               <option value={1}>1ª quincena</option>
               <option value={2}>2ª quincena</option>
@@ -193,7 +193,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
         <button
           type="button"
           onClick={() => router.push('/payroll')}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
         >
           Cancelar
         </button>

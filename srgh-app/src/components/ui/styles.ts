@@ -21,7 +21,7 @@
  * queda el texto de abajo.
  */
 export const INPUT =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition hover:border-slate-300 focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 pointer-coarse:min-h-11 placeholder:text-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition hover:border-slate-300 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/10 pointer-coarse:min-h-11 placeholder:text-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
 
 /**
  * Select nativo con flecha propia.
@@ -37,11 +37,19 @@ export const INPUT =
  * el campo cerrado, que es el 95% del tiempo que se ve. Para controlar
  * tambien la lista hay que ir a un combobox propio (ver SearchSelect).
  */
-export const SELECT = `${INPUT} appearance-none bg-[length:1.25rem] bg-[right_0.5rem_center] bg-no-repeat pr-9 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="%2394a3b8"%3E%3Cpath stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/%3E%3C/svg%3E')]`
+/**
+ * Solo la flecha, sin la forma de INPUT — para componer sobre un select con
+ * fondo/color propio (ver TimeSelect: el selector de a.m./p.m. tiene su
+ * propio celeste, y pegarle el token SELECT completo le habria impuesto el
+ * fondo blanco generico encima).
+ */
+export const SELECT_ARROW = `appearance-none bg-[length:1.25rem] bg-[right_0.5rem_center] bg-no-repeat pr-9 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="%2394a3b8"%3E%3Cpath stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/%3E%3C/svg%3E')]`
+
+export const SELECT = `${INPUT} ${SELECT_ARROW}`
 
 /** Input compacto de las barras de filtro que van sobre las tablas. */
 export const INPUT_SM =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
 
 /** Etiqueta de campo de formulario. */
 export const LABEL = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
