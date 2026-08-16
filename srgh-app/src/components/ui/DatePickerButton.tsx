@@ -1,19 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { IconButton } from '@/components/ui/IconButton'
-
-interface DatePickerButtonProps {
-  /** Fecha seleccionada, "YYYY-MM-DD". */
-  value: string
-  onChange: (dateISO: string) => void
-  /** "YYYY-MM-DD" del dia de hoy. Se pasa desde afuera porque "hoy" depende de
-   *  la zona horaria del negocio, no de la del navegador (ver lib/time.ts). */
-  todayISO?: string
-  disabled?: boolean
-  label?: string
-}
+import { cn } from '@/lib/utils/cn'
+import { INPUT } from '@/components/ui/styles'
 
 /**
  * Selector de fecha con calendario propio.
@@ -22,6 +13,10 @@ interface DatePickerButtonProps {
  * fuera del DOM y NO se puede estilizar — ni tipografia, ni colores, ni
  * bordes. Cambia de aspecto entre Chrome, Firefox y Safari, y no se parecia
  * en nada al resto del sistema.
+ *
+ * Dos disparadores sobre el MISMO panel: `DatePickerButton` es solo un icono
+ * (navegar por dias en un listado) y `DateField` se ve como un campo de
+ * formulario. Comparten toda la logica; solo cambia lo que se toca.
  *
  * Se trabaja siempre con cadenas "YYYY-MM-DD" y con `new Date(y, m, d)` (que
  * es local por construccion). Nunca se parsea una fecha desde string: eso es
@@ -39,7 +34,7 @@ function aISO(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
-/** "sábado 15 de agosto de 2026" — nombre accesible de cada dia. */
+/** "sábado, 15 de agosto de 2026" — nombre accesible de cada dia. */
 function etiquetaLarga(y: number, m: number, d: number) {
   return new Intl.DateTimeFormat('es-CR', { dateStyle: 'full' }).format(new Date(y, m, d))
 }
@@ -51,18 +46,92 @@ function nombreMes(y: number, m: number) {
   return etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1)
 }
 
-export function DatePickerButton({
+/** Hoy segun el navegador. Solo decide en que mes ABRE el calendario. */
+function hoyLocal() {
+  const ahora = new Date()
+  return aISO(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
+}
+
+/** "15/08/2026" para mostrar en el campo. Cadena vacia si no hay fecha. */
+function formatoCorto(dateISO: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return ''
+  const { y, m, d } = partes(dateISO)
+  return new Intl.DateTimeFormat('es-CR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(y, m, d))
+}
+
+interface PopoverProps {
+  value: string
+  onChange: (dateISO: string) => void
+  todayISO?: string
+  disabled?: boolean
+  label: string
+  /** El control que abre el panel. Recibe lo que necesita para cablearse. */
+  trigger: (props: {
+    ref: React.Ref<HTMLButtonElement>
+    onClick: () => void
+    disabled: boolean
+    'aria-expanded': boolean
+    'aria-haspopup': 'dialog'
+  }) => React.ReactNode
+}
+
+function DatePopover({
   value,
   onChange,
   todayISO,
   disabled = false,
-  label = 'Elegir fecha',
-}: DatePickerButtonProps) {
+  label,
+  trigger,
+}: PopoverProps) {
   const [abierto, setAbierto] = useState(false)
-  const [cursor, setCursor] = useState(value)
+  // Fecha "en foco" dentro del calendario, que no es la elegida: con las
+  // flechas se recorre sin seleccionar hasta apretar Enter.
+  //
+  // Sin valor y sin "hoy" del negocio, se abre en el mes CORRIENTE del
+  // navegador. Es una fecha de arranque para la vista, no un valor que se
+  // guarde, asi que la zona horaria local alcanza y es infinitamente mejor
+  // que un mes fijo: abrir un campo vacio y aterrizar en enero de otro año
+  // obliga a navegar meses a mano.
+  const [cursor, setCursor] = useState(value || todayISO || hoyLocal())
   const contenedorRef = useRef<HTMLDivElement>(null)
-  const botonRef = useRef<HTMLButtonElement>(null)
+  const disparadorRef = useRef<HTMLButtonElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Empuja el panel para que no se salga de la pantalla.
+   *
+   * Anclarlo a un lado fijo no alcanza: el mismo disparador puede quedar a la
+   * derecha en escritorio y a la izquierda en movil (basta que la barra de
+   * controles envuelva de linea), y en 375px un panel de 280px se sale por
+   * cualquiera de los dos lados.
+   *
+   * Se escribe `style.left` sobre el nodo en vez de guardarlo en estado: es
+   * un ajuste visual derivado de una medicion del DOM, y pasarlo por estado
+   * encadena un render extra por cada apertura. El panel se monta de cero
+   * cada vez, asi que no hay valor viejo que arrastrar.
+   */
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!abierto || !panel) return
+
+    const caja = panel.getBoundingClientRect()
+    const margen = 8
+    // `clientWidth` del documento y NO `window.innerWidth`: el segundo incluye
+    // el ancho de la barra de scroll, asi que el panel quedaba calzado contra
+    // el borde y generaba unos pixeles de desplazamiento horizontal en la
+    // pagina — el defecto que este componente venia justamente a evitar.
+    const anchoVisible = document.documentElement.clientWidth
+    const sobraDerecha = caja.right - (anchoVisible - margen)
+    const faltaIzquierda = margen - caja.left
+
+    if (sobraDerecha > 0) panel.style.left = `${-sobraDerecha}px`
+    else if (faltaIzquierda > 0) panel.style.left = `${faltaIzquierda}px`
+  }, [abierto])
 
   // Al abrir, el calendario arranca en el mes de la fecha seleccionada —
   // aunque el usuario haya navegado a otro mes y cerrado sin elegir. Se hace
@@ -70,8 +139,15 @@ export function DatePickerButton({
   // un useEffect provoca un render de mas y el linter lo marca con razon.
   function alternar() {
     const siguiente = !abierto
-    if (siguiente) setCursor(value)
+    if (siguiente) setCursor(value || todayISO || cursor)
     setAbierto(siguiente)
+  }
+
+  function cerrar() {
+    setAbierto(false)
+    // Devolver el foco al disparador: si se pierde, quien navega con teclado
+    // queda sin punto de partida y tiene que tabular desde el principio.
+    disparadorRef.current?.focus()
   }
 
   useEffect(() => {
@@ -84,9 +160,7 @@ export function DatePickerButton({
     function alTeclear(evento: KeyboardEvent) {
       if (evento.key !== 'Escape') return
       setAbierto(false)
-      // Devolver el foco al boton: si se pierde, quien navega con teclado
-      // queda sin punto de partida y tiene que tabular desde el principio.
-      botonRef.current?.focus()
+      disparadorRef.current?.focus()
     }
 
     document.addEventListener('mousedown', alTocarFuera)
@@ -109,10 +183,9 @@ export function DatePickerButton({
   const celdas = useMemo(() => {
     const primerDia = new Date(y, m, 1).getDay()
     const diasDelMes = new Date(y, m + 1, 0).getDate()
-    const total = primerDia + diasDelMes
     // Se rellena hasta completar semanas, para que la cuadricula no baile de
     // alto entre meses (un mes puede necesitar 5 filas y otro 6).
-    const filas = Math.ceil(total / 7) * 7
+    const filas = Math.ceil((primerDia + diasDelMes) / 7) * 7
 
     return Array.from({ length: filas }, (_, i) => {
       const dia = i - primerDia + 1
@@ -153,28 +226,25 @@ export function DatePickerButton({
 
   function elegir(dia: number) {
     onChange(aISO(y, m, dia))
-    setAbierto(false)
-    botonRef.current?.focus()
+    cerrar()
   }
 
   return (
     <div className="relative" ref={contenedorRef}>
-      <IconButton
-        ref={botonRef}
-        onClick={alternar}
-        disabled={disabled}
-        aria-label={label}
-        aria-expanded={abierto}
-        aria-haspopup="dialog"
-      >
-        <CalendarDays className="h-4 w-4" />
-      </IconButton>
+      {trigger({
+        ref: disparadorRef,
+        onClick: alternar,
+        disabled,
+        'aria-expanded': abierto,
+        'aria-haspopup': 'dialog',
+      })}
 
       {abierto && (
         <div
           role="dialog"
           aria-label={label}
-          className="animate-menu-pop absolute right-0 top-full z-50 mt-2 w-[17.5rem] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+          ref={panelRef}
+          className="animate-menu-pop absolute left-0 top-full z-50 mt-2 w-[17.5rem] max-w-[calc(100vw-1rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
         >
           <div className="flex items-center justify-between gap-2">
             <IconButton onClick={() => cambiarMes(-1)} aria-label="Mes anterior">
@@ -226,7 +296,7 @@ export function DatePickerButton({
                   // que el usuario necesita reencontrar al reabrir. El "hoy"
                   // se distingue visualmente y se dice en la etiqueta.
                   aria-current={seleccionado ? 'date' : undefined}
-                  className={`flex h-9 items-center justify-center rounded-lg text-xs tabular-nums outline-none transition focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+                  className={`flex h-9 items-center justify-center rounded-lg text-xs tabular-nums outline-none transition active:scale-90 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
                     seleccionado
                       ? 'bg-blue-600 font-bold text-white hover:bg-blue-700'
                       : esHoy
@@ -245,10 +315,9 @@ export function DatePickerButton({
               type="button"
               onClick={() => {
                 onChange(todayISO)
-                setAbierto(false)
-                botonRef.current?.focus()
+                cerrar()
               }}
-              className="mt-2 w-full rounded-lg py-2 text-xs font-semibold text-blue-600 outline-none transition hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+              className="mt-2 w-full rounded-lg py-2 text-xs font-semibold text-blue-600 outline-none transition hover:bg-blue-50 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-blue-500/60"
             >
               Hoy
             </button>
@@ -256,5 +325,97 @@ export function DatePickerButton({
         </div>
       )}
     </div>
+  )
+}
+
+interface DatePickerButtonProps {
+  value: string
+  onChange: (dateISO: string) => void
+  todayISO?: string
+  disabled?: boolean
+  label?: string
+}
+
+/** Disparador de solo icono: navegar por fecha en un listado. */
+export function DatePickerButton({
+  value,
+  onChange,
+  todayISO,
+  disabled = false,
+  label = 'Elegir fecha',
+}: DatePickerButtonProps) {
+  return (
+    <DatePopover
+      value={value}
+      onChange={onChange}
+      todayISO={todayISO}
+      disabled={disabled}
+      label={label}
+      trigger={(props) => (
+        <IconButton {...props} aria-label={label}>
+          <CalendarDays className="h-4 w-4" />
+        </IconButton>
+      )}
+    />
+  )
+}
+
+interface DateFieldProps {
+  value: string
+  onChange: (dateISO: string) => void
+  todayISO?: string
+  disabled?: boolean
+  /** Nombre accesible; tambien el texto del placeholder cuando no hay fecha. */
+  label: string
+  id?: string
+  invalid?: boolean
+  placeholder?: string
+}
+
+/**
+ * Disparador con forma de campo: reemplaza al `<input type="date">` dentro de
+ * los formularios. Se ve como el resto de los campos (mismo token `INPUT`),
+ * muestra la fecha en dd/mm/aaaa y abre el mismo calendario.
+ */
+export function DateField({
+  value,
+  onChange,
+  todayISO,
+  disabled = false,
+  label,
+  id,
+  invalid = false,
+  placeholder = 'dd/mm/aaaa',
+}: DateFieldProps) {
+  const texto = formatoCorto(value)
+
+  return (
+    <DatePopover
+      value={value}
+      onChange={onChange}
+      todayISO={todayISO}
+      disabled={disabled}
+      label={label}
+      trigger={(props) => (
+        <button
+          {...props}
+          id={id}
+          type="button"
+          aria-label={label}
+          // Sin `aria-invalid`: no es un atributo valido sobre role="button",
+          // asi que el borde rojo se aplica por clase. El mensaje de error lo
+          // anuncia el `role="alert"` que ya rinde <Labeled> debajo.
+          className={cn(
+            INPUT,
+            'flex items-center justify-between gap-2 text-left',
+            !texto && 'text-slate-400',
+            invalid && 'border-rose-400 focus:ring-rose-400/20'
+          )}
+        >
+          <span className="truncate tabular-nums">{texto || placeholder}</span>
+          <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+        </button>
+      )}
+    />
   )
 }
