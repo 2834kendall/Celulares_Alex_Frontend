@@ -32,10 +32,10 @@ interface TabsProps<T extends string> {
 // la app que no acusaba recibo, y en tactil —donde no hay hover— el usuario
 // se queda sin ninguna señal hasta que la pagina termina de navegar.
 const TAB_BUTTON =
-  'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition outline-none active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2'
+  'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition outline-none active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2'
 
 const STANDALONE_BUTTON =
-  'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:shadow-md active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2'
+  'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:shadow-md active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2'
 
 /**
  * Pestanas sincronizadas con el query param `?tab=`.
@@ -93,7 +93,7 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
           tab.standalone
             ? cn(
                 STANDALONE_BUTTON,
-                active ? 'bg-blue-700 ring-2 ring-blue-700/30' : 'bg-blue-600 hover:bg-blue-700'
+                active ? 'bg-brand-700 ring-2 ring-brand-700/30' : 'bg-brand-600 hover:bg-brand-700'
               )
             : cn(
                 TAB_BUTTON,
@@ -109,7 +109,7 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
           <span
             className={cn(
               'flex h-5 w-5 items-center justify-center rounded-full transition',
-              active ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-500'
+              active ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-500'
             )}
           >
             <Icon className="h-3 w-3" aria-hidden="true" />
@@ -121,16 +121,32 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
   }
 
   return (
-    <div className="min-w-0 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+    // @container: el resto del layout mide el sidebar y su estado, no el
+    // viewport (ver DailyAttendanceTable). Aca no hace falta esa precision —
+    // el tablist es angosto y cabe en casi cualquier ancho — pero se declara
+    // igual para que el punto de corte responda al espacio real disponible,
+    // no a si el celular mide 375 o 430px.
+    <div className="min-w-0 @container space-y-3">
+      {/*
+        Centrado en angosto, a la izquierda desde @sm. Un tablist de 2-4
+        pildoras pegado al borde izquierdo con medio celular vacio al lado
+        se leia como mal alineado, no como una decision de diseño — y con
+        cuatro pestañas que envuelven a dos filas (horarios), cada fila
+        quedaba con un largo distinto sin ningun eje que las una.
+      */}
+      <div className="flex flex-col items-center gap-2 @sm:flex-row @sm:flex-wrap @sm:items-center">
         <div
           role="tablist"
           aria-label={ariaLabel}
-          className="inline-flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1"
+          className="inline-flex flex-wrap justify-center gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1"
         >
           {grouped.map(renderTab)}
         </div>
-        {standalone.map(renderTab)}
+        {standalone.length > 0 && (
+          <div className="flex w-full justify-center gap-2 @sm:w-auto @sm:justify-start">
+            {standalone.map(renderTab)}
+          </div>
+        )}
       </div>
 
       {/*
