@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
+import { ICON_CONTROL_BASE, ICON_CONTROL_TONES } from '@/components/ui/IconButton'
 
 interface PageHeaderProps {
   title: string
@@ -26,7 +28,7 @@ export function PageHeader({ title, description, backHref, backLabel, actions }:
           <Link
             href={backHref}
             aria-label={backLabel ?? 'Volver'}
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+            className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.slate, 'shrink-0')}
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           </Link>

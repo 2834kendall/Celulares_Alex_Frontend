@@ -6,6 +6,7 @@ import { X } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { NavLinks } from '@/components/layout/NavLinks'
 import { UserMenu } from '@/components/layout/UserMenu'
+import { IconButton } from '@/components/ui/IconButton'
 import { tituloDeRuta } from '@/lib/permissions/zones'
 import { BRAND } from '@/lib/brand'
 
@@ -92,7 +93,11 @@ export function AppShell({
             type="button"
             onClick={() => setDrawerOpen(true)}
             aria-label="Abrir menu"
-            className="rounded-lg p-2.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 md:hidden"
+            // El icono mide 16x20, asi que con p-2.5 el boton quedaba en
+            // 36x40: por debajo de los 44px de WCAG 2.5.5, y es el control
+            // MAS usado de toda la app en un telefono. El minimo solo aplica
+            // con dedo, asi que en escritorio el boton no cambia de tamaño.
+            className="inline-flex items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 md:hidden"
           >
             <BurgerIcon open={drawerOpen} />
           </button>
@@ -102,7 +107,7 @@ export function AppShell({
             onClick={() => setSidebarOpen((v) => !v)}
             aria-label={sidebarOpen ? 'Ocultar menu lateral' : 'Mostrar menu lateral'}
             aria-expanded={sidebarOpen}
-            className="hidden rounded-lg p-2.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 md:inline-flex"
+            className="hidden items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 md:inline-flex"
           >
             <BurgerIcon open={sidebarOpen} />
           </button>
@@ -141,14 +146,9 @@ export function AppShell({
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setDrawerOpen(false)}
-                aria-label="Cerrar menu"
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-900"
-              >
+              <IconButton onClick={() => setDrawerOpen(false)} aria-label="Cerrar menu">
                 <X className="h-5 w-5" />
-              </button>
+              </IconButton>
             </div>
 
             <div className="flex-1 overflow-y-auto p-3">

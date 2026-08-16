@@ -216,14 +216,14 @@ export function AbsencesPanel({
                     </div>
 
                     {!editingId && form.ranges.length > 1 && (
-                      <button
-                        type="button"
+                      <IconButton
                         onClick={() => removeRange(index)}
                         aria-label={`Quitar periodo ${index + 1}`}
-                        className="mb-1 shrink-0 rounded-full p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60"
+                        tone="rose"
+                        className="mb-1 shrink-0"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </IconButton>
                     )}
                   </div>
                 ))}

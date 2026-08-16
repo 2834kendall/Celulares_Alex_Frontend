@@ -21,7 +21,23 @@
  * queda el texto de abajo.
  */
 export const INPUT =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition hover:border-slate-300 focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 pointer-coarse:min-h-11 placeholder:text-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
+
+/**
+ * Select nativo con flecha propia.
+ *
+ * `appearance-none` quita la flecha del sistema —que en Windows es un cuadro
+ * gris pegado al borde, y es lo que hacia ver el campo "cuadrado"— y en su
+ * lugar va un chevron SVG embebido como background. Se usa un data URI para
+ * no depender de un archivo ni de un icono de React: el `<select>` no admite
+ * hijos que no sean `<option>`.
+ *
+ * OJO: la LISTA desplegada la dibuja el sistema operativo y no se puede
+ * estilizar por CSS, igual que pasaba con el calendario nativo. Esto mejora
+ * el campo cerrado, que es el 95% del tiempo que se ve. Para controlar
+ * tambien la lista hay que ir a un combobox propio (ver SearchSelect).
+ */
+export const SELECT = `${INPUT} appearance-none bg-[length:1.25rem] bg-[right_0.5rem_center] bg-no-repeat pr-9 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="%2394a3b8"%3E%3Cpath stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/%3E%3C/svg%3E')]`
 
 /** Input compacto de las barras de filtro que van sobre las tablas. */
 export const INPUT_SM =
@@ -47,8 +63,14 @@ export const FIELD_ERROR = 'mt-1.5 text-xs text-rose-600'
 export const CARD =
   'rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]'
 
-/** Tarjeta que responde al hover (items de lista clicables). */
-export const CARD_HOVER = `${CARD} transition hover:border-slate-300`
+/**
+ * Tarjeta que responde al hover (items de lista clicables).
+ *
+ * Al borde se le suma una sombra apenas mayor: el cambio de borde solo se
+ * nota si el ojo ya esta puesto en la tarjeta, y la sombra es lo que la
+ * despega del fondo cuando el cursor llega desde otro lado.
+ */
+export const CARD_HOVER = `${CARD} transition hover:border-slate-300 hover:shadow-[0_2px_8px_rgba(15,23,42,.06)]`
 
 /* ------------------------------------------------------------------ tablas */
 

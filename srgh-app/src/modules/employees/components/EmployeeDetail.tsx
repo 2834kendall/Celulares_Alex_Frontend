@@ -25,6 +25,8 @@ import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
 import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
 import { Button } from '@/components/ui/Button'
 import { META_LABEL } from '@/components/ui/styles'
+import { ICON_CONTROL_BASE, ICON_CONTROL_TONES } from '@/components/ui/IconButton'
+import { cn } from '@/lib/utils/cn'
 
 interface EmployeeDetailProps {
   empleado: EmpleadoDetalle
@@ -240,7 +242,7 @@ export function EmployeeDetail({
           <Link
             href="/employees"
             aria-label="Volver al listado"
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+            className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.slate, 'shrink-0')}
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>

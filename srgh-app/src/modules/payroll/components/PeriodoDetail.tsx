@@ -28,9 +28,10 @@ import { Pagination } from '@/components/ui/Pagination'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
-import { IconButton } from '@/components/ui/IconButton'
+import { ICON_CONTROL_BASE, ICON_CONTROL_TONES, IconButton } from '@/components/ui/IconButton'
 import { TABLE_TH, TABLE_TH_RIGHT, TABLE_WRAP } from '@/components/ui/styles'
 import { Badge } from '@/components/ui/Badge'
+import { cn } from '@/lib/utils/cn'
 
 interface PeriodoDetailProps {
   periodo: PeriodoDetalle
@@ -270,7 +271,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                               target="_blank"
                               rel="noopener noreferrer"
                               aria-label="Ver comprobante de pago"
-                              className="rounded-full p-1 text-slate-400 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                              className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.blue, 'shrink-0')}
                             >
                               <Receipt className="h-3.5 w-3.5" />
                             </Link>
