@@ -53,11 +53,17 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
   }
 
-  const { employeeId, tipo, latitud, longitud, pin, dispositivoId, ticketFacial } = parsed.data
+  const { employeeId, tipo, latitud, longitud, pin, dispositivoId, ticketFacial, fechaHora } =
+    parsed.data
 
+  // Una marca que trae su propia hora viene de la cola offline: el rostro no
+  // se pudo verificar contra el servidor en el momento del evento, asi que
+  // sube como MANUAL aunque cargue un ticket. Hasta ahora eso pasaba por
+  // omision (la cola nunca mandaba ticket); dejarlo explicito evita que un
+  // cambio futuro en el kiosco convierta una marca diferida en "FACIAL".
   let metodoVerificacion: 'FACIAL' | 'MANUAL' = 'MANUAL'
   const ticketSecret = process.env.FACE_TICKET_SECRET
-  if (ticketFacial && ticketSecret) {
+  if (!fechaHora && ticketFacial && ticketSecret) {
     if (await verifyFaceTicket(ticketFacial, employeeId, ticketSecret)) {
       metodoVerificacion = 'FACIAL'
     }
@@ -109,18 +115,29 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
     }
   }
 
+  // La hora del evento manda sobre la del servidor. Una marca sincronizada
+  // horas despues de hacerse (tablet sin red) tiene que quedar guardada a la
+  // hora en que el empleado marco, no a la que se restablecio el internet:
+  // de lo contrario el resumen mensual la lee como una tardanza inventada.
+  const observaciones = [
+    pin ? 'Marcado con PIN de respaldo (camara no disponible).' : null,
+    fechaHora
+      ? 'Marca sincronizada desde la cola offline: la hora es la del evento, no la de sincronizacion.'
+      : null,
+  ].filter((o): o is string => o !== null)
+
   const { error } = await supabase.from('sgrh_marcas_asistencia').insert({
     mar_historial_laboral_id: historial.lab_id,
     mar_sucursal_id: historial.lab_sucursal_id,
     mar_tipo: tipo,
-    mar_fecha_hora: nowInCostaRica(),
+    mar_fecha_hora: fechaHora ?? nowInCostaRica(),
     mar_latitud_marcada: latitud,
     mar_longitud_marcada: longitud,
     mar_distancia_geocerca_metros: distancia,
     mar_metodo_verificacion: metodoVerificacion,
     mar_dispositivo_id: dispositivoId,
     mar_registrado_por_id: meta.usr_id ?? null,
-    mar_observacion: pin ? 'Marcado con PIN de respaldo (camara no disponible).' : null,
+    mar_observacion: observaciones.length > 0 ? observaciones.join(' ') : null,
   })
 
   if (error) {

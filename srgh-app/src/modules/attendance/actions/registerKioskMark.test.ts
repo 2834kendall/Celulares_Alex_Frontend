@@ -222,6 +222,89 @@ describe('registerKioskMark (server action)', () => {
       expect(result).toEqual({ ok: true })
       expect(insertedMark(client).mar_metodo_verificacion).toBe('MANUAL')
     })
+
+    it('una marca con hora propia sube como MANUAL aunque traiga un ticket valido', async () => {
+      const client = clientWithMark()
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+      const ticket = await signFaceTicket(10, TICKET_SECRET)
+      const result = await registerKioskMark({
+        ...validInput,
+        ticketFacial: ticket,
+        fechaHora: '2026-08-14 08:00:00',
+      })
+
+      expect(result).toEqual({ ok: true })
+      expect(insertedMark(client).mar_metodo_verificacion).toBe('MANUAL')
+    })
+  })
+
+  describe('hora del evento (cola offline)', () => {
+    function clientWithMark() {
+      return createSupabaseClientMock({
+        sgrh_historial_laboral: { data: { lab_id: 1, lab_sucursal_id: 100 }, error: null },
+        sgrh_marcas_asistencia: { data: null, error: null },
+      })
+    }
+
+    function insertedMark(client: ReturnType<typeof createSupabaseClientMock>) {
+      const markBuilder = (client.from as ReturnType<typeof vi.fn>).mock.results.find(
+        (_r: unknown, i: number) =>
+          (client.from as ReturnType<typeof vi.fn>).mock.calls[i][0] === 'sgrh_marcas_asistencia'
+      )!.value
+      return (markBuilder.insert as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    }
+
+    it('guarda la hora del evento, no la de sincronizacion', async () => {
+      const client = clientWithMark()
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+      // La tablet marco a las 08:00 sin red; esto se sincroniza a las 14:00.
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T20:00:00Z')) // 14:00 en Costa Rica
+
+      const result = await registerKioskMark({
+        ...validInput,
+        fechaHora: '2026-08-14 08:00:00',
+      })
+
+      vi.useRealTimers()
+
+      expect(result).toEqual({ ok: true })
+      expect(insertedMark(client).mar_fecha_hora).toBe('2026-08-14 08:00:00')
+      expect(insertedMark(client).mar_observacion).toContain('cola offline')
+    })
+
+    it('sin hora propia usa el reloj del servidor, como siempre', async () => {
+      const client = clientWithMark()
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T20:00:00Z')) // 14:00 en Costa Rica
+
+      const result = await registerKioskMark(validInput)
+
+      vi.useRealTimers()
+
+      expect(result).toEqual({ ok: true })
+      expect(insertedMark(client).mar_fecha_hora).toBe('2026-08-14 14:00:00')
+      expect(insertedMark(client).mar_observacion).toBeNull()
+    })
+
+    it('rechaza una hora con formato invalido', async () => {
+      const result = await registerKioskMark({
+        ...validInput,
+        fechaHora: '14/08/2026 8:00',
+      })
+
+      expect(result).toEqual({ ok: false, error: 'Datos de marca invalidos.' })
+    })
   })
 
   it('devuelve error generico si supabase falla al insertar', async () => {

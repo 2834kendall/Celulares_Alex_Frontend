@@ -21,6 +21,9 @@ interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
   tone?: IconButtonTone
   /** Obligatorio: el boton solo contiene un icono, necesita nombre accesible. */
   'aria-label': string
+  /** React 19 pasa `ref` como prop normal, sin forwardRef. Lo necesita quien
+   *  deba devolver el foco al boton (ej. al cerrar un popover). */
+  ref?: React.Ref<HTMLButtonElement>
 }
 
 /**

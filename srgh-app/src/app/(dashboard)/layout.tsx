@@ -22,6 +22,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/unauthorized')
   }
 
+  // Capa 3: el kiosco NUNCA monta el shell administrativo. No basta con el
+  // chequeo de arriba — KIOSCO tiene permisos (marca asistencia, lee su
+  // sucursal), asi que pasaba el filtro y la tablet compartida terminaba
+  // mostrando sidebar, banner y navegacion. El proxy ya lo desvia; esto es la
+  // red de seguridad por si alguien alcanza este layout por otra via.
+  if (meta.rol === 'KIOSCO') {
+    redirect('/kiosco')
+  }
+
   const email = typeof data.claims.email === 'string' ? data.claims.email : 'Usuario autenticado'
   const rol = typeof meta.rol === 'string' ? meta.rol : null
 
