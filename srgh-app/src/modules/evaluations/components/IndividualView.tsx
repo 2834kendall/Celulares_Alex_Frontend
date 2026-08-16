@@ -42,7 +42,7 @@ function AddNoteButton({ label, onClick }: AddNoteButtonProps) {
     <button
       type="button"
       onClick={onClick}
-      className="mt-2 flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-blue-600 outline-none transition hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+      className="mt-2 flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-brand-600 outline-none transition hover:bg-brand-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
     >
       <Plus className="h-3 w-3" /> {label}
     </button>
@@ -92,9 +92,9 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
   const classification = evaluation?.promedio != null ? classifyScore(evaluation.promedio) : null
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
+    <div className="@container space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-64">
           <h2 className="text-sm font-bold text-slate-900">
             Expediente de desempeño personalizado
           </h2>
@@ -102,12 +102,13 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
             Consulte por separado las fortalezas, comentarios e índices de cada trabajador.
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
-          Colaborador:
+        <label className="block w-full @sm:w-64">
+          <span className={META_LABEL}>Colaborador</span>
           <CollaboratorSearchSelect
             collaborators={collaborators}
             selectedLabId={selected.labId}
             onSelect={selectCollaborator}
+            className="mt-1 w-full"
           />
         </label>
       </div>
@@ -115,7 +116,7 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[18rem_1fr]">
         <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
           <div className="flex flex-col items-center gap-2 text-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-lg font-bold text-blue-700 ring-4 ring-blue-100/60">
+            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 text-lg font-bold text-brand-700 ring-4 ring-brand-100/60">
               {initialsOf(selected.fullName)}
             </span>
             <div>
@@ -129,7 +130,7 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
 
           <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-center">
             <p className={META_LABEL}>Promedio total</p>
-            <p className="mt-0.5 text-lg font-bold tabular-nums text-blue-700">
+            <p className="mt-0.5 text-lg font-bold tabular-nums text-brand-700">
               {evaluation?.promedio != null ? `${Math.round(evaluation.promedio)}/10` : '—'}
             </p>
             {classification && (
@@ -168,7 +169,7 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
           <div className="min-w-0 space-y-4">
             <div className={CARD}>
               <h3 className="flex items-center gap-2 px-4 pt-4 text-xs font-bold uppercase tracking-wide text-slate-900">
-                <ClipboardCheck className="h-3.5 w-3.5 text-blue-600" />
+                <ClipboardCheck className="h-3.5 w-3.5 text-brand-600" />
                 Criterios de evaluación interna
               </h3>
               <div className="space-y-4 p-4">
@@ -262,7 +263,7 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
 
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
               <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-                <MessageSquareQuote className="h-3.5 w-3.5 text-blue-600" /> Comentarios de
+                <MessageSquareQuote className="h-3.5 w-3.5 text-brand-600" /> Comentarios de
                 liderazgo
               </h4>
               {evaluation.notes.comentarios ? (

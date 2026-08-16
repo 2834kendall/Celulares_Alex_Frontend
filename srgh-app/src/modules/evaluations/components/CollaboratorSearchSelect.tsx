@@ -8,6 +8,7 @@ interface CollaboratorSearchSelectProps {
   collaborators: CollaboratorRow[]
   selectedLabId: number
   onSelect: (labId: number) => void
+  className?: string
 }
 
 /**
@@ -21,6 +22,7 @@ export function CollaboratorSearchSelect({
   collaborators,
   selectedLabId,
   onSelect,
+  className = 'w-64',
 }: CollaboratorSearchSelectProps) {
   const options: SearchSelectOption[] = collaborators.map((c) => ({
     value: String(c.labId),
@@ -28,7 +30,7 @@ export function CollaboratorSearchSelect({
     sublabel: `${c.position ?? 'Sin puesto'} • ${c.branchName}`,
     searchTerms: c.idNumber,
     avatar: (
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[10px] font-bold text-blue-700">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[10px] font-bold text-brand-700">
         {initialsOf(c.fullName)}
       </span>
     ),
@@ -40,7 +42,7 @@ export function CollaboratorSearchSelect({
       value={String(selectedLabId)}
       onChange={(value) => onSelect(Number(value))}
       ariaLabel="Buscar colaborador"
-      className="w-64"
+      className={className}
     />
   )
 }
