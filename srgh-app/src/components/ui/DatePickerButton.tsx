@@ -97,6 +97,15 @@ function DatePopover({
   // que un mes fijo: abrir un campo vacio y aterrizar en enero de otro año
   // obliga a navegar meses a mano.
   const [cursor, setCursor] = useState(value || todayISO || hoyLocal())
+
+  /**
+   * Nivel de zoom del calendario: dias, meses de un año, o bloque de años.
+   *
+   * Sin esto, poner una fecha de nacimiento de 1985 exigia unos 500 toques
+   * en "mes anterior". Tocando el titulo se sube de nivel (dias -> meses ->
+   * años) y eligiendo se baja: 1985 queda a tres toques.
+   */
+  const [vista, setVista] = useState<'dias' | 'meses' | 'anios'>('dias')
   const contenedorRef = useRef<HTMLDivElement>(null)
   const disparadorRef = useRef<HTMLButtonElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -139,7 +148,12 @@ function DatePopover({
   // un useEffect provoca un render de mas y el linter lo marca con razon.
   function alternar() {
     const siguiente = !abierto
-    if (siguiente) setCursor(value || todayISO || cursor)
+    if (siguiente) {
+      setCursor(value || todayISO || cursor)
+      // Siempre se reabre en dias: quien dejo el calendario en la vista de
+      // años no espera reencontrarla ahi la proxima vez.
+      setVista('dias')
+    }
     setAbierto(siguiente)
   }
 
@@ -229,6 +243,9 @@ function DatePopover({
     cerrar()
   }
 
+  /** Primer año del bloque de 12 que se muestra en la vista de años. */
+  const inicioBloque = Math.floor(y / 12) * 12
+
   return (
     <div className="relative" ref={contenedorRef}>
       {trigger({
@@ -247,16 +264,97 @@ function DatePopover({
           className="animate-menu-pop absolute left-0 top-full z-50 mt-2 w-[17.5rem] max-w-[calc(100vw-1rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
         >
           <div className="flex items-center justify-between gap-2">
-            <IconButton onClick={() => cambiarMes(-1)} aria-label="Mes anterior">
+            <IconButton
+              onClick={() =>
+                vista === 'dias'
+                  ? cambiarMes(-1)
+                  : setCursor(aISO(y - (vista === 'meses' ? 1 : 12), m, 1))
+              }
+              aria-label={vista === 'dias' ? 'Mes anterior' : 'Años anteriores'}
+            >
               <ChevronLeft className="h-4 w-4" />
             </IconButton>
-            <p className="text-xs font-bold capitalize text-slate-800">{nombreMes(y, m)}</p>
-            <IconButton onClick={() => cambiarMes(1)} aria-label="Mes siguiente">
+
+            {/*
+              El titulo es el que sube de nivel. Es el gesto que ya existe en
+              los calendarios de escritorio, y evita meter dos desplegables
+              que en 280px de ancho no caben.
+            */}
+            <button
+              type="button"
+              onClick={() => setVista(vista === 'dias' ? 'meses' : 'anios')}
+              disabled={vista === 'anios'}
+              aria-label={
+                vista === 'dias' ? 'Elegir mes y año' : vista === 'meses' ? 'Elegir año' : undefined
+              }
+              className="rounded-lg px-2 py-1 text-xs font-bold capitalize text-slate-800 outline-none transition hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:hover:bg-transparent"
+            >
+              {vista === 'dias'
+                ? nombreMes(y, m)
+                : vista === 'meses'
+                  ? y
+                  : `${inicioBloque} – ${inicioBloque + 11}`}
+            </button>
+
+            <IconButton
+              onClick={() =>
+                vista === 'dias'
+                  ? cambiarMes(1)
+                  : setCursor(aISO(y + (vista === 'meses' ? 1 : 12), m, 1))
+              }
+              aria-label={vista === 'dias' ? 'Mes siguiente' : 'Años siguientes'}
+            >
               <ChevronRight className="h-4 w-4" />
             </IconButton>
           </div>
 
-          <div className="mt-2 grid grid-cols-7 gap-0.5" aria-hidden="true">
+          {vista === 'meses' && (
+            <div className="mt-2 grid grid-cols-3 gap-1">
+              {Array.from({ length: 12 }, (_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    setCursor(aISO(y, i, 1))
+                    setVista('dias')
+                  }}
+                  className={`rounded-lg py-2.5 text-xs font-semibold capitalize outline-none transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 ${
+                    i === m ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {new Intl.DateTimeFormat('es-CR', { month: 'short' }).format(new Date(y, i, 1))}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {vista === 'anios' && (
+            <div className="mt-2 grid grid-cols-3 gap-1">
+              {Array.from({ length: 12 }, (_, i) => {
+                const anio = inicioBloque + i
+                return (
+                  <button
+                    key={anio}
+                    type="button"
+                    onClick={() => {
+                      setCursor(aISO(anio, m, 1))
+                      setVista('meses')
+                    }}
+                    className={`rounded-lg py-2.5 text-xs font-semibold tabular-nums outline-none transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 ${
+                      anio === y ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {anio}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          <div
+            className={`mt-2 grid grid-cols-7 gap-0.5 ${vista === 'dias' ? '' : 'hidden'}`}
+            aria-hidden="true"
+          >
             {DIAS.map((dia) => (
               <span
                 key={dia}
@@ -275,7 +373,11 @@ function DatePopover({
             boton con su fecha completa en el nombre accesible, que se anuncia
             bien por si solo, y las flechas siguen funcionando igual.
           */}
-          <div ref={gridRef} onKeyDown={alTeclearEnGrid} className="grid grid-cols-7 gap-0.5">
+          <div
+            ref={gridRef}
+            onKeyDown={alTeclearEnGrid}
+            className={`grid grid-cols-7 gap-0.5 ${vista === 'dias' ? '' : 'hidden'}`}
+          >
             {celdas.map((dia, i) => {
               if (dia === null) return <span key={`vacio-${i}`} />
 
@@ -296,11 +398,11 @@ function DatePopover({
                   // que el usuario necesita reencontrar al reabrir. El "hoy"
                   // se distingue visualmente y se dice en la etiqueta.
                   aria-current={seleccionado ? 'date' : undefined}
-                  className={`flex h-9 items-center justify-center rounded-lg text-xs tabular-nums outline-none transition active:scale-90 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+                  className={`flex h-9 items-center justify-center rounded-lg text-xs tabular-nums outline-none transition active:scale-90 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 ${
                     seleccionado
-                      ? 'bg-blue-600 font-bold text-white hover:bg-blue-700'
+                      ? 'bg-brand-600 font-bold text-white hover:bg-brand-700'
                       : esHoy
-                        ? 'font-bold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-50'
+                        ? 'font-bold text-brand-700 ring-1 ring-inset ring-brand-200 hover:bg-brand-50'
                         : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
@@ -310,18 +412,34 @@ function DatePopover({
             })}
           </div>
 
-          {todayISO && (
+          {/*
+            Pie de acciones. "Cerrar" existe sobre todo por movil: en
+            escritorio se sale con Escape o tocando afuera, pero en una
+            pantalla tactil no hay ninguna de las dos cosas a la vista, y
+            tocar "afuera" de un panel que ocupa media pantalla es incomodo.
+            Va abajo porque es donde llega el pulgar sin recolocar la mano.
+          */}
+          <div className="mt-2 flex items-center gap-1 border-t border-slate-100 pt-2">
+            {todayISO && vista === 'dias' && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(todayISO)
+                  cerrar()
+                }}
+                className="flex-1 rounded-lg py-2 text-xs font-semibold text-brand-600 outline-none transition hover:bg-brand-50 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+              >
+                Hoy
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => {
-                onChange(todayISO)
-                cerrar()
-              }}
-              className="mt-2 w-full rounded-lg py-2 text-xs font-semibold text-blue-600 outline-none transition hover:bg-blue-50 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+              onClick={cerrar}
+              className="flex-1 rounded-lg py-2 text-xs font-semibold text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-800 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60"
             >
-              Hoy
+              Cerrar
             </button>
-          )}
+          </div>
         </div>
       )}
     </div>

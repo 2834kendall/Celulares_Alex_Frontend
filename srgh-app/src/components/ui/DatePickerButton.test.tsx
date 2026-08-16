@@ -132,4 +132,59 @@ describe('<DatePickerButton />', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
+
+  it('el boton Cerrar cierra el panel y devuelve el foco', async () => {
+    render(<DatePickerButton value="2026-08-15" onChange={vi.fn()} />)
+    const boton = screen.getByRole('button', { name: 'Elegir fecha' })
+    await abrir()
+
+    await userEvent.click(calendario().getByRole('button', { name: 'Cerrar' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(boton).toHaveFocus()
+  })
+
+  describe('elegir mes y año', () => {
+    /**
+     * Sin estos atajos, poner una fecha de nacimiento de 1985 exigia unos 500
+     * toques en "mes anterior": el unico camino era mes a mes.
+     */
+    it('llega a un año lejano en pocos pasos, sin navegar mes a mes', async () => {
+      const onChange = vi.fn()
+      render(<DatePickerButton value="2026-08-15" onChange={onChange} />)
+      await abrir()
+
+      // Titulo -> vista de meses
+      await userEvent.click(calendario().getByRole('button', { name: 'Elegir mes y año' }))
+      // Titulo -> vista de años (bloques de 12: 2016–2027)
+      await userEvent.click(calendario().getByRole('button', { name: 'Elegir año' }))
+      expect(calendario().getByText('2016 – 2027')).toBeInTheDocument()
+
+      // Retroceder dos bloques: 1992–2003 y despues 1980–1991
+      await userEvent.click(calendario().getByRole('button', { name: 'Años anteriores' }))
+      await userEvent.click(calendario().getByRole('button', { name: 'Años anteriores' }))
+      expect(calendario().getByText('1992 – 2003')).toBeInTheDocument()
+
+      await userEvent.click(calendario().getByRole('button', { name: 'Años anteriores' }))
+      await userEvent.click(calendario().getByText('1985'))
+
+      // Elegir año baja a meses, elegir mes baja a dias
+      await userEvent.click(calendario().getByText('mar'))
+      await userEvent.click(calendario().getByRole('button', { name: /10 de marzo de 1985/ }))
+
+      expect(onChange).toHaveBeenCalledWith('1985-03-10')
+    })
+
+    it('el titulo muestra el nivel en el que esta parado', async () => {
+      render(<DatePickerButton value="2026-08-15" onChange={vi.fn()} />)
+      await abrir()
+
+      expect(calendario().getByRole('button', { name: 'Elegir mes y año' })).toHaveTextContent(
+        'Agosto de 2026'
+      )
+
+      await userEvent.click(calendario().getByRole('button', { name: 'Elegir mes y año' }))
+      expect(calendario().getByRole('button', { name: 'Elegir año' })).toHaveTextContent('2026')
+    })
+  })
 })
