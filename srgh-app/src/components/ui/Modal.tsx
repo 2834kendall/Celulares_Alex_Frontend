@@ -47,7 +47,14 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
             <X className="h-3.5 w-3.5" />
           </IconButton>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto p-4">{children}</div>
+        {/*
+          dvh y no vh: en movil la barra de direcciones se retrae y expande, y
+          `vh` se mide siempre contra el viewport MAS GRANDE. Con la barra
+          visible, un 70vh real ocupa mas del 70% de lo que se ve y el ultimo
+          control del formulario queda debajo del borde, inalcanzable. El caso
+          que lo delata es el telefono acostado (812x375).
+        */}
+        <div className="max-h-[70dvh] overflow-y-auto p-4">{children}</div>
       </div>
     </div>
   )

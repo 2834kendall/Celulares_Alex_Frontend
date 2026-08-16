@@ -2,8 +2,13 @@ import { cn } from '@/lib/utils/cn'
 
 export type IconButtonTone = 'slate' | 'blue' | 'rose'
 
+// El area tocable crece con `pointer-coarse:` y no con un breakpoint: lo que
+// decide si 26px alcanzan es el DEDO, no el ancho de pantalla. Una laptop
+// tactil de 1280px necesita los 44px de WCAG 2.5.5 igual que un telefono, y
+// un mouse en 375px no los necesita. El icono no cambia de tamaño: solo se
+// agranda el area, asi que la densidad visual del escritorio queda intacta.
 const BASE =
-  'inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 outline-none transition focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50'
+  'inline-flex items-center justify-center rounded-full p-1.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-slate-500 outline-none transition active:scale-90 motion-reduce:active:scale-100 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100'
 
 const TONES: Record<IconButtonTone, string> = {
   slate: 'hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-blue-500/60',
