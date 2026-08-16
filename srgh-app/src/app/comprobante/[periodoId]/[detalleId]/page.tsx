@@ -105,7 +105,7 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
       <div className="mb-4 flex items-center justify-between print:hidden">
         <Link
           href={`/payroll/${periodoId}`}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 outline-none transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 outline-none transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-500/60"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Volver al periodo

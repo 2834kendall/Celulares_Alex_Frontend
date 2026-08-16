@@ -48,7 +48,7 @@ export function WizardStepper({ steps, currentIndex }: WizardStepperProps) {
         >
           {/* La transicion es lo que convierte el salto de paso en avance */}
           <div
-            className="h-full rounded-full bg-blue-600 transition-[width] duration-300 ease-out motion-reduce:transition-none"
+            className="h-full rounded-full bg-brand-600 transition-[width] duration-300 ease-out motion-reduce:transition-none"
             style={{ width: `${progreso}%` }}
           />
         </div>
@@ -71,7 +71,7 @@ export function WizardStepper({ steps, currentIndex }: WizardStepperProps) {
                   isDone
                     ? 'bg-emerald-100 text-emerald-700'
                     : isCurrent
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-brand-600 text-white'
                       : 'bg-slate-100 text-slate-400'
                 }`}
               >

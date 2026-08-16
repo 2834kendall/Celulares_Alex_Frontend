@@ -37,7 +37,7 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
       */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
             <CalendarClock className="h-4 w-4" />
           </span>
           <div>

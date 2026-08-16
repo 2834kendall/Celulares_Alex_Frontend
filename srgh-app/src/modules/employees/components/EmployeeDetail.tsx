@@ -255,7 +255,7 @@ export function EmployeeDetail({
                 type="button"
                 onClick={() => setEditingPhoto(true)}
                 aria-label="Editar foto"
-                className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-600 text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-brand-600 text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60"
               >
                 <Camera className="h-3.5 w-3.5" />
               </button>

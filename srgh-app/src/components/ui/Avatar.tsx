@@ -60,7 +60,7 @@ export function Avatar({ fotoUrl, nombre, size = 'md', className = '' }: AvatarP
     <span
       role="img"
       aria-label={`Foto de ${nombre}`}
-      className={`flex shrink-0 items-center justify-center rounded-full bg-blue-700 font-bold text-white ${sizeClasses} ${className}`}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-brand-700 font-bold text-white ${sizeClasses} ${className}`}
     >
       {initials(nombre)}
     </span>

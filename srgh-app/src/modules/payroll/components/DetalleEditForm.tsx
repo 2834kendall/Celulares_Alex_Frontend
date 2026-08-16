@@ -166,10 +166,10 @@ export function DetalleEditForm({
 
       <div className="overflow-hidden rounded-xl border border-slate-200">
         <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-600">
             <Clock className="h-3.5 w-3.5" />
           </span>
-          <h4 className="text-xs font-bold text-blue-700">Horas y tarifa</h4>
+          <h4 className="text-xs font-bold text-brand-700">Horas y tarifa</h4>
           <span className="ml-auto hidden text-[10px] text-slate-400 sm:inline">
             Base para calcular las horas extra automáticas
           </span>
@@ -236,7 +236,7 @@ export function DetalleEditForm({
           type="button"
           onClick={onCancel}
           disabled={isSubmitting}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
         >
           Cancelar
         </button>

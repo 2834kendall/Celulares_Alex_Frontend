@@ -44,9 +44,9 @@ export function CollaboratorListModal({
                 <button
                   type="button"
                   onClick={() => onSelect(c.labId)}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-left outline-none transition hover:bg-slate-50 focus-visible:bg-blue-50"
+                  className="flex w-full items-center gap-3 px-3 py-2 text-left outline-none transition hover:bg-slate-50 focus-visible:bg-brand-50"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[10px] font-bold text-blue-700">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[10px] font-bold text-brand-700">
                     {initialsOf(c.fullName)}
                   </span>
                   <span className="min-w-0 flex-1">

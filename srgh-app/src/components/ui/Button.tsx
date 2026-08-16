@@ -26,9 +26,10 @@ export const BUTTON_BASE =
 // `secondary` (fondo blanco, borde gris) una sombra mayor se lee como que la
 // tarjeta de atras se movio, no el boton.
 export const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md focus-visible:ring-blue-600',
+  primary:
+    'bg-brand-600 text-white hover:bg-brand-700 hover:shadow-md focus-visible:ring-brand-600',
   secondary:
-    'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 focus-visible:ring-blue-500/60',
+    'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 focus-visible:ring-brand-500/60',
   danger: 'bg-rose-600 text-white hover:bg-rose-700 hover:shadow-md focus-visible:ring-rose-600',
 }
 
@@ -48,7 +49,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 /**
  * Boton de accion.
  *
- * Reemplaza las 14 variantes de `bg-blue-600 ... text-white` que habia sueltas
+ * Reemplaza las 14 variantes de `bg-brand-600 ... text-white` que habia sueltas
  * por la aplicacion. Para layout extra (`mt-1`, `shrink-0`, `w-56`) usar
  * `className`; para cambiar tamano o color usar `size`/`variant`, porque `cn()`
  * no resuelve conflictos de Tailwind.

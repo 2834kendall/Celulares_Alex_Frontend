@@ -136,7 +136,7 @@ export function AppShell({
           <div className="animate-slide-in-left relative flex h-full w-72 max-w-[80vw] flex-col bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-700 text-xs font-black text-white">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-700 text-xs font-black text-white">
                   {empresaNombre.charAt(0)}
                 </span>
                 <div className="leading-tight">

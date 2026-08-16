@@ -153,7 +153,7 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
         </span>
       )}
       {row.isHoliday && (
-        <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+        <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
           Feriado
         </span>
       )}
@@ -239,7 +239,7 @@ function MarkTile({
       type="button"
       onClick={onEdit}
       aria-label={`${mark ? 'Corregir' : 'Agregar'} marca de ${label.toLowerCase()}`}
-      className={`${shape} outline-none hover:border-blue-300 hover:bg-blue-50/40 focus-visible:ring-2 focus-visible:ring-blue-500/60 active:scale-[0.97] motion-reduce:active:scale-100`}
+      className={`${shape} outline-none hover:border-brand-300 hover:bg-brand-50/40 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.97] motion-reduce:active:scale-100`}
     >
       {body}
     </button>

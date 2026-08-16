@@ -18,8 +18,8 @@ export const ICON_CONTROL_BASE =
   'inline-flex items-center justify-center rounded-full p-1.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-slate-500 outline-none transition active:scale-90 motion-reduce:active:scale-100 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100'
 
 export const ICON_CONTROL_TONES: Record<IconButtonTone, string> = {
-  slate: 'hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-blue-500/60',
-  blue: 'hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-blue-500/60',
+  slate: 'hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-brand-500/60',
+  blue: 'hover:bg-brand-50 hover:text-brand-600 focus-visible:ring-brand-500/60',
   rose: 'hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-rose-500/60',
 }
 

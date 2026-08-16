@@ -109,7 +109,7 @@ export function DocumentDropzone({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 active:scale-[0.98]"
             >
               <Plus className="h-3.5 w-3.5" /> {triggerLabel}
             </button>
@@ -126,7 +126,7 @@ export function DocumentDropzone({
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`rounded-xl transition ${dragging ? 'bg-blue-50/60 ring-2 ring-blue-500' : ''}`}
+        className={`rounded-xl transition ${dragging ? 'bg-brand-50/60 ring-2 ring-brand-500' : ''}`}
       >
         {children}
       </div>

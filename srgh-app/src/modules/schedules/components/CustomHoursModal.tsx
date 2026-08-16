@@ -73,7 +73,7 @@ function OptionalPeriod({
             onChange={(event) => onToggle(event.target.checked)}
             className="peer sr-only"
           />
-          <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2" />
+          <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2" />
           <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
         </span>
         <span className="text-xs text-slate-700">{label}</span>
@@ -159,7 +159,7 @@ export function CustomHoursModal({
       <div className="animate-fade-in flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[21rem] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5">
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-600">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-600">
               Horario personalizado
             </p>
             <h3 className="mt-0.5 text-sm font-bold text-slate-900">{employeeName}</h3>
@@ -203,11 +203,11 @@ export function CustomHoursModal({
                       title={
                         isUnavailable ? 'Día cubierto por una incapacidad o licencia' : undefined
                       }
-                      className={`rounded-lg px-2 py-1 text-[10px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+                      className={`rounded-lg px-2 py-1 text-[10px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-brand-500/60 ${
                         isUnavailable
                           ? 'cursor-not-allowed bg-slate-100 text-slate-300'
                           : isSelected
-                            ? 'bg-blue-600 text-white shadow-sm'
+                            ? 'bg-brand-600 text-white shadow-sm'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >

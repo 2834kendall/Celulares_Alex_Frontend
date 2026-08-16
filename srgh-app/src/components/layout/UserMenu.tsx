@@ -64,7 +64,7 @@ export function UserMenu({ email, rol }: UserMenuProps) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="Menu de usuario"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-700 text-xs font-bold text-white transition hover:bg-blue-800 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white transition hover:bg-brand-800 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2"
       >
         {initials}
       </button>

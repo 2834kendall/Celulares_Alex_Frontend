@@ -78,7 +78,7 @@ export function EditNotesModal({ evaluationId, field, notes, onClose }: EditNote
             value={comentarios}
             disabled={isSaving}
             onChange={(e) => setComentarios(e.target.value)}
-            className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50"
+            className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/10 disabled:cursor-not-allowed disabled:bg-slate-50"
             placeholder={meta.placeholder}
           />
         ) : (
