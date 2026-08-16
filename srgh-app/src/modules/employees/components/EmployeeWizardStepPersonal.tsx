@@ -30,12 +30,20 @@ export function EmployeeWizardStepPersonal({
   onFotoChange,
 }: EmployeeWizardStepPersonalProps) {
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
       <section className="space-y-3">
         <h3 className="text-xs font-bold uppercase tracking-wide text-slate-600">
           Foto del colaborador (opcional)
         </h3>
-        <PhotoDropzone file={foto} onSelect={onFotoChange} onClear={() => onFotoChange(null)} />
+        {/*
+          En angosto la foto se centra: es un circulo de 128px solo en la
+          fila, y alineado a la izquierda quedaba descolgado con un vacio
+          enorme al lado. Desde @sm vuelve a la izquierda, alineada con los
+          campos que siguen — el escritorio no cambia.
+        */}
+        <div className="flex justify-center @sm:justify-start">
+          <PhotoDropzone file={foto} onSelect={onFotoChange} onClear={() => onFotoChange(null)} />
+        </div>
       </section>
 
       <section className="space-y-3">

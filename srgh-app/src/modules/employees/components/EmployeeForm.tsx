@@ -96,7 +96,7 @@ export function EmployeeForm({
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="@container space-y-4">
         {serverError && (
           <Alert>
             <div>{serverError}</div>

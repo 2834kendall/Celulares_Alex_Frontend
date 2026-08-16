@@ -10,12 +10,12 @@ import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import {
+  META_LABEL,
   TABLE_HEAD,
   TABLE_ROW_CLICKABLE,
   TABLE_TD,
   TABLE_TD_NUM,
   TABLE_TH,
-  TABLE_WRAP,
 } from '@/components/ui/styles'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
@@ -26,6 +26,20 @@ const SELECT_CLASSES =
 interface EmployeesListProps {
   employees: EmpleadoListItem[]
   canWrite: boolean
+}
+
+/** Estado del contrato. Lo rinden las dos vistas: tarjetas en movil y tabla. */
+function EstadoBadge({ activo }: { activo: boolean }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+        activo ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+      }`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {activo ? 'Activo' : 'Inactivo'}
+    </span>
+  )
 }
 
 export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
@@ -51,8 +65,11 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
   const activos = employees.filter((e) => e.activo).length
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+    // Se mide el contenedor y no el viewport: el sidebar ocupa 256px y ademas
+    // se colapsa, asi que a un mismo ancho de pantalla el espacio real puede
+    // ser muy distinto. Mismo criterio que asistencia.
+    <div className="@container space-y-4">
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         <StatCard icon={Users} label="Total empleados" value={total} hoverable />
         <StatCard
           icon={UserCheck}
@@ -134,8 +151,63 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
           description="Ningún empleado coincide con la búsqueda o los filtros seleccionados."
         />
       ) : (
-        <div className={TABLE_WRAP}>
-          <div className="overflow-x-auto">
+        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            En movil, la tarjeta ENTERA es el enlace. En la tabla solo el
+            nombre lo era (la fila navegaba por onClick, que el teclado no
+            alcanza): aca el area util es de ~90px de alto, imposible de
+            errar con el pulgar, y al ser un <Link> real se puede abrir en
+            otra pestaña y se anuncia como enlace.
+          */}
+          <ul className="space-y-3 @3xl:hidden">
+            {paginatedItems.map((employee, index) => (
+              <li
+                key={employee.emp_id}
+                // Entrada en cascada, cortada a los 6 primeros para que la
+                // ultima tarjeta de la pagina no se haga esperar.
+                style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
+                className="animate-fade-in"
+              >
+                <Link
+                  href={`/employees/${employee.emp_id}`}
+                  className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm outline-none transition hover:border-slate-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-blue-500/60 active:scale-[0.99] motion-reduce:active:scale-100"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Avatar size="sm" fotoUrl={employee.foto_url} nombre={fullName(employee)} />
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold text-slate-800">
+                          {fullName(employee)}
+                        </p>
+                        <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">
+                          {employee.emp_numero_identificacion}
+                        </p>
+                      </div>
+                    </div>
+                    <EstadoBadge activo={employee.activo} />
+                  </div>
+
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+                    {[
+                      { label: 'Puesto', valor: employee.puesto_nombre },
+                      { label: 'Sucursal', valor: employee.sucursal_nombre },
+                      { label: 'Contrato', valor: employee.tipo_contrato_nombre },
+                      { label: 'Inicio', valor: formatDate(employee.fecha_inicio_contrato) },
+                    ].map(({ label, valor }) => (
+                      <div key={label} className="min-w-0">
+                        <dt className={META_LABEL}>{label}</dt>
+                        <dd className="mt-0.5 break-words text-xs text-slate-600">
+                          {valor || '—'}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </Link>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden @3xl:block @3xl:overflow-x-auto">
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -176,16 +248,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
                     <td className={TABLE_TD}>{employee.tipo_contrato_nombre ?? '—'}</td>
                     <td className={TABLE_TD_NUM}>{formatDate(employee.fecha_inicio_contrato)}</td>
                     <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                          employee.activo
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-rose-50 text-rose-700'
-                        }`}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        {employee.activo ? 'Activo' : 'Inactivo'}
-                      </span>
+                      <EstadoBadge activo={employee.activo} />
                     </td>
                   </tr>
                 ))}
