@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { CalendarPlus, Clock, Coins, Gift } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
+import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '@/components/ui/Button'
 
 interface PayrollHeaderProps {
   canWrite: boolean
@@ -7,49 +9,52 @@ interface PayrollHeaderProps {
   canManageConceptos: boolean
 }
 
-/** Encabezado de la pantalla de nómina: título + acciones principales. */
+const SECONDARY = cn(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES.sm)
+const PRIMARY = cn(BUTTON_BASE, BUTTON_VARIANTS.primary, BUTTON_SIZES.sm)
+
+/**
+ * Encabezado de la pantalla de nómina: título + hasta cuatro acciones.
+ *
+ * Los enlaces tenian `shrink-0` con las clases del boton copiadas a mano:
+ * en un telefono, cuatro botones sin permiso para encogerse desbordaban el
+ * ancho de la pantalla. Ahora, bajo @sm, forman una rejilla de 2 columnas —
+ * apilarlos los cuatro a ancho completo ocupaba demasiado alto, y con
+ * exactamente cuatro acciones una rejilla de 2x2 es mas compacta que
+ * cualquier numero variable, donde auto-fit tiene sentido pero aca no.
+ */
 export function PayrollHeader({ canWrite, canManageConceptos }: PayrollHeaderProps) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="min-w-0">
-        <h1 className="text-base font-bold text-slate-900">Nómina</h1>
-        <p className="text-xs text-slate-500">
-          Periodos de planilla, ingresos, deducciones y comprobantes de pago.
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {canWrite && (
-          <Link
-            href="/payroll/aguinaldo-liquidacion"
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-blue-300 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
-          >
-            <Gift className="h-3.5 w-3.5" /> Aguinaldo y liquidación
-          </Link>
-        )}
-        {canWrite && (
-          <Link
-            href="/payroll/banco-horas"
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-blue-300 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
-          >
-            <Clock className="h-3.5 w-3.5" /> Banco de horas
-          </Link>
-        )}
-        {canManageConceptos && (
-          <Link
-            href="/payroll/concepts"
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-blue-300 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
-          >
-            <Coins className="h-3.5 w-3.5" /> Conceptos de nómina
-          </Link>
-        )}
-        {canWrite && (
-          <Link
-            href="/payroll/new"
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-          >
-            <CalendarPlus className="h-3.5 w-3.5" /> Nuevo periodo
-          </Link>
-        )}
+    <div className="@container">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-64">
+          <h1 className="text-base font-bold text-slate-900">Nómina</h1>
+          <p className="text-xs text-slate-500">
+            Periodos de planilla, ingresos, deducciones y comprobantes de pago.
+          </p>
+        </div>
+
+        <div className="grid w-full grid-cols-2 gap-2 @sm:w-auto @sm:flex @sm:flex-wrap @sm:items-center">
+          {canWrite && (
+            <Link href="/payroll/aguinaldo-liquidacion" className={cn(SECONDARY, '@sm:w-auto')}>
+              <Gift className="h-3.5 w-3.5" aria-hidden="true" /> Aguinaldo y liquidación
+            </Link>
+          )}
+          {canWrite && (
+            <Link href="/payroll/banco-horas" className={cn(SECONDARY, '@sm:w-auto')}>
+              <Clock className="h-3.5 w-3.5" aria-hidden="true" /> Banco de horas
+            </Link>
+          )}
+          {canManageConceptos && (
+            <Link href="/payroll/concepts" className={cn(SECONDARY, '@sm:w-auto')}>
+              <Coins className="h-3.5 w-3.5" aria-hidden="true" /> Conceptos de nómina
+            </Link>
+          )}
+          {canWrite && (
+            <Link href="/payroll/new" className={cn(PRIMARY, '@sm:w-auto')}>
+              <CalendarPlus className="h-3.5 w-3.5" aria-hidden="true" /> Nuevo periodo
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   )

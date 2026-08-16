@@ -29,7 +29,7 @@ import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePaga
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
 import { ICON_CONTROL_BASE, ICON_CONTROL_TONES, IconButton } from '@/components/ui/IconButton'
-import { TABLE_TH, TABLE_TH_RIGHT, TABLE_WRAP } from '@/components/ui/styles'
+import { META_LABEL, TABLE_TH, TABLE_TH_RIGHT } from '@/components/ui/styles'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
 
@@ -89,13 +89,91 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     8
   )
 
+  /** Toggle de pago + acceso al comprobante. Lo rinden tarjetas y tabla. */
+  function EstadoPago({ detalle: d }: { detalle: DetalleNominaItem }) {
+    return (
+      <div className="flex items-center gap-1.5">
+        {canWrite ? (
+          <button
+            type="button"
+            onClick={() => handleTogglePagado(d)}
+            disabled={pagandoId === d.id}
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold outline-none ring-1 ring-inset transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
+              d.pagado
+                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100'
+                : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            {pagandoId === d.id ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            )}
+            {d.pagado ? 'Pagado' : 'Pendiente'}
+          </button>
+        ) : (
+          <Badge tone={d.pagado ? 'emerald' : 'slate'}>{d.pagado ? 'Pagado' : 'Pendiente'}</Badge>
+        )}
+        {d.pagado && (
+          <Link
+            href={`/comprobante/${periodo.id}/${d.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Ver comprobante de pago"
+            className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.blue, 'shrink-0')}
+          >
+            <Receipt className="h-3.5 w-3.5" />
+          </Link>
+        )}
+      </div>
+    )
+  }
+
+  /** Editar ingresos y registrar incapacidad. */
+  function AccionesDetalle({ detalle: d }: { detalle: DetalleNominaItem }) {
+    return (
+      <>
+        {puedeEditar && (
+          <IconButton
+            onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
+            aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
+            tone="blue"
+          >
+            {editandoId === d.id ? (
+              <X className="h-3.5 w-3.5" />
+            ) : (
+              <Pencil className="h-3.5 w-3.5" />
+            )}
+          </IconButton>
+        )}
+        <IconButton
+          onClick={() =>
+            setRegistrandoIncapacidadId(registrandoIncapacidadId === d.id ? null : d.id)
+          }
+          aria-label={
+            registrandoIncapacidadId === d.id
+              ? 'Cerrar registro de incapacidad'
+              : 'Registrar incapacidad'
+          }
+          tone="rose"
+        >
+          {registrandoIncapacidadId === d.id ? (
+            <X className="h-3.5 w-3.5" />
+          ) : (
+            <Stethoscope className="h-3.5 w-3.5" />
+          )}
+        </IconButton>
+      </>
+    )
+  }
+
   const resumen = [
     {
       key: 'empleados',
       icon: Users,
       label: 'Empleados en planilla',
       value: String(periodo.detalles.length),
-      tone: 'bg-blue-50 text-blue-600',
+      tone: 'bg-brand-50 text-brand-600',
     },
     {
       key: 'bruto',
@@ -114,7 +192,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   ]
 
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -143,7 +221,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         {resumen.map(({ key, icon: Icon, label, value, tone }) => (
           <div
             key={key}
@@ -169,8 +247,99 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           </p>
         </div>
       ) : (
-        <div className={TABLE_WRAP}>
-          <div className="overflow-x-auto">
+        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            Movil: tarjeta por empleado. Son nueve columnas de montos; en
+            375px el scroll horizontal dejaba al usuario adivinando cual
+            cifra estaba mirando. El neto va aparte y en grande porque es el
+            numero que se viene a buscar — los demas son su desglose.
+          */}
+          <ul className="space-y-3 p-3 @3xl:hidden">
+            {paginatedItems.map((d, i) => (
+              <li
+                key={d.id}
+                style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+                className="animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-slate-900">
+                      {d.empleadoNombre}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      {d.numeroCuenta
+                        ? `${d.bancoNombre ? d.bancoNombre + ' · ' : ''}${formatIban(d.numeroCuenta)}`
+                        : 'Sin cuenta IBAN registrada'}
+                    </p>
+                  </div>
+                  <EstadoPago detalle={d} />
+                </div>
+
+                <div className="flex items-baseline justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2">
+                  <span className={META_LABEL}>Salario neto</span>
+                  <span className="text-base font-bold tabular-nums text-slate-900">
+                    {formatCRC(d.salarioNeto)}
+                  </span>
+                </div>
+
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+                  {[
+                    { label: 'Bruto', valor: formatCRC(d.salarioBruto) },
+                    { label: 'Deducc. %', valor: formatCRC(d.deduccionPorcentual) },
+                    { label: 'Deducc. manual', valor: formatCRC(d.deduccionManual) },
+                    { label: 'Cargas patronales', valor: formatCRC(d.cargasPatronales) },
+                    {
+                      label: 'Incapacidad',
+                      valor: d.incapacidad ? formatCRC(d.incapacidad.monto) : '—',
+                    },
+                  ].map(({ label, valor }) => (
+                    <div key={label} className="min-w-0">
+                      <dt className={META_LABEL}>{label}</dt>
+                      <dd className="mt-0.5 text-xs tabular-nums text-slate-600">{valor}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {canWrite && (
+                  // gap-2: con el area tocable en 44px, gap-1 los deja pegados.
+                  <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                    <AccionesDetalle detalle={d} />
+                  </div>
+                )}
+
+                {puedeEditar && editandoId === d.id && (
+                  <div className="rounded-xl bg-slate-50/60 p-3">
+                    <div className="mb-3 flex items-center gap-2">
+                      <Pencil className="h-3.5 w-3.5 text-brand-600" />
+                      <p className="text-xs font-bold text-slate-800">Editar ingresos</p>
+                    </div>
+                    <DetalleEditForm
+                      detalle={d}
+                      conceptosManuales={conceptosManuales}
+                      onCancel={() => setEditandoId(null)}
+                      onSuccess={() => {
+                        setEditandoId(null)
+                        router.refresh()
+                      }}
+                    />
+                  </div>
+                )}
+
+                {canWrite && registrandoIncapacidadId === d.id && (
+                  <div className="rounded-xl bg-slate-50/60 p-3">
+                    <RegistrarIncapacidadForm
+                      historialLaboralId={d.historialLaboralId}
+                      empleadoNombre={d.empleadoNombre}
+                      onCancel={() => setRegistrandoIncapacidadId(null)}
+                      onSuccess={() => setRegistrandoIncapacidadId(null)}
+                    />
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden @3xl:block @3xl:overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">
@@ -241,80 +410,12 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5">
-                          {canWrite ? (
-                            <button
-                              type="button"
-                              onClick={() => handleTogglePagado(d)}
-                              disabled={pagandoId === d.id}
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset outline-none transition focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
-                                d.pagado
-                                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100'
-                                  : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'
-                              }`}
-                            >
-                              {pagandoId === d.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                              )}
-                              {d.pagado ? 'Pagado' : 'Pendiente'}
-                            </button>
-                          ) : (
-                            <Badge tone={d.pagado ? 'emerald' : 'slate'}>
-                              {d.pagado ? 'Pagado' : 'Pendiente'}
-                            </Badge>
-                          )}
-                          {d.pagado && (
-                            <Link
-                              href={`/comprobante/${periodo.id}/${d.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              aria-label="Ver comprobante de pago"
-                              className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.blue, 'shrink-0')}
-                            >
-                              <Receipt className="h-3.5 w-3.5" />
-                            </Link>
-                          )}
-                        </div>
+                        <EstadoPago detalle={d} />
                       </td>
                       {canWrite && (
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-end gap-1">
-                            {puedeEditar && (
-                              <IconButton
-                                onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
-                                aria-label={
-                                  editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'
-                                }
-                                tone="blue"
-                              >
-                                {editandoId === d.id ? (
-                                  <X className="h-3.5 w-3.5" />
-                                ) : (
-                                  <Pencil className="h-3.5 w-3.5" />
-                                )}
-                              </IconButton>
-                            )}
-                            <IconButton
-                              onClick={() =>
-                                setRegistrandoIncapacidadId(
-                                  registrandoIncapacidadId === d.id ? null : d.id
-                                )
-                              }
-                              aria-label={
-                                registrandoIncapacidadId === d.id
-                                  ? 'Cerrar registro de incapacidad'
-                                  : 'Registrar incapacidad'
-                              }
-                              tone="rose"
-                            >
-                              {registrandoIncapacidadId === d.id ? (
-                                <X className="h-3.5 w-3.5" />
-                              ) : (
-                                <Stethoscope className="h-3.5 w-3.5" />
-                              )}
-                            </IconButton>
+                            <AccionesDetalle detalle={d} />
                           </div>
                         </td>
                       )}
@@ -323,7 +424,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                       <tr className="border-b border-slate-100 bg-slate-50/60">
                         <td colSpan={9} className="px-4 py-4">
                           <div className="mb-3 flex items-center gap-2">
-                            <Pencil className="h-3.5 w-3.5 text-blue-600" />
+                            <Pencil className="h-3.5 w-3.5 text-brand-600" />
                             <p className="text-xs font-bold text-slate-800">
                               Editar ingresos de {d.empleadoNombre}
                             </p>

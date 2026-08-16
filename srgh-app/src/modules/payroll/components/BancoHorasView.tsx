@@ -11,12 +11,12 @@ import { compensarBancoHoras } from '@/modules/payroll/actions/compensarBancoHor
 import { PagarBancoHorasModal } from './PagarBancoHorasModal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
+  META_LABEL,
   TABLE_HEAD,
   TABLE_TD,
   TABLE_TD_NUM,
   TABLE_TD_STRONG,
   TABLE_TH,
-  TABLE_WRAP,
 } from '@/components/ui/styles'
 import { Badge, type BadgeTone } from '@/components/ui/Badge'
 
@@ -89,8 +89,8 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
   const items = tab === 'pendientes' ? pendientes : historial
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+    <div className="@container space-y-3">
+      <div className="flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-800">
         <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <p>
           Cuando un empleado trabaja más de las horas normales de la quincena, esas horas de más
@@ -108,7 +108,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
             onClick={() => setTab(t.id)}
             className={`rounded-lg px-3 py-1.5 transition ${
               tab === t.id
-                ? 'bg-white text-blue-700 shadow-sm'
+                ? 'bg-white text-brand-700 shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
@@ -124,8 +124,89 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
             : 'Todavía no hay movimientos pagados ni compensados.'}
         </p>
       ) : (
-        <div className={TABLE_WRAP}>
-          <table className="w-full text-left text-xs">
+        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            Movil: tarjeta por movimiento. Las columnas cambian segun la
+            pestaña (historial agrega monto pagado y fecha), asi que la lista
+            de campos se arma condicional en vez de duplicar la tarjeta.
+          */}
+          <ul className="space-y-3 @3xl:hidden">
+            {items.map((item, i) => (
+              <li
+                key={item.id}
+                style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+                className="animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-slate-800">
+                      {item.empleadoNombre}
+                    </p>
+                    <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">
+                      {item.empleadoCedula}
+                    </p>
+                  </div>
+                  <Badge tone={ESTADO_TONE[item.estado]} size="xs">
+                    {ESTADO_LABEL[item.estado]}
+                  </Badge>
+                </div>
+
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+                  {[
+                    { label: 'Periodo de origen', valor: item.periodoOrigenLabel },
+                    { label: 'Horas', valor: String(item.horas) },
+                    { label: 'Monto sugerido', valor: formatCRC(item.montoSugerido) },
+                    ...(tab === 'historial'
+                      ? [
+                          {
+                            label: 'Monto pagado',
+                            valor: item.estado === 'pagado' ? formatCRC(item.montoPagado) : '—',
+                          },
+                          {
+                            label: 'Fecha',
+                            valor: formatDate(item.fechaResolucion?.slice(0, 10)),
+                          },
+                        ]
+                      : []),
+                  ].map(({ label, valor }) => (
+                    <div key={label} className="min-w-0">
+                      <dt className={META_LABEL}>{label}</dt>
+                      <dd className="mt-0.5 break-words text-xs tabular-nums text-slate-600">
+                        {valor}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {canWrite && tab === 'pendientes' && (
+                  <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setItemACompensar(item)}
+                      disabled={submittingId === item.id}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60"
+                    >
+                      Compensar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setItemAPagar(item)}
+                      disabled={submittingId === item.id}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
+                    >
+                      {submittingId === item.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        'Pagar'
+                      )}
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <table className="hidden w-full text-left text-xs @3xl:table">
             <thead className={TABLE_HEAD}>
               <tr>
                 <th className={TABLE_TH}>Empleado</th>
@@ -171,7 +252,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                           type="button"
                           onClick={() => setItemACompensar(item)}
                           disabled={submittingId === item.id}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-blue-300 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-60"
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60"
                         >
                           Compensar
                         </button>
