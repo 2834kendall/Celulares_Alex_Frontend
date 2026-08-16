@@ -11,6 +11,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import {
   META_LABEL,
+  SELECT,
   TABLE_HEAD,
   TABLE_ROW_CLICKABLE,
   TABLE_TD,
@@ -19,9 +20,6 @@ import {
 } from '@/components/ui/styles'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
-
-const SELECT_CLASSES =
-  'rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10'
 
 interface EmployeesListProps {
   employees: EmpleadoListItem[]
@@ -96,7 +94,12 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por nombre o identificación…"
-            className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10"
+            // Mismas metricas verticales que SELECT (py-2, min-h-11 con dedo):
+            // el buscador y los selects de al lado compartian fila con alturas
+            // distintas y eso era gran parte de lo que se leia "desalineado".
+            // El padding izquierdo queda aparte (pl-8, para el icono) porque
+            // por eso este campo nunca uso el token INPUT compartido.
+            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-800 shadow-sm outline-none transition hover:border-slate-300 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10 pointer-coarse:min-h-11"
           />
         </label>
         <label className="flex items-center gap-1.5">
@@ -104,7 +107,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
           <select
             value={estado}
             onChange={(e) => setEstado(e.target.value as EstadoFiltro)}
-            className={SELECT_CLASSES}
+            className={SELECT}
           >
             <option value="todos">Todos los estados</option>
             <option value="activos">Activos</option>
@@ -116,7 +119,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
           <select
             value={tipoContrato}
             onChange={(e) => setTipoContrato(e.target.value)}
-            className={SELECT_CLASSES}
+            className={SELECT}
           >
             <option value="todos">Todos los contratos</option>
             {tiposContrato.map((nombre) => (
@@ -137,7 +140,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
             canWrite && (
               <Link
                 href="/employees/new"
-                className="mt-1 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
+                className="mt-1 flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 active:scale-[0.98]"
               >
                 <UserPlus className="h-3.5 w-3.5" /> Registrar el primer empleado
               </Link>
@@ -170,7 +173,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
               >
                 <Link
                   href={`/employees/${employee.emp_id}`}
-                  className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm outline-none transition hover:border-slate-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-blue-500/60 active:scale-[0.99] motion-reduce:active:scale-100"
+                  className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm outline-none transition hover:border-slate-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.99] motion-reduce:active:scale-100"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
@@ -233,7 +236,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
                           <Link
                             href={`/employees/${employee.emp_id}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="font-medium text-slate-800 outline-none transition hover:text-blue-700 focus-visible:underline"
+                            className="font-medium text-slate-800 outline-none transition hover:text-brand-700 focus-visible:underline"
                           >
                             {fullName(employee)}
                           </Link>

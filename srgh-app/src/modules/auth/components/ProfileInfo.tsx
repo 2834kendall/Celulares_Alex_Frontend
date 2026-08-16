@@ -1,4 +1,5 @@
 import { Briefcase, Building2, Mail } from 'lucide-react'
+import { BreakableEmail } from '@/components/ui/BreakableEmail'
 
 interface ProfileInfoProps {
   email: string
@@ -25,11 +26,13 @@ export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
     <section className="mx-auto max-w-2xl">
       <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="flex items-center gap-4">
-          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-blue-700 text-xl font-bold text-white">
+          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xl font-bold text-white">
             {initials}
           </span>
           <div className="min-w-0 leading-tight">
-            <h1 className="break-all text-xl font-extrabold text-slate-900">{email}</h1>
+            <h1 className="text-xl font-extrabold text-slate-900">
+              <BreakableEmail email={email} />
+            </h1>
             <p className="mt-1 text-sm text-slate-500">{empresaNombre}</p>
           </div>
         </div>
@@ -44,7 +47,9 @@ export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
                 <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   {etiqueta}
                 </dt>
-                <dd className="break-all text-sm font-medium text-slate-700">{valor}</dd>
+                <dd className="break-words text-sm font-medium text-slate-700">
+                  {key === 'correo' ? <BreakableEmail email={valor} /> : valor}
+                </dd>
               </div>
             </div>
           ))}

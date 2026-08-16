@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/Button'
 import { ICON_CONTROL_BASE, IconButton } from '@/components/ui/IconButton'
 import {
   META_LABEL,
+  SELECT,
   TABLE_HEAD,
   TABLE_ROW,
   TABLE_TD,
@@ -36,10 +37,8 @@ import {
   TABLE_TH_RIGHT,
 } from '@/components/ui/styles'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { BreakableEmail } from '@/components/ui/BreakableEmail'
 import { cn } from '@/lib/utils/cn'
-
-const SELECT_CLASSES =
-  'rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10'
 
 const ESTADO_BADGES: Record<UsuarioEstado, { label: string; classes: string }> = {
   activo: { label: 'Activo', classes: 'bg-emerald-50 text-emerald-700' },
@@ -170,7 +169,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
           // aparte porque reactivar es verde y no existe ese tono en IconButton.
           className={cn(
             ICON_CONTROL_BASE,
-            'focus-visible:ring-blue-500/60',
+            'focus-visible:ring-brand-500/60',
             desactivado
               ? 'hover:bg-emerald-50 hover:text-emerald-700'
               : 'hover:bg-rose-50 hover:text-rose-700'
@@ -198,7 +197,9 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por email o empleado…"
-            className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10"
+            // Mismas metricas verticales que SELECT (py-2, min-h-11 con dedo):
+            // ver la nota igual en EmployeesList.
+            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-800 shadow-sm outline-none transition hover:border-slate-300 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10 pointer-coarse:min-h-11"
           />
         </label>
         <label className="flex items-center gap-1.5">
@@ -206,7 +207,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
           <select
             value={estado}
             onChange={(e) => setEstado(e.target.value as EstadoFiltro)}
-            className={SELECT_CLASSES}
+            className={SELECT}
           >
             <option value="todos">Todos los estados</option>
             <option value="activo">Activos</option>
@@ -246,8 +247,8 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
                 className="animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 break-words text-sm font-semibold text-slate-800">
-                    {usuario.email}
+                  <p className="min-w-0 text-sm font-semibold text-slate-800">
+                    <BreakableEmail email={usuario.email} />
                   </p>
                   <EstadoBadge estado={usuario.estado} />
                 </div>
