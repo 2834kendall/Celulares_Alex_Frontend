@@ -227,7 +227,7 @@ export function LoginForm() {
                 type="submit"
                 id="submit-login"
                 disabled={isSubmitting}
-                className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-700/20 hover:shadow-blue-700/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
+                className={`w-full py-3.5 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-700/20 hover:shadow-brand-700/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
               >
                 {isSubmitting ? (
                   <>

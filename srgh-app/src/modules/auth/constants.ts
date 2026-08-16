@@ -8,8 +8,8 @@ export const brandConfig = {
   systemName: 'SGRH',
   tagline: 'Talento, asistencia y planillas',
   logo: 'S',
-  accent: 'bg-blue-700',
-  accentHover: 'hover:bg-blue-800',
+  accent: 'bg-brand-700',
+  accentHover: 'hover:bg-brand-800',
   gradient: 'from-slate-950 via-slate-900 to-slate-800',
 } as const
 

@@ -4,6 +4,7 @@ import { useFormContext } from 'react-hook-form'
 import type { CatalogoItem } from '@/modules/employees/types'
 import { getFieldError, INPUT_CLASSES, Labeled } from './EmployeeFields'
 import { Alert } from '@/components/ui/Alert'
+import { SELECT } from '@/components/ui/styles'
 
 interface EmployeeWizardStepUsuarioProps {
   roles: CatalogoItem[]
@@ -46,7 +47,7 @@ export function EmployeeWizardStepUsuario({
           checked={crearUsuario}
           disabled={!canInviteUser}
           onChange={(e) => onToggle(e.target.checked)}
-          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <span className="text-sm font-semibold text-slate-800">
           Crear cuenta de usuario del sistema
@@ -69,7 +70,7 @@ export function EmployeeWizardStepUsuario({
             <select
               {...register('usuario.rol_id', { valueAsNumber: true })}
               aria-invalid={Boolean(getFieldError(errors, 'usuario.rol_id'))}
-              className={INPUT_CLASSES}
+              className={SELECT}
             >
               <option value="">Seleccionar…</option>
               {roles.map((rol) => (
@@ -86,7 +87,7 @@ export function EmployeeWizardStepUsuario({
                 setValueAs: (value) => (value === '' ? null : Number(value)),
               })}
               aria-invalid={Boolean(getFieldError(errors, 'usuario.sucursal_id'))}
-              className={INPUT_CLASSES}
+              className={SELECT}
             >
               <option value="">Todas las sucursales</option>
               {sucursales.map((sucursal) => (

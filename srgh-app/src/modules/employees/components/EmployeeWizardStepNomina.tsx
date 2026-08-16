@@ -6,8 +6,8 @@ import {
   BankingFields,
   CatalogSelect,
   CurrencyInput,
+  DateInput,
   getFieldError,
-  INPUT_CLASSES,
   Labeled,
 } from './EmployeeFields'
 
@@ -28,12 +28,11 @@ export function EmployeeWizardStepNomina({
   bancos,
 }: EmployeeWizardStepNominaProps) {
   const {
-    register,
     formState: { errors },
   } = useFormContext()
 
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
       <section className="space-y-3">
         <p className="text-xs text-slate-500">
           Condiciones de la contratación. Estos datos crean el contrato vigente del colaborador.
@@ -60,11 +59,10 @@ export function EmployeeWizardStepNomina({
             label="Fecha de inicio *"
             error={getFieldError(errors, 'contratacion.lab_fecha_inicio')}
           >
-            <input
-              type="date"
-              {...register('contratacion.lab_fecha_inicio')}
-              aria-invalid={Boolean(getFieldError(errors, 'contratacion.lab_fecha_inicio'))}
-              className={INPUT_CLASSES}
+            <DateInput
+              name="contratacion.lab_fecha_inicio"
+              label="Fecha de inicio"
+              invalid={Boolean(getFieldError(errors, 'contratacion.lab_fecha_inicio'))}
             />
           </Labeled>
 

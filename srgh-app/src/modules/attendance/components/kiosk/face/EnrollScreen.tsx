@@ -73,7 +73,7 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
         <button
           type="button"
           onClick={() => setSavedName(null)}
-          className="mt-2 rounded-full bg-blue-600 px-6 py-2.5 text-sm font-bold text-white outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-white/60"
+          className="mt-2 rounded-full bg-brand-600 px-6 py-2.5 text-sm font-bold text-white outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-white/60"
         >
           Enrolar a otra persona
         </button>
@@ -112,7 +112,7 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
           <button
             type="button"
             onClick={() => setScanning(true)}
-            className="flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-base font-bold text-white shadow-lg outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-white/60 active:scale-95"
+            className="flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3 text-base font-bold text-white shadow-lg outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-white/60 active:scale-95"
           >
             <UserPlus className="h-5 w-5" /> Capturar rostro
           </button>

@@ -5,6 +5,7 @@ import { useOfflineSync } from './useOfflineSync'
 import { registerKioskMark } from '@/modules/attendance/actions/registerKioskMark'
 import {
   getQueuedMarks,
+  queueOfflineMark,
   removeQueuedMark,
 } from '@/modules/attendance/components/kiosk/offlineQueue'
 import type { KioskMarkInput } from '@/modules/attendance/types'
@@ -107,5 +108,48 @@ describe('useOfflineSync', () => {
 
     expect(outcome).toEqual({ queued: false, result: { ok: false, error: 'PIN incorrecto.' } })
     expect(result.current.pendingCount).toBe(0)
+  })
+
+  it('al sincronizar manda la hora del EVENTO, no la del reintento', async () => {
+    // Marca hecha a las 08:00 con la tablet sin red: asi quedo en la cola.
+    await queueOfflineMark({
+      id: 'marca-de-las-ocho',
+      employeeId: 10,
+      tipo: 'entrada',
+      fechaHora: '2026-08-14 08:00:00',
+      latitud: null,
+      longitud: null,
+      pin: null,
+      dispositivoId: null,
+    })
+
+    mockRegisterKioskMark.mockResolvedValue({ ok: true })
+    const { result } = renderHook(() => useOfflineSync())
+    await waitFor(() => expect(result.current.pendingCount).toBe(1))
+
+    // La red vuelve horas despues y dispara la sincronizacion.
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+    })
+
+    await waitFor(() => expect(mockRegisterKioskMark).toHaveBeenCalled())
+    expect(mockRegisterKioskMark).toHaveBeenCalledWith(
+      expect.objectContaining({ employeeId: 10, fechaHora: '2026-08-14 08:00:00' })
+    )
+    await waitFor(() => expect(result.current.pendingCount).toBe(0))
+  })
+
+  it('la marca encolada guarda la hora en que se hizo, no un placeholder', async () => {
+    setOnline(false)
+    const { result } = renderHook(() => useOfflineSync())
+    await waitFor(() => expect(result.current.isOnline).toBe(false))
+
+    await act(async () => {
+      await result.current.submitMark(input)
+    })
+    await waitFor(() => expect(result.current.pendingCount).toBe(1))
+
+    const [queued] = await getQueuedMarks()
+    expect(queued.fechaHora).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
   })
 })

@@ -11,13 +11,13 @@ import { ShiftTypeForm } from './ShiftTypeForm'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import {
+  META_LABEL,
   TABLE_HEAD,
   TABLE_TD,
   TABLE_TD_NUM,
   TABLE_TD_STRONG,
   TABLE_TH,
   TABLE_TH_RIGHT,
-  TABLE_WRAP,
 } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -48,7 +48,7 @@ export function ShiftTypesList({ shiftTypes, canWrite }: ShiftTypesListProps) {
   } = usePagination(shiftTypes, 8)
 
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-sm font-bold text-slate-900">Tipos de jornada</h2>
@@ -103,8 +103,70 @@ export function ShiftTypesList({ shiftTypes, canWrite }: ShiftTypesListProps) {
           }
         />
       ) : (
-        <div className={TABLE_WRAP}>
-          <div className="overflow-x-auto">
+        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            Movil: tarjeta por tipo de jornada. Las tres cifras son limites y
+            recargo, que sin encabezado son numeros sueltos — van rotuladas.
+          */}
+          <ul className="space-y-3 @3xl:hidden">
+            {paginatedShiftTypes.map((shiftType, i) => (
+              <li
+                key={shiftType.tjo_id}
+                style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+                className={`animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${
+                  deletingId === shiftType.tjo_id ? 'opacity-50' : ''
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-800">{shiftType.tjo_codigo}</p>
+                  <p className="mt-0.5 break-words text-[11px] text-slate-500">
+                    {shiftType.tjo_nombre}
+                  </p>
+                </div>
+
+                <dl className="grid grid-cols-3 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+                  {[
+                    {
+                      label: 'Máx. diarias',
+                      valor: String(shiftType.tjo_horas_max_diarias ?? '—'),
+                    },
+                    {
+                      label: 'Máx. semanales',
+                      valor: String(shiftType.tjo_horas_max_semanales ?? '—'),
+                    },
+                    { label: 'Recargo', valor: `${shiftType.tjo_recargo_porcentaje}%` },
+                  ].map(({ label, valor }) => (
+                    <div key={label} className="min-w-0">
+                      <dt className={META_LABEL}>{label}</dt>
+                      <dd className="mt-0.5 text-xs tabular-nums text-slate-600">{valor}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {canWrite && (
+                  <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                    <IconButton
+                      onClick={() => setEditing(shiftType)}
+                      aria-label="Editar"
+                      tone="blue"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => requestDelete(shiftType.tjo_id)}
+                      disabled={deletingId === shiftType.tjo_id}
+                      aria-label="Eliminar"
+                      tone="rose"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </IconButton>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden @3xl:block @3xl:overflow-x-auto">
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>

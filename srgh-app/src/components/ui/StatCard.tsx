@@ -5,7 +5,7 @@ import { CARD, CARD_HOVER } from '@/components/ui/styles'
 export type StatTone = 'blue' | 'emerald' | 'amber' | 'rose' | 'slate'
 
 const TONES: Record<StatTone, string> = {
-  blue: 'bg-blue-50 text-blue-600',
+  blue: 'bg-brand-50 text-brand-600',
   emerald: 'bg-emerald-50 text-emerald-600',
   amber: 'bg-amber-50 text-amber-600',
   rose: 'bg-rose-50 text-rose-600',

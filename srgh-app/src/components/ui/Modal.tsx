@@ -32,8 +32,13 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
       aria-labelledby={titleId}
       onClick={onClose}
     >
+      {/*
+        El fondo se funde (`animate-fade-in` en el contenedor) y el panel
+        ademas escala: entrar los dos con la misma opacidad plana hacia que
+        el modal "apareciera" de golpe, sin sensacion de que sale del clic.
+      */}
       <div
-        className="animate-fade-in w-full max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5"
+        className="animate-modal-in w-full max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
@@ -47,7 +52,14 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
             <X className="h-3.5 w-3.5" />
           </IconButton>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto p-4">{children}</div>
+        {/*
+          dvh y no vh: en movil la barra de direcciones se retrae y expande, y
+          `vh` se mide siempre contra el viewport MAS GRANDE. Con la barra
+          visible, un 70vh real ocupa mas del 70% de lo que se ve y el ultimo
+          control del formulario queda debajo del borde, inalcanzable. El caso
+          que lo delata es el telefono acostado (812x375).
+        */}
+        <div className="max-h-[70dvh] overflow-y-auto p-4">{children}</div>
       </div>
     </div>
   )

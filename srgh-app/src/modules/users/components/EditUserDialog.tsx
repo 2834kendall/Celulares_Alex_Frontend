@@ -13,10 +13,10 @@ import {
   type UsuarioListItem,
 } from '@/modules/users/types'
 import { updateUserAssignment } from '@/modules/users/actions/updateUserAssignment'
-import { INPUT_CLASSES, Labeled, toOptionalNumber } from './fields'
+import { Labeled, toOptionalNumber } from './fields'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { SPINNER } from '@/components/ui/styles'
+import { SELECT, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface EditUserDialogProps {
@@ -102,7 +102,7 @@ export function EditUserDialog({
             <select
               {...register('rol_id', { valueAsNumber: true })}
               aria-invalid={Boolean(errors.rol_id)}
-              className={INPUT_CLASSES}
+              className={SELECT}
             >
               {roles.map((rol) => (
                 <option key={rol.id} value={rol.id}>
@@ -116,7 +116,7 @@ export function EditUserDialog({
             <select
               {...register('sucursal_id', { setValueAs: toOptionalNumber })}
               aria-invalid={Boolean(errors.sucursal_id)}
-              className={INPUT_CLASSES}
+              className={SELECT}
             >
               <option value="">Todas las sucursales</option>
               {sucursales.map((sucursal) => (
@@ -132,7 +132,7 @@ export function EditUserDialog({
           <select
             {...register('empleado_id', { setValueAs: toOptionalNumber })}
             aria-invalid={Boolean(errors.empleado_id)}
-            className={INPUT_CLASSES}
+            className={SELECT}
           >
             <option value="">Sin empleado vinculado</option>
             {opcionesEmpleado.map((empleado) => (

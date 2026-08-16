@@ -9,7 +9,7 @@ import { averageScore, classifyScore, scoreColor } from '@/modules/evaluations/l
 import { createEvaluation } from '@/modules/evaluations/actions/createEvaluation'
 import { NotesListInput } from './NotesListInput'
 import { Button } from '@/components/ui/Button'
-import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface EvaluationFormProps {
@@ -136,7 +136,7 @@ export function EvaluationForm({
             value={labId}
             disabled={isSubmitting}
             onChange={(e) => setLabId(e.target.value === '' ? '' : Number(e.target.value))}
-            className={INPUT}
+            className={SELECT}
           >
             <option value="">Seleccione un colaborador...</option>
             {collaborators.map((c) => (
@@ -155,7 +155,7 @@ export function EvaluationForm({
             value={tipo}
             disabled={isSubmitting}
             onChange={(e) => setTipo(e.target.value as (typeof EVALUATION_TYPES)[number])}
-            className={INPUT}
+            className={SELECT}
           >
             {EVALUATION_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -201,7 +201,7 @@ export function EvaluationForm({
           </p>
           {promedio !== null && (
             <p className="text-[11px] font-semibold text-slate-500">
-              Promedio: <span className="font-bold tabular-nums text-blue-700">{promedio}/10</span>{' '}
+              Promedio: <span className="font-bold tabular-nums text-brand-700">{promedio}/10</span>{' '}
               · {classifyScore(promedio).label}
             </p>
           )}
@@ -246,7 +246,7 @@ export function EvaluationForm({
                     value={entry.observacion}
                     disabled={isSubmitting || entry.noAplica}
                     onChange={(e) => patchScore(r.criterioId!, { observacion: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 shadow-sm transition placeholder:text-slate-300 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 shadow-sm transition placeholder:text-slate-300 focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/10 disabled:cursor-not-allowed disabled:bg-slate-50"
                     placeholder="Observaciones (opcional)"
                   />
                   <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] font-medium text-slate-500">
@@ -255,7 +255,7 @@ export function EvaluationForm({
                       checked={entry.noAplica}
                       disabled={isSubmitting}
                       onChange={(e) => patchScore(r.criterioId!, { noAplica: e.target.checked })}
-                      className="h-3.5 w-3.5 rounded border-slate-300 accent-blue-600"
+                      className="h-3.5 w-3.5 rounded border-slate-300 accent-brand-600"
                     />
                     No aplica
                   </label>

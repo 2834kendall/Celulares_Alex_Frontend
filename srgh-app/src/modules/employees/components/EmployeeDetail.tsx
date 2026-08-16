@@ -25,6 +25,8 @@ import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
 import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
 import { Button } from '@/components/ui/Button'
 import { META_LABEL } from '@/components/ui/styles'
+import { ICON_CONTROL_BASE, ICON_CONTROL_TONES } from '@/components/ui/IconButton'
+import { cn } from '@/lib/utils/cn'
 
 interface EmployeeDetailProps {
   empleado: EmpleadoDetalle
@@ -240,7 +242,7 @@ export function EmployeeDetail({
           <Link
             href="/employees"
             aria-label="Volver al listado"
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+            className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.slate, 'shrink-0')}
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
@@ -253,7 +255,7 @@ export function EmployeeDetail({
                 type="button"
                 onClick={() => setEditingPhoto(true)}
                 aria-label="Editar foto"
-                className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-600 text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-brand-600 text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60"
               >
                 <Camera className="h-3.5 w-3.5" />
               </button>

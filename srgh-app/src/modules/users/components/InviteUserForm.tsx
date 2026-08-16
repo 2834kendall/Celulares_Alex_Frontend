@@ -12,7 +12,7 @@ import { inviteUser } from '@/modules/users/actions/inviteUser'
 import { INPUT_CLASSES, Labeled, toOptionalNumber } from './fields'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { SPINNER } from '@/components/ui/styles'
+import { SELECT, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface InviteUserFormProps {
@@ -96,7 +96,7 @@ export function InviteUserForm({
               },
             })}
             aria-invalid={Boolean(errors.empleado_id)}
-            className={INPUT_CLASSES}
+            className={SELECT}
           >
             <option value="">Sin empleado vinculado</option>
             {empleadosSinUsuario.map((empleado) => (
@@ -122,7 +122,7 @@ export function InviteUserForm({
             <select
               {...register('rol_id', { valueAsNumber: true })}
               aria-invalid={Boolean(errors.rol_id)}
-              className={INPUT_CLASSES}
+              className={SELECT}
             >
               <option value="">Seleccionar…</option>
               {roles.map((rol) => (
@@ -137,7 +137,7 @@ export function InviteUserForm({
             <select
               {...register('sucursal_id', { setValueAs: toOptionalNumber })}
               aria-invalid={Boolean(errors.sucursal_id)}
-              className={INPUT_CLASSES}
+              className={SELECT}
             >
               <option value="">Todas las sucursales</option>
               {sucursales.map((sucursal) => (

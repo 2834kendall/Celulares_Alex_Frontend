@@ -1,6 +1,7 @@
 'use client'
 
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { IconButton } from '@/components/ui/IconButton'
 
 interface PaginationProps {
   page: number
@@ -21,24 +22,12 @@ export function Pagination({ page, totalPages, onPrevious, onNext }: PaginationP
         Página {page} de {totalPages}
       </p>
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={onPrevious}
-          disabled={page <= 1}
-          aria-label="Página anterior"
-          className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-40"
-        >
+        <IconButton onClick={onPrevious} disabled={page <= 1} aria-label="Página anterior">
           <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={page >= totalPages}
-          aria-label="Página siguiente"
-          className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-40"
-        >
+        </IconButton>
+        <IconButton onClick={onNext} disabled={page >= totalPages} aria-label="Página siguiente">
           <ChevronRight className="h-3.5 w-3.5" />
-        </button>
+        </IconButton>
       </div>
     </div>
   )

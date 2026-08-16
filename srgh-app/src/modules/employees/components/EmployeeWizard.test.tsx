@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { EmployeeWizard } from './EmployeeWizard'
 import { TERRITORIO } from './testFixtures'
@@ -67,15 +67,40 @@ function renderWizard(canInviteUser = true, canManageDocs = true) {
   )
 }
 
+/**
+ * Elige una fecha en el calendario del sistema.
+ *
+ * Ya no es un `<input type="date">` donde bastaba un fireEvent.change: es un
+ * boton que abre un popover, asi que hay que abrirlo y tocar el dia. Se toma
+ * el dia 1 del mes que ofrezca por defecto, que es suficiente para pasar la
+ * validacion de "campo requerido" — el valor exacto no lo asertan estos
+ * tests, solo que el formulario avance.
+ */
+async function elegirFecha(user: UserEvent, label: string) {
+  await user.click(screen.getByRole('button', { name: label }))
+  const calendario = within(screen.getByRole('dialog', { name: label }))
+  // Se busca por el texto del dia y no por el nombre accesible, que trae el
+  // dia de la semana y cambia segun la fecha real de ejecucion. El 15 existe
+  // en todos los meses.
+  const dia15 = calendario.getAllByRole('button').find((b) => b.textContent?.trim() === '15')!
+  await user.click(dia15)
+
+  // Devuelve la fecha elegida para que las aserciones no hardcodeen un mes:
+  // el calendario abre en el mes CORRIENTE, asi que el valor cambia segun
+  // cuando se corran los tests.
+  const hoy = new Date()
+  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-15`
+}
+
 async function fillStepPersonal(user: UserEvent) {
+  let fechaIngreso = ''
   await user.type(screen.getByLabelText('Nombre *'), 'Ana')
   await user.type(screen.getByLabelText('Primer apellido *'), 'Mora')
   await user.selectOptions(screen.getByLabelText('Tipo de identificación *'), '1')
   await user.type(screen.getByLabelText('Número de identificación *'), '1-1111-1111')
-  fireEvent.change(screen.getByLabelText('Fecha de ingreso *'), {
-    target: { value: '2024-01-01' },
-  })
+  fechaIngreso = await elegirFecha(user, 'Fecha de ingreso')
   await fillDireccion(user)
+  return fechaIngreso
 }
 
 /** La dirección vive en el paso 1: sin ella «Siguiente» no avanza. */
@@ -91,9 +116,7 @@ async function fillStepNomina(user: UserEvent) {
   await user.selectOptions(screen.getByLabelText('Sucursal *'), '2')
   await user.selectOptions(screen.getByLabelText('Tipo de contrato *'), '1')
   await user.selectOptions(screen.getByLabelText('Tipo de jornada *'), '1')
-  fireEvent.change(screen.getByLabelText('Fecha de inicio *'), {
-    target: { value: '2024-02-01' },
-  })
+  await elegirFecha(user, 'Fecha de inicio')
   await user.type(screen.getByLabelText('Salario base (₡) *'), '500000')
   await user.type(screen.getByLabelText('Salario real (₡) *'), '550000')
 }
@@ -119,7 +142,7 @@ describe('<EmployeeWizard />', () => {
   it('arranca en el paso 1 con el stepper visible', () => {
     renderWizard()
 
-    expect(screen.getByText('Información principal')).toBeInTheDocument()
+    expect(within(screen.getByRole('list')).getByText('Información principal')).toBeInTheDocument()
     expect(screen.getByLabelText('Nombre *')).toBeInTheDocument()
     expect(screen.queryByLabelText('Puesto *')).not.toBeInTheDocument()
   })
@@ -154,7 +177,7 @@ describe('<EmployeeWizard />', () => {
     const user = userEvent.setup()
     renderWizard()
 
-    await fillStepPersonal(user)
+    const fechaIngreso = await fillStepPersonal(user)
     await user.click(screen.getByRole('button', { name: /siguiente/i }))
     await screen.findByLabelText('Puesto *')
 
@@ -179,7 +202,7 @@ describe('<EmployeeWizard />', () => {
             emp_apellido_1: 'Mora',
             emp_tipo_identificacion_id: 1,
             emp_numero_identificacion: '1-1111-1111',
-            emp_fecha_ingreso_original: '2024-01-01',
+            emp_fecha_ingreso_original: fechaIngreso,
           }),
           contratacion: expect.objectContaining({
             lab_puesto_id: 3,

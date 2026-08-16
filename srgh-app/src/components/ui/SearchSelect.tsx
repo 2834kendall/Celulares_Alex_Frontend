@@ -94,7 +94,7 @@ export function SearchSelect({
 
   return (
     <div ref={containerRef} className={`relative max-w-full ${className}`}>
-      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-600/10">
+      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition hover:border-slate-300 focus-within:border-brand-600 focus-within:ring-4 focus-within:ring-brand-600/10 pointer-coarse:min-h-11">
         <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         <input
           type="text"
@@ -129,7 +129,7 @@ export function SearchSelect({
                     onClick={() => choose(o.value)}
                     onMouseEnter={() => setHighlighted(i)}
                     className={`flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none transition ${
-                      i === highlighted ? 'bg-blue-50' : ''
+                      i === highlighted ? 'bg-brand-50' : ''
                     }`}
                   >
                     {o.avatar}
@@ -143,7 +143,7 @@ export function SearchSelect({
                         </span>
                       )}
                     </span>
-                    {o.value === value && <Check className="h-3.5 w-3.5 shrink-0 text-blue-600" />}
+                    {o.value === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
                   </button>
                 </li>
               ))}

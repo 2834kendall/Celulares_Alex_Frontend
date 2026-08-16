@@ -65,15 +65,19 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
   )
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+    // Mismo criterio que el panel diario: se mide el contenedor, no el
+    // viewport, para que ambas pestañas se comporten igual con el sidebar
+    // abierto, cerrado, o en cualquier tamaño intermedio.
+    <div className="@container space-y-4">
+      {/* Mismo criterio que el panel diario: una columna o tres, nunca dos. */}
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         <StatCard icon={Users} label="Colaboradores" value={rows.length} />
         <StatCard icon={Clock} tone="amber" label="Tardias del mes" value={totalTardias} />
         <StatCard icon={CalendarX2} tone="rose" label="Ausencias del mes" value={totalAusencias} />
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0 flex-1 basis-48">
           <h2 className="text-sm font-bold capitalize text-slate-900">{formatMonth(monthISO)}</h2>
           <p className="truncate text-xs text-slate-500">Tardias y ausencias por colaborador.</p>
         </div>

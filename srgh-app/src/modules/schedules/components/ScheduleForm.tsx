@@ -9,7 +9,7 @@ import { createSchedule } from '@/modules/schedules/actions/createSchedule'
 import { updateSchedule } from '@/modules/schedules/actions/updateSchedule'
 import { stripSeconds } from '@/modules/schedules/lib/time'
 import { Button } from '@/components/ui/Button'
-import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface ShiftTypeOption {
@@ -129,7 +129,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           disabled={isSubmitting}
           aria-invalid={!!errors.hor_tipo_jornada_id}
           {...register('hor_tipo_jornada_id', { valueAsNumber: true })}
-          className={INPUT}
+          className={SELECT}
         >
           {shiftTypes.map((shiftType) => (
             <option key={shiftType.tjo_id} value={shiftType.tjo_id}>
@@ -228,7 +228,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
               onChange={(event) => toggleBreak(event.target.checked)}
               className="peer sr-only"
             />
-            <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2" />
+            <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2" />
             <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
           </span>
           <span className="text-xs text-slate-700 sm:text-sm">
@@ -287,7 +287,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
             {...register('hor_activo')}
             className="peer sr-only"
           />
-          <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2" />
+          <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2" />
           <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
         </span>
         <span className="text-xs text-slate-700 sm:text-sm">Plantilla activa</span>

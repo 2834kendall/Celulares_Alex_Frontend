@@ -99,6 +99,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         ],
         error: null,
       },
+      sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
           // 10 de julio: tardio (15 min tarde)
@@ -162,6 +163,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
       sgrh_sucursales: { data: [], error: null },
       sgrh_programacion_semanal: { data: [], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>

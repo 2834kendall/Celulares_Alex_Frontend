@@ -12,11 +12,52 @@
   --font-mono: var(--font-jetbrains-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/*
+ * Color de marca, como escala propia ("brand") en vez del "blue" de Tailwind
+ * escrito a mano en 181 lugares. Hoy son un ALIAS sobre la paleta azul que
+ * Tailwind ya trae — cero diferencia visual, mismo valor por otro nombre.
+ *
+ * Deliberadamente en un @theme SIN `inline` (a diferencia del bloque de
+ * arriba): `inline` colapsa la cadena de variables al generar cada utilidad,
+ * asi que `.bg-brand-600` habria terminado apuntando directo a
+ * `var(--color-blue-600)` — util hoy, pero el dia de la personalizacion por
+ * sucursal habria que sobreescribir una variable que dice "blue" para
+ * cambiar lo que en el codigo se llama "brand". Sin `inline`, Tailwind deja
+ * `--color-brand-600` como variable propia en :root y genera
+ * `.bg-brand-600 { background-color: var(--color-brand-600) }` — esa es la
+ * unica variable que hay que tocar para reskinear, y su nombre coincide con
+ * lo que hace.
+ *
+ * Solo se declaran los tonos que el codigo realmente usa (ver auditoria:
+ * 50/100/200/300/500/600/700/800) — no la escala completa de 11 pasos, que
+ * solo agregaria ruido sin ningun consumidor.
+ */
+@theme {
+  --color-brand-50: var(--color-blue-50);
+  --color-brand-100: var(--color-blue-100);
+  --color-brand-200: var(--color-blue-200);
+  --color-brand-300: var(--color-blue-300);
+  --color-brand-500: var(--color-blue-500);
+  --color-brand-600: var(--color-blue-600);
+  --color-brand-700: var(--color-blue-700);
+  --color-brand-800: var(--color-blue-800);
+}
+
+/*
+ * Sin bloque de prefers-color-scheme: dark a proposito. Este era boilerplate
+ * de create-next-app que nadie retiro — la app entera es un solo tema claro
+ * (cero clases `dark:` en todo el codigo) y ese bloque volvia el fondo casi
+ * negro (#0a0a0a) en cualquier telefono con el sistema en modo oscuro.
+ *
+ * Eso se veia en dos momentos: el flash de carga entre paginas (loading.tsx
+ * no pintaba fondo propio, asi que se veia el body de abajo) y el rebote
+ * elastico de iOS al hacer scroll mas alla del contenido, donde tambien
+ * asoma el body. `color-scheme: light` de paso le dice al navegador que no
+ * intente "modo oscuro automatico" sobre widgets nativos (scrollbars,
+ * inputs de fecha) de una pagina que nunca penso en dark mode.
+ */
+:root {
+  color-scheme: light;
 }
 
 body {
@@ -85,6 +126,29 @@ body {
 
   .animate-fade-in {
     animation: fade-in 0.2s ease-out;
+  }
+
+  /*
+   * Entrada del panel de un modal. Distinta de `menu-pop`, que nace en la
+   * esquina superior derecha porque cuelga de un avatar: un modal esta
+   * centrado y tiene que crecer desde su propio centro.
+   *
+   * El desplazamiento es minimo (4px) a proposito: lo que comunica la
+   * aparicion es la escala, y un salto mayor se lee como rebote.
+   */
+  @keyframes modal-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-modal-in {
+    animation: modal-in 0.18s ease-out;
   }
 }
 

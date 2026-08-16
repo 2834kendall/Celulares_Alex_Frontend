@@ -13,11 +13,9 @@ import {
 } from '@/modules/payroll/lib/format'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
-import { TABLE_TD, TABLE_TH, TABLE_WRAP } from '@/components/ui/styles'
+import { META_LABEL, SELECT, TABLE_TD, TABLE_TH } from '@/components/ui/styles'
 import { Badge } from '@/components/ui/Badge'
-
-const SELECT_CLASSES =
-  'rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10'
+import { cn } from '@/lib/utils/cn'
 
 interface PeriodosListProps {
   periodos: PeriodoListItem[]
@@ -57,7 +55,7 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
       icon: CalendarDays,
       label: 'Periodos',
       value: total,
-      tone: 'bg-blue-50 text-blue-600',
+      tone: 'bg-brand-50 text-brand-600',
     },
     {
       key: 'borradores',
@@ -69,8 +67,8 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
   ]
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+    <div className="@container space-y-4">
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2">
         {stats.map(({ key, icon: Icon, label, value, tone }) => (
           <div
             key={key}
@@ -87,12 +85,18 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
         ))}
       </div>
 
+      {/*
+        Los dos filtros comparten el ancho y bajan de linea juntos: con
+        `basis-40` cada uno se comprime hasta ahi y despues envuelve, en vez
+        de que uno quede larguisimo y el otro aplastado. `min-w-0` es lo que
+        permite que se compriman en lugar de estirar el contenedor.
+      */}
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={estado}
           onChange={(e) => setEstado(e.target.value)}
           aria-label="Filtrar por estado"
-          className={SELECT_CLASSES}
+          className={cn(SELECT, 'min-w-0 flex-1 basis-40')}
         >
           <option value="todos">Todos los estados</option>
           {Object.entries(ESTADO_LABELS).map(([value, label]) => (
@@ -105,7 +109,7 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
           value={anio}
           onChange={(e) => setAnio(e.target.value)}
           aria-label="Filtrar por año"
-          className={SELECT_CLASSES}
+          className={cn(SELECT, 'min-w-0 flex-1 basis-40')}
         >
           <option value="todos">Todos los años</option>
           {anios.map((a) => (
@@ -126,8 +130,55 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
           </p>
         </div>
       ) : (
-        <div className={TABLE_WRAP}>
-          <div className="overflow-x-auto">
+        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            Movil: tarjeta por periodo. La tabla declara `min-w-[640px]`, asi
+            que en 375px el scroll horizontal era obligatorio y escondia los
+            encabezados. El `min-w` sigue siendo correcto de @3xl para arriba,
+            donde ya hay espacio.
+          */}
+          <ul className="space-y-3 @3xl:hidden">
+            {paginatedItems.map((p, i) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/payroll/${p.id}`)}
+                  style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+                  className="animate-fade-in block w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm outline-none transition hover:border-slate-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.99] motion-reduce:active:scale-100"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-semibold text-slate-900">
+                        {periodoLabel(p.mes, p.anio, p.quincena)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">{p.sucursalNombre}</p>
+                    </div>
+                    <Badge tone={estadoBadgeTone(p.estado)}>{estadoLabel(p.estado)}</Badge>
+                  </div>
+
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+                    {[
+                      {
+                        label: 'Rango',
+                        valor: `${formatDate(p.fechaInicio)} — ${formatDate(p.fechaFin)}`,
+                      },
+                      { label: 'Empleados', valor: String(p.totalEmpleados) },
+                      { label: 'Fecha de pago', valor: formatDate(p.fechaPago) },
+                    ].map(({ label, valor }) => (
+                      <div key={label} className="min-w-0">
+                        <dt className={META_LABEL}>{label}</dt>
+                        <dd className="mt-0.5 break-words text-xs tabular-nums text-slate-600">
+                          {valor}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden @3xl:block @3xl:overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">

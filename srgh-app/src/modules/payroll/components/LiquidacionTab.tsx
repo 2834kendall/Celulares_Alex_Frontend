@@ -18,7 +18,7 @@ import { formatCRC } from '@/modules/payroll/lib/format'
 import { procesarLiquidacion } from '@/modules/payroll/actions/procesarLiquidacion'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 import { Button } from '@/components/ui/Button'
-import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface LiquidacionTabProps {
@@ -118,7 +118,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               disabled={isSubmitting}
               aria-invalid={!!errors.historialLaboralId}
               {...register('historialLaboralId', { valueAsNumber: true })}
-              className={INPUT}
+              className={SELECT}
               defaultValue=""
             >
               <option value="" disabled>
@@ -161,7 +161,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               disabled={isSubmitting}
               aria-invalid={!!errors.motivoSalidaId}
               {...register('motivoSalidaId', { valueAsNumber: true })}
-              className={INPUT}
+              className={SELECT}
               defaultValue=""
             >
               <option value="" disabled>

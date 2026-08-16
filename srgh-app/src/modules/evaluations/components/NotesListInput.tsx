@@ -45,7 +45,7 @@ export function NotesListInput({
                 disabled={disabled}
                 onClick={() => onChange(items.filter((_, idx) => idx !== i))}
                 aria-label={`Quitar ${item}`}
-                className="rounded-full p-0.5 text-slate-400 outline-none transition hover:bg-slate-200 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                className="rounded-full p-0.5 text-slate-400 outline-none transition hover:bg-slate-200 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-brand-500/60"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -72,7 +72,7 @@ export function NotesListInput({
           onClick={addDraft}
           disabled={disabled || !draft.trim()}
           aria-label={`Agregar a ${label.toLowerCase()}`}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-blue-600 shadow-sm outline-none transition hover:border-blue-300 hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-brand-600 shadow-sm outline-none transition hover:border-brand-300 hover:bg-brand-50 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Plus className="h-4 w-4" />
         </button>
