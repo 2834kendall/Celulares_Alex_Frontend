@@ -32,8 +32,13 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
       aria-labelledby={titleId}
       onClick={onClose}
     >
+      {/*
+        El fondo se funde (`animate-fade-in` en el contenedor) y el panel
+        ademas escala: entrar los dos con la misma opacidad plana hacia que
+        el modal "apareciera" de golpe, sin sensacion de que sale del clic.
+      */}
       <div
-        className="animate-fade-in w-full max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5"
+        className="animate-modal-in w-full max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">

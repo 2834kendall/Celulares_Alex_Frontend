@@ -28,11 +28,14 @@ interface TabsProps<T extends string> {
   tabs: TabDefinition<T>[]
 }
 
+// Las pestañas tambien responden al toque: sin eso eran el unico control de
+// la app que no acusaba recibo, y en tactil —donde no hay hover— el usuario
+// se queda sin ninguna señal hasta que la pagina termina de navegar.
 const TAB_BUTTON =
-  'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2'
+  'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition outline-none active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2'
 
 const STANDALONE_BUTTON =
-  'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]'
+  'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:shadow-md active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2'
 
 /**
  * Pestanas sincronizadas con el query param `?tab=`.
@@ -130,11 +133,18 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
         {standalone.map(renderTab)}
       </div>
 
+      {/*
+        `key` fuerza el remonte al cambiar de pestaña, que es lo que reinicia
+        la animacion — sin el, React reusa el nodo y el contenido nuevo
+        aparece de golpe. Mismo recurso que usa AppShell para animar cada
+        navegacion.
+      */}
       <div
+        key={activeTab.id}
         role="tabpanel"
         id={`${idPrefix}-tabpanel-${activeTab.id}`}
         aria-labelledby={`${idPrefix}-tab-${activeTab.id}`}
-        className="min-w-0"
+        className="animate-fade-in min-w-0"
       >
         {activeTab.content}
       </div>
