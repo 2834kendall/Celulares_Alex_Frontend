@@ -83,6 +83,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
+      sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
           {
@@ -153,6 +154,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
+      sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [],
         error: null,
@@ -199,6 +201,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
+      sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
           {
@@ -247,6 +250,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
+      sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
           {
@@ -280,6 +284,7 @@ describe('checkMonthlyInfractions (server action)', () => {
       sgrh_sucursales: { data: null, error: { message: 'boom' } },
       sgrh_programacion_semanal: { data: [], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>
