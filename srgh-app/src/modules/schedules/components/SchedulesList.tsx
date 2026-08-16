@@ -26,13 +26,13 @@ import { ScheduleForm } from './ScheduleForm'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import {
+  META_LABEL,
   TABLE_HEAD,
   TABLE_TD,
   TABLE_TD_NUM,
   TABLE_TD_STRONG,
   TABLE_TH,
   TABLE_TH_RIGHT,
-  TABLE_WRAP,
 } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -85,8 +85,8 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+    <div className="@container space-y-4">
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         <StatCard icon={ListChecks} label="Total plantillas" value={total} hoverable />
         <StatCard
           icon={CheckCircle2}
@@ -97,16 +97,16 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
         />
         <Link
           href="?tab=jornadas"
-          className="group flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] outline-none transition hover:border-blue-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
+          className="group flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] outline-none transition hover:border-brand-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
             <Clock className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-medium text-slate-500">Tipos de jornada</p>
             <p className="text-base font-bold tabular-nums text-slate-900">{shiftTypes.length}</p>
           </div>
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-500" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500" />
         </Link>
       </div>
 
@@ -159,7 +159,7 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
             onChange={(e) => setNameFilter(e.target.value)}
             placeholder="Buscar por nombre..."
             aria-label="Buscar plantilla por nombre"
-            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs font-medium text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
+            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs font-medium text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10"
           />
         </div>
       )}
@@ -184,8 +184,89 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
           description="Prueba con otro nombre."
         />
       ) : (
-        <div className={TABLE_WRAP}>
-          <div className="overflow-x-auto">
+        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            Movil: tarjeta por horario. Las cuatro columnas de hora son el
+            dato central, asi que van juntas en su propia rejilla, con la
+            entrada y la salida arriba — que es lo que se compara primero.
+          */}
+          <ul className="space-y-3 @3xl:hidden">
+            {paginatedSchedules.map((schedule, i) => (
+              <li
+                key={schedule.hor_id}
+                style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+                className={`animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${
+                  deletingId === schedule.hor_id ? 'opacity-50' : ''
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-slate-800">
+                      {schedule.hor_nombre}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {shiftTypeName(schedule.hor_tipo_jornada_id)}
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      schedule.hor_activo
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-rose-50 text-rose-700'
+                    }`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                    {schedule.hor_activo ? 'Activo' : 'Inactivo'}
+                  </span>
+                </div>
+
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+                  {[
+                    { label: 'Entrada', valor: stripSeconds(schedule.hor_hora_entrada) },
+                    { label: 'Salida', valor: stripSeconds(schedule.hor_hora_salida) },
+                    {
+                      label: 'Almuerzo',
+                      valor: `${stripSeconds(schedule.hor_hora_inicio_almuerzo)} - ${stripSeconds(schedule.hor_hora_fin_almuerzo)}`,
+                    },
+                    {
+                      label: 'Break',
+                      valor:
+                        schedule.hor_hora_inicio_break && schedule.hor_hora_fin_break
+                          ? `${stripSeconds(schedule.hor_hora_inicio_break)} - ${stripSeconds(schedule.hor_hora_fin_break)}`
+                          : '—',
+                    },
+                  ].map(({ label, valor }) => (
+                    <div key={label} className="min-w-0">
+                      <dt className={META_LABEL}>{label}</dt>
+                      <dd className="mt-0.5 text-xs tabular-nums text-slate-600">{valor}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {canWrite && (
+                  <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                    <IconButton
+                      onClick={() => setEditing(schedule)}
+                      aria-label="Editar"
+                      tone="blue"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => requestDelete(schedule.hor_id)}
+                      disabled={deletingId === schedule.hor_id}
+                      aria-label="Eliminar"
+                      tone="rose"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </IconButton>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden @3xl:block @3xl:overflow-x-auto">
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>

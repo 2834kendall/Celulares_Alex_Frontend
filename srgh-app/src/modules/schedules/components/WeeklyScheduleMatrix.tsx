@@ -33,6 +33,7 @@ import {
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchSelect } from '@/components/ui/SearchSelect'
+import { META_LABEL } from '@/components/ui/styles'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
 import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
 import { IconButton } from '@/components/ui/IconButton'
@@ -411,7 +412,7 @@ export function WeeklyScheduleMatrix({
 
   return (
     <div className="min-w-0 space-y-3">
-      <div className="relative z-30 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <div className="@container relative z-30 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="mt-1 text-base font-bold tracking-tight text-slate-900 sm:text-lg">
@@ -493,67 +494,88 @@ export function WeeklyScheduleMatrix({
           </div>
         )}
 
-        <div className="mt-3.5 flex flex-col gap-3 border-t border-slate-100 pt-3.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
-              Sucursal:
-              <SearchSelect
-                ariaLabel="Filtrar por sucursal"
-                className="w-44"
-                value={branchFilter === 'all' ? 'all' : String(branchFilter)}
-                onChange={handleBranchChange}
-                options={[
-                  { value: 'all', label: 'Todas las sucursales' },
-                  ...branchOptions.map((b) => ({ value: String(b.id), label: b.name })),
-                ]}
-              />
-            </label>
+        {/*
+          Rediseño completo de esta barra: antes cada filtro era
+          "Etiqueta: [caja]" en linea, que en movil forzaba a las cajas de
+          ancho fijo (w-44/w-52) a su propia fila y se leia como una lista de
+          formulario suelta, no como una barra de filtros. Ahora cada control
+          lleva su etiqueta ARRIBA en mayusculas chicas (mismo patron que las
+          tarjetas: META_LABEL), y los tres bloques se acomodan solos con
+          `@container`: uno por fila en angosto, en linea desde @lg.
+        */}
+        <div className="mt-3.5 grid grid-cols-1 gap-3 border-t border-slate-100 pt-3.5 @lg:grid-cols-[minmax(0,11rem)_minmax(0,13rem)_1fr] @lg:items-start">
+          <label className="block">
+            <span className={META_LABEL}>Sucursal</span>
+            <SearchSelect
+              ariaLabel="Filtrar por sucursal"
+              className="mt-1 w-full"
+              value={branchFilter === 'all' ? 'all' : String(branchFilter)}
+              onChange={handleBranchChange}
+              options={[
+                { value: 'all', label: 'Todas las sucursales' },
+                ...branchOptions.map((b) => ({ value: String(b.id), label: b.name })),
+              ]}
+            />
+          </label>
 
-            <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
-              Colaborador:
-              <SearchSelect
-                ariaLabel="Filtrar por colaborador"
-                className="w-52"
-                value={employeeFilter === 'all' ? 'all' : String(employeeFilter)}
-                onChange={(v) => setEmployeeFilter(v === 'all' ? 'all' : Number(v))}
-                options={[
-                  { value: 'all', label: 'Todos los colaboradores' },
-                  ...employeeOptions.map((e) => ({
-                    value: String(e.id),
-                    label: e.name,
-                    sublabel: e.position ?? undefined,
-                  })),
-                ]}
-              />
-            </label>
-          </div>
+          <label className="block">
+            <span className={META_LABEL}>Colaborador</span>
+            <SearchSelect
+              ariaLabel="Filtrar por colaborador"
+              className="mt-1 w-full"
+              value={employeeFilter === 'all' ? 'all' : String(employeeFilter)}
+              onChange={(v) => setEmployeeFilter(v === 'all' ? 'all' : Number(v))}
+              options={[
+                { value: 'all', label: 'Todos los colaboradores' },
+                ...employeeOptions.map((e) => ({
+                  value: String(e.id),
+                  label: e.name,
+                  sublabel: e.position ?? undefined,
+                })),
+              ]}
+            />
+          </label>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-medium text-slate-500">Días:</span>
-            {WEEKDAY_NAMES.map((name, index) => {
-              const active = selectedDayIndexes.includes(index)
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => toggleDayIndex(index)}
-                  aria-pressed={active}
-                  className={`rounded-lg px-2 py-1 text-[10px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-slate-400/50 ${
-                    active
-                      ? 'bg-slate-800 text-white'
-                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                  }`}
-                >
-                  {name.slice(0, 3)}
-                </button>
-              )
-            })}
+          <div>
+            <span className={META_LABEL}>Días</span>
+            {/*
+              Grid de 7 columnas iguales, no flex-wrap: con flex-wrap, 7
+              pildoras de ancho variable dejaban una sola huerfana en la
+              segunda fila (el clasico "Dom" solo). Un grid parejo siempre
+              cierra filas completas.
+            */}
+            <div className="mt-1 grid grid-cols-7 gap-1">
+              {WEEKDAY_NAMES.map((name, index) => {
+                const active = selectedDayIndexes.includes(index)
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleDayIndex(index)}
+                    aria-pressed={active}
+                    className={`rounded-lg py-2 text-[10px] font-semibold outline-none transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-slate-400/50 pointer-coarse:min-h-11 ${
+                      active
+                        ? 'bg-slate-800 text-white'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }`}
+                  >
+                    {name.slice(0, 3)}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-        <div className="border-b border-slate-200/80 p-3 md:hidden">
+      {/*
+        @container: sin esto los `@3xl:` de abajo (tarjetas en movil, tabla
+        desde ahi) no tenian ancestro que declarar contenedor y NUNCA se
+        activaban — ni la tabla de escritorio se mostraba ni las tarjetas se
+        ocultaban en ancho grande. Bug propio, arreglado aca.
+      */}
+      <div className="@container overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+        <div className="border-b border-slate-200/80 p-3 @3xl:hidden">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Vista móvil
           </p>
@@ -562,7 +584,7 @@ export function WeeklyScheduleMatrix({
           </p>
         </div>
 
-        <div className="space-y-2 p-2.5 md:hidden">
+        <div className="space-y-2 p-2.5 @3xl:hidden">
           {filteredRows.length === 0 ? (
             <MatrixEmptyState hasUnfilteredRows={scheduleRows.length > 0} />
           ) : (
@@ -635,7 +657,7 @@ export function WeeklyScheduleMatrix({
           )}
         </div>
 
-        <div className="hidden md:block">
+        <div className="hidden @3xl:block">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] table-fixed border-separate border-spacing-0 text-xs">
               <thead>

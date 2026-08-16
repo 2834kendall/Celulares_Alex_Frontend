@@ -29,6 +29,15 @@ function makeSchedule(overrides: Partial<ScheduleRow> = {}): ScheduleRow {
   } as ScheduleRow
 }
 
+/**
+ * Misma data en dos ramas —tarjetas y tabla— y jsdom no aplica CSS, asi
+ * que ve las dos. Solo las aserciones sobre FILAS se acotan a la tabla;
+ * dialogos, formularios y estados vacios viven fuera de ambas.
+ */
+function tabla() {
+  return within(screen.getByRole('table'))
+}
+
 describe('<SchedulesList />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -43,8 +52,8 @@ describe('<SchedulesList />', () => {
   it('lista los horarios con el nombre del tipo de jornada resuelto', () => {
     render(<SchedulesList schedules={[makeSchedule()]} shiftTypes={shiftTypes} canWrite={true} />)
 
-    expect(screen.getByText('Turno Diurno')).toBeInTheDocument()
-    expect(screen.getByText('Diurna')).toBeInTheDocument()
+    expect(tabla().getByText('Turno Diurno')).toBeInTheDocument()
+    expect(tabla().getByText('Diurna')).toBeInTheDocument()
   })
 
   it('oculta las acciones de escritura cuando canWrite es false', () => {
@@ -68,7 +77,7 @@ describe('<SchedulesList />', () => {
     mockDeleteSchedule.mockResolvedValue({ ok: true })
     render(<SchedulesList schedules={[makeSchedule()]} shiftTypes={shiftTypes} canWrite={true} />)
 
-    await userEvent.click(screen.getByLabelText('Eliminar'))
+    await userEvent.click(tabla().getByLabelText('Eliminar'))
     const dialog = screen.getByRole('alertdialog')
     expect(dialog).toBeInTheDocument()
 
@@ -81,7 +90,7 @@ describe('<SchedulesList />', () => {
   it('cancelar en el dialogo de confirmacion no elimina nada', async () => {
     render(<SchedulesList schedules={[makeSchedule()]} shiftTypes={shiftTypes} canWrite={true} />)
 
-    await userEvent.click(screen.getByLabelText('Eliminar'))
+    await userEvent.click(tabla().getByLabelText('Eliminar'))
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
 
     expect(mockDeleteSchedule).not.toHaveBeenCalled()
@@ -92,7 +101,7 @@ describe('<SchedulesList />', () => {
     mockDeleteSchedule.mockResolvedValue({ ok: false, error: 'En uso.' })
     render(<SchedulesList schedules={[makeSchedule()]} shiftTypes={shiftTypes} canWrite={true} />)
 
-    await userEvent.click(screen.getByLabelText('Eliminar'))
+    await userEvent.click(tabla().getByLabelText('Eliminar'))
     await userEvent.click(
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Eliminar' })
     )

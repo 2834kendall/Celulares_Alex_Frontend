@@ -23,6 +23,15 @@ function makeShiftType(overrides: Partial<ShiftType> = {}): ShiftType {
   } as ShiftType
 }
 
+/**
+ * Misma data en dos ramas —tarjetas y tabla— y jsdom no aplica CSS, asi
+ * que ve las dos. Solo las aserciones sobre FILAS se acotan a la tabla;
+ * dialogos, formularios y estados vacios viven fuera de ambas.
+ */
+function tabla() {
+  return within(screen.getByRole('table'))
+}
+
 describe('<ShiftTypesList />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -36,9 +45,9 @@ describe('<ShiftTypesList />', () => {
   it('lista los tipos de jornada con sus horas y recargo', () => {
     render(<ShiftTypesList shiftTypes={[makeShiftType()]} canWrite={true} />)
 
-    expect(screen.getByText('DIURNA')).toBeInTheDocument()
-    expect(screen.getByText('Diurna')).toBeInTheDocument()
-    expect(screen.getByText('0%')).toBeInTheDocument()
+    expect(tabla().getByText('DIURNA')).toBeInTheDocument()
+    expect(tabla().getByText('Diurna')).toBeInTheDocument()
+    expect(tabla().getByText('0%')).toBeInTheDocument()
   })
 
   it('muestra "—" cuando no hay limite de horas', () => {
@@ -49,7 +58,7 @@ describe('<ShiftTypesList />', () => {
       />
     )
 
-    expect(screen.getAllByText('—')).toHaveLength(2)
+    expect(tabla().getAllByText('—')).toHaveLength(2)
   })
 
   it('oculta las acciones de escritura cuando canWrite es false', () => {
@@ -62,7 +71,7 @@ describe('<ShiftTypesList />', () => {
   it('abre el formulario de edicion con los valores existentes', async () => {
     render(<ShiftTypesList shiftTypes={[makeShiftType()]} canWrite={true} />)
 
-    await userEvent.click(screen.getByLabelText('Editar'))
+    await userEvent.click(tabla().getByLabelText('Editar'))
 
     expect(screen.getByRole('heading', { name: 'Editar: Diurna' })).toBeInTheDocument()
     expect(screen.getByDisplayValue('DIURNA')).toBeInTheDocument()
@@ -72,7 +81,7 @@ describe('<ShiftTypesList />', () => {
     mockDeleteShiftType.mockResolvedValue({ ok: true })
     render(<ShiftTypesList shiftTypes={[makeShiftType()]} canWrite={true} />)
 
-    await userEvent.click(screen.getByLabelText('Eliminar'))
+    await userEvent.click(tabla().getByLabelText('Eliminar'))
     const dialog = screen.getByRole('alertdialog')
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Eliminar' }))
@@ -84,7 +93,7 @@ describe('<ShiftTypesList />', () => {
     mockDeleteShiftType.mockResolvedValue({ ok: false, error: 'En uso por un horario.' })
     render(<ShiftTypesList shiftTypes={[makeShiftType()]} canWrite={true} />)
 
-    await userEvent.click(screen.getByLabelText('Eliminar'))
+    await userEvent.click(tabla().getByLabelText('Eliminar'))
     await userEvent.click(
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Eliminar' })
     )
