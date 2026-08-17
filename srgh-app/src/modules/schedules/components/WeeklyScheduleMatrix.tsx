@@ -458,6 +458,13 @@ export function WeeklyScheduleMatrix({
                     if (!picked) return
                     goToWeekStart(getWeekDates(picked)[0])
                   }}
+                  // El input nativo es invisible y cubre todo el `label`, pero
+                  // Chrome solo abre el calendario cuando el clic cae sobre su
+                  // icono interno (una franja de unos 20px) — en el resto del
+                  // area transparente solo enfoca sin desplegar nada. Forzar
+                  // `showPicker()` en el click hace que TODA el area del
+                  // control abra el calendario, no solo esa franja.
+                  onClick={(event) => event.currentTarget.showPicker?.()}
                   className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                 />
               </label>

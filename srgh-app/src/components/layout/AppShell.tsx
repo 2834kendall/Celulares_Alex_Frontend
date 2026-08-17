@@ -6,7 +6,8 @@ import { X } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { NavLinks } from '@/components/layout/NavLinks'
 import { UserMenu } from '@/components/layout/UserMenu'
-import { IconButton } from '@/components/ui/IconButton'
+import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
+import { cn } from '@/lib/utils/cn'
 import { tituloDeRuta } from '@/lib/permissions/zones'
 import { BRAND } from '@/lib/brand'
 
@@ -84,9 +85,9 @@ export function AppShell({
   }, [drawerOpen])
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
+    <div className="flex min-h-screen flex-col bg-[#fcfcfa] text-slate-900">
       {/* Barra superior de ancho completo — la hamburguesa vive siempre en la esquina */}
-      <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 md:px-4">
+      <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-[#dde2e8] bg-[#eef1f4] px-3 md:px-4">
         <div className="flex min-w-0 items-center gap-3">
           {/* Hamburguesa movil: abre el drawer */}
           <button
@@ -133,22 +134,41 @@ export function AppShell({
             aria-hidden="true"
             onClick={() => setDrawerOpen(false)}
           />
-          <div className="animate-slide-in-left relative flex h-full w-72 max-w-[80vw] flex-col bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
+          <div className="animate-slide-in-left relative flex h-full w-72 max-w-[80vw] flex-col bg-[var(--sidebar-bg)] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--sidebar-border)] px-4 py-4">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-700 text-xs font-black text-white">
                   {empresaNombre.charAt(0)}
                 </span>
                 <div className="leading-tight">
-                  <p className="text-sm font-extrabold text-slate-900">{empresaNombre}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                  <p className="text-sm font-extrabold text-[var(--sidebar-text-strong)]">
+                    {empresaNombre}
+                  </p>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
                     {sucursalNombre ?? BRAND.sistema}
                   </p>
                 </div>
               </div>
-              <IconButton onClick={() => setDrawerOpen(false)} aria-label="Cerrar menu">
+              {/*
+                No usa <IconButton tone="slate">: sus tonos son fijos
+                (`slate-100`/`slate-900`) y `cn()` no resuelve conflictos de
+                color (ver lib/utils/cn.ts) — mezclar el tono base con un
+                override por className dejaria dos clases de color
+                compitiendo. La superficie del sidebar usa su propia paleta
+                (`--sidebar-*`), asi que un boton propio evita ese choque sin
+                agregar un tono nuevo al primitivo compartido por un solo uso.
+              */}
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                aria-label="Cerrar menu"
+                className={cn(
+                  ICON_CONTROL_BASE,
+                  'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-brand-500/60'
+                )}
+              >
                 <X className="h-5 w-5" />
-              </IconButton>
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-3">

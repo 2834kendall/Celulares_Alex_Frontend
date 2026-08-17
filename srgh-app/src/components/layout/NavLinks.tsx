@@ -55,7 +55,7 @@ export function NavLinks({ permisos, onNavigate }: NavLinksProps) {
             className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
               active
                 ? 'bg-brand-700 text-white'
-                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                : 'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)]'
             }`}
           >
             <Icon className="h-4 w-4 shrink-0" />
