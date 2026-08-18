@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Banknote,
+  CalendarCheck,
   CalendarClock,
   ClipboardCheck,
   Clock,
@@ -20,6 +21,7 @@ const ICONOS: Record<string, LucideIcon> = {
   employees: Users,
   attendance: CalendarClock,
   schedule: Clock,
+  'my-schedule': CalendarCheck,
   payroll: Banknote,
   recruitment: UserSearch,
   evaluations: ClipboardCheck,
@@ -54,8 +56,8 @@ export function NavLinks({ permisos, onNavigate }: NavLinksProps) {
             aria-current={active ? 'page' : undefined}
             className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
               active
-                ? 'bg-brand-700 text-white'
-                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-frame-700 text-white'
+                : 'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)]'
             }`}
           >
             <Icon className="h-4 w-4 shrink-0" />

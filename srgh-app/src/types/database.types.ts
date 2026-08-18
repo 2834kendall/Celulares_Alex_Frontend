@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
   }
   graphql_public: {
     Tables: {
@@ -2463,6 +2463,8 @@ export type Database = {
         Row: {
           suc_activa: boolean
           suc_codigo_interno: string | null
+          suc_color_acento: string | null
+          suc_color_sidebar: string | null
           suc_created_at: string
           suc_direccion_id: number | null
           suc_email_sucursal: string | null
@@ -2478,6 +2480,8 @@ export type Database = {
         Insert: {
           suc_activa?: boolean
           suc_codigo_interno?: string | null
+          suc_color_acento?: string | null
+          suc_color_sidebar?: string | null
           suc_created_at?: string
           suc_direccion_id?: number | null
           suc_email_sucursal?: string | null
@@ -2493,6 +2497,8 @@ export type Database = {
         Update: {
           suc_activa?: boolean
           suc_codigo_interno?: string | null
+          suc_color_acento?: string | null
+          suc_color_sidebar?: string | null
           suc_created_at?: string
           suc_direccion_id?: number | null
           suc_email_sucursal?: string | null
@@ -2640,7 +2646,9 @@ export type Database = {
       get_emp_id: { Args: never; Returns: number }
       get_empresa_id: { Args: never; Returns: number }
       get_rol: { Args: never; Returns: string }
+      get_sucursal_id: { Args: never; Returns: number }
       get_usr_id: { Args: never; Returns: number }
+      sucursal_visible: { Args: { p_sucursal_id: number }; Returns: boolean }
       tiene_permiso: { Args: { p_codigo: string }; Returns: boolean }
     }
     Enums: {

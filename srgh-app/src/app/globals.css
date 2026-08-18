@@ -1,27 +1,39 @@
 @import 'tailwindcss';
 
 :root {
-  --background: #ffffff;
+  /* Mismo tinte calido que el sidebar (#f1efe8), mucho mas tenue: casi
+     blanco, para que las tarjetas (blancas de verdad) sigan siendo la
+     superficie que mas resalta. */
+  --background: #fcfcfa;
   --foreground: #171717;
+
+  /*
+   * Fondo de las paginas de contenido (ver AppShell). Variable PROPIA, no
+   * un alias de `--background`: esta si la sobreescribe `AppShell` segun el
+   * acento de la sucursal (ver `derivePageBackground`); `--background` sigue
+   * fija — la usa el `body`, de fondo, antes de que el shell monte.
+   */
+  --page-bg: #fcfcfa;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-jetbrains-mono);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
 }
 
 /*
  * Color de marca, como escala propia ("brand") en vez del "blue" de Tailwind
- * escrito a mano en 181 lugares. Hoy son un ALIAS sobre la paleta azul que
- * Tailwind ya trae — cero diferencia visual, mismo valor por otro nombre.
+ * escrito a mano en 181 lugares. Es un ALIAS sobre una paleta que Tailwind ya
+ * trae (hoy `cyan`, la base "Calma Profesional" elegida) — cero diferencia
+ * visual, mismo valor por otro nombre.
  *
  * Deliberadamente en un @theme SIN `inline` (a diferencia del bloque de
  * arriba): `inline` colapsa la cadena de variables al generar cada utilidad,
  * asi que `.bg-brand-600` habria terminado apuntando directo a
- * `var(--color-blue-600)` — util hoy, pero el dia de la personalizacion por
- * sucursal habria que sobreescribir una variable que dice "blue" para
+ * `var(--color-cyan-600)` — util hoy, pero el dia de la personalizacion por
+ * sucursal habria que sobreescribir una variable que dice "cyan" para
  * cambiar lo que en el codigo se llama "brand". Sin `inline`, Tailwind deja
  * `--color-brand-600` como variable propia en :root y genera
  * `.bg-brand-600 { background-color: var(--color-brand-600) }` — esa es la
@@ -33,14 +45,33 @@
  * solo agregaria ruido sin ningun consumidor.
  */
 @theme {
-  --color-brand-50: var(--color-blue-50);
-  --color-brand-100: var(--color-blue-100);
-  --color-brand-200: var(--color-blue-200);
-  --color-brand-300: var(--color-blue-300);
-  --color-brand-500: var(--color-blue-500);
-  --color-brand-600: var(--color-blue-600);
-  --color-brand-700: var(--color-blue-700);
-  --color-brand-800: var(--color-blue-800);
+  --color-brand-50: var(--color-cyan-50);
+  --color-brand-100: var(--color-cyan-100);
+  --color-brand-200: var(--color-cyan-200);
+  --color-brand-300: var(--color-cyan-300);
+  --color-brand-500: var(--color-cyan-500);
+  --color-brand-600: var(--color-cyan-600);
+  --color-brand-700: var(--color-cyan-700);
+  --color-brand-800: var(--color-cyan-800);
+}
+
+/*
+ * Escala separada ("frame") para el color de acento POR SUCURSAL — a
+ * proposito una variable distinta de `--color-brand-*`, no una
+ * reasignacion. `brand` sigue fijo (badges, tabs, inputs, focus rings de
+ * TODO el contenido de los modulos, en toda la app); `frame` es la unica
+ * que `AppShell` sobreescribe segun la sucursal, y solo la usan el item
+ * activo del menu, las insignias del logo, el avatar del usuario y el
+ * boton primario (`Button` variante `primary`) — el "marco" de la app mas
+ * la accion principal, como el acento de Windows en la barra de
+ * tareas/bordes de ventana, nunca en badges/tabs/inputs sueltos del
+ * contenido.
+ */
+@theme {
+  --color-frame-500: var(--color-cyan-500);
+  --color-frame-600: var(--color-cyan-600);
+  --color-frame-700: var(--color-cyan-700);
+  --color-frame-800: var(--color-cyan-800);
 }
 
 /*
@@ -60,10 +91,31 @@
   color-scheme: light;
 }
 
+/*
+ * Sidebar (escritorio + drawer movil): mismo color que la barra superior
+ * (#eef1f4, ver AppShell) para que ambas se lean como una sola superficie
+ * de navegacion en vez de dos grises distintos. Variables propias, no
+ * `--color-slate-*`, porque son de ESTA superficie especifica, no una
+ * reasignacion de la escala neutra global.
+ */
+:root {
+  --sidebar-bg: #eef1f4;
+  --sidebar-border: #d1d4d7;
+  --sidebar-text: #6b6c6e;
+  --sidebar-text-strong: #242425;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Titulos: nunca una palabra huerfana sola en la ultima linea. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
 }
 
 /* ===== Animaciones sutiles del shell (solo si el usuario no las desactiva) ===== */

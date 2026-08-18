@@ -10,10 +10,14 @@
 -- exactamente qué permiso gana o pierde cada rol, que es justo lo que hay que
 -- poder revisar.
 --
--- Nota sobre EMPLEADO: no tiene NINGUNA fila, y es correcto. El acceso del
--- empleado a su propia información no pasa por permisos sino por las ramas
--- `emp_id = get_emp_id()` de las policies. Un permiso le daría acceso a los
--- datos de TODA la empresa.
+-- Nota sobre EMPLEADO: tiene UNA sola fila, MI_HORARIO_READ, y es la
+-- excepción deliberada a la regla de abajo. El acceso del empleado a su
+-- propia información no pasa por permisos sino por las ramas
+-- `emp_id = get_emp_id()` de las policies — un permiso normal (HORARIOS_READ,
+-- ASISTENCIA_READ, etc.) le daría acceso a los datos de TODA la empresa.
+-- MI_HORARIO_READ es distinto: no amplía ninguna policy (la RLS ya deja ver
+-- las filas propias sin permiso alguno), solo habilita la pantalla
+-- "Mi Horario" en el shell — mismo patrón que ASISTENCIA_KIOSCO.
 --
 -- Convergencia: la tabla NO tiene índice único sobre (rol, permiso), solo la
 -- PK sobre rpe_id — que es generada, así que no hay conflicto que detectar y
@@ -99,6 +103,9 @@ FROM (VALUES
   -- ── SOPORTE: solo configuración; cero acceso a datos de personas ─────────
   ('SOPORTE', 'CATALOGOS_WRITE'), ('SOPORTE', 'EMPRESAS_WRITE'),
   ('SOPORTE', 'ROLES_WRITE'),     ('SOPORTE', 'USUARIOS_WRITE'),
+
+  -- ── EMPLEADO: autoservicio, ver comentario de arriba ─────────────────────
+  ('EMPLEADO', 'MI_HORARIO_READ'),
 
   -- ── KIOSCO: tablet compartida. El rol más restringido del sistema. ──────
   -- Exactamente dos permisos, y ninguno es de lectura general:

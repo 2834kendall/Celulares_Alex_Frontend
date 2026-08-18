@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getWeekDates } from '@/modules/schedules/lib/week'
+import { hoursBetween } from '@/modules/schedules/lib/hours'
 
 interface EmployeeJoin {
   emp_id: number
@@ -86,45 +87,6 @@ export interface EmployeeWeekRow {
 
 export type GetWeeklyScheduleResult =
   { ok: true; weekDates: string[]; data: EmployeeWeekRow[] } | { ok: false; error: string }
-
-function toMinutes(t: string) {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
-}
-
-function subtractPeriod(minutes: number, start?: string | null, end?: string | null) {
-  if (!start || !end) return minutes
-  return minutes - (toMinutes(end) - toMinutes(start))
-}
-
-/** Los primeros 10 minutos de break estan pagados; solo el exceso se resta de las horas trabajadas. */
-const PAID_BREAK_MINUTES = 10
-
-function subtractBreakExcess(minutes: number, start?: string | null, end?: string | null) {
-  if (!start || !end) return minutes
-  const breakMinutes = toMinutes(end) - toMinutes(start)
-  const excess = Math.max(0, breakMinutes - PAID_BREAK_MINUTES)
-  return minutes - excess
-}
-
-/**
- * Worked hours = full span minus lunch minus the break's excess over the
- * paid allowance. Both deductions are optional: pass null/undefined when a
- * period isn't set.
- */
-function hoursBetween(
-  startTime: string,
-  endTime: string,
-  lunchStart?: string | null,
-  lunchEnd?: string | null,
-  breakStart?: string | null,
-  breakEnd?: string | null
-) {
-  let minutes = toMinutes(endTime) - toMinutes(startTime)
-  minutes = subtractPeriod(minutes, lunchStart, lunchEnd)
-  minutes = subtractBreakExcess(minutes, breakStart, breakEnd)
-  return Math.max(0, minutes / 60)
-}
 
 export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeeklyScheduleResult> {
   // RLS policies on sgrh_programacion_semanal require ASISTENCIA_READ.
