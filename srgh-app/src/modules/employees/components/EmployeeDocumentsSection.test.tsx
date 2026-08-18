@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
+import { chooseSelectMenuOption } from '@/test/selectMenu'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
 import { updateEmployeeDocument } from '@/modules/employees/actions/updateEmployeeDocument'
 import { deleteEmployeeDocument } from '@/modules/employees/actions/deleteEmployeeDocument'
@@ -104,7 +105,7 @@ describe('<EmployeeDocumentsSection />', () => {
     await user.upload(screen.getByTestId('document-dropzone-input'), pdfFile())
 
     const dialog = await screen.findByRole('dialog')
-    await user.selectOptions(within(dialog).getByLabelText(/tipo de documento/i), '1')
+    await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
     await user.click(within(dialog).getByRole('button', { name: /guardar/i }))
 
     await waitFor(() => {
@@ -125,7 +126,7 @@ describe('<EmployeeDocumentsSection />', () => {
 
     await user.upload(screen.getByTestId('document-dropzone-input'), pdfFile())
     const dialog = await screen.findByRole('dialog')
-    await user.selectOptions(within(dialog).getByLabelText(/tipo de documento/i), '1')
+    await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
     await user.click(within(dialog).getByRole('button', { name: /guardar/i }))
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(

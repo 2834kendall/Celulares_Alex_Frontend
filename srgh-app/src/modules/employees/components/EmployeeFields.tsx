@@ -6,7 +6,7 @@ import type { CatalogoItem, TerritorioCatalogo } from '@/modules/employees/types
 import { GENERO_LABELS, TIPO_CUENTA_LABELS } from '@/modules/employees/lib/format'
 import { formatIbanGroups, IBAN_CR_LENGTH, normalizeIban } from '@/modules/employees/lib/iban'
 import { DateField } from '@/components/ui/DatePickerButton'
-import { SELECT } from '@/components/ui/styles'
+import { ControlledSelectMenu, parseNumber, SelectMenu } from '@/components/ui/SelectMenu'
 
 export const INPUT_CLASSES =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
@@ -83,35 +83,34 @@ export function CatalogSelect({
   onAfterChange,
 }: CatalogSelectProps) {
   const {
-    register,
+    control,
     formState: { errors },
   } = useFormContext()
   const error = getFieldError(errors, name)
-  const { onChange, ...field } = register(name, { valueAsNumber: true })
+  // useController (no register): el trigger de SelectMenu no es un <input>
+  // nativo, asi que no hay evento `change` del DOM para que register escuche.
+  const { field } = useController({ name, control })
 
   return (
     <Labeled label={label} error={error}>
-      <select
-        {...field}
-        disabled={disabled}
-        onChange={async (event) => {
-          await onChange(event)
+      <SelectMenu
+        value={
+          field.value === null || field.value === undefined || Number.isNaN(field.value)
+            ? ''
+            : String(field.value)
+        }
+        onChange={(raw) => {
+          field.onChange(raw === '' ? NaN : Number(raw))
           // El hijo se limpia en el onChange y NO en un efecto que observe el
           // valor: un efecto correría también al montar el formulario de
           // edición y borraría lo que el empleado ya tiene guardado.
-          const raw = event.target.value
           onAfterChange?.(raw === '' ? null : Number(raw))
         }}
-        aria-invalid={Boolean(error)}
-        className={SELECT}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.nombre}
-          </option>
-        ))}
-      </select>
+        disabled={disabled}
+        invalid={Boolean(error)}
+        placeholder={placeholder}
+        options={options.map((option) => ({ value: String(option.id), label: option.nombre }))}
+      />
     </Labeled>
   )
 }
@@ -265,6 +264,7 @@ export function PersonalDataFields({
 }: PersonalDataFieldsProps) {
   const {
     register,
+    control,
     formState: { errors },
   } = useFormContext()
 
@@ -300,18 +300,16 @@ export function PersonalDataFields({
       </Labeled>
 
       <Labeled label="Tipo de identificación *" error={err('emp_tipo_identificacion_id')}>
-        <select
-          {...register(`${basePath}emp_tipo_identificacion_id`, { valueAsNumber: true })}
-          aria-invalid={Boolean(err('emp_tipo_identificacion_id'))}
-          className={SELECT}
-        >
-          <option value="">Seleccionar…</option>
-          {tiposIdentificacion.map((tipo) => (
-            <option key={tipo.id} value={tipo.id}>
-              {tipo.nombre}
-            </option>
-          ))}
-        </select>
+        <ControlledSelectMenu
+          control={control}
+          name={`${basePath}emp_tipo_identificacion_id`}
+          parse={parseNumber}
+          invalid={Boolean(err('emp_tipo_identificacion_id'))}
+          options={tiposIdentificacion.map((tipo) => ({
+            value: String(tipo.id),
+            label: tipo.nombre,
+          }))}
+        />
       </Labeled>
 
       <Labeled label="Número de identificación *" error={err('emp_numero_identificacion')}>
@@ -340,18 +338,16 @@ export function PersonalDataFields({
       </Labeled>
 
       <Labeled label="Género" error={err('emp_genero')}>
-        <select
-          {...register(`${basePath}emp_genero`)}
-          aria-invalid={Boolean(err('emp_genero'))}
-          className={SELECT}
-        >
-          <option value="">Sin especificar</option>
-          {Object.entries(GENERO_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+        <ControlledSelectMenu
+          control={control}
+          name={`${basePath}emp_genero`}
+          invalid={Boolean(err('emp_genero'))}
+          placeholder="Sin especificar"
+          options={[
+            { value: '', label: 'Sin especificar' },
+            ...Object.entries(GENERO_LABELS).map(([value, label]) => ({ value, label })),
+          ]}
+        />
       </Labeled>
 
       <Labeled label="Nacionalidad" error={err('emp_nacionalidad')}>
@@ -423,6 +419,7 @@ interface BankingFieldsProps extends FieldGroupProps {
 export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
   const {
     register,
+    control,
     watch,
     setValue,
     formState: { errors },
@@ -444,8 +441,6 @@ export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
     setValue(`${basePath}edp_numero_cuenta`, '', { shouldValidate: false, shouldDirty: true })
   }
 
-  const tipoCuentaField = register(`${basePath}edp_tipo_cuenta`)
-
   return (
     <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2 @2xl:grid-cols-3">
       <CatalogSelect
@@ -457,22 +452,17 @@ export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
       />
 
       <Labeled label="Tipo de cuenta" error={err('edp_tipo_cuenta')}>
-        <select
-          {...tipoCuentaField}
-          onChange={async (event) => {
-            await tipoCuentaField.onChange(event)
-            limpiarCuenta()
-          }}
-          aria-invalid={Boolean(err('edp_tipo_cuenta'))}
-          className={SELECT}
-        >
-          <option value="">Sin especificar</option>
-          {Object.entries(TIPO_CUENTA_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+        <ControlledSelectMenu
+          control={control}
+          name={`${basePath}edp_tipo_cuenta`}
+          invalid={Boolean(err('edp_tipo_cuenta'))}
+          placeholder="Sin especificar"
+          onValueChange={limpiarCuenta}
+          options={[
+            { value: '', label: 'Sin especificar' },
+            ...Object.entries(TIPO_CUENTA_LABELS).map(([value, label]) => ({ value, label })),
+          ]}
+        />
       </Labeled>
 
       <Labeled label="Número de cuenta (IBAN / SINPE)" error={err('edp_numero_cuenta')}>
@@ -515,21 +505,13 @@ function LocalSelect({
 }: LocalSelectProps) {
   return (
     <Labeled label={label}>
-      <select
-        value={value ?? ''}
+      <SelectMenu
+        value={value === null ? '' : String(value)}
         disabled={disabled}
-        onChange={(event) =>
-          onChange(event.target.value === '' ? null : Number(event.target.value))
-        }
-        className={SELECT}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.nombre}
-          </option>
-        ))}
-      </select>
+        onChange={(v) => onChange(v === '' ? null : Number(v))}
+        placeholder={placeholder}
+        options={options.map((option) => ({ value: String(option.id), label: option.nombre }))}
+      />
     </Labeled>
   )
 }

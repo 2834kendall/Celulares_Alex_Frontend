@@ -9,10 +9,11 @@ import type { CatalogoItem } from '@/modules/employees/types'
 import { invitarUsuarioSchema, type InvitarUsuarioInput } from '@/modules/users/types'
 import type { EmpleadoSinUsuario } from '@/modules/users/types'
 import { inviteUser } from '@/modules/users/actions/inviteUser'
-import { INPUT_CLASSES, Labeled, toOptionalNumber } from './fields'
+import { INPUT_CLASSES, Labeled } from './fields'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { SELECT, SPINNER } from '@/components/ui/styles'
+import { SPINNER } from '@/components/ui/styles'
+import { ControlledSelectMenu, parseNumber, parseOptionalNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
 
 interface InviteUserFormProps {
@@ -39,6 +40,7 @@ export function InviteUserForm({
 
   const {
     register,
+    control,
     handleSubmit,
     getValues,
     setValue,
@@ -82,29 +84,26 @@ export function InviteUserForm({
         )}
 
         <Labeled label="Empleado vinculado (opcional)" error={errors.empleado_id?.message}>
-          <select
-            {...register('empleado_id', {
-              setValueAs: toOptionalNumber,
-              onChange: (e) => {
-                // Sugiere el email personal del empleado si aún no se escribió uno.
-                const empleado = empleadosSinUsuario.find(
-                  (emp) => emp.emp_id === Number(e.target.value)
-                )
-                if (empleado?.email_personal && !getValues('email')) {
-                  setValue('email', empleado.email_personal)
-                }
-              },
-            })}
-            aria-invalid={Boolean(errors.empleado_id)}
-            className={SELECT}
-          >
-            <option value="">Sin empleado vinculado</option>
-            {empleadosSinUsuario.map((empleado) => (
-              <option key={empleado.emp_id} value={empleado.emp_id}>
-                {empleado.nombre_completo}
-              </option>
-            ))}
-          </select>
+          <ControlledSelectMenu
+            control={control}
+            name="empleado_id"
+            parse={parseOptionalNumber}
+            invalid={Boolean(errors.empleado_id)}
+            onValueChange={(value) => {
+              // Sugiere el email personal del empleado si aún no se escribió uno.
+              const empleado = empleadosSinUsuario.find((emp) => emp.emp_id === Number(value))
+              if (empleado?.email_personal && !getValues('email')) {
+                setValue('email', empleado.email_personal)
+              }
+            }}
+            options={[
+              { value: '', label: 'Sin empleado vinculado' },
+              ...empleadosSinUsuario.map((empleado) => ({
+                value: String(empleado.emp_id),
+                label: empleado.nombre_completo,
+              })),
+            ]}
+          />
         </Labeled>
 
         <Labeled label="Email de acceso *" error={errors.email?.message}>
@@ -119,33 +118,29 @@ export function InviteUserForm({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Labeled label="Rol *" error={errors.rol_id?.message}>
-            <select
-              {...register('rol_id', { valueAsNumber: true })}
-              aria-invalid={Boolean(errors.rol_id)}
-              className={SELECT}
-            >
-              <option value="">Seleccionar…</option>
-              {roles.map((rol) => (
-                <option key={rol.id} value={rol.id}>
-                  {rol.nombre}
-                </option>
-              ))}
-            </select>
+            <ControlledSelectMenu
+              control={control}
+              name="rol_id"
+              parse={parseNumber}
+              invalid={Boolean(errors.rol_id)}
+              options={roles.map((rol) => ({ value: String(rol.id), label: rol.nombre }))}
+            />
           </Labeled>
 
           <Labeled label="Sucursal (opcional)" error={errors.sucursal_id?.message}>
-            <select
-              {...register('sucursal_id', { setValueAs: toOptionalNumber })}
-              aria-invalid={Boolean(errors.sucursal_id)}
-              className={SELECT}
-            >
-              <option value="">Todas las sucursales</option>
-              {sucursales.map((sucursal) => (
-                <option key={sucursal.id} value={sucursal.id}>
-                  {sucursal.nombre}
-                </option>
-              ))}
-            </select>
+            <ControlledSelectMenu
+              control={control}
+              name="sucursal_id"
+              parse={parseOptionalNumber}
+              invalid={Boolean(errors.sucursal_id)}
+              options={[
+                { value: '', label: 'Todas las sucursales' },
+                ...sucursales.map((sucursal) => ({
+                  value: String(sucursal.id),
+                  label: sucursal.nombre,
+                })),
+              ]}
+            />
           </Labeled>
         </div>
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DocumentMetadataForm } from './DocumentMetadataForm'
+import { chooseSelectMenuOption } from '@/test/selectMenu'
 import type { CatalogoItem } from '@/modules/employees/types'
 
 const TIPOS: CatalogoItem[] = [
@@ -30,7 +31,7 @@ describe('<DocumentMetadataForm />', () => {
     render(<DocumentMetadataForm tiposDocumento={TIPOS} onCancel={vi.fn()} onSubmit={onSubmit} />)
 
     await user.type(screen.getByLabelText(/nombre del documento/i), 'Contrato firmado')
-    await user.selectOptions(screen.getByLabelText(/tipo de documento/i), '2')
+    await chooseSelectMenuOption(user, /tipo de documento/i, 'Identificación')
     await user.click(screen.getByRole('button', { name: /guardar/i }))
 
     expect(onSubmit).toHaveBeenCalledWith({
@@ -42,23 +43,38 @@ describe('<DocumentMetadataForm />', () => {
   })
 
   it('envía descripción y vencimiento cuando se completan', async () => {
+    // El calendario propio abre en el mes de "hoy" cuando el campo esta vacio:
+    // se fija el reloj para que el dia buscado este a un clic, sin navegar.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2030-01-15T09:00:00'))
+
     const onSubmit = vi.fn()
     const user = userEvent.setup()
-    render(<DocumentMetadataForm tiposDocumento={TIPOS} onCancel={vi.fn()} onSubmit={onSubmit} />)
 
-    await user.type(screen.getByLabelText(/nombre del documento/i), 'Contrato firmado')
-    await user.selectOptions(screen.getByLabelText(/tipo de documento/i), '1')
-    await user.type(screen.getByLabelText(/descripción/i), 'Firmado en enero')
-    // input[type=date] no acepta user.type con formato local; se usa fireEvent-like change vía user.type con formato ISO.
-    await user.type(screen.getByLabelText(/fecha de vencimiento/i), '2030-01-01')
-    await user.click(screen.getByRole('button', { name: /guardar/i }))
+    try {
+      render(<DocumentMetadataForm tiposDocumento={TIPOS} onCancel={vi.fn()} onSubmit={onSubmit} />)
 
-    expect(onSubmit).toHaveBeenCalledWith({
-      doc_nombre: 'Contrato firmado',
-      doc_tipo_id: 1,
-      doc_descripcion: 'Firmado en enero',
-      doc_fecha_vencimiento: '2030-01-01',
-    })
+      await user.type(screen.getByLabelText(/nombre del documento/i), 'Contrato firmado')
+      await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
+      await user.type(screen.getByLabelText(/descripción/i), 'Firmado en enero')
+
+      await user.click(screen.getByLabelText(/fecha de vencimiento/i))
+      // La coma del inicio acota al dia 1: sin ella el patron tambien caeria
+      // dentro de "11 de enero de 2030" y "21 de enero de 2030".
+      await user.click(screen.getByRole('button', { name: /, 1 de enero de 2030/ }))
+
+      await user.click(screen.getByRole('button', { name: /guardar/i }))
+
+      // Lo que importa: el valor que sale del formulario sigue siendo el ISO.
+      expect(onSubmit).toHaveBeenCalledWith({
+        doc_nombre: 'Contrato firmado',
+        doc_tipo_id: 1,
+        doc_descripcion: 'Firmado en enero',
+        doc_fecha_vencimiento: '2030-01-01',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('precarga los valores por defecto (modo edición)', () => {
@@ -77,9 +93,10 @@ describe('<DocumentMetadataForm />', () => {
     )
 
     expect(screen.getByLabelText(/nombre del documento/i)).toHaveValue('Contrato viejo')
-    expect(screen.getByLabelText(/tipo de documento/i)).toHaveValue('2')
+    expect(screen.getByLabelText(/tipo de documento/i)).toHaveTextContent('Identificación')
     expect(screen.getByLabelText(/descripción/i)).toHaveValue('Nota previa')
-    expect(screen.getByLabelText(/fecha de vencimiento/i)).toHaveValue('2028-05-01')
+    // El disparador del calendario muestra dd/mm/aaaa; el form guarda el ISO.
+    expect(screen.getByLabelText(/fecha de vencimiento/i)).toHaveTextContent('01/05/2028')
   })
 
   it('muestra el error del servidor en un role="alert"', () => {
@@ -126,7 +143,7 @@ describe('<DocumentMetadataForm />', () => {
     render(<DocumentMetadataForm tiposDocumento={TIPOS} onCancel={vi.fn()} onSubmit={onSubmit} />)
 
     await user.type(screen.getByLabelText(/nombre del documento/i), 'Contrato firmado')
-    await user.selectOptions(screen.getByLabelText(/tipo de documento/i), '1')
+    await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
     await user.type(screen.getByLabelText(/nombre del documento/i), '{Enter}')
 
     await waitFor(() => {
@@ -140,7 +157,7 @@ describe('<DocumentMetadataForm />', () => {
     render(<DocumentMetadataForm tiposDocumento={TIPOS} onCancel={vi.fn()} onSubmit={onSubmit} />)
 
     await user.type(screen.getByLabelText(/nombre del documento/i), 'Contrato firmado')
-    await user.selectOptions(screen.getByLabelText(/tipo de documento/i), '1')
+    await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
     await user.type(screen.getByLabelText(/descripción/i), 'linea 1{Enter}linea 2')
 
     expect(onSubmit).not.toHaveBeenCalled()

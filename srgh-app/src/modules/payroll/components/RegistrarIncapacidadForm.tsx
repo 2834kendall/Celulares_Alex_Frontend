@@ -11,6 +11,7 @@ import { registrarIncapacidadSchema, type RegistrarIncapacidadInput } from '@/mo
 import { registrarIncapacidad } from '@/modules/payroll/actions/registrarIncapacidad'
 import { Button } from '@/components/ui/Button'
 import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { ControlledDateField } from '@/components/ui/ControlledDateField'
 import { Alert } from '@/components/ui/Alert'
 
 interface RegistrarIncapacidadFormProps {
@@ -37,6 +38,7 @@ export function RegistrarIncapacidadForm({
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<z.input<typeof registrarIncapacidadSchema>, unknown, RegistrarIncapacidadInput>({
@@ -97,13 +99,13 @@ export function RegistrarIncapacidadForm({
           <label className={LABEL} htmlFor="fechaInicio">
             Fecha de inicio
           </label>
-          <input
+          <ControlledDateField
+            control={control}
+            name="fechaInicio"
             id="fechaInicio"
-            type="date"
+            label="Fecha de inicio"
             disabled={isSubmitting}
-            aria-invalid={!!errors.fechaInicio}
-            {...register('fechaInicio')}
-            className={INPUT}
+            invalid={!!errors.fechaInicio}
           />
           {errors.fechaInicio && (
             <p className="mt-1 text-[11px] text-rose-600">{errors.fechaInicio.message}</p>
@@ -114,13 +116,13 @@ export function RegistrarIncapacidadForm({
           <label className={LABEL} htmlFor="fechaFin">
             Fecha de fin
           </label>
-          <input
+          <ControlledDateField
+            control={control}
+            name="fechaFin"
             id="fechaFin"
-            type="date"
+            label="Fecha de fin"
             disabled={isSubmitting}
-            aria-invalid={!!errors.fechaFin}
-            {...register('fechaFin')}
-            className={INPUT}
+            invalid={!!errors.fechaFin}
           />
           {errors.fechaFin && (
             <p className="mt-1 text-[11px] text-rose-600">{errors.fechaFin.message}</p>

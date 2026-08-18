@@ -9,7 +9,9 @@ import { averageScore, classifyScore, scoreColor } from '@/modules/evaluations/l
 import { createEvaluation } from '@/modules/evaluations/actions/createEvaluation'
 import { NotesListInput } from './NotesListInput'
 import { Button } from '@/components/ui/Button'
-import { INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { SelectMenu } from '@/components/ui/SelectMenu'
+import { DateField } from '@/components/ui/DatePickerButton'
 import { Alert } from '@/components/ui/Alert'
 
 interface EvaluationFormProps {
@@ -131,65 +133,57 @@ export function EvaluationForm({
           <label className={LABEL} htmlFor="eval_colaborador">
             Colaborador
           </label>
-          <select
+          <SelectMenu
             id="eval_colaborador"
-            value={labId}
+            value={String(labId)}
             disabled={isSubmitting}
-            onChange={(e) => setLabId(e.target.value === '' ? '' : Number(e.target.value))}
-            className={SELECT}
-          >
-            <option value="">Seleccione un colaborador...</option>
-            {collaborators.map((c) => (
-              <option key={c.labId} value={c.labId}>
-                {c.fullName} — {c.branchName}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setLabId(v === '' ? '' : Number(v))}
+            placeholder="Seleccione un colaborador..."
+            options={[
+              { value: '', label: 'Seleccione un colaborador...' },
+              ...collaborators.map((c) => ({
+                value: String(c.labId),
+                label: `${c.fullName} — ${c.branchName}`,
+              })),
+            ]}
+          />
         </div>
         <div>
           <label className={LABEL} htmlFor="eval_tipo">
             Tipo de evaluación
           </label>
-          <select
+          <SelectMenu
             id="eval_tipo"
             value={tipo}
             disabled={isSubmitting}
-            onChange={(e) => setTipo(e.target.value as (typeof EVALUATION_TYPES)[number])}
-            className={SELECT}
-          >
-            {EVALUATION_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setTipo(v as (typeof EVALUATION_TYPES)[number])}
+            options={EVALUATION_TYPES.map((t) => ({ value: t, label: t }))}
+          />
         </div>
         <div>
           <label className={LABEL} htmlFor="eval_periodo_inicio">
             Período evaluado — desde
           </label>
-          <input
+          <DateField
             id="eval_periodo_inicio"
-            type="date"
+            label="Período evaluado — desde"
             value={periodoInicio}
             disabled={isSubmitting}
-            max={periodoFin || undefined}
-            onChange={(e) => setPeriodoInicio(e.target.value)}
-            className={`${INPUT} tabular-nums`}
+            maxISO={periodoFin || undefined}
+            onChange={setPeriodoInicio}
           />
         </div>
         <div>
           <label className={LABEL} htmlFor="eval_periodo_fin">
             Período evaluado — hasta
           </label>
-          <input
+          <DateField
             id="eval_periodo_fin"
-            type="date"
+            label="Período evaluado — hasta"
             value={periodoFin}
             disabled={isSubmitting}
-            min={periodoInicio || undefined}
-            onChange={(e) => setPeriodoFin(e.target.value)}
-            className={`${INPUT} tabular-nums`}
+            minISO={periodoInicio || undefined}
+            onChange={setPeriodoFin}
           />
         </div>
       </div>
