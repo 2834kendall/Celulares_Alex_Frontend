@@ -24,6 +24,8 @@ const PERMISOS_EN_SUPABASE = [
   'AUSENCIAS_APPROVE',
   'HORARIOS_READ',
   'HORARIOS_WRITE',
+  // Autoservicio: un empleado ve SU PROPIO horario sin acceso al de otros.
+  'MI_HORARIO_READ',
   'NOMINA_READ',
   'NOMINA_WRITE',
   'NOMINA_APPROVE',
@@ -46,7 +48,7 @@ describe('catalogo de permisos', () => {
     }
   })
 
-  it('refleja exactamente los 27 permisos sembrados en Supabase', () => {
+  it('refleja exactamente los 28 permisos sembrados en Supabase', () => {
     expect(Object.values(PERMISOS).sort()).toEqual([...PERMISOS_EN_SUPABASE].sort())
   })
 })

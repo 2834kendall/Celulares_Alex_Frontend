@@ -32,7 +32,7 @@ export function Sidebar({ permisos, empresaNombre, sucursalNombre, open = true }
       {/* Ancho fijo interno para que el contenido no se deforme durante la animacion */}
       <div className="flex h-full w-64 flex-col">
         <div className="flex items-center gap-2.5 border-b border-[var(--sidebar-border)] px-5 py-5">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-700 text-sm font-black text-white">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-frame-700 text-sm font-black text-white">
             {empresaNombre.charAt(0)}
           </span>
           <div className="leading-tight">

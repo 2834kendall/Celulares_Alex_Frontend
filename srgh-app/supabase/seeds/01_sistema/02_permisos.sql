@@ -48,7 +48,13 @@ VALUES
   -- la empresa, desde una tablet con sesión permanente. Con este, la policy
   -- solo le muestra empleados con asignación ACTIVA en su propia sucursal.
   (60, 'ASISTENCIA_KIOSCO',   'asistencia',    'Operar kiosco de asistencia',
-       'Ver el listado de empleados de la sucursal del kiosco para poder marcar')
+       'Ver el listado de empleados de la sucursal del kiosco para poder marcar'),
+  -- Autoservicio: permiso angosto para que un empleado vea SU PROPIO horario
+  -- (pantalla "Mi Horario"). La RLS de sgrh_programacion_semanal ya deja
+  -- pasar las filas propias sin ningun permiso — este solo habilita esa
+  -- pantalla en el shell, nunca amplia lo que la RLS ya permite ver.
+  (61, 'MI_HORARIO_READ',     'horarios',      'Ver mi horario',
+       'Consultar el propio horario y programación semanal, sin ver el de otros')
 ON CONFLICT DO NOTHING;
 
 SELECT setval(

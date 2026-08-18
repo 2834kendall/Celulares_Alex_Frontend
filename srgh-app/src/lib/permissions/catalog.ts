@@ -58,6 +58,14 @@ export const PERMISOS = {
   HORARIOS_READ: 'HORARIOS_READ',
   HORARIOS_WRITE: 'HORARIOS_WRITE',
 
+  // Autoservicio (SGRH): un empleado consulta SU PROPIO horario. Permiso
+  // propio y angosto, igual que ASISTENCIA_KIOSCO — la RLS de
+  // sgrh_programacion_semanal ya deja ver las filas propias sin ningun
+  // permiso (rama emp_id = get_emp_id()), asi que este NO amplia esa lectura;
+  // solo habilita la pantalla "Mi Horario" en el shell. Nunca sustituye a
+  // HORARIOS_READ, que sigue siendo el que expone el horario de otros.
+  MI_HORARIO_READ: 'MI_HORARIO_READ',
+
   // Reclutamiento
   RECLUTAMIENTO_READ: 'RECLUTAMIENTO_READ',
   RECLUTAMIENTO_WRITE: 'RECLUTAMIENTO_WRITE',

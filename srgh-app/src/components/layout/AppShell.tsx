@@ -8,6 +8,7 @@ import { NavLinks } from '@/components/layout/NavLinks'
 import { UserMenu } from '@/components/layout/UserMenu'
 import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
+import { deriveFrameTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
 import { tituloDeRuta } from '@/lib/permissions/zones'
 import { BRAND } from '@/lib/brand'
 
@@ -19,8 +20,21 @@ interface AppShellProps {
   empresaNombre: string
   /** Sucursal asignada al usuario, o null si no tiene una fija (p.ej. ADMIN). */
   sucursalNombre: string | null
+  /** Color de acento de la sucursal (hex), o null para usar el default del sistema. */
+  colorAcento: string | null
+  /** Color de fondo de la barra lateral (hex), o null para usar el default del sistema. */
+  colorSidebar: string | null
   children: React.ReactNode
 }
+
+/**
+ * Id estable del contenedor raiz: el formulario de apariencia en
+ * Configuracion lo usa para previsualizar colores en vivo (con
+ * `document.getElementById(APP_SHELL_ROOT_ID)`) sobrescribiendo las MISMAS
+ * variables inline antes de guardar — nada de contexto/estado global para
+ * un caso tan puntual.
+ */
+export const APP_SHELL_ROOT_ID = 'app-shell-root'
 
 /** Hamburguesa animada: las 3 lineas se transforman en una X al abrir. */
 function BurgerIcon({ open }: { open: boolean }) {
@@ -59,6 +73,8 @@ export function AppShell({
   rol,
   empresaNombre,
   sucursalNombre,
+  colorAcento,
+  colorSidebar,
   children,
 }: AppShellProps) {
   const pathname = usePathname()
@@ -66,6 +82,14 @@ export function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false) // movil
 
   const titulo = tituloDeRuta(pathname)
+
+  // Estilo de apariencia por sucursal: si no personalizo un color, no se
+  // sobrescribe nada y gana el default declarado en globals.css.
+  const shellStyle = {
+    ...(colorAcento ? deriveFrameTokens(colorAcento) : {}),
+    ...(colorSidebar ? deriveSidebarTokens(colorSidebar) : {}),
+    ...(colorSidebar ? { '--page-bg': derivePageBackground(colorSidebar) } : {}),
+  } as React.CSSProperties
 
   // Con el drawer abierto: bloquear el scroll del fondo y permitir cerrar con Escape
   useEffect(() => {
@@ -85,9 +109,13 @@ export function AppShell({
   }, [drawerOpen])
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#fcfcfa] text-slate-900">
+    <div
+      id={APP_SHELL_ROOT_ID}
+      className="flex min-h-screen flex-col bg-[var(--page-bg)] text-slate-900"
+      style={shellStyle}
+    >
       {/* Barra superior de ancho completo — la hamburguesa vive siempre en la esquina */}
-      <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-[#dde2e8] bg-[#eef1f4] px-3 md:px-4">
+      <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-3 md:px-4">
         <div className="flex min-w-0 items-center gap-3">
           {/* Hamburguesa movil: abre el drawer */}
           <button
@@ -98,7 +126,7 @@ export function AppShell({
             // 36x40: por debajo de los 44px de WCAG 2.5.5, y es el control
             // MAS usado de toda la app en un telefono. El minimo solo aplica
             // con dedo, asi que en escritorio el boton no cambia de tamaño.
-            className="inline-flex items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 md:hidden"
+            className="inline-flex items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[var(--sidebar-text)] transition hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] md:hidden"
           >
             <BurgerIcon open={drawerOpen} />
           </button>
@@ -108,16 +136,16 @@ export function AppShell({
             onClick={() => setSidebarOpen((v) => !v)}
             aria-label={sidebarOpen ? 'Ocultar menu lateral' : 'Mostrar menu lateral'}
             aria-expanded={sidebarOpen}
-            className="hidden items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 md:inline-flex"
+            className="hidden items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[var(--sidebar-text)] transition hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] md:inline-flex"
           >
             <BurgerIcon open={sidebarOpen} />
           </button>
 
           <div className="min-w-0 leading-tight">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
               {BRAND.sistema}
             </p>
-            <h1 className="truncate text-base font-extrabold tracking-tight text-slate-900 md:text-lg">
+            <h1 className="truncate text-base font-extrabold tracking-tight text-[var(--sidebar-text-strong)] md:text-lg">
               {titulo}
             </h1>
           </div>
@@ -137,7 +165,7 @@ export function AppShell({
           <div className="animate-slide-in-left relative flex h-full w-72 max-w-[80vw] flex-col bg-[var(--sidebar-bg)] shadow-2xl">
             <div className="flex items-center justify-between border-b border-[var(--sidebar-border)] px-4 py-4">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-700 text-xs font-black text-white">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-frame-700 text-xs font-black text-white">
                   {empresaNombre.charAt(0)}
                 </span>
                 <div className="leading-tight">
@@ -164,7 +192,7 @@ export function AppShell({
                 aria-label="Cerrar menu"
                 className={cn(
                   ICON_CONTROL_BASE,
-                  'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-brand-500/60'
+                  'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-frame-500/60'
                 )}
               >
                 <X className="h-5 w-5" />

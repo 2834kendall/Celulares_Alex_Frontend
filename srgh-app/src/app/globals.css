@@ -6,6 +6,14 @@
      superficie que mas resalta. */
   --background: #fcfcfa;
   --foreground: #171717;
+
+  /*
+   * Fondo de las paginas de contenido (ver AppShell). Variable PROPIA, no
+   * un alias de `--background`: esta si la sobreescribe `AppShell` segun el
+   * acento de la sucursal (ver `derivePageBackground`); `--background` sigue
+   * fija — la usa el `body`, de fondo, antes de que el shell monte.
+   */
+  --page-bg: #fcfcfa;
 }
 
 @theme inline {
@@ -48,6 +56,25 @@
 }
 
 /*
+ * Escala separada ("frame") para el color de acento POR SUCURSAL — a
+ * proposito una variable distinta de `--color-brand-*`, no una
+ * reasignacion. `brand` sigue fijo (badges, tabs, inputs, focus rings de
+ * TODO el contenido de los modulos, en toda la app); `frame` es la unica
+ * que `AppShell` sobreescribe segun la sucursal, y solo la usan el item
+ * activo del menu, las insignias del logo, el avatar del usuario y el
+ * boton primario (`Button` variante `primary`) — el "marco" de la app mas
+ * la accion principal, como el acento de Windows en la barra de
+ * tareas/bordes de ventana, nunca en badges/tabs/inputs sueltos del
+ * contenido.
+ */
+@theme {
+  --color-frame-500: var(--color-cyan-500);
+  --color-frame-600: var(--color-cyan-600);
+  --color-frame-700: var(--color-cyan-700);
+  --color-frame-800: var(--color-cyan-800);
+}
+
+/*
  * Sin bloque de prefers-color-scheme: dark a proposito. Este era boilerplate
  * de create-next-app que nadie retiro — la app entera es un solo tema claro
  * (cero clases `dark:` en todo el codigo) y ese bloque volvia el fondo casi
@@ -65,17 +92,17 @@
 }
 
 /*
- * Sidebar (escritorio + drawer movil): gris claro neutro, apenas mas
- * marcado que el fondo del contenido, con texto oscuro encima — prueba a
- * pedido del usuario contra una referencia visual. Variables propias, no
+ * Sidebar (escritorio + drawer movil): mismo color que la barra superior
+ * (#eef1f4, ver AppShell) para que ambas se lean como una sola superficie
+ * de navegacion en vez de dos grises distintos. Variables propias, no
  * `--color-slate-*`, porque son de ESTA superficie especifica, no una
  * reasignacion de la escala neutra global.
  */
 :root {
-  --sidebar-bg: #ececef;
-  --sidebar-border: #dcdee1;
-  --sidebar-text: #5b5f66;
-  --sidebar-text-strong: #1f2124;
+  --sidebar-bg: #eef1f4;
+  --sidebar-border: #d1d4d7;
+  --sidebar-text: #6b6c6e;
+  --sidebar-text-strong: #242425;
 }
 
 body {
