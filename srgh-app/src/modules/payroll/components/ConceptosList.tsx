@@ -1,13 +1,26 @@
 'use client'
 
-import { AlertTriangle, Coins, FileSpreadsheet, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Coins, FileSpreadsheet, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ConceptoNominaRow } from '@/modules/payroll/types'
 import { deleteConcepto } from '@/modules/payroll/actions/deleteConcepto'
 import { useCrudList } from '@/modules/payroll/hooks/useCrudList'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
-import { ConfirmDialog } from './ConfirmDialog'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ConceptoForm } from './ConceptoForm'
+import { Button } from '@/components/ui/Button'
+import { IconButton } from '@/components/ui/IconButton'
+import {
+  META_LABEL,
+  TABLE_HEAD,
+  TABLE_TD,
+  TABLE_TD_STRONG,
+  TABLE_TH,
+  TABLE_TH_RIGHT,
+} from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Badge } from '@/components/ui/Badge'
 
 interface ConceptosListProps {
   conceptos: ConceptoNominaRow[]
@@ -46,7 +59,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
   } = usePagination(conceptos, 8)
 
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-sm font-bold text-slate-900">Conceptos de nómina</h2>
@@ -56,17 +69,14 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
           </p>
         </div>
         {canWrite && (
-          <button
-            onClick={() => setEditing('new')}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-          >
+          <Button onClick={() => setEditing('new')} className="shrink-0">
             <Plus className="h-3.5 w-3.5" /> Nuevo concepto
-          </button>
+          </Button>
         )}
       </div>
 
-      <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs text-blue-800">
-        <FileSpreadsheet className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
+      <div className="flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2.5 text-xs text-brand-800">
+        <FileSpreadsheet className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-600" />
         <p>
           Todo concepto <span className="font-semibold">activo</span> aparece en la próxima
           plantilla de Excel que se descargue. Los marcados con{' '}
@@ -78,24 +88,20 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
       </div>
 
       {deleteError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{deleteError}</div>
-        </div>
+        </Alert>
       )}
 
       {editing && (
         <div className="relative rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
-          <button
+          <IconButton
             onClick={() => setEditing(null)}
             aria-label="Cerrar formulario"
-            className="absolute right-3.5 top-3.5 rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
+            className="absolute right-3.5 top-3.5"
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </IconButton>
           <h3 className="mb-3 pr-8 text-sm font-bold text-slate-900">
             {editing === 'new' ? 'Nuevo concepto' : `Editar: ${editing.con_nombre}`}
           </h3>
@@ -107,38 +113,106 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
       )}
 
       {conceptos.length === 0 ? (
-        <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-            <Coins className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-700">No hay conceptos de nómina</p>
-            <p className="mt-1 max-w-sm text-xs text-slate-500">
-              Crea el primero (por ejemplo, BASE o CCSS_OBRERA) para poder procesar planillas.
-            </p>
-          </div>
-          {canWrite && (
-            <button
-              onClick={() => setEditing('new')}
-              className="mt-1 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-            >
-              <Plus className="h-3.5 w-3.5" /> Crear el primero
-            </button>
-          )}
-        </div>
+        <EmptyState
+          icon={Coins}
+          title="No hay conceptos de nómina"
+          description="Crea el primero (por ejemplo, BASE o CCSS_OBRERA) para poder procesar planillas."
+          action={
+            canWrite && (
+              <Button onClick={() => setEditing('new')} className="mt-1">
+                <Plus className="h-3.5 w-3.5" /> Crear el primero
+              </Button>
+            )
+          }
+        />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <div className="overflow-x-auto">
+        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            Movil: tarjeta por concepto. "Afecta bruto" y "Afecta CCSS" son
+            dos columnas de Si/No que sin encabezado no significan nada, asi
+            que en la tarjeta van rotuladas.
+          */}
+          <ul className="space-y-3 @3xl:hidden">
+            {paginatedConceptos.map((concepto, i) => (
+              <li
+                key={concepto.con_id}
+                style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+                className={`animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${
+                  deletingId === concepto.con_id ? 'opacity-50' : ''
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="text-sm font-semibold text-slate-800">{concepto.con_codigo}</p>
+                      {ES_COLUMNA_EXCEL.has(concepto.con_tipo_calculo) && (
+                        <span
+                          title="Es una columna editable en la plantilla de Excel"
+                          className="inline-flex items-center rounded-full bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-700"
+                        >
+                          Excel
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 break-words text-[11px] text-slate-500">
+                      {concepto.con_nombre}
+                    </p>
+                  </div>
+                  <Badge tone={concepto.con_activo ? 'emerald' : 'slate'}>
+                    {concepto.con_activo ? 'Activo' : 'Inactivo'}
+                  </Badge>
+                </div>
+
+                <dl className="grid grid-cols-3 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+                  {[
+                    { label: 'Tipo', valor: TIPO_LABELS[concepto.con_tipo] ?? concepto.con_tipo },
+                    {
+                      label: 'Afecta bruto',
+                      valor: concepto.con_afecta_salario_bruto ? 'Sí' : 'No',
+                    },
+                    { label: 'Afecta CCSS', valor: concepto.con_afecta_base_ccss ? 'Sí' : 'No' },
+                  ].map(({ label, valor }) => (
+                    <div key={label} className="min-w-0">
+                      <dt className={META_LABEL}>{label}</dt>
+                      <dd className="mt-0.5 break-words text-xs text-slate-600">{valor}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {canWrite && (
+                  <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                    <IconButton
+                      onClick={() => setEditing(concepto)}
+                      aria-label="Editar"
+                      tone="blue"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => requestDelete(concepto.con_id)}
+                      disabled={deletingId === concepto.con_id}
+                      aria-label="Eliminar"
+                      tone="rose"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </IconButton>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden @3xl:block @3xl:overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+              <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Código</th>
-                  <th className="px-3 py-2 text-left font-semibold">Nombre</th>
-                  <th className="px-3 py-2 text-left font-semibold">Tipo</th>
-                  <th className="px-3 py-2 text-left font-semibold">Afecta bruto</th>
-                  <th className="px-3 py-2 text-left font-semibold">Afecta CCSS</th>
-                  <th className="px-3 py-2 text-left font-semibold">Estado</th>
-                  {canWrite && <th className="px-3 py-2 text-right font-semibold">Acciones</th>}
+                  <th className={TABLE_TH}>Código</th>
+                  <th className={TABLE_TH}>Nombre</th>
+                  <th className={TABLE_TH}>Tipo</th>
+                  <th className={TABLE_TH}>Afecta bruto</th>
+                  <th className={TABLE_TH}>Afecta CCSS</th>
+                  <th className={TABLE_TH}>Estado</th>
+                  {canWrite && <th className={TABLE_TH_RIGHT}>Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -149,58 +223,48 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
                       deletingId === concepto.con_id ? 'opacity-50' : ''
                     }`}
                   >
-                    <td className="px-3 py-2 font-medium text-slate-800">
+                    <td className={TABLE_TD_STRONG}>
                       <div className="flex items-center gap-1.5">
                         {concepto.con_codigo}
                         {ES_COLUMNA_EXCEL.has(concepto.con_tipo_calculo) && (
                           <span
                             title="Es una columna editable en la plantilla de Excel"
-                            className="inline-flex items-center rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700"
+                            className="inline-flex items-center rounded-full bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-700"
                           >
                             Excel
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-slate-600">{concepto.con_nombre}</td>
-                    <td className="px-3 py-2 text-slate-600">
+                    <td className={TABLE_TD}>{concepto.con_nombre}</td>
+                    <td className={TABLE_TD}>
                       {TIPO_LABELS[concepto.con_tipo] ?? concepto.con_tipo}
                     </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {concepto.con_afecta_salario_bruto ? 'Sí' : 'No'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {concepto.con_afecta_base_ccss ? 'Sí' : 'No'}
-                    </td>
+                    <td className={TABLE_TD}>{concepto.con_afecta_salario_bruto ? 'Sí' : 'No'}</td>
+                    <td className={TABLE_TD}>{concepto.con_afecta_base_ccss ? 'Sí' : 'No'}</td>
                     <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${
-                          concepto.con_activo
-                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                            : 'bg-slate-50 text-slate-600 ring-slate-200'
-                        }`}
-                      >
+                      <Badge tone={concepto.con_activo ? 'emerald' : 'slate'}>
                         {concepto.con_activo ? 'Activo' : 'Inactivo'}
-                      </span>
+                      </Badge>
                     </td>
                     {canWrite && (
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
-                          <button
+                          <IconButton
                             onClick={() => setEditing(concepto)}
                             aria-label="Editar"
-                            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                            tone="blue"
                           >
                             <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
+                          </IconButton>
+                          <IconButton
                             onClick={() => requestDelete(concepto.con_id)}
                             disabled={deletingId === concepto.con_id}
                             aria-label="Eliminar"
-                            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
+                            tone="rose"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </IconButton>
                         </div>
                       </td>
                     )}

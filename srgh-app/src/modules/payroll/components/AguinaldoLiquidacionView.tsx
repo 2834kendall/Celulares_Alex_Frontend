@@ -47,7 +47,7 @@ export function AguinaldoLiquidacionView({
             onClick={() => setTab(t.id)}
             className={`rounded-lg px-3 py-1.5 transition ${
               tab === t.id
-                ? 'bg-white text-blue-700 shadow-sm'
+                ? 'bg-white text-brand-700 shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >

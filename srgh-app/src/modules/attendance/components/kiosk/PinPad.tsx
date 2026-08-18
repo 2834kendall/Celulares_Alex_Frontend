@@ -53,7 +53,7 @@ export function PinPad({ onConfirm, onCancel }: PinPadProps) {
           <span
             key={i}
             className={`flex h-14 w-11 items-center justify-center rounded-xl border-2 text-2xl font-bold ${
-              pin[i] ? 'border-blue-500 bg-blue-500/10' : 'border-slate-600'
+              pin[i] ? 'border-brand-500 bg-brand-500/10' : 'border-slate-600'
             }`}
           >
             {pin[i] ? '•' : ''}

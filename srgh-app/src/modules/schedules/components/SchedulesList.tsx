@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle,
   Pencil,
   Plus,
   Trash2,
@@ -24,6 +23,20 @@ import { Pagination } from '@/components/ui/Pagination'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { normalizeSearchText } from '@/components/ui/SearchSelect'
 import { ScheduleForm } from './ScheduleForm'
+import { Button } from '@/components/ui/Button'
+import { IconButton } from '@/components/ui/IconButton'
+import {
+  META_LABEL,
+  TABLE_HEAD,
+  TABLE_TD,
+  TABLE_TD_NUM,
+  TABLE_TD_STRONG,
+  TABLE_TH,
+  TABLE_TH_RIGHT,
+} from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { StatCard } from '@/components/ui/StatCard'
 
 interface ShiftTypeOption {
   tjo_id: number
@@ -72,38 +85,28 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-slate-300">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-            <ListChecks className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Total plantillas</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{total}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-slate-300">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-            <CheckCircle2 className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Activas</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{activeCount}</p>
-          </div>
-        </div>
+    <div className="@container space-y-4">
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
+        <StatCard icon={ListChecks} label="Total plantillas" value={total} hoverable />
+        <StatCard
+          icon={CheckCircle2}
+          tone="emerald"
+          label="Activas"
+          value={activeCount}
+          hoverable
+        />
         <Link
           href="?tab=jornadas"
-          className="group flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] outline-none transition hover:border-blue-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
+          className="group flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] outline-none transition hover:border-brand-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
             <Clock className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-medium text-slate-500">Tipos de jornada</p>
             <p className="text-base font-bold tabular-nums text-slate-900">{shiftTypes.length}</p>
           </div>
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-500" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500" />
         </Link>
       </div>
 
@@ -115,34 +118,27 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
           </p>
         </div>
         {canWrite && (
-          <button
-            onClick={() => setEditing('new')}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-          >
+          <Button onClick={() => setEditing('new')} className="shrink-0">
             <Plus className="h-3.5 w-3.5" /> Nuevo horario
-          </button>
+          </Button>
         )}
       </div>
 
       {deleteError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{deleteError}</div>
-        </div>
+        </Alert>
       )}
 
       {editing && (
         <div className="relative rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
-          <button
+          <IconButton
             onClick={() => setEditing(null)}
             aria-label="Cerrar formulario"
-            className="absolute right-3.5 top-3.5 rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2"
+            className="absolute right-3.5 top-3.5"
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </IconButton>
           <h3 className="mb-3 pr-8 text-sm font-bold text-slate-900">
             {editing === 'new' ? 'Nuevo horario' : `Editar: ${editing.hor_nombre}`}
           </h3>
@@ -163,54 +159,125 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
             onChange={(e) => setNameFilter(e.target.value)}
             placeholder="Buscar por nombre..."
             aria-label="Buscar plantilla por nombre"
-            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs font-medium text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
+            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs font-medium text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10"
           />
         </div>
       )}
 
       {schedules.length === 0 ? (
-        <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-            <CalendarX className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-700">
-              Todavía no hay horarios registrados
-            </p>
-            <p className="mt-1 max-w-sm text-xs text-slate-500">
-              Crea una plantilla de jornada para poder asignarla luego en la matriz semanal.
-            </p>
-          </div>
-          {canWrite && (
-            <button
-              onClick={() => setEditing('new')}
-              className="mt-1 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-            >
-              <Plus className="h-3.5 w-3.5" /> Crear la primera plantilla
-            </button>
-          )}
-        </div>
+        <EmptyState
+          icon={CalendarX}
+          title="Todavía no hay horarios registrados"
+          description="Crea una plantilla de jornada para poder asignarla luego en la matriz semanal."
+          action={
+            canWrite && (
+              <Button onClick={() => setEditing('new')} className="mt-1">
+                <Plus className="h-3.5 w-3.5" /> Crear la primera plantilla
+              </Button>
+            )
+          }
+        />
       ) : filteredSchedules.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center">
-          <p className="text-sm font-semibold text-slate-700">
-            Ningún horario coincide con &ldquo;{nameFilter}&rdquo;
-          </p>
-          <p className="text-xs text-slate-500">Prueba con otro nombre.</p>
-        </div>
+        <EmptyState
+          icon={Search}
+          title={`Ningún horario coincide con “${nameFilter}”`}
+          description="Prueba con otro nombre."
+        />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <div className="overflow-x-auto">
+        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            Movil: tarjeta por horario. Las cuatro columnas de hora son el
+            dato central, asi que van juntas en su propia rejilla, con la
+            entrada y la salida arriba — que es lo que se compara primero.
+          */}
+          <ul className="space-y-3 @3xl:hidden">
+            {paginatedSchedules.map((schedule, i) => (
+              <li
+                key={schedule.hor_id}
+                style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+                className={`animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${
+                  deletingId === schedule.hor_id ? 'opacity-50' : ''
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-slate-800">
+                      {schedule.hor_nombre}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {shiftTypeName(schedule.hor_tipo_jornada_id)}
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      schedule.hor_activo
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-rose-50 text-rose-700'
+                    }`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                    {schedule.hor_activo ? 'Activo' : 'Inactivo'}
+                  </span>
+                </div>
+
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+                  {[
+                    { label: 'Entrada', valor: stripSeconds(schedule.hor_hora_entrada) },
+                    { label: 'Salida', valor: stripSeconds(schedule.hor_hora_salida) },
+                    {
+                      label: 'Almuerzo',
+                      valor: `${stripSeconds(schedule.hor_hora_inicio_almuerzo)} - ${stripSeconds(schedule.hor_hora_fin_almuerzo)}`,
+                    },
+                    {
+                      label: 'Break',
+                      valor:
+                        schedule.hor_hora_inicio_break && schedule.hor_hora_fin_break
+                          ? `${stripSeconds(schedule.hor_hora_inicio_break)} - ${stripSeconds(schedule.hor_hora_fin_break)}`
+                          : '—',
+                    },
+                  ].map(({ label, valor }) => (
+                    <div key={label} className="min-w-0">
+                      <dt className={META_LABEL}>{label}</dt>
+                      <dd className="mt-0.5 text-xs tabular-nums text-slate-600">{valor}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {canWrite && (
+                  <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                    <IconButton
+                      onClick={() => setEditing(schedule)}
+                      aria-label="Editar"
+                      tone="blue"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => requestDelete(schedule.hor_id)}
+                      disabled={deletingId === schedule.hor_id}
+                      aria-label="Eliminar"
+                      tone="rose"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </IconButton>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden @3xl:block @3xl:overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+              <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Nombre</th>
-                  <th className="px-3 py-2 text-left font-semibold">Tipo</th>
-                  <th className="px-3 py-2 text-left font-semibold">Entrada</th>
-                  <th className="px-3 py-2 text-left font-semibold">Salida</th>
-                  <th className="px-3 py-2 text-left font-semibold">Almuerzo</th>
-                  <th className="px-3 py-2 text-left font-semibold">Break</th>
-                  <th className="px-3 py-2 text-left font-semibold">Estado</th>
-                  {canWrite && <th className="px-3 py-2 text-right font-semibold">Acciones</th>}
+                  <th className={TABLE_TH}>Nombre</th>
+                  <th className={TABLE_TH}>Tipo</th>
+                  <th className={TABLE_TH}>Entrada</th>
+                  <th className={TABLE_TH}>Salida</th>
+                  <th className={TABLE_TH}>Almuerzo</th>
+                  <th className={TABLE_TH}>Break</th>
+                  <th className={TABLE_TH}>Estado</th>
+                  {canWrite && <th className={TABLE_TH_RIGHT}>Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -221,21 +288,15 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
                       deletingId === schedule.hor_id ? 'opacity-50' : ''
                     }`}
                   >
-                    <td className="px-3 py-2 font-medium text-slate-800">{schedule.hor_nombre}</td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {shiftTypeName(schedule.hor_tipo_jornada_id)}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {stripSeconds(schedule.hor_hora_entrada)}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {stripSeconds(schedule.hor_hora_salida)}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums text-slate-600">
+                    <td className={TABLE_TD_STRONG}>{schedule.hor_nombre}</td>
+                    <td className={TABLE_TD}>{shiftTypeName(schedule.hor_tipo_jornada_id)}</td>
+                    <td className={TABLE_TD_NUM}>{stripSeconds(schedule.hor_hora_entrada)}</td>
+                    <td className={TABLE_TD_NUM}>{stripSeconds(schedule.hor_hora_salida)}</td>
+                    <td className={TABLE_TD_NUM}>
                       {stripSeconds(schedule.hor_hora_inicio_almuerzo)} -{' '}
                       {stripSeconds(schedule.hor_hora_fin_almuerzo)}
                     </td>
-                    <td className="px-3 py-2 tabular-nums text-slate-600">
+                    <td className={TABLE_TD_NUM}>
                       {schedule.hor_hora_inicio_break && schedule.hor_hora_fin_break
                         ? `${stripSeconds(schedule.hor_hora_inicio_break)} - ${stripSeconds(schedule.hor_hora_fin_break)}`
                         : '—'}
@@ -255,21 +316,21 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
                     {canWrite && (
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
-                          <button
+                          <IconButton
                             onClick={() => setEditing(schedule)}
                             aria-label="Editar"
-                            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                            tone="blue"
                           >
                             <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
+                          </IconButton>
+                          <IconButton
                             onClick={() => requestDelete(schedule.hor_id)}
                             disabled={deletingId === schedule.hor_id}
                             aria-label="Eliminar"
-                            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
+                            tone="rose"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </IconButton>
                         </div>
                       </td>
                     )}

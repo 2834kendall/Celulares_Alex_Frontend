@@ -28,7 +28,7 @@ interface EmployeeDocumentsGridProps {
 }
 
 const ACTION_BUTTON_CLASSES =
-  'flex items-center justify-center rounded-md p-1.5 text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-50'
+  'flex items-center justify-center rounded-md p-1.5 text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:opacity-50'
 
 const DELETE_BUTTON_CLASSES =
   'flex items-center justify-center rounded-md p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50'

@@ -44,13 +44,20 @@ export function UserMenu({ email, rol }: UserMenuProps) {
 
   return (
     <div className="relative flex items-center gap-3" ref={containerRef}>
-      {/* Identidad siempre visible (el correo completo esta en Mi perfil) */}
-      <div className="min-w-0 text-right leading-tight">
-        <p className="max-w-[180px] truncate text-sm font-semibold text-slate-700 md:max-w-[260px]">
+      {/*
+        El correo y el rol se ocultan en pantallas angostas: reservaban hasta
+        180px fijos del topbar y eso dejaba el titulo de la pagina en
+        "Asisten…". En un telefono el avatar ya identifica la sesion, y el
+        correo completo sigue estando a un toque, dentro de este mismo menu.
+      */}
+      <div className="hidden min-w-0 text-right leading-tight sm:block">
+        <p className="max-w-[180px] truncate text-sm font-semibold text-[var(--sidebar-text-strong)] md:max-w-[260px]">
           {email}
         </p>
         {rol && (
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{rol}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--sidebar-text)]">
+            {rol}
+          </p>
         )}
       </div>
 
@@ -59,13 +66,27 @@ export function UserMenu({ email, rol }: UserMenuProps) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="Menu de usuario"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-700 text-xs font-bold text-white transition hover:bg-blue-800 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-frame-700 text-xs font-bold text-white transition hover:bg-frame-800 active:scale-95 focus:outline-none focus:ring-2 focus:ring-frame-500/50 focus:ring-offset-2"
       >
         {initials}
       </button>
 
       {open && (
-        <div className="animate-menu-pop absolute right-0 top-full z-50 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+        <div className="animate-menu-pop absolute right-0 top-full z-50 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+          {/*
+            Solo en angosto: ahi el correo no cabe en el topbar, y sin esto no
+            quedaria ninguna forma de ver con que cuenta se esta trabajando.
+            Desde sm: es redundante, porque ya se lee al lado del avatar.
+          */}
+          <div className="border-b border-slate-100 px-3 pb-2 pt-1 sm:hidden">
+            <p className="truncate text-sm font-semibold text-slate-700">{email}</p>
+            {rol && (
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                {rol}
+              </p>
+            )}
+          </div>
+
           <Link
             href="/profile"
             onClick={() => setOpen(false)}

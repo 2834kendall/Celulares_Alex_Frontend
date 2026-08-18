@@ -296,7 +296,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
                     type="button"
                     onClick={() => handleMark(m.tipo)}
                     disabled={submittingTipo !== null}
-                    className="flex h-24 items-center justify-center rounded-2xl bg-blue-600 px-2 text-center text-base font-bold text-white shadow-lg outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-white/60 active:scale-95 disabled:opacity-50"
+                    className="flex h-24 items-center justify-center rounded-2xl bg-brand-600 px-2 text-center text-base font-bold text-white shadow-lg outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-white/60 active:scale-95 disabled:opacity-50"
                   >
                     {submittingTipo === m.tipo ? 'Marcando…' : m.label}
                   </button>

@@ -29,12 +29,7 @@ export function parseFechaLocal(fecha: string): Date {
  * Días (inclusive en ambos extremos) en que dos rangos de fechas se
  * traslapan. 0 si no se tocan.
  */
-export function diasSuperpuestos(
-  inicioA: Date,
-  finA: Date,
-  inicioB: Date,
-  finB: Date
-): number {
+export function diasSuperpuestos(inicioA: Date, finA: Date, inicioB: Date, finB: Date): number {
   const inicio = inicioA > inicioB ? inicioA : inicioB
   const fin = finA < finB ? finA : finB
   const dias = Math.round((fin.getTime() - inicio.getTime()) / MS_POR_DIA) + 1

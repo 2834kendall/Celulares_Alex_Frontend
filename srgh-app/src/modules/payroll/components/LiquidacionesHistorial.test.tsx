@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
@@ -18,10 +18,20 @@ function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem
   }
 }
 
+/**
+ * El componente rinde la MISMA data dos veces: tarjetas en movil y tabla
+ * desde el ancho de contenedor 3xl. jsdom no aplica CSS y ve las dos, asi
+ * que se consulta dentro de la tabla en vez de relajar a getAllBy*.
+ */
+function tabla() {
+  return within(screen.getByRole('table'))
+}
+
 describe('<LiquidacionesHistorial />', () => {
   it('muestra un mensaje si todavía no hay liquidaciones', () => {
     render(<LiquidacionesHistorial items={[]} />)
 
+    // Sin datos no se rinde ninguna de las dos ramas: consulta global.
     expect(screen.getByText('Todavía no se ha generado ninguna liquidación.')).toBeInTheDocument()
   })
 
@@ -35,10 +45,10 @@ describe('<LiquidacionesHistorial />', () => {
       />
     )
 
-    expect(screen.getByText('Ana Pérez')).toBeInTheDocument()
-    expect(screen.getByText('Luis Solano')).toBeInTheDocument()
-    expect(screen.getByText('Pagada')).toBeInTheDocument()
-    expect(screen.getByText('Pendiente de pago')).toBeInTheDocument()
+    expect(tabla().getByText('Ana Pérez')).toBeInTheDocument()
+    expect(tabla().getByText('Luis Solano')).toBeInTheDocument()
+    expect(tabla().getByText('Pagada')).toBeInTheDocument()
+    expect(tabla().getByText('Pendiente de pago')).toBeInTheDocument()
   })
 
   it('pagina cuando hay más de 8 liquidaciones', async () => {
@@ -47,12 +57,13 @@ describe('<LiquidacionesHistorial />', () => {
     )
     render(<LiquidacionesHistorial items={items} />)
 
-    expect(screen.getByText('Empleado 1')).toBeInTheDocument()
-    expect(screen.queryByText('Empleado 9')).not.toBeInTheDocument()
+    expect(tabla().getByText('Empleado 1')).toBeInTheDocument()
+    expect(tabla().queryByText('Empleado 9')).not.toBeInTheDocument()
+    // La paginacion es comun a las dos ramas, vive fuera de la tabla.
     expect(screen.getByText('Página 1 de 2')).toBeInTheDocument()
 
     await userEvent.click(screen.getByLabelText('Página siguiente'))
 
-    expect(screen.getByText('Empleado 9')).toBeInTheDocument()
+    expect(tabla().getByText('Empleado 9')).toBeInTheDocument()
   })
 })

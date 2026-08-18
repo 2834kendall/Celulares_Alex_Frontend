@@ -1,14 +1,17 @@
 'use client'
 
 import { type FormEvent, useState } from 'react'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Modal } from '@/modules/attendance/components/Modal'
-import { TimeSelect } from '@/modules/attendance/components/TimeSelect'
+import { Modal } from '@/components/ui/Modal'
+import { TimeSelect } from '@/components/ui/TimeSelect'
 import { saveManualMark } from '@/modules/attendance/actions/saveManualMark'
 import { manualMarkSchema } from '@/modules/attendance/types'
 import type { MarkType } from '@/modules/attendance/lib/marks'
 import { timeOfDay } from '@/modules/attendance/lib/time'
+import { Button } from '@/components/ui/Button'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 const MARK_LABELS: Record<MarkType, string> = {
   entrada: 'Entrada',
@@ -16,11 +19,6 @@ const MARK_LABELS: Record<MarkType, string> = {
   inicio_almuerzo: 'Inicio de almuerzo',
   fin_almuerzo: 'Fin de almuerzo',
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 aria-[invalid=true]:border-rose-400'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 interface ManualMarkModalProps {
   employmentHistoryId: number
@@ -114,18 +112,14 @@ export function ManualMarkModal({
     >
       <form onSubmit={handleSubmit} className="space-y-3" noValidate>
         {serverError && (
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-          >
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+          <Alert>
             <div>{serverError}</div>
-          </div>
+          </Alert>
         )}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label className={LABEL_CLASSES} htmlFor="manual-mark-fecha">
+            <label className={LABEL} htmlFor="manual-mark-fecha">
               Fecha del evento
             </label>
             <input
@@ -135,20 +129,20 @@ export function ManualMarkModal({
               onChange={(e) => setFecha(e.target.value)}
               disabled={isSaving}
               aria-invalid={!!errors.fecha}
-              className={INPUT_CLASSES}
+              className={INPUT}
             />
-            {errors.fecha && <p className="mt-1.5 text-xs text-rose-600">{errors.fecha}</p>}
+            {errors.fecha && <p className={FIELD_ERROR}>{errors.fecha}</p>}
           </div>
 
           <div>
-            <label className={LABEL_CLASSES}>Hora real del evento</label>
+            <label className={LABEL}>Hora real del evento</label>
             <TimeSelect value={hora} onChange={setHora} />
-            {errors.hora && <p className="mt-1.5 text-xs text-rose-600">{errors.hora}</p>}
+            {errors.hora && <p className={FIELD_ERROR}>{errors.hora}</p>}
           </div>
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="manual-mark-observacion">
+          <label className={LABEL} htmlFor="manual-mark-observacion">
             Justificacion (obligatoria)
           </label>
           <textarea
@@ -159,28 +153,22 @@ export function ManualMarkModal({
             disabled={isSaving}
             aria-invalid={!!errors.observacion}
             placeholder="Explique por que se registra o corrige esta marca..."
-            className={INPUT_CLASSES}
+            className={INPUT}
           />
-          {errors.observacion && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.observacion}</p>
-          )}
+          {errors.observacion && <p className={FIELD_ERROR}>{errors.observacion}</p>}
         </div>
 
-        <button
-          type="submit"
-          disabled={isSaving}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition-all hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
+        <Button type="submit" disabled={isSaving} size="lg" block>
           {isSaving ? (
             <>
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Guardando
+              <Loader2 className={SPINNER} /> Guardando
             </>
           ) : markId ? (
             'Guardar correccion'
           ) : (
             'Agregar marca'
           )}
-        </button>
+        </Button>
       </form>
     </Modal>
   )

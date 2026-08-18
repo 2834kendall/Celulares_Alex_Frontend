@@ -32,7 +32,7 @@ export function ExpiredInvitation() {
 
         <Link
           href="/login"
-          className={`inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-700/20 transition-all hover:shadow-blue-700/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover}`}
+          className={`inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand-700/20 transition-all hover:shadow-brand-700/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover}`}
         >
           Ir a iniciar sesión
         </Link>

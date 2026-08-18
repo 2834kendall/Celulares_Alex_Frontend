@@ -3,6 +3,7 @@ import { classifyDay, shouldWarn, summarizeMonth, type DayForInfraction } from '
 
 function day(overrides: Partial<DayForInfraction> = {}): DayForInfraction {
   return {
+    isJustifiedAbsence: false,
     isDayOff: false,
     isHoliday: false,
     expectedStart: '08:00',
@@ -27,6 +28,18 @@ describe('classifyDay', () => {
 
   it('es "ausente" si no hay marca de entrada', () => {
     expect(classifyDay(day({ entradaTime: null }))).toBe('ausente')
+  })
+
+  it('es "no_aplica" con ausencia justificada, aunque el dia siga programado y sin marcar', () => {
+    expect(
+      classifyDay(day({ isJustifiedAbsence: true, entradaTime: null, expectedStart: '08:00' }))
+    ).toBe('no_aplica')
+  })
+
+  it('la ausencia justificada tambien tapa una llegada tarde ese dia', () => {
+    expect(
+      classifyDay(day({ isJustifiedAbsence: true, expectedStart: '08:00', entradaTime: '10:30' }))
+    ).toBe('no_aplica')
   })
 
   it('es "a_tiempo" dentro de la tolerancia', () => {
@@ -56,6 +69,17 @@ describe('summarizeMonth', () => {
     ]
 
     expect(summarizeMonth(days)).toEqual({ tardias: 1, ausencias: 1 })
+  })
+
+  it('una semana de vacaciones aprobadas no suma ninguna ausencia', () => {
+    const vacaciones = Array.from({ length: 5 }, () =>
+      day({ isJustifiedAbsence: true, entradaTime: null })
+    )
+
+    expect(summarizeMonth(vacaciones)).toEqual({ tardias: 0, ausencias: 0 })
+    // El limite de ausencias es 1: sin la exclusion, el primer dia de
+    // vacaciones ya disparaba la advertencia del mes.
+    expect(shouldWarn(summarizeMonth(vacaciones))).toBe(false)
   })
 })
 

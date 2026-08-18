@@ -30,6 +30,22 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
   }
 }
 
+/**
+ * El componente rinde la MISMA data dos veces: cards en movil (`md:hidden`) y
+ * tabla desde `md:`. En un navegador solo una existe — `hidden` es
+ * `display:none` y la otra rama sale del arbol de accesibilidad. jsdom no
+ * aplica CSS, asi que aca conviven y cualquier consulta global encuentra dos
+ * coincidencias. Por eso se consulta DENTRO de la rama que interesa, en vez
+ * de relajar los tests a getAllBy* y perder de vista cual se esta probando.
+ */
+function tabla() {
+  return within(screen.getByRole('table'))
+}
+
+function cards() {
+  return within(screen.getByRole('list'))
+}
+
 describe('<DailyAttendanceTable />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -44,9 +60,22 @@ describe('<DailyAttendanceTable />', () => {
   it('lista un colaborador con su entrada y el estado de jornada abierta', () => {
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={[makeRow()]} canWrite={true} />)
 
-    expect(screen.getByText('Ana Perez')).toBeInTheDocument()
-    expect(screen.getByText('08:04')).toBeInTheDocument()
-    expect(screen.getByText('Sin salida')).toBeInTheDocument()
+    expect(tabla().getByText('Ana Perez')).toBeInTheDocument()
+    expect(tabla().getByText('08:04')).toBeInTheDocument()
+    expect(tabla().getByText('Sin salida')).toBeInTheDocument()
+  })
+
+  it('en movil rinde la misma jornada como card, con las cuatro marcas etiquetadas', () => {
+    render(<DailyAttendanceTable dateISO="2026-07-25" rows={[makeRow()]} canWrite={true} />)
+
+    expect(cards().getByText('Ana Perez')).toBeInTheDocument()
+    expect(cards().getByText('08:04')).toBeInTheDocument()
+    expect(cards().getByText('Sin salida')).toBeInTheDocument()
+
+    // Sin encabezados de tabla, cada marca necesita su propia etiqueta.
+    for (const label of ['Entrada', 'Inicio almuerzo', 'Fin almuerzo', 'Salida']) {
+      expect(cards().getByText(label)).toBeInTheDocument()
+    }
   })
 
   it('oculta los botones de corregir/agregar marca cuando canWrite es false', () => {
@@ -59,7 +88,7 @@ describe('<DailyAttendanceTable />', () => {
   it('abre el modal de correccion con los datos de la marca existente', async () => {
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={[makeRow()]} canWrite={true} />)
 
-    await userEvent.click(screen.getByLabelText('Corregir marca'))
+    await userEvent.click(tabla().getByLabelText('Corregir marca'))
 
     const modal = screen.getByRole('dialog')
     expect(within(modal).getByRole('heading', { name: 'Corregir marca' })).toBeInTheDocument()
@@ -71,7 +100,7 @@ describe('<DailyAttendanceTable />', () => {
 
     // inicioAlmuerzo/finAlmuerzo/salida vienen null en makeRow(): las tres
     // celdas muestran "Agregar marca", se toma la primera.
-    await userEvent.click(screen.getAllByLabelText('Agregar marca')[0])
+    await userEvent.click(tabla().getAllByLabelText('Agregar marca')[0])
 
     expect(screen.getByRole('heading', { name: 'Agregar marca' })).toBeInTheDocument()
   })

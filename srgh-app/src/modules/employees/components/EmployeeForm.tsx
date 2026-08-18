@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { FormProvider, useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   editarFichaEmpleadoSchema,
@@ -14,6 +14,9 @@ import {
 } from '@/modules/employees/types'
 import { updateEmployee } from '@/modules/employees/actions/updateEmployee'
 import { AddressFields, BankingFields, PersonalDataFields } from './EmployeeFields'
+import { Button } from '@/components/ui/Button'
+import { SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 type FichaGenero = EditarFichaEmpleadoInput['empleado']['emp_genero']
 type PagoTipoCuenta = NonNullable<EditarFichaEmpleadoInput['datos_pago']>['edp_tipo_cuenta']
@@ -93,15 +96,11 @@ export function EmployeeForm({
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="@container space-y-4">
         {serverError && (
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-          >
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+          <Alert>
             <div>{serverError}</div>
-          </div>
+          </Alert>
         )}
 
         <section className="space-y-3">
@@ -128,19 +127,15 @@ export function EmployeeForm({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
             >
               Cancelar
             </button>
           )}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
-          >
-            {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting && <Loader2 className={SPINNER} />}
             Guardar cambios
-          </button>
+          </Button>
         </div>
       </form>
     </FormProvider>

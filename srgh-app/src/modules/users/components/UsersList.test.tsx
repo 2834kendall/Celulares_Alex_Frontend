@@ -77,6 +77,36 @@ function renderList(usuarios: UsuarioListItem[] = USUARIOS) {
   )
 }
 
+/**
+ * El componente rinde la MISMA data dos veces: tarjetas en movil y tabla
+ * desde el ancho de contenedor 3xl. En un navegador solo una existe (la otra
+ * es display:none), pero jsdom no aplica CSS y ve las dos. Se consulta dentro
+ * de la tabla en vez de relajar los tests a getAllBy*.
+ */
+function tabla() {
+  return within(screen.getByRole('table'))
+}
+
+function tarjetas() {
+  return within(screen.getByRole('list'))
+}
+
+/** Cobertura de la rama movil: misma data, sin encabezados de columna. */
+function esperarTarjetaCompleta(email: string) {
+  const tarjeta = tarjetas()
+    .getAllByRole('listitem')
+    .find((li) => li.textContent?.includes(email))!
+
+  expect(tarjeta).toBeDefined()
+
+  // Se leen los <dt> y no se busca por texto: "Empleado" es tambien el nombre
+  // de un rol, asi que una consulta por texto encuentra la etiqueta Y el valor.
+  const etiquetas = [...tarjeta.querySelectorAll('dt')].map((dt) => dt.textContent)
+  expect(etiquetas).toEqual(['Empleado', 'Rol', 'Sucursal', 'Último acceso'])
+
+  return tarjeta
+}
+
 describe('<UsersList />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -85,13 +115,13 @@ describe('<UsersList />', () => {
   it('muestra los usuarios con su estado y último acceso', () => {
     renderList()
 
-    expect(screen.getByText('ana@empresa.com')).toBeInTheDocument()
-    expect(screen.getByText('Ana Mora')).toBeInTheDocument()
-    expect(screen.getByText('Activo')).toBeInTheDocument()
-    expect(screen.getByText('Pendiente')).toBeInTheDocument()
-    expect(screen.getByText('Desactivado')).toBeInTheDocument()
+    expect(tabla().getByText('ana@empresa.com')).toBeInTheDocument()
+    expect(tabla().getByText('Ana Mora')).toBeInTheDocument()
+    expect(tabla().getByText('Activo')).toBeInTheDocument()
+    expect(tabla().getByText('Pendiente')).toBeInTheDocument()
+    expect(tabla().getByText('Desactivado')).toBeInTheDocument()
     // El pendiente nunca ha entrado.
-    expect(screen.getByText('Nunca')).toBeInTheDocument()
+    expect(tabla().getByText('Nunca')).toBeInTheDocument()
   })
 
   it('filtra por búsqueda y por estado', async () => {
@@ -99,23 +129,23 @@ describe('<UsersList />', () => {
     renderList()
 
     await user.type(screen.getByLabelText('Buscar usuario'), 'ana')
-    expect(screen.getByText('ana@empresa.com')).toBeInTheDocument()
-    expect(screen.queryByText('luis@empresa.com')).not.toBeInTheDocument()
+    expect(tabla().getByText('ana@empresa.com')).toBeInTheDocument()
+    expect(tabla().queryByText('luis@empresa.com')).not.toBeInTheDocument()
 
     await user.clear(screen.getByLabelText('Buscar usuario'))
     await user.selectOptions(screen.getByLabelText('Filtrar por estado'), 'pendiente')
-    expect(screen.getByText('luis@empresa.com')).toBeInTheDocument()
-    expect(screen.queryByText('ana@empresa.com')).not.toBeInTheDocument()
+    expect(tabla().getByText('luis@empresa.com')).toBeInTheDocument()
+    expect(tabla().queryByText('ana@empresa.com')).not.toBeInTheDocument()
   })
 
   it('solo ofrece reenviar invitación a los pendientes', () => {
     renderList()
 
     expect(
-      screen.getByRole('button', { name: 'Reenviar invitación a luis@empresa.com' })
+      tabla().getByRole('button', { name: 'Reenviar invitación a luis@empresa.com' })
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: 'Reenviar invitación a ana@empresa.com' })
+      tabla().queryByRole('button', { name: 'Reenviar invitación a ana@empresa.com' })
     ).not.toBeInTheDocument()
   })
 
@@ -124,7 +154,9 @@ describe('<UsersList />', () => {
     const user = userEvent.setup()
     renderList()
 
-    await user.click(screen.getByRole('button', { name: 'Reenviar invitación a luis@empresa.com' }))
+    await user.click(
+      tabla().getByRole('button', { name: 'Reenviar invitación a luis@empresa.com' })
+    )
 
     await waitFor(() => {
       expect(mockResendInvitation).toHaveBeenCalledWith(8)
@@ -136,7 +168,7 @@ describe('<UsersList />', () => {
     const user = userEvent.setup()
     renderList()
 
-    await user.click(screen.getByRole('button', { name: 'Desactivar a ana@empresa.com' }))
+    await user.click(tabla().getByRole('button', { name: 'Desactivar a ana@empresa.com' }))
 
     // Aún no se llama: primero el diálogo de confirmación.
     expect(mockSetUserActive).not.toHaveBeenCalled()
@@ -155,7 +187,7 @@ describe('<UsersList />', () => {
     const user = userEvent.setup()
     renderList()
 
-    await user.click(screen.getByRole('button', { name: 'Reactivar a eva@empresa.com' }))
+    await user.click(tabla().getByRole('button', { name: 'Reactivar a eva@empresa.com' }))
 
     await waitFor(() => {
       expect(mockSetUserActive).toHaveBeenCalledWith(9, true)
@@ -166,7 +198,7 @@ describe('<UsersList />', () => {
     const user = userEvent.setup()
     renderList()
 
-    await user.click(screen.getByRole('button', { name: 'Editar a ana@empresa.com' }))
+    await user.click(tabla().getByRole('button', { name: 'Editar a ana@empresa.com' }))
 
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('Editar usuario')).toBeInTheDocument()
@@ -187,9 +219,21 @@ describe('<UsersList />', () => {
     expect(within(dialog).getByLabelText('Empleado vinculado (opcional)')).toHaveValue('11')
   })
 
+  it('en movil rinde cada usuario como tarjeta, con sus datos rotulados', () => {
+    renderList()
+
+    const tarjeta = esperarTarjetaCompleta('ana@empresa.com')
+
+    // Las acciones viven tambien en la tarjeta, no solo en la tabla.
+    expect(
+      within(tarjeta).getByRole('button', { name: 'Editar a ana@empresa.com' })
+    ).toBeInTheDocument()
+  })
+
   it('muestra el vacío cuando no hay usuarios', () => {
     renderList([])
 
+    // Sin usuarios no se rinde ninguna de las dos ramas: se consulta global.
     expect(screen.getByText('Todavía no hay usuarios')).toBeInTheDocument()
   })
 })

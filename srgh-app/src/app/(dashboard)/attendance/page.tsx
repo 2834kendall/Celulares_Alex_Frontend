@@ -1,4 +1,4 @@
-import { Info } from 'lucide-react'
+import { Alert } from '@/components/ui/Alert'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { ACCESO_ASISTENCIA } from '@/lib/permissions/zones'
@@ -18,15 +18,6 @@ interface AttendancePageProps {
   searchParams?: { date?: string; month?: string } | Promise<{ date?: string; month?: string }>
 }
 
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-      <Info className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-      <p>{message}</p>
-    </div>
-  )
-}
-
 export default async function AttendancePage({ searchParams }: AttendancePageProps) {
   const claims = await requireAnyPermission(ACCESO_ASISTENCIA)
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
@@ -34,13 +25,10 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
 
   if (!canReadDashboard) {
     return (
-      <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-        <p>
-          Tu rol no tiene permiso para ver el panel de asistencia de la sucursal. Tu historial
-          personal de marcas estara disponible en tu perfil.
-        </p>
-      </div>
+      <Alert tone="info" size="md">
+        Tu rol no tiene permiso para ver el panel de asistencia de la sucursal. Tu historial
+        personal de marcas estara disponible en tu perfil.
+      </Alert>
     )
   }
 
@@ -68,13 +56,13 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const diarioContent = dailyResult.ok ? (
     <DailyAttendanceTable dateISO={dailyResult.date} rows={dailyResult.data} canWrite={canWrite} />
   ) : (
-    <ErrorBanner message={dailyResult.error} />
+    <Alert size="md">{dailyResult.error}</Alert>
   )
 
   const resumenContent = monthlyResult.ok ? (
     <MonthlySummaryTable monthISO={monthISO} rows={monthlyResult.data} />
   ) : (
-    <ErrorBanner message={monthlyResult.error} />
+    <Alert size="md">{monthlyResult.error}</Alert>
   )
 
   return <AttendanceTabs diarioContent={diarioContent} resumenContent={resumenContent} />

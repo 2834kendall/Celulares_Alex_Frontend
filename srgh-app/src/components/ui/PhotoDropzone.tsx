@@ -128,7 +128,7 @@ export function PhotoDropzone({
         onDrop={onDrop}
         className={`relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-dashed outline-none transition ${
           dragging
-            ? 'border-blue-500 bg-blue-50'
+            ? 'border-brand-500 bg-brand-50'
             : 'border-slate-300 bg-slate-50 hover:border-slate-400'
         } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
       >

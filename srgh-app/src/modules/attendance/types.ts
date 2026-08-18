@@ -17,6 +17,8 @@ export const metodoVerificacionSchema = z.enum(METODOS_VERIFICACION)
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/
 const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
+/** "YYYY-MM-DD HH:mm:ss" naive, el mismo formato que escribe lib/time.ts. */
+const naiveTimestampRegex = /^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/
 
 /**
  * Corregir una marca existente o agregar una que nunca se registro. `markId`
@@ -61,6 +63,15 @@ export const kioskMarkSchema = z.object({
   // y la firma es valida, la marca se guarda como FACIAL; si no, MANUAL.
   // Opcional para no romper a los llamadores previos (cola offline incluida).
   ticketFacial: z.string().max(500).nullable().default(null),
+  // Hora REAL del evento, no la de su registro en el servidor. Solo la manda
+  // la cola offline al sincronizar: la tablet marco sin red y esa hora es la
+  // unica verdadera. Una marca en linea la deja en null y el servidor estampa
+  // su propio reloj, que en ese caso son el mismo instante.
+  fechaHora: z
+    .string()
+    .regex(naiveTimestampRegex, 'Formato de fecha y hora invalido.')
+    .nullable()
+    .default(null),
 })
 
 export type KioskMarkInput = z.input<typeof kioskMarkSchema>

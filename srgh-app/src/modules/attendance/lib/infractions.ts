@@ -3,6 +3,8 @@ import { diffMinutes } from '@/modules/attendance/lib/time'
 export type DayAttendanceStatus = 'a_tiempo' | 'tardio' | 'ausente' | 'no_aplica'
 
 export interface DayForInfraction {
+  /** Ausencia aprobada que cubre este dia (vacaciones, incapacidad, permiso). */
+  isJustifiedAbsence: boolean
   isDayOff: boolean
   isHoliday: boolean
   /** "HH:mm" esperado segun la programacion. null si no hay programacion ese dia. */
@@ -14,10 +16,16 @@ export interface DayForInfraction {
 
 /**
  * Clasifica un dia para efectos de tardias/ausencias (RF-07/RF-08). Dia libre,
- * feriado, o sin programacion no cuentan ni a favor ni en contra ("no_aplica").
+ * feriado, sin programacion o cubierto por una ausencia justificada no cuentan
+ * ni a favor ni en contra ("no_aplica").
+ *
+ * La ausencia justificada se evalua PRIMERO y gana sobre todo lo demas: el
+ * horario semanal se publica antes de que la gente se enferme, asi que el dia
+ * sigue programado y con hora esperada. Sin esta rama, una incapacidad
+ * aprobada se leia como ausencia y disparaba la advertencia del mes (SGRH-72).
  */
 export function classifyDay(day: DayForInfraction): DayAttendanceStatus {
-  if (day.isDayOff || day.isHoliday || !day.expectedStart) {
+  if (day.isJustifiedAbsence || day.isDayOff || day.isHoliday || !day.expectedStart) {
     return 'no_aplica'
   }
 

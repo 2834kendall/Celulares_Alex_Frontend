@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { Info } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { DocumentDropzone } from '@/components/ui/DocumentDropzone'
 import type {
@@ -12,6 +11,7 @@ import type {
 import { nombreSinExtension } from '@/modules/employees/lib/format'
 import { DocumentMetadataForm } from './DocumentMetadataForm'
 import { EmployeeDocumentsGrid, type DocumentoCardItem } from './EmployeeDocumentsGrid'
+import { Alert } from '@/components/ui/Alert'
 
 interface EmployeeWizardStepDocumentosProps {
   tiposDocumento: CatalogoItem[]
@@ -96,10 +96,9 @@ export function EmployeeWizardStepDocumentos({
       {!canManageDocs ? (
         <>
           {encabezado}
-          <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          <Alert tone="info" size="md">
             <p>Tu rol no tiene permiso de gestión de documentos. Continúa al siguiente paso.</p>
-          </div>
+          </Alert>
         </>
       ) : (
         <DocumentDropzone header={encabezado} onSelect={handleFileSelect}>

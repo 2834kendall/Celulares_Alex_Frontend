@@ -2,9 +2,10 @@
 
 import { ClipboardCheck, Lightbulb, MessageSquareQuote, Sparkles } from 'lucide-react'
 import type { EvaluationDetail, RubroRow } from '@/modules/evaluations/types'
-import { Modal } from './Modal'
+import { Modal } from '@/components/ui/Modal'
 import { ScoreBadge } from './ScoreBadge'
 import { ScoreBar } from './ScoreBar'
+import { META_LABEL } from '@/components/ui/styles'
 
 interface EvaluationDetailModalProps {
   collaboratorName: string
@@ -29,22 +30,18 @@ export function EvaluationDetailModal({
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Período evaluado
-            </p>
+            <p className={META_LABEL}>Período evaluado</p>
             <p className="text-xs font-semibold text-slate-700">{detail.periodo}</p>
           </div>
           <div className="flex items-center gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Promedio
-            </p>
+            <p className={META_LABEL}>Promedio</p>
             <ScoreBadge score={detail.promedio} />
           </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 p-3">
           <h4 className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-700">
-            <ClipboardCheck className="h-3.5 w-3.5 text-blue-600" /> Criterios evaluados
+            <ClipboardCheck className="h-3.5 w-3.5 text-brand-600" /> Criterios evaluados
           </h4>
           <div className="space-y-3">
             {rubros.map((r) => {
@@ -103,7 +100,7 @@ export function EvaluationDetailModal({
         {detail.notes.comentarios && (
           <div className="rounded-xl border border-slate-200 p-3">
             <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-              <MessageSquareQuote className="h-3.5 w-3.5 text-blue-600" /> Comentarios de liderazgo
+              <MessageSquareQuote className="h-3.5 w-3.5 text-brand-600" /> Comentarios de liderazgo
             </h4>
             <p className="mt-2 text-xs italic leading-5 text-slate-600">
               &ldquo;{detail.notes.comentarios}&rdquo;

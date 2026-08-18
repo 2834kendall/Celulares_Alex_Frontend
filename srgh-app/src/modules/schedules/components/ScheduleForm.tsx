@@ -3,11 +3,14 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Clock, Loader2 } from 'lucide-react'
+import { Clock, Loader2 } from 'lucide-react'
 import { scheduleSchema, type ScheduleInput, type ScheduleRow } from '@/modules/schedules/types'
 import { createSchedule } from '@/modules/schedules/actions/createSchedule'
 import { updateSchedule } from '@/modules/schedules/actions/updateSchedule'
 import { stripSeconds } from '@/modules/schedules/lib/time'
+import { Button } from '@/components/ui/Button'
+import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface ShiftTypeOption {
   tjo_id: number
@@ -21,11 +24,6 @@ interface ScheduleFormProps {
   /** Called after a successful save (create or update). */
   onSuccess?: () => void
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
@@ -102,17 +100,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
       {serverError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{serverError}</div>
-        </div>
+        </Alert>
       )}
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="hor_nombre">
+        <label className={LABEL} htmlFor="hor_nombre">
           Nombre de la plantilla
         </label>
         <input
@@ -120,16 +114,14 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           disabled={isSubmitting}
           aria-invalid={!!errors.hor_nombre}
           {...register('hor_nombre')}
-          className={INPUT_CLASSES}
+          className={INPUT}
           placeholder="Turno Diurno Tienda"
         />
-        {errors.hor_nombre && (
-          <p className="mt-1.5 text-xs text-rose-600">{errors.hor_nombre.message}</p>
-        )}
+        {errors.hor_nombre && <p className={FIELD_ERROR}>{errors.hor_nombre.message}</p>}
       </div>
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="hor_tipo_jornada_id">
+        <label className={LABEL} htmlFor="hor_tipo_jornada_id">
           Tipo de jornada
         </label>
         <select
@@ -137,7 +129,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           disabled={isSubmitting}
           aria-invalid={!!errors.hor_tipo_jornada_id}
           {...register('hor_tipo_jornada_id', { valueAsNumber: true })}
-          className={INPUT_CLASSES}
+          className={SELECT}
         >
           {shiftTypes.map((shiftType) => (
             <option key={shiftType.tjo_id} value={shiftType.tjo_id}>
@@ -146,13 +138,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           ))}
         </select>
         {errors.hor_tipo_jornada_id && (
-          <p className="mt-1.5 text-xs text-rose-600">{errors.hor_tipo_jornada_id.message}</p>
+          <p className={FIELD_ERROR}>{errors.hor_tipo_jornada_id.message}</p>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className={LABEL_CLASSES} htmlFor="hor_hora_entrada">
+          <label className={LABEL} htmlFor="hor_hora_entrada">
             Hora de entrada
           </label>
           <input
@@ -161,15 +153,15 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
             disabled={isSubmitting}
             aria-invalid={!!errors.hor_hora_entrada}
             {...register('hor_hora_entrada')}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
           />
           {errors.hor_hora_entrada && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.hor_hora_entrada.message}</p>
+            <p className={FIELD_ERROR}>{errors.hor_hora_entrada.message}</p>
           )}
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="hor_hora_salida">
+          <label className={LABEL} htmlFor="hor_hora_salida">
             Hora de salida
           </label>
           <input
@@ -178,17 +170,17 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
             disabled={isSubmitting}
             aria-invalid={!!errors.hor_hora_salida}
             {...register('hor_hora_salida')}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
           />
           {errors.hor_hora_salida && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.hor_hora_salida.message}</p>
+            <p className={FIELD_ERROR}>{errors.hor_hora_salida.message}</p>
           )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className={LABEL_CLASSES} htmlFor="hor_hora_inicio_almuerzo">
+          <label className={LABEL} htmlFor="hor_hora_inicio_almuerzo">
             Inicio de almuerzo
           </label>
           <input
@@ -197,17 +189,15 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
             disabled={isSubmitting}
             aria-invalid={!!errors.hor_hora_inicio_almuerzo}
             {...register('hor_hora_inicio_almuerzo')}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
           />
           {errors.hor_hora_inicio_almuerzo && (
-            <p className="mt-1.5 text-xs text-rose-600">
-              {errors.hor_hora_inicio_almuerzo.message}
-            </p>
+            <p className={FIELD_ERROR}>{errors.hor_hora_inicio_almuerzo.message}</p>
           )}
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="hor_hora_fin_almuerzo">
+          <label className={LABEL} htmlFor="hor_hora_fin_almuerzo">
             Fin de almuerzo
           </label>
           <input
@@ -216,10 +206,10 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
             disabled={isSubmitting}
             aria-invalid={!!errors.hor_hora_fin_almuerzo}
             {...register('hor_hora_fin_almuerzo')}
-            className={`${INPUT_CLASSES} tabular-nums`}
+            className={`${INPUT} tabular-nums`}
           />
           {errors.hor_hora_fin_almuerzo && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.hor_hora_fin_almuerzo.message}</p>
+            <p className={FIELD_ERROR}>{errors.hor_hora_fin_almuerzo.message}</p>
           )}
         </div>
       </div>
@@ -238,7 +228,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
               onChange={(event) => toggleBreak(event.target.checked)}
               className="peer sr-only"
             />
-            <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2" />
+            <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2" />
             <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
           </span>
           <span className="text-xs text-slate-700 sm:text-sm">
@@ -249,7 +239,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
         {hasBreak && (
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className={LABEL_CLASSES} htmlFor="hor_hora_inicio_break">
+              <label className={LABEL} htmlFor="hor_hora_inicio_break">
                 Inicio de break
               </label>
               <input
@@ -258,17 +248,15 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
                 disabled={isSubmitting}
                 aria-invalid={!!errors.hor_hora_inicio_break}
                 {...register('hor_hora_inicio_break')}
-                className={`${INPUT_CLASSES} tabular-nums`}
+                className={`${INPUT} tabular-nums`}
               />
               {errors.hor_hora_inicio_break && (
-                <p className="mt-1.5 text-xs text-rose-600">
-                  {errors.hor_hora_inicio_break.message}
-                </p>
+                <p className={FIELD_ERROR}>{errors.hor_hora_inicio_break.message}</p>
               )}
             </div>
 
             <div>
-              <label className={LABEL_CLASSES} htmlFor="hor_hora_fin_break">
+              <label className={LABEL} htmlFor="hor_hora_fin_break">
                 Fin de break
               </label>
               <input
@@ -277,10 +265,10 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
                 disabled={isSubmitting}
                 aria-invalid={!!errors.hor_hora_fin_break}
                 {...register('hor_hora_fin_break')}
-                className={`${INPUT_CLASSES} tabular-nums`}
+                className={`${INPUT} tabular-nums`}
               />
               {errors.hor_hora_fin_break && (
-                <p className="mt-1.5 text-xs text-rose-600">{errors.hor_hora_fin_break.message}</p>
+                <p className={FIELD_ERROR}>{errors.hor_hora_fin_break.message}</p>
               )}
             </div>
           </div>
@@ -299,27 +287,23 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
             {...register('hor_activo')}
             className="peer sr-only"
           />
-          <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2" />
+          <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2" />
           <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
         </span>
         <span className="text-xs text-slate-700 sm:text-sm">Plantilla activa</span>
       </label>
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition-all hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
-      >
+      <Button type="submit" disabled={isSubmitting} size="lg" block>
         {isSubmitting ? (
           <>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Guardando
+            <Loader2 className={SPINNER} /> Guardando
           </>
         ) : (
           <>
             <Clock className="h-3.5 w-3.5" /> {isEditing ? 'Actualizar horario' : 'Crear horario'}
           </>
         )}
-      </button>
+      </Button>
     </form>
   )
 }

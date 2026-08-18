@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { z } from 'zod'
-import { AlertTriangle, Coins, Loader2 } from 'lucide-react'
+import { Coins, Loader2 } from 'lucide-react'
 import {
   conceptoNominaSchema,
   CONCEPTO_TIPOS,
@@ -15,17 +15,15 @@ import {
 } from '@/modules/payroll/types'
 import { createConcepto } from '@/modules/payroll/actions/createConcepto'
 import { updateConcepto } from '@/modules/payroll/actions/updateConcepto'
+import { Button } from '@/components/ui/Button'
+import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface ConceptoFormProps {
   /** Si se pasa un concepto existente, el formulario entra en modo edición. */
   concepto?: ConceptoNominaRow
   onSuccess?: () => void
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 const TIPO_LABELS: Record<(typeof CONCEPTO_TIPOS)[number], string> = {
   ingreso: 'Ingreso',
@@ -117,18 +115,14 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
       {serverError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{serverError}</div>
-        </div>
+        </Alert>
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className={LABEL_CLASSES} htmlFor="con_codigo">
+          <label className={LABEL} htmlFor="con_codigo">
             Código
           </label>
           <input
@@ -136,16 +130,14 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             disabled={isSubmitting}
             aria-invalid={!!errors.con_codigo}
             {...register('con_codigo')}
-            className={`${INPUT_CLASSES} uppercase`}
+            className={`${INPUT} uppercase`}
             placeholder="BONO_ANUAL"
           />
-          {errors.con_codigo && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.con_codigo.message}</p>
-          )}
+          {errors.con_codigo && <p className={FIELD_ERROR}>{errors.con_codigo.message}</p>}
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="con_nombre">
+          <label className={LABEL} htmlFor="con_nombre">
             Nombre
           </label>
           <input
@@ -153,17 +145,15 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             disabled={isSubmitting}
             aria-invalid={!!errors.con_nombre}
             {...register('con_nombre')}
-            className={INPUT_CLASSES}
+            className={INPUT}
             placeholder="Bono anual"
           />
-          {errors.con_nombre && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.con_nombre.message}</p>
-          )}
+          {errors.con_nombre && <p className={FIELD_ERROR}>{errors.con_nombre.message}</p>}
         </div>
       </div>
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="con_tipo">
+        <label className={LABEL} htmlFor="con_tipo">
           Tipo
         </label>
         <select
@@ -171,7 +161,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           disabled={isSubmitting}
           aria-invalid={!!errors.con_tipo}
           {...register('con_tipo')}
-          className={INPUT_CLASSES}
+          className={SELECT}
         >
           {tiposDisponibles.map((tipo) => (
             <option key={tipo} value={tipo}>
@@ -179,13 +169,11 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             </option>
           ))}
         </select>
-        {errors.con_tipo && (
-          <p className="mt-1.5 text-xs text-rose-600">{errors.con_tipo.message}</p>
-        )}
+        {errors.con_tipo && <p className={FIELD_ERROR}>{errors.con_tipo.message}</p>}
       </div>
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="con_tipo_calculo">
+        <label className={LABEL} htmlFor="con_tipo_calculo">
           Cómo se calcula
         </label>
         <select
@@ -193,7 +181,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           disabled={isSubmitting}
           aria-invalid={!!errors.con_tipo_calculo}
           {...register('con_tipo_calculo')}
-          className={INPUT_CLASSES}
+          className={SELECT}
         >
           {TIPOS_CALCULO_CONCEPTO.map((tipo) => (
             <option key={tipo} value={tipo}>
@@ -202,13 +190,13 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           ))}
         </select>
         {errors.con_tipo_calculo && (
-          <p className="mt-1.5 text-xs text-rose-600">{errors.con_tipo_calculo.message}</p>
+          <p className={FIELD_ERROR}>{errors.con_tipo_calculo.message}</p>
         )}
       </div>
 
       {requierePorcentaje && (
         <div>
-          <label className={LABEL_CLASSES} htmlFor="con_porcentaje">
+          <label className={LABEL} htmlFor="con_porcentaje">
             Porcentaje
           </label>
           <input
@@ -218,7 +206,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             disabled={isSubmitting}
             aria-invalid={!!errors.con_porcentaje}
             {...register('con_porcentaje', { valueAsNumber: true })}
-            className={INPUT_CLASSES}
+            className={INPUT}
             placeholder={
               tipoCalculo === 'porcentaje_deduccion_bruto'
                 ? 'ej. 10.83'
@@ -230,9 +218,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
               ? 'Porcentaje del salario bruto que se resta.'
               : 'Multiplicador sobre el salario por hora de las horas que superen el tope normal (100% = una vez, 150% = tiempo y medio).'}
           </p>
-          {errors.con_porcentaje && (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.con_porcentaje.message}</p>
-          )}
+          {errors.con_porcentaje && <p className={FIELD_ERROR}>{errors.con_porcentaje.message}</p>}
         </div>
       )}
 
@@ -242,7 +228,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             type="checkbox"
             disabled={isSubmitting}
             {...register('con_afecta_salario_bruto')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
           />
           Afecta el salario bruto
         </label>
@@ -252,7 +238,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             type="checkbox"
             disabled={isSubmitting}
             {...register('con_afecta_base_ccss')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
           />
           Afecta la base de CCSS
         </label>
@@ -264,40 +250,36 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             type="checkbox"
             disabled={isSubmitting}
             {...register('con_activo')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
           />
           Activo (disponible para nuevas planillas)
         </label>
       )}
 
       <div>
-        <label className={LABEL_CLASSES} htmlFor="con_formula_base">
+        <label className={LABEL} htmlFor="con_formula_base">
           Fórmula o nota <span className="font-normal normal-case text-slate-400">(opcional)</span>
         </label>
         <input
           id="con_formula_base"
           disabled={isSubmitting}
           {...register('con_formula_base')}
-          className={INPUT_CLASSES}
+          className={INPUT}
           placeholder="Referencia interna, sin efecto en el cálculo automático"
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition-all hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
-      >
+      <Button type="submit" disabled={isSubmitting} size="lg" block>
         {isSubmitting ? (
           <>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Guardando
+            <Loader2 className={SPINNER} /> Guardando
           </>
         ) : (
           <>
             <Coins className="h-3.5 w-3.5" /> {isEditing ? 'Actualizar concepto' : 'Crear concepto'}
           </>
         )}
-      </button>
+      </Button>
     </form>
   )
 }

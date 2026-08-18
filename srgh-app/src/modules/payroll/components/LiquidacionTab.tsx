@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Loader2, Receipt } from 'lucide-react'
+import { Loader2, Receipt } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   procesarLiquidacionSchema,
@@ -17,17 +17,15 @@ import {
 import { formatCRC } from '@/modules/payroll/lib/format'
 import { procesarLiquidacion } from '@/modules/payroll/actions/procesarLiquidacion'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
+import { Button } from '@/components/ui/Button'
+import { INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface LiquidacionTabProps {
   empleados: EmpleadoActivoItem[]
   motivos: MotivoSalidaRow[]
   historial: LiquidacionListItem[]
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 function ResultadoLinea({ label, valor, dias }: { label: string; valor: number; dias?: number }) {
   return (
@@ -106,17 +104,13 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
           noValidate
         >
           {serverError && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-            >
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+            <Alert>
               <div>{serverError}</div>
-            </div>
+            </Alert>
           )}
 
           <div>
-            <label className={LABEL_CLASSES} htmlFor="historialLaboralId">
+            <label className={LABEL} htmlFor="historialLaboralId">
               Empleado
             </label>
             <select
@@ -124,7 +118,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               disabled={isSubmitting}
               aria-invalid={!!errors.historialLaboralId}
               {...register('historialLaboralId', { valueAsNumber: true })}
-              className={INPUT_CLASSES}
+              className={SELECT}
               defaultValue=""
             >
               <option value="" disabled>
@@ -142,7 +136,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
           </div>
 
           <div>
-            <label className={LABEL_CLASSES} htmlFor="fechaSalida">
+            <label className={LABEL} htmlFor="fechaSalida">
               Fecha de salida
             </label>
             <input
@@ -151,7 +145,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               disabled={isSubmitting}
               aria-invalid={!!errors.fechaSalida}
               {...register('fechaSalida')}
-              className={INPUT_CLASSES}
+              className={INPUT}
             />
             {errors.fechaSalida && (
               <p className="mt-1 text-[11px] text-rose-600">{errors.fechaSalida.message}</p>
@@ -159,7 +153,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
           </div>
 
           <div>
-            <label className={LABEL_CLASSES} htmlFor="motivoSalidaId">
+            <label className={LABEL} htmlFor="motivoSalidaId">
               Motivo de salida
             </label>
             <select
@@ -167,7 +161,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               disabled={isSubmitting}
               aria-invalid={!!errors.motivoSalidaId}
               {...register('motivoSalidaId', { valueAsNumber: true })}
-              className={INPUT_CLASSES}
+              className={SELECT}
               defaultValue=""
             >
               <option value="" disabled>
@@ -192,7 +186,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
           </div>
 
           <div>
-            <label className={LABEL_CLASSES} htmlFor="diasVacacionesPendientes">
+            <label className={LABEL} htmlFor="diasVacacionesPendientes">
               Días de vacaciones pendientes
             </label>
             <input
@@ -202,7 +196,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               disabled={isSubmitting}
               aria-invalid={!!errors.diasVacacionesPendientes}
               {...register('diasVacacionesPendientes', { valueAsNumber: true })}
-              className={INPUT_CLASSES}
+              className={INPUT}
             />
             <p className="mt-1 text-[11px] text-slate-400">
               El sistema todavía no lleva el control de vacaciones tomadas: ingresá el saldo a mano.
@@ -214,21 +208,17 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             )}
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition-all hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
+          <Button type="submit" disabled={isSubmitting} size="lg" block>
             {isSubmitting ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando
+                <Loader2 className={SPINNER} /> Calculando
               </>
             ) : (
               <>
                 <Receipt className="h-3.5 w-3.5" /> Calcular y guardar liquidación
               </>
             )}
-          </button>
+          </Button>
         </form>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

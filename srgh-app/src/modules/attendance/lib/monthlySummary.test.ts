@@ -100,6 +100,7 @@ describe('gatherMonthlyAttendanceDays', () => {
         ],
         error: null,
       },
+      sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
@@ -120,6 +121,7 @@ describe('gatherMonthlyAttendanceDays', () => {
           days: [
             {
               date: '2026-07-01',
+              isJustifiedAbsence: false,
               isDayOff: false,
               isHoliday: false,
               expectedStart: '08:00',
@@ -167,6 +169,7 @@ describe('gatherMonthlyAttendanceDays', () => {
         error: null,
       },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
@@ -216,6 +219,7 @@ describe('gatherMonthlyAttendanceDays', () => {
         error: null,
       },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
@@ -265,6 +269,7 @@ describe('gatherMonthlyAttendanceDays', () => {
         error: null,
       },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
@@ -285,6 +290,7 @@ describe('gatherMonthlyAttendanceDays', () => {
           days: [
             {
               date: '2026-07-31',
+              isJustifiedAbsence: false,
               isDayOff: false,
               isHoliday: false,
               expectedStart: '11:00',
@@ -294,6 +300,98 @@ describe('gatherMonthlyAttendanceDays', () => {
           ],
         },
       ],
+    })
+  })
+
+  it('marca como justificados los dias cubiertos por una ausencia aprobada, recortada al mes', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
+      sgrh_programacion_semanal: {
+        data: ['2026-07-01', '2026-07-02', '2026-07-03'].map((prg_fecha) => ({
+          prg_historial_laboral_id: 1,
+          prg_fecha,
+          prg_es_dia_libre: false,
+          prg_es_feriado: false,
+          prg_hora_entrada_custom: null,
+          sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+        })),
+        error: null,
+      },
+      sgrh_marcas_asistencia: { data: [], error: null },
+      // Incapacidad que arranca el mes anterior: cubre el 1 y el 2 de julio,
+      // no el 3. El recorte al rango es lo que se esta probando.
+      sgrh_ausencias: {
+        data: [
+          {
+            aus_historial_laboral_id: 1,
+            aus_fecha_inicio: '2026-06-28',
+            aus_fecha_fin: '2026-07-02',
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result.ok).toBe(true)
+    const days = result.ok ? result.data[0].days : []
+    expect(days.map((d) => [d.date, d.isJustifiedAbsence])).toEqual([
+      ['2026-07-01', true],
+      ['2026-07-02', true],
+      ['2026-07-03', false],
+    ])
+  })
+
+  it('devuelve error si falla la consulta de ausencias, en vez de contarlas como inasistencia', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
+      sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: null, error: { message: 'boom' } },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'No se pudo calcular tardias/ausencias del mes.',
     })
   })
 
@@ -307,6 +405,7 @@ describe('gatherMonthlyAttendanceDays', () => {
       sgrh_sucursales: { data: [], error: null },
       sgrh_programacion_semanal: { data: [], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
@@ -333,6 +432,7 @@ describe('gatherMonthlyAttendanceDays', () => {
       sgrh_sucursales: { data: null, error: { message: 'boom' } },
       sgrh_programacion_semanal: { data: [], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(

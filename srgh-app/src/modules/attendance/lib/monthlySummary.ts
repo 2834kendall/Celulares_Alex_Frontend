@@ -4,6 +4,7 @@ import {
   dateOfDay,
   diffMinutes,
   nowInCostaRica,
+  shiftISODate,
   timeOfDay,
   todayInCostaRica,
 } from '@/modules/attendance/lib/time'
@@ -48,6 +49,12 @@ interface MarkDbRow {
   mar_historial_laboral_id: number
   mar_tipo: string
   mar_fecha_hora: string
+}
+
+interface AusenciaRow {
+  aus_historial_laboral_id: number
+  aus_fecha_inicio: string
+  aus_fecha_fin: string
 }
 
 /** Un DayForInfraction con su fecha — el calculo puro (classifyDay) no la necesita, pero reportarla si. */
@@ -130,6 +137,7 @@ export async function gatherMonthlyAttendanceDays(
     { data: tolerancias, error: errTolerancias },
     { data: assignments, error: errAssignments },
     { data: marks, error: errMarks },
+    { data: ausencias, error: errAusencias },
   ] = await Promise.all([
     supabase
       .from('sgrh_sucursales')
@@ -160,9 +168,21 @@ export async function gatherMonthlyAttendanceDays(
       .gte('mar_fecha_hora', `${start} 00:00:00`)
       .lte('mar_fecha_hora', `${end} 23:59:59`)
       .returns<MarkDbRow[]>(),
+    // Ausencias aprobadas que se SOLAPAN con el rango (no las contenidas en
+    // el): una incapacidad del 28 de junio al 3 de julio cubre dias de julio
+    // aunque empiece antes, por eso se compara inicio<=fin_rango y
+    // fin>=inicio_rango en vez de meter ambas fechas dentro del mes.
+    supabase
+      .from('sgrh_ausencias')
+      .select('aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin')
+      .in('aus_historial_laboral_id', historyIds)
+      .eq('aus_estado', 'aprobada')
+      .lte('aus_fecha_inicio', end)
+      .gte('aus_fecha_fin', start)
+      .returns<AusenciaRow[]>(),
   ])
 
-  if (errTolerancias || errAssignments || errMarks) {
+  if (errTolerancias || errAssignments || errMarks || errAusencias) {
     return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
   }
 
@@ -186,6 +206,23 @@ export async function gatherMonthlyAttendanceDays(
     const list = assignmentsByHist.get(a.prg_historial_laboral_id) ?? []
     list.push(a)
     assignmentsByHist.set(a.prg_historial_laboral_id, list)
+  }
+
+  // Dias cubiertos por una ausencia aprobada, expandidos a claves
+  // "historial|fecha". El rango se recorta al mes consultado antes de
+  // expandirlo para no generar claves de dias que nadie va a preguntar.
+  //
+  // Ojo: leer esta tabla exige el permiso AUSENCIAS_READ. Si el rol que abre
+  // el panel no lo tiene, RLS no devuelve error — devuelve cero filas, y
+  // todo vuelve a contarse como ausencia sin ninguna señal visible.
+  const justifiedDays = new Set<string>()
+  for (const a of ausencias ?? []) {
+    const from = a.aus_fecha_inicio > start ? a.aus_fecha_inicio : start
+    const to = a.aus_fecha_fin < end ? a.aus_fecha_fin : end
+
+    for (let d = from; d <= to; d = shiftISODate(d, 1)) {
+      justifiedDays.add(`${a.aus_historial_laboral_id}|${d}`)
+    }
   }
 
   // Primera marca de entrada valida por (historial, fecha) — mismo criterio
@@ -214,6 +251,7 @@ export async function gatherMonthlyAttendanceDays(
         const expectedRaw = a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
         return {
           date: a.prg_fecha,
+          isJustifiedAbsence: justifiedDays.has(`${h.lab_id}|${a.prg_fecha}`),
           isDayOff: a.prg_es_dia_libre,
           isHoliday: a.prg_es_feriado,
           expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,

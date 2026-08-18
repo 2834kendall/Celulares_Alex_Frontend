@@ -15,6 +15,16 @@ import type { MonthlyEmployeeSummary } from '@/modules/attendance/actions/getMon
 import { useMonthNavigation } from '@/modules/attendance/hooks/useMonthNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
+import { IconButton } from '@/components/ui/IconButton'
+import {
+  TABLE_HEAD,
+  TABLE_ROW,
+  TABLE_TD_STRONG,
+  TABLE_TH,
+  TABLE_WRAP,
+} from '@/components/ui/styles'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { StatCard } from '@/components/ui/StatCard'
 
 interface MonthlySummaryTableProps {
   /** "YYYY-MM-01" — el mes que se esta viendo. */
@@ -55,88 +65,48 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
   )
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-            <Users className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Colaboradores</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{rows.length}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-            <Clock className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Tardias del mes</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{totalTardias}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
-            <CalendarX2 className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium text-slate-500">Ausencias del mes</p>
-            <p className="text-base font-bold tabular-nums text-slate-900">{totalAusencias}</p>
-          </div>
-        </div>
+    // Mismo criterio que el panel diario: se mide el contenedor, no el
+    // viewport, para que ambas pestañas se comporten igual con el sidebar
+    // abierto, cerrado, o en cualquier tamaño intermedio.
+    <div className="@container space-y-4">
+      {/* Mismo criterio que el panel diario: una columna o tres, nunca dos. */}
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
+        <StatCard icon={Users} label="Colaboradores" value={rows.length} />
+        <StatCard icon={Clock} tone="amber" label="Tardias del mes" value={totalTardias} />
+        <StatCard icon={CalendarX2} tone="rose" label="Ausencias del mes" value={totalAusencias} />
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0 flex-1 basis-48">
           <h2 className="text-sm font-bold capitalize text-slate-900">{formatMonth(monthISO)}</h2>
           <p className="truncate text-xs text-slate-500">Tardias y ausencias por colaborador.</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={goToPreviousMonth}
-            disabled={isNavigating}
-            aria-label="Mes anterior"
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-50"
-          >
+          <IconButton onClick={goToPreviousMonth} disabled={isNavigating} aria-label="Mes anterior">
             <ChevronLeft className="h-4 w-4" />
-          </button>
+          </IconButton>
           {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-          <button
-            type="button"
-            onClick={goToNextMonth}
-            disabled={isNavigating}
-            aria-label="Mes siguiente"
-            className="rounded-full p-1.5 text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:opacity-50"
-          >
+          <IconButton onClick={goToNextMonth} disabled={isNavigating} aria-label="Mes siguiente">
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </IconButton>
         </div>
       </div>
 
       {rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
-            <Users className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-700">
-              No hay colaboradores activos en esta sucursal
-            </p>
-            <p className="mt-1 max-w-sm text-xs text-slate-500">
-              Verifica que existan contratos activos asignados a esta sucursal.
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          icon={Users}
+          title="No hay colaboradores activos en esta sucursal"
+          description="Verifica que existan contratos activos asignados a esta sucursal."
+        />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+        <div className={TABLE_WRAP}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
+              <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Colaborador</th>
-                  <th className="px-3 py-2 text-left font-semibold">Tardias</th>
-                  <th className="px-3 py-2 text-left font-semibold">Ausencias</th>
+                  <th className={TABLE_TH}>Colaborador</th>
+                  <th className={TABLE_TH}>Tardias</th>
+                  <th className={TABLE_TH}>Ausencias</th>
                   <th className="px-3 py-2" />
                 </tr>
               </thead>
@@ -146,8 +116,8 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
                   const hasDetail = row.tardias > 0 || row.ausencias > 0
                   return (
                     <Fragment key={row.employmentHistoryId}>
-                      <tr className="border-t border-slate-100 transition hover:bg-slate-50/70">
-                        <td className="px-3 py-2 font-medium text-slate-800">{row.fullName}</td>
+                      <tr className={TABLE_ROW}>
+                        <td className={TABLE_TD_STRONG}>{row.fullName}</td>
                         <td className="px-3 py-2">
                           <span
                             className={
@@ -172,19 +142,18 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
                         </td>
                         <td className="px-3 py-2 text-right">
                           {hasDetail && (
-                            <button
-                              type="button"
+                            <IconButton
                               onClick={() =>
                                 setExpandedId(expanded ? null : row.employmentHistoryId)
                               }
                               aria-label={expanded ? 'Ocultar dias' : 'Ver dias'}
                               aria-expanded={expanded}
-                              className="rounded-full p-1 text-slate-400 outline-none transition hover:bg-blue-50 hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500/60"
+                              tone="blue"
                             >
                               <ChevronDown
                                 className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`}
                               />
-                            </button>
+                            </IconButton>
                           )}
                         </td>
                       </tr>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import type { BancoHorasItem } from '@/modules/payroll/types'
 import { formatCRC } from '@/modules/payroll/lib/format'
+import { INPUT, LABEL } from '@/components/ui/styles'
 
 interface PagarBancoHorasModalProps {
   item: BancoHorasItem
@@ -11,9 +12,6 @@ interface PagarBancoHorasModalProps {
   onCancel: () => void
   onConfirm: (monto: number) => void
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10'
 
 /**
  * Confirma el pago de un movimiento pendiente del banco de horas. El monto
@@ -48,10 +46,7 @@ export function PagarBancoHorasModal({
         </p>
 
         <div className="mt-3">
-          <label
-            className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500"
-            htmlFor="monto-pago-banco-horas"
-          >
+          <label className={LABEL} htmlFor="monto-pago-banco-horas">
             Monto a pagar
           </label>
           <input
@@ -63,7 +58,7 @@ export function PagarBancoHorasModal({
             disabled={submitting}
             value={monto}
             onChange={(e) => setMonto(e.target.value)}
-            className={INPUT_CLASSES}
+            className={INPUT}
           />
           <p className="mt-1 text-[11px] text-slate-400">
             Sugerido (1.5x): {formatCRC(item.montoSugerido)}. Podés ajustarlo.
@@ -80,7 +75,7 @@ export function PagarBancoHorasModal({
             type="button"
             onClick={onCancel}
             disabled={submitting}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
           >
             Cancelar
           </button>

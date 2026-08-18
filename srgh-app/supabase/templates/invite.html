@@ -1,0 +1,55 @@
+<h2>¡Bienvenido a SGRH!</h2>
+
+<p>
+  Ha sido invitado a crear su cuenta en el Sistema de Gestión de Recursos Humanos (SGRH) de
+  Celulares Alex / Infinity CR.
+</p>
+
+<p>A través de esta plataforma podrá acceder a:</p>
+<ul>
+  <li>Consulta de horarios y programación</li>
+  <li>Solicitudes de permisos y ausencias</li>
+</ul>
+
+<p>Para completar su registro y acceder a la plataforma, haga clic en el botón de abajo:</p>
+
+<p>
+  <a
+    href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite"
+    style="
+      display: inline-block;
+      padding: 12px 24px;
+      background-color: #1e40af;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+    "
+    >Aceptar invitación</a
+  >
+</p>
+
+<p>
+  Si tiene alguna pregunta o necesita asistencia, contáctese con el Departamento de Recursos
+  Humanos.
+</p>
+
+<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0" />
+
+<p style="font-size: 12px; color: #6b7280">
+  © 2026 Celulares Alex / Infinity CR<br />
+  Este mensaje fue enviado de forma automática. Por favor, no responda a este correo.
+</p>
+
+<!--
+  IMPORTANTE — no cambiar el formato del enlace.
+
+  El link por defecto de Supabase ({{ .ConfirmationURL }}) entrega la sesión
+  en el FRAGMENTO de la URL (#access_token=...), que el navegador nunca manda
+  al servidor. Con @supabase/ssr la sesión vive en cookies y la escribe el
+  servidor, así que ese formato es un callejón sin salida: el usuario cae en
+  una página que no puede autenticarlo.
+
+  El patrón correcto es token_hash + verifyOtp en un route handler, que es
+  justo lo que hace /auth/confirm.
+-->

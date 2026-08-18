@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth/require-permission'
+import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 
 interface EmployeeJoin {
@@ -28,36 +28,32 @@ export type GetActiveEmployeesResult =
 
 /**
  * Lista de empleados con contrato activo en la sucursal DEL KIOSCO — no toda
- * la empresa. Cada cuenta KIOSCO tiene su sucursal asignada via
- * uer_sucursal_id (no viaja en el JWT, se resuelve en vivo, igual que el
- * resto del modulo). Si el kiosco no tiene sucursal asignada, es un error de
+ * la empresa. Si el kiosco no tiene sucursal asignada es un error de
  * configuracion: no se debe caer de vuelta a "mostrar toda la empresa" en un
  * dispositivo fisicamente expuesto.
+ *
+ * Acepta ASISTENCIA_KIOSCO (el permiso estrecho del rol KIOSCO) o
+ * EMPLEADOS_READ (gerentes y RRHH, que ven la misma pantalla). KIOSCO ya NO
+ * tiene EMPLEADOS_READ: con ese permiso la RLS le dejaba leer el expediente
+ * completo de toda la empresa.
  */
 export async function getActiveEmployees(): Promise<GetActiveEmployeesResult> {
-  const claims = await requirePermission(PERMISOS.EMPLEADOS_READ)
-  const meta = claims.app_metadata as { usr_id?: number; empresa_id?: number }
+  const claims = await requireAnyPermission([PERMISOS.ASISTENCIA_KIOSCO, PERMISOS.EMPLEADOS_READ])
+  const meta = claims.app_metadata as { empresa_id?: number; sucursal_id?: number | null }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
   }
 
-  const supabase = await createClient()
-
-  let sucursalId: number | null = null
-  if (meta.usr_id) {
-    const { data: asignacion } = await supabase
-      .from('sgrh_usuarios_empresa_rol')
-      .select('uer_sucursal_id')
-      .eq('uer_usuario_id', meta.usr_id)
-      .eq('uer_activo', true)
-      .maybeSingle<{ uer_sucursal_id: number | null }>()
-    sucursalId = asignacion?.uer_sucursal_id ?? null
-  }
+  // La sucursal viaja en el JWT (custom_access_token_hook la toma de
+  // uer_sucursal_id). Antes se resolvia con una consulta extra por llamada.
+  const sucursalId = meta.sucursal_id ?? null
 
   if (sucursalId === null) {
     return { ok: false, error: 'Este kiosco no tiene una sucursal asignada.' }
   }
+
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('sgrh_historial_laboral')

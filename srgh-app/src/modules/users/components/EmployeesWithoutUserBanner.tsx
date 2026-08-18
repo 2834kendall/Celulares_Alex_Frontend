@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, UserPlus } from 'lucide-react'
 import type { EmpleadoSinUsuario } from '@/modules/users/types'
+import { Button } from '@/components/ui/Button'
 
 interface EmployeesWithoutUserBannerProps {
   empleados: EmpleadoSinUsuario[]
@@ -64,13 +65,9 @@ export function EmployeesWithoutUserBanner({
                   {empleado.email_personal ? ` · ${empleado.email_personal}` : ''}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => onInvite(empleado)}
-                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98]"
-              >
+              <Button onClick={() => onInvite(empleado)} className="shrink-0">
                 <UserPlus className="h-3 w-3" /> Crear usuario
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

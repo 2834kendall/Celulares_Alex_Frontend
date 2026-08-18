@@ -5,9 +5,11 @@ import { useController, useFormContext, type FieldErrors } from 'react-hook-form
 import type { CatalogoItem, TerritorioCatalogo } from '@/modules/employees/types'
 import { GENERO_LABELS, TIPO_CUENTA_LABELS } from '@/modules/employees/lib/format'
 import { formatIbanGroups, IBAN_CR_LENGTH, normalizeIban } from '@/modules/employees/lib/iban'
+import { DateField } from '@/components/ui/DatePickerButton'
+import { SELECT } from '@/components/ui/styles'
 
 export const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
 
 export const LABEL_CLASSES =
   'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
@@ -101,7 +103,7 @@ export function CatalogSelect({
           onAfterChange?.(raw === '' ? null : Number(raw))
         }}
         aria-invalid={Boolean(error)}
-        className={INPUT_CLASSES}
+        className={SELECT}
       >
         <option value="">{placeholder}</option>
         {options.map((option) => (
@@ -121,6 +123,38 @@ const MILES_FORMAT = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 0 }
 interface MaskedInputProps {
   name: string
   invalid?: boolean
+}
+
+/**
+ * Fecha del formulario, con el calendario del sistema.
+ *
+ * Puente entre React Hook Form y `DateField`, que es controlado: `register()`
+ * no sirve porque el control no es un `<input>` nativo. El valor sigue siendo
+ * "YYYY-MM-DD", igual que con `type="date"`, asi que los schemas de Zod y los
+ * Server Actions no cambian.
+ */
+export function DateInput({
+  name,
+  label,
+  invalid,
+}: {
+  name: string
+  label: string
+  invalid?: boolean
+}) {
+  const { control } = useFormContext()
+  const {
+    field: { value, onChange },
+  } = useController({ name, control })
+
+  return (
+    <DateField
+      value={typeof value === 'string' ? value : ''}
+      onChange={onChange}
+      label={label}
+      invalid={invalid}
+    />
+  )
 }
 
 /**
@@ -237,7 +271,7 @@ export function PersonalDataFields({
   const err = (name: string) => getFieldError(errors, basePath + name)
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2 @2xl:grid-cols-3">
       <Labeled label="Nombre *" error={err('emp_nombre')}>
         <input
           type="text"
@@ -269,7 +303,7 @@ export function PersonalDataFields({
         <select
           {...register(`${basePath}emp_tipo_identificacion_id`, { valueAsNumber: true })}
           aria-invalid={Boolean(err('emp_tipo_identificacion_id'))}
-          className={INPUT_CLASSES}
+          className={SELECT}
         >
           <option value="">Seleccionar…</option>
           {tiposIdentificacion.map((tipo) => (
@@ -290,20 +324,18 @@ export function PersonalDataFields({
       </Labeled>
 
       <Labeled label="Fecha de ingreso *" error={err('emp_fecha_ingreso_original')}>
-        <input
-          type="date"
-          {...register(`${basePath}emp_fecha_ingreso_original`)}
-          aria-invalid={Boolean(err('emp_fecha_ingreso_original'))}
-          className={INPUT_CLASSES}
+        <DateInput
+          name={`${basePath}emp_fecha_ingreso_original`}
+          label="Fecha de ingreso"
+          invalid={Boolean(err('emp_fecha_ingreso_original'))}
         />
       </Labeled>
 
       <Labeled label="Fecha de nacimiento" error={err('emp_fecha_nacimiento')}>
-        <input
-          type="date"
-          {...register(`${basePath}emp_fecha_nacimiento`)}
-          aria-invalid={Boolean(err('emp_fecha_nacimiento'))}
-          className={INPUT_CLASSES}
+        <DateInput
+          name={`${basePath}emp_fecha_nacimiento`}
+          label="Fecha de nacimiento"
+          invalid={Boolean(err('emp_fecha_nacimiento'))}
         />
       </Labeled>
 
@@ -311,7 +343,7 @@ export function PersonalDataFields({
         <select
           {...register(`${basePath}emp_genero`)}
           aria-invalid={Boolean(err('emp_genero'))}
-          className={INPUT_CLASSES}
+          className={SELECT}
         >
           <option value="">Sin especificar</option>
           {Object.entries(GENERO_LABELS).map(([value, label]) => (
@@ -415,7 +447,7 @@ export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
   const tipoCuentaField = register(`${basePath}edp_tipo_cuenta`)
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2 @2xl:grid-cols-3">
       <CatalogSelect
         name={`${basePath}edp_banco_id`}
         label="Banco"
@@ -432,7 +464,7 @@ export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
             limpiarCuenta()
           }}
           aria-invalid={Boolean(err('edp_tipo_cuenta'))}
-          className={INPUT_CLASSES}
+          className={SELECT}
         >
           <option value="">Sin especificar</option>
           {Object.entries(TIPO_CUENTA_LABELS).map(([value, label]) => (
@@ -489,7 +521,7 @@ function LocalSelect({
         onChange={(event) =>
           onChange(event.target.value === '' ? null : Number(event.target.value))
         }
-        className={INPUT_CLASSES}
+        className={SELECT}
       >
         <option value="">{placeholder}</option>
         {options.map((option) => (
@@ -561,7 +593,7 @@ export function AddressFields({ basePath = '', territorio }: AddressFieldsProps)
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2 @2xl:grid-cols-3">
       {/* Provincia y cantón NO se registran en react-hook-form: no se persisten
           y su valor sale del estado local, que ya viene posicionado en edición. */}
       <LocalSelect

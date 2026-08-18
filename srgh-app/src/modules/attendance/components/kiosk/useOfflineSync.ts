@@ -74,6 +74,10 @@ export function useOfflineSync() {
           longitud: mark.longitud,
           pin: mark.pin,
           dispositivoId: mark.dispositivoId,
+          // La hora capturada al encolar, no la de este intento de envio: es
+          // lo que distingue "marco a las 8:00 y no habia red" de "marco a
+          // las 14:00". Sin esto la marca diferida nace como tardanza falsa.
+          fechaHora: mark.fechaHora,
         })
 
         if (result.ok) {

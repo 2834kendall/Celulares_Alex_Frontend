@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EmployeesList } from './EmployeesList'
 import type { EmpleadoListItem } from '@/modules/employees/types'
@@ -54,6 +54,21 @@ const EMPLOYEES: EmpleadoListItem[] = [
   }),
 ]
 
+/**
+ * El componente rinde la MISMA data dos veces: tarjetas en movil y tabla
+ * desde el ancho de contenedor 3xl. En un navegador solo una existe, porque
+ * la clase "hidden" es display:none; jsdom no aplica CSS y ve las dos, asi
+ * que toda consulta global encuentra duplicados. Se consulta dentro de la
+ * rama que interesa, en vez de relajar los tests a getAllBy*.
+ */
+function tabla() {
+  return within(screen.getByRole('table'))
+}
+
+function tarjetas() {
+  return within(screen.getByRole('list'))
+}
+
 describe('<EmployeesList />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -62,11 +77,11 @@ describe('<EmployeesList />', () => {
   it('muestra los empleados con su contrato y estado', () => {
     render(<EmployeesList employees={EMPLOYEES} canWrite />)
 
-    expect(screen.getByText('Ana Mora')).toBeInTheDocument()
-    expect(screen.getByText('Cajera')).toBeInTheDocument()
-    expect(screen.getAllByText('01/02/2024')).toHaveLength(2)
-    expect(screen.getAllByText('Activo')).toHaveLength(2)
-    expect(screen.getByText('Inactivo')).toBeInTheDocument()
+    expect(tabla().getByText('Ana Mora')).toBeInTheDocument()
+    expect(tabla().getByText('Cajera')).toBeInTheDocument()
+    expect(tabla().getAllByText('01/02/2024')).toHaveLength(2)
+    expect(tabla().getAllByText('Activo')).toHaveLength(2)
+    expect(tabla().getByText('Inactivo')).toBeInTheDocument()
   })
 
   it('muestra avatar con foto o iniciales según cada empleado', () => {
@@ -86,9 +101,9 @@ describe('<EmployeesList />', () => {
     )
 
     // Sin foto: iniciales.
-    expect(screen.getByText('AM')).toBeInTheDocument()
+    expect(tabla().getByText('AM')).toBeInTheDocument()
     // Con foto: <img> con la URL firmada, sin exponer nada del proveedor.
-    const img = screen.getByAltText('Foto de José Pérez')
+    const img = tabla().getByAltText('Foto de José Pérez')
     expect(img).toHaveAttribute('src', 'https://cdn.example/jose.jpg?token=t')
   })
 
@@ -113,8 +128,8 @@ describe('<EmployeesList />', () => {
 
     await user.type(screen.getByPlaceholderText(/buscar por nombre/i), 'perez')
 
-    expect(screen.getByText('José Pérez')).toBeInTheDocument()
-    expect(screen.queryByText('Ana Mora')).not.toBeInTheDocument()
+    expect(tabla().getByText('José Pérez')).toBeInTheDocument()
+    expect(tabla().queryByText('Ana Mora')).not.toBeInTheDocument()
 
     await user.clear(screen.getByPlaceholderText(/buscar por nombre/i))
     await user.type(screen.getByPlaceholderText(/buscar por nombre/i), 'zzz')
@@ -128,8 +143,8 @@ describe('<EmployeesList />', () => {
 
     await user.selectOptions(screen.getByLabelText(/filtrar por estado/i), 'inactivos')
 
-    expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
-    expect(screen.queryByText('Ana Mora')).not.toBeInTheDocument()
+    expect(tabla().getByText('Luis Rojas')).toBeInTheDocument()
+    expect(tabla().queryByText('Ana Mora')).not.toBeInTheDocument()
   })
 
   it('filtra por tipo de contrato derivado de la data', async () => {
@@ -138,15 +153,15 @@ describe('<EmployeesList />', () => {
 
     await user.selectOptions(screen.getByLabelText(/filtrar por tipo de contrato/i), 'Plazo fijo')
 
-    expect(screen.getByText('José Pérez')).toBeInTheDocument()
-    expect(screen.queryByText('Ana Mora')).not.toBeInTheDocument()
+    expect(tabla().getByText('José Pérez')).toBeInTheDocument()
+    expect(tabla().queryByText('Ana Mora')).not.toBeInTheDocument()
   })
 
   it('navega al detalle al hacer click en la fila', async () => {
     const user = userEvent.setup()
     render(<EmployeesList employees={EMPLOYEES} canWrite />)
 
-    await user.click(screen.getByText('Cajera'))
+    await user.click(tabla().getByText('Cajera'))
 
     expect(push).toHaveBeenCalledWith('/employees/1')
   })
@@ -154,6 +169,26 @@ describe('<EmployeesList />', () => {
   it('el nombre es un enlace real al detalle', () => {
     render(<EmployeesList employees={EMPLOYEES} canWrite />)
 
-    expect(screen.getByRole('link', { name: 'Ana Mora' })).toHaveAttribute('href', '/employees/1')
+    expect(tabla().getByRole('link', { name: 'Ana Mora' })).toHaveAttribute('href', '/employees/1')
+  })
+
+  it('en movil cada tarjeta entera es el enlace al detalle', () => {
+    render(<EmployeesList employees={EMPLOYEES} canWrite />)
+
+    // El nombre accesible del enlace incluye todo el contenido de la tarjeta,
+    // no solo el nombre: es la tarjeta completa la que navega, no un texto.
+    const tarjeta = tarjetas().getByRole('link', { name: /Ana Mora/ })
+
+    expect(tarjeta).toHaveAttribute('href', '/employees/1')
+    expect(tarjeta).toHaveTextContent('Cajera')
+    expect(tarjeta).toHaveTextContent('Central')
+  })
+
+  it('la tarjeta rotula cada dato, porque no hay encabezados de columna', () => {
+    render(<EmployeesList employees={EMPLOYEES} canWrite />)
+
+    for (const label of ['Puesto', 'Sucursal', 'Contrato', 'Inicio']) {
+      expect(tarjetas().getAllByText(label).length).toBeGreaterThan(0)
+    }
   })
 })

@@ -1,4 +1,3 @@
-import { AlertTriangle } from 'lucide-react'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { ACCESO_EVALUACIONES } from '@/lib/permissions/zones'
@@ -9,15 +8,7 @@ import { EvaluationTabs } from '@/modules/evaluations/components/EvaluationTabs'
 import { IndividualView } from '@/modules/evaluations/components/IndividualView'
 import { NewEvaluationSection } from '@/modules/evaluations/components/NewEvaluationSection'
 import { RubrosManager } from '@/modules/evaluations/components/RubrosManager'
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-      <p>{message}</p>
-    </div>
-  )
-}
+import { Alert } from '@/components/ui/Alert'
 
 export default async function EvaluationsPage() {
   const claims = await requireAnyPermission(ACCESO_EVALUACIONES)
@@ -28,11 +19,11 @@ export default async function EvaluationsPage() {
   const [overviewResult, rubrosResult] = await Promise.all([getEvaluationsOverview(), getRubros()])
 
   if (!overviewResult.ok) {
-    return <ErrorBanner message={overviewResult.error} />
+    return <Alert size="md">{overviewResult.error}</Alert>
   }
 
   if (!rubrosResult.ok) {
-    return <ErrorBanner message={rubrosResult.error} />
+    return <Alert size="md">{rubrosResult.error}</Alert>
   }
 
   const { collaborators, branches } = overviewResult

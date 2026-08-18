@@ -1,5 +1,6 @@
 import { CalendarClock, Inbox } from 'lucide-react'
 import type { MyAttendanceDay } from '@/modules/attendance/actions/getMyMarks'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface MyAttendanceHistoryProps {
   data: MyAttendanceDay[]
@@ -27,9 +28,16 @@ function MarkTime({ time }: { time: string | undefined }) {
 export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
   return (
     <section className="mx-auto max-w-2xl">
-      <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+      {/*
+        p-5 en movil y p-8 desde sm:. Con p-8 fijo, a 375px el padding se comia
+        64px de 375 y dejaba 311px para cuatro columnas de horas: entraban por
+        muy poco y cualquier nombre de dia largo forzaba el scroll. La tabla en
+        si no necesita version de cards — son cuatro columnas de valores
+        cortos, que es justo el caso donde apilar en tarjetas estorba.
+      */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
             <CalendarClock className="h-4 w-4" />
           </span>
           <div>
@@ -39,10 +47,7 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
         </div>
 
         {data.length === 0 ? (
-          <div className="mt-6 flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center">
-            <Inbox className="h-5 w-5 text-slate-400" />
-            <p className="text-xs text-slate-500">Todavia no tienes marcas registradas.</p>
-          </div>
+          <EmptyState icon={Inbox} title="Todavia no tienes marcas registradas." className="mt-6" />
         ) : (
           <div className="mt-6 overflow-x-auto">
             <table className="w-full text-xs">

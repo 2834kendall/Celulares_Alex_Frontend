@@ -8,9 +8,8 @@ import { AlertTriangle, Eye, EyeOff, KeyRound, Loader2, LockKeyhole } from 'luci
 import { activateAccountSchema, type ActivateAccountInput } from '@/modules/auth/types'
 import { brandConfig } from '@/modules/auth/constants'
 import { activateAccount } from '@/modules/auth/actions/activateAccount'
-
-const INPUT_CLASSES =
-  'w-full pl-10 pr-11 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-700/25 focus:border-blue-700 transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/60'
+import { cn } from '@/lib/utils/cn'
+import { FIELD_ERROR, INPUT } from '@/components/ui/styles'
 
 interface ActivateAccountFormProps {
   /** Email de la cuenta invitada (sale de la sesión, solo informativo). */
@@ -111,7 +110,7 @@ export function ActivateAccountForm({ email }: ActivateAccountFormProps) {
                   disabled={isSubmitting}
                   aria-invalid={!!errors.password}
                   {...register('password')}
-                  className={INPUT_CLASSES}
+                  className={cn(INPUT, 'py-3 pl-10 pr-11')}
                   placeholder="Mínimo 8 caracteres"
                 />
                 <button
@@ -124,9 +123,7 @@ export function ActivateAccountForm({ email }: ActivateAccountFormProps) {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              {errors.password && (
-                <p className="mt-1.5 text-xs text-rose-600">{errors.password.message}</p>
-              )}
+              {errors.password && <p className={FIELD_ERROR}>{errors.password.message}</p>}
             </div>
 
             <div>
@@ -145,19 +142,19 @@ export function ActivateAccountForm({ email }: ActivateAccountFormProps) {
                   disabled={isSubmitting}
                   aria-invalid={!!errors.confirmPassword}
                   {...register('confirmPassword')}
-                  className={INPUT_CLASSES}
+                  className={cn(INPUT, 'py-3 pl-10')}
                   placeholder="Repite la contraseña"
                 />
               </div>
               {errors.confirmPassword && (
-                <p className="mt-1.5 text-xs text-rose-600">{errors.confirmPassword.message}</p>
+                <p className={FIELD_ERROR}>{errors.confirmPassword.message}</p>
               )}
             </div>
 
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-700/20 transition-all hover:shadow-blue-700/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
+              className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-700/20 transition-all hover:shadow-brand-700/30 active:scale-[0.99] ${brandConfig.accent} ${brandConfig.accentHover} disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none`}
             >
               {isSubmitting ? (
                 <>

@@ -4,14 +4,14 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Loader2, Save } from 'lucide-react'
+import { Loader2, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import type { z } from 'zod'
-import {
-  registrarIncapacidadSchema,
-  type RegistrarIncapacidadInput,
-} from '@/modules/payroll/types'
+import { registrarIncapacidadSchema, type RegistrarIncapacidadInput } from '@/modules/payroll/types'
 import { registrarIncapacidad } from '@/modules/payroll/actions/registrarIncapacidad'
+import { Button } from '@/components/ui/Button'
+import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { Alert } from '@/components/ui/Alert'
 
 interface RegistrarIncapacidadFormProps {
   historialLaboralId: number
@@ -19,11 +19,6 @@ interface RegistrarIncapacidadFormProps {
   onCancel: () => void
   onSuccess: () => void
 }
-
-const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
-
-const LABEL_CLASSES = 'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
 
 /**
  * Registra una incapacidad por enfermedad (INC_ENF) para el empleado del
@@ -92,18 +87,14 @@ export function RegistrarIncapacidadForm({
       <p className="text-xs font-bold text-slate-800">Registrar incapacidad — {empleadoNombre}</p>
 
       {serverError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+        <Alert>
           <div>{serverError}</div>
-        </div>
+        </Alert>
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
-          <label className={LABEL_CLASSES} htmlFor="fechaInicio">
+          <label className={LABEL} htmlFor="fechaInicio">
             Fecha de inicio
           </label>
           <input
@@ -112,7 +103,7 @@ export function RegistrarIncapacidadForm({
             disabled={isSubmitting}
             aria-invalid={!!errors.fechaInicio}
             {...register('fechaInicio')}
-            className={INPUT_CLASSES}
+            className={INPUT}
           />
           {errors.fechaInicio && (
             <p className="mt-1 text-[11px] text-rose-600">{errors.fechaInicio.message}</p>
@@ -120,7 +111,7 @@ export function RegistrarIncapacidadForm({
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="fechaFin">
+          <label className={LABEL} htmlFor="fechaFin">
             Fecha de fin
           </label>
           <input
@@ -129,7 +120,7 @@ export function RegistrarIncapacidadForm({
             disabled={isSubmitting}
             aria-invalid={!!errors.fechaFin}
             {...register('fechaFin')}
-            className={INPUT_CLASSES}
+            className={INPUT}
           />
           {errors.fechaFin && (
             <p className="mt-1 text-[11px] text-rose-600">{errors.fechaFin.message}</p>
@@ -137,14 +128,14 @@ export function RegistrarIncapacidadForm({
         </div>
 
         <div>
-          <label className={LABEL_CLASSES} htmlFor="numeroBoletaCcss">
+          <label className={LABEL} htmlFor="numeroBoletaCcss">
             Boleta CCSS <span className="font-normal normal-case text-slate-400">(opcional)</span>
           </label>
           <input
             id="numeroBoletaCcss"
             disabled={isSubmitting}
             {...register('numeroBoletaCcss')}
-            className={INPUT_CLASSES}
+            className={INPUT}
             placeholder="N.° de boleta"
           />
         </div>
@@ -160,22 +151,14 @@ export function RegistrarIncapacidadForm({
           type="button"
           onClick={onCancel}
           disabled={isSubmitting}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
         >
           Cancelar
         </button>
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
-        >
-          {isSubmitting ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Save className="h-3.5 w-3.5" />
-          )}
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? <Loader2 className={SPINNER} /> : <Save className="h-3.5 w-3.5" />}
           Guardar incapacidad
-        </button>
+        </Button>
       </div>
     </form>
   )
