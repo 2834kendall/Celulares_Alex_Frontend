@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AppShell } from '@/components/layout/AppShell'
 import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
-import { getSucursalTema } from '@/lib/empresa/get-sucursal-tema'
+import { resolveShellTheme } from '@/lib/empresa/resolve-shell-theme'
 import type { SgrhJwtClaims } from '@/types/auth'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,11 +34,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const email = typeof data.claims.email === 'string' ? data.claims.email : 'Usuario autenticado'
   const rol = typeof meta.rol === 'string' ? meta.rol : null
 
-  // Nombre real de la empresa del tenant (RLS devuelve solo la del JWT) y,
-  // si el usuario tiene una sucursal fija asignada, su nombre y apariencia.
-  const [empresaNombre, tema] = await Promise.all([
+  // Nombre real de la empresa del tenant (RLS devuelve solo la del JWT) y el
+  // tema oficial del shell — sucursal fija propia, salvo que haya una
+  // sucursal en preview desde el selector de la barra superior.
+  const [empresaNombre, theme] = await Promise.all([
     getEmpresaNombre(),
-    getSucursalTema(meta.usr_id),
+    resolveShellTheme(meta.usr_id, permisos),
   ])
 
   return (
@@ -47,9 +48,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       email={email}
       rol={rol}
       empresaNombre={empresaNombre}
-      sucursalNombre={tema.sucursalNombre}
-      colorAcento={tema.colorAcento}
-      colorSidebar={tema.colorSidebar}
+      sucursalNombre={theme.sucursalNombre}
+      colorAcento={theme.colorAcento}
+      colorSidebar={theme.colorSidebar}
+      sucursales={theme.sucursales}
+      sucursalPreviewId={theme.sucursalPreviewId}
     >
       {children}
     </AppShell>

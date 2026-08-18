@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
 import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
+import { chooseSelectMenuOption } from '@/test/selectMenu'
 
 const push = vi.fn()
 
@@ -96,7 +97,7 @@ async function fillStepPersonal(user: UserEvent) {
   let fechaIngreso = ''
   await user.type(screen.getByLabelText('Nombre *'), 'Ana')
   await user.type(screen.getByLabelText('Primer apellido *'), 'Mora')
-  await user.selectOptions(screen.getByLabelText('Tipo de identificación *'), '1')
+  await chooseSelectMenuOption(user, 'Tipo de identificación *', 'Cédula nacional')
   await user.type(screen.getByLabelText('Número de identificación *'), '1-1111-1111')
   fechaIngreso = await elegirFecha(user, 'Fecha de ingreso')
   await fillDireccion(user)
@@ -105,17 +106,17 @@ async function fillStepPersonal(user: UserEvent) {
 
 /** La dirección vive en el paso 1: sin ella «Siguiente» no avanza. */
 async function fillDireccion(user: UserEvent) {
-  await user.selectOptions(screen.getByLabelText('Provincia *'), '1')
-  await user.selectOptions(screen.getByLabelText('Cantón *'), '12')
-  await user.selectOptions(screen.getByLabelText('Distrito *'), '121')
+  await chooseSelectMenuOption(user, 'Provincia *', 'San José')
+  await chooseSelectMenuOption(user, 'Cantón *', 'Escazú')
+  await chooseSelectMenuOption(user, 'Distrito *', 'Escazú')
   await user.type(screen.getByLabelText('Señas exactas *'), '200 m norte de la iglesia')
 }
 
 async function fillStepNomina(user: UserEvent) {
-  await user.selectOptions(screen.getByLabelText('Puesto *'), '3')
-  await user.selectOptions(screen.getByLabelText('Sucursal *'), '2')
-  await user.selectOptions(screen.getByLabelText('Tipo de contrato *'), '1')
-  await user.selectOptions(screen.getByLabelText('Tipo de jornada *'), '1')
+  await chooseSelectMenuOption(user, 'Puesto *', 'Cajera')
+  await chooseSelectMenuOption(user, 'Sucursal *', 'Central')
+  await chooseSelectMenuOption(user, 'Tipo de contrato *', 'Indefinido')
+  await chooseSelectMenuOption(user, 'Tipo de jornada *', 'Diurna')
   await elegirFecha(user, 'Fecha de inicio')
   await user.type(screen.getByLabelText('Salario base (₡) *'), '500000')
   await user.type(screen.getByLabelText('Salario real (₡) *'), '550000')
@@ -230,7 +231,7 @@ describe('<EmployeeWizard />', () => {
     const iban = screen.getByLabelText('Número de cuenta (IBAN / SINPE)')
     expect(iban).toBeDisabled()
 
-    await user.selectOptions(screen.getByLabelText('Banco'), '3')
+    await chooseSelectMenuOption(user, 'Banco', 'BAC Credomatic')
     expect(iban).toBeEnabled()
 
     // Solo se digitan los dígitos: el prefijo CR se antepone solo. Este
@@ -263,7 +264,7 @@ describe('<EmployeeWizard />', () => {
 
     await user.click(screen.getByRole('checkbox'))
     await user.type(screen.getByLabelText('Email de acceso *'), 'ana@empresa.com')
-    await user.selectOptions(screen.getByLabelText('Rol *'), '4')
+    await chooseSelectMenuOption(user, 'Rol *', 'Empleado')
 
     await user.click(screen.getByRole('button', { name: /crear empleado/i }))
 
@@ -414,7 +415,7 @@ describe('<EmployeeWizard />', () => {
     await user.upload(screen.getByTestId('document-dropzone-input'), pdfFile('cedula.pdf'))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByLabelText(/nombre del documento/i)).toHaveValue('cedula')
-    await user.selectOptions(within(dialog).getByLabelText(/tipo de documento/i), '5')
+    await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
     await user.click(within(dialog).getByRole('button', { name: /guardar/i }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -454,7 +455,7 @@ describe('<EmployeeWizard />', () => {
 
     await user.upload(screen.getByTestId('document-dropzone-input'), pdfFile('cedula.pdf'))
     const dialog = await screen.findByRole('dialog')
-    await user.selectOptions(within(dialog).getByLabelText(/tipo de documento/i), '5')
+    await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
     await user.click(within(dialog).getByRole('button', { name: /guardar/i }))
 
     await user.click(screen.getByRole('button', { name: /siguiente/i }))
@@ -489,7 +490,7 @@ describe('<EmployeeWizard />', () => {
 
     await user.upload(screen.getByTestId('document-dropzone-input'), pdfFile('cedula.pdf'))
     const dialog = await screen.findByRole('dialog')
-    await user.selectOptions(within(dialog).getByLabelText(/tipo de documento/i), '5')
+    await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
     await user.click(within(dialog).getByRole('button', { name: /guardar/i }))
 
     await user.click(screen.getByRole('button', { name: /siguiente/i }))

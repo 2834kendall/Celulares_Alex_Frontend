@@ -104,11 +104,14 @@ describe('<WeeklyScheduleMatrix />', () => {
     expect(screen.getAllByText('7.5 Hrs').length).toBeGreaterThan(0)
   })
 
-  it('el input de fecha navega a la semana que contiene la fecha elegida', () => {
-    const { container } = renderMatrix([makeRow()])
+  it('el calendario navega a la semana que contiene la fecha elegida', async () => {
+    const user = userEvent.setup()
+    renderMatrix([makeRow()])
 
-    const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement
-    fireEvent.change(dateInput, { target: { value: '2026-01-14' } })
+    // Calendario propio (DatePopover), ya no el <input type="date"> nativo: se
+    // abre el panel y se elige el dia por su nombre accesible completo.
+    await user.click(screen.getByRole('button', { name: 'Ir a una semana especifica' }))
+    await user.click(screen.getByRole('button', { name: /14 de enero de 2026/ }))
 
     expect(push).toHaveBeenCalledWith('/schedule?week=2026-01-12')
   })

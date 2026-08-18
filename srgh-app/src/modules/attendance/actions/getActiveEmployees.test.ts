@@ -19,7 +19,9 @@ function claims(app_metadata: Record<string, unknown>) {
 describe('getActiveEmployees (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequireAnyPermission.mockResolvedValue(claims({ empresa_id: 1, sucursal_id: 100 }))
+    mockRequireAnyPermission.mockResolvedValue(
+      claims({ usr_id: 7, empresa_id: 1, sucursal_id: 100 })
+    )
   })
 
   it('acepta tanto el permiso estrecho del kiosco como EMPLEADOS_READ', async () => {
@@ -45,10 +47,49 @@ describe('getActiveEmployees (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'No se pudo determinar la empresa del kiosco.' })
   })
 
+  it('resuelve la sucursal contra la tabla cuando el JWT no trae el claim', async () => {
+    // El hook desplegado todavia no emite sucursal_id. Con la asignacion viva
+    // en sgrh_usuarios_empresa_rol el kiosco tiene que abrir igual.
+    mockRequireAnyPermission.mockResolvedValue(claims({ usr_id: 7, empresa_id: 1 }))
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_historial_laboral: {
+          data: [
+            {
+              sgrh_empleados: {
+                emp_id: 10,
+                emp_nombre: 'Ana',
+                emp_apellido_1: 'Perez',
+                emp_apellido_2: null,
+                emp_fecha_nacimiento: null,
+              },
+            },
+          ],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getActiveEmployees()
+
+    expect(result).toEqual({
+      ok: true,
+      data: [{ employeeId: 10, fullName: 'Ana Perez', birthDateISO: null }],
+    })
+  })
+
   it('falla si la cuenta del kiosco no tiene sucursal asignada', async () => {
-    // sucursal_id null = usuario a nivel empresa. En un kiosco eso es un error
+    // Sin sucursal ni en el claim ni en la tabla. En un kiosco eso es un error
     // de configuracion: no se cae de vuelta a "toda la empresa".
-    mockRequireAnyPermission.mockResolvedValue(claims({ empresa_id: 1, sucursal_id: null }))
+    mockRequireAnyPermission.mockResolvedValue(
+      claims({ usr_id: 7, empresa_id: 1, sucursal_id: null })
+    )
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_usuarios_empresa_rol: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
 
     const result = await getActiveEmployees()
 

@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EmployeesList } from './EmployeesList'
 import type { EmpleadoListItem } from '@/modules/employees/types'
+import { chooseSelectMenuOption } from '@/test/selectMenu'
 
 const push = vi.fn()
 
@@ -141,7 +142,7 @@ describe('<EmployeesList />', () => {
     const user = userEvent.setup()
     render(<EmployeesList employees={EMPLOYEES} canWrite />)
 
-    await user.selectOptions(screen.getByLabelText(/filtrar por estado/i), 'inactivos')
+    await chooseSelectMenuOption(user, /filtrar por estado/i, 'Inactivos')
 
     expect(tabla().getByText('Luis Rojas')).toBeInTheDocument()
     expect(tabla().queryByText('Ana Mora')).not.toBeInTheDocument()
@@ -151,7 +152,7 @@ describe('<EmployeesList />', () => {
     const user = userEvent.setup()
     render(<EmployeesList employees={EMPLOYEES} canWrite />)
 
-    await user.selectOptions(screen.getByLabelText(/filtrar por tipo de contrato/i), 'Plazo fijo')
+    await chooseSelectMenuOption(user, /filtrar por tipo de contrato/i, 'Plazo fijo')
 
     expect(tabla().getByText('José Pérez')).toBeInTheDocument()
     expect(tabla().queryByText('Ana Mora')).not.toBeInTheDocument()

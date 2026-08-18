@@ -14,7 +14,9 @@ import {
 import { createPeriodo } from '@/modules/payroll/actions/createPeriodo'
 import { MESES } from '@/modules/payroll/lib/format'
 import { Button } from '@/components/ui/Button'
-import { INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { ControlledDateField } from '@/components/ui/ControlledDateField'
+import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 
 const ERROR_CLASSES = 'mt-1 text-[11px] font-medium text-rose-600'
 
@@ -30,6 +32,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
   const hoy = new Date()
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<CrearPeriodoInput>({
@@ -71,21 +74,15 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
             <label htmlFor="npe_sucursal_id" className={LABEL}>
               Sucursal
             </label>
-            <select
+            <ControlledSelectMenu
+              control={control}
+              name="npe_sucursal_id"
               id="npe_sucursal_id"
-              {...register('npe_sucursal_id', { valueAsNumber: true })}
-              defaultValue=""
-              className={SELECT}
-            >
-              <option value="" disabled>
-                Selecciona una sucursal
-              </option>
-              {sucursales.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.nombre}
-                </option>
-              ))}
-            </select>
+              parse={parseNumber}
+              placeholder="Selecciona una sucursal"
+              invalid={!!errors.npe_sucursal_id}
+              options={sucursales.map((s) => ({ value: String(s.id), label: s.nombre }))}
+            />
             {errors.npe_sucursal_id && (
               <p className={ERROR_CLASSES}>{errors.npe_sucursal_id.message}</p>
             )}
@@ -95,17 +92,14 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
             <label htmlFor="npe_periodo_mes" className={LABEL}>
               Mes
             </label>
-            <select
+            <ControlledSelectMenu
+              control={control}
+              name="npe_periodo_mes"
               id="npe_periodo_mes"
-              {...register('npe_periodo_mes', { valueAsNumber: true })}
-              className={SELECT}
-            >
-              {MESES.map((mes, index) => (
-                <option key={mes} value={index + 1}>
-                  {mes}
-                </option>
-              ))}
-            </select>
+              parse={parseNumber}
+              invalid={!!errors.npe_periodo_mes}
+              options={MESES.map((mes, index) => ({ value: String(index + 1), label: mes }))}
+            />
             {errors.npe_periodo_mes && (
               <p className={ERROR_CLASSES}>{errors.npe_periodo_mes.message}</p>
             )}
@@ -130,14 +124,17 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
             <label htmlFor="npe_quincena" className={LABEL}>
               Quincena
             </label>
-            <select
+            <ControlledSelectMenu
+              control={control}
+              name="npe_quincena"
               id="npe_quincena"
-              {...register('npe_quincena', { valueAsNumber: true })}
-              className={SELECT}
-            >
-              <option value={1}>1ª quincena</option>
-              <option value={2}>2ª quincena</option>
-            </select>
+              parse={parseNumber}
+              invalid={!!errors.npe_quincena}
+              options={[
+                { value: '1', label: '1ª quincena' },
+                { value: '2', label: '2ª quincena' },
+              ]}
+            />
             {errors.npe_quincena && <p className={ERROR_CLASSES}>{errors.npe_quincena.message}</p>}
           </div>
 
@@ -145,11 +142,12 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
             <label htmlFor="npe_fecha_inicio_periodo" className={LABEL}>
               Inicio del periodo
             </label>
-            <input
+            <ControlledDateField
+              control={control}
+              name="npe_fecha_inicio_periodo"
               id="npe_fecha_inicio_periodo"
-              type="date"
-              {...register('npe_fecha_inicio_periodo')}
-              className={INPUT}
+              label="Inicio del periodo"
+              invalid={!!errors.npe_fecha_inicio_periodo}
             />
             {errors.npe_fecha_inicio_periodo && (
               <p className={ERROR_CLASSES}>{errors.npe_fecha_inicio_periodo.message}</p>
@@ -160,11 +158,12 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
             <label htmlFor="npe_fecha_fin_periodo" className={LABEL}>
               Fin del periodo
             </label>
-            <input
+            <ControlledDateField
+              control={control}
+              name="npe_fecha_fin_periodo"
               id="npe_fecha_fin_periodo"
-              type="date"
-              {...register('npe_fecha_fin_periodo')}
-              className={INPUT}
+              label="Fin del periodo"
+              invalid={!!errors.npe_fecha_fin_periodo}
             />
             {errors.npe_fecha_fin_periodo && (
               <p className={ERROR_CLASSES}>{errors.npe_fecha_fin_periodo.message}</p>

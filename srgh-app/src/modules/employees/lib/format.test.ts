@@ -1,5 +1,58 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { esFechaVencida, formatCRC, formatDate, fullName, nombreSinExtension } from './format'
+import {
+  esCumpleanosHoy,
+  esFechaVencida,
+  formatCRC,
+  formatCumpleanos,
+  formatDate,
+  fullName,
+  nombreSinExtension,
+} from './format'
+
+describe('formatCumpleanos', () => {
+  it('muestra dia y mes en palabras, sin el año', () => {
+    expect(formatCumpleanos('1990-05-10')).toBe('10 de mayo')
+  })
+
+  it('quita el cero a la izquierda del dia', () => {
+    expect(formatCumpleanos('1988-01-03')).toBe('3 de enero')
+  })
+
+  it('no se corre de dia por zona horaria', () => {
+    // Con new Date('1990-01-01') en America/Costa_Rica esto caeria al 31/12.
+    expect(formatCumpleanos('1990-01-01')).toBe('1 de enero')
+    expect(formatCumpleanos('1990-12-31')).toBe('31 de diciembre')
+  })
+
+  it('devuelve — sin fecha', () => {
+    expect(formatCumpleanos(null)).toBe('—')
+    expect(formatCumpleanos(undefined)).toBe('—')
+  })
+})
+
+describe('esCumpleanosHoy', () => {
+  afterEach(() => vi.useRealTimers())
+
+  function hoyEs(fecha: string) {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(`${fecha}T09:00:00`))
+  }
+
+  it('true cuando coinciden dia y mes, aunque el año sea otro', () => {
+    hoyEs('2026-05-10')
+    expect(esCumpleanosHoy('1990-05-10')).toBe(true)
+  })
+
+  it('false cuando es otro dia', () => {
+    hoyEs('2026-05-11')
+    expect(esCumpleanosHoy('1990-05-10')).toBe(false)
+  })
+
+  it('false sin fecha de nacimiento', () => {
+    hoyEs('2026-05-10')
+    expect(esCumpleanosHoy(null)).toBe(false)
+  })
+})
 
 describe('formatDate', () => {
   it('convierte ISO a dd/mm/yyyy sin corrimiento de zona horaria', () => {

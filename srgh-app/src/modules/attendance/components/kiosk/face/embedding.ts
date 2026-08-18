@@ -1,4 +1,3 @@
-import * as faceapi from '@vladmandic/face-api'
 import { FACE_EMBEDDING_DIM, FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
 import { computeTestEmbedding } from './testEmbedding'
 
@@ -27,13 +26,33 @@ const MODEL_URL = '/models/face-api'
 const TEST_MODE = process.env.NEXT_PUBLIC_FACE_TEST_MODE === 'true'
 
 let modelLoadPromise: Promise<void> | null = null
+let faceapiPromise: Promise<typeof import('@vladmandic/face-api')> | null = null
+
+/**
+ * face-api entra por import dinamico, no estatico: arrastra TensorFlow.js,
+ * que al evaluarse toca APIs que solo existen en el navegador, y el arbol del
+ * kiosco tambien se evalua en el servidor al renderizar. Con el import arriba,
+ * /kiosco reventaba en el SSR ("this.util.TextEncoder is not a constructor")
+ * antes de montar nada.
+ */
+function getFaceapi(): Promise<typeof import('@vladmandic/face-api')> {
+  if (!faceapiPromise) {
+    faceapiPromise = import('@vladmandic/face-api').catch((err) => {
+      faceapiPromise = null
+      throw err
+    })
+  }
+  return faceapiPromise
+}
 
 function loadModel(): Promise<void> {
   if (!modelLoadPromise) {
-    modelLoadPromise = faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL).catch((err) => {
-      modelLoadPromise = null
-      throw err
-    })
+    modelLoadPromise = getFaceapi()
+      .then((faceapi) => faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL))
+      .catch((err) => {
+        modelLoadPromise = null
+        throw err
+      })
   }
   return modelLoadPromise
 }
@@ -57,6 +76,7 @@ export async function computeEmbedding(faceCanvas: HTMLCanvasElement): Promise<n
     return computeTestEmbedding(data)
   }
 
+  const faceapi = await getFaceapi()
   await loadModel()
   const raw = await faceapi.computeFaceDescriptor(faceCanvas)
   const descriptor = Array.isArray(raw) ? raw[0] : raw

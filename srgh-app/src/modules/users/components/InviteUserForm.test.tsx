@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { InviteUserForm } from './InviteUserForm'
+import { chooseSelectMenuOption } from '@/test/selectMenu'
 import { inviteUser } from '@/modules/users/actions/inviteUser'
 
 vi.mock('@/modules/users/actions/inviteUser', () => ({ inviteUser: vi.fn() }))
@@ -55,7 +56,7 @@ describe('<InviteUserForm />', () => {
     const user = userEvent.setup()
     renderForm()
 
-    await user.selectOptions(screen.getByLabelText('Empleado vinculado (opcional)'), '11')
+    await chooseSelectMenuOption(user, 'Empleado vinculado (opcional)', 'Luis Rojas')
 
     expect(screen.getByLabelText('Email de acceso *')).toHaveValue('luis.rojas@mail.com')
   })
@@ -65,7 +66,7 @@ describe('<InviteUserForm />', () => {
     renderForm()
 
     await user.type(screen.getByLabelText('Email de acceso *'), 'otro@empresa.com')
-    await user.selectOptions(screen.getByLabelText('Empleado vinculado (opcional)'), '11')
+    await chooseSelectMenuOption(user, 'Empleado vinculado (opcional)', 'Luis Rojas')
 
     expect(screen.getByLabelText('Email de acceso *')).toHaveValue('otro@empresa.com')
   })
@@ -75,9 +76,9 @@ describe('<InviteUserForm />', () => {
     const user = userEvent.setup()
     const { onClose } = renderForm()
 
-    await user.selectOptions(screen.getByLabelText('Empleado vinculado (opcional)'), '11')
-    await user.selectOptions(screen.getByLabelText('Rol *'), '4')
-    await user.selectOptions(screen.getByLabelText('Sucursal (opcional)'), '2')
+    await chooseSelectMenuOption(user, 'Empleado vinculado (opcional)', 'Luis Rojas')
+    await chooseSelectMenuOption(user, 'Rol *', 'Empleado')
+    await chooseSelectMenuOption(user, 'Sucursal (opcional)', 'Central')
     await user.click(screen.getByRole('button', { name: /enviar invitación/i }))
 
     await waitFor(() => {
@@ -94,7 +95,7 @@ describe('<InviteUserForm />', () => {
   it('precarga empleado y email desde el banner', () => {
     renderForm({ prefill: EMPLEADOS[0] })
 
-    expect(screen.getByLabelText('Empleado vinculado (opcional)')).toHaveValue('11')
+    expect(screen.getByLabelText('Empleado vinculado (opcional)')).toHaveTextContent('Luis Rojas')
     expect(screen.getByLabelText('Email de acceso *')).toHaveValue('luis.rojas@mail.com')
   })
 
@@ -107,7 +108,7 @@ describe('<InviteUserForm />', () => {
     const { onClose } = renderForm()
 
     await user.type(screen.getByLabelText('Email de acceso *'), 'ana@empresa.com')
-    await user.selectOptions(screen.getByLabelText('Rol *'), '4')
+    await chooseSelectMenuOption(user, 'Rol *', 'Empleado')
     await user.click(screen.getByRole('button', { name: /enviar invitación/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(

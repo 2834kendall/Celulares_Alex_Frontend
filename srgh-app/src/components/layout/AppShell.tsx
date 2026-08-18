@@ -6,6 +6,8 @@ import { X } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { NavLinks } from '@/components/layout/NavLinks'
 import { UserMenu } from '@/components/layout/UserMenu'
+import { SucursalSwitcher } from '@/components/layout/SucursalSwitcher'
+import type { SucursalConApariencia } from '@/lib/empresa/list-sucursales'
 import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
 import { deriveFrameTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
@@ -24,6 +26,10 @@ interface AppShellProps {
   colorAcento: string | null
   /** Color de fondo de la barra lateral (hex), o null para usar el default del sistema. */
   colorSidebar: string | null
+  /** Sucursales de la empresa con permiso EMPRESAS_WRITE; vacio para el resto. */
+  sucursales?: SucursalConApariencia[]
+  /** Sucursal actualmente en preview (ver SucursalSwitcher), o null. */
+  sucursalPreviewId?: number | null
   children: React.ReactNode
 }
 
@@ -75,6 +81,8 @@ export function AppShell({
   sucursalNombre,
   colorAcento,
   colorSidebar,
+  sucursales = [],
+  sucursalPreviewId = null,
   children,
 }: AppShellProps) {
   const pathname = usePathname()
@@ -151,7 +159,10 @@ export function AppShell({
           </div>
         </div>
 
-        <UserMenu email={email} rol={rol} />
+        <div className="flex shrink-0 items-center gap-3">
+          <SucursalSwitcher sucursales={sucursales} sucursalPreviewId={sucursalPreviewId} />
+          <UserMenu email={email} rol={rol} />
+        </div>
       </header>
 
       {/* Drawer de navegacion movil */}
@@ -198,6 +209,19 @@ export function AppShell({
                 <X className="h-5 w-5" />
               </button>
             </div>
+
+            {/*
+              Version de ancho completo del selector de sucursal: el
+              telefono no tiene lugar para el disparador compacto del
+              header (ver el `hidden sm:flex` de SucursalSwitcher), asi que
+              vive aca, en el drawer, donde si sobra espacio. Mismo permiso,
+              mismos datos — nunca se muestran los dos disparadores a la vez.
+            */}
+            <SucursalSwitcher
+              sucursales={sucursales}
+              sucursalPreviewId={sucursalPreviewId}
+              variant="block"
+            />
 
             <div className="flex-1 overflow-y-auto p-3">
               <NavLinks permisos={permisos} onNavigate={() => setDrawerOpen(false)} />

@@ -16,7 +16,8 @@ import {
 import { createConcepto } from '@/modules/payroll/actions/createConcepto'
 import { updateConcepto } from '@/modules/payroll/actions/updateConcepto'
 import { Button } from '@/components/ui/Button'
-import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { ControlledSelectMenu } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
 
 interface ConceptoFormProps {
@@ -63,6 +64,7 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
   // exige que ambos coincidan exactamente y el build falla.
   const {
     register,
+    control,
     handleSubmit,
     watch,
     formState: { errors, isSubmitting },
@@ -156,19 +158,14 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
         <label className={LABEL} htmlFor="con_tipo">
           Tipo
         </label>
-        <select
+        <ControlledSelectMenu
+          control={control}
+          name="con_tipo"
           id="con_tipo"
           disabled={isSubmitting}
-          aria-invalid={!!errors.con_tipo}
-          {...register('con_tipo')}
-          className={SELECT}
-        >
-          {tiposDisponibles.map((tipo) => (
-            <option key={tipo} value={tipo}>
-              {TIPO_LABELS[tipo]}
-            </option>
-          ))}
-        </select>
+          invalid={!!errors.con_tipo}
+          options={tiposDisponibles.map((tipo) => ({ value: tipo, label: TIPO_LABELS[tipo] }))}
+        />
         {errors.con_tipo && <p className={FIELD_ERROR}>{errors.con_tipo.message}</p>}
       </div>
 
@@ -176,19 +173,17 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
         <label className={LABEL} htmlFor="con_tipo_calculo">
           Cómo se calcula
         </label>
-        <select
+        <ControlledSelectMenu
+          control={control}
+          name="con_tipo_calculo"
           id="con_tipo_calculo"
           disabled={isSubmitting}
-          aria-invalid={!!errors.con_tipo_calculo}
-          {...register('con_tipo_calculo')}
-          className={SELECT}
-        >
-          {TIPOS_CALCULO_CONCEPTO.map((tipo) => (
-            <option key={tipo} value={tipo}>
-              {TIPO_CALCULO_LABELS[tipo]}
-            </option>
-          ))}
-        </select>
+          invalid={!!errors.con_tipo_calculo}
+          options={TIPOS_CALCULO_CONCEPTO.map((tipo) => ({
+            value: tipo,
+            label: TIPO_CALCULO_LABELS[tipo],
+          }))}
+        />
         {errors.con_tipo_calculo && (
           <p className={FIELD_ERROR}>{errors.con_tipo_calculo.message}</p>
         )}

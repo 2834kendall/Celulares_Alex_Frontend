@@ -248,6 +248,47 @@ describe('<EmployeeDetail />', () => {
     expect(screen.getByRole('button', { name: /guardar cambios/i })).toBeInTheDocument()
   })
 
+  it('muestra el cumpleaños como dia y mes, aparte de la fecha de nacimiento', () => {
+    render(
+      <EmployeeDetail
+        empleado={EMPLEADO_DETALLE}
+        tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
+        territorio={TERRITORIO}
+        canWrite
+      />
+    )
+
+    // El fixture nace el 1990-05-10.
+    expect(screen.getByText('Cumpleaños')).toBeInTheDocument()
+    expect(screen.getByText('10 de mayo')).toBeInTheDocument()
+    expect(screen.getByText('10/05/1990')).toBeInTheDocument()
+    expect(screen.queryByText('Hoy')).not.toBeInTheDocument()
+  })
+
+  it('el dia del cumpleaños marca la pastilla "Hoy"', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-05-10T09:00:00'))
+
+    try {
+      render(
+        <EmployeeDetail
+          empleado={EMPLEADO_DETALLE}
+          tiposIdentificacion={TIPOS_IDENTIFICACION}
+          bancos={BANCOS}
+          territorio={TERRITORIO}
+          canWrite
+        />
+      )
+
+      // La pastilla se resuelve en un efecto (evita el mismatch de hidratacion),
+      // asi que aparece despues del primer render.
+      expect(await screen.findByText('Hoy')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('sin la prop documentos (default null) no hay tabs: la ficha se ve como antes', () => {
     render(
       <EmployeeDetail

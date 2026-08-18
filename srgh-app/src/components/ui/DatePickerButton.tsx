@@ -69,6 +69,14 @@ interface PopoverProps {
   todayISO?: string
   disabled?: boolean
   label: string
+  /**
+   * Rango permitido, "YYYY-MM-DD". Equivalen a los `min`/`max` del
+   * `<input type="date">` nativo: los dias fuera del rango se muestran
+   * apagados y no se pueden elegir. Se comparan como cadenas, que en formato
+   * ISO ordena igual que por fecha.
+   */
+  minISO?: string
+  maxISO?: string
   /** El control que abre el panel. Recibe lo que necesita para cablearse. */
   trigger: (props: {
     ref: React.Ref<HTMLButtonElement>
@@ -79,14 +87,24 @@ interface PopoverProps {
   }) => React.ReactNode
 }
 
-function DatePopover({
+/**
+ * El calendario con un disparador a medida. `DatePickerButton` y `DateField`
+ * son los dos disparadores de uso comun; se exporta para las barras de control
+ * que necesitan uno propio (la pildora de rango semanal de Horarios) sin tener
+ * que volver a un `<input type="date">` nativo.
+ */
+export function DatePopover({
   value,
   onChange,
   todayISO,
   disabled = false,
   label,
+  minISO,
+  maxISO,
   trigger,
 }: PopoverProps) {
+  const fueraDeRango = (iso: string) =>
+    Boolean((minISO && iso < minISO) || (maxISO && iso > maxISO))
   const [abierto, setAbierto] = useState(false)
   // Fecha "en foco" dentro del calendario, que no es la elegida: con las
   // flechas se recorre sin seleccionar hasta apretar Enter.
@@ -385,6 +403,7 @@ function DatePopover({
               const seleccionado = iso === value
               const esHoy = iso === todayISO
               const activo = iso === cursor
+              const bloqueado = fueraDeRango(iso)
 
               return (
                 <button
@@ -392,18 +411,23 @@ function DatePopover({
                   type="button"
                   data-activo={activo}
                   tabIndex={activo ? 0 : -1}
+                  disabled={bloqueado}
                   onClick={() => elegir(dia)}
                   aria-label={etiquetaLarga(y, m, dia) + (esHoy ? ', hoy' : '')}
                   // `aria-current="date"` marca la fecha ELEGIDA, que es lo
                   // que el usuario necesita reencontrar al reabrir. El "hoy"
                   // se distingue visualmente y se dice en la etiqueta.
                   aria-current={seleccionado ? 'date' : undefined}
-                  className={`flex h-9 items-center justify-center rounded-lg text-xs tabular-nums outline-none transition active:scale-90 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 ${
-                    seleccionado
-                      ? 'bg-brand-600 font-bold text-white hover:bg-brand-700'
-                      : esHoy
-                        ? 'font-bold text-brand-700 ring-1 ring-inset ring-brand-200 hover:bg-brand-50'
-                        : 'text-slate-600 hover:bg-slate-100'
+                  className={`flex h-9 items-center justify-center rounded-lg text-xs tabular-nums outline-none transition focus-visible:ring-2 focus-visible:ring-brand-500/60 ${
+                    bloqueado
+                      ? 'cursor-not-allowed text-slate-300'
+                      : `active:scale-90 motion-reduce:active:scale-100 ${
+                          seleccionado
+                            ? 'bg-brand-600 font-bold text-white hover:bg-brand-700'
+                            : esHoy
+                              ? 'font-bold text-brand-700 ring-1 ring-inset ring-brand-200 hover:bg-brand-50'
+                              : 'text-slate-600 hover:bg-slate-100'
+                        }`
                   }`}
                 >
                   {dia}
@@ -488,6 +512,8 @@ interface DateFieldProps {
   id?: string
   invalid?: boolean
   placeholder?: string
+  minISO?: string
+  maxISO?: string
 }
 
 /**
@@ -504,6 +530,8 @@ export function DateField({
   id,
   invalid = false,
   placeholder = 'dd/mm/aaaa',
+  minISO,
+  maxISO,
 }: DateFieldProps) {
   const texto = formatoCorto(value)
 
@@ -514,6 +542,8 @@ export function DateField({
       todayISO={todayISO}
       disabled={disabled}
       label={label}
+      minISO={minISO}
+      maxISO={maxISO}
       trigger={(props) => (
         <button
           {...props}

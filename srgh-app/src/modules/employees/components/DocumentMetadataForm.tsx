@@ -9,7 +9,9 @@ import {
   type DocumentoMetadataInput,
 } from '@/modules/employees/types'
 import { Button } from '@/components/ui/Button'
-import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { ControlledDateField } from '@/components/ui/ControlledDateField'
+import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
 
 interface DocumentMetadataFormProps {
@@ -44,6 +46,7 @@ export function DocumentMetadataForm({
 }: DocumentMetadataFormProps) {
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<DocumentoMetadataInput>({
@@ -100,20 +103,15 @@ export function DocumentMetadataForm({
         <label className={LABEL} htmlFor="doc_tipo_id">
           Tipo de documento
         </label>
-        <select
+        <ControlledSelectMenu
+          control={control}
+          name="doc_tipo_id"
           id="doc_tipo_id"
+          parse={parseNumber}
           disabled={isSubmitting}
-          aria-invalid={!!errors.doc_tipo_id}
-          {...register('doc_tipo_id', { valueAsNumber: true })}
-          className={SELECT}
-        >
-          <option value="">Seleccionar…</option>
-          {tiposDocumento.map((tipo) => (
-            <option key={tipo.id} value={tipo.id}>
-              {tipo.nombre}
-            </option>
-          ))}
-        </select>
+          invalid={!!errors.doc_tipo_id}
+          options={tiposDocumento.map((tipo) => ({ value: String(tipo.id), label: tipo.nombre }))}
+        />
         {errors.doc_tipo_id && <p className={FIELD_ERROR}>{errors.doc_tipo_id.message}</p>}
       </div>
 
@@ -137,13 +135,13 @@ export function DocumentMetadataForm({
         <label className={LABEL} htmlFor="doc_fecha_vencimiento">
           Fecha de vencimiento (opcional)
         </label>
-        <input
+        <ControlledDateField
+          control={control}
+          name="doc_fecha_vencimiento"
           id="doc_fecha_vencimiento"
-          type="date"
+          label="Fecha de vencimiento (opcional)"
           disabled={isSubmitting}
-          aria-invalid={!!errors.doc_fecha_vencimiento}
-          {...register('doc_fecha_vencimiento')}
-          className={INPUT}
+          invalid={!!errors.doc_fecha_vencimiento}
         />
         {errors.doc_fecha_vencimiento && (
           <p className={FIELD_ERROR}>{errors.doc_fecha_vencimiento.message}</p>

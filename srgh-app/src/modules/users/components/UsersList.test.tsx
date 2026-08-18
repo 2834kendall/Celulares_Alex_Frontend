@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersList } from './UsersList'
+import { chooseSelectMenuOption } from '@/test/selectMenu'
 import { resendInvitation } from '@/modules/users/actions/resendInvitation'
 import { setUserActive } from '@/modules/users/actions/setUserActive'
 import type { UsuarioListItem } from '@/modules/users/types'
@@ -133,7 +134,7 @@ describe('<UsersList />', () => {
     expect(tabla().queryByText('luis@empresa.com')).not.toBeInTheDocument()
 
     await user.clear(screen.getByLabelText('Buscar usuario'))
-    await user.selectOptions(screen.getByLabelText('Filtrar por estado'), 'pendiente')
+    await chooseSelectMenuOption(user, 'Filtrar por estado', 'Pendientes')
     expect(tabla().getByText('luis@empresa.com')).toBeInTheDocument()
     expect(tabla().queryByText('ana@empresa.com')).not.toBeInTheDocument()
   })
@@ -216,7 +217,9 @@ describe('<UsersList />', () => {
     expect(within(dialog).getByText('Invitar usuario')).toBeInTheDocument()
     // Email personal del empleado sugerido y empleado preseleccionado.
     expect(within(dialog).getByLabelText('Email de acceso *')).toHaveValue('luis.rojas@mail.com')
-    expect(within(dialog).getByLabelText('Empleado vinculado (opcional)')).toHaveValue('11')
+    expect(within(dialog).getByLabelText('Empleado vinculado (opcional)')).toHaveTextContent(
+      'Luis Rojas'
+    )
   })
 
   it('en movil rinde cada usuario como tarjeta, con sus datos rotulados', () => {

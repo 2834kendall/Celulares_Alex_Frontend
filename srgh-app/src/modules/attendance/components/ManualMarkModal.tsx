@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Modal } from '@/components/ui/Modal'
 import { TimeSelect } from '@/components/ui/TimeSelect'
+import { DateField } from '@/components/ui/DatePickerButton'
 import { saveManualMark } from '@/modules/attendance/actions/saveManualMark'
 import { manualMarkSchema } from '@/modules/attendance/types'
 import type { MarkType } from '@/modules/attendance/lib/marks'
@@ -122,14 +123,13 @@ export function ManualMarkModal({
             <label className={LABEL} htmlFor="manual-mark-fecha">
               Fecha del evento
             </label>
-            <input
+            <DateField
               id="manual-mark-fecha"
-              type="date"
               value={fecha}
-              onChange={(e) => setFecha(e.target.value)}
+              onChange={setFecha}
               disabled={isSaving}
-              aria-invalid={!!errors.fecha}
-              className={INPUT}
+              invalid={!!errors.fecha}
+              label="Fecha del evento"
             />
             {errors.fecha && <p className={FIELD_ERROR}>{errors.fecha}</p>}
           </div>

@@ -182,9 +182,9 @@ export function KioskScreen({ employees }: KioskScreenProps) {
   if (successLabel) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-        <CheckCircle2 className="h-20 w-20 text-emerald-400" />
-        <p className="text-2xl font-bold">{successLabel}</p>
-        {activeFullName && <p className="text-slate-300">{activeFullName}</p>}
+        <CheckCircle2 className="h-24 w-24 text-emerald-600" />
+        <p className="text-3xl font-bold">{successLabel}</p>
+        {activeFullName && <p className="text-lg text-slate-600">{activeFullName}</p>}
       </div>
     )
   }
@@ -192,9 +192,9 @@ export function KioskScreen({ employees }: KioskScreenProps) {
   if (denied) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-        <ShieldX className="h-20 w-20 text-red-400" />
-        <p className="text-2xl font-bold">Rostro no reconocido</p>
-        <p className="max-w-xs text-sm text-slate-300">
+        <ShieldX className="h-24 w-24 text-red-600" />
+        <p className="text-3xl font-bold">Rostro no reconocido</p>
+        <p className="max-w-sm text-base text-slate-600">
           No se encontro coincidencia con el personal de esta sucursal. El intento quedo registrado.
         </p>
       </div>
@@ -202,18 +202,21 @@ export function KioskScreen({ employees }: KioskScreenProps) {
   }
 
   return (
-    <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-8">
+    // El ancho sube con la pantalla: en la tablet del kiosco `max-w-sm` dejaba
+    // todo el flujo dentro de 384px, con los botones de marca apretados en el
+    // centro de una pantalla mayormente vacia.
+    <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-8 sm:max-w-md lg:max-w-xl">
       {!isOnline && (
-        <div className="flex items-center gap-2 rounded-full bg-amber-500/15 px-4 py-2 text-xs font-semibold text-amber-300">
-          <WifiOff className="h-3.5 w-3.5" />
+        <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">
+          <WifiOff className="h-4 w-4" />
           Sin conexion — las marcas se guardan en este dispositivo
           {pendingCount > 0 && ` (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})`}
         </div>
       )}
 
       <div className="text-center">
-        <h1 className="text-2xl font-bold">Control de asistencia</h1>
-        <p className="mt-1 text-sm text-slate-300">
+        <h1 className="text-3xl font-bold tracking-tight">Control de asistencia</h1>
+        <p className="mt-2 text-base text-slate-600">
           {faceActive ? 'Mira a la camara para marcar' : 'Selecciona tu nombre para marcar'}
         </p>
       </div>
@@ -224,7 +227,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
           <button
             type="button"
             onClick={() => setManualMode(true)}
-            className="flex items-center gap-2 text-sm text-slate-300 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-base font-medium text-slate-600 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-600/40"
           >
             <KeyRound className="h-4 w-4" /> ¿Falló la cámara? Usar PIN
           </button>
@@ -242,6 +245,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
                 }}
                 ariaLabel="Selecciona tu nombre"
                 className="w-full"
+                size="lg"
               />
             </div>
           )}
@@ -255,7 +259,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
                 setPin(null)
                 setShowPinPad(false)
               }}
-              className="flex items-center gap-2 text-sm text-slate-300 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-base font-medium text-slate-600 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-600/40"
             >
               <ScanFace className="h-4 w-4" /> Volver a la cámara
             </button>
@@ -267,14 +271,14 @@ export function KioskScreen({ employees }: KioskScreenProps) {
         <>
           {verified && (
             <div className="flex flex-col items-center gap-1">
-              <p className="text-center text-lg font-semibold text-emerald-400">
+              <p className="text-center text-2xl font-semibold text-emerald-700">
                 {verified.fullName}
               </p>
               <button
                 type="button"
                 onClick={() => setVerified(null)}
                 disabled={submittingTipo !== null}
-                className="flex items-center gap-2 text-xs text-slate-400 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/60 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-600/40 disabled:opacity-50"
               >
                 <ScanFace className="h-3.5 w-3.5" /> No soy yo / Cancelar
               </button>
@@ -282,7 +286,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
           )}
 
           {!verified && !readyToMark ? (
-            <p className="text-sm text-amber-300">
+            <p className="text-base font-medium text-amber-800">
               {isOnline
                 ? 'Ingresa tu PIN para continuar.'
                 : 'Sin conexion: ingresa tu PIN para continuar.'}
@@ -296,7 +300,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
                     type="button"
                     onClick={() => handleMark(m.tipo)}
                     disabled={submittingTipo !== null}
-                    className="flex h-24 items-center justify-center rounded-2xl bg-brand-600 px-2 text-center text-base font-bold text-white shadow-lg outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-white/60 active:scale-95 disabled:opacity-50"
+                    className="flex min-h-28 items-center justify-center rounded-2xl bg-brand-600 px-3 text-center text-lg font-bold text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600/40 focus-visible:ring-offset-2 active:scale-95 disabled:opacity-50 motion-reduce:active:scale-100"
                   >
                     {submittingTipo === m.tipo ? 'Marcando…' : m.label}
                   </button>
@@ -307,14 +311,14 @@ export function KioskScreen({ employees }: KioskScreenProps) {
                 <button
                   type="button"
                   onClick={() => setShowPinPad(true)}
-                  className="flex items-center gap-2 text-sm text-slate-300 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-base font-medium text-slate-600 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-600/40"
                 >
                   <KeyRound className="h-4 w-4" /> ¿Falló la cámara?
                 </button>
               )}
 
               {!verified && pin && (
-                <p className="text-xs text-emerald-400">
+                <p className="text-sm font-medium text-emerald-700">
                   PIN listo — se usara en tu proxima marca.
                 </p>
               )}
@@ -325,6 +329,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
 
       {pinPadOpen && (
         <PinPad
+          employeeName={activeFullName}
           onConfirm={(value) => {
             setPin(value)
             setShowPinPad(false)

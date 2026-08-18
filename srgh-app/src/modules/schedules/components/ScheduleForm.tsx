@@ -9,7 +9,8 @@ import { createSchedule } from '@/modules/schedules/actions/createSchedule'
 import { updateSchedule } from '@/modules/schedules/actions/updateSchedule'
 import { stripSeconds } from '@/modules/schedules/lib/time'
 import { Button } from '@/components/ui/Button'
-import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
 
 interface ShiftTypeOption {
@@ -35,6 +36,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
 
   const {
     register,
+    control,
     handleSubmit,
     setValue,
     getValues,
@@ -124,19 +126,18 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
         <label className={LABEL} htmlFor="hor_tipo_jornada_id">
           Tipo de jornada
         </label>
-        <select
+        <ControlledSelectMenu
+          control={control}
+          name="hor_tipo_jornada_id"
           id="hor_tipo_jornada_id"
+          parse={parseNumber}
           disabled={isSubmitting}
-          aria-invalid={!!errors.hor_tipo_jornada_id}
-          {...register('hor_tipo_jornada_id', { valueAsNumber: true })}
-          className={SELECT}
-        >
-          {shiftTypes.map((shiftType) => (
-            <option key={shiftType.tjo_id} value={shiftType.tjo_id}>
-              {shiftType.tjo_nombre}
-            </option>
-          ))}
-        </select>
+          invalid={!!errors.hor_tipo_jornada_id}
+          options={shiftTypes.map((shiftType) => ({
+            value: String(shiftType.tjo_id),
+            label: shiftType.tjo_nombre,
+          }))}
+        />
         {errors.hor_tipo_jornada_id && (
           <p className={FIELD_ERROR}>{errors.hor_tipo_jornada_id.message}</p>
         )}

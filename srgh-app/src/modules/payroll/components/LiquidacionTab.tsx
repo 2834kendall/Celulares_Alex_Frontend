@@ -18,7 +18,9 @@ import { formatCRC } from '@/modules/payroll/lib/format'
 import { procesarLiquidacion } from '@/modules/payroll/actions/procesarLiquidacion'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 import { Button } from '@/components/ui/Button'
-import { INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { ControlledDateField } from '@/components/ui/ControlledDateField'
+import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
 
 interface LiquidacionTabProps {
@@ -51,6 +53,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
 
   const {
     register,
+    control,
     handleSubmit,
     watch,
     reset,
@@ -113,23 +116,19 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             <label className={LABEL} htmlFor="historialLaboralId">
               Empleado
             </label>
-            <select
+            <ControlledSelectMenu
+              control={control}
+              name="historialLaboralId"
               id="historialLaboralId"
+              parse={parseNumber}
               disabled={isSubmitting}
-              aria-invalid={!!errors.historialLaboralId}
-              {...register('historialLaboralId', { valueAsNumber: true })}
-              className={SELECT}
-              defaultValue=""
-            >
-              <option value="" disabled>
-                Elegí un empleado
-              </option>
-              {empleados.map((e) => (
-                <option key={e.historialLaboralId} value={e.historialLaboralId}>
-                  {e.nombre} — {e.cedula}
-                </option>
-              ))}
-            </select>
+              invalid={!!errors.historialLaboralId}
+              placeholder="Elegí un empleado"
+              options={empleados.map((e) => ({
+                value: String(e.historialLaboralId),
+                label: `${e.nombre} — ${e.cedula}`,
+              }))}
+            />
             {errors.historialLaboralId && (
               <p className="mt-1 text-[11px] text-rose-600">{errors.historialLaboralId.message}</p>
             )}
@@ -139,13 +138,13 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             <label className={LABEL} htmlFor="fechaSalida">
               Fecha de salida
             </label>
-            <input
+            <ControlledDateField
+              control={control}
+              name="fechaSalida"
               id="fechaSalida"
-              type="date"
+              label="Fecha de salida"
               disabled={isSubmitting}
-              aria-invalid={!!errors.fechaSalida}
-              {...register('fechaSalida')}
-              className={INPUT}
+              invalid={!!errors.fechaSalida}
             />
             {errors.fechaSalida && (
               <p className="mt-1 text-[11px] text-rose-600">{errors.fechaSalida.message}</p>
@@ -156,23 +155,16 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             <label className={LABEL} htmlFor="motivoSalidaId">
               Motivo de salida
             </label>
-            <select
+            <ControlledSelectMenu
+              control={control}
+              name="motivoSalidaId"
               id="motivoSalidaId"
+              parse={parseNumber}
               disabled={isSubmitting}
-              aria-invalid={!!errors.motivoSalidaId}
-              {...register('motivoSalidaId', { valueAsNumber: true })}
-              className={SELECT}
-              defaultValue=""
-            >
-              <option value="" disabled>
-                Elegí un motivo
-              </option>
-              {motivos.map((m) => (
-                <option key={m.mot_id} value={m.mot_id}>
-                  {m.mot_nombre}
-                </option>
-              ))}
-            </select>
+              invalid={!!errors.motivoSalidaId}
+              placeholder="Elegí un motivo"
+              options={motivos.map((m) => ({ value: String(m.mot_id), label: m.mot_nombre }))}
+            />
             {errors.motivoSalidaId && (
               <p className="mt-1 text-[11px] text-rose-600">{errors.motivoSalidaId.message}</p>
             )}

@@ -110,6 +110,8 @@ describe('<ManualMarkModal />', () => {
   it('prellena fecha y hora a partir de la marca actual cuando se esta corrigiendo', () => {
     render(<ManualMarkModal {...baseProps} markId={5} currentFechaHora="2026-07-25 08:04:00" />)
 
-    expect(screen.getByLabelText('Fecha del evento')).toHaveValue('2026-07-25')
+    // Calendario propio en vez del <input type="date">: el disparador muestra
+    // la fecha en dd/mm/aaaa, pero el valor que viaja sigue siendo el ISO.
+    expect(screen.getByLabelText('Fecha del evento')).toHaveTextContent('25/07/2026')
   })
 })

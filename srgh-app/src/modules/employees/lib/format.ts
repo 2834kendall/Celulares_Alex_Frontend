@@ -20,6 +20,46 @@ export function formatDate(iso: string | null | undefined) {
   return `${day}/${month}/${year}`
 }
 
+const MESES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+]
+
+/**
+ * '1990-05-10' → '10 de mayo'. Omite el año a proposito: al lado de "Fecha de
+ * nacimiento", que ya lo muestra completo, lo que aporta este campo es CUANDO
+ * se celebra. Sin pasar por Date (mismo criterio que formatDate).
+ */
+export function formatCumpleanos(iso: string | null | undefined) {
+  if (!iso) return '—'
+  const [, month, day] = iso.split('-')
+  const nombreMes = MESES[Number(month) - 1]
+  if (!nombreMes || !day) return formatDate(iso)
+  return `${Number(day)} de ${nombreMes}`
+}
+
+/**
+ * true si hoy es el cumpleaños: compara dia y mes ignorando el año. Lee el
+ * reloj LOCAL, asi que el llamador debe resolverlo ya montado en el navegador
+ * y no durante el render del servidor (ver EmployeeDetail).
+ */
+export function esCumpleanosHoy(iso: string | null | undefined) {
+  if (!iso) return false
+  const [, month, day] = iso.split('-')
+  const hoy = new Date()
+  return Number(month) === hoy.getMonth() + 1 && Number(day) === hoy.getDate()
+}
+
 /** Monto en colones sin decimales; '—' cuando no hay dato. */
 export function formatCRC(amount: number | null | undefined) {
   if (amount === null || amount === undefined) return '—'

@@ -39,21 +39,44 @@ export type GetActiveEmployeesResult =
  */
 export async function getActiveEmployees(): Promise<GetActiveEmployeesResult> {
   const claims = await requireAnyPermission([PERMISOS.ASISTENCIA_KIOSCO, PERMISOS.EMPLEADOS_READ])
-  const meta = claims.app_metadata as { empresa_id?: number; sucursal_id?: number | null }
+  const meta = claims.app_metadata as {
+    usr_id?: number
+    empresa_id?: number
+    sucursal_id?: number | null
+  }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
   }
 
-  // La sucursal viaja en el JWT (custom_access_token_hook la toma de
-  // uer_sucursal_id). Antes se resolvia con una consulta extra por llamada.
-  const sucursalId = meta.sucursal_id ?? null
+  const supabase = await createClient()
+
+  // La sucursal deberia viajar en el JWT (custom_access_token_hook la toma de
+  // uer_sucursal_id), pero la version del hook que corre hoy en la base no
+  // emite ese claim: el token sale con permisos y sin sucursal, y el kiosco
+  // quedaba bloqueado aun con la sucursal bien asignada en la tabla. Mientras
+  // el hook no se actualice se resuelve por consulta, igual que verifyFace.
+  //
+  // No debilita el alcance: la RLS de uer_select solo deja leer la asignacion
+  // PROPIA, y si tampoco por ahi aparece una sucursal se sigue cortando — en
+  // un dispositivo fisicamente expuesto nunca se cae a "toda la empresa".
+  let sucursalId = meta.sucursal_id ?? null
+
+  if (sucursalId === null && meta.usr_id) {
+    const { data: asignacion } = await supabase
+      .from('sgrh_usuarios_empresa_rol')
+      .select('uer_sucursal_id')
+      .eq('uer_usuario_id', meta.usr_id)
+      .eq('uer_activo', true)
+      .limit(1)
+      .maybeSingle<{ uer_sucursal_id: number | null }>()
+
+    sucursalId = asignacion?.uer_sucursal_id ?? null
+  }
 
   if (sucursalId === null) {
     return { ok: false, error: 'Este kiosco no tiene una sucursal asignada.' }
   }
-
-  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('sgrh_historial_laboral')
