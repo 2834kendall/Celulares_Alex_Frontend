@@ -4,7 +4,7 @@ import { useFormContext } from 'react-hook-form'
 import type { CatalogoItem } from '@/modules/employees/types'
 import { getFieldError, INPUT_CLASSES, Labeled } from './EmployeeFields'
 import { Alert } from '@/components/ui/Alert'
-import { SELECT } from '@/components/ui/styles'
+import { ControlledSelectMenu, parseNumber, parseOptionalNumber } from '@/components/ui/SelectMenu'
 
 interface EmployeeWizardStepUsuarioProps {
   roles: CatalogoItem[]
@@ -27,6 +27,7 @@ export function EmployeeWizardStepUsuario({
 }: EmployeeWizardStepUsuarioProps) {
   const {
     register,
+    control,
     formState: { errors },
   } = useFormContext()
 
@@ -67,35 +68,29 @@ export function EmployeeWizardStepUsuario({
           </Labeled>
 
           <Labeled label="Rol *" error={getFieldError(errors, 'usuario.rol_id')}>
-            <select
-              {...register('usuario.rol_id', { valueAsNumber: true })}
-              aria-invalid={Boolean(getFieldError(errors, 'usuario.rol_id'))}
-              className={SELECT}
-            >
-              <option value="">Seleccionar…</option>
-              {roles.map((rol) => (
-                <option key={rol.id} value={rol.id}>
-                  {rol.nombre}
-                </option>
-              ))}
-            </select>
+            <ControlledSelectMenu
+              control={control}
+              name="usuario.rol_id"
+              parse={parseNumber}
+              invalid={Boolean(getFieldError(errors, 'usuario.rol_id'))}
+              options={roles.map((rol) => ({ value: String(rol.id), label: rol.nombre }))}
+            />
           </Labeled>
 
           <Labeled label="Sucursal (opcional)" error={getFieldError(errors, 'usuario.sucursal_id')}>
-            <select
-              {...register('usuario.sucursal_id', {
-                setValueAs: (value) => (value === '' ? null : Number(value)),
-              })}
-              aria-invalid={Boolean(getFieldError(errors, 'usuario.sucursal_id'))}
-              className={SELECT}
-            >
-              <option value="">Todas las sucursales</option>
-              {sucursales.map((sucursal) => (
-                <option key={sucursal.id} value={sucursal.id}>
-                  {sucursal.nombre}
-                </option>
-              ))}
-            </select>
+            <ControlledSelectMenu
+              control={control}
+              name="usuario.sucursal_id"
+              parse={parseOptionalNumber}
+              invalid={Boolean(getFieldError(errors, 'usuario.sucursal_id'))}
+              options={[
+                { value: '', label: 'Todas las sucursales' },
+                ...sucursales.map((sucursal) => ({
+                  value: String(sucursal.id),
+                  label: sucursal.nombre,
+                })),
+              ]}
+            />
           </Labeled>
         </div>
       ) : (

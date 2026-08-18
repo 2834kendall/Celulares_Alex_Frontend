@@ -27,7 +27,6 @@ import { Button } from '@/components/ui/Button'
 import { ICON_CONTROL_BASE, IconButton } from '@/components/ui/IconButton'
 import {
   META_LABEL,
-  SELECT,
   TABLE_HEAD,
   TABLE_ROW,
   TABLE_TD,
@@ -39,6 +38,7 @@ import {
 import { EmptyState } from '@/components/ui/EmptyState'
 import { BreakableEmail } from '@/components/ui/BreakableEmail'
 import { cn } from '@/lib/utils/cn'
+import { SelectMenu } from '@/components/ui/SelectMenu'
 
 const ESTADO_BADGES: Record<UsuarioEstado, { label: string; classes: string }> = {
   activo: { label: 'Activo', classes: 'bg-emerald-50 text-emerald-700' },
@@ -202,19 +202,18 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
             className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-800 shadow-sm outline-none transition hover:border-slate-300 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10 pointer-coarse:min-h-11"
           />
         </label>
-        <label className="flex items-center gap-1.5">
-          <span className="sr-only">Filtrar por estado</span>
-          <select
-            value={estado}
-            onChange={(e) => setEstado(e.target.value as EstadoFiltro)}
-            className={SELECT}
-          >
-            <option value="todos">Todos los estados</option>
-            <option value="activo">Activos</option>
-            <option value="pendiente">Pendientes</option>
-            <option value="desactivado">Desactivados</option>
-          </select>
-        </label>
+        <SelectMenu
+          ariaLabel="Filtrar por estado"
+          value={estado}
+          onChange={(v) => setEstado(v as EstadoFiltro)}
+          className="min-w-44"
+          options={[
+            { value: 'todos', label: 'Todos los estados' },
+            { value: 'activo', label: 'Activos' },
+            { value: 'pendiente', label: 'Pendientes' },
+            { value: 'desactivado', label: 'Desactivados' },
+          ]}
+        />
         <Button onClick={() => setInvite({ open: true })}>
           <UserPlus className="h-3.5 w-3.5" /> Invitar usuario
         </Button>

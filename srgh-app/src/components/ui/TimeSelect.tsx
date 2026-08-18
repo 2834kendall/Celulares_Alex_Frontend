@@ -2,13 +2,16 @@
 
 import { cn } from '@/lib/utils/cn'
 import { INPUT } from '@/components/ui/styles'
+import { SelectMenu } from '@/components/ui/SelectMenu'
 
-// Flecha propia, mas chica que SELECT_ARROW: ese token trae su padding
-// horneado (pr-9) para un select de ancho libre, y `cn` de este proyecto no
-// hace merge de clases en conflicto — apilarle un pr-7 encima no garantiza
-// cual gana. Con solo "a.m." / "p.m." de contenido, pr-9 se ve con aire de
-// mas; esta version usa un icono mas chico con su propio padding a juego.
-const AM_PM_ARROW = `appearance-none bg-[length:0.85rem] bg-[right_0.35rem_center] bg-no-repeat pr-6 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="%2394a3b8"%3E%3Cpath stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/%3E%3C/svg%3E')]`
+// Clases propias del trigger (no el default de SelectMenu): fondo celeste
+// tenue y texto de marca en negrita, mas angosto que un select comun porque
+// solo tiene que caber "a.m."/"p.m.". Via `triggerClassName`, que REEMPLAZA
+// las clases default en vez de mezclarse — `cn()` en este proyecto no
+// resuelve conflictos de color, asi que apilar un bg propio sobre el
+// `bg-white` default dejaria dos clases de fondo compitiendo.
+const AM_PM_TRIGGER =
+  'flex items-center justify-between gap-1 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-2.5 pr-1.5 text-xs font-bold text-brand-700 shadow-sm outline-none transition hover:border-slate-300 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10 pointer-coarse:min-h-11'
 
 interface TimeSelectProps {
   /** Valor en formato 24h "HH:MM". */
@@ -42,18 +45,17 @@ export function TimeSelect({ value, onChange }: TimeSelectProps) {
         className={cn(INPUT, 'font-semibold tabular-nums')}
         required
       />
-      <select
+      <SelectMenu
         value={meridiemOf(value)}
-        onChange={(event) => onChange(withMeridiem(value, event.target.value as 'AM' | 'PM'))}
-        className={cn(
-          AM_PM_ARROW,
-          'rounded-xl border border-slate-200 bg-slate-50 py-2 pl-2.5 text-xs font-bold text-brand-700 shadow-sm outline-none transition hover:border-slate-300 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10 pointer-coarse:min-h-11'
-        )}
-        aria-label="a.m. o p.m."
-      >
-        <option value="AM">a.m.</option>
-        <option value="PM">p.m.</option>
-      </select>
+        onChange={(v) => onChange(withMeridiem(value, v as 'AM' | 'PM'))}
+        ariaLabel="a.m. o p.m."
+        className="w-auto"
+        triggerClassName={AM_PM_TRIGGER}
+        options={[
+          { value: 'AM', label: 'a.m.' },
+          { value: 'PM', label: 'p.m.' },
+        ]}
+      />
     </div>
   )
 }

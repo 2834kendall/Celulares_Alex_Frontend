@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, Briefcase, Camera, Pencil } from 'lucide-react'
+import { ArrowLeft, Briefcase, Cake, Camera, Pencil } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
 import type {
   CatalogoItem,
@@ -12,7 +12,9 @@ import type {
   TerritorioCatalogo,
 } from '@/modules/employees/types'
 import {
+  esCumpleanosHoy,
   formatCRC,
+  formatCumpleanos,
   formatDate,
   fullName,
   GENERO_LABELS,
@@ -23,6 +25,7 @@ import { EmployeeForm } from './EmployeeForm'
 import { EmployeePhotoModal } from './EmployeePhotoModal'
 import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
 import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { META_LABEL } from '@/components/ui/styles'
 import { ICON_CONTROL_BASE, ICON_CONTROL_TONES } from '@/components/ui/IconButton'
@@ -47,15 +50,22 @@ function InfoItem({
   label,
   value,
   wrap = false,
+  badge = null,
 }: {
-  label: string
+  /** Casi siempre texto; el campo de Cumpleaños le suma un icono. */
+  label: React.ReactNode
   value: string
   /** Para textos largos (señas exactas): envuelve en vez de recortar. */
   wrap?: boolean
+  /** Pastilla al lado de la etiqueta (hoy: el aviso de cumpleaños). */
+  badge?: React.ReactNode
 }) {
   return (
     <div className="min-w-0">
-      <dt className={META_LABEL}>{label}</dt>
+      <dt className={cn(META_LABEL, badge ? 'flex items-center gap-1.5' : undefined)}>
+        {label}
+        {badge}
+      </dt>
       <dd
         className={`text-sm text-slate-800 ${wrap ? 'whitespace-pre-line break-words' : 'truncate'}`}
       >
@@ -87,6 +97,22 @@ export function EmployeeDetail({
 }: EmployeeDetailProps) {
   const [editing, setEditing] = useState(false)
   const [editingPhoto, setEditingPhoto] = useState(false)
+
+  // "Hoy" depende del reloj local, asi que se resuelve DESPUES de montar: si
+  // se calculara durante el render del servidor, un servidor en UTC y un
+  // navegador en Costa Rica podrian no coincidir en la fecha y React marcaria
+  // un mismatch de hidratacion. El primer render nunca muestra la pastilla.
+  //
+  // setTimeout (no un setState directo en el cuerpo del efecto) por el mismo
+  // motivo que usePermisos.ts: evita el patron que react-hooks/set-state-in-effect
+  // marca como cascada de renders sincrona.
+  const [cumpleHoy, setCumpleHoy] = useState(false)
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setCumpleHoy(esCumpleanosHoy(empleado.emp_fecha_nacimiento))
+    }, 0)
+    return () => clearTimeout(id)
+  }, [empleado.emp_fecha_nacimiento])
 
   const historial = empleado.historial_activo
   const direccion = empleado.direccion
@@ -124,6 +150,23 @@ export function EmployeeDetail({
               <InfoItem
                 label="Fecha de nacimiento"
                 value={formatDate(empleado.emp_fecha_nacimiento)}
+              />
+              <InfoItem
+                label={
+                  <span className="inline-flex items-center gap-1">
+                    <Cake className="h-3 w-3 shrink-0 text-slate-400" aria-hidden="true" />
+                    Cumpleaños
+                  </span>
+                }
+                value={formatCumpleanos(empleado.emp_fecha_nacimiento)}
+                badge={
+                  cumpleHoy ? (
+                    <Badge tone="rose" size="xs">
+                      <Cake className="h-3 w-3 shrink-0" aria-hidden="true" />
+                      Hoy
+                    </Badge>
+                  ) : null
+                }
               />
               <InfoItem
                 label="Género"

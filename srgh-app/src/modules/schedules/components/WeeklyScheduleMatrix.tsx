@@ -37,6 +37,7 @@ import { META_LABEL } from '@/components/ui/styles'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
 import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
 import { IconButton } from '@/components/ui/IconButton'
+import { DatePopover } from '@/components/ui/DatePickerButton'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 interface WeeklyScheduleMatrixProps {
@@ -437,37 +438,35 @@ export function WeeklyScheduleMatrix({
                 <ChevronLeft className="h-3.5 w-3.5" />
               </IconButton>
 
-              <label
-                className="relative inline-flex min-w-[124px] cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 py-1 outline-none transition hover:bg-white focus-within:ring-2 focus-within:ring-slate-400/50"
-                aria-label="Ir a una semana especifica"
-              >
-                {isNavigating ? (
-                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-400" />
-                ) : (
-                  <CalendarClock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              {/*
+                Calendario propio, no `<input type="date">`: el nativo lo dibuja
+                el navegador fuera del DOM, no acepta CSS y cambia de aspecto
+                entre Chrome, Firefox y Safari — se veia de otro sistema al lado
+                del resto de la barra. Ver DatePickerButton.tsx.
+              */}
+              <DatePopover
+                value={weekStartISO}
+                onChange={(picked) => goToWeekStart(getWeekDates(picked)[0])}
+                disabled={isNavigating}
+                label="Ir a una semana especifica"
+                trigger={(props) => (
+                  <button
+                    {...props}
+                    type="button"
+                    aria-label="Ir a una semana especifica"
+                    className="inline-flex min-w-[124px] items-center justify-center gap-1.5 rounded-full px-2 py-1 outline-none transition hover:bg-white focus-visible:ring-2 focus-visible:ring-slate-400/50 disabled:cursor-not-allowed"
+                  >
+                    {isNavigating ? (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-400" />
+                    ) : (
+                      <CalendarClock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    )}
+                    <span className="text-xs font-bold text-slate-800">
+                      {formatWeekRange(weekDates[0], weekDates[6])}
+                    </span>
+                  </button>
                 )}
-                <span className="text-xs font-bold text-slate-800">
-                  {formatWeekRange(weekDates[0], weekDates[6])}
-                </span>
-                <input
-                  type="date"
-                  value={weekStartISO}
-                  disabled={isNavigating}
-                  onChange={(event) => {
-                    const picked = event.target.value
-                    if (!picked) return
-                    goToWeekStart(getWeekDates(picked)[0])
-                  }}
-                  // El input nativo es invisible y cubre todo el `label`, pero
-                  // Chrome solo abre el calendario cuando el clic cae sobre su
-                  // icono interno (una franja de unos 20px) — en el resto del
-                  // area transparente solo enfoca sin desplegar nada. Forzar
-                  // `showPicker()` en el click hace que TODA el area del
-                  // control abra el calendario, no solo esa franja.
-                  onClick={(event) => event.currentTarget.showPicker?.()}
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                />
-              </label>
+              />
 
               <IconButton
                 onClick={() => goToWeekStart(shiftWeekISO(weekStartISO, 1))}

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EditUserDialog } from './EditUserDialog'
+import { chooseSelectMenuOption } from '@/test/selectMenu'
 import { updateUserAssignment } from '@/modules/users/actions/updateUserAssignment'
 import type { UsuarioListItem } from '@/modules/users/types'
 
@@ -52,13 +53,16 @@ describe('<EditUserDialog />', () => {
     vi.clearAllMocks()
   })
 
-  it('precarga rol, sucursal y empleado actuales, con el vínculo en las opciones', () => {
+  it('precarga rol, sucursal y empleado actuales, con el vínculo en las opciones', async () => {
+    const user = userEvent.setup()
     renderDialog()
 
-    expect(screen.getByLabelText('Rol *')).toHaveValue('4')
-    expect(screen.getByLabelText('Sucursal (opcional)')).toHaveValue('2')
+    expect(screen.getByLabelText('Rol *')).toHaveTextContent('Empleado')
+    expect(screen.getByLabelText('Sucursal (opcional)')).toHaveTextContent('Central')
     // El empleado vinculado no está en la lista "sin usuario": se antepone.
-    expect(screen.getByLabelText('Empleado vinculado (opcional)')).toHaveValue('10')
+    expect(screen.getByLabelText('Empleado vinculado (opcional)')).toHaveTextContent('Ana Mora')
+
+    await user.click(screen.getByLabelText('Empleado vinculado (opcional)'))
     expect(screen.getByRole('option', { name: 'Ana Mora' })).toBeInTheDocument()
   })
 
@@ -73,8 +77,8 @@ describe('<EditUserDialog />', () => {
     const user = userEvent.setup()
     const { onClose } = renderDialog()
 
-    await user.selectOptions(screen.getByLabelText('Rol *'), '5')
-    await user.selectOptions(screen.getByLabelText('Empleado vinculado (opcional)'), '')
+    await chooseSelectMenuOption(user, 'Rol *', 'RRHH')
+    await chooseSelectMenuOption(user, 'Empleado vinculado (opcional)', 'Sin empleado vinculado')
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
 
     await waitFor(() => {

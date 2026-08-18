@@ -13,7 +13,8 @@ import {
 } from '@/modules/payroll/lib/format'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
-import { META_LABEL, SELECT, TABLE_TD, TABLE_TH } from '@/components/ui/styles'
+import { META_LABEL, TABLE_TD, TABLE_TH } from '@/components/ui/styles'
+import { SelectMenu } from '@/components/ui/SelectMenu'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
 
@@ -92,32 +93,26 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
         permite que se compriman en lugar de estirar el contenedor.
       */}
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <SelectMenu
+          ariaLabel="Filtrar por estado"
           value={estado}
-          onChange={(e) => setEstado(e.target.value)}
-          aria-label="Filtrar por estado"
-          className={cn(SELECT, 'min-w-0 flex-1 basis-40')}
-        >
-          <option value="todos">Todos los estados</option>
-          {Object.entries(ESTADO_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <select
+          onChange={setEstado}
+          className="min-w-0 flex-1 basis-40"
+          options={[
+            { value: 'todos', label: 'Todos los estados' },
+            ...Object.entries(ESTADO_LABELS).map(([value, label]) => ({ value, label })),
+          ]}
+        />
+        <SelectMenu
+          ariaLabel="Filtrar por año"
           value={anio}
-          onChange={(e) => setAnio(e.target.value)}
-          aria-label="Filtrar por año"
-          className={cn(SELECT, 'min-w-0 flex-1 basis-40')}
-        >
-          <option value="todos">Todos los años</option>
-          {anios.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
-        </select>
+          onChange={setAnio}
+          className="min-w-0 flex-1 basis-40"
+          options={[
+            { value: 'todos', label: 'Todos los años' },
+            ...anios.map((a) => ({ value: String(a), label: String(a) })),
+          ]}
+        />
       </div>
 
       {filtered.length === 0 ? (

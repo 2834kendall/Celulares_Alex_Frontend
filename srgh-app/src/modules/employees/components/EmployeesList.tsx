@@ -11,7 +11,6 @@ import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import {
   META_LABEL,
-  SELECT,
   TABLE_HEAD,
   TABLE_ROW_CLICKABLE,
   TABLE_TD,
@@ -19,6 +18,7 @@ import {
   TABLE_TH,
 } from '@/components/ui/styles'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SelectMenu } from '@/components/ui/SelectMenu'
 import { StatCard } from '@/components/ui/StatCard'
 
 interface EmployeesListProps {
@@ -102,33 +102,27 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
             className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-800 shadow-sm outline-none transition hover:border-slate-300 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10 pointer-coarse:min-h-11"
           />
         </label>
-        <label className="flex items-center gap-1.5">
-          <span className="sr-only">Filtrar por estado</span>
-          <select
-            value={estado}
-            onChange={(e) => setEstado(e.target.value as EstadoFiltro)}
-            className={SELECT}
-          >
-            <option value="todos">Todos los estados</option>
-            <option value="activos">Activos</option>
-            <option value="inactivos">Inactivos</option>
-          </select>
-        </label>
-        <label className="flex items-center gap-1.5">
-          <span className="sr-only">Filtrar por tipo de contrato</span>
-          <select
-            value={tipoContrato}
-            onChange={(e) => setTipoContrato(e.target.value)}
-            className={SELECT}
-          >
-            <option value="todos">Todos los contratos</option>
-            {tiposContrato.map((nombre) => (
-              <option key={nombre} value={nombre}>
-                {nombre}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SelectMenu
+          ariaLabel="Filtrar por estado"
+          value={estado}
+          onChange={(v) => setEstado(v as EstadoFiltro)}
+          className="min-w-40"
+          options={[
+            { value: 'todos', label: 'Todos los estados' },
+            { value: 'activos', label: 'Activos' },
+            { value: 'inactivos', label: 'Inactivos' },
+          ]}
+        />
+        <SelectMenu
+          ariaLabel="Filtrar por tipo de contrato"
+          value={tipoContrato}
+          onChange={setTipoContrato}
+          className="min-w-44"
+          options={[
+            { value: 'todos', label: 'Todos los contratos' },
+            ...tiposContrato.map((nombre) => ({ value: nombre, label: nombre })),
+          ]}
+        />
       </div>
 
       {employees.length === 0 ? (

@@ -13,10 +13,11 @@ import {
   type UsuarioListItem,
 } from '@/modules/users/types'
 import { updateUserAssignment } from '@/modules/users/actions/updateUserAssignment'
-import { Labeled, toOptionalNumber } from './fields'
+import { Labeled } from './fields'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { SELECT, SPINNER } from '@/components/ui/styles'
+import { SPINNER } from '@/components/ui/styles'
+import { ControlledSelectMenu, parseNumber, parseOptionalNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
 
 interface EditUserDialogProps {
@@ -53,7 +54,7 @@ export function EditUserDialog({
       : empleadosSinUsuario
 
   const {
-    register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<EditarAsignacionInput>({
@@ -99,48 +100,46 @@ export function EditUserDialog({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Labeled label="Rol *" error={errors.rol_id?.message}>
-            <select
-              {...register('rol_id', { valueAsNumber: true })}
-              aria-invalid={Boolean(errors.rol_id)}
-              className={SELECT}
-            >
-              {roles.map((rol) => (
-                <option key={rol.id} value={rol.id}>
-                  {rol.nombre}
-                </option>
-              ))}
-            </select>
+            <ControlledSelectMenu
+              control={control}
+              name="rol_id"
+              parse={parseNumber}
+              invalid={Boolean(errors.rol_id)}
+              options={roles.map((rol) => ({ value: String(rol.id), label: rol.nombre }))}
+            />
           </Labeled>
 
           <Labeled label="Sucursal (opcional)" error={errors.sucursal_id?.message}>
-            <select
-              {...register('sucursal_id', { setValueAs: toOptionalNumber })}
-              aria-invalid={Boolean(errors.sucursal_id)}
-              className={SELECT}
-            >
-              <option value="">Todas las sucursales</option>
-              {sucursales.map((sucursal) => (
-                <option key={sucursal.id} value={sucursal.id}>
-                  {sucursal.nombre}
-                </option>
-              ))}
-            </select>
+            <ControlledSelectMenu
+              control={control}
+              name="sucursal_id"
+              parse={parseOptionalNumber}
+              invalid={Boolean(errors.sucursal_id)}
+              options={[
+                { value: '', label: 'Todas las sucursales' },
+                ...sucursales.map((sucursal) => ({
+                  value: String(sucursal.id),
+                  label: sucursal.nombre,
+                })),
+              ]}
+            />
           </Labeled>
         </div>
 
         <Labeled label="Empleado vinculado (opcional)" error={errors.empleado_id?.message}>
-          <select
-            {...register('empleado_id', { setValueAs: toOptionalNumber })}
-            aria-invalid={Boolean(errors.empleado_id)}
-            className={SELECT}
-          >
-            <option value="">Sin empleado vinculado</option>
-            {opcionesEmpleado.map((empleado) => (
-              <option key={empleado.emp_id} value={empleado.emp_id}>
-                {empleado.nombre_completo}
-              </option>
-            ))}
-          </select>
+          <ControlledSelectMenu
+            control={control}
+            name="empleado_id"
+            parse={parseOptionalNumber}
+            invalid={Boolean(errors.empleado_id)}
+            options={[
+              { value: '', label: 'Sin empleado vinculado' },
+              ...opcionesEmpleado.map((empleado) => ({
+                value: String(empleado.emp_id),
+                label: empleado.nombre_completo,
+              })),
+            ]}
+          />
         </Labeled>
 
         <div className="flex items-center justify-end gap-2 pt-1">

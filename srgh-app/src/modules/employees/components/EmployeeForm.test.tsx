@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EmployeeForm } from './EmployeeForm'
+import { chooseSelectMenuOption } from '@/test/selectMenu'
 import { updateEmployee } from '@/modules/employees/actions/updateEmployee'
 import { BANCOS, EMPLEADO_DETALLE, TERRITORIO, TIPOS_IDENTIFICACION } from './testFixtures'
 
@@ -33,8 +34,8 @@ describe('<EmployeeForm />', () => {
     expect(screen.getByLabelText('Nombre *')).toHaveValue('Ana')
     expect(screen.getByLabelText('Primer apellido *')).toHaveValue('Mora')
     expect(screen.getByLabelText('Teléfono')).toHaveValue('8888-8888')
-    expect(screen.getByLabelText('Banco')).toHaveValue('3')
-    expect(screen.getByLabelText('Tipo de cuenta')).toHaveValue('AHORRO')
+    expect(screen.getByLabelText('Banco')).toHaveTextContent('BAC Credomatic')
+    expect(screen.getByLabelText('Tipo de cuenta')).toHaveTextContent('Ahorro')
   })
 
   it('bloquea el submit con datos inválidos sin llamar la action', async () => {
@@ -151,9 +152,9 @@ describe('<EmployeeForm />', () => {
 
     // Solo se persiste el distrito (121 = Escazú); provincia y cantón se
     // remontan por la cadena de FKs al montar.
-    expect(screen.getByLabelText('Provincia *')).toHaveValue('1')
-    expect(screen.getByLabelText('Cantón *')).toHaveValue('12')
-    expect(screen.getByLabelText('Distrito *')).toHaveValue('121')
+    expect(screen.getByLabelText('Provincia *')).toHaveTextContent('San José')
+    expect(screen.getByLabelText('Cantón *')).toHaveTextContent('Escazú')
+    expect(screen.getByLabelText('Distrito *')).toHaveTextContent('Escazú')
     expect(screen.getByLabelText('Código postal')).toHaveValue('10201')
     expect(screen.getByLabelText('Señas exactas *')).toHaveValue('200 m norte de la iglesia')
   })
@@ -162,22 +163,24 @@ describe('<EmployeeForm />', () => {
     const user = userEvent.setup()
     renderForm()
 
-    await user.selectOptions(screen.getByLabelText('Provincia *'), '2')
+    await chooseSelectMenuOption(user, 'Provincia *', 'Alajuela')
 
-    // Alajuela solo tiene su propio cantón en el fixture.
-    const cantones = within(screen.getByLabelText('Cantón *') as HTMLSelectElement)
-    expect(cantones.getByRole('option', { name: 'Alajuela' })).toBeInTheDocument()
-    expect(cantones.queryByRole('option', { name: 'Escazú' })).not.toBeInTheDocument()
+    // Alajuela solo tiene su propio cantón en el fixture. Se abre el listbox
+    // de Cantón para inspeccionar sus opciones (SelectMenu solo las monta
+    // mientras esta abierto, a diferencia del <select> nativo).
+    await user.click(screen.getByLabelText('Cantón *'))
+    expect(screen.getByRole('option', { name: 'Alajuela' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Escazú' })).not.toBeInTheDocument()
   })
 
   it('cambiar de provincia limpia cantón y distrito', async () => {
     const user = userEvent.setup()
     renderForm()
 
-    await user.selectOptions(screen.getByLabelText('Provincia *'), '2')
+    await chooseSelectMenuOption(user, 'Provincia *', 'Alajuela')
 
-    expect(screen.getByLabelText('Cantón *')).toHaveValue('')
-    expect(screen.getByLabelText('Distrito *')).toHaveValue('')
+    expect(screen.getByLabelText('Cantón *')).toHaveTextContent('Seleccionar…')
+    expect(screen.getByLabelText('Distrito *')).toHaveTextContent('Elige el cantón primero')
     // El postal se deriva del distrito: sin distrito, no hay postal.
     expect(screen.getByLabelText('Código postal')).toHaveValue('')
   })
@@ -186,12 +189,12 @@ describe('<EmployeeForm />', () => {
     const user = userEvent.setup()
     renderForm()
 
-    await user.selectOptions(screen.getByLabelText('Provincia *'), '2')
+    await chooseSelectMenuOption(user, 'Provincia *', 'Alajuela')
 
     expect(screen.getByLabelText('Cantón *')).toBeEnabled()
     expect(screen.getByLabelText('Distrito *')).toBeDisabled()
 
-    await user.selectOptions(screen.getByLabelText('Cantón *'), '21')
+    await chooseSelectMenuOption(user, 'Cantón *', 'Alajuela')
 
     expect(screen.getByLabelText('Distrito *')).toBeEnabled()
   })
@@ -201,9 +204,9 @@ describe('<EmployeeForm />', () => {
   it('montar el formulario NO borra el distrito ni la cuenta ya guardados', () => {
     renderForm()
 
-    expect(screen.getByLabelText('Distrito *')).toHaveValue('121')
-    expect(screen.getByLabelText('Banco')).toHaveValue('3')
-    expect(screen.getByLabelText('Tipo de cuenta')).toHaveValue('AHORRO')
+    expect(screen.getByLabelText('Distrito *')).toHaveTextContent('Escazú')
+    expect(screen.getByLabelText('Banco')).toHaveTextContent('BAC Credomatic')
+    expect(screen.getByLabelText('Tipo de cuenta')).toHaveTextContent('Ahorro')
   })
 
   it('cambiar de banco limpia el número de cuenta', async () => {
@@ -229,7 +232,7 @@ describe('<EmployeeForm />', () => {
     expect(cuenta).toHaveValue('CR02 0102 0000 0000 0000 01')
 
     // El IBAN lleva el código de entidad del BAC: con otro banco deja de ser válido.
-    await user.selectOptions(screen.getByLabelText('Banco'), '5')
+    await chooseSelectMenuOption(user, 'Banco', 'Banco Nacional')
 
     expect(cuenta).toHaveValue('')
   })
@@ -253,7 +256,7 @@ describe('<EmployeeForm />', () => {
       />
     )
 
-    await user.selectOptions(screen.getByLabelText('Tipo de cuenta'), 'SINPE')
+    await chooseSelectMenuOption(user, 'Tipo de cuenta', 'SINPE Móvil')
 
     expect(screen.getByLabelText('Número de cuenta (IBAN / SINPE)')).toHaveValue('')
   })

@@ -18,6 +18,14 @@ interface SucursalAppearancePanelProps {
    * puede elegir cualquier otra igual.
    */
   sucursalIdInicial?: number | null
+  /**
+   * Tema OFICIAL que el shell esta pintando ahora mismo (sucursal fija o la
+   * que este en preview desde el selector de la barra superior) — se
+   * reenvia hasta `SucursalAppearanceForm`, que restaura estos colores al
+   * salir de la edicion. Ver resolve-shell-theme.ts.
+   */
+  officialColorAcento: string | null
+  officialColorSidebar: string | null
 }
 
 /**
@@ -30,6 +38,8 @@ interface SucursalAppearancePanelProps {
 export function SucursalAppearancePanel({
   sucursales,
   sucursalIdInicial,
+  officialColorAcento,
+  officialColorSidebar,
 }: SucursalAppearancePanelProps) {
   const [seleccionadaId, setSeleccionadaId] = useState<number | null>(
     sucursalIdInicial ?? sucursales[0]?.id ?? null
@@ -95,6 +105,8 @@ export function SucursalAppearancePanel({
           sucursalNombre={seleccionada.nombre}
           colorAcentoActual={seleccionada.colorAcento}
           colorSidebarActual={seleccionada.colorSidebar}
+          officialColorAcento={officialColorAcento}
+          officialColorSidebar={officialColorSidebar}
         />
       )}
     </div>

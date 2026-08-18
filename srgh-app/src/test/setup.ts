@@ -39,6 +39,17 @@ if (typeof window !== 'undefined' && typeof window.localStorage?.clear !== 'func
 }
 
 /**
+ * jsdom no implementa `Element.prototype.scrollIntoView` (existe en todo
+ * navegador real, asi que esto NUNCA es un bug de produccion). Lo usa
+ * SelectMenu para mantener la opcion resaltada a la vista al navegar con
+ * flechas — sin el polyfill, cualquier test que abra su listbox revienta con
+ * "scrollIntoView is not a function".
+ */
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => {}
+}
+
+/**
  * `findBy*` / `waitFor` esperan 1 s por defecto. Componentes pesados como
  * EmployeeWizard (validacion Zod de ~10 campos por paso) resuelven de sobra en
  * ese margen cuando el archivo corre solo, pero con la suite completa en

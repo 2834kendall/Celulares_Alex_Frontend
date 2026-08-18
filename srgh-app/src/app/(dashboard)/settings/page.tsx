@@ -2,7 +2,7 @@ import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { ACCESO_CONFIGURACION } from '@/lib/permissions/zones'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getSucursalTema } from '@/lib/empresa/get-sucursal-tema'
-import { listSucursalesConApariencia } from '@/lib/empresa/list-sucursales'
+import { resolveShellTheme } from '@/lib/empresa/resolve-shell-theme'
 import { getPuestos } from '@/modules/settings/actions/getPuestos'
 import { SucursalAppearanceForm } from '@/modules/settings/components/SucursalAppearanceForm'
 import { SucursalAppearancePanel } from '@/modules/settings/components/SucursalAppearancePanel'
@@ -21,12 +21,21 @@ export default async function SettingsPage() {
   const administraEmpresa = permisos.includes(PERMISOS.EMPRESAS_WRITE)
   const puedeEditarPuestos = permisos.includes(PERMISOS.CATALOGOS_WRITE)
 
-  const [tema, puestosResult] = await Promise.all([
+  // `tema` es la sucursal FIJA propia del usuario (para saber cual
+  // preseleccionar en el panel). `theme` es el tema OFICIAL que el shell
+  // esta pintando AHORA — sucursal fija, salvo que haya una en preview desde
+  // el selector de la barra superior — y es a lo que hay que restaurar el
+  // shell cuando se sale del formulario de apariencia (ver
+  // SucursalAppearanceForm). Sin esto ultimo, cambiar de tarjeta o de pagina
+  // dejaba pegado el color de PRUEBA de lo ultimo editado, ignorando lo que
+  // decia el selector de arriba.
+  const [tema, theme, puestosResult] = await Promise.all([
     getSucursalTema(meta.usr_id ?? null),
+    resolveShellTheme(meta.usr_id ?? null, permisos),
     getPuestos(),
   ])
 
-  const sucursales = administraEmpresa ? await listSucursalesConApariencia() : []
+  const sucursales = theme.sucursales
 
   return (
     <div className="space-y-6">
@@ -40,12 +49,19 @@ export default async function SettingsPage() {
       <SettingsTabs
         aparienciaContent={
           administraEmpresa ? (
-            <SucursalAppearancePanel sucursales={sucursales} sucursalIdInicial={tema.sucursalId} />
+            <SucursalAppearancePanel
+              sucursales={sucursales}
+              sucursalIdInicial={tema.sucursalId}
+              officialColorAcento={theme.colorAcento}
+              officialColorSidebar={theme.colorSidebar}
+            />
           ) : tema.sucursalId && tema.sucursalNombre ? (
             <SucursalAppearanceForm
               sucursalNombre={tema.sucursalNombre}
               colorAcentoActual={tema.colorAcento}
               colorSidebarActual={tema.colorSidebar}
+              officialColorAcento={theme.colorAcento}
+              officialColorSidebar={theme.colorSidebar}
             />
           ) : (
             <p className="max-w-md text-sm text-slate-500">

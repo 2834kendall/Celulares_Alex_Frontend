@@ -17,7 +17,9 @@ import type { AusenciaTypeRow, EmployeeOption } from '@/modules/absences/types'
 import type { AusenciaWeekRow } from '@/modules/absences/actions/getAusenciasForWeek'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { INPUT, LABEL, SELECT, SPINNER, TABLE_WRAP } from '@/components/ui/styles'
+import { DateField } from '@/components/ui/DatePickerButton'
+import { SelectMenu } from '@/components/ui/SelectMenu'
+import { INPUT, LABEL, SPINNER, TABLE_WRAP } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
 interface AbsencesPanelProps {
@@ -138,19 +140,19 @@ export function AbsencesPanel({
               <label className={LABEL} htmlFor="aus_tipo">
                 Tipo
               </label>
-              <select
+              <SelectMenu
                 id="aus_tipo"
-                className={SELECT}
                 value={form.tipoAusenciaId}
-                onChange={(e) => setField('tipoAusenciaId', e.target.value)}
-              >
-                <option value="">Seleccione un tipo</option>
-                {ausenciaTypes.map((t) => (
-                  <option key={t.tau_id} value={t.tau_id}>
-                    {t.tau_nombre}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setField('tipoAusenciaId', v)}
+                placeholder="Seleccione un tipo"
+                options={[
+                  { value: '', label: 'Seleccione un tipo' },
+                  ...ausenciaTypes.map((t) => ({
+                    value: String(t.tau_id),
+                    label: t.tau_nombre,
+                  })),
+                ]}
+              />
               {selectedType && (
                 <p className="mt-1 text-[11px] text-slate-500">
                   {selectedType.tau_referencia_legal}
@@ -188,13 +190,12 @@ export function AbsencesPanel({
                       >
                         Desde
                       </label>
-                      <input
+                      <DateField
                         id={`aus_fecha_inicio_${index}`}
-                        type="date"
-                        className={`${INPUT} tabular-nums`}
+                        label="Desde"
                         value={range.fechaInicio}
-                        max={range.fechaFin || undefined}
-                        onChange={(e) => setRangeField(index, 'fechaInicio', e.target.value)}
+                        maxISO={range.fechaFin || undefined}
+                        onChange={(valor) => setRangeField(index, 'fechaInicio', valor)}
                       />
                     </div>
 
@@ -205,13 +206,12 @@ export function AbsencesPanel({
                       >
                         Hasta
                       </label>
-                      <input
+                      <DateField
                         id={`aus_fecha_fin_${index}`}
-                        type="date"
-                        className={`${INPUT} tabular-nums`}
+                        label="Hasta"
                         value={range.fechaFin}
-                        min={range.fechaInicio || undefined}
-                        onChange={(e) => setRangeField(index, 'fechaFin', e.target.value)}
+                        minISO={range.fechaInicio || undefined}
+                        onChange={(valor) => setRangeField(index, 'fechaFin', valor)}
                       />
                     </div>
 
