@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { activateAccountSchema, loginSchema } from './types'
+import {
+  activateAccountSchema,
+  forgotPasswordSchema,
+  loginSchema,
+  resetPasswordSchema,
+} from './types'
 
 describe('loginSchema', () => {
   it('acepta credenciales validas', () => {
@@ -93,6 +98,49 @@ describe('activateAccountSchema', () => {
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error.issues[0].message).toBe('Confirme su contraseña.')
+    }
+  })
+
+  it('es el mismo esquema que resetPasswordSchema', () => {
+    // Activar la cuenta invitada y restablecer la contraseña olvidada aplican
+    // la misma politica; si esto deja de ser cierto hay que separarlos a
+    // proposito, no por accidente.
+    expect(resetPasswordSchema).toBe(activateAccountSchema)
+  })
+})
+
+describe('forgotPasswordSchema', () => {
+  it('acepta un correo valido', () => {
+    const result = forgotPasswordSchema.safeParse({ email: 'ana@empresa.com' })
+    expect(result.success).toBe(true)
+  })
+
+  it('normaliza el correo: trim y minusculas', () => {
+    const result = forgotPasswordSchema.parse({ email: '  ANA@EMPRESA.COM  ' })
+    expect(result.email).toBe('ana@empresa.com')
+  })
+
+  it('rechaza un correo con formato invalido', () => {
+    const result = forgotPasswordSchema.safeParse({ email: 'no-es-correo' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('Ingrese un correo electrónico válido.')
+    }
+  })
+
+  it('rechaza el correo vacio con mensaje de requerido', () => {
+    const result = forgotPasswordSchema.safeParse({ email: '   ' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('El correo electrónico es requerido.')
+    }
+  })
+
+  it('rechaza el correo ausente', () => {
+    const result = forgotPasswordSchema.safeParse({})
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('El correo electrónico es requerido.')
     }
   })
 })
