@@ -17,11 +17,13 @@ export const loginSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>
 
 /**
- * Esquema de activacion de cuenta (primer acceso tras la invitacion).
- * La sesion ya existe (la establecio /auth/confirm); aqui solo se define
- * la contraseña.
+ * Definir una contraseña sobre una sesion que /auth/confirm ya establecio.
+ * Es el mismo formulario en los dos flujos que llegan por correo —activacion
+ * de la invitacion y recuperacion—, asi que la regla vive una sola vez y los
+ * dos nombres de abajo son alias: si cambia la politica de contraseñas, cambia
+ * aqui y en ningun otro lado.
  */
-export const activateAccountSchema = z
+export const setPasswordSchema = z
   .object({
     password: z
       .string({ message: 'La contraseña es requerida.' })
@@ -35,4 +37,30 @@ export const activateAccountSchema = z
     message: 'Las contraseñas no coinciden.',
   })
 
-export type ActivateAccountInput = z.infer<typeof activateAccountSchema>
+export type SetPasswordInput = z.infer<typeof setPasswordSchema>
+
+/** Activacion de cuenta: primer acceso tras la invitacion. */
+export const activateAccountSchema = setPasswordSchema
+
+export type ActivateAccountInput = SetPasswordInput
+
+/**
+ * Esquema del formulario "olvide mi contraseña": solo el correo al que se
+ * envia el enlace de recuperacion. Misma normalizacion que el login (trim +
+ * minusculas) para que el mismo usuario escrito de dos formas sea uno solo.
+ */
+export const forgotPasswordSchema = z.object({
+  email: z
+    .string({ message: 'El correo electrónico es requerido.' })
+    .trim()
+    .toLowerCase()
+    .min(1, 'El correo electrónico es requerido.')
+    .email('Ingrese un correo electrónico válido.'),
+})
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>
+
+/** Restablecer la contraseña tras el enlace de recuperacion. */
+export const resetPasswordSchema = setPasswordSchema
+
+export type ResetPasswordInput = SetPasswordInput

@@ -34,8 +34,11 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Token inválido o expirado: /activate-account sin sesión muestra el
-  // estado de enlace vencido con la salida correcta.
-  redirectTo.pathname = '/activate-account'
+  // Token inválido o expirado: se redirige al MISMO destino que en el caso
+  // feliz. Esas pantallas, al no recibir sesión, muestran el estado de enlace
+  // vencido con la salida que corresponde a su flujo (reenviar la invitación
+  // vs. pedir otro enlace de recuperación). Mandar todo a /activate-account
+  // dejaba a quien recuperaba su contraseña leyendo sobre invitaciones.
+  redirectTo.pathname = next
   return NextResponse.redirect(redirectTo)
 }

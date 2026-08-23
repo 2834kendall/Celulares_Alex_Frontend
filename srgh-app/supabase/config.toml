@@ -278,6 +278,17 @@ otp_expiry = 3600
 subject = "Activa tu cuenta de SGRH"
 content_path = "./supabase/templates/invite.html"
 
+# Recuperacion de contraseña (SGRH-79): aplica todo lo dicho arriba —mismo
+# motivo para no dejar la plantilla de fabrica, misma ruta relativa a srgh-app/,
+# y en un proyecto remoto hay que replicarla a mano en
+# Dashboard -> Authentication -> Email Templates -> Reset Password.
+#
+# La diferencia con la invitacion es el `next=/reset-password` del enlace: sin
+# el, /auth/confirm cae en su destino por defecto (/activate-account).
+[auth.email.template.recovery]
+subject = "Restablecer su contraseña de SGRH"
+content_path = "./supabase/templates/reset-password.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true

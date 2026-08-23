@@ -43,6 +43,8 @@ export async function updateSession(request: NextRequest) {
   const isPublicPath =
     pathname === '/login' ||
     pathname === '/activate-account' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
     pathname === '/auth/confirm' ||
     pathname === '/unauthorized'
 
@@ -76,9 +78,12 @@ export async function updateSession(request: NextRequest) {
     return redirectTo('/kiosco')
   }
 
-  // Solo /login rebota con sesión: /activate-account y /auth/confirm son parte
-  // del flujo de invitación, que establece la sesión ANTES de definir la
-  // contraseña; /unauthorized aplica justo a usuarios con sesión sin permisos.
+  // Solo /login rebota con sesión: /activate-account, /reset-password y
+  // /auth/confirm son parte de los flujos que llegan por correo, que
+  // establecen la sesión ANTES de definir la contraseña —rebotarlos por
+  // "tener sesión" seria rebotarlos justo cuando el flujo va bien—;
+  // /forgot-password es inofensivo con sesión; y /unauthorized aplica
+  // justo a usuarios con sesión sin permisos.
   if (hasSession && pathname === '/login') {
     return redirectTo('/dashboard')
   }
