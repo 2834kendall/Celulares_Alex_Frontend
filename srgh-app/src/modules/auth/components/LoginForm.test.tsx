@@ -38,8 +38,15 @@ describe('<LoginForm />', () => {
     expect(screen.getByText('Expedientes')).toBeInTheDocument()
     expect(screen.getByText('Asistencia')).toBeInTheDocument()
     expect(screen.getByText('Planillas')).toBeInTheDocument()
-    // Sin enlace de "olvido su contrasena"
-    expect(screen.queryByText(/olvido/i)).not.toBeInTheDocument()
+  })
+
+  it('ofrece la salida a recuperar la contrasena', () => {
+    render(<LoginForm />)
+
+    expect(screen.getByRole('link', { name: /olvidó su contraseña/i })).toHaveAttribute(
+      'href',
+      '/forgot-password'
+    )
   })
 
   it('muestra errores de validacion y no llama la action con campos vacios', async () => {
