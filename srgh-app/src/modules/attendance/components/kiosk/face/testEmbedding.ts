@@ -5,7 +5,7 @@ import { FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
  * Embedding de PRUEBA — NUNCA reconocimiento facial real. Reemplaza el paso
  * "imagen -> 128 numeros" con una cuenta determinista de luminancia por
  * celda de una grilla, para poder probar el resto del sistema (camara,
- * parpadeo, cifrado, comparacion, umbrales MATCH/REQUIRE_PIN/DENIED, ticket,
+ * cifrado, comparacion, umbrales MATCH/REQUIRE_PIN/DENIED, ticket,
  * marca) mientras no esten los pesos de face-api.js en public/models/face-api/.
  *
  * Solo sustituye ESTE paso: la imagen sigue sin salir nunca del dispositivo

@@ -1,39 +1,11 @@
 /**
  * Helpers PUROS sobre los resultados de MediaPipe Face Landmarker (tipados
- * estructuralmente para no arrastrar la libreria a los tests): extraccion de
- * scores de parpadeo y calculo del recorte cuadrado del rostro.
+ * estructuralmente para no arrastrar la libreria a los tests): recorte
+ * cuadrado del rostro y angulo de nivelacion de los ojos.
  */
-
-interface BlendshapeCategory {
-  categoryName: string
-  score: number
-}
 
 interface LandmarkerResultShape {
   faceLandmarks: { x: number; y: number }[][]
-  faceBlendshapes: { categories: BlendshapeCategory[] }[]
-}
-
-export interface BlinkScores {
-  blinkLeft: number
-  blinkRight: number
-}
-
-/** Scores de parpadeo del primer rostro, o null si no hay rostro/blendshapes. */
-export function extractBlinkScores(result: LandmarkerResultShape): BlinkScores | null {
-  const categories = result.faceBlendshapes?.[0]?.categories
-  if (!categories || categories.length === 0) return null
-
-  let blinkLeft: number | null = null
-  let blinkRight: number | null = null
-
-  for (const c of categories) {
-    if (c.categoryName === 'eyeBlinkLeft') blinkLeft = c.score
-    else if (c.categoryName === 'eyeBlinkRight') blinkRight = c.score
-  }
-
-  if (blinkLeft === null || blinkRight === null) return null
-  return { blinkLeft, blinkRight }
 }
 
 export interface CropBox {
@@ -101,7 +73,7 @@ export function firstFaceLandmarks(
   return landmarks && landmarks.length > 0 ? landmarks : null
 }
 
-// Mismos indices que motionLiveness.ts: esquina externa de cada ojo.
+// Esquina externa de cada ojo.
 const RIGHT_EYE_OUTER = 33
 const LEFT_EYE_OUTER = 263
 

@@ -3,7 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { decryptVector } from '@/modules/attendance/lib/face/faceCrypto'
+import { decryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
+import { isLivenessProof } from '@/modules/attendance/lib/face/livenessProof'
 import { classifyDistance, euclideanDistance } from '@/modules/attendance/lib/face/faceMath'
 import { signFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 import { FACE_EMBEDDING_DIM, FACE_MODEL_ID } from '@/modules/attendance/lib/face/model'
@@ -70,14 +71,26 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   }
 
   let probe: number[]
+  let liveness: unknown
   try {
-    probe = await decryptVector(parsed.data.vector, vectorKey)
+    const payload = await decryptFacePayload(parsed.data.vector, vectorKey)
+    probe = payload.vector
+    liveness = payload.liveness
   } catch {
     return { ok: false, error: 'No se pudo procesar la verificacion facial.' }
   }
 
   if (probe.length !== FACE_EMBEDDING_DIM) {
     return { ok: false, error: 'No se pudo procesar la verificacion facial.' }
+  }
+
+  // Sin prueba de vida NO se emite ticket. Reconocer de quien es una cara y
+  // verificar si esa cara esta viva son preguntas distintas: sin esta guarda,
+  // una foto del colaborador da distancia baja —correctamente, es la misma
+  // cara— y el kiosco firmaria una marca FACIAL. Ver livenessProof.ts para el
+  // alcance real de esta garantia.
+  if (!isLivenessProof(liveness)) {
+    return { ok: true, status: 'REQUIRE_PIN' }
   }
 
   const supabase = await createClient()
