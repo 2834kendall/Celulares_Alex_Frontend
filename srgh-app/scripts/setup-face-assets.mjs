@@ -96,7 +96,9 @@ async function ensureFaceRecognitionModel() {
   } catch (err) {
     console.warn(
       `[face-assets] AVISO: no se pudo descargar el modelo de reconocimiento (${err.message}).\n` +
-        '  El kiosco caera al modo de prueba (NEXT_PUBLIC_FACE_TEST_MODE) hasta que exista.\n' +
+        '  Sin el, el kiosco NO puede generar embeddings y cae al flujo de PIN.\n' +
+        '  NO entra solo en modo de prueba: NEXT_PUBLIC_FACE_TEST_MODE hay que\n' +
+        '  ponerlo a mano, y solo con el valor exacto "true".\n' +
         `  Fuente: ${FACE_API_REPO_RAW}`
     )
   }
@@ -178,7 +180,7 @@ const missing = [
 if (missing.length > 0) {
   console.warn(
     `[face-assets] AVISO: faltan modelos en public/models: ${missing.join(', ')}.\n` +
-      '  El kiosco caera automaticamente al flujo de PIN/modo de prueba hasta que existan.\n' +
+      '  El kiosco caera automaticamente al flujo de PIN hasta que existan.\n' +
       '  Ver srgh-app/public/models/README.md para las fuentes de descarga.'
   )
 } else {
