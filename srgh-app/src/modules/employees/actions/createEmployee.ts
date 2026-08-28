@@ -6,10 +6,13 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { onboardingEmpleadoSchema, type OnboardingEmpleadoInput } from '@/modules/employees/types'
 import { mapEmployeeUniqueError } from '@/modules/employees/lib/dbErrors'
+import { validateDatosPago } from '@/modules/employees/lib/validateDatosPago'
+import { encryptField } from '@/lib/crypto/fieldCrypto'
 import { inviteUser } from '@/modules/users/actions/inviteUser'
 
 export type CreateEmployeeResult =
-  { ok: true; empId: number; usuarioWarning?: string } | { ok: false; error: string }
+  | { ok: true; empId: number; usuarioWarning?: string }
+  | { ok: false; error: string; requiereConfirmacion?: true }
 
 /**
  * Alta completa: empleado + contrato (+ datos de pago y usuario opcionales).
@@ -35,10 +38,32 @@ export async function createEmployee(
   }
 
   const supabase = await createClient()
+
+  // El número de cuenta viaja cifrado a la RPC, así que la coherencia con el
+  // banco y la detección de cuentas repetidas tienen que resolverse acá: en SQL
+  // ya no hay texto plano que mirar. Va antes de la RPC para no dejar un
+  // empleado creado y después fallar por los datos de pago.
+  const pago = await validateDatosPago(supabase, parsed.data.datos_pago, {
+    confirmado: parsed.data.confirmar_cuenta_duplicada,
+  })
+
+  if (!pago.ok) return pago
+
+  const datosPago = parsed.data.datos_pago && {
+    ...parsed.data.datos_pago,
+    edp_numero_cuenta: parsed.data.datos_pago.edp_numero_cuenta
+      ? await encryptField(parsed.data.datos_pago.edp_numero_cuenta)
+      : null,
+    // Ciphertext y HMAC se escriben siempre juntos (constraint
+    // edp_cuenta_hmac_pareado); validateDatosPago devuelve null cuando no hay
+    // cuenta, que es justo lo que hace falta para cumplirlo.
+    edp_cuenta_hmac: pago.hmac,
+  }
+
   const { data: empId, error } = await supabase.rpc('crear_empleado_completo', {
     p_empleado: parsed.data.empleado,
     p_contratacion: parsed.data.contratacion,
-    p_datos_pago: parsed.data.datos_pago,
+    p_datos_pago: datosPago,
     // Sin dir_codigo_postal: lo calcula el trigger desde el distrito.
     p_direccion: parsed.data.direccion,
   })
@@ -52,8 +77,10 @@ export async function createEmployee(
       return { ok: false, error: 'No tienes permiso para crear empleados.' }
     }
     if (error?.code === '23514') {
-      // check_violation: solo lo emiten las validaciones de coherencia de la
-      // RPC (SINPE/IBAN/banco), cuyos mensajes ya están escritos para la UI.
+      // check_violation: las validaciones de coherencia que le quedan a la RPC
+      // ("cuenta sin banco", "sin índice de cuenta") y los CHECK de la tabla.
+      // Los mensajes de la RPC ya están escritos para la UI; los del constraint
+      // no, pero son un bug nuestro, no algo que el usuario pueda corregir.
       return { ok: false, error: error.message || 'Los datos de pago no son coherentes.' }
     }
     return { ok: false, error: 'No se pudo crear el empleado.' }

@@ -6,9 +6,16 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { editarFichaEmpleadoSchema, type EditarFichaEmpleadoInput } from '@/modules/employees/types'
 import { mapEmployeeUniqueError } from '@/modules/employees/lib/dbErrors'
-import { ibanBankCode } from '@/modules/employees/lib/iban'
+import { validateDatosPago } from '@/modules/employees/lib/validateDatosPago'
+import { decryptField, encryptField } from '@/lib/crypto/fieldCrypto'
 
-export type UpdateEmployeeResult = { ok: true } | { ok: false; error: string }
+export type UpdateEmployeeResult =
+  { ok: true; warning?: string } | { ok: false; error: string; requiereConfirmacion?: true }
+
+/** Se conservó la cuenta ilegible en vez de borrarla. Ver el guard más abajo. */
+const CUENTA_PRESERVADA =
+  'Los cambios se guardaron. La cuenta bancaria registrada no se pudo descifrar y se conservó ' +
+  'intacta — escribí el número de nuevo para reemplazarla.'
 
 /**
  * Edición de la ficha personal + dirección + datos de pago. Usa el cliente de
@@ -33,22 +40,39 @@ export async function updateEmployee(
 
   const supabase = await createClient()
 
-  // El schema ya validó formato y checksum del IBAN; que pertenezca al banco
-  // elegido solo puede verificarse aquí (el código de entidad vive en el
-  // catálogo). Se valida ANTES de escribir para no dejar guardados parciales.
-  const pago = parsed.data.datos_pago
-  if (pago?.edp_banco_id && pago.edp_numero_cuenta && pago.edp_tipo_cuenta !== 'SINPE') {
-    const { data: banco, error: errBanco } = await supabase
-      .from('sgrh_cat_bancos')
-      .select('ban_codigo')
-      .eq('ban_id', pago.edp_banco_id)
+  // El schema ya validó formato y checksum del IBAN; lo que necesita consultar
+  // la base (banco activo, código de entidad, cuenta repetida) vive en
+  // validateDatosPago. Se valida ANTES de escribir para no dejar guardados
+  // parciales — esta action no es transaccional.
+  const pago = await validateDatosPago(supabase, parsed.data.datos_pago, {
+    empIdActual: empId,
+    confirmado: parsed.data.confirmar_cuenta_duplicada,
+  })
+
+  if (!pago.ok) return pago
+
+  // ─── Guard: un campo vacío no siempre significa "borrar" ──────────────────
+  // Desde que la cuenta se guarda cifrada existe un estado que antes no podía
+  // darse: hay un número registrado pero no se pudo descifrar (llave rotada mal,
+  // payload alterado). En ese caso getEmployeeDetail devuelve null y el
+  // formulario se pinta VACÍO. Si tomáramos ese vacío como intención de borrar,
+  // editar el teléfono de un empleado bastaría para escribir null encima del
+  // ciphertext y perder la cuenta para siempre.
+  //
+  // La regla: vacío solo significa "borrar" si el usuario pudo ver lo que había.
+  // Escribir un valor nuevo, en cambio, siempre vale — es como se repara una
+  // fila corrupta.
+  let cuentaPreservada = false
+
+  if (parsed.data.datos_pago && !parsed.data.datos_pago.edp_numero_cuenta) {
+    const { data: actual } = await supabase
+      .from('sgrh_empleado_datos_pago')
+      .select('edp_numero_cuenta')
+      .eq('edp_empleado_id', empId)
       .maybeSingle()
 
-    if (errBanco || !banco) {
-      return { ok: false, error: 'El banco seleccionado no es válido.' }
-    }
-    if (banco.ban_codigo && ibanBankCode(pago.edp_numero_cuenta) !== banco.ban_codigo) {
-      return { ok: false, error: 'El IBAN no corresponde al banco seleccionado.' }
+    if (actual?.edp_numero_cuenta) {
+      cuentaPreservada = !(await decryptField(actual.edp_numero_cuenta)).ok
     }
   }
 
@@ -106,14 +130,37 @@ export async function updateEmployee(
   }
 
   if (parsed.data.datos_pago) {
+    const { edp_numero_cuenta: cuenta, ...restoPago } = parsed.data.datos_pago
+
+    // Omitir las dos columnas del payload las deja intactas: PostgREST solo
+    // actualiza las que vienen en el objeto. Van juntas siempre — el constraint
+    // edp_cuenta_hmac_pareado rechaza que una quede nula y la otra no.
+    const payload = cuentaPreservada
+      ? { edp_empleado_id: empId, ...restoPago }
+      : {
+          edp_empleado_id: empId,
+          ...restoPago,
+          edp_numero_cuenta: cuenta ? await encryptField(cuenta) : null,
+          edp_cuenta_hmac: pago.hmac,
+        }
+
     const { error: errPago } = await supabase
       .from('sgrh_empleado_datos_pago')
-      .upsert(
-        { edp_empleado_id: empId, ...parsed.data.datos_pago },
-        { onConflict: 'edp_empleado_id' }
-      )
+      .upsert(payload, { onConflict: 'edp_empleado_id' })
 
     if (errPago) {
+      // 23514 acá es casi siempre edp_cuenta_hmac_pareado sobre una fila cifrada
+      // ANTES de que existiera el índice ciego: el guard preservó el ciphertext
+      // y el HMAC sigue nulo. Lo resuelve correr scripts/encrypt-payment-data.ts,
+      // no el usuario, así que el mensaje apunta a soporte en vez de a reintentar.
+      if (errPago.code === '23514') {
+        return {
+          ok: false,
+          error:
+            'Los datos personales se guardaron, pero la cuenta bancaria quedó pendiente de ' +
+            'migración. Avisa a soporte antes de volver a intentarlo.',
+        }
+      }
       return {
         ok: false,
         error: 'Los datos personales se guardaron, pero los datos de pago no. Intenta de nuevo.',
@@ -123,5 +170,5 @@ export async function updateEmployee(
 
   revalidatePath('/employees')
   revalidatePath(`/employees/${empId}`)
-  return { ok: true }
+  return cuentaPreservada ? { ok: true, warning: CUENTA_PRESERVADA } : { ok: true }
 }
