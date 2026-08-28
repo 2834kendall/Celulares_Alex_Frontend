@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.5"
   }
   graphql_public: {
     Tables: {
@@ -1221,6 +1221,7 @@ export type Database = {
         Row: {
           edp_banco_id: number | null
           edp_created_at: string
+          edp_cuenta_hmac: string | null
           edp_empleado_id: number
           edp_id: number
           edp_numero_cuenta: string | null
@@ -1229,6 +1230,7 @@ export type Database = {
         Insert: {
           edp_banco_id?: number | null
           edp_created_at?: string
+          edp_cuenta_hmac?: string | null
           edp_empleado_id: number
           edp_id?: number
           edp_numero_cuenta?: string | null
@@ -1237,6 +1239,7 @@ export type Database = {
         Update: {
           edp_banco_id?: number | null
           edp_created_at?: string
+          edp_cuenta_hmac?: string | null
           edp_empleado_id?: number
           edp_id?: number
           edp_numero_cuenta?: string | null
