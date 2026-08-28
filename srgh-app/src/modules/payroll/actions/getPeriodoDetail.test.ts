@@ -2,13 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getPeriodoDetail } from './getPeriodoDetail'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { decryptField } from '@/lib/crypto/fieldCrypto'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+// fieldCrypto importa 'server-only', que revienta fuera de Next.js (ver
+// planillaExcel.test.ts). El descifrado real vive en fieldCrypto.core.test.ts.
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/crypto/fieldCrypto', () => ({ decryptField: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
+const mockDecryptField = vi.mocked(decryptField)
 
 const CLAIMS = { app_metadata: { empresa_id: 1 } } as unknown as Awaited<
   ReturnType<typeof requirePermission>
@@ -67,6 +73,8 @@ describe('getPeriodoDetail (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue(CLAIMS)
+    // Por defecto la cuenta se descifra bien y devuelve lo guardado.
+    mockDecryptField.mockImplementation(async (stored) => ({ ok: true, value: stored }))
   })
 
   it('marca notFound con un id inválido', async () => {
@@ -181,8 +189,40 @@ describe('getPeriodoDetail (server action)', () => {
           incapacidad: null,
           numeroCuenta: 'CR05015202001026284066',
           bancoNombre: 'Banco Nacional',
+          cuentaIlegible: false,
         },
       ])
+    }
+  })
+
+  it('marca cuentaIlegible cuando la cuenta no se pudo descifrar', async () => {
+    mockDecryptField.mockResolvedValue({ ok: false })
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: {
+        data: [
+          {
+            edp_empleado_id: 501,
+            edp_numero_cuenta: 'v1:rota:rota',
+            sgrh_cat_bancos: { ban_nombre: 'Banco Nacional' },
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      // Distinto de "no cargó datos de pago": el empleado SÍ tiene cuenta, y
+      // quien arma la transferencia tiene que poder diferenciarlo.
+      expect(result.data.detalles[0].numeroCuenta).toBeNull()
+      expect(result.data.detalles[0].cuentaIlegible).toBe(true)
     }
   })
 
@@ -205,6 +245,8 @@ describe('getPeriodoDetail (server action)', () => {
       // bloquea la página, simplemente no se muestra la cuenta.
       expect(result.data.detalles[0].numeroCuenta).toBeNull()
       expect(result.data.detalles[0].bancoNombre).toBeNull()
+      // Una consulta que falla no es una cuenta ilegible: no hay dato que leer.
+      expect(result.data.detalles[0].cuentaIlegible).toBe(false)
     }
   })
 

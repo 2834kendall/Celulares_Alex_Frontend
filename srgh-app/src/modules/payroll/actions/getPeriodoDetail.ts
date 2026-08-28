@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
+import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
 
 interface PeriodoRow {
@@ -216,7 +217,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   )
   const datosPagoPorEmpleado = new Map<
     number,
-    { numeroCuenta: string | null; bancoNombre: string | null }
+    { numeroCuenta: string | null; bancoNombre: string | null; cuentaIlegible: boolean }
   >()
   if (empIds.length > 0) {
     const { data: datosPago } = await supabase
@@ -225,12 +226,25 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       .in('edp_empleado_id', empIds)
       .returns<DatosPagoRow[]>()
 
-    for (const row of datosPago ?? []) {
+    // La cuenta se guarda cifrada: se descifra acá, una por empleado del
+    // período. La llave se importa una sola vez (fieldCrypto.core memoiza el
+    // CryptoKey), así que el lote no paga un importKey por fila.
+    //
+    // cuentaIlegible se propaga en vez de aplanarse a null: quien arma la
+    // transferencia tiene que poder distinguir "no cargó datos de pago" de
+    // "tiene cuenta pero no se pudo leer" — son problemas distintos.
+    const cuentas = await Promise.all(
+      (datosPago ?? []).map((row) => decryptField(row.edp_numero_cuenta))
+    )
+
+    ;(datosPago ?? []).forEach((row, i) => {
+      const cuenta = cuentas[i]
       datosPagoPorEmpleado.set(row.edp_empleado_id, {
-        numeroCuenta: row.edp_numero_cuenta,
+        numeroCuenta: cuenta.ok ? cuenta.value : null,
         bancoNombre: row.sgrh_cat_bancos?.ban_nombre ?? null,
+        cuentaIlegible: !cuenta.ok,
       })
-    }
+    })
   }
 
   const items: DetalleNominaItem[] = (detalles ?? []).map((row: DetalleRow) => {
@@ -282,6 +296,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       incapacidad,
       numeroCuenta: datosPago?.numeroCuenta ?? null,
       bancoNombre: datosPago?.bancoNombre ?? null,
+      cuentaIlegible: datosPago?.cuentaIlegible ?? false,
     }
   })
 

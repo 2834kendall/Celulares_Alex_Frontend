@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getStorageProvider } from '@/lib/storage'
 import { TTL_FOTO } from '@/lib/storage/containers'
+import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { Database } from '@/types/database.types'
 import type { EmpleadoDetalle } from '@/modules/employees/types'
 
@@ -164,20 +165,32 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     }
   }
 
+  // El número se guarda cifrado (AES-256-GCM), así que se descifra acá, en el
+  // servidor. Los tres estados de decryptField NO se aplanan: cuenta_ilegible
+  // distingue "no hay cuenta" de "hay una y no se pudo leer". Sin esa distinción
+  // el formulario de edición se pintaría vacío y el siguiente guardado
+  // sobrescribiría el ciphertext con null, borrando el dato para siempre.
+  let datosPagoDto: EmpleadoDetalle['datos_pago'] = null
+
+  if (datosPago) {
+    const cuenta = await decryptField(datosPago.edp_numero_cuenta)
+
+    datosPagoDto = {
+      edp_banco_id: datosPago.edp_banco_id,
+      edp_tipo_cuenta: datosPago.edp_tipo_cuenta,
+      edp_numero_cuenta: cuenta.ok ? cuenta.value : null,
+      cuenta_ilegible: !cuenta.ok,
+      banco_nombre: datosPago.sgrh_cat_bancos?.ban_nombre ?? null,
+    }
+  }
+
   const data: EmpleadoDetalle = {
     ...empleadoBase,
     tipo_identificacion_nombre: sgrh_cat_tipos_identificacion?.tid_nombre ?? '—',
     foto_url: fotoUrl,
     historial_activo: historialActivo,
     direccion,
-    datos_pago: datosPago
-      ? {
-          edp_banco_id: datosPago.edp_banco_id,
-          edp_tipo_cuenta: datosPago.edp_tipo_cuenta,
-          edp_numero_cuenta: datosPago.edp_numero_cuenta,
-          banco_nombre: datosPago.sgrh_cat_bancos?.ban_nombre ?? null,
-        }
-      : null,
+    datos_pago: datosPagoDto,
   }
 
   return { ok: true, data }
