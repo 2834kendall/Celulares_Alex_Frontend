@@ -17,9 +17,13 @@ interface EnrollScreenProps {
 }
 
 /**
- * Alta de rostros (solo gerentes): elegir empleado → capturar con la misma
- * prueba de vida del kiosco → el vector viaja cifrado a enrollFace.
- * Re-enrolar a alguien ya registrado simplemente reemplaza su vector.
+ * Alta de rostros (solo gerentes): elegir empleado → capturar → el vector
+ * viaja cifrado a enrollFace. Re-enrolar a alguien ya registrado simplemente
+ * reemplaza su vector.
+ *
+ * Aplica la MISMA prueba de vida que el kiosco (decision de SGRH-80): antes
+ * era posible registrar a una persona desde una fotografia, y ese vector
+ * envenenado no caduca — deja al colaborador suplantable de forma permanente.
  */
 export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
   const router = useRouter()
@@ -61,6 +65,13 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
 
   const handleUnavailable = useCallback((reason: string) => {
     toast.error(reason)
+    setScanning(false)
+  }, [])
+
+  const handleSpoof = useCallback(() => {
+    toast.error(
+      'La camara ve una imagen plana, no un rostro. El enrolamiento debe hacerse con la persona presente.'
+    )
     setScanning(false)
   }, [])
 
@@ -121,7 +132,11 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
 
       {selectedEmployee && scanning && (
         <>
-          <FaceScan onEmbedding={handleEmbedding} onUnavailable={handleUnavailable} />
+          <FaceScan
+            onEmbedding={handleEmbedding}
+            onUnavailable={handleUnavailable}
+            onSpoof={handleSpoof}
+          />
           <button
             type="button"
             onClick={() => setScanning(false)}

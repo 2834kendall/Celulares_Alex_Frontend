@@ -3,7 +3,8 @@ import { verifyFace } from './verifyFace'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
-import { encryptVector } from '@/modules/attendance/lib/face/faceCrypto'
+import { encryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
+import type { LivenessProof } from '@/modules/attendance/lib/face/livenessProof'
 import { verifyFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 import { FACE_EMBEDDING_DIM } from '@/modules/attendance/lib/face/model'
 
@@ -28,8 +29,10 @@ function vecAtDistance(d: number): number[] {
 
 const PROBE = vecAtDistance(0)
 
-async function encryptedProbe() {
-  return encryptVector(PROBE, KEY)
+const LIVE: LivenessProof = { method: 'textura', score: 0.98, samples: 6 }
+
+async function encryptedProbe(liveness: unknown = LIVE) {
+  return encryptFacePayload({ vector: PROBE, liveness }, KEY)
 }
 
 const HISTORIAL = {
@@ -252,5 +255,91 @@ describe('verifyFace (server action)', () => {
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los datos biometricos.' })
+  })
+
+  /**
+   * SGRH-80. Estas pruebas son la red que evita que la prueba de vida vuelva a
+   * quedar desconectada sin que nadie lo note: no verifican que el chequeo
+   * FUNCIONE (de eso se encarga antispoof.test.ts) sino que este EXIGIDO. La
+   * ausencia de esa distincion fue lo que dejo pasar la regresion anterior.
+   */
+  describe('exigencia de prueba de vida', () => {
+    function conVectorCoincidente() {
+      mockCreateClient.mockResolvedValue(
+        createSupabaseClientMock({
+          sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+          sgrh_historial_laboral: HISTORIAL,
+          sgrh_biometria_empleado: {
+            data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],
+            error: null,
+          },
+        }) as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+    }
+
+    it('no emite ticket si el payload no trae prueba de vida', async () => {
+      conVectorCoincidente()
+
+      // Vector identico al enrolado: sin la guarda de vida esto seria un MATCH
+      // de confianza alta. Es exactamente el caso de la foto.
+      const sinPrueba = await encryptFacePayload({ vector: PROBE } as never, KEY)
+      const result = await verifyFace({ vector: sinPrueba, dispositivoId: null })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('no emite ticket si la prueba de vida viene nula', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({
+        vector: await encryptedProbe(null),
+        dispositivoId: null,
+      })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('rechaza una prueba de vida con metodo desconocido', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({
+        vector: await encryptedProbe({ method: 'inventado', ratio: 1, motion: 1 }),
+        dispositivoId: null,
+      })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('rechaza un puntaje fuera del rango 0..1', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({
+        vector: await encryptedProbe({ method: 'textura', score: 1.5, samples: 6 }),
+        dispositivoId: null,
+      })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('rechaza una prueba sin muestras que la respalden', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({
+        vector: await encryptedProbe({ method: 'textura', score: 0.99, samples: 0 }),
+        dispositivoId: null,
+      })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('emite ticket valido cuando la prueba de vida esta presente', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok || result.status !== 'MATCH') throw new Error('esperaba MATCH')
+      await expect(verifyFaceTicket(result.ticket, 10, TICKET_SECRET)).resolves.toBe(true)
+    })
   })
 })

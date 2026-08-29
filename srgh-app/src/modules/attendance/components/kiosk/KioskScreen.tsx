@@ -36,13 +36,36 @@ interface FaceVerified {
 }
 
 /**
+ * Motivo del rechazo, para poder decir algo util en vez de un error generico.
+ * 'foto' lo decide el cliente y ni siquiera llega al servidor; 'no_reconocido'
+ * viene de verifyFace tras comparar contra los enrolados.
+ */
+type Rejection = 'no_reconocido' | 'foto'
+
+const REJECTION_TEXT: Record<Rejection, { titulo: string; detalle: string }> = {
+  no_reconocido: {
+    titulo: 'Rostro no reconocido',
+    detalle:
+      'No se encontro coincidencia con el personal de esta sucursal. El intento quedo registrado.',
+  },
+  foto: {
+    titulo: 'Necesitamos a la persona',
+    detalle:
+      'La camara esta viendo una imagen, no a una persona. Marca mirando directo a la camara, o usa tu PIN.',
+  },
+}
+
+/**
  * Kiosco compartido de sucursal: los empleados NO inician sesion, solo la
  * cuenta KIOSCO tiene sesion (permanente en la tablet).
  *
  * Identificacion en cascada:
- * 1. FACIAL (primario, solo online y con llave configurada): FaceScan captura
- *    el rostro con prueba de vida, el vector viaja cifrado y verifyFace
- *    responde MATCH / REQUIRE_PIN / DENIED.
+ * 1. FACIAL (primario, solo online y con llave configurada): FaceScan confirma
+ *    que hay una persona real —no una foto ni una pantalla— con la prueba de
+ *    vida por analisis de material (ver antispoof.ts), el vector viaja cifrado con
+ *    esa prueba, y verifyFace responde MATCH / REQUIRE_PIN / DENIED. Si el
+ *    clasificador detecta una reproduccion, se rechaza sin consultar al
+ *    servidor.
  * 2. MANUAL con PIN: si la camara fallo, el resultado fue REQUIRE_PIN o el
  *    dispositivo esta offline (la camara se deshabilita de inmediato sin
  *    red), el empleado elige su nombre e ingresa su PIN.
@@ -56,7 +79,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
   const [successLabel, setSuccessLabel] = useState<string | null>(null)
   const [verified, setVerified] = useState<FaceVerified | null>(null)
   const [manualMode, setManualMode] = useState(false)
-  const [denied, setDenied] = useState(false)
+  const [rejection, setRejection] = useState<Rejection | null>(null)
 
   const { isOnline, pendingCount, submitMark } = useOfflineSync()
 
@@ -64,7 +87,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
   // Sin internet la camara queda deshabilitada DE INMEDIATO: la verificacion
   // facial necesita al servidor (los vectores enrolados nunca bajan al
   // dispositivo), asi que offline el unico respaldo de identidad es el PIN.
-  const faceActive = faceConfigured && isOnline && !manualMode && !verified && !denied
+  const faceActive = faceConfigured && isOnline && !manualMode && !verified && !rejection
 
   const options: SearchSelectOption[] = employees.map((e) => ({
     value: String(e.employeeId),
@@ -95,10 +118,10 @@ export function KioskScreen({ employees }: KioskScreenProps) {
   }, [successLabel])
 
   useEffect(() => {
-    if (!denied) return
-    const timeout = setTimeout(() => setDenied(false), DENIED_DISPLAY_MS)
+    if (!rejection) return
+    const timeout = setTimeout(() => setRejection(null), DENIED_DISPLAY_MS)
     return () => clearTimeout(timeout)
-  }, [denied])
+  }, [rejection])
 
   const handleFaceEmbedding = useCallback(async (payload: EncryptedVector) => {
     const result = await verifyFace({
@@ -122,7 +145,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
     }
 
     if (result.status === 'DENIED') {
-      setDenied(true)
+      setRejection('no_reconocido')
       return
     }
 
@@ -133,6 +156,14 @@ export function KioskScreen({ employees }: KioskScreenProps) {
 
   const handleFaceUnavailable = useCallback((reason: string) => {
     toast.message(reason)
+    setManualMode(true)
+  }, [])
+
+  // Superficie plana en vez de rostro: se rechaza en el cliente, sin gastar una
+  // consulta al servidor. Despues del aviso el kiosco cae al PIN, que sigue
+  // siendo un camino legitimo — quien de verdad trabaja ahi tiene su PIN.
+  const handleFaceSpoof = useCallback(() => {
+    setRejection('foto')
     setManualMode(true)
   }, [])
 
@@ -189,14 +220,12 @@ export function KioskScreen({ employees }: KioskScreenProps) {
     )
   }
 
-  if (denied) {
+  if (rejection) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
         <ShieldX className="h-24 w-24 text-red-600" />
-        <p className="text-3xl font-bold">Rostro no reconocido</p>
-        <p className="max-w-sm text-base text-slate-600">
-          No se encontro coincidencia con el personal de esta sucursal. El intento quedo registrado.
-        </p>
+        <p className="text-3xl font-bold">{REJECTION_TEXT[rejection].titulo}</p>
+        <p className="max-w-sm text-base text-slate-600">{REJECTION_TEXT[rejection].detalle}</p>
       </div>
     )
   }
@@ -223,7 +252,11 @@ export function KioskScreen({ employees }: KioskScreenProps) {
 
       {faceActive ? (
         <>
-          <FaceScan onEmbedding={handleFaceEmbedding} onUnavailable={handleFaceUnavailable} />
+          <FaceScan
+            onEmbedding={handleFaceEmbedding}
+            onUnavailable={handleFaceUnavailable}
+            onSpoof={handleFaceSpoof}
+          />
           <button
             type="button"
             onClick={() => setManualMode(true)}

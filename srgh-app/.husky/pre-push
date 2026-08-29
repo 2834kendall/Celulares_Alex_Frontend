@@ -1,0 +1,59 @@
+# Compuerta ANTES de que el codigo salga de la maquina. Aca viven las
+# verificaciones caras que antes estaban en pre-commit: se commitea muchas
+# veces y se empuja una, asi que este es el lugar correcto para pagarlas.
+#
+# Que atrapa (y que no atrapaba nadie antes de existir este hook):
+#   - typecheck: NINGUN hook lo corria. Un error de tipos se podia commitear y
+#     empujar, y solo lo veia el CI varios minutos despues.
+#   - tests relacionados con TODO lo que va en el push, no solo con el ultimo
+#     commit — que es lo que revisaba el pre-commit anterior.
+#
+# El CI sigue corriendo la suite completa, lint y build: esto no lo reemplaza,
+# le evita el viaje de ida y vuelta cuando el error es evidente.
+cd srgh-app || exit 1
+
+echo "[pre-push] typecheck…"
+# --incremental reusa tsconfig.tsbuildinfo (ignorado por git): 10 s en frio
+# contra ~3 s con el cache caliente.
+pnpm exec tsc --noEmit --incremental || {
+  echo "[pre-push] typecheck fallo — push cancelado."
+  exit 1
+}
+
+# Base de comparacion para saber que va en este push.
+BASE=""
+if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  BASE=$(git rev-parse '@{u}')
+else
+  # Rama que todavia no existe en el remoto: comparar contra la principal.
+  for ref in origin/dev origin/main; do
+    if git rev-parse --verify "$ref" >/dev/null 2>&1; then
+      BASE=$(git merge-base HEAD "$ref" 2>/dev/null) && break
+    fi
+  done
+fi
+
+if [ -z "$BASE" ]; then
+  # Sin punto de comparacion no se puede acotar el alcance. Antes que dejar
+  # pasar algo sin probar, se corre la suite completa.
+  echo "[pre-push] sin base de comparacion — suite completa…"
+  pnpm exec vitest run || {
+    echo "[pre-push] tests fallaron — push cancelado."
+    exit 1
+  }
+  exit 0
+fi
+
+FILES=$(git diff --name-only --relative --diff-filter=ACM "$BASE"...HEAD -- 'src/**/*.ts' 'src/**/*.tsx')
+
+if [ -z "$FILES" ]; then
+  echo "[pre-push] sin cambios en src/ — nada que probar."
+  exit 0
+fi
+
+echo "[pre-push] tests relacionados…"
+# shellcheck disable=SC2086  # se quiere el split por palabras: es una lista.
+pnpm exec vitest related --run $FILES || {
+  echo "[pre-push] tests fallaron — push cancelado."
+  exit 1
+}
