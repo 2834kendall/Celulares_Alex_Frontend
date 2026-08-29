@@ -40,6 +40,21 @@ interface PeriodoDetailProps {
 }
 
 /**
+ * Línea de cuenta bajo el nombre del empleado. Son TRES estados, no dos: desde
+ * que la cuenta se guarda cifrada puede haber una registrada que no se pudo
+ * descifrar, y eso no es lo mismo que no tenerla. Quien arma la transferencia
+ * necesita distinguirlo — en un caso hay que pedirle los datos al empleado, en
+ * el otro el dato existe y el problema es técnico.
+ */
+function textoCuenta(d: DetalleNominaItem): string {
+  if (d.numeroCuenta) {
+    return `${d.bancoNombre ? d.bancoNombre + ' · ' : ''}${formatIban(d.numeroCuenta)}`
+  }
+  if (d.cuentaIlegible) return 'Cuenta registrada, ilegible — avisa a soporte'
+  return 'Sin cuenta IBAN registrada'
+}
+
+/**
  * Cabecera del periodo + tabla de planilla. La edición manual de ingresos
  * (BASE, FERIADO, COMISION, HORAS_EXTRA, AJUSTE) solo se ofrece mientras el
  * periodo está en borrador — igual que la subida de Excel.
@@ -266,11 +281,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     <p className="break-words text-sm font-semibold text-slate-900">
                       {d.empleadoNombre}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-slate-400">
-                      {d.numeroCuenta
-                        ? `${d.bancoNombre ? d.bancoNombre + ' · ' : ''}${formatIban(d.numeroCuenta)}`
-                        : 'Sin cuenta IBAN registrada'}
-                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">{textoCuenta(d)}</p>
                   </div>
                   <EstadoPago detalle={d} />
                 </div>
@@ -372,16 +383,9 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     <tr className="border-b border-slate-50 last:border-0">
                       <td className="px-3 py-2">
                         <p className="font-semibold text-slate-900">{d.empleadoNombre}</p>
-                        {d.numeroCuenta ? (
-                          <p className="mt-0.5 text-[11px] font-normal text-slate-400">
-                            {d.bancoNombre ? `${d.bancoNombre} · ` : ''}
-                            {formatIban(d.numeroCuenta)}
-                          </p>
-                        ) : (
-                          <p className="mt-0.5 text-[11px] font-normal text-slate-400">
-                            Sin cuenta IBAN registrada
-                          </p>
-                        )}
+                        <p className="mt-0.5 text-[11px] font-normal text-slate-400">
+                          {textoCuenta(d)}
+                        </p>
                       </td>
                       <td className="px-3 py-2 text-right text-slate-600">
                         {formatCRC(d.salarioBruto)}

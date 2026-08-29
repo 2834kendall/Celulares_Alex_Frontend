@@ -25,6 +25,7 @@ import { EmployeeWizardStepUsuario } from './EmployeeWizardStepUsuario'
 import { Button } from '@/components/ui/Button'
 import { META_LABEL, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const STEPS: WizardStep[] = [
   { id: 'personal', label: 'Información principal' },
@@ -191,6 +192,14 @@ export function EmployeeWizard({
   const [step, setStep] = useState(0)
   const [crearUsuario, setCrearUsuario] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  // Alta en espera de que el usuario confirme una cuenta bancaria repetida.
+  const [duplicado, setDuplicado] = useState<{
+    mensaje: string
+    values: OnboardingEmpleadoInput
+  } | null>(null)
+  // El reintento tras confirmar no pasa por handleSubmit, así que isSubmitting
+  // no lo cubre y los botones quedarían habilitados durante el alta.
+  const [reintentando, setReintentando] = useState(false)
   // Fuera de RHF: un File no viaja por el schema Zod ni por createEmployee
   // (que aún no tiene emp_id). Se sube en onSubmit, tras crear el empleado.
   const [foto, setFoto] = useState<File | null>(null)
@@ -255,10 +264,33 @@ export function EmployeeWizard({
   }
 
   async function onSubmit(values: OnboardingEmpleadoInput) {
+    await crearEmpleado(values)
+  }
+
+  async function confirmarDuplicado() {
+    if (!duplicado) return
+    const { values } = duplicado
+    setDuplicado(null)
+    setReintentando(true)
+    try {
+      await crearEmpleado(values, true)
+    } finally {
+      setReintentando(false)
+    }
+  }
+
+  async function crearEmpleado(values: OnboardingEmpleadoInput, confirmado = false) {
     setServerError(null)
 
-    const result = await createEmployee(values)
+    const result = await createEmployee({ ...values, confirmar_cuenta_duplicada: confirmado })
     if (!result.ok) {
+      // La cuenta ya está registrada para otro empleado de la empresa. Puede
+      // ser legítimo (cuenta compartida), así que se pregunta en vez de
+      // bloquear — y el alta se reintenta entera con el flag.
+      if (result.requiereConfirmacion) {
+        setDuplicado({ mensaje: result.error, values })
+        return
+      }
       setServerError(result.error)
       return
     }
@@ -389,7 +421,7 @@ export function EmployeeWizard({
             <button
               type="button"
               onClick={goBack}
-              disabled={step === 0 || isSubmitting}
+              disabled={step === 0 || isSubmitting || reintentando}
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-40"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Anterior
@@ -399,8 +431,8 @@ export function EmployeeWizard({
                 el click de "Siguiente" mutaría a type=submit durante el evento
                 y el navegador enviaría el form al llegar al último paso. */}
             {isLastStep ? (
-              <Button key="submit" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
+              <Button key="submit" type="submit" disabled={isSubmitting || reintentando}>
+                {isSubmitting || reintentando ? (
                   <Loader2 className={SPINNER} />
                 ) : (
                   <UserPlus className="h-3.5 w-3.5" />
@@ -419,6 +451,16 @@ export function EmployeeWizard({
           </div>
         </form>
       </FormProvider>
+
+      {duplicado && (
+        <ConfirmDialog
+          title="Cuenta bancaria repetida"
+          message={duplicado.mensaje}
+          confirmLabel="Crear de todos modos"
+          onCancel={() => setDuplicado(null)}
+          onConfirm={confirmarDuplicado}
+        />
+      )}
     </div>
   )
 }

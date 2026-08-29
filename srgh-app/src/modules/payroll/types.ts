@@ -72,10 +72,12 @@ export interface DetalleNominaItem {
   salarioPorHora: number
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
   incapacidad: IncapacidadItem | null
-  /** Cuenta IBAN para la transferencia (sgrh_empleado_datos_pago.edp_numero_cuenta). Null si el empleado no tiene datos de pago cargados. */
+  /** Cuenta IBAN para la transferencia, ya DESCIFRADA (sgrh_empleado_datos_pago.edp_numero_cuenta). Null si el empleado no tiene datos de pago cargados, o si los tiene pero no se pudieron descifrar — ver cuentaIlegible. */
   numeroCuenta: string | null
   /** Nombre del banco de esa cuenta (sgrh_cat_bancos.ban_nombre). Null si no hay cuenta o el banco no está definido. */
   bancoNombre: string | null
+  /** true cuando el empleado SÍ tiene cuenta registrada pero no se pudo descifrar. Distinto de "no cargó datos de pago", y hay que mostrarlo distinto: quien arma la transferencia necesita saber que el problema es técnico y no una omisión del empleado. */
+  cuentaIlegible: boolean
 }
 
 /**

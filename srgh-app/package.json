@@ -28,7 +28,8 @@
     "supabase:seed:demo": "supabase db query --linked -f supabase/seeds/99_demo/01_empresa_sucursales.sql && supabase db query --linked -f supabase/seeds/99_demo/02_usuarios_roles.sql",
     "supabase:db:reset": "supabase db reset",
     "supabase:db:diff": "supabase db diff --linked",
-    "supabase:diagnose": "node scripts/diagnose-target-db.mjs"
+    "supabase:diagnose": "node scripts/diagnose-target-db.mjs",
+    "encrypt:payment-data": "node --env-file=.env.local --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/encrypt-payment-data.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

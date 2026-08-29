@@ -227,12 +227,18 @@ export function EmployeeDetail({
                     : '—'
                 }
               />
+              {/* Tres estados, no dos: 'No se pudo descifrar' NO es '—'. Un
+                  guión haría creer que el empleado nunca cargó su cuenta, y es
+                  justo lo que llevaría a alguien a "corregirla" guardando el
+                  formulario en blanco encima del dato cifrado. */}
               <InfoItem
                 label="Número de cuenta"
                 value={
-                  empleado.datos_pago?.edp_numero_cuenta
-                    ? formatIbanGroups(empleado.datos_pago.edp_numero_cuenta)
-                    : '—'
+                  empleado.datos_pago?.cuenta_ilegible
+                    ? 'No se pudo descifrar'
+                    : empleado.datos_pago?.edp_numero_cuenta
+                      ? formatIbanGroups(empleado.datos_pago.edp_numero_cuenta)
+                      : '—'
                 }
               />
             </dl>

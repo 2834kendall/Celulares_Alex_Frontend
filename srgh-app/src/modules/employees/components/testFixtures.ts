@@ -85,6 +85,7 @@ export const EMPLEADO_DETALLE: EmpleadoDetalle = {
     banco_nombre: 'BAC Credomatic',
     edp_tipo_cuenta: 'AHORRO',
     edp_numero_cuenta: null,
+    cuenta_ilegible: false,
   },
   direccion: {
     dir_distrito_id: 121,

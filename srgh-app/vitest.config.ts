@@ -66,11 +66,14 @@ export default defineConfig({
       // Cobertura 100% exigida sobre el modulo de auth y permisos.
       // lib/storage entra tambien: paths.ts y validation.ts son el codigo que
       // decide el aislamiento entre empresas y que bytes entran al sistema.
+      // lib/crypto por el mismo criterio: cifra los datos de pago at-rest, y un
+      // fallo suyo no se nota mirando la UI — se nota cuando el dato ya se perdio.
       include: [
         'src/modules/auth/**/*.{ts,tsx}',
         'src/lib/auth/**/*.ts',
         'src/lib/permissions/**/*.ts',
         'src/lib/storage/**/*.ts',
+        'src/lib/crypto/**/*.ts',
         'src/hooks/usePermisos.ts',
         'src/components/layout/Sidebar.tsx',
       ],

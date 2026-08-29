@@ -197,10 +197,24 @@ export const datosPagoSchema = z
       })
     }
     // Que el IBAN pertenezca al banco elegido se verifica en el servidor
-    // (updateEmployee y la RPC), que es quien conoce sgrh_cat_bancos.ban_codigo.
-  }) satisfies z.ZodType<Omit<DatosPagoInsert, 'edp_id' | 'edp_empleado_id' | 'edp_created_at'>>
+    // (validateDatosPago), que es quien conoce sgrh_cat_bancos.ban_codigo.
+    //
+    // edp_cuenta_hmac queda fuera del schema a propósito: lo calcula el servidor
+    // a partir del número ya normalizado. Si viniera del formulario, el cliente
+    // podría desalinearlo del ciphertext y envenenar la detección de duplicados.
+  }) satisfies z.ZodType<
+  Omit<DatosPagoInsert, 'edp_id' | 'edp_empleado_id' | 'edp_created_at' | 'edp_cuenta_hmac'>
+>
 
 export type DatosPagoInput = z.infer<typeof datosPagoSchema>
+
+// El número de cuenta se guarda cifrado, así que la base no puede tener un
+// UNIQUE sobre él; la detección de cuentas repetidas se hace comparando el
+// índice ciego (HMAC) en validateDatosPago. Como una cuenta compartida es
+// legítima (cónyuges, por ejemplo) la detección no bloquea: devuelve
+// requiereConfirmacion, la UI pregunta, y el reenvío llega con este flag en
+// true. Vive fuera de datosPagoSchema porque no es una columna de la tabla.
+const confirmarCuentaDuplicada = z.boolean().optional()
 
 // ─── Schema de dirección ─────────────────────────────────────────────────────
 // Vive en sgrh_direcciones, tabla genérica compartida con empresas y sucursales.
@@ -240,6 +254,7 @@ export const editarFichaEmpleadoSchema = z.object({
   // Obligatoria: si se abre el formulario, se guarda una dirección válida.
   direccion: direccionSchema,
   datos_pago: datosPagoSchema.optional(),
+  confirmar_cuenta_duplicada: confirmarCuentaDuplicada,
 })
 
 export type EditarFichaEmpleadoInput = z.infer<typeof editarFichaEmpleadoSchema>
@@ -325,6 +340,7 @@ export const onboardingEmpleadoSchema = z.object({
   contratacion: crearHistorialLaboralSchema,
   datos_pago: datosPagoSchema.optional(),
   usuario: crearUsuarioEmpleadoSchema.optional(),
+  confirmar_cuenta_duplicada: confirmarCuentaDuplicada,
 })
 
 export type OnboardingEmpleadoInput = z.infer<typeof onboardingEmpleadoSchema>
@@ -401,9 +417,15 @@ export type EmpleadoDetalle = EmpleadoRow & {
     | null
   // null cuando el empleado no tiene datos de pago registrados O cuando el rol
   // del usuario no alcanza para verlos (la RLS de la tabla oculta las filas).
+  //
+  // edp_numero_cuenta llega DESCIFRADO. Ojo con cuenta_ilegible: distingue "no
+  // hay cuenta registrada" de "hay una cuenta cifrada que no se pudo descifrar".
+  // Son estados distintos y colapsarlos pierde datos — un formulario en blanco
+  // que se guarda escribe null encima del ciphertext, irreversible.
   datos_pago:
     | (Pick<DatosPagoRow, 'edp_banco_id' | 'edp_tipo_cuenta' | 'edp_numero_cuenta'> & {
         banco_nombre: string | null
+        cuenta_ilegible: boolean
       })
     | null
   // null solo para empleados creados antes de que el formulario capturara

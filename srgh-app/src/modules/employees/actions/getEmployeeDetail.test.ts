@@ -3,16 +3,23 @@ import { getEmployeeDetail } from './getEmployeeDetail'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { getStorageProvider } from '@/lib/storage'
+import { decryptField } from '@/lib/crypto/fieldCrypto'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { StorageProvider } from '@/lib/storage/types'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 vi.mock('@/lib/storage', () => ({ getStorageProvider: vi.fn() }))
+// fieldCrypto importa 'server-only', que revienta fuera de Next.js (ver
+// planillaExcel.test.ts). El descifrado real se prueba en fieldCrypto.core.test.ts;
+// acá interesa cómo se propagan sus TRES estados al DTO.
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/crypto/fieldCrypto', () => ({ decryptField: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockGetStorageProvider = vi.mocked(getStorageProvider)
+const mockDecryptField = vi.mocked(decryptField)
 
 function mockProvider(overrides: Partial<StorageProvider> = {}) {
   const provider = {
@@ -52,6 +59,8 @@ describe('getEmployeeDetail (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue(CLAIMS)
+    // Por defecto la cuenta se descifra bien y devuelve lo que hay guardado.
+    mockDecryptField.mockImplementation(async (stored) => ({ ok: true, value: stored }))
   })
 
   it('rechaza ids inválidos sin tocar permisos ni DB', async () => {
@@ -124,8 +133,44 @@ describe('getEmployeeDetail (server action)', () => {
       banco_nombre: 'BAC Credomatic',
       edp_tipo_cuenta: 'AHORRO',
       edp_numero_cuenta: 'CR02010200000000000001',
+      cuenta_ilegible: false,
     })
     expect(result.data).not.toHaveProperty('sgrh_cat_tipos_identificacion')
+    // El índice ciego es de uso interno: no puede salir en ningún DTO.
+    expect(result.data.datos_pago).not.toHaveProperty('edp_cuenta_hmac')
+  })
+
+  it('marca cuenta_ilegible cuando el número no se pudo descifrar', async () => {
+    mockDecryptField.mockResolvedValue({ ok: false })
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: HISTORIAL_ROW, error: null },
+        sgrh_empleado_datos_pago: {
+          data: {
+            edp_banco_id: 3,
+            edp_tipo_cuenta: 'AHORRO',
+            edp_numero_cuenta: 'v1:rota:rota',
+            sgrh_cat_bancos: { ban_nombre: 'BAC Credomatic' },
+          },
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    // La distinción es la que impide el borrado silencioso: si esto llegara
+    // como un datos_pago null cualquiera, el formulario se pintaría vacío y el
+    // siguiente guardado escribiría null encima del ciphertext.
+    expect(result.data.datos_pago).toMatchObject({
+      edp_numero_cuenta: null,
+      cuenta_ilegible: true,
+      banco_nombre: 'BAC Credomatic',
+    })
   })
 
   it('devuelve historial y datos de pago null cuando no existen (o la RLS los oculta)', async () => {
