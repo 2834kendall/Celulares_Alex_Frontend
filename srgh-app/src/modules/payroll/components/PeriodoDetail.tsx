@@ -29,7 +29,7 @@ import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePaga
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
 import { ICON_CONTROL_BASE, ICON_CONTROL_TONES, IconButton } from '@/components/ui/IconButton'
-import { META_LABEL, TABLE_TH, TABLE_TH_RIGHT } from '@/components/ui/styles'
+import { META_LABEL, TABLE_DESKTOP_WRAP, TABLE_TH, TABLE_TH_RIGHT } from '@/components/ui/styles'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
 
@@ -350,7 +350,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
             ))}
           </ul>
 
-          <div className="hidden @3xl:block @3xl:overflow-x-auto">
+          <div className={TABLE_DESKTOP_WRAP}>
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">

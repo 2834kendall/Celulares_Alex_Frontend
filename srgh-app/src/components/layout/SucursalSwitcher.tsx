@@ -107,7 +107,7 @@ export function SucursalSwitcher({
         onChange={elegir}
         disabled={pending}
         className="min-w-0 max-w-[8rem] md:max-w-[12rem]"
-        triggerClassName="flex w-full items-center gap-1.5 rounded-full border border-[var(--sidebar-border)] bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--sidebar-text-strong)] outline-none transition hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-frame-500/60 disabled:cursor-not-allowed disabled:opacity-60"
+        triggerClassName="flex w-full items-center gap-1.5 rounded-full border border-[var(--sidebar-border)] bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--sidebar-text-strong)] outline-none transition hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60"
         options={options}
       />
     </div>

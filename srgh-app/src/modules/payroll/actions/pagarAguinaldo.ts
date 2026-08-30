@@ -4,16 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { hoyLocal } from '@/modules/payroll/lib/fechas'
 
 export type PagarAguinaldoResult = { ok: true } | { ok: false; error: string }
-
-/** 'YYYY-MM-DD' en horario local, sin pasar por Date→ISOString (evita el corrimiento UTC). */
-function hoyLocal(): string {
-  const hoy = new Date()
-  const mes = String(hoy.getMonth() + 1).padStart(2, '0')
-  const dia = String(hoy.getDate()).padStart(2, '0')
-  return `${hoy.getFullYear()}-${mes}-${dia}`
-}
 
 /**
  * Marca el aguinaldo de un empleado, para un año de ciclo dado, como pagado.

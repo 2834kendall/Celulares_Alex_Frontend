@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/Button'
 import { ICON_CONTROL_BASE, IconButton } from '@/components/ui/IconButton'
 import {
   META_LABEL,
+  TABLE_DESKTOP_WRAP,
   TABLE_HEAD,
   TABLE_ROW,
   TABLE_TD,
@@ -282,7 +283,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
             ))}
           </ul>
 
-          <div className="hidden @3xl:block @3xl:overflow-x-auto">
+          <div className={TABLE_DESKTOP_WRAP}>
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>

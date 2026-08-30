@@ -9,13 +9,10 @@
  */
 
 import { TOPE_HORAS_NORMALES_QUINCENAL } from './planilla'
+import { round2 } from '@/modules/payroll/lib/numeros'
 
 /** Cada hora extra se paga a tiempo y medio (1.5×) — mismo factor que ya usaba el concepto HORAS_EXTRA. */
 export const FACTOR_HORAS_EXTRA = 1.5
-
-function round2(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
-}
 
 /** Horas por encima del tope normal de la quincena (0 si no hay). */
 export function calcularHorasExtraPendientes(horasTrabajadas: number): number {

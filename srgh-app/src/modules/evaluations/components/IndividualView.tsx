@@ -13,8 +13,9 @@ import {
   UserRound,
 } from 'lucide-react'
 import type { CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
-import { classifyScore, initialsOf } from '@/modules/evaluations/lib/scoring'
-import { usePagination } from '@/modules/evaluations/hooks/usePagination'
+import { classifyScore } from '@/modules/evaluations/lib/scoring'
+import { Avatar } from '@/components/ui/Avatar'
+import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { CollaboratorSearchSelect } from './CollaboratorSearchSelect'
 import { EditNotesModal, type NotesField } from './EditNotesModal'
@@ -116,9 +117,12 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[18rem_1fr]">
         <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
           <div className="flex flex-col items-center gap-2 text-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 text-lg font-bold text-brand-700 ring-4 ring-brand-100/60">
-              {initialsOf(selected.fullName)}
-            </span>
+            <Avatar
+              size="lg"
+              fotoUrl={selected.fotoUrl}
+              nombre={selected.fullName}
+              className="ring-4 ring-brand-100/60"
+            />
             <div>
               <p className="text-sm font-bold text-slate-900">{selected.fullName}</p>
               <p className="text-xs font-medium text-slate-500">

@@ -6,12 +6,14 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
 import { marcaTipoSchema } from '@/modules/attendance/types'
+import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 
 interface EmployeeJoin {
   emp_id: number
   emp_nombre: string
   emp_apellido_1: string
   emp_apellido_2: string | null
+  emp_foto_path: string | null
 }
 
 interface PositionJoin {
@@ -58,6 +60,8 @@ export interface DailyAttendanceRow {
   employmentHistoryId: number
   employeeId: number
   fullName: string
+  /** URL firmada de la foto, o null si no tiene (el Avatar cae a iniciales). */
+  fotoUrl: string | null
   position: string | null
   branchId: number
   isDayOff: boolean
@@ -106,7 +110,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       lab_id,
       lab_empleado_id,
       lab_sucursal_id,
-      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2 ),
+      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_foto_path ),
       sgrh_cat_puestos ( pue_nombre )
     `
     )
@@ -182,6 +186,11 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     marksByHistoryId.set(m.mar_historial_laboral_id, list)
   }
 
+  // Una sola firma para toda la jornada (ver signEmployeePhotos).
+  const fotoUrls = await signEmployeePhotos(
+    employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)
+  )
+
   const data: DailyAttendanceRow[] = employmentHistory.map((h) => {
     const employee = h.sgrh_empleados
     const fullName = employee
@@ -215,6 +224,8 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       employmentHistoryId: h.lab_id,
       employeeId: h.lab_empleado_id,
       fullName,
+      // emp_foto_path nunca cruza al cliente: solo la URL firmada opaca.
+      fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,
       position: h.sgrh_cat_puestos?.pue_nombre ?? null,
       branchId: h.lab_sucursal_id,
       isDayOff: assignment?.prg_es_dia_libre ?? false,

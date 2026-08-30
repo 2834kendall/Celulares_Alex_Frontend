@@ -15,6 +15,7 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
     employmentHistoryId: 1,
     employeeId: 10,
     fullName: 'Ana Perez',
+    fotoUrl: null,
     position: 'Cajera',
     branchId: 100,
     isDayOff: false,

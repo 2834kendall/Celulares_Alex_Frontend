@@ -32,9 +32,29 @@ export function lighten(hex: string, amount: number): string {
   return rgbToHex([r + (255 - r) * amount, g + (255 - g) * amount, b + (255 - b) * amount])
 }
 
-/** Luminancia relativa (0-1): >0.5 se trata como color "claro". */
+/**
+ * Luminancia relativa segun WCAG 2.x (0 = negro, 1 = blanco).
+ *
+ * El paso clave es LINEALIZAR cada canal sRGB antes de ponderarlo: los
+ * valores de un hex vienen con correccion gamma aplicada, y ponderarlos tal
+ * cual da un numero que no corresponde a la luz que realmente emite la
+ * pantalla. Esta funcion hacia justo eso —promediar los canales crudos— y el
+ * resultado subestimaba el contraste entre un 80% y un 195%: por ejemplo el
+ * texto base de la app sobre su fondo daba 7.4:1 cuando en realidad es
+ * 17.5:1. Cualquiera que la usara para auditar accesibilidad veia fallas
+ * inexistentes.
+ *
+ * OJO: NO sirve para preguntarse "este color es claro u oscuro?" con un
+ * umbral de 0.5. La curva gamma hunde los tonos medios (un gris #969696 da
+ * 0.32, o sea "oscuro"), pero sobre ese gris el texto legible es el OSCURO,
+ * no el claro. Para esa decision hay que comparar contrastes, que es lo que
+ * hace `deriveSidebarTokens`.
+ */
 export function relativeLuminance(hex: string): number {
-  const [r, g, b] = hexToRgb(hex).map((c) => c / 255)
+  const [r, g, b] = hexToRgb(hex).map((canal) => {
+    const s = canal / 255
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+  })
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
@@ -96,13 +116,18 @@ function hslToHex(h: number, s: number, l: number): string {
  * practica da tonos chillones o mal combinados (ej. verde oliva sobre azul
  * marino). Prueba varios matices desplazados del de la barra, con
  * saturacion/luminosidad bajas ("empresarial", nunca neon), y se queda con
- * el que mas se acerca a un contraste moderado (~2.3, suficiente para
+ * el que mas se acerca a un contraste moderado (~3, suficiente para
  * distinguirse sin chocar) en vez del que mas contraste da.
+ *
+ * El objetivo era 2.3 cuando `contrastRatio` devolvia numeros subestimados;
+ * al corregir la formula a WCAG se recalibro a 3.05, que es el valor que
+ * reproduce las mismas sugerencias que se venian dando (7 de 9 colores de
+ * prueba, incluidos los 6 presets ofrecidos, dan identico).
  */
 export function suggestAccent(sidebarHex: string): string {
   const [sidebarHue] = hexToHsl(sidebarHex)
   const desplazamientos = [150, 180, 210, -150, -180, -210]
-  const contrasteObjetivo = 2.3
+  const contrasteObjetivo = 3.05
   const saturacion = 38
   const luminosidad = 46
 
@@ -121,26 +146,52 @@ export function suggestAccent(sidebarHex: string): string {
   return mejor
 }
 
-export interface FrameTokens {
-  '--color-frame-500': string
-  '--color-frame-600': string
-  '--color-frame-700': string
-  '--color-frame-800': string
+export interface BrandTokens {
+  '--color-brand-50': string
+  '--color-brand-100': string
+  '--color-brand-200': string
+  '--color-brand-300': string
+  '--color-brand-400': string
+  '--color-brand-500': string
+  '--color-brand-600': string
+  '--color-brand-700': string
+  '--color-brand-800': string
 }
 
 /**
- * Deriva SOLO los pasos que usa el "marco" de la app (item activo del menu,
- * insignias del logo, avatar del usuario, boton primario — ver
- * `--color-frame-*` en globals.css): nunca los badges/tabs/inputs del
- * contenido de los modulos, que quedan fijos en `--color-brand-*` sin
- * importar la sucursal.
+ * Deriva la escala de marca COMPLETA a partir del color de acento de la
+ * sucursal. Es la unica escala de acento de la app (ver `--color-brand-*` en
+ * globals.css): la pintan por igual el marco (item activo del menu, logo,
+ * avatar, boton primario) y el contenido de los modulos (tabs, badges,
+ * focus rings, inputs).
+ *
+ * Antes existia una segunda escala `--color-frame-*` para el marco, y
+ * `brand` quedaba clavado en cyan para el contenido. El resultado era que
+ * una misma pantalla mezclaba dos acentos —el boton primario tomaba el color
+ * de la sucursal y el de al lado seguia cyan— y 170 de 189 usos ignoraban la
+ * plantilla elegida. Una sola escala elimina esa clase de bug de raiz: no hay
+ * forma de "olvidarse" de aplicar el tema.
+ *
+ * Los pasos 500-800 conservan exactamente los valores de la escala `frame`
+ * anterior, para que el marco no cambie de tono con la unificacion; los pasos
+ * claros (50-400) se agregan para los fondos suaves, bordes y anillos de foco
+ * que el contenido ya usaba.
+ *
+ * Los colores SEMANTICOS (emerald/amber/rose para presente/tarde/ausente) no
+ * salen de aca a proposito: comunican estado, no marca, y tienen que
+ * significar lo mismo en todas las sucursales.
  */
-export function deriveFrameTokens(hex: string): FrameTokens {
+export function deriveBrandTokens(hex: string): BrandTokens {
   return {
-    '--color-frame-500': lighten(hex, 0.12),
-    '--color-frame-600': hex,
-    '--color-frame-700': darken(hex, 0.15),
-    '--color-frame-800': darken(hex, 0.3),
+    '--color-brand-50': lighten(hex, 0.95),
+    '--color-brand-100': lighten(hex, 0.88),
+    '--color-brand-200': lighten(hex, 0.75),
+    '--color-brand-300': lighten(hex, 0.55),
+    '--color-brand-400': lighten(hex, 0.3),
+    '--color-brand-500': lighten(hex, 0.12),
+    '--color-brand-600': hex,
+    '--color-brand-700': darken(hex, 0.15),
+    '--color-brand-800': darken(hex, 0.3),
   }
 }
 
@@ -163,12 +214,22 @@ export interface SidebarTokens {
 }
 
 /**
- * Borde y texto legibles a partir de un unico color de fondo — si es claro
- * el texto se oscurece, si es oscuro se aclara, para no tener que elegir
- * "modo" a mano.
+ * Borde y texto legibles a partir de un unico color de fondo, sin tener que
+ * elegir "modo claro/oscuro" a mano.
+ *
+ * La direccion del texto (oscurecer o aclarar respecto del fondo) se decide
+ * MIDIENDO cual de las dos opciones contrasta mas, no con un umbral de
+ * luminancia. Antes era `relativeLuminance(hex) > 0.5`, que con la formula
+ * WCAG correcta se equivoca justo en los tonos medios: un gris #7a7a7a queda
+ * por debajo de 0.5 —"oscuro"— y por lo tanto recibia texto claro, cuando
+ * sobre ese gris el texto oscuro contrasta bastante mejor (4.4:1 contra
+ * 3.0:1). Comparar las dos candidatas reales elimina el umbral magico y de
+ * paso siempre elige la mas legible.
  */
 export function deriveSidebarTokens(hex: string): SidebarTokens {
-  const esClaro = relativeLuminance(hex) > 0.5
+  const textoOscuro = darken(hex, 0.85)
+  const textoClaro = lighten(hex, 0.94)
+  const esClaro = contrastRatio(textoOscuro, hex) >= contrastRatio(textoClaro, hex)
   return {
     '--sidebar-bg': hex,
     '--sidebar-border': esClaro ? darken(hex, 0.12) : lighten(hex, 0.18),

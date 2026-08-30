@@ -31,6 +31,8 @@ import {
   type EmployeeWeekRowWithAusencia,
 } from '@/modules/schedules/hooks/useWeeklyScheduleMatrix'
 import { usePagination } from '@/hooks/usePagination'
+import { Avatar } from '@/components/ui/Avatar'
+import { formatHoursValue } from '@/modules/schedules/lib/hours'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import { META_LABEL } from '@/components/ui/styles'
@@ -144,20 +146,8 @@ function formatWeekRange(startISO: string, endISO: string) {
 }
 
 /** Integers with no decimals, fractions with one (7.5 must not show as 8). */
-function formatHoursValue(hours: number) {
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
-}
-
 function formatHours(hours: number) {
   return `${formatHoursValue(hours)} Hrs`
-}
-
-function initialsOf(fullName: string) {
-  return fullName
-    .split(' ')
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join('')
 }
 
 function assignmentLabel(assignment: DayAssignmentWithAusencia) {
@@ -261,9 +251,9 @@ function ScheduleCell({
               type="button"
               onClick={onEditCustom}
               aria-label="Editar horas"
-              className="pointer-events-auto rounded-full p-0.5 outline-none transition hover:bg-white/70 focus-visible:ring-2 focus-visible:ring-violet-500/60"
+              className="pointer-events-auto rounded-full p-0.5 outline-none transition hover:bg-white/70 focus-visible:ring-2 focus-visible:ring-brand-500/60"
             >
-              <Pencil className="h-2.5 w-2.5 text-violet-500" />
+              <Pencil className="h-2.5 w-2.5 text-brand-600" />
             </button>
           )}
           {ausencia?.isIntraday && (
@@ -281,7 +271,7 @@ function ScheduleCell({
   ) : (
     <div className="flex flex-1 items-center justify-center gap-1 rounded-lg">
       {canWrite ? (
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800 text-white opacity-0 shadow-md transition group-hover/cell:opacity-100 peer-focus-visible:opacity-100">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700 text-white opacity-0 shadow-md transition group-hover/cell:opacity-100 peer-focus-visible:opacity-100">
           <Plus className="h-3.5 w-3.5" />
         </span>
       ) : (
@@ -559,9 +549,9 @@ export function WeeklyScheduleMatrix({
                     type="button"
                     onClick={() => toggleDayIndex(index)}
                     aria-pressed={active}
-                    className={`rounded-lg py-2 text-[10px] font-semibold outline-none transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-slate-400/50 pointer-coarse:min-h-11 ${
+                    className={`rounded-lg py-2 text-[10px] font-semibold outline-none transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 pointer-coarse:min-h-11 ${
                       active
-                        ? 'bg-slate-800 text-white'
+                        ? 'bg-brand-700 text-white'
                         : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                     }`}
                   >
@@ -603,9 +593,7 @@ export function WeeklyScheduleMatrix({
                   className="rounded-2xl border border-slate-200/80 bg-white p-3"
                 >
                   <div className="flex items-center gap-2.5 border-b border-slate-100 pb-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-bold text-white">
-                      {initialsOf(row.fullName)}
-                    </div>
+                    <Avatar size="md" fotoUrl={row.fotoUrl} nombre={row.fullName} />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-slate-800">{row.fullName}</p>
                       <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
@@ -709,9 +697,12 @@ export function WeeklyScheduleMatrix({
                           style={{ backgroundColor: RAIL_BG }}
                         >
                           <div className="flex items-center gap-2">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[9.5px] font-bold text-white ring-2 ring-white">
-                              {initialsOf(row.fullName)}
-                            </div>
+                            <Avatar
+                              size="xs"
+                              fotoUrl={row.fotoUrl}
+                              nombre={row.fullName}
+                              className="ring-2 ring-white"
+                            />
                             <div className="min-w-0">
                               <p className="truncate text-[12px] font-bold text-slate-800">
                                 {row.fullName}

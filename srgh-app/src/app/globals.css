@@ -25,53 +25,48 @@
 
 /*
  * Color de marca, como escala propia ("brand") en vez del "blue" de Tailwind
- * escrito a mano en 181 lugares. Es un ALIAS sobre una paleta que Tailwind ya
- * trae (hoy `cyan`, la base "Calma Profesional" elegida) — cero diferencia
- * visual, mismo valor por otro nombre.
+ * escrito a mano en 181 lugares.
+ *
+ * Es la UNICA escala de acento de la app: la usan por igual el marco (item
+ * activo del menu, insignias del logo, avatar, boton primario) y todo el
+ * contenido de los modulos (tabs, badges, inputs, focus rings). Los valores
+ * declarados aca son solo el DEFAULT del sistema — la sucursal que
+ * personalizo su color los sobreescribe en caliente desde `AppShell`, que
+ * inyecta estas mismas variables con `deriveBrandTokens()` (ver
+ * lib/utils/color.ts).
+ *
+ * Antes habia una segunda escala, `--color-frame-*`, que era la unica que
+ * seguia a la sucursal, mientras `brand` quedaba clavado en cyan para el
+ * contenido. Eso hacia que una misma pantalla mezclara dos acentos (el boton
+ * primario con el color de la sucursal, el de al lado en cyan) y que 170 de
+ * 189 usos ignoraran la plantilla elegida. Se unificaron en `brand`: si
+ * alguna vez hace falta que el marco vuelva a tener su propio color, se
+ * agrega una escala nueva a proposito, no se revive la division.
  *
  * Deliberadamente en un @theme SIN `inline` (a diferencia del bloque de
  * arriba): `inline` colapsa la cadena de variables al generar cada utilidad,
  * asi que `.bg-brand-600` habria terminado apuntando directo a
- * `var(--color-cyan-600)` — util hoy, pero el dia de la personalizacion por
- * sucursal habria que sobreescribir una variable que dice "cyan" para
- * cambiar lo que en el codigo se llama "brand". Sin `inline`, Tailwind deja
+ * `var(--color-cyan-600)` y sobreescribir `--color-brand-600` en el shell no
+ * habria tenido ningun efecto. Sin `inline`, Tailwind deja
  * `--color-brand-600` como variable propia en :root y genera
  * `.bg-brand-600 { background-color: var(--color-brand-600) }` — esa es la
- * unica variable que hay que tocar para reskinear, y su nombre coincide con
- * lo que hace.
+ * unica variable que hay que tocar para reskinear.
  *
- * Solo se declaran los tonos que el codigo realmente usa (ver auditoria:
- * 50/100/200/300/500/600/700/800) — no la escala completa de 11 pasos, que
- * solo agregaria ruido sin ningun consumidor.
+ * Se declara la escala que el codigo realmente usa (50/100/200/300/400/500/
+ * 600/700/800), no los 11 pasos completos. El 400 estuvo faltando un tiempo
+ * pese a tener un consumidor (`hover:border-brand-400` en el formulario de
+ * apariencia): Tailwind no generaba la clase y ese hover no hacia nada.
  */
 @theme {
   --color-brand-50: var(--color-cyan-50);
   --color-brand-100: var(--color-cyan-100);
   --color-brand-200: var(--color-cyan-200);
   --color-brand-300: var(--color-cyan-300);
+  --color-brand-400: var(--color-cyan-400);
   --color-brand-500: var(--color-cyan-500);
   --color-brand-600: var(--color-cyan-600);
   --color-brand-700: var(--color-cyan-700);
   --color-brand-800: var(--color-cyan-800);
-}
-
-/*
- * Escala separada ("frame") para el color de acento POR SUCURSAL — a
- * proposito una variable distinta de `--color-brand-*`, no una
- * reasignacion. `brand` sigue fijo (badges, tabs, inputs, focus rings de
- * TODO el contenido de los modulos, en toda la app); `frame` es la unica
- * que `AppShell` sobreescribe segun la sucursal, y solo la usan el item
- * activo del menu, las insignias del logo, el avatar del usuario y el
- * boton primario (`Button` variante `primary`) — el "marco" de la app mas
- * la accion principal, como el acento de Windows en la barra de
- * tareas/bordes de ventana, nunca en badges/tabs/inputs sueltos del
- * contenido.
- */
-@theme {
-  --color-frame-500: var(--color-cyan-500);
-  --color-frame-600: var(--color-cyan-600);
-  --color-frame-700: var(--color-cyan-700);
-  --color-frame-800: var(--color-cyan-800);
 }
 
 /*

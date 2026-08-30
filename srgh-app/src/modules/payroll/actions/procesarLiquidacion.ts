@@ -9,6 +9,7 @@ import {
   calcularLiquidacion,
   calcularMesesAntiguedad,
 } from '@/modules/payroll/lib/liquidacion'
+import { parseFechaLocal } from '@/modules/payroll/lib/fechas'
 import {
   procesarLiquidacionSchema,
   type LiquidacionCalculada,
@@ -42,11 +43,6 @@ interface DetalleHistoricoRow {
 }
 
 /** Interpreta 'YYYY-MM-DD' en horario local (evita el corrimiento de Date por UTC). */
-function parseFechaLocal(fecha: string): Date {
-  const [anio, mes, dia] = fecha.split('-').map(Number)
-  return new Date(anio, mes - 1, dia)
-}
-
 /**
  * Clave comparable a nivel de quincena (no solo mes) para poder ordenar y
  * filtrar periodos correctamente cuando hay dos quincenas en el mismo mes.

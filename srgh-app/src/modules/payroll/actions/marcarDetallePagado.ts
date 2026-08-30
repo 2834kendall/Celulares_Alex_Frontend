@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
+import { hoyLocal } from '@/modules/payroll/lib/fechas'
 
 interface DetalleActualRow {
   ndt_id: number
@@ -16,14 +17,6 @@ interface DetalleActualRow {
 }
 
 export type MarcarDetallePagadoResult = { ok: true } | { ok: false; error: string }
-
-/** 'YYYY-MM-DD' en horario local, sin pasar por Date→ISOString (evita el corrimiento UTC). */
-function hoyLocal(): string {
-  const hoy = new Date()
-  const mes = String(hoy.getMonth() + 1).padStart(2, '0')
-  const dia = String(hoy.getDate()).padStart(2, '0')
-  return `${hoy.getFullYear()}-${mes}-${dia}`
-}
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 

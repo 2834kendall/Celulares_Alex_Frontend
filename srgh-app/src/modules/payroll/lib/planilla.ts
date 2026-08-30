@@ -1,3 +1,5 @@
+import { round2 } from '@/modules/payroll/lib/numeros'
+
 // Reglas de la planilla. Funciones puras — sin I/O — para poder testearlas
 // sin exceljs.
 //
@@ -11,10 +13,6 @@
 // conceptos quemados en código, todo sale del catálogo activo.
 
 /** Redondeo a 2 decimales sin sorpresas de coma flotante. */
-function round2(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
-}
-
 // ─── Motor de cálculo dinámico por conceptos ─────────────────────────────────
 // Usado por la edición manual del detalle de planilla (updateDetalleManual.ts
 // / DetalleEditForm.tsx) y por la subida de Excel (uploadPlanilla.ts /

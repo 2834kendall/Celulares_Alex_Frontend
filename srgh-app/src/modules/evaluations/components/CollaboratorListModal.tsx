@@ -2,8 +2,8 @@
 
 import { UserRound } from 'lucide-react'
 import type { CollaboratorRow } from '@/modules/evaluations/types'
-import { initialsOf } from '@/modules/evaluations/lib/scoring'
-import { usePagination } from '@/modules/evaluations/hooks/usePagination'
+import { Avatar } from '@/components/ui/Avatar'
+import { usePagination } from '@/hooks/usePagination'
 import { Modal } from '@/components/ui/Modal'
 import { Pagination } from '@/components/ui/Pagination'
 import { ScoreBadge } from './ScoreBadge'
@@ -46,9 +46,7 @@ export function CollaboratorListModal({
                   onClick={() => onSelect(c.labId)}
                   className="flex w-full items-center gap-3 px-3 py-2 text-left outline-none transition hover:bg-slate-50 focus-visible:bg-brand-50"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[10px] font-bold text-brand-700">
-                    {initialsOf(c.fullName)}
-                  </span>
+                  <Avatar size="sm" fotoUrl={c.fotoUrl} nombre={c.fullName} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-semibold text-slate-800">
                       {c.fullName}

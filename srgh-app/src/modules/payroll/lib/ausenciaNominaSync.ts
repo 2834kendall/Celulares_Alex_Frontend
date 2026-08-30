@@ -1,5 +1,6 @@
 import type { createClient } from '@/lib/supabase/server'
-import { diasSuperpuestos, parseFechaLocal, repartirDiasIncapacidad } from './incapacidad'
+import { diasSuperpuestos, repartirDiasIncapacidad } from './incapacidad'
+import { parseFechaLocal } from './fechas'
 import { periodoLabel } from './format'
 import type { PeriodoAfectadoIncapacidad } from '@/modules/payroll/types'
 

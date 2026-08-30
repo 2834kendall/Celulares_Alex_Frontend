@@ -1,5 +1,6 @@
 import { Briefcase, Building2, Mail } from 'lucide-react'
 import { BreakableEmail } from '@/components/ui/BreakableEmail'
+import { Avatar, initialsOfEmail } from '@/components/ui/Avatar'
 
 interface ProfileInfoProps {
   email: string
@@ -14,8 +15,6 @@ interface ProfileInfoProps {
  * completo (datos personales, contrato, puesto).
  */
 export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
-  const initials = email.slice(0, 2).toUpperCase()
-
   const detalles = [
     { key: 'correo', icon: Mail, etiqueta: 'Correo electronico', valor: email },
     { key: 'empresa', icon: Building2, etiqueta: 'Empresa', valor: empresaNombre },
@@ -26,9 +25,7 @@ export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
     <section className="mx-auto max-w-2xl">
       <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="flex items-center gap-4">
-          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xl font-bold text-white">
-            {initials}
-          </span>
+          <Avatar size="lg" nombre={email} iniciales={initialsOfEmail(email)} />
           <div className="min-w-0 leading-tight">
             <h1 className="text-xl font-extrabold text-slate-900">
               <BreakableEmail email={email} />

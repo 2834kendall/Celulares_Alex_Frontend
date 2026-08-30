@@ -1,3 +1,5 @@
+import { round2 } from '@/modules/payroll/lib/numeros'
+
 /**
  * Cálculo de incapacidad por enfermedad (INC_ENF), según las reglas
  * confirmadas para este sistema:
@@ -15,16 +17,7 @@
 
 const MS_POR_DIA = 1000 * 60 * 60 * 24
 
-function round2(value: number) {
-  return Math.round(value * 100) / 100
-}
-
 /** 'YYYY-MM-DD' → Date en horario local (evita el corrimiento UTC de `new Date(str)`). */
-export function parseFechaLocal(fecha: string): Date {
-  const [anio, mes, dia] = fecha.split('-').map(Number)
-  return new Date(anio, mes - 1, dia)
-}
-
 /**
  * Días (inclusive en ambos extremos) en que dos rangos de fechas se
  * traslapan. 0 si no se tocan.

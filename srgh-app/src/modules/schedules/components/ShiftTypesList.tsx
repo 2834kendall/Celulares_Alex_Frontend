@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import {
   META_LABEL,
+  TABLE_DESKTOP_WRAP,
   TABLE_HEAD,
   TABLE_TD,
   TABLE_TD_NUM,
@@ -166,7 +167,7 @@ export function ShiftTypesList({ shiftTypes, canWrite }: ShiftTypesListProps) {
             ))}
           </ul>
 
-          <div className="hidden @3xl:block @3xl:overflow-x-auto">
+          <div className={TABLE_DESKTOP_WRAP}>
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>

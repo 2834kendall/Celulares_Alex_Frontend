@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { Avatar } from './Avatar'
+import { Avatar, initialsOf } from './Avatar'
 
 describe('Avatar', () => {
   it('renderiza la imagen cuando hay fotoUrl', () => {
@@ -41,9 +41,30 @@ describe('Avatar', () => {
     expect(document.querySelector('img')).not.toBeInTheDocument()
   })
 
+  /*
+   * Regresion de SGRH-82: la copia de esta logica que vivia dentro de
+   * WeeklyScheduleMatrix no hacia toUpperCase(), asi que un colaborador
+   * cargado en minusculas ("Pepe re fr") salia como "Pr" en la matriz de
+   * turnos y como "PR" en el resto de la app. Ahora hay una sola funcion.
+   */
+  it('siempre devuelve las iniciales en mayuscula, venga como venga el nombre', () => {
+    expect(initialsOf('pepe re fr')).toBe('PR')
+    expect(initialsOf('MARIA de los Angeles')).toBe('MD')
+  })
+
+  it('tolera espacios de más entre nombres', () => {
+    expect(initialsOf('  Ana   Solis  ')).toBe('AS')
+  })
+
   it('aplica la clase de tamaño según la prop size', () => {
     const { rerender } = render(<Avatar fotoUrl={null} nombre="X Y" size="sm" />)
     expect(screen.getByText('XY')).toHaveClass('h-8', 'w-8')
+
+    rerender(<Avatar fotoUrl={null} nombre="X Y" size="xs" />)
+    expect(screen.getByText('XY')).toHaveClass('h-7', 'w-7')
+
+    rerender(<Avatar fotoUrl={null} nombre="X Y" size="lg" />)
+    expect(screen.getByText('XY')).toHaveClass('h-16', 'w-16')
 
     rerender(<Avatar fotoUrl={null} nombre="X Y" size="xl" />)
     expect(screen.getByText('XY')).toHaveClass('h-24', 'w-24')
