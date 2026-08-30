@@ -81,7 +81,7 @@ export function LoginForm() {
         className={`md:w-1/2 bg-gradient-to-br ${brandConfig.gradient} p-8 md:p-14 flex min-h-[38vh] md:min-h-screen flex-col justify-between text-white relative overflow-hidden`}
       >
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.04)_1px,transparent_1px)] bg-[size:24px_24px]" />
-        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-brand-500/10 blur-3xl" />
         <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full bg-slate-500/10 blur-3xl" />
 
         <div className="relative z-10 flex items-center gap-2.5">

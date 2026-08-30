@@ -10,7 +10,7 @@ import { SucursalSwitcher } from '@/components/layout/SucursalSwitcher'
 import type { SucursalConApariencia } from '@/lib/empresa/list-sucursales'
 import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
-import { deriveFrameTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
+import { deriveBrandTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
 import { tituloDeRuta } from '@/lib/permissions/zones'
 import { BRAND } from '@/lib/brand'
 
@@ -94,7 +94,7 @@ export function AppShell({
   // Estilo de apariencia por sucursal: si no personalizo un color, no se
   // sobrescribe nada y gana el default declarado en globals.css.
   const shellStyle = {
-    ...(colorAcento ? deriveFrameTokens(colorAcento) : {}),
+    ...(colorAcento ? deriveBrandTokens(colorAcento) : {}),
     ...(colorSidebar ? deriveSidebarTokens(colorSidebar) : {}),
     ...(colorSidebar ? { '--page-bg': derivePageBackground(colorSidebar) } : {}),
   } as React.CSSProperties
@@ -176,7 +176,7 @@ export function AppShell({
           <div className="animate-slide-in-left relative flex h-full w-72 max-w-[80vw] flex-col bg-[var(--sidebar-bg)] shadow-2xl">
             <div className="flex items-center justify-between border-b border-[var(--sidebar-border)] px-4 py-4">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-frame-700 text-xs font-black text-white">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-700 text-xs font-black text-white">
                   {empresaNombre.charAt(0)}
                 </span>
                 <div className="leading-tight">
@@ -203,7 +203,7 @@ export function AppShell({
                 aria-label="Cerrar menu"
                 className={cn(
                   ICON_CONTROL_BASE,
-                  'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-frame-500/60'
+                  'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-brand-500/60'
                 )}
               >
                 <X className="h-5 w-5" />

@@ -56,7 +56,7 @@ export function NavLinks({ permisos, onNavigate }: NavLinksProps) {
             aria-current={active ? 'page' : undefined}
             className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
               active
-                ? 'bg-frame-700 text-white'
+                ? 'bg-brand-700 text-white'
                 : 'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)]'
             }`}
           >
