@@ -5,12 +5,14 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import { hoursBetween } from '@/modules/schedules/lib/hours'
+import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 
 interface EmployeeJoin {
   emp_id: number
   emp_nombre: string
   emp_apellido_1: string
   emp_apellido_2: string | null
+  emp_foto_path: string | null
 }
 
 interface PositionJoin {
@@ -80,6 +82,8 @@ export interface EmployeeWeekRow {
   branchId: number
   branchName: string | null
   fullName: string
+  /** URL firmada de la foto, o null si no tiene (el Avatar cae a iniciales). */
+  fotoUrl: string | null
   position: string | null
   days: DayAssignment[]
   weeklyTotal: number
@@ -107,7 +111,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       lab_id,
       lab_empleado_id,
       lab_sucursal_id,
-      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2 ),
+      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_foto_path ),
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_id, suc_nombre )
     `
@@ -157,6 +161,11 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
   for (const a of assignments ?? []) {
     assignmentByCell.set(`${a.prg_historial_laboral_id}|${a.prg_fecha}`, a)
   }
+
+  // Una sola firma para toda la matriz (ver signEmployeePhotos).
+  const fotoUrls = await signEmployeePhotos(
+    employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)
+  )
 
   const data: EmployeeWeekRow[] = employmentHistory.map((h) => {
     const employee = h.sgrh_empleados
@@ -239,6 +248,8 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       branchId: h.lab_sucursal_id,
       branchName: h.sgrh_sucursales?.suc_nombre ?? null,
       fullName,
+      // emp_foto_path nunca cruza al cliente: solo la URL firmada opaca.
+      fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,
       position: position?.pue_nombre ?? null,
       days,
       weeklyTotal,

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import type { BranchOption, CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
 import { averageScore, LOW_PERFORMANCE_THRESHOLD } from '@/modules/evaluations/lib/scoring'
-import { usePagination } from '@/modules/evaluations/hooks/usePagination'
+import { usePagination } from '@/hooks/usePagination'
 import { CollaboratorListModal } from './CollaboratorListModal'
 import { Modal } from '@/components/ui/Modal'
 import { Pagination } from '@/components/ui/Pagination'
@@ -136,7 +136,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
         >
           <div className="flex items-center justify-between gap-2">
             <p className={META_LABEL}>Promedio de la sucursal</p>
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
               <Award className="h-3.5 w-3.5" />
             </span>
           </div>
@@ -386,7 +386,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
             <ul className="divide-y divide-slate-100">
               {branchAverages.map((b) => (
                 <li key={b.id} className="flex items-center gap-3 px-3 py-2">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
                     <Building2 className="h-3.5 w-3.5" />
                   </span>
                   <span className="min-w-0 flex-1">

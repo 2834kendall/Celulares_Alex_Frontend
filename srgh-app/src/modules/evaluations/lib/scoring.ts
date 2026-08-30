@@ -68,12 +68,3 @@ export function parseNotes(raw: string | null): EvaluationNotes {
 export function formatPeriod(inicio: string, fin: string): string {
   return `${inicio} a ${fin}`
 }
-
-export function initialsOf(fullName: string): string {
-  return fullName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join('')
-}

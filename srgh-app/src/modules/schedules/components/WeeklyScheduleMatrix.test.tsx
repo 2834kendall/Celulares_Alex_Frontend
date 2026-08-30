@@ -62,6 +62,7 @@ function makeRow(overrides: Partial<EmployeeWeekRow> = {}): EmployeeWeekRow {
     branchId: 100,
     branchName: 'Sucursal Central',
     fullName: 'Ana Perez',
+    fotoUrl: null,
     position: 'Cajera',
     days: makeDays(),
     weeklyTotal: 0,

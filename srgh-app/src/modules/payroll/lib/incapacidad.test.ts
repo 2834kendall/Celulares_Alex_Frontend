@@ -1,19 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  calcularMontoIncapacidad,
-  diasSuperpuestos,
-  parseFechaLocal,
-  repartirDiasIncapacidad,
-} from './incapacidad'
-
-describe('parseFechaLocal', () => {
-  it('parsea sin corrimiento de zona horaria', () => {
-    const fecha = parseFechaLocal('2026-07-15')
-    expect(fecha.getFullYear()).toBe(2026)
-    expect(fecha.getMonth()).toBe(6)
-    expect(fecha.getDate()).toBe(15)
-  })
-})
+import { calcularMontoIncapacidad, diasSuperpuestos, repartirDiasIncapacidad } from './incapacidad'
+import { parseFechaLocal } from './fechas'
 
 describe('diasSuperpuestos', () => {
   it('rango totalmente adentro de otro', () => {

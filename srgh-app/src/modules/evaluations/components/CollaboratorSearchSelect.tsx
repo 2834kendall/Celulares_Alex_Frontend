@@ -2,7 +2,7 @@
 
 import { SearchSelect, type SearchSelectOption } from '@/components/ui/SearchSelect'
 import type { CollaboratorRow } from '@/modules/evaluations/types'
-import { initialsOf } from '@/modules/evaluations/lib/scoring'
+import { Avatar } from '@/components/ui/Avatar'
 
 interface CollaboratorSearchSelectProps {
   collaborators: CollaboratorRow[]
@@ -29,11 +29,7 @@ export function CollaboratorSearchSelect({
     label: c.fullName,
     sublabel: `${c.position ?? 'Sin puesto'} • ${c.branchName}`,
     searchTerms: c.idNumber,
-    avatar: (
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[10px] font-bold text-brand-700">
-        {initialsOf(c.fullName)}
-      </span>
-    ),
+    avatar: <Avatar size="xs" fotoUrl={c.fotoUrl} nombre={c.fullName} />,
   }))
 
   return (

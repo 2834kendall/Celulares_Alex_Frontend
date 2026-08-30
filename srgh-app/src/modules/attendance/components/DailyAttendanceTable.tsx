@@ -17,6 +17,7 @@ import type {
 } from '@/modules/attendance/actions/getDailyAttendance'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
+import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import { ManualMarkModal } from '@/modules/attendance/components/ManualMarkModal'
 import type { MarkType } from '@/modules/attendance/lib/marks'
@@ -363,11 +364,14 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                     dejar dos filas identicas. La hora esperada bajo a la
                     linea de meta, igual que en la tabla.
                   */}
-                  <div className="min-w-0">
-                    <p className="break-words text-sm font-semibold text-slate-800">
-                      {row.fullName}
-                    </p>
-                    <EmployeeMeta row={row} />
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-semibold text-slate-800">
+                        {row.fullName}
+                      </p>
+                      <EmployeeMeta row={row} />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -409,8 +413,13 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                 {paginatedItems.map((row) => (
                   <tr key={row.employmentHistoryId} className={TABLE_ROW}>
                     <td className="px-3 py-2">
-                      <p className="font-medium text-slate-800">{row.fullName}</p>
-                      <EmployeeMeta row={row} />
+                      <div className="flex items-center gap-2.5">
+                        <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-800">{row.fullName}</p>
+                          <EmployeeMeta row={row} />
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
