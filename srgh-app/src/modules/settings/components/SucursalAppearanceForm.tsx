@@ -7,6 +7,7 @@ import { Loader2, RotateCcw, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { CARD, LABEL, SPINNER } from '@/components/ui/styles'
 import { updateSucursalApariencia } from '@/modules/settings/actions/updateSucursalApariencia'
+import { setSucursalPreview } from '@/modules/settings/actions/setSucursalPreview'
 import { suggestAccent } from '@/lib/utils/color'
 import { previewShellColors } from '@/modules/settings/lib/previewShell'
 
@@ -69,6 +70,33 @@ export function SucursalAppearanceForm({
   const sugerenciaAplicada =
     sugerencia !== null && sugerencia.toLowerCase() === colorAcento.toLowerCase()
 
+  /*
+   * Tema oficial VIGENTE, en una ref.
+   *
+   * La limpieza del efecto de abajo corre al desmontar, o sea despues de
+   * haber guardado; si leyera `officialColor*` directo, leeria el valor
+   * capturado en el PRIMER render (el efecto tiene deps vacias a proposito
+   * para correr solo al montar/desmontar). Eso es lo que hacia que al
+   * guardar y navegar a Inicio se repintara con los colores ANTERIORES:
+   * en pantalla el guardado se veia bien, pero al salir la limpieza
+   * clavaba encima la foto vieja. Volviendo a Configuracion el formulario
+   * montaba de nuevo y capturaba los colores frescos, y recien ahi la
+   * navegacion se comportaba — de ahi el sintoma de "la segunda vez si
+   * funciona".
+   *
+   * La ref se actualiza en cada render, asi que la limpieza siempre lee lo
+   * ultimo que llego por props.
+   */
+  const temaOficial = useRef({ acento: officialColorAcento, sidebar: officialColorSidebar })
+
+  // La ref se escribe en la fase de COMMIT, no durante el render: escribirla
+  // en el cuerpo del componente rompe con renderizado concurrente (React puede
+  // renderizar sin llegar a montar). Sin arreglo de dependencias a proposito —
+  // tiene que correr despues de CADA render para quedar siempre al dia.
+  useEffect(() => {
+    temaOficial.current = { acento: officialColorAcento, sidebar: officialColorSidebar }
+  })
+
   // El panel remonta este formulario (key={sucursal.id}) cada vez que se
   // elige otra tarjeta — este efecto corre en CADA montaje, o sea en cada
   // cambio de sucursal, y repinta el shell real con los colores YA
@@ -85,9 +113,10 @@ export function SucursalAppearanceForm({
     // color de prueba nunca se devolvia a lo que decia ese selector, se
     // quedaba pegado al de la ultima sucursal editada.
     return () => {
+      // Desde la ref, NUNCA desde las props: ver el comentario de arriba.
       previewShellColors(
-        officialColorAcento ?? DEFAULT_ACCENT,
-        officialColorSidebar ?? DEFAULT_SIDEBAR
+        temaOficial.current.acento ?? DEFAULT_ACCENT,
+        temaOficial.current.sidebar ?? DEFAULT_SIDEBAR
       )
     }
     // Solo al montar/desmontar: colorAcentoActual/colorSidebarActual son la
@@ -143,18 +172,23 @@ export function SucursalAppearanceForm({
 
     toast.success('Apariencia actualizada.')
 
-    // Vuelve a lo que dice el selector de arriba de inmediato: si la
-    // sucursal editada es OTRA distinta a la que esta activa ahi, su color
-    // oficial no cambia con este guardado, asi que el efecto de arriba
-    // (atado a que ese valor CAMBIE) nunca se dispara por si solo — hay que
-    // pedirlo explicito. Si en cambio es LA MISMA sucursal, esto repinta con
-    // el color viejo por un instante hasta que `router.refresh()` trae el
-    // nuevo (ese efecto lo corrige solo); preferible al bug de quedarse
-    // pegado en la sucursal equivocada.
-    previewShellColors(
-      officialColorAcento ?? DEFAULT_ACCENT,
-      officialColorSidebar ?? DEFAULT_SIDEBAR
-    )
+    // Guardar deja la vista puesta en la sucursal recien editada, para que
+    // los colores que se acaban de elegir sigan ahi al salir de
+    // Configuracion. Antes se repintaba el shell con el tema OFICIAL apenas
+    // terminaba el guardado, y como ese tema seguia siendo el de la sucursal
+    // propia, el efecto visible era que los colores recien guardados
+    // "desaparecian" al navegar a Inicio — el bug que se reportaba como que
+    // no se guardaba (si se guardaba: se estaba viendo otra sucursal).
+    //
+    // Cubre el caso de editar la sucursal que ya venia preseleccionada, sin
+    // haber hecho clic en ninguna tarjeta: ahi `elegirSucursal` del panel
+    // nunca corrio y la cookie de preview seguiria apuntando a otra.
+    // `sucursalId` solo llega desde ese panel (admins de empresa); un usuario
+    // con sucursal fija no tiene selector ni preview que mover.
+    if (sucursalId) {
+      await setSucursalPreview(sucursalId)
+    }
+
     router.refresh()
   }
 

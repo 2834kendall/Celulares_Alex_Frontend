@@ -6,6 +6,7 @@ import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import {
   META_LABEL,
+  TABLE_DESKTOP_WRAP,
   TABLE_HEAD,
   TABLE_TD,
   TABLE_TD_STRONG,
@@ -81,7 +82,7 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
             ))}
           </ul>
 
-          <div className="hidden @3xl:block @3xl:overflow-x-auto">
+          <div className={TABLE_DESKTOP_WRAP}>
             <table className="w-full min-w-[560px] text-left text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>

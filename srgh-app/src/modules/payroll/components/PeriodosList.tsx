@@ -13,7 +13,7 @@ import {
 } from '@/modules/payroll/lib/format'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
-import { META_LABEL, TABLE_TD, TABLE_TH } from '@/components/ui/styles'
+import { META_LABEL, TABLE_DESKTOP_WRAP, TABLE_TD, TABLE_TH } from '@/components/ui/styles'
 import { SelectMenu } from '@/components/ui/SelectMenu'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
@@ -173,7 +173,7 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
             ))}
           </ul>
 
-          <div className="hidden @3xl:block @3xl:overflow-x-auto">
+          <div className={TABLE_DESKTOP_WRAP}>
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">

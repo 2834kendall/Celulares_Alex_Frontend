@@ -1,7 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Building2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { setSucursalPreview } from '@/modules/settings/actions/setSucursalPreview'
 import { cn } from '@/lib/utils/cn'
 import { CARD } from '@/components/ui/styles'
 import { SucursalAppearanceForm } from '@/modules/settings/components/SucursalAppearanceForm'
@@ -41,10 +44,42 @@ export function SucursalAppearancePanel({
   officialColorAcento,
   officialColorSidebar,
 }: SucursalAppearancePanelProps) {
+  const router = useRouter()
   const [seleccionadaId, setSeleccionadaId] = useState<number | null>(
     sucursalIdInicial ?? sucursales[0]?.id ?? null
   )
+  const [cambiandoVista, empezarCambioDeVista] = useTransition()
   const seleccionada = sucursales.find((s) => s.id === seleccionadaId) ?? null
+
+  /**
+   * Elegir una sucursal para editarla TAMBIEN mueve el selector de la barra
+   * superior a esa sucursal.
+   *
+   * Sin esto pasaba lo que se reportaba como "se pierden los colores": el
+   * formulario repinta el shell entero como vista previa, asi que editar la
+   * Sucursal 11 hacia ver toda la app con sus colores; pero el tema OFICIAL
+   * seguia siendo el de la sucursal propia, y al salir de Configuracion el
+   * shell volvia —correctamente— a ese tema. Se guardaba bien: lo que
+   * fallaba era que la vista previa usaba toda la app de lienzo sin ninguna
+   * señal de que estabas mirando OTRA sucursal.
+   *
+   * Moviendo la cookie de preview (que existe justo para esto, ver
+   * sucursal-preview.ts) lo que ves pasa a ser de verdad lo que el shell
+   * pinta: al salir de Configuracion los colores se mantienen, y la barra
+   * superior dice a nombre de que sucursal los estas viendo. Para volver a
+   * la propia esta la opcion "Mi vista" de ese mismo selector.
+   */
+  function elegirSucursal(id: number) {
+    setSeleccionadaId(id)
+    empezarCambioDeVista(async () => {
+      const result = await setSucursalPreview(id)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      router.refresh()
+    })
+  }
 
   if (sucursales.length === 0) {
     return (
@@ -67,12 +102,14 @@ export function SucursalAppearancePanel({
               <button
                 key={sucursal.id}
                 type="button"
-                onClick={() => setSeleccionadaId(sucursal.id)}
+                onClick={() => elegirSucursal(sucursal.id)}
+                disabled={cambiandoVista}
                 className={cn(
                   'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium outline-none transition',
                   activa
                     ? 'bg-brand-50 text-brand-700'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+                  cambiandoVista && 'cursor-wait opacity-70'
                 )}
               >
                 <Building2 className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
