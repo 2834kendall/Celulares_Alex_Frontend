@@ -83,7 +83,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     const ws = wb.getWorksheet('Planilla')!
 
     const headerRow = ws.getRow(4)
-    const headerLabels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(
+    const headerLabels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(
       (col) => headerRow.getCell(col).value
     )
 
@@ -96,6 +96,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
       'Comisión',
       'Préstamo',
       'Horas extra (calculado)',
+      'Días por revisar',
       'Total bruto',
       'Rebajo CCSS (10.83%, calculado)',
       'Total deducciones',
@@ -170,9 +171,9 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     await wb.xlsx.load(buffer.buffer)
     const ws = wb.getWorksheet('Planilla')!
 
-    // "Total neto" (columna 12) trae una fórmula; forzamos un valor rarísimo
+    // "Total neto" (columna 13) trae una fórmula; forzamos un valor rarísimo
     // ahí para probar que el parseo ni siquiera la mira.
-    ws.getRow(5).getCell(12).value = 999999999
+    ws.getRow(5).getCell(13).value = 999999999
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { rows } = await parsePlanillaWorkbook(
@@ -295,5 +296,63 @@ describe('parsePlanillaWorkbook: archivos que no corresponden', () => {
 
     expect(errors).toHaveLength(1)
     expect(errors[0].mensaje).toContain('Préstamo')
+  })
+})
+
+// La plantilla dejo de suponer que todos trabajaron la jornada completa: las
+// horas salen de las marcas del kiosco y el base se prorratea sobre ellas.
+describe('buildPlanillaTemplate: horas reales de asistencia', () => {
+  it('prorratea el salario base según las horas cumplidas', async () => {
+    const buffer = await buildPlanillaTemplate(
+      INFO,
+      [
+        {
+          ...EMPLEADOS[0],
+          horas: { trabajadas: 44, esperadas: 88, salarioPorHora: 3409.09, diasPorRevisar: 2 },
+        },
+      ],
+      CONCEPTOS
+    )
+
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const fila = wb.getWorksheet('Planilla')!.getRow(5)
+
+    expect(fila.getCell(3).value).toBe(44) // horas trabajadas reales
+    expect(fila.getCell(4).value).toBe(3409.09) // valor hora prorrateado
+    expect(fila.getCell(5).value).toBe(150000) // media jornada = medio salario
+    expect(fila.getCell(9).value).toBe(2) // días por revisar
+  })
+
+  it('cumplir la jornada completa prellena el base exacto, sin arrastre de redondeo', async () => {
+    const buffer = await buildPlanillaTemplate(
+      INFO,
+      [
+        {
+          ...EMPLEADOS[0],
+          horas: { trabajadas: 88, esperadas: 88, salarioPorHora: 3409.09, diasPorRevisar: 0 },
+        },
+      ],
+      CONCEPTOS
+    )
+
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+
+    // 88 x 3409.09 daria 299999.92: el base se prorratea sobre el mensual, no
+    // se reconstruye multiplicando la hora redondeada.
+    expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(5).value).toBe(300000)
+  })
+
+  it('sin lectura de marcas mantiene el supuesto anterior de jornada completa', async () => {
+    const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)
+
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const fila = wb.getWorksheet('Planilla')!.getRow(5)
+
+    expect(fila.getCell(3).value).toBe(88)
+    expect(fila.getCell(5).value).toBe(300000)
+    expect(fila.getCell(9).value).toBe(0)
   })
 })

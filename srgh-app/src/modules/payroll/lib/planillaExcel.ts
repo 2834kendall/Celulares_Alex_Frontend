@@ -46,12 +46,27 @@ const LABEL_SALARIO_HORA = 'Salario por hora'
 const LABEL_TOTAL_BRUTO = 'Total bruto'
 const LABEL_TOTAL_DEDUCCIONES = 'Total deducciones'
 const LABEL_TOTAL_NETO = 'Total neto'
+const LABEL_REVISAR = 'Días por revisar'
 
 export interface EmpleadoPlantilla {
   cedula: string
   nombre: string
-  /** Salario base mensual del contrato; en la plantilla se prellena la mitad (quincena). */
+  /** Salario base mensual del contrato; es el techo de la quincena (la mitad). */
   salarioBaseMensual: number
+  /**
+   * Horas de la quincena según las marcas del kiosco, y el valor de la hora
+   * prorrateado sobre las horas que la persona tenía programadas. Ausente
+   * cuando el periodo no tiene fechas o no se pudieron leer las marcas: en ese
+   * caso la plantilla vuelve al comportamiento anterior (jornada completa
+   * supuesta) para no dejar al encargado sin planilla.
+   */
+  horas?: {
+    trabajadas: number
+    esperadas: number
+    salarioPorHora: number
+    /** Días programados con marcas incompletas; hay que corregirlos antes de pagar. */
+    diasPorRevisar: number
+  }
 }
 
 export interface PlantillaInfo {
@@ -110,6 +125,7 @@ export async function buildPlanillaTemplate(
     ...ingresoManual.map((c) => ({ label: c.con_nombre, editable: true })),
     ...deduccionManual.map((c) => ({ label: c.con_nombre, editable: true })),
     ...horasExtra.map((c) => ({ label: `${c.con_nombre} (calculado)`, editable: false })),
+    { label: LABEL_REVISAR, editable: false },
     { label: LABEL_TOTAL_BRUTO, editable: false },
     ...deduccionPorcentual.map((c) => ({
       label: `${c.con_nombre} (${c.con_porcentaje ?? 0}%, calculado)`,
@@ -125,7 +141,8 @@ export async function buildPlanillaTemplate(
   const colIngresoInicio = 5
   const colDeduccionManualInicio = colIngresoInicio + ingresoManual.length
   const colHorasExtraInicio = colDeduccionManualInicio + deduccionManual.length
-  const colTotalBruto = colHorasExtraInicio + horasExtra.length
+  const colRevisar = colHorasExtraInicio + horasExtra.length
+  const colTotalBruto = colRevisar + 1
   const colDeduccionPctInicio = colTotalBruto + 1
   const colTotalDeducciones = colDeduccionPctInicio + deduccionPorcentual.length
   const colTotalNeto = colTotalDeducciones + 1
@@ -135,7 +152,7 @@ export async function buildPlanillaTemplate(
   ws.getCell('A2').value = info.subtitulo
   ws.getCell('A2').font = { color: { argb: 'FF64748B' }, size: 10 }
   ws.getCell('A3').value =
-    'Edita solo las columnas azules (montos, horas y salario por hora). No cambies la cédula ni agregues columnas — las columnas grises se calculan solas.'
+    'Las horas y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues columnas — las columnas grises se calculan solas.'
   ws.getCell('A3').font = { color: { argb: 'FFB45309' }, size: 10 }
 
   const headerRow = ws.getRow(HEADER_ROW)
@@ -157,13 +174,35 @@ export async function buildPlanillaTemplate(
     const row = ws.getRow(rowNumber)
     row.getCell(colCedula).value = emp.cedula
     row.getCell(2).value = emp.nombre
-    row.getCell(colHoras).value = TOPE_HORAS_NORMALES_QUINCENAL
-    row.getCell(colSalarioHora).value =
+    // Sin lectura de marcas se cae al supuesto anterior: jornada completa.
+    const horasTrabajadas = emp.horas?.trabajadas ?? TOPE_HORAS_NORMALES_QUINCENAL
+    const salarioPorHora =
+      emp.horas?.salarioPorHora ??
       Math.round((emp.salarioBaseMensual / 2 / TOPE_HORAS_NORMALES_QUINCENAL) * 100) / 100
 
+    row.getCell(colHoras).value = horasTrabajadas
+    row.getCell(colSalarioHora).value = salarioPorHora
+    row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
+
+    // Salario base de la quincena: la mitad del mensual, en proporción a las
+    // horas cumplidas dentro de la jornada programada.
+    //
+    // Se prorratea sobre salario_base / 2 y NO multiplicando las horas por el
+    // valor de la hora: ese valor va redondeado a dos decimales, y multiplicarlo
+    // por 88 horas dejaba a quien cumplió su jornada completa cobrando
+    // ¢299.999,92 en vez de ¢300.000. La hora redondeada sirve para las horas
+    // extra; el base sale de la proporción.
+    //
+    // Es un prellenado, no una imposición: el encargado revisa el archivo antes
+    // de subirlo.
+    const mitadMensual = emp.salarioBaseMensual / 2
+    const proporcion =
+      emp.horas && emp.horas.esperadas > 0
+        ? Math.min(emp.horas.trabajadas, emp.horas.esperadas) / emp.horas.esperadas
+        : 1
+
     ingresoManual.forEach((c, i) => {
-      const monto =
-        c.con_codigo === 'BASE' ? Math.round((emp.salarioBaseMensual / 2) * 100) / 100 : 0
+      const monto = c.con_codigo === 'BASE' ? Math.round(mitadMensual * proporcion * 100) / 100 : 0
       row.getCell(colIngresoInicio + i).value = monto
     })
     deduccionManual.forEach((_, i) => {
@@ -218,6 +257,13 @@ export async function buildPlanillaTemplate(
       row.getCell(col).numFmt = MONEY_FORMAT
     }
     row.getCell(colHoras).numFmt = HOURS_FORMAT
+    // "Días por revisar" es un conteo, no plata: el formato de moneda que se
+    // aplica al bloque de arriba lo mostraría como "2.00".
+    row.getCell(colRevisar).numFmt = '0'
+
+    if ((emp.horas?.diasPorRevisar ?? 0) > 0) {
+      row.getCell(colRevisar).font = { bold: true, color: { argb: 'FFB91C1C' } }
+    }
 
     for (let col = colHorasExtraInicio; col <= colTotalNeto; col += 1) {
       row.getCell(col).fill = {
