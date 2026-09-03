@@ -166,6 +166,9 @@ describe('uploadPlanilla (server action)', () => {
             ndt_historial_laboral_id: 55,
             ndt_horas_ordinarias_diurnas: 88,
             ndt_salario_por_hora: 0,
+            ndt_salario_bruto: 100000,
+            ndt_total_deducciones_obreras: 10830,
+            ndt_salario_neto: 89170,
           },
         ],
         error: null,
@@ -250,6 +253,9 @@ describe('uploadPlanilla (server action)', () => {
               ndt_historial_laboral_id: 70,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
             },
           ],
           error: null,
@@ -306,6 +312,9 @@ describe('uploadPlanilla (server action)', () => {
               ndt_historial_laboral_id: 71,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
             },
           ],
           error: null,
@@ -365,12 +374,18 @@ describe('uploadPlanilla (server action)', () => {
               ndt_historial_laboral_id: 55,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
             },
             {
               ndt_id: 20,
               ndt_historial_laboral_id: 66,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
             },
           ],
           error: null,
@@ -455,6 +470,76 @@ describe('uploadPlanilla (server action)', () => {
       empleados: 1,
       nuevos: 1,
       actualizados: 0,
+      sinCambios: 0,
+      eliminados: 0,
+    })
+  })
+  // Regresion: la comparacion de "sin cambios" solo miraba los campos del
+  // Excel (horas, salario por hora, montos). Si entre una subida y otra
+  // cambiaba el catalogo — por ejemplo se corregia el porcentaje de la CCSS
+  // obrera — la fila llegaba identica, se marcaba "sin cambios" y se quedaba
+  // con el monto viejo. La unica forma de forzar el recalculo era editarle
+  // algo a cada empleado.
+  it('recalcula una fila identica si el catálogo cambió desde el último guardado', async () => {
+    const catalogoCorregido = CONCEPTOS.map((c) =>
+      c.con_codigo === 'CCSS_OBRERA' ? { ...c, con_porcentaje: 10.5 } : c
+    )
+
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: catalogoCorregido, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 10,
+              ndt_historial_laboral_id: 55,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_salario_por_hora: 0,
+              // Totales calculados con la CCSS vieja (10,83%).
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 10,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+        OK,
+      ],
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    // El Excel viene con exactamente los mismos valores que ya estaban.
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toEqual({
+      ok: true,
+      empleados: 1,
+      nuevos: 0,
+      actualizados: 1,
       sinCambios: 0,
       eliminados: 0,
     })

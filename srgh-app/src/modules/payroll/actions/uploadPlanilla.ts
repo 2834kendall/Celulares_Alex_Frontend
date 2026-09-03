@@ -23,6 +23,9 @@ interface DetalleExistenteRow {
   ndt_historial_laboral_id: number
   ndt_horas_ordinarias_diurnas: number
   ndt_salario_por_hora: number
+  ndt_salario_bruto: number
+  ndt_total_deducciones_obreras: number
+  ndt_salario_neto: number
 }
 
 interface LineaIngresoExistenteRow {
@@ -47,6 +50,8 @@ interface ValoresPrevios {
   horasTrabajadas: number
   salarioPorHora: number
   montos: Record<string, number>
+  /** Totales ya guardados, para detectar cambios que vienen del catálogo. */
+  totales: { bruto: number; deducciones: number; neto: number }
 }
 
 export type UploadPlanillaResult =
@@ -167,7 +172,9 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // 5. Planilla ya guardada en el periodo (para comparar, no para borrar de una vez)
   const { data: detallesPrevios, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
-    .select('ndt_id, ndt_historial_laboral_id, ndt_horas_ordinarias_diurnas, ndt_salario_por_hora')
+    .select(
+      'ndt_id, ndt_historial_laboral_id, ndt_horas_ordinarias_diurnas, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto'
+    )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
 
@@ -195,6 +202,11 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         horasTrabajadas: d.ndt_horas_ordinarias_diurnas,
         salarioPorHora: d.ndt_salario_por_hora,
         montos,
+        totales: {
+          bruto: d.ndt_salario_bruto,
+          deducciones: d.ndt_total_deducciones_obreras,
+          neto: d.ndt_salario_neto,
+        },
       })
     }
 
@@ -234,7 +246,11 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
   // 6. Clasificar cada fila del Excel: nueva, sin cambios o actualizada
   const filasNuevas: PlanillaRowInput[] = []
-  const filasActualizar: { row: PlanillaRowInput; ndtId: number }[] = []
+  const filasActualizar: {
+    row: PlanillaRowInput
+    ndtId: number
+    totales: ReturnType<typeof calcularPlanillaPorConceptos>
+  }[] = []
   let sinCambios = 0
 
   const labIdsEnExcel = new Set<number>()
@@ -249,7 +265,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
 
     const previo = valoresPreviosPorNdt.get(ndtId)!
-    const valoresIguales = sameRowValues(
+    const mismoInput = sameRowValues(
       {
         horasTrabajadas: previo.horasTrabajadas,
         salarioPorHora: previo.salarioPorHora,
@@ -262,10 +278,27 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       }
     )
 
-    if (valoresIguales) {
+    const totales = calcularPlanillaPorConceptos(conceptos, {
+      montos: row.montos,
+      horasTrabajadas: row.horasTrabajadas,
+      salarioPorHora: row.salarioPorHora,
+    })
+
+    // "Sin cambios" tiene que mirar también el RESULTADO, no solo lo que el
+    // usuario escribió. Si entre una subida y otra cambió el catálogo (se
+    // corrigió el porcentaje de la CCSS, se desactivó un concepto), la fila
+    // llega idéntica pero su cálculo ya no lo es. Comparando solo los campos
+    // del Excel, esas filas se saltaban y se quedaban con el monto viejo: la
+    // única forma de forzar el recálculo era editarle algo a cada empleado.
+    const mismoResultado =
+      previo.totales.bruto === totales.salarioBruto &&
+      previo.totales.deducciones === totales.totalDeducciones &&
+      previo.totales.neto === totales.salarioNeto
+
+    if (mismoInput && mismoResultado) {
       sinCambios += 1
     } else {
-      filasActualizar.push({ row, ndtId })
+      filasActualizar.push({ row, ndtId, totales })
     }
   }
 
@@ -308,15 +341,8 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   }
 
   // 8. Actualizar los que cambiaron: totales recalculados + líneas desde cero
-  for (const { row, ndtId } of filasActualizar) {
-    const { salarioBruto, totalDeducciones, salarioNeto, lineas } = calcularPlanillaPorConceptos(
-      conceptos,
-      {
-        montos: row.montos,
-        horasTrabajadas: row.horasTrabajadas,
-        salarioPorHora: row.salarioPorHora,
-      }
-    )
+  for (const { row, ndtId, totales } of filasActualizar) {
+    const { salarioBruto, totalDeducciones, salarioNeto, lineas } = totales
 
     const { error: errUpdate } = await supabase
       .from('sgrh_nomina_detalle')
