@@ -113,7 +113,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // columnas de monto manual buscar (por el nombre del concepto).
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
-    .select('con_id, con_codigo, con_nombre, con_tipo_calculo, con_porcentaje')
+    .select('con_id, con_codigo, con_nombre, con_tipo, con_tipo_calculo, con_porcentaje')
     .eq('con_activo', true)
     .returns<ConceptoPlanillaColumna[]>()
 

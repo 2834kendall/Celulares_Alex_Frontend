@@ -32,8 +32,25 @@ export const TOPE_HORAS_NORMALES_QUINCENAL = 88
 export interface ConceptoCalculo {
   con_id: number
   con_codigo: string
+  /** 'ingreso' | 'deduccion' | 'patronal'. Ver esConceptoDelTrabajador. */
+  con_tipo: string
   con_tipo_calculo: string
   con_porcentaje: number | null
+}
+
+/**
+ * Un concepto patronal (con_tipo = 'patronal') es costo del patrono ante la
+ * CCSS, el INS y demas instituciones: NO es ingreso ni deduccion del
+ * trabajador y no puede entrar en el calculo de su planilla.
+ *
+ * Se filtra por con_tipo y no por con_tipo_calculo porque en el catalogo
+ * varios patronales estan guardados como 'monto_manual_ingreso' (todavia no
+ * hay motor de cargas patronales, ver el seed 04_nomina.sql). Sin este filtro
+ * salian como columnas editables del Excel y, si alguien las llenaba, sumaban
+ * al salario bruto del empleado y ademas le aplicaban CCSS obrera encima.
+ */
+export function esConceptoDelTrabajador(concepto: { con_tipo: string }): boolean {
+  return concepto.con_tipo !== 'patronal'
 }
 
 /** Datos que el usuario carga a mano en el detalle de un empleado dentro del periodo. */
@@ -77,7 +94,10 @@ export function calcularPlanillaPorConceptos(
   const lineas: LineaCalculada[] = []
   let bruto = 0
 
-  for (const concepto of conceptos) {
+  // Las cargas patronales quedan fuera: no son plata del trabajador.
+  const aplicables = conceptos.filter(esConceptoDelTrabajador)
+
+  for (const concepto of aplicables) {
     if (concepto.con_tipo_calculo === 'monto_manual_ingreso') {
       const monto = round2(input.montos[concepto.con_codigo] ?? 0)
       if (monto > 0) {
@@ -109,7 +129,7 @@ export function calcularPlanillaPorConceptos(
   bruto = round2(bruto)
   let deducciones = 0
 
-  for (const concepto of conceptos) {
+  for (const concepto of aplicables) {
     if (concepto.con_tipo_calculo === 'monto_manual_deduccion') {
       const monto = round2(input.montos[concepto.con_codigo] ?? 0)
       if (monto > 0) {
@@ -158,11 +178,14 @@ export interface ConceptoPlanillaColumna extends ConceptoCalculo {
 
 /** Agrupa los conceptos activos por cómo se usan en el Excel (columna editable vs. calculado). */
 export function agruparConceptosPlanilla(conceptos: ConceptoPlanillaColumna[]) {
+  // Mismo filtro que el motor de calculo: un concepto patronal no es columna
+  // de la planilla del trabajador.
+  const aplicables = conceptos.filter(esConceptoDelTrabajador)
   return {
-    ingresoManual: conceptos.filter((c) => c.con_tipo_calculo === 'monto_manual_ingreso'),
-    deduccionManual: conceptos.filter((c) => c.con_tipo_calculo === 'monto_manual_deduccion'),
-    horasExtra: conceptos.filter((c) => c.con_tipo_calculo === 'horas_extra_automatico'),
-    deduccionPorcentual: conceptos.filter(
+    ingresoManual: aplicables.filter((c) => c.con_tipo_calculo === 'monto_manual_ingreso'),
+    deduccionManual: aplicables.filter((c) => c.con_tipo_calculo === 'monto_manual_deduccion'),
+    horasExtra: aplicables.filter((c) => c.con_tipo_calculo === 'horas_extra_automatico'),
+    deduccionPorcentual: aplicables.filter(
       (c) => c.con_tipo_calculo === 'porcentaje_deduccion_bruto'
     ),
   }

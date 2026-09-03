@@ -39,6 +39,9 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
   const conceptosManuales = (conceptosResult.ok ? conceptosResult.data : []).filter(
     (c) =>
       c.con_activo &&
+      // Mismo criterio que el motor de calculo (esConceptoDelTrabajador): una
+      // carga patronal no se edita en la planilla del trabajador.
+      c.con_tipo !== 'patronal' &&
       (c.con_tipo_calculo === 'monto_manual_ingreso' ||
         c.con_tipo_calculo === 'monto_manual_deduccion')
   )

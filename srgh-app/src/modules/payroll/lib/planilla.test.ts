@@ -12,30 +12,35 @@ describe('calcularPlanillaPorConceptos', () => {
     {
       con_id: 1,
       con_codigo: 'BASE',
+      con_tipo: 'ingreso',
       con_tipo_calculo: 'monto_manual_ingreso',
       con_porcentaje: null,
     },
     {
       con_id: 2,
       con_codigo: 'COMISION',
+      con_tipo: 'ingreso',
       con_tipo_calculo: 'monto_manual_ingreso',
       con_porcentaje: null,
     },
     {
       con_id: 3,
       con_codigo: 'PRESTAMO',
+      con_tipo: 'deduccion',
       con_tipo_calculo: 'monto_manual_deduccion',
       con_porcentaje: null,
     },
     {
       con_id: 4,
       con_codigo: 'HORAS_EXTRA',
+      con_tipo: 'ingreso',
       con_tipo_calculo: 'horas_extra_automatico',
       con_porcentaje: 150,
     },
     {
       con_id: 5,
       con_codigo: 'CCSS_OBRERA',
+      con_tipo: 'deduccion',
       con_tipo_calculo: 'porcentaje_deduccion_bruto',
       con_porcentaje: 10.83,
     },
@@ -80,12 +85,57 @@ describe('calcularPlanillaPorConceptos', () => {
   })
 })
 
+// Regresion: en el catalogo real, PAT001 (CCSS Patronal), PAT003 y PAT004
+// estan activos con con_tipo = 'patronal' pero con_tipo_calculo =
+// 'monto_manual_ingreso'. Como el agrupador y el motor solo miraban
+// con_tipo_calculo, salian como columnas azules editables del Excel y, si
+// alguien las llenaba, sumaban al salario bruto del trabajador (y le
+// aplicaban CCSS obrera encima). No son plata suya: son costo del patrono.
+describe('conceptos patronales', () => {
+  const PATRONAL = {
+    con_id: 17,
+    con_codigo: 'PAT001',
+    con_nombre: 'CCSS Patronal (SEM+IVM)',
+    con_tipo: 'patronal',
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+
+  const BASE = {
+    con_id: 1,
+    con_codigo: 'BASE',
+    con_nombre: 'Salario base',
+    con_tipo: 'ingreso',
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+
+  it('no suman al bruto ni generan linea, aunque vengan con monto', () => {
+    const resultado = calcularPlanillaPorConceptos([BASE, PATRONAL], {
+      montos: { BASE: 200000, PAT001: 55000 },
+      horasTrabajadas: 88,
+      salarioPorHora: 2500,
+    })
+
+    expect(resultado.salarioBruto).toBe(200000)
+    expect(resultado.lineas.some((l) => l.con_codigo === 'PAT001')).toBe(false)
+  })
+
+  it('no aparecen como columna editable de la plantilla', () => {
+    const grupos = agruparConceptosPlanilla([BASE, PATRONAL])
+
+    expect(grupos.ingresoManual.map((c) => c.con_codigo)).toEqual(['BASE'])
+    expect(grupos.deduccionManual).toEqual([])
+  })
+})
+
 describe('agruparConceptosPlanilla', () => {
   const CONCEPTOS: ConceptoPlanillaColumna[] = [
     {
       con_id: 1,
       con_codigo: 'BASE',
       con_nombre: 'Salario base',
+      con_tipo: 'ingreso',
       con_tipo_calculo: 'monto_manual_ingreso',
       con_porcentaje: null,
     },
@@ -93,6 +143,7 @@ describe('agruparConceptosPlanilla', () => {
       con_id: 2,
       con_codigo: 'PRESTAMO',
       con_nombre: 'Préstamo',
+      con_tipo: 'deduccion',
       con_tipo_calculo: 'monto_manual_deduccion',
       con_porcentaje: null,
     },
@@ -100,6 +151,7 @@ describe('agruparConceptosPlanilla', () => {
       con_id: 3,
       con_codigo: 'HORAS_EXTRA',
       con_nombre: 'Horas extra',
+      con_tipo: 'ingreso',
       con_tipo_calculo: 'horas_extra_automatico',
       con_porcentaje: 150,
     },
@@ -107,6 +159,7 @@ describe('agruparConceptosPlanilla', () => {
       con_id: 4,
       con_codigo: 'CCSS_OBRERA',
       con_nombre: 'Rebajo CCSS',
+      con_tipo: 'deduccion',
       con_tipo_calculo: 'porcentaje_deduccion_bruto',
       con_porcentaje: 10.83,
     },
