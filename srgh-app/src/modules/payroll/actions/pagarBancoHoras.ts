@@ -37,6 +37,11 @@ interface LineaIngresoRow {
   sgrh_cat_conceptos_nomina: { con_codigo: string } | null
 }
 
+interface LineaDeduccionRow {
+  ded_monto: number
+  sgrh_cat_conceptos_nomina: { con_codigo: string; con_tipo_calculo: string } | null
+}
+
 /**
  * Paga un movimiento pendiente del banco de horas: agrega el monto como
  * ingreso al periodo en borrador más reciente del empleado, usando el mismo
@@ -144,21 +149,46 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
   ]
 
   // Montos ya guardados en el periodo destino, para no perderlos al recalcular.
-  const { data: lineasActuales, error: errLineas } = await supabase
-    .from('sgrh_nomina_linea_ingreso')
-    .select('ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
-    .eq('ing_nomina_detalle_id', detalleDestino.ndt_id)
-    .returns<LineaIngresoRow[]>()
+  //
+  // Hay que leer las DOS tablas. Mas abajo se borran tanto las lineas de
+  // ingreso como las de deduccion y se reinsertan desde lo que devuelva el
+  // motor, asi que todo concepto manual que no llegue en `montos` desaparece.
+  // Leyendo solo los ingresos, cualquier deduccion manual que el periodo ya
+  // tuviera (prestamo, embargo, renta, cuota solidarista) se borraba en
+  // silencio y el neto del empleado subia.
+  const [
+    { data: lineasIngresoActuales, error: errLineasIngreso },
+    { data: lineasDeduccionActuales, error: errLineasDeduccion },
+  ] = await Promise.all([
+    supabase
+      .from('sgrh_nomina_linea_ingreso')
+      .select('ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+      .eq('ing_nomina_detalle_id', detalleDestino.ndt_id)
+      .returns<LineaIngresoRow[]>(),
+    supabase
+      .from('sgrh_nomina_linea_deduccion')
+      .select('ded_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_tipo_calculo )')
+      .eq('ded_nomina_detalle_id', detalleDestino.ndt_id)
+      .returns<LineaDeduccionRow[]>(),
+  ])
 
-  if (errLineas) {
+  if (errLineasIngreso || errLineasDeduccion) {
     return { ok: false, error: 'No se pudo cargar el detalle del periodo destino.' }
   }
 
   const montos: Record<string, number> = {}
-  for (const linea of lineasActuales ?? []) {
+  for (const linea of lineasIngresoActuales ?? []) {
     const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
     if (!codigo) continue
     montos[codigo] = linea.ing_monto
+  }
+  // Solo las deducciones de monto manual: las porcentuales (CCSS) las vuelve a
+  // calcular el motor sobre el bruto nuevo, arrastrar su monto viejo seria un
+  // error.
+  for (const linea of lineasDeduccionActuales ?? []) {
+    const concepto = linea.sgrh_cat_conceptos_nomina
+    if (!concepto || concepto.con_tipo_calculo !== 'monto_manual_deduccion') continue
+    montos[concepto.con_codigo] = linea.ded_monto
   }
   // Se suma al monto de HORAS_EXTRA que ya hubiera en ese periodo (por si se
   // le paga banco de horas más de una vez al mismo periodo en borrador).
