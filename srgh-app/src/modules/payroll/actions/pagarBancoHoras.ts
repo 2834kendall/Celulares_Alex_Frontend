@@ -122,12 +122,16 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     await Promise.all([
       supabase
         .from('sgrh_cat_conceptos_nomina')
-        .select('con_id, con_codigo, con_tipo, con_tipo_calculo, con_porcentaje')
+        .select(
+          'con_id, con_codigo, con_tipo, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
+        )
         .eq('con_activo', true)
         .returns<ConceptoCalculo[]>(),
       supabase
         .from('sgrh_cat_conceptos_nomina')
-        .select('con_id, con_codigo, con_tipo, con_tipo_calculo, con_porcentaje')
+        .select(
+          'con_id, con_codigo, con_tipo, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
+        )
         .eq('con_codigo', 'HORAS_EXTRA')
         .maybeSingle<ConceptoCalculo>(),
     ])

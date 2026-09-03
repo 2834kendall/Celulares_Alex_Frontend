@@ -13,6 +13,7 @@ describe('calcularPlanillaPorConceptos', () => {
       con_id: 1,
       con_codigo: 'BASE',
       con_tipo: 'ingreso',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'monto_manual_ingreso',
       con_porcentaje: null,
     },
@@ -20,6 +21,7 @@ describe('calcularPlanillaPorConceptos', () => {
       con_id: 2,
       con_codigo: 'COMISION',
       con_tipo: 'ingreso',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'monto_manual_ingreso',
       con_porcentaje: null,
     },
@@ -27,6 +29,7 @@ describe('calcularPlanillaPorConceptos', () => {
       con_id: 3,
       con_codigo: 'PRESTAMO',
       con_tipo: 'deduccion',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'monto_manual_deduccion',
       con_porcentaje: null,
     },
@@ -34,6 +37,7 @@ describe('calcularPlanillaPorConceptos', () => {
       con_id: 4,
       con_codigo: 'HORAS_EXTRA',
       con_tipo: 'ingreso',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'horas_extra_automatico',
       con_porcentaje: 150,
     },
@@ -41,6 +45,7 @@ describe('calcularPlanillaPorConceptos', () => {
       con_id: 5,
       con_codigo: 'CCSS_OBRERA',
       con_tipo: 'deduccion',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'porcentaje_deduccion_bruto',
       con_porcentaje: 10.83,
     },
@@ -91,12 +96,75 @@ describe('calcularPlanillaPorConceptos', () => {
 // con_tipo_calculo, salian como columnas azules editables del Excel y, si
 // alguien las llenaba, sumaban al salario bruto del trabajador (y le
 // aplicaban CCSS obrera encima). No son plata suya: son costo del patrono.
+// Regresion: con_afecta_base_ccss existia en el catalogo y estaba bien puesto
+// en el seed (ING010 Viaticos y ING005 Aguinaldo en false), pero el motor
+// nunca lo leia: aplicaba el porcentaje sobre el bruto completo. Resultado, a
+// los viaticos se les rebajaba CCSS obrera como si fueran salario.
+describe('base de las deducciones porcentuales', () => {
+  const BASE = {
+    con_id: 1,
+    con_codigo: 'BASE',
+    con_tipo: 'ingreso',
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+
+  const VIATICOS = {
+    con_id: 10,
+    con_codigo: 'ING010',
+    con_tipo: 'ingreso',
+    con_afecta_base_ccss: false,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+
+  const CCSS = {
+    con_id: 6,
+    con_codigo: 'CCSS_OBRERA',
+    con_tipo: 'deduccion',
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'porcentaje_deduccion_bruto',
+    con_porcentaje: 10.83,
+  }
+
+  it('excluye del cálculo los ingresos que no cotizan, pero los paga igual', () => {
+    const resultado = calcularPlanillaPorConceptos([BASE, VIATICOS, CCSS], {
+      montos: { BASE: 200000, ING010: 50000 },
+      horasTrabajadas: 88,
+      salarioPorHora: 0,
+    })
+
+    // Los viáticos se pagan: entran al bruto y por lo tanto al neto.
+    expect(resultado.salarioBruto).toBe(250000)
+    // Pero no cotizan: la CCSS se calcula solo sobre los 200000 del salario.
+    expect(resultado.baseCcss).toBe(200000)
+    expect(resultado.totalDeducciones).toBe(21660) // 200000 * 10,83%
+    expect(resultado.salarioNeto).toBe(228340)
+
+    const ccss = resultado.lineas.find((l) => l.con_codigo === 'CCSS_OBRERA')
+    expect(ccss?.baseCalculo).toBe(200000)
+  })
+
+  it('si todo cotiza, la base y el bruto coinciden (comportamiento de siempre)', () => {
+    const resultado = calcularPlanillaPorConceptos([BASE, CCSS], {
+      montos: { BASE: 200000 },
+      horasTrabajadas: 88,
+      salarioPorHora: 0,
+    })
+
+    expect(resultado.baseCcss).toBe(resultado.salarioBruto)
+    expect(resultado.totalDeducciones).toBe(21660)
+  })
+})
+
 describe('conceptos patronales', () => {
   const PATRONAL = {
     con_id: 17,
     con_codigo: 'PAT001',
     con_nombre: 'CCSS Patronal (SEM+IVM)',
     con_tipo: 'patronal',
+    con_afecta_base_ccss: true,
     con_tipo_calculo: 'monto_manual_ingreso',
     con_porcentaje: null,
   }
@@ -106,6 +174,7 @@ describe('conceptos patronales', () => {
     con_codigo: 'BASE',
     con_nombre: 'Salario base',
     con_tipo: 'ingreso',
+    con_afecta_base_ccss: true,
     con_tipo_calculo: 'monto_manual_ingreso',
     con_porcentaje: null,
   }
@@ -136,6 +205,7 @@ describe('agruparConceptosPlanilla', () => {
       con_codigo: 'BASE',
       con_nombre: 'Salario base',
       con_tipo: 'ingreso',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'monto_manual_ingreso',
       con_porcentaje: null,
     },
@@ -144,6 +214,7 @@ describe('agruparConceptosPlanilla', () => {
       con_codigo: 'PRESTAMO',
       con_nombre: 'Préstamo',
       con_tipo: 'deduccion',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'monto_manual_deduccion',
       con_porcentaje: null,
     },
@@ -152,6 +223,7 @@ describe('agruparConceptosPlanilla', () => {
       con_codigo: 'HORAS_EXTRA',
       con_nombre: 'Horas extra',
       con_tipo: 'ingreso',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'horas_extra_automatico',
       con_porcentaje: 150,
     },
@@ -160,6 +232,7 @@ describe('agruparConceptosPlanilla', () => {
       con_codigo: 'CCSS_OBRERA',
       con_nombre: 'Rebajo CCSS',
       con_tipo: 'deduccion',
+      con_afecta_base_ccss: true,
       con_tipo_calculo: 'porcentaje_deduccion_bruto',
       con_porcentaje: 10.83,
     },

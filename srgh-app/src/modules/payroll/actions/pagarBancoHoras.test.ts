@@ -34,6 +34,7 @@ const CONCEPTOS_ACTIVOS = [
   {
     con_id: 6,
     con_codigo: 'CCSS_OBRERA',
+    con_afecta_base_ccss: true,
     con_tipo_calculo: 'porcentaje_deduccion_bruto',
     con_porcentaje: 10.83,
   },
@@ -42,6 +43,7 @@ const CONCEPTOS_ACTIVOS = [
 const PRESTAMO_CONCEPTO = {
   con_id: 7,
   con_codigo: 'PRESTAMO',
+  con_afecta_base_ccss: true,
   con_tipo_calculo: 'monto_manual_deduccion',
   con_porcentaje: null,
 }
@@ -49,6 +51,7 @@ const PRESTAMO_CONCEPTO = {
 const HORAS_EXTRA_CONCEPTO = {
   con_id: 4,
   con_codigo: 'HORAS_EXTRA',
+  con_afecta_base_ccss: true,
   con_tipo_calculo: 'horas_extra_automatico',
   con_porcentaje: 150,
 }
@@ -210,6 +213,7 @@ describe('pagarBancoHoras (server action)', () => {
               ded_monto: 20000,
               sgrh_cat_conceptos_nomina: {
                 con_codigo: 'PRESTAMO',
+                con_afecta_base_ccss: true,
                 con_tipo_calculo: 'monto_manual_deduccion',
               },
             },

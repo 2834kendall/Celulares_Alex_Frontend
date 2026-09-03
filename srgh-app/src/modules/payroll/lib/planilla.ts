@@ -34,6 +34,11 @@ export interface ConceptoCalculo {
   con_codigo: string
   /** 'ingreso' | 'deduccion' | 'patronal'. Ver esConceptoDelTrabajador. */
   con_tipo: string
+  /**
+   * false = el monto se paga pero NO entra en la base de las deducciones
+   * porcentuales (ej. viáticos, que no son salario y no cotizan a la CCSS).
+   */
+  con_afecta_base_ccss: boolean
   con_tipo_calculo: string
   con_porcentaje: number | null
 }
@@ -76,6 +81,12 @@ export interface LineaCalculada {
 
 export interface TotalesPorConceptos {
   salarioBruto: number
+  /**
+   * Parte del bruto que sí cotiza (suma de los ingresos con
+   * con_afecta_base_ccss). Es la base de las deducciones porcentuales, y
+   * coincide con el bruto salvo que haya ingresos no cotizables.
+   */
+  baseCcss: number
   totalDeducciones: number
   salarioNeto: number
   lineas: LineaCalculada[]
@@ -93,6 +104,11 @@ export function calcularPlanillaPorConceptos(
 ): TotalesPorConceptos {
   const lineas: LineaCalculada[] = []
   let bruto = 0
+  // Base de las deducciones porcentuales. Se acumula aparte del bruto porque
+  // hay ingresos que se pagan pero no cotizan: el catálogo ya lo declaraba en
+  // con_afecta_base_ccss, pero el motor no lo miraba y le aplicaba el 10,83%
+  // de CCSS obrera a los viáticos igual que al salario.
+  let baseCcss = 0
 
   // Las cargas patronales quedan fuera: no son plata del trabajador.
   const aplicables = conceptos.filter(esConceptoDelTrabajador)
@@ -108,6 +124,9 @@ export function calcularPlanillaPorConceptos(
           esIngreso: true,
         })
         bruto += monto
+        // `!== false` y no `=== true`: si el dato faltara, el fallo seguro es
+        // cotizar (comportamiento de siempre), no dejar de cotizar.
+        if (concepto.con_afecta_base_ccss !== false) baseCcss += monto
       }
     } else if (concepto.con_tipo_calculo === 'horas_extra_automatico') {
       const horasExtra = Math.max(0, input.horasTrabajadas - TOPE_HORAS_NORMALES_QUINCENAL)
@@ -122,11 +141,15 @@ export function calcularPlanillaPorConceptos(
           esIngreso: true,
         })
         bruto += monto
+        // `!== false` y no `=== true`: si el dato faltara, el fallo seguro es
+        // cotizar (comportamiento de siempre), no dejar de cotizar.
+        if (concepto.con_afecta_base_ccss !== false) baseCcss += monto
       }
     }
   }
 
   bruto = round2(bruto)
+  baseCcss = round2(baseCcss)
   let deducciones = 0
 
   for (const concepto of aplicables) {
@@ -143,7 +166,7 @@ export function calcularPlanillaPorConceptos(
       }
     } else if (concepto.con_tipo_calculo === 'porcentaje_deduccion_bruto') {
       const porcentaje = concepto.con_porcentaje ?? 0
-      const monto = round2(bruto * (porcentaje / 100))
+      const monto = round2(baseCcss * (porcentaje / 100))
       if (monto > 0) {
         lineas.push({
           con_id: concepto.con_id,
@@ -151,7 +174,7 @@ export function calcularPlanillaPorConceptos(
           monto,
           esIngreso: false,
           porcentajeAplicado: porcentaje,
-          baseCalculo: bruto,
+          baseCalculo: baseCcss,
         })
         deducciones += monto
       }
@@ -161,7 +184,13 @@ export function calcularPlanillaPorConceptos(
   deducciones = round2(deducciones)
   const neto = round2(bruto - deducciones)
 
-  return { salarioBruto: bruto, totalDeducciones: deducciones, salarioNeto: neto, lineas }
+  return {
+    salarioBruto: bruto,
+    baseCcss,
+    totalDeducciones: deducciones,
+    salarioNeto: neto,
+    lineas,
+  }
 }
 
 // ─── Excel de planilla: columnas dinámicas por concepto ──────────────────────

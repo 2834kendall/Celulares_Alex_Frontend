@@ -26,18 +26,21 @@ const CONCEPTOS_ACTIVOS = [
   {
     con_id: 3,
     con_codigo: 'COMISION',
+    con_afecta_base_ccss: true,
     con_tipo_calculo: 'monto_manual_ingreso',
     con_porcentaje: null,
   },
   {
     con_id: 4,
     con_codigo: 'HORAS_EXTRA',
+    con_afecta_base_ccss: true,
     con_tipo_calculo: 'horas_extra_automatico',
     con_porcentaje: 150,
   },
   {
     con_id: 6,
     con_codigo: 'CCSS_OBRERA',
+    con_afecta_base_ccss: true,
     con_tipo_calculo: 'porcentaje_deduccion_bruto',
     con_porcentaje: 10.83,
   },
