@@ -100,7 +100,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   )}`
   const subtitulo = `Sucursal: ${periodo.sgrh_sucursales?.suc_nombre ?? '—'} · Montos por quincena en colones`
 
-  const buffer = await buildPlanillaTemplate({ titulo, subtitulo }, empleadosResult.data, conceptos)
+  const buffer = await buildPlanillaTemplate(
+    { titulo, subtitulo, periodoId },
+    empleadosResult.data,
+    conceptos
+  )
 
   const filename = `planilla-${periodo.npe_periodo_anio}-${String(periodo.npe_periodo_mes).padStart(2, '0')}-q${periodo.npe_quincena}.xlsx`
 

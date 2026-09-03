@@ -176,6 +176,45 @@ export interface ConceptoPlanillaColumna extends ConceptoCalculo {
   con_nombre: string
 }
 
+/**
+ * Huella del catálogo con el que se generó una plantilla.
+ *
+ * La plantilla de Excel se arma a partir del catálogo activo: los nombres de
+ * los conceptos son los encabezados de las columnas, y sus porcentajes entran
+ * en las fórmulas. Si el catálogo cambia después de descargarla, ese archivo
+ * ya no corresponde: puede faltarle una columna nueva, o traer un encabezado
+ * que ya no existe. Antes eso se leía como "monto 0" sin avisar.
+ *
+ * Se guarda en una hoja oculta del archivo y se compara al subirlo. Entra
+ * todo lo que cambia la forma o el cálculo de la plantilla; el orden no
+ * importa porque se ordena por con_id.
+ */
+export function firmaCatalogo(conceptos: ConceptoPlanillaColumna[]): string {
+  const texto = [...conceptos]
+    .sort((a, b) => a.con_id - b.con_id)
+    .map((c) =>
+      [
+        c.con_id,
+        c.con_codigo,
+        c.con_nombre,
+        c.con_tipo,
+        c.con_tipo_calculo,
+        c.con_porcentaje ?? '',
+      ].join(':')
+    )
+    .join('|')
+
+  // FNV-1a de 32 bits: estable entre corridas y entre plataformas, sin
+  // dependencias. No es criptográfico y no necesita serlo — solo tiene que
+  // cambiar cuando cambia el catálogo.
+  let hash = 0x811c9dc5
+  for (let i = 0; i < texto.length; i += 1) {
+    hash ^= texto.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
 /** Agrupa los conceptos activos por cómo se usan en el Excel (columna editable vs. calculado). */
 export function agruparConceptosPlanilla(conceptos: ConceptoPlanillaColumna[]) {
   // Mismo filtro que el motor de calculo: un concepto patronal no es columna

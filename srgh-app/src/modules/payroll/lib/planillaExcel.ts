@@ -13,6 +13,7 @@ import ExcelJS from 'exceljs'
 import {
   TOPE_HORAS_NORMALES_QUINCENAL,
   agruparConceptosPlanilla,
+  firmaCatalogo,
   parsePlanillaRow,
   type ConceptoPlanillaColumna,
   type PlanillaRowError,
@@ -21,6 +22,16 @@ import {
 } from './planilla'
 
 const SHEET_NAME = 'Planilla'
+
+// Hoja oculta con la procedencia del archivo: de qué periodo salió y con qué
+// catálogo se armó. Sin esto, la subida no puede distinguir "el usuario borró
+// una columna" de "este concepto se creó después de descargar la plantilla",
+// y ante la duda contaba 0 en silencio.
+const META_SHEET_NAME = '_sgrh'
+const META_VERSION = 1
+const META_LABEL_VERSION = 'version'
+const META_LABEL_PERIODO = 'periodoId'
+const META_LABEL_CATALOGO = 'catalogo'
 const HEADER_ROW = 4
 const MONEY_FORMAT = '#,##0.00'
 const HOURS_FORMAT = '0.00'
@@ -46,6 +57,8 @@ export interface EmpleadoPlantilla {
 export interface PlantillaInfo {
   titulo: string
   subtitulo: string
+  /** Periodo al que pertenece la plantilla; se sella en la hoja oculta. */
+  periodoId: number
 }
 
 /** Convierte un índice de columna 1-based a su letra de Excel (1 → A, 27 → AA). */
@@ -75,6 +88,16 @@ export async function buildPlanillaTemplate(
 ): Promise<Uint8Array<ArrayBuffer>> {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet(SHEET_NAME)
+
+  // Sello de procedencia. 'veryHidden' para que no se pueda mostrar desde la
+  // interfaz de Excel: no es información que el usuario deba tocar.
+  const meta = wb.addWorksheet(META_SHEET_NAME, { state: 'veryHidden' })
+  meta.getCell('A1').value = META_LABEL_VERSION
+  meta.getCell('B1').value = META_VERSION
+  meta.getCell('A2').value = META_LABEL_PERIODO
+  meta.getCell('B2').value = info.periodoId
+  meta.getCell('A3').value = META_LABEL_CATALOGO
+  meta.getCell('B3').value = firmaCatalogo(conceptos)
 
   const { ingresoManual, deduccionManual, horasExtra, deduccionPorcentual } =
     agruparConceptosPlanilla(conceptos)
@@ -271,16 +294,57 @@ function locateColumn(headerRow: ExcelJS.Row, label: string, maxCol: number): nu
 }
 
 /**
+ * Verifica que el archivo sea la plantilla que este sistema genero, para este
+ * periodo, y con el catalogo que esta vigente ahora. Devuelve el error a
+ * reportar, o null si todo cuadra.
+ */
+function validarProcedencia(
+  wb: ExcelJS.Workbook,
+  conceptos: ConceptoPlanillaColumna[],
+  periodoId: number
+): PlanillaRowError | null {
+  const meta = wb.getWorksheet(META_SHEET_NAME)
+
+  if (!meta || cellValue(meta.getCell('B1')) !== META_VERSION) {
+    return {
+      fila: 0,
+      mensaje:
+        'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descarga la plantilla de este periodo y vuelve a intentar.',
+    }
+  }
+
+  const periodoDelArchivo = Number(cellValue(meta.getCell('B2')))
+  if (periodoDelArchivo !== periodoId) {
+    return {
+      fila: 0,
+      mensaje: `Esta plantilla es del periodo ${periodoDelArchivo}, no del que estás subiendo. Descarga la plantilla de este periodo.`,
+    }
+  }
+
+  const catalogoDelArchivo = String(cellValue(meta.getCell('B3')) ?? '')
+  if (catalogoDelArchivo !== firmaCatalogo(conceptos)) {
+    return {
+      fila: 0,
+      mensaje:
+        'Los conceptos de nómina cambiaron desde que se descargó esta plantilla, así que sus columnas ya no corresponden. Descarga la plantilla de nuevo y vuelve a llenarla.',
+    }
+  }
+
+  return null
+}
+
+/**
  * Lee el Excel subido y devuelve filas normalizadas + errores por fila.
  * `conceptos` debe ser la lista de conceptos activos del catálogo (la misma
  * que se usó para generar la plantilla) — a partir de ella se ubican las
- * columnas de monto manual por el nombre del concepto. Si un concepto ya no
- * tiene columna en el archivo (por ejemplo, se creó después de descargar la
- * plantilla), su monto cuenta como 0 para esa fila.
+ * columnas de monto manual por el nombre del concepto. Si al archivo le falta
+ * cualquiera de esas columnas se rechaza entero: contarlas como 0 era
+ * justamente la forma silenciosa de perder plata que esto viene a evitar.
  */
 export async function parsePlanillaWorkbook(
   buffer: ArrayBuffer,
-  conceptos: ConceptoPlanillaColumna[]
+  conceptos: ConceptoPlanillaColumna[],
+  periodoId: number
 ): Promise<ParsePlanillaResult> {
   const wb = new ExcelJS.Workbook()
 
@@ -299,9 +363,15 @@ export async function parsePlanillaWorkbook(
     }
   }
 
-  const ws = wb.getWorksheet(SHEET_NAME) ?? wb.worksheets[0]
+  const ws =
+    wb.getWorksheet(SHEET_NAME) ?? wb.worksheets.find((hoja) => hoja.name !== META_SHEET_NAME)
   if (!ws) {
     return { rows: [], errors: [{ fila: 0, mensaje: 'El archivo no tiene hojas legibles.' }] }
+  }
+
+  const errorArchivo = validarProcedencia(wb, conceptos, periodoId)
+  if (errorArchivo) {
+    return { rows: [], errors: [errorArchivo] }
   }
 
   const { ingresoManual, deduccionManual } = agruparConceptosPlanilla(conceptos)
@@ -311,7 +381,7 @@ export async function parsePlanillaWorkbook(
   const headerRow = ws.getRow(headerRowNumber)
   const maxCol = Math.max(ws.columnCount, headerRow.actualCellCount, columnasMontoDef.length + 20)
 
-  const colCedula = locateColumn(headerRow, LABEL_CEDULA, maxCol) ?? 1
+  const colCedula = locateColumn(headerRow, LABEL_CEDULA, maxCol)
   const colHoras = locateColumn(headerRow, LABEL_HORAS, maxCol)
   const colSalarioHora = locateColumn(headerRow, LABEL_SALARIO_HORA, maxCol)
 
@@ -320,6 +390,37 @@ export async function parsePlanillaWorkbook(
     etiqueta: c.con_nombre,
     columna: locateColumn(headerRow, c.con_nombre, maxCol),
   }))
+
+  // Una columna que no aparece NO es un 0: es un archivo que no corresponde.
+  // Antes se leía como vacío y la planilla se guardaba con ese concepto en
+  // cero, o — si lo que faltaba era "Horas trabajadas" — con toda la sucursal
+  // en 0 horas, sin un solo mensaje de error.
+  //
+  // Las tres columnas fijas se comprueban en la misma condición para que
+  // TypeScript las estreche a `number` en el resto de la función.
+  if (
+    colCedula === null ||
+    colHoras === null ||
+    colSalarioHora === null ||
+    columnasMonto.some((c) => c.columna === null)
+  ) {
+    const faltantes = [
+      colCedula === null ? LABEL_CEDULA : null,
+      colHoras === null ? LABEL_HORAS : null,
+      colSalarioHora === null ? LABEL_SALARIO_HORA : null,
+      ...columnasMonto.filter((c) => c.columna === null).map((c) => c.etiqueta),
+    ].filter((etiqueta): etiqueta is string => etiqueta !== null)
+
+    return {
+      rows: [],
+      errors: [
+        {
+          fila: headerRowNumber,
+          mensaje: `Al archivo le faltan columnas obligatorias: ${faltantes.join(', ')}. No cambies ni borres los encabezados; descarga la plantilla de nuevo si hace falta.`,
+        },
+      ],
+    }
+  }
 
   const rows: PlanillaRowInput[] = []
   const errors: PlanillaRowError[] = []
@@ -331,14 +432,15 @@ export async function parsePlanillaWorkbook(
     const montosCrudos = columnasMonto.map(({ codigo, etiqueta, columna }) => ({
       codigo,
       etiqueta,
-      valor: columna !== null ? cellValue(row.getCell(columna)) : null,
+      // El guard de arriba ya garantiza que ninguna quedó en null.
+      valor: cellValue(row.getCell(columna!)),
     }))
 
     const result = parsePlanillaRow(
       rowNumber,
       cellValue(row.getCell(colCedula)),
-      colHoras !== null ? cellValue(row.getCell(colHoras)) : null,
-      colSalarioHora !== null ? cellValue(row.getCell(colSalarioHora)) : null,
+      cellValue(row.getCell(colHoras)),
+      cellValue(row.getCell(colSalarioHora)),
       montosCrudos
     )
 

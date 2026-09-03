@@ -132,7 +132,11 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const codigosManuales = [...ingresoManual, ...deduccionManual].map((c) => c.con_codigo)
 
   // 3. Leer y validar el Excel
-  const { rows, errors } = await parsePlanillaWorkbook(await file.arrayBuffer(), conceptos)
+  const { rows, errors } = await parsePlanillaWorkbook(
+    await file.arrayBuffer(),
+    conceptos,
+    periodoId
+  )
 
   if (errors.length > 0) {
     const detalle = errors
