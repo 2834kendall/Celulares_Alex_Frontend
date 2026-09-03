@@ -5,6 +5,14 @@
  * plantilla de Excel las prellenaba en 88 y nada las conectaba con el kiosco.
  * Este módulo es el puente que faltaba.
  *
+ * La regla de "horas = presencia − almuerzo − exceso de break" es la misma que
+ * ya aplica la pantalla de horarios (schedules/lib/hours.ts) y de ahí se
+ * importa la constante de break pagado. Lo que no se puede reutilizar es su
+ * `hoursBetween`: resta las horas como números del mismo día, así que un turno
+ * de 22:00 a 06:00 le da negativo y lo recorta a 0. Acá todas las horas del
+ * horario se normalizan contra la entrada, que es lo que hace que un turno
+ * nocturno mida 8 h y no 0.
+ *
  * Reglas (definidas con el negocio):
  *  - El salario base pactado corresponde a la jornada completa de la quincena.
  *    Si la persona trabajó menos horas de las que tenía programadas, cobra
@@ -24,7 +32,7 @@
  */
 
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
-import { PAID_BREAK_MINUTES, hoursBetween } from '@/modules/schedules/lib/hours'
+import { PAID_BREAK_MINUTES } from '@/modules/schedules/lib/hours'
 import { round2 } from '@/modules/payroll/lib/numeros'
 
 const MINUTOS_POR_DIA = 24 * 60
@@ -98,6 +106,17 @@ function solape(inicioA: number, finA: number, inicioB: number, finB: number): n
 }
 
 /**
+ * Hora del horario expresada en minutos desde la medianoche del día en que
+ * ARRANCA la jornada. Una hora anterior a la entrada pertenece al día
+ * siguiente: en un turno de 22:00 a 06:00, tanto la salida como un almuerzo a
+ * la 01:00 caen del otro lado de la medianoche.
+ */
+function minutosEnJornada(hora: string, entradaMinutos: number): number {
+  const minutos = minutosDeHora(hora)
+  return minutos < entradaMinutos ? minutos + MINUTOS_POR_DIA : minutos
+}
+
+/**
  * Descuentos del día, recortados al tiempo que la persona REALMENTE estuvo.
  *
  * Se recorta a propósito: si alguien se fue antes del almuerzo, restarle la
@@ -106,13 +125,29 @@ function solape(inicioA: number, finA: number, inicioB: number, finB: number): n
  * PAID_BREAK_MINUTES van pagados y solo el exceso se resta.
  */
 function minutosDescontables(horario: HorarioDia, entrada: number, salida: number): number {
+  const anclaje = minutosDeHora(horario.entrada)
   const ventana = (inicio: string | null, fin: string | null) =>
-    inicio && fin ? solape(entrada, salida, minutosDeHora(inicio), minutosDeHora(fin)) : 0
+    inicio && fin
+      ? solape(entrada, salida, minutosEnJornada(inicio, anclaje), minutosEnJornada(fin, anclaje))
+      : 0
 
   const almuerzo = ventana(horario.inicioAlmuerzo, horario.finAlmuerzo)
   const brk = ventana(horario.inicioBreak, horario.finBreak)
 
   return almuerzo + Math.max(0, brk - PAID_BREAK_MINUTES)
+}
+
+/**
+ * Horas que exige el horario del día: la jornada completa menos el almuerzo y
+ * menos el exceso de break sobre lo pagado. Misma regla que la pantalla de
+ * horarios, pero con las horas normalizadas contra la entrada para que los
+ * turnos que cruzan medianoche midan lo que realmente duran.
+ */
+function horasProgramadas(horario: HorarioDia): number {
+  const entrada = minutosDeHora(horario.entrada)
+  const salida = minutosEnJornada(horario.salida, entrada)
+  const netos = salida - entrada - minutosDescontables(horario, entrada, salida)
+  return round2(Math.max(0, netos / 60))
 }
 
 const DIA_VACIO = (fecha: string, problema: ProblemaDia | null, horasEsperadas: number) => ({
@@ -134,16 +169,7 @@ export function calcularDia(dia: DiaProgramado): DiaCalculado {
   }
 
   const horario = dia.horario
-  const horasEsperadas = round2(
-    hoursBetween(
-      horario.entrada,
-      horario.salida,
-      horario.inicioAlmuerzo,
-      horario.finAlmuerzo,
-      horario.inicioBreak,
-      horario.finBreak
-    )
-  )
+  const horasEsperadas = horasProgramadas(horario)
 
   const jornada = groupIntoDayJourney(dia.marcas)
 

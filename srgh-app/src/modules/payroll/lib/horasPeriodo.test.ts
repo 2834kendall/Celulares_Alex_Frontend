@@ -129,7 +129,36 @@ describe('calcularDia', () => {
       })
     )
 
+    // Lo que importa acá no es solo el trabajado: las 8 esperadas tambien
+    // tienen que cruzar medianoche. Si el horario se midiera como resta del
+    // mismo dia daria 0 esperadas y las 8 trabajadas saldrian todas como
+    // extra, pagadas a tiempo y medio sin que nadie lo notara.
+    expect(r.horasEsperadas).toBe(8)
     expect(r.horasTrabajadas).toBe(8)
+    expect(r.horasOrdinarias).toBe(8)
+    expect(r.horasExtra).toBe(0)
+  })
+
+  it('un almuerzo de madrugada dentro de un turno nocturno también se descuenta', () => {
+    const horario: HorarioDia = {
+      entrada: '22:00:00',
+      salida: '07:00:00',
+      inicioAlmuerzo: '01:00:00',
+      finAlmuerzo: '02:00:00',
+      inicioBreak: null,
+      finBreak: null,
+    }
+
+    const r = calcularDia(
+      dia({
+        horario,
+        marcas: [marca('entrada', '2026-07-06 22:00:00'), marca('salida', '2026-07-07 07:00:00')],
+      })
+    )
+
+    expect(r.horasEsperadas).toBe(8) // 9 de jornada menos el almuerzo
+    expect(r.horasTrabajadas).toBe(8)
+    expect(r.horasExtra).toBe(0)
   })
 })
 
