@@ -55,6 +55,11 @@ interface TipoAusenciaRow {
   tau_porcentaje_pago_empleador: number
 }
 
+interface ComprobanteRow {
+  com_nomina_detalle_id: number
+  com_codigo_verificacion: string
+}
+
 interface LineaIngresoRow {
   ing_nomina_detalle_id: number
   ing_monto: number
@@ -157,12 +162,26 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // y los montos crudos quedan vacíos — no se bloquea toda la pantalla.
   const idsDetalle = (detalles ?? []).map((d: DetalleRow) => d.ndt_id)
   const montosPorNdt = new Map<number, Record<string, number>>()
+  // Código del comprobante ya emitido (sgrh_comprobantes_pago). Solo existe
+  // para los detalles marcados como pagados; es lo que hace verificable el
+  // papel que se le entrega al empleado.
+  const codigoPorNdt = new Map<number, string>()
   // Desglose de "Deducciones" en dos totales, por cómo se calculan:
   //  - porcentual: % del salario bruto (ej. CCSS obrera) — con_tipo_calculo = porcentaje_deduccion_bruto
   //  - manual: monto fijo que el patrono decide (ej. préstamo) — con_tipo_calculo = monto_manual_deduccion
   const deduccionesPorNdt = new Map<number, { porcentual: number; manual: number }>()
 
   if (idsDetalle.length > 0) {
+    const { data: comprobantes } = await supabase
+      .from('sgrh_comprobantes_pago')
+      .select('com_nomina_detalle_id, com_codigo_verificacion')
+      .in('com_nomina_detalle_id', idsDetalle)
+      .returns<ComprobanteRow[]>()
+
+    for (const comprobante of comprobantes ?? []) {
+      codigoPorNdt.set(comprobante.com_nomina_detalle_id, comprobante.com_codigo_verificacion)
+    }
+
     const [{ data: lineasIngreso }, { data: lineasDeduccion }] = await Promise.all([
       supabase
         .from('sgrh_nomina_linea_ingreso')
@@ -290,6 +309,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       salarioNeto: row.ndt_salario_neto,
       pagado: row.ndt_pagado,
       fechaPago: row.ndt_fecha_pago,
+      codigoVerificacion: codigoPorNdt.get(row.ndt_id) ?? null,
       montosPorConcepto: montosPorNdt.get(row.ndt_id) ?? {},
       horasTrabajadas: row.ndt_horas_ordinarias_diurnas,
       salarioPorHora: row.ndt_salario_por_hora,

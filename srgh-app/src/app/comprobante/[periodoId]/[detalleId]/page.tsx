@@ -223,6 +223,15 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
           )}
         </div>
 
+        {detalle.codigoVerificacion && (
+          <div className="mt-6 flex items-baseline justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+            <span>Código de verificación</span>
+            <span className="font-mono text-xs font-semibold tracking-wider text-slate-700">
+              {detalle.codigoVerificacion}
+            </span>
+          </div>
+        )}
+
         <div className="mt-10 grid grid-cols-2 gap-8 pt-4 text-center text-[11px] text-slate-500">
           <div>
             <div className="border-t border-slate-300 pt-1">Entregado por</div>

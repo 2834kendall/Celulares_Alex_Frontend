@@ -65,7 +65,12 @@ const TIPO_AUSENCIA_ROW = { data: { tau_porcentaje_pago_empleador: 50 }, error: 
 
 function mockTables(responses: Record<string, { data: unknown; error: unknown }>) {
   mockCreateClient.mockResolvedValue(
-    createSupabaseClientMock(responses) as unknown as Awaited<ReturnType<typeof createClient>>
+    createSupabaseClientMock({
+      // La acción consulta esta tabla en todos los casos; los tests que no la
+      // declaran no deberían tener que enumerarla.
+      sgrh_comprobantes_pago: { data: [], error: null },
+      ...responses,
+    }) as unknown as Awaited<ReturnType<typeof createClient>>
   )
 }
 
@@ -162,6 +167,10 @@ describe('getPeriodoDetail (server action)', () => {
         ],
         error: null,
       },
+      sgrh_comprobantes_pago: {
+        data: [{ com_nomina_detalle_id: 21, com_codigo_verificacion: 'ABCD-EFGH-JKMN' }],
+        error: null,
+      },
     })
 
     const result = await getPeriodoDetail(7)
@@ -183,6 +192,7 @@ describe('getPeriodoDetail (server action)', () => {
           salarioNeto: 447500,
           pagado: false,
           fechaPago: null,
+          codigoVerificacion: 'ABCD-EFGH-JKMN',
           montosPorConcepto: { BASE: 450000, COMISION: 50000, CCSS_OBRERA: 52500, PRESTAMO: 10000 },
           horasTrabajadas: 88,
           salarioPorHora: 2500,

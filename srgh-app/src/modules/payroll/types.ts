@@ -67,6 +67,8 @@ export interface DetalleNominaItem {
   salarioNeto: number
   pagado: boolean
   fechaPago: string | null
+  /** Código impreso en el comprobante (sgrh_comprobantes_pago). Null mientras el pago no se haya marcado. */
+  codigoVerificacion: string | null
   montosPorConcepto: Record<string, number>
   horasTrabajadas: number
   salarioPorHora: number

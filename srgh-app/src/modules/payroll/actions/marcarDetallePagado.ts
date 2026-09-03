@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
+import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
 
 interface DetalleActualRow {
   ndt_id: number
@@ -67,6 +68,58 @@ async function acumularProvisionAguinaldo(
       pra_anio: anio,
       pra_monto_acumulado_aguinaldo: delta,
     })
+  }
+}
+
+const INTENTOS_CODIGO_COMPROBANTE = 3
+
+/**
+ * Crea (o retira) el comprobante de pago del empleado en
+ * sgrh_comprobantes_pago.
+ *
+ * La tabla existía desde el baseline —con índice único, RLS y una columna
+ * para que el empleado confirme el recibo— pero nadie la escribía: el
+ * comprobante se armaba al vuelo desde el detalle y no quedaba ninguna
+ * evidencia de que el pago se hizo. Ahora marcar el pago deja esa fila, con
+ * un código de verificación que va impreso en el comprobante.
+ *
+ * Al DESMARCAR se borra la fila: el pago no ocurrió, y dejar vivo un código
+ * de verificación de un pago inexistente es peor que no tenerlo. El periodo
+ * sigue en borrador en ese momento, así que todavía no es historia.
+ *
+ * Es "mejor esfuerzo", igual que la provisión de aguinaldo: si falla, no
+ * bloquea el marcado que ya se guardó.
+ */
+async function sincronizarComprobante(
+  supabase: SupabaseServerClient,
+  ndtId: number,
+  pagado: boolean
+): Promise<void> {
+  if (!pagado) {
+    await supabase.from('sgrh_comprobantes_pago').delete().eq('com_nomina_detalle_id', ndtId)
+    return
+  }
+
+  const { data: existente } = await supabase
+    .from('sgrh_comprobantes_pago')
+    .select('com_id')
+    .eq('com_nomina_detalle_id', ndtId)
+    .maybeSingle<{ com_id: number }>()
+
+  // Ya tiene comprobante (se desmarcó y se volvió a marcar sin que la
+  // eliminación llegara a correr): no se emite otro código para el mismo pago.
+  if (existente) return
+
+  for (let intento = 0; intento < INTENTOS_CODIGO_COMPROBANTE; intento += 1) {
+    const { error } = await supabase.from('sgrh_comprobantes_pago').insert({
+      com_nomina_detalle_id: ndtId,
+      com_codigo_verificacion: generarCodigoVerificacion(),
+    })
+
+    if (!error) return
+    // 23505 = choque con el índice único del código. Cualquier otro error no
+    // se arregla reintentando.
+    if (error.code !== '23505') return
   }
 }
 
@@ -172,6 +225,10 @@ export async function marcarDetallePagado(
 
   // Solo mover la provisión si el estado realmente cambió, para no duplicar
   // el acumulado si esto se llama dos veces con el mismo valor.
+  if (detalle.ndt_pagado !== pagado) {
+    await sincronizarComprobante(supabase, ndtId, pagado)
+  }
+
   if (detalle.ndt_pagado !== pagado && detalle.sgrh_nomina_periodo) {
     await acumularProvisionAguinaldo(
       supabase,

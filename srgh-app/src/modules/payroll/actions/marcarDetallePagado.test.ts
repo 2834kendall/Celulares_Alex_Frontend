@@ -24,7 +24,12 @@ const DETALLE_BASE = {
 function mockSupabase(
   responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
 ) {
-  const client = createSupabaseClientMock(responses)
+  const client = createSupabaseClientMock({
+    // Sin comprobante previo: la acción emite uno al marcar el pago. Los
+    // tests que quieran otro escenario lo declaran ellos.
+    sgrh_comprobantes_pago: { data: null, error: null },
+    ...responses,
+  })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -174,5 +179,87 @@ describe('marcarDetallePagado (server action)', () => {
       npe_estado: 'borrador',
       npe_fecha_pago: null,
     })
+  })
+  // sgrh_comprobantes_pago existia desde el baseline —con indice unico, RLS y
+  // columna de confirmacion del empleado— pero ningun archivo la escribia: no
+  // quedaba evidencia de que el pago se hizo.
+  it('emite el comprobante de pago al marcar pagado', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+        OK,
+        { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
+      ],
+      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: OK,
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result).toEqual({ ok: true })
+
+    const comprobante = client.from.mock.results.find(
+      (r, i) => client.from.mock.calls[i][0] === 'sgrh_comprobantes_pago'
+    )
+    expect(comprobante).toBeDefined()
+
+    const inserciones = client.from.mock.results
+      .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_comprobantes_pago')
+      .flatMap((r) => {
+        const insert = r.value.insert as { mock: { calls: unknown[][] } }
+        return insert.mock.calls.map((args) => args[0] as Record<string, unknown>)
+      })
+
+    expect(inserciones).toHaveLength(1)
+    expect(inserciones[0].com_nomina_detalle_id).toBe(1)
+    expect(inserciones[0].com_codigo_verificacion).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/)
+  })
+
+  it('retira el comprobante al desmarcar el pago (el pago no ocurrio)', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null },
+        OK,
+        { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
+      ],
+      sgrh_provisiones_anuales: [
+        { data: { pra_id: 3, pra_monto_acumulado_aguinaldo: 50000 }, error: null },
+        OK,
+      ],
+      sgrh_nomina_periodo: OK,
+    })
+
+    const result = await marcarDetallePagado(1, false)
+
+    expect(result).toEqual({ ok: true })
+
+    const comprobante = client.from.mock.results.find(
+      (r, i) => client.from.mock.calls[i][0] === 'sgrh_comprobantes_pago'
+    )
+    expect(comprobante?.value.delete).toHaveBeenCalled()
+  })
+
+  it('no emite un segundo comprobante si el detalle ya tenia uno', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+        OK,
+        { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
+      ],
+      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: OK,
+      sgrh_comprobantes_pago: { data: { com_id: 77 }, error: null },
+    })
+
+    await marcarDetallePagado(1, true)
+
+    const inserciones = client.from.mock.results
+      .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_comprobantes_pago')
+      .flatMap((r) => {
+        const insert = r.value.insert as { mock: { calls: unknown[][] } }
+        return insert.mock.calls
+      })
+
+    expect(inserciones).toHaveLength(0)
   })
 })
