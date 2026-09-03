@@ -547,4 +547,50 @@ describe('uploadPlanilla (server action)', () => {
       eliminados: 0,
     })
   })
+  // Regresion: la subida borraba cualquier detalle que no viniera en el
+  // archivo, sin mirar si ese empleado ya habia cobrado. Borrarlo elimina el
+  // registro del pago y su comprobante.
+  it('rechaza la subida si dejaría fuera a un empleado que ya tiene el pago marcado', async () => {
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: {
+        data: [
+          {
+            ndt_id: 20,
+            ndt_historial_laboral_id: 66,
+            ndt_pagado: true,
+            ndt_horas_ordinarias_diurnas: 88,
+            ndt_salario_por_hora: 0,
+            ndt_salario_bruto: 100000,
+            ndt_total_deducciones_obreras: 10830,
+            ndt_salario_neto: 89170,
+          },
+        ],
+        error: null,
+      },
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+    })
+    // El Excel solo trae a Ana; Beto (que ya cobro) quedo fuera.
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [
+        { labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 },
+        { labId: 66, cedula: 'OUT', nombre: 'Beto Solís', salarioBaseMensual: 200000 },
+      ],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('Beto Solís')
+      expect(result.error).toContain('ya tienen el pago marcado')
+    }
+  })
 })

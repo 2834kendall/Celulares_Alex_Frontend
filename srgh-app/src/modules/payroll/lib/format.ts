@@ -19,6 +19,7 @@ export const MESES = [
 
 export const ESTADO_LABELS: Record<string, string> = {
   borrador: 'Borrador',
+  atrasado: 'Atrasado',
   pagado: 'Pagado',
 }
 
@@ -30,11 +31,23 @@ export const ESTADO_LABELS: Record<string, string> = {
  */
 const ESTADO_BADGE_TONES: Record<string, BadgeTone> = {
   borrador: 'amber',
+  atrasado: 'rose',
   pagado: 'emerald',
 }
 
 export function estadoLabel(estado: string) {
   return ESTADO_LABELS[estado] ?? estado
+}
+
+/**
+ * Estado que se le muestra al usuario. 'atrasado' no existe en la base: se
+ * deriva de que el periodo ya terminó y todavía no está pagado (ver
+ * lib/estadoPeriodo.ts). El estado guardado se deja intacto a propósito —
+ * varias pantallas dependen de `estado === 'borrador'` para permitir editar,
+ * y un periodo atrasado justamente hay que poder editarlo y pagarlo.
+ */
+export function estadoVisible(estado: string, atrasado: boolean): string {
+  return atrasado ? 'atrasado' : estado
 }
 
 export function estadoBadgeTone(estado: string): BadgeTone {

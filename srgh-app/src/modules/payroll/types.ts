@@ -41,6 +41,8 @@ export interface PeriodoListItem {
   fechaInicio: string | null
   fechaFin: string | null
   estado: string
+  /** Derivado: el periodo ya terminó y todavía no está pagado. No se guarda. */
+  atrasado: boolean
   fechaPago: string | null
   sucursalNombre: string
   totalEmpleados: number
@@ -104,6 +106,8 @@ export interface PeriodoDetalle {
   fechaInicio: string | null
   fechaFin: string | null
   estado: string
+  /** Derivado: el periodo ya terminó y todavía no está pagado. No se guarda. */
+  atrasado: boolean
   fechaPago: string | null
   observaciones: string | null
   sucursalNombre: string

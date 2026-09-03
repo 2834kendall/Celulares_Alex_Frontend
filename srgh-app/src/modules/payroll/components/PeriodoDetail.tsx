@@ -18,6 +18,7 @@ import type { ConceptoNominaRow, DetalleNominaItem, PeriodoDetalle } from '@/mod
 import {
   estadoBadgeTone,
   estadoLabel,
+  estadoVisible,
   formatCRC,
   formatDate,
   formatIban,
@@ -219,8 +220,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               {formatDate(periodo.fechaFin)}
             </p>
           </div>
-          <Badge tone={estadoBadgeTone(periodo.estado)} className="px-2.5 py-1 text-xs">
-            {estadoLabel(periodo.estado)}
+          <Badge
+            tone={estadoBadgeTone(estadoVisible(periodo.estado, periodo.atrasado))}
+            className="px-2.5 py-1 text-xs"
+          >
+            {estadoLabel(estadoVisible(periodo.estado, periodo.atrasado))}
           </Badge>
         </div>
 

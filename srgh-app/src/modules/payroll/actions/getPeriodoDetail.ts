@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
+import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
 
@@ -330,6 +331,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       fechaInicio: periodo.npe_fecha_inicio_periodo,
       fechaFin: periodo.npe_fecha_fin_periodo,
       estado: periodo.npe_estado,
+      atrasado: periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo),
       fechaPago: periodo.npe_fecha_pago,
       observaciones: periodo.npe_observaciones,
       sucursalNombre: periodo.sgrh_sucursales?.suc_nombre ?? '—',

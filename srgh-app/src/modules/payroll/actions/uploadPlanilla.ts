@@ -15,12 +15,14 @@ import {
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
+import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos KB
 
 interface DetalleExistenteRow {
   ndt_id: number
   ndt_historial_laboral_id: number
+  ndt_pagado: boolean
   ndt_horas_ordinarias_diurnas: number
   ndt_salario_por_hora: number
   ndt_salario_bruto: number
@@ -99,7 +101,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // 1. El periodo debe existir (RLS: solo de la empresa del JWT) y estar en borrador
   const { data: periodo, error: errPeriodo } = await supabase
     .from('sgrh_nomina_periodo')
-    .select('npe_id, npe_estado, npe_sucursal_id')
+    .select('npe_id, npe_estado, npe_sucursal_id, npe_fecha_fin_periodo')
     .eq('npe_id', periodoId)
     .maybeSingle()
 
@@ -175,7 +177,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const { data: detallesPrevios, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
-      'ndt_id, ndt_historial_laboral_id, ndt_horas_ordinarias_diurnas, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto'
+      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto'
     )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
@@ -305,9 +307,44 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   }
 
   // Empleados que ya tenían planilla en el periodo pero salieron del Excel
-  const ndtIdsEliminar = (detallesPrevios ?? [])
-    .filter((d: DetalleExistenteRow) => !labIdsEnExcel.has(d.ndt_historial_laboral_id))
-    .map((d: DetalleExistenteRow) => d.ndt_id)
+  const salieronDelExcel = (detallesPrevios ?? []).filter(
+    (d: DetalleExistenteRow) => !labIdsEnExcel.has(d.ndt_historial_laboral_id)
+  )
+
+  // Hay dos filas que NO se pueden borrar así:
+  //
+  //  - Una ya PAGADA: borrarla elimina el registro del pago y su comprobante.
+  //  - Una impaga de un periodo YA VENCIDO: es lo más cerca que tiene el
+  //    sistema de un registro de deuda. Como el periodo impago se queda en
+  //    'borrador' para siempre, cualquier subida posterior la hacía
+  //    desaparecer sin dejar rastro de que a esa persona se le debía.
+  //
+  // En ambos casos se rechaza la subida entera en vez de borrar en silencio:
+  // sacar a alguien de un periodo en el que ya cobró, o al que se le debe, es
+  // una decisión que tiene que ser deliberada.
+  const vencido = periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo)
+  const protegidos = salieronDelExcel.filter((d: DetalleExistenteRow) => d.ndt_pagado || vencido)
+
+  if (protegidos.length > 0) {
+    const nombrePorLab = new Map(empleadosResult.data.map((e) => [e.labId, e.nombre]))
+    const nombres = protegidos
+      .map(
+        (d: DetalleExistenteRow) =>
+          nombrePorLab.get(d.ndt_historial_laboral_id) ?? `contrato ${d.ndt_historial_laboral_id}`
+      )
+      .slice(0, 5)
+      .join(', ')
+    const motivo = protegidos.some((d: DetalleExistenteRow) => d.ndt_pagado)
+      ? 'ya tienen el pago marcado'
+      : 'están sin pagar en un periodo que ya venció'
+
+    return {
+      ok: false,
+      error: `No se puede quitar de la planilla a empleados que ${motivo}: ${nombres}. Volvé a incluirlos en el archivo; si de verdad hay que sacarlos, primero desmarcá el pago o revisá el periodo.`,
+    }
+  }
+
+  const ndtIdsEliminar = salieronDelExcel.map((d: DetalleExistenteRow) => d.ndt_id)
 
   // 7. Eliminar lo que salió de la planilla
   if (ndtIdsEliminar.length > 0) {

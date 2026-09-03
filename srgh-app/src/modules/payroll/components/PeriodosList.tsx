@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, FileClock } from 'lucide-react'
+import { AlertTriangle, CalendarDays, FileClock } from 'lucide-react'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 import {
   ESTADO_LABELS,
   estadoBadgeTone,
   estadoLabel,
+  estadoVisible,
   formatDate,
   periodoLabel,
 } from '@/modules/payroll/lib/format'
@@ -36,7 +37,7 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
     () =>
       periodos.filter(
         (p) =>
-          (estado === 'todos' || p.estado === estado) &&
+          (estado === 'todos' || estadoVisible(p.estado, p.atrasado) === estado) &&
           (anio === 'todos' || p.anio === Number(anio))
       ),
     [periodos, estado, anio]
@@ -48,7 +49,10 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
   )
 
   const total = periodos.length
-  const borradores = periodos.filter((p) => p.estado === 'borrador').length
+  // Un periodo atrasado sigue siendo 'borrador' en la base; se cuenta aparte
+  // porque es el que necesita atencion: ya vencio y alguien no cobro.
+  const atrasados = periodos.filter((p) => p.atrasado).length
+  const borradores = periodos.filter((p) => p.estado === 'borrador').length - atrasados
 
   const stats = [
     {
@@ -65,11 +69,18 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
       value: borradores,
       tone: 'bg-amber-50 text-amber-600',
     },
+    {
+      key: 'atrasados',
+      icon: AlertTriangle,
+      label: 'Atrasados',
+      value: atrasados,
+      tone: 'bg-rose-50 text-rose-600',
+    },
   ]
 
   return (
     <div className="@container space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         {stats.map(({ key, icon: Icon, label, value, tone }) => (
           <div
             key={key}
@@ -148,7 +159,9 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-500">{p.sucursalNombre}</p>
                     </div>
-                    <Badge tone={estadoBadgeTone(p.estado)}>{estadoLabel(p.estado)}</Badge>
+                    <Badge tone={estadoBadgeTone(estadoVisible(p.estado, p.atrasado))}>
+                      {estadoLabel(estadoVisible(p.estado, p.atrasado))}
+                    </Badge>
                   </div>
 
                   <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
@@ -201,7 +214,9 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
                     </td>
                     <td className={TABLE_TD}>{p.totalEmpleados}</td>
                     <td className="px-3 py-2">
-                      <Badge tone={estadoBadgeTone(p.estado)}>{estadoLabel(p.estado)}</Badge>
+                      <Badge tone={estadoBadgeTone(estadoVisible(p.estado, p.atrasado))}>
+                        {estadoLabel(estadoVisible(p.estado, p.atrasado))}
+                      </Badge>
                     </td>
                     <td className={TABLE_TD}>{formatDate(p.fechaPago)}</td>
                   </tr>
