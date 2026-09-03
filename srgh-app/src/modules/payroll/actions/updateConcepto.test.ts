@@ -62,4 +62,21 @@ describe('updateConcepto (server action)', () => {
 
     expect(result).toEqual({ ok: false, error: 'Ya existe un concepto con ese código.' })
   })
+  // Mismo motivo que en createConcepto: activar un concepto de horas extra
+  // automaticas hace que el excedente se pague en la planilla Y quede
+  // pendiente en el banco de horas.
+  it('no deja activar un concepto de horas extra automáticas', async () => {
+    mockUpdate({ data: null, error: null })
+
+    const result = await updateConcepto(4, {
+      ...INPUT,
+      con_tipo_calculo: 'horas_extra_automatico',
+      con_porcentaje: 150,
+      con_activo: true,
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('dos veces')
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
 })

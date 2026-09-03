@@ -275,6 +275,33 @@ export const conceptoNominaSchema = z
 
 export type ConceptoNominaInput = z.infer<typeof conceptoNominaSchema>
 
+/**
+ * Desde que existe el banco de horas, el excedente sobre el tope quincenal ya
+ * no se paga solo en la planilla: queda pendiente en
+ * sgrh_banco_horas_movimientos y el encargado decide si pagarlo (a 1,5×) o
+ * compensarlo. Por eso HORAS_EXTRA nace inactivo en el seed 04_nomina.sql.
+ *
+ * Un concepto ACTIVO de tipo 'horas_extra_automatico' rompe ese acuerdo: las
+ * mismas horas por encima del tope se pagarían en el bruto de la quincena
+ * (calcularPlanillaPorConceptos) y ademas quedarían pendientes en el banco
+ * para pagarse una segunda vez (sincronizarMovimientoBancoHoras). Nada lo
+ * impedía: la pantalla de conceptos deja elegir ese tipo y marcar "activo".
+ *
+ * La fila del catálogo sí tiene que poder existir —pagarBancoHoras busca
+ * HORAS_EXTRA por código para armar el ingreso al liquidar horas pendientes—,
+ * así que lo que se bloquea es activarla, no crearla.
+ */
+export const ERROR_CONCEPTO_HORAS_EXTRA_ACTIVO =
+  'Las horas extra ya no se pagan directamente en la planilla: lo que pasa del tope queda pendiente en el banco de horas, donde se decide si se paga o se compensa. Si activás este concepto, esas horas se pagarían dos veces. Guardalo como inactivo.'
+
+/** true si guardar este concepto dejaría activo un cálculo de horas extra automáticas. */
+export function conceptoDuplicariaHorasExtra(input: {
+  con_tipo_calculo: string
+  con_activo: boolean
+}): boolean {
+  return input.con_activo && input.con_tipo_calculo === 'horas_extra_automatico'
+}
+
 type _ConceptoNominaAlineado =
   ConceptoNominaInput extends Omit<ConceptoNominaInsert, 'con_id'> ? true : never
 const _conceptoAlineado: _ConceptoNominaAlineado = true
