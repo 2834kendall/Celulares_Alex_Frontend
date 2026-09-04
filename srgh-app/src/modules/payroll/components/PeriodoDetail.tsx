@@ -92,6 +92,9 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   // Los totales se calculan sobre todos los detalles del periodo, no solo
   // sobre la página visible — son un resumen del periodo completo.
   const totalBruto = periodo.detalles.reduce((sum, d) => sum + d.salarioBruto, 0)
+  // Empleados a los que no se les puede marcar el pago todavía: sus marcas del
+  // periodo están incompletas, así que las horas calculadas están cortas.
+  const conMarcasIncompletas = periodo.detalles.filter((d) => d.diasPorRevisar.length > 0)
   const totalDeduccionPorcentual = periodo.detalles.reduce(
     (sum, d) => sum + d.deduccionPorcentual,
     0
@@ -239,6 +242,28 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           </p>
         )}
       </div>
+
+      {conMarcasIncompletas.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-900">
+            {conMarcasIncompletas.length} empleado(s) con marcas de asistencia incompletas
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+            Sus horas calculadas están cortas, así que el pago está bloqueado hasta corregir las
+            marcas en Asistencia.
+          </p>
+          <ul className="mt-2 space-y-1 text-xs text-amber-900">
+            {conMarcasIncompletas.map((d) => (
+              <li key={d.id}>
+                <span className="font-semibold">{d.empleadoNombre}</span>{' '}
+                <span className="text-amber-700">
+                  — {d.diasPorRevisar.map((r) => formatDate(r.fecha)).join(', ')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         {resumen.map(({ key, icon: Icon, label, value, tone }) => (

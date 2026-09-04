@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
+import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
 
@@ -167,6 +168,29 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // para los detalles marcados como pagados; es lo que hace verificable el
   // papel que se le entrega al empleado.
   const codigoPorNdt = new Map<number, string>()
+  // Días con marcas incompletas por contrato. Es informativo acá: quien
+  // decide es marcarDetallePagado, que lo vuelve a consultar. Si la lectura
+  // falla no se bloquea la pantalla — se muestra la planilla igual.
+  const revisarPorLab = new Map<number, { fecha: string; problema: string }[]>()
+  if (
+    (detalles ?? []).length > 0 &&
+    periodo.npe_fecha_inicio_periodo &&
+    periodo.npe_fecha_fin_periodo
+  ) {
+    const horas = await getHorasDelPeriodo(supabase, {
+      historialLaboralIds: (detalles ?? []).map((d: DetalleRow) => d.ndt_historial_laboral_id),
+      fechaInicio: periodo.npe_fecha_inicio_periodo,
+      fechaFin: periodo.npe_fecha_fin_periodo,
+    })
+
+    if (horas.ok) {
+      for (const [labId, totales] of horas.data) {
+        if (totales.diasConProblema.length > 0) {
+          revisarPorLab.set(labId, totales.diasConProblema)
+        }
+      }
+    }
+  }
   // Desglose de "Deducciones" en dos totales, por cómo se calculan:
   //  - porcentual: % del salario bruto (ej. CCSS obrera) — con_tipo_calculo = porcentaje_deduccion_bruto
   //  - manual: monto fijo que el patrono decide (ej. préstamo) — con_tipo_calculo = monto_manual_deduccion
@@ -311,6 +335,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       pagado: row.ndt_pagado,
       fechaPago: row.ndt_fecha_pago,
       codigoVerificacion: codigoPorNdt.get(row.ndt_id) ?? null,
+      diasPorRevisar: revisarPorLab.get(row.ndt_historial_laboral_id) ?? [],
       montosPorConcepto: montosPorNdt.get(row.ndt_id) ?? {},
       horasTrabajadas: row.ndt_horas_ordinarias_diurnas,
       salarioPorHora: row.ndt_salario_por_hora,

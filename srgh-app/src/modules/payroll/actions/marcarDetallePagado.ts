@@ -7,6 +7,9 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
+import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
+import { MENSAJE_PROBLEMA } from '@/modules/payroll/lib/horasPeriodo'
+import { formatDate } from '@/modules/payroll/lib/format'
 
 interface DetalleActualRow {
   ndt_id: number
@@ -14,7 +17,12 @@ interface DetalleActualRow {
   ndt_pagado: boolean
   ndt_historial_laboral_id: number
   ndt_salario_bruto: number
-  sgrh_nomina_periodo: { npe_periodo_mes: number; npe_periodo_anio: number } | null
+  sgrh_nomina_periodo: {
+    npe_periodo_mes: number
+    npe_periodo_anio: number
+    npe_fecha_inicio_periodo: string | null
+    npe_fecha_fin_periodo: string | null
+  } | null
 }
 
 export type MarcarDetallePagadoResult = { ok: true } | { ok: false; error: string }
@@ -198,7 +206,10 @@ export async function marcarDetallePagado(
       ndt_pagado,
       ndt_historial_laboral_id,
       ndt_salario_bruto,
-      sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio )
+      sgrh_nomina_periodo (
+        npe_periodo_mes, npe_periodo_anio,
+        npe_fecha_inicio_periodo, npe_fecha_fin_periodo
+      )
     `
     )
     .eq('ndt_id', ndtId)
@@ -209,6 +220,40 @@ export async function marcarDetallePagado(
   }
   if (!detalle) {
     return { ok: false, error: 'El detalle no existe o no es visible.' }
+  }
+
+  // Antes de dar por pagado a alguien, sus marcas del periodo tienen que
+  // estar completas. Un dia con entrada y sin salida no suma horas, asi que
+  // el monto calculado esta corto: pagarlo es pagarle de menos a la persona
+  // por un fallo del kiosco o un olvido, y una vez marcado el periodo se cierra
+  // y el error queda enterrado.
+  //
+  // Solo se revisa al MARCAR. Desmarcar siempre se puede: es la salida cuando
+  // algo quedo mal.
+  const periodo = detalle.sgrh_nomina_periodo
+  if (pagado && periodo?.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo) {
+    const horas = await getHorasDelPeriodo(supabase, {
+      historialLaboralIds: [detalle.ndt_historial_laboral_id],
+      fechaInicio: periodo.npe_fecha_inicio_periodo,
+      fechaFin: periodo.npe_fecha_fin_periodo,
+    })
+
+    const problemas = horas.ok
+      ? (horas.data.get(detalle.ndt_historial_laboral_id)?.diasConProblema ?? [])
+      : []
+
+    if (problemas.length > 0) {
+      const detalleDias = problemas
+        .slice(0, 3)
+        .map((d) => `${formatDate(d.fecha)} (${MENSAJE_PROBLEMA[d.problema]})`)
+        .join(' · ')
+      const resto = problemas.length > 3 ? ` y ${problemas.length - 3} día(s) más` : ''
+
+      return {
+        ok: false,
+        error: `Este empleado tiene marcas de asistencia incompletas en el periodo, así que las horas calculadas están cortas: ${detalleDias}${resto}. Corregí las marcas en Asistencia antes de marcar el pago.`,
+      }
+    }
   }
 
   const { error: errUpdate } = await supabase

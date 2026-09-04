@@ -71,6 +71,12 @@ export interface DetalleNominaItem {
   fechaPago: string | null
   /** Código impreso en el comprobante (sgrh_comprobantes_pago). Null mientras el pago no se haya marcado. */
   codigoVerificacion: string | null
+  /**
+   * Días del periodo con marcas de asistencia incompletas. Mientras haya
+   * alguno, las horas calculadas están cortas y el pago queda bloqueado
+   * (marcarDetallePagado lo re-verifica).
+   */
+  diasPorRevisar: { fecha: string; problema: string }[]
   montosPorConcepto: Record<string, number>
   horasTrabajadas: number
   salarioPorHora: number
