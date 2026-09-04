@@ -21,11 +21,17 @@ import { round2 } from '@/modules/payroll/lib/numeros'
 // calcula a partir de eso.
 
 /**
- * Tope de horas normales quincenales: las horas trabajadas por encima de
- * este número se consideran "horas extra" para los conceptos de tipo
- * horas_extra_automatico. Ajusta este número si la jornada de la empresa es
- * distinta (valor por defecto: 8h/día × 11 días hábiles aprox. en una
- * quincena costarricense estándar).
+ * Jornada quincenal supuesta cuando NO hay de dónde sacar la real.
+ *
+ * Ya no es la regla de las horas extra. Estas se calculan día por día contra
+ * el horario programado de cada persona (ver lib/horasPeriodo.ts), que es lo
+ * que hace que quien tiene pactada una jornada de 12 h no genere extra por
+ * cumplirla, y que quien tiene 8 la genere a la novena. Un tope quincenal
+ * plano no puede distinguir esos dos casos.
+ *
+ * Sobrevive solo como valor por defecto de la plantilla de Excel cuando el
+ * periodo no tiene fechas o no se pudieron leer las marcas: 8 h/día × 11 días
+ * hábiles aprox. de una quincena costarricense.
  */
 export const TOPE_HORAS_NORMALES_QUINCENAL = 88
 
@@ -62,8 +68,14 @@ export function esConceptoDelTrabajador(concepto: { con_tipo: string }): boolean
 export interface DetalleManualInput {
   /** Monto por concepto (con_codigo), solo para tipos monto_manual_ingreso / monto_manual_deduccion. */
   montos: Record<string, number>
-  /** Horas trabajadas en la quincena (mientras no exista marcación automática). */
+  /** Horas trabajadas en la quincena, dentro de la jornada programada. */
   horasTrabajadas: number
+  /**
+   * Horas por encima de la jornada programada de cada día, ya calculadas
+   * (lib/horasPeriodo.ts). Llegan como dato y no se derivan de un tope: solo
+   * quien miró el horario de cada día sabe cuáles sobran.
+   */
+  horasExtra: number
   /** Salario por hora del empleado, usado para calcular horas extra automáticas. */
   salarioPorHora: number
 }
@@ -129,9 +141,8 @@ export function calcularPlanillaPorConceptos(
         if (concepto.con_afecta_base_ccss !== false) baseCcss += monto
       }
     } else if (concepto.con_tipo_calculo === 'horas_extra_automatico') {
-      const horasExtra = Math.max(0, input.horasTrabajadas - TOPE_HORAS_NORMALES_QUINCENAL)
       const monto = round2(
-        horasExtra * input.salarioPorHora * ((concepto.con_porcentaje ?? 0) / 100)
+        input.horasExtra * input.salarioPorHora * ((concepto.con_porcentaje ?? 0) / 100)
       )
       if (monto > 0) {
         lineas.push({
@@ -271,6 +282,7 @@ export interface PlanillaRowError {
 export interface PlanillaRowInput {
   cedula: string
   horasTrabajadas: number
+  horasExtra: number
   salarioPorHora: number
   /** Monto por código de concepto — solo conceptos monto_manual_ingreso / monto_manual_deduccion. */
   montos: Record<string, number>
@@ -295,6 +307,7 @@ export function parsePlanillaRow(
   fila: number,
   cedula: RawCell,
   horasTrabajadas: RawCell,
+  horasExtra: RawCell,
   salarioPorHora: RawCell,
   montosCrudos: { codigo: string; etiqueta: string; valor: RawCell }[]
 ): ParseRowResult {
@@ -305,6 +318,7 @@ export function parsePlanillaRow(
   if (
     !cedulaStr &&
     vacio(horasTrabajadas) &&
+    vacio(horasExtra) &&
     vacio(salarioPorHora) &&
     montosCrudos.every((m) => vacio(m.valor))
   ) {
@@ -326,6 +340,20 @@ export function parsePlanillaRow(
     return {
       ok: false,
       error: { fila, mensaje: 'El campo "horas trabajadas" no puede ser negativo.' },
+    }
+  }
+
+  const extra = toNumber(horasExtra)
+  if (extra === null) {
+    return {
+      ok: false,
+      error: { fila, mensaje: 'El campo "horas extra" no es un número válido.' },
+    }
+  }
+  if (extra < 0) {
+    return {
+      ok: false,
+      error: { fila, mensaje: 'El campo "horas extra" no puede ser negativo.' },
     }
   }
 
@@ -363,7 +391,13 @@ export function parsePlanillaRow(
 
   return {
     ok: true,
-    row: { cedula: cedulaStr, horasTrabajadas: horas, salarioPorHora: salario, montos },
+    row: {
+      cedula: cedulaStr,
+      horasTrabajadas: horas,
+      horasExtra: extra,
+      salarioPorHora: salario,
+      montos,
+    },
   }
 }
 
@@ -378,6 +412,7 @@ export function sameRowValues(
   b: Omit<PlanillaRowInput, 'cedula'>
 ): boolean {
   if (a.horasTrabajadas !== b.horasTrabajadas) return false
+  if (a.horasExtra !== b.horasExtra) return false
   if (a.salarioPorHora !== b.salarioPorHora) return false
 
   const codigos = new Set([...Object.keys(a.montos), ...Object.keys(b.montos)])

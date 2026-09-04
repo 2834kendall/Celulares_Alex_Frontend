@@ -75,6 +75,7 @@ export function DetalleEditForm({
         conceptosManuales.map((c) => [c.con_codigo, detalle.montosPorConcepto[c.con_codigo] ?? 0])
       ),
       horasTrabajadas: detalle.horasTrabajadas,
+      horasExtra: detalle.horasExtra,
       salarioPorHora: detalle.salarioPorHora,
     },
   })
@@ -195,6 +196,29 @@ export function DetalleEditForm({
             </div>
             {errors.horasTrabajadas && (
               <p className="mt-1 text-[11px] text-rose-600">{errors.horasTrabajadas.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className={LABEL} htmlFor={`horas-extra-${detalle.id}`}>
+              Horas extra
+            </label>
+            <div className="relative">
+              <input
+                id={`horas-extra-${detalle.id}`}
+                type="number"
+                step="0.01"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.horasExtra}
+                {...register('horasExtra', { valueAsNumber: true })}
+                className={`${INPUT} pl-3 pr-7`}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
+                h
+              </span>
+            </div>
+            {errors.horasExtra && (
+              <p className="mt-1 text-[11px] text-rose-600">{errors.horasExtra.message}</p>
             )}
           </div>
 

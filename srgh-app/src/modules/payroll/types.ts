@@ -79,6 +79,8 @@ export interface DetalleNominaItem {
   diasPorRevisar: { fecha: string; problema: string }[]
   montosPorConcepto: Record<string, number>
   horasTrabajadas: number
+  /** Horas por encima de la jornada programada, guardadas en ndt_horas_extra_al_50. */
+  horasExtra: number
   salarioPorHora: number
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
   incapacidad: IncapacidadItem | null
@@ -336,6 +338,10 @@ export const editarDetalleSchema = z.object({
   horasTrabajadas: montoNoNegativo('Las horas trabajadas son obligatorias').max(
     999,
     'Revisa las horas trabajadas'
+  ),
+  horasExtra: montoNoNegativo('Las horas extra son obligatorias').max(
+    999,
+    'Revisa las horas extra'
   ),
   salarioPorHora: montoNoNegativo('El salario por hora es obligatorio'),
 })

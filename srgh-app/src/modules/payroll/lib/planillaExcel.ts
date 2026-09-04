@@ -42,6 +42,7 @@ const COLOR_CALCULADO_FILL = 'FFF1F5F9'
 const LABEL_CEDULA = 'Cédula'
 const LABEL_EMPLEADO = 'Empleado'
 const LABEL_HORAS = 'Horas trabajadas'
+const LABEL_HORAS_EXTRA = 'Horas extra'
 const LABEL_SALARIO_HORA = 'Salario por hora'
 const LABEL_TOTAL_BRUTO = 'Total bruto'
 const LABEL_TOTAL_DEDUCCIONES = 'Total deducciones'
@@ -61,7 +62,10 @@ export interface EmpleadoPlantilla {
    * supuesta) para no dejar al encargado sin planilla.
    */
   horas?: {
+    /** Horas dentro de la jornada programada. */
     trabajadas: number
+    /** Horas por encima de la jornada programada de cada día. */
+    extra: number
     esperadas: number
     salarioPorHora: number
     /** Días programados con marcas incompletas; hay que corregirlos antes de pagar. */
@@ -121,6 +125,7 @@ export async function buildPlanillaTemplate(
     { label: LABEL_CEDULA, editable: false },
     { label: LABEL_EMPLEADO, editable: false },
     { label: LABEL_HORAS, editable: true },
+    { label: LABEL_HORAS_EXTRA, editable: true },
     { label: LABEL_SALARIO_HORA, editable: true },
     ...ingresoManual.map((c) => ({ label: c.con_nombre, editable: true })),
     ...deduccionManual.map((c) => ({ label: c.con_nombre, editable: true })),
@@ -137,8 +142,9 @@ export async function buildPlanillaTemplate(
 
   const colCedula = 1
   const colHoras = 3
-  const colSalarioHora = 4
-  const colIngresoInicio = 5
+  const colHorasExtra = 4
+  const colSalarioHora = 5
+  const colIngresoInicio = 6
   const colDeduccionManualInicio = colIngresoInicio + ingresoManual.length
   const colHorasExtraInicio = colDeduccionManualInicio + deduccionManual.length
   const colRevisar = colHorasExtraInicio + horasExtra.length
@@ -152,7 +158,7 @@ export async function buildPlanillaTemplate(
   ws.getCell('A2').value = info.subtitulo
   ws.getCell('A2').font = { color: { argb: 'FF64748B' }, size: 10 }
   ws.getCell('A3').value =
-    'Las horas y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues columnas — las columnas grises se calculan solas.'
+    'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues columnas — las columnas grises se calculan solas.'
   ws.getCell('A3').font = { color: { argb: 'FFB45309' }, size: 10 }
 
   const headerRow = ws.getRow(HEADER_ROW)
@@ -181,6 +187,7 @@ export async function buildPlanillaTemplate(
       Math.round((emp.salarioBaseMensual / 2 / TOPE_HORAS_NORMALES_QUINCENAL) * 100) / 100
 
     row.getCell(colHoras).value = horasTrabajadas
+    row.getCell(colHorasExtra).value = emp.horas?.extra ?? 0
     row.getCell(colSalarioHora).value = salarioPorHora
     row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
 
@@ -209,14 +216,14 @@ export async function buildPlanillaTemplate(
       row.getCell(colDeduccionManualInicio + i).value = 0
     })
 
-    const letraHoras = columnLetter(colHoras)
+    const letraHorasExtra = columnLetter(colHorasExtra)
     const letraSalarioHora = columnLetter(colSalarioHora)
 
     horasExtra.forEach((c, i) => {
       const col = colHorasExtraInicio + i
       const factor = (c.con_porcentaje ?? 0) / 100
       row.getCell(col).value = {
-        formula: `MAX(0,${letraHoras}${rowNumber}-${TOPE_HORAS_NORMALES_QUINCENAL})*${letraSalarioHora}${rowNumber}*${factor}`,
+        formula: `${letraHorasExtra}${rowNumber}*${letraSalarioHora}${rowNumber}*${factor}`,
       }
     })
 
@@ -257,6 +264,7 @@ export async function buildPlanillaTemplate(
       row.getCell(col).numFmt = MONEY_FORMAT
     }
     row.getCell(colHoras).numFmt = HOURS_FORMAT
+    row.getCell(colHorasExtra).numFmt = HOURS_FORMAT
     // "Días por revisar" es un conteo, no plata: el formato de moneda que se
     // aplica al bloque de arriba lo mostraría como "2.00".
     row.getCell(colRevisar).numFmt = '0'
@@ -429,6 +437,7 @@ export async function parsePlanillaWorkbook(
 
   const colCedula = locateColumn(headerRow, LABEL_CEDULA, maxCol)
   const colHoras = locateColumn(headerRow, LABEL_HORAS, maxCol)
+  const colHorasExtra = locateColumn(headerRow, LABEL_HORAS_EXTRA, maxCol)
   const colSalarioHora = locateColumn(headerRow, LABEL_SALARIO_HORA, maxCol)
 
   const columnasMonto = columnasMontoDef.map((c) => ({
@@ -447,12 +456,14 @@ export async function parsePlanillaWorkbook(
   if (
     colCedula === null ||
     colHoras === null ||
+    colHorasExtra === null ||
     colSalarioHora === null ||
     columnasMonto.some((c) => c.columna === null)
   ) {
     const faltantes = [
       colCedula === null ? LABEL_CEDULA : null,
       colHoras === null ? LABEL_HORAS : null,
+      colHorasExtra === null ? LABEL_HORAS_EXTRA : null,
       colSalarioHora === null ? LABEL_SALARIO_HORA : null,
       ...columnasMonto.filter((c) => c.columna === null).map((c) => c.etiqueta),
     ].filter((etiqueta): etiqueta is string => etiqueta !== null)
@@ -486,6 +497,7 @@ export async function parsePlanillaWorkbook(
       rowNumber,
       cellValue(row.getCell(colCedula)),
       cellValue(row.getCell(colHoras)),
+      cellValue(row.getCell(colHorasExtra)),
       cellValue(row.getCell(colSalarioHora)),
       montosCrudos
     )

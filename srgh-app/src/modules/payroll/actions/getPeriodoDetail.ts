@@ -32,6 +32,7 @@ interface DetalleRow {
   ndt_pagado: boolean
   ndt_fecha_pago: string | null
   ndt_horas_ordinarias_diurnas: number
+  ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
   ndt_dias_incapacidad_empleador: number
   ndt_dias_incapacidad_ccss: number
@@ -131,6 +132,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_pagado,
       ndt_fecha_pago,
       ndt_horas_ordinarias_diurnas,
+      ndt_horas_extra_al_50,
       ndt_salario_por_hora,
       ndt_dias_incapacidad_empleador,
       ndt_dias_incapacidad_ccss,
@@ -338,6 +340,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       diasPorRevisar: revisarPorLab.get(row.ndt_historial_laboral_id) ?? [],
       montosPorConcepto: montosPorNdt.get(row.ndt_id) ?? {},
       horasTrabajadas: row.ndt_horas_ordinarias_diurnas,
+      horasExtra: row.ndt_horas_extra_al_50 ?? 0,
       salarioPorHora: row.ndt_salario_por_hora,
       incapacidad,
       numeroCuenta: datosPago?.numeroCuenta ?? null,

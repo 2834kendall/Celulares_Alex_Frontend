@@ -11,14 +11,15 @@
 
 import 'server-only'
 import type { createClient } from '@/lib/supabase/server'
-import { calcularHorasExtraPendientes } from './bancoHoras'
+import { round2 } from '@/modules/payroll/lib/numeros'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 interface SincronizarBancoHorasParams {
   ndtId: number
   historialLaboralId: number
-  horasTrabajadas: number
+  /** Horas por encima de la jornada programada, ya calculadas. */
+  horasExtra: number
   salarioPorHora: number
 }
 
@@ -31,7 +32,7 @@ export async function sincronizarMovimientoBancoHoras(
   supabase: SupabaseServerClient,
   params: SincronizarBancoHorasParams
 ): Promise<{ error: string | null }> {
-  const horasExtra = calcularHorasExtraPendientes(params.horasTrabajadas)
+  const horasExtra = Math.max(0, round2(params.horasExtra))
 
   const { data: existente, error: errExistente } = await supabase
     .from('sgrh_banco_horas_movimientos')

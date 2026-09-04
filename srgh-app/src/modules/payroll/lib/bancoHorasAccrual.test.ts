@@ -24,7 +24,7 @@ describe('sincronizarMovimientoBancoHoras', () => {
 
     const result = await sincronizarMovimientoBancoHoras(supabase, {
       ...BASE,
-      horasTrabajadas: 80,
+      horasExtra: 0,
     })
 
     expect(result).toEqual({ error: null })
@@ -41,7 +41,7 @@ describe('sincronizarMovimientoBancoHoras', () => {
 
     const result = await sincronizarMovimientoBancoHoras(supabase, {
       ...BASE,
-      horasTrabajadas: 80,
+      horasExtra: 0,
     })
 
     expect(result).toEqual({ error: null })
@@ -55,7 +55,7 @@ describe('sincronizarMovimientoBancoHoras', () => {
 
     const result = await sincronizarMovimientoBancoHoras(supabase, {
       ...BASE,
-      horasTrabajadas: 80,
+      horasExtra: 0,
     })
 
     expect(result).toEqual({ error: null })
@@ -73,7 +73,7 @@ describe('sincronizarMovimientoBancoHoras', () => {
 
     const result = await sincronizarMovimientoBancoHoras(supabase, {
       ...BASE,
-      horasTrabajadas: 96,
+      horasExtra: 8,
     })
 
     expect(result).toEqual({ error: null })
@@ -90,7 +90,7 @@ describe('sincronizarMovimientoBancoHoras', () => {
 
     const result = await sincronizarMovimientoBancoHoras(supabase, {
       ...BASE,
-      horasTrabajadas: 96,
+      horasExtra: 8,
     })
 
     expect(result).toEqual({ error: null })
@@ -104,7 +104,7 @@ describe('sincronizarMovimientoBancoHoras', () => {
 
     const result = await sincronizarMovimientoBancoHoras(supabase, {
       ...BASE,
-      horasTrabajadas: 96,
+      horasExtra: 8,
     })
 
     expect(result).toEqual({ error: null })
@@ -118,7 +118,7 @@ describe('sincronizarMovimientoBancoHoras', () => {
 
     const result = await sincronizarMovimientoBancoHoras(supabase, {
       ...BASE,
-      horasTrabajadas: 96,
+      horasExtra: 8,
     })
 
     expect(result).toEqual({ error: 'No se pudo revisar el banco de horas.' })

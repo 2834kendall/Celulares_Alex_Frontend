@@ -202,6 +202,7 @@ describe('getPeriodoDetail (server action)', () => {
           diasPorRevisar: [],
           montosPorConcepto: { BASE: 450000, COMISION: 50000, CCSS_OBRERA: 52500, PRESTAMO: 10000 },
           horasTrabajadas: 88,
+          horasExtra: 0,
           salarioPorHora: 2500,
           incapacidad: null,
           numeroCuenta: 'CR05015202001026284066',

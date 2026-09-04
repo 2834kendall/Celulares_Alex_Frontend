@@ -83,7 +83,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     const ws = wb.getWorksheet('Planilla')!
 
     const headerRow = ws.getRow(4)
-    const headerLabels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(
+    const headerLabels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(
       (col) => headerRow.getCell(col).value
     )
 
@@ -91,6 +91,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
       'Cédula',
       'Empleado',
       'Horas trabajadas',
+      'Horas extra',
       'Salario por hora',
       'Salario base',
       'Comisión',
@@ -108,10 +109,11 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     expect(fila5.getCell(1).value).toBe('1-1111-1111')
     expect(fila5.getCell(2).value).toBe('Ana Mora')
     expect(fila5.getCell(3).value).toBe(88) // horas trabajadas por defecto = tope normal
-    expect(fila5.getCell(4).value).toBe(3409.09) // 600000 / 2 / 88, redondeado
-    expect(fila5.getCell(5).value).toBe(300000) // BASE = mitad del salario mensual
-    expect(fila5.getCell(6).value).toBe(0) // COMISION en cero por defecto
-    expect(fila5.getCell(7).value).toBe(0) // PRESTAMO en cero por defecto
+    expect(fila5.getCell(4).value).toBe(0) // horas extra
+    expect(fila5.getCell(5).value).toBe(3409.09) // 600000 / 2 / 88, redondeado
+    expect(fila5.getCell(6).value).toBe(300000) // BASE = mitad del salario mensual
+    expect(fila5.getCell(7).value).toBe(0) // COMISION en cero por defecto
+    expect(fila5.getCell(8).value).toBe(0) // PRESTAMO en cero por defecto
   })
 
   it('lee de vuelta los valores prellenados sin que el usuario edite nada', async () => {
@@ -124,12 +126,14 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     expect(rows[0]).toEqual({
       cedula: '1-1111-1111',
       horasTrabajadas: 88,
+      horasExtra: 0,
       salarioPorHora: 3409.09,
       montos: { BASE: 300000, COMISION: 0, PRESTAMO: 0 },
     })
     expect(rows[1]).toEqual({
       cedula: '2-2222-2222',
       horasTrabajadas: 88,
+      horasExtra: 0,
       salarioPorHora: 1704.55, // 300000 / 2 / 88
       montos: { BASE: 150000, COMISION: 0, PRESTAMO: 0 },
     })
@@ -144,9 +148,10 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     // Simula que el usuario edita la fila de Ana: le pone comisión, un
     // préstamo, y reporta 96 horas trabajadas (8 de extra).
     const fila5 = ws.getRow(5)
-    fila5.getCell(3).value = 96 // horas trabajadas
-    fila5.getCell(6).value = 26250 // comisión
-    fila5.getCell(7).value = 10000 // préstamo
+    fila5.getCell(3).value = 88 // horas trabajadas
+    fila5.getCell(4).value = 8 // horas extra
+    fila5.getCell(7).value = 26250 // comisión
+    fila5.getCell(8).value = 10000 // préstamo
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { rows, errors } = await parsePlanillaWorkbook(
@@ -159,7 +164,8 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     const ana = rows.find((r) => r.cedula === '1-1111-1111')
     expect(ana).toEqual({
       cedula: '1-1111-1111',
-      horasTrabajadas: 96,
+      horasTrabajadas: 88,
+      horasExtra: 8,
       salarioPorHora: 3409.09,
       montos: { BASE: 300000, COMISION: 26250, PRESTAMO: 10000 },
     })
@@ -171,9 +177,9 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     await wb.xlsx.load(buffer.buffer)
     const ws = wb.getWorksheet('Planilla')!
 
-    // "Total neto" (columna 13) trae una fórmula; forzamos un valor rarísimo
+    // "Total neto" (columna 14) trae una fórmula; forzamos un valor rarísimo
     // ahí para probar que el parseo ni siquiera la mira.
-    ws.getRow(5).getCell(13).value = 999999999
+    ws.getRow(5).getCell(14).value = 999999999
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { rows } = await parsePlanillaWorkbook(
@@ -192,7 +198,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     await wb.xlsx.load(buffer.buffer)
     const ws = wb.getWorksheet('Planilla')!
 
-    ws.getRow(5).getCell(6).value = -500 // comisión negativa
+    ws.getRow(5).getCell(7).value = -500 // comisión negativa
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { rows, errors } = await parsePlanillaWorkbook(
@@ -285,7 +291,7 @@ describe('parsePlanillaWorkbook: archivos que no corresponden', () => {
     await wb.xlsx.load(buffer.buffer)
     const ws = wb.getWorksheet('Planilla')!
 
-    ws.getRow(4).getCell(7).value = null // encabezado "Préstamo"
+    ws.getRow(4).getCell(8).value = null // encabezado "Préstamo"
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { errors } = await parsePlanillaWorkbook(
@@ -308,7 +314,13 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
       [
         {
           ...EMPLEADOS[0],
-          horas: { trabajadas: 44, esperadas: 88, salarioPorHora: 3409.09, diasPorRevisar: 2 },
+          horas: {
+            trabajadas: 44,
+            extra: 0,
+            esperadas: 88,
+            salarioPorHora: 3409.09,
+            diasPorRevisar: 2,
+          },
         },
       ],
       CONCEPTOS
@@ -319,9 +331,10 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
     const fila = wb.getWorksheet('Planilla')!.getRow(5)
 
     expect(fila.getCell(3).value).toBe(44) // horas trabajadas reales
-    expect(fila.getCell(4).value).toBe(3409.09) // valor hora prorrateado
-    expect(fila.getCell(5).value).toBe(150000) // media jornada = medio salario
-    expect(fila.getCell(9).value).toBe(2) // días por revisar
+    expect(fila.getCell(4).value).toBe(0) // sin horas extra
+    expect(fila.getCell(5).value).toBe(3409.09) // valor hora prorrateado
+    expect(fila.getCell(6).value).toBe(150000) // media jornada = medio salario
+    expect(fila.getCell(10).value).toBe(2) // días por revisar
   })
 
   it('cumplir la jornada completa prellena el base exacto, sin arrastre de redondeo', async () => {
@@ -330,7 +343,13 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
       [
         {
           ...EMPLEADOS[0],
-          horas: { trabajadas: 88, esperadas: 88, salarioPorHora: 3409.09, diasPorRevisar: 0 },
+          horas: {
+            trabajadas: 88,
+            extra: 6,
+            esperadas: 88,
+            salarioPorHora: 3409.09,
+            diasPorRevisar: 0,
+          },
         },
       ],
       CONCEPTOS
@@ -341,7 +360,9 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
 
     // 88 x 3409.09 daria 299999.92: el base se prorratea sobre el mensual, no
     // se reconstruye multiplicando la hora redondeada.
-    expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(5).value).toBe(300000)
+    expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(6).value).toBe(300000)
+    // Las horas extra vienen aparte, ya no se deducen de un tope.
+    expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(4).value).toBe(6)
   })
 
   it('sin lectura de marcas mantiene el supuesto anterior de jornada completa', async () => {
@@ -352,7 +373,8 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
     const fila = wb.getWorksheet('Planilla')!.getRow(5)
 
     expect(fila.getCell(3).value).toBe(88)
-    expect(fila.getCell(5).value).toBe(300000)
-    expect(fila.getCell(9).value).toBe(0)
+    expect(fila.getCell(4).value).toBe(0)
+    expect(fila.getCell(6).value).toBe(300000)
+    expect(fila.getCell(10).value).toBe(0)
   })
 })

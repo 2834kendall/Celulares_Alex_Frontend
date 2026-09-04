@@ -24,6 +24,7 @@ interface DetalleExistenteRow {
   ndt_historial_laboral_id: number
   ndt_pagado: boolean
   ndt_horas_ordinarias_diurnas: number
+  ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
   ndt_salario_bruto: number
   ndt_total_deducciones_obreras: number
@@ -50,6 +51,7 @@ interface DetalleInsertadoRow {
 /** Valores previos de una fila, en el mismo shape que PlanillaRowInput (sin cédula) para comparar con sameRowValues. */
 interface ValoresPrevios {
   horasTrabajadas: number
+  horasExtra: number
   salarioPorHora: number
   montos: Record<string, number>
   /** Totales ya guardados, para detectar cambios que vienen del catálogo. */
@@ -177,7 +179,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const { data: detallesPrevios, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
-      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto'
+      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto'
     )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
@@ -204,6 +206,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       for (const codigo of codigosManuales) montos[codigo] = 0
       valoresPreviosPorNdt.set(d.ndt_id, {
         horasTrabajadas: d.ndt_horas_ordinarias_diurnas,
+        horasExtra: d.ndt_horas_extra_al_50 ?? 0,
         salarioPorHora: d.ndt_salario_por_hora,
         montos,
         totales: {
@@ -272,11 +275,13 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     const mismoInput = sameRowValues(
       {
         horasTrabajadas: previo.horasTrabajadas,
+        horasExtra: previo.horasExtra,
         salarioPorHora: previo.salarioPorHora,
         montos: previo.montos,
       },
       {
         horasTrabajadas: row.horasTrabajadas,
+        horasExtra: row.horasExtra,
         salarioPorHora: row.salarioPorHora,
         montos: row.montos,
       }
@@ -285,6 +290,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     const totales = calcularPlanillaPorConceptos(conceptos, {
       montos: row.montos,
       horasTrabajadas: row.horasTrabajadas,
+      horasExtra: row.horasExtra,
       salarioPorHora: row.salarioPorHora,
     })
 
@@ -417,7 +423,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
       ndtId,
       historialLaboralId: porCedula.get(row.cedula)!.labId,
-      horasTrabajadas: row.horasTrabajadas,
+      horasExtra: row.horasExtra,
       salarioPorHora: row.salarioPorHora,
     })
     if (errBanco) {
@@ -434,6 +440,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         calcularPlanillaPorConceptos(conceptos, {
           montos: row.montos,
           horasTrabajadas: row.horasTrabajadas,
+          horasExtra: row.horasExtra,
           salarioPorHora: row.salarioPorHora,
         }),
       ])
@@ -489,7 +496,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
         ndtId,
         historialLaboralId: labId,
-        horasTrabajadas: row.horasTrabajadas,
+        horasExtra: row.horasExtra,
         salarioPorHora: row.salarioPorHora,
       })
       if (errBanco) {

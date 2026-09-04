@@ -49,7 +49,7 @@ function fila(
   montos: Record<string, number>,
   extra: Partial<Omit<PlanillaRowInput, 'cedula' | 'montos'>> = {}
 ): PlanillaRowInput {
-  return { cedula, horasTrabajadas: 88, salarioPorHora: 0, ...extra, montos }
+  return { cedula, horasTrabajadas: 88, horasExtra: 0, salarioPorHora: 0, ...extra, montos }
 }
 
 function buildFormData(periodoId = 1): FormData {
@@ -167,6 +167,7 @@ describe('uploadPlanilla (server action)', () => {
             ndt_id: 10,
             ndt_historial_laboral_id: 55,
             ndt_horas_ordinarias_diurnas: 88,
+            ndt_horas_extra_al_50: 0,
             ndt_salario_por_hora: 0,
             ndt_salario_bruto: 100000,
             ndt_total_deducciones_obreras: 10830,
@@ -254,6 +255,7 @@ describe('uploadPlanilla (server action)', () => {
               ndt_id: 20,
               ndt_historial_laboral_id: 70,
               ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
               ndt_salario_bruto: 100000,
               ndt_total_deducciones_obreras: 10830,
@@ -313,6 +315,7 @@ describe('uploadPlanilla (server action)', () => {
               ndt_id: 30,
               ndt_historial_laboral_id: 71,
               ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
               ndt_salario_bruto: 100000,
               ndt_total_deducciones_obreras: 10830,
@@ -375,6 +378,7 @@ describe('uploadPlanilla (server action)', () => {
               ndt_id: 10,
               ndt_historial_laboral_id: 55,
               ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
               ndt_salario_bruto: 100000,
               ndt_total_deducciones_obreras: 10830,
@@ -384,6 +388,7 @@ describe('uploadPlanilla (server action)', () => {
               ndt_id: 20,
               ndt_historial_laboral_id: 66,
               ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
               ndt_salario_bruto: 100000,
               ndt_total_deducciones_obreras: 10830,
@@ -498,6 +503,7 @@ describe('uploadPlanilla (server action)', () => {
               ndt_id: 10,
               ndt_historial_laboral_id: 55,
               ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
               // Totales calculados con la CCSS vieja (10,83%).
               ndt_salario_bruto: 100000,
@@ -561,6 +567,7 @@ describe('uploadPlanilla (server action)', () => {
             ndt_historial_laboral_id: 66,
             ndt_pagado: true,
             ndt_horas_ordinarias_diurnas: 88,
+            ndt_horas_extra_al_50: 0,
             ndt_salario_por_hora: 0,
             ndt_salario_bruto: 100000,
             ndt_total_deducciones_obreras: 10830,

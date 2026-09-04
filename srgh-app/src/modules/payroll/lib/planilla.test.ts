@@ -54,7 +54,8 @@ describe('calcularPlanillaPorConceptos', () => {
   it('suma ingresos manuales + horas extra para el bruto, y aplica deducciones sobre ese bruto', () => {
     const resultado = calcularPlanillaPorConceptos(CONCEPTOS, {
       montos: { BASE: 180000, COMISION: 26250, PRESTAMO: 10000 },
-      horasTrabajadas: 96, // 8 horas extra sobre el tope de 88
+      horasTrabajadas: 88,
+      horasExtra: 8, // calculadas contra el horario del día, no contra un tope
       salarioPorHora: 2500,
     })
 
@@ -69,6 +70,7 @@ describe('calcularPlanillaPorConceptos', () => {
     const resultado = calcularPlanillaPorConceptos(CONCEPTOS, {
       montos: { BASE: 180000 },
       horasTrabajadas: 80,
+      horasExtra: 0,
       salarioPorHora: 2500,
     })
 
@@ -80,6 +82,7 @@ describe('calcularPlanillaPorConceptos', () => {
     const resultado = calcularPlanillaPorConceptos(CONCEPTOS, {
       montos: {},
       horasTrabajadas: 88,
+      horasExtra: 0,
       salarioPorHora: 0,
     })
 
@@ -132,6 +135,7 @@ describe('base de las deducciones porcentuales', () => {
     const resultado = calcularPlanillaPorConceptos([BASE, VIATICOS, CCSS], {
       montos: { BASE: 200000, ING010: 50000 },
       horasTrabajadas: 88,
+      horasExtra: 0,
       salarioPorHora: 0,
     })
 
@@ -150,6 +154,7 @@ describe('base de las deducciones porcentuales', () => {
     const resultado = calcularPlanillaPorConceptos([BASE, CCSS], {
       montos: { BASE: 200000 },
       horasTrabajadas: 88,
+      horasExtra: 0,
       salarioPorHora: 0,
     })
 
@@ -183,6 +188,7 @@ describe('conceptos patronales', () => {
     const resultado = calcularPlanillaPorConceptos([BASE, PATRONAL], {
       montos: { BASE: 200000, PAT001: 55000 },
       horasTrabajadas: 88,
+      horasExtra: 0,
       salarioPorHora: 2500,
     })
 
@@ -257,7 +263,7 @@ describe('parsePlanillaRow', () => {
     }))
 
   it('acepta una fila válida y normaliza la cédula', () => {
-    const result = parsePlanillaRow(5, ' 1-1111-1111 ', 88, 2500, columnas({ BASE: 180000 }))
+    const result = parsePlanillaRow(5, ' 1-1111-1111 ', 88, 0, 2500, columnas({ BASE: 180000 }))
 
     expect(result.ok).toBe(true)
     if (result.ok === true) {
@@ -269,7 +275,14 @@ describe('parsePlanillaRow', () => {
   })
 
   it('ignora filas totalmente vacías', () => {
-    const result = parsePlanillaRow(9, null, null, null, columnas({ BASE: null, COMISION: '' }))
+    const result = parsePlanillaRow(
+      9,
+      null,
+      null,
+      null,
+      null,
+      columnas({ BASE: null, COMISION: '' })
+    )
 
     expect(result.ok).toBe('empty')
   })
@@ -279,6 +292,7 @@ describe('parsePlanillaRow', () => {
       5,
       '1-1111-1111',
       88,
+      0,
       2500,
       columnas({ BASE: 180000, COMISION: null })
     )
@@ -290,7 +304,7 @@ describe('parsePlanillaRow', () => {
   })
 
   it('acepta montos con formato de texto (separadores y colones)', () => {
-    const result = parsePlanillaRow(5, '1-1111-1111', 88, 2500, columnas({ BASE: '₡180,000' }))
+    const result = parsePlanillaRow(5, '1-1111-1111', 88, 0, 2500, columnas({ BASE: '₡180,000' }))
 
     expect(result.ok).toBe(true)
     if (result.ok === true) {
@@ -299,7 +313,7 @@ describe('parsePlanillaRow', () => {
   })
 
   it('rechaza montos negativos', () => {
-    const result = parsePlanillaRow(7, '1-1111-1111', 88, 2500, columnas({ AJUSTE: -100 }))
+    const result = parsePlanillaRow(7, '1-1111-1111', 88, 0, 2500, columnas({ AJUSTE: -100 }))
 
     expect(result.ok).toBe(false)
     if (result.ok === false) {
@@ -309,7 +323,7 @@ describe('parsePlanillaRow', () => {
   })
 
   it('rechaza montos no numéricos', () => {
-    const result = parsePlanillaRow(6, '1-1111-1111', 88, 2500, columnas({ BASE: 'abc' }))
+    const result = parsePlanillaRow(6, '1-1111-1111', 88, 0, 2500, columnas({ BASE: 'abc' }))
 
     expect(result.ok).toBe(false)
     if (result.ok === false) {
@@ -318,7 +332,7 @@ describe('parsePlanillaRow', () => {
   })
 
   it('rechaza horas trabajadas negativas', () => {
-    const result = parsePlanillaRow(6, '1-1111-1111', -5, 2500, columnas({}))
+    const result = parsePlanillaRow(6, '1-1111-1111', -5, 0, 2500, columnas({}))
 
     expect(result.ok).toBe(false)
     if (result.ok === false) {
@@ -326,8 +340,17 @@ describe('parsePlanillaRow', () => {
     }
   })
 
+  it('rechaza horas extra negativas', () => {
+    const result = parsePlanillaRow(6, '1-1111-1111', 88, -2, 2500, columnas({}))
+
+    expect(result.ok).toBe(false)
+    if (result.ok === false) {
+      expect(result.error.mensaje).toContain('horas extra')
+    }
+  })
+
   it('rechaza salario por hora no numérico', () => {
-    const result = parsePlanillaRow(6, '1-1111-1111', 88, 'abc', columnas({}))
+    const result = parsePlanillaRow(6, '1-1111-1111', 88, 0, 'abc', columnas({}))
 
     expect(result.ok).toBe(false)
     if (result.ok === false) {
@@ -336,7 +359,7 @@ describe('parsePlanillaRow', () => {
   })
 
   it('rechaza fila con montos pero sin cédula', () => {
-    const result = parsePlanillaRow(8, '', 88, 2500, columnas({ BASE: 1000 }))
+    const result = parsePlanillaRow(8, '', 88, 0, 2500, columnas({ BASE: 1000 }))
 
     expect(result.ok).toBe(false)
     if (result.ok === false) {
@@ -348,6 +371,7 @@ describe('parsePlanillaRow', () => {
 describe('sameRowValues', () => {
   const BASE = {
     horasTrabajadas: 88,
+    horasExtra: 0,
     salarioPorHora: 2500,
     montos: { BASE: 180000, COMISION: 26250 },
   }
@@ -366,13 +390,22 @@ describe('sameRowValues', () => {
     expect(sameRowValues(BASE, { ...BASE, horasTrabajadas: 96 })).toBe(false)
   })
 
+  it('es false si cambian las horas extra', () => {
+    expect(sameRowValues(BASE, { ...BASE, horasExtra: 4 })).toBe(false)
+  })
+
   it('es false si cambia el salario por hora', () => {
     expect(sameRowValues(BASE, { ...BASE, salarioPorHora: 3000 })).toBe(false)
   })
 
   it('trata un código ausente en un lado como cero', () => {
-    const a = { horasTrabajadas: 88, salarioPorHora: 2500, montos: { BASE: 180000 } }
-    const b = { horasTrabajadas: 88, salarioPorHora: 2500, montos: { BASE: 180000, COMISION: 0 } }
+    const a = { horasTrabajadas: 88, horasExtra: 0, salarioPorHora: 2500, montos: { BASE: 180000 } }
+    const b = {
+      horasTrabajadas: 88,
+      horasExtra: 0,
+      salarioPorHora: 2500,
+      montos: { BASE: 180000, COMISION: 0 },
+    }
     expect(sameRowValues(a, b)).toBe(true)
   })
 })

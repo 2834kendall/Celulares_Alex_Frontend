@@ -21,6 +21,7 @@ interface MovimientoRow {
 interface DetalleBorradorRow {
   ndt_id: number
   ndt_horas_ordinarias_diurnas: number
+  ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
   ndt_nomina_periodo_id: number
   sgrh_nomina_periodo: {
@@ -85,6 +86,7 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
       `
       ndt_id,
       ndt_horas_ordinarias_diurnas,
+      ndt_horas_extra_al_50,
       ndt_salario_por_hora,
       ndt_nomina_periodo_id,
       sgrh_nomina_periodo (
@@ -203,6 +205,10 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     {
       montos,
       horasTrabajadas: detalleDestino.ndt_horas_ordinarias_diurnas,
+      // Las horas extra guardadas del periodo destino, para que recalcular no
+      // las pierda. Con HORAS_EXTRA forzado a monto manual acá no las consume
+      // nadie, pero pasar 0 sería mentirle al motor.
+      horasExtra: detalleDestino.ndt_horas_extra_al_50 ?? 0,
       salarioPorHora: detalleDestino.ndt_salario_por_hora,
     }
   )

@@ -123,7 +123,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return {
       ...empleado,
       horas: {
-        trabajadas: totales.horasOrdinarias + totales.horasExtra,
+        trabajadas: totales.horasOrdinarias,
+        extra: totales.horasExtra,
         esperadas: totales.horasEsperadas,
         salarioPorHora: salarioPorHoraPeriodo(empleado.salarioBaseMensual, totales.horasEsperadas),
         diasPorRevisar: totales.diasConProblema.length,

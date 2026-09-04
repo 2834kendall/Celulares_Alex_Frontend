@@ -1,21 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calcularHorasExtraPendientes, calcularMontoSugeridoBancoHoras } from './bancoHoras'
-
-describe('calcularHorasExtraPendientes', () => {
-  it('devuelve 0 si las horas trabajadas no pasan del tope (88)', () => {
-    expect(calcularHorasExtraPendientes(88)).toBe(0)
-    expect(calcularHorasExtraPendientes(80)).toBe(0)
-  })
-
-  it('devuelve las horas de más cuando se pasa del tope', () => {
-    expect(calcularHorasExtraPendientes(96)).toBe(8)
-    expect(calcularHorasExtraPendientes(90.5)).toBe(2.5)
-  })
-
-  it('nunca devuelve un número negativo', () => {
-    expect(calcularHorasExtraPendientes(0)).toBe(0)
-  })
-})
+import { calcularMontoSugeridoBancoHoras } from './bancoHoras'
 
 describe('calcularMontoSugeridoBancoHoras', () => {
   it('calcula horas × salario por hora × 1.5', () => {

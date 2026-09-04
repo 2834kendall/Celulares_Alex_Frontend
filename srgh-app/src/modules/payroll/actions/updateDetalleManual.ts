@@ -89,6 +89,7 @@ export async function updateDetalleManual(
       ndt_total_deducciones_obreras: totalDeducciones,
       ndt_salario_neto: salarioNeto,
       ndt_horas_ordinarias_diurnas: parsed.data.horasTrabajadas,
+      ndt_horas_extra_al_50: parsed.data.horasExtra,
       ndt_salario_por_hora: parsed.data.salarioPorHora,
     })
     .eq('ndt_id', ndtId)
@@ -145,7 +146,7 @@ export async function updateDetalleManual(
   const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
     ndtId,
     historialLaboralId: detalle.ndt_historial_laboral_id,
-    horasTrabajadas: parsed.data.horasTrabajadas,
+    horasExtra: parsed.data.horasExtra,
     salarioPorHora: parsed.data.salarioPorHora,
   })
   if (errBanco) {

@@ -18,6 +18,7 @@ const mockRequirePermission = vi.mocked(requirePermission)
 const INPUT: EditarDetalleInput = {
   montos: { BASE: 200000, COMISION: 30000 },
   horasTrabajadas: 80,
+  horasExtra: 0,
   salarioPorHora: 2500,
 }
 
