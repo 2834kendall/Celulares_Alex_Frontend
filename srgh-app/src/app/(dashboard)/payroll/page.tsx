@@ -34,7 +34,7 @@ export default async function PayrollPage() {
   return (
     <div className="min-w-0 space-y-4">
       <PayrollHeader canWrite={canWrite} canManageConceptos={canManageConceptos} />
-      <PeriodosList periodos={periodosResult.data} />
+      <PeriodosList periodos={periodosResult.data} canWrite={canWrite} />
     </div>
   )
 }
