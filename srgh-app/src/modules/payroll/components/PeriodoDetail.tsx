@@ -21,6 +21,7 @@ import {
   estadoVisible,
   formatCRC,
   formatDate,
+  formatHoras,
   formatIban,
   periodoLabel,
 } from '@/modules/payroll/lib/format'
@@ -101,6 +102,8 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   )
   const totalDeduccionManual = periodo.detalles.reduce((sum, d) => sum + d.deduccionManual, 0)
   const totalNeto = periodo.detalles.reduce((sum, d) => sum + d.salarioNeto, 0)
+  const totalHoras = periodo.detalles.reduce((sum, d) => sum + d.horasTrabajadas, 0)
+  const totalHorasExtra = periodo.detalles.reduce((sum, d) => sum + d.horasExtra, 0)
   const totalIncapacidad = periodo.detalles.reduce((sum, d) => sum + (d.incapacidad?.monto ?? 0), 0)
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
@@ -324,10 +327,27 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
                   {[
+                    {
+                      label: 'Horas',
+                      valor:
+                        d.horasExtra > 0
+                          ? `${formatHoras(d.horasTrabajadas)} h (+${formatHoras(d.horasExtra)} extra)`
+                          : `${formatHoras(d.horasTrabajadas)} h`,
+                    },
+                    { label: 'Valor hora', valor: formatCRC(d.salarioPorHora) },
                     { label: 'Bruto', valor: formatCRC(d.salarioBruto) },
-                    { label: 'Deducc. %', valor: formatCRC(d.deduccionPorcentual) },
-                    { label: 'Deducc. manual', valor: formatCRC(d.deduccionManual) },
-                    { label: 'Cargas patronales', valor: formatCRC(d.cargasPatronales) },
+                    {
+                      label: 'Deducc. %',
+                      valor: formatCRC(d.deduccionPorcentual),
+                    },
+                    {
+                      label: 'Deducc. manual',
+                      valor: formatCRC(d.deduccionManual),
+                    },
+                    {
+                      label: 'Cargas patronales',
+                      valor: formatCRC(d.cargasPatronales),
+                    },
                     {
                       label: 'Incapacidad',
                       valor: d.incapacidad ? formatCRC(d.incapacidad.monto) : '—',
@@ -384,6 +404,12 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">
                   <th className={TABLE_TH}>Empleado</th>
+                  <th
+                    className={TABLE_TH_RIGHT}
+                    title="Horas de la quincena según las marcas de asistencia, y las que pasan de la jornada programada"
+                  >
+                    Horas
+                  </th>
                   <th className={TABLE_TH_RIGHT}>Salario bruto</th>
                   <th className={TABLE_TH_RIGHT} title="% del salario bruto, ej. CCSS obrera">
                     Deducc. % (bruto)
@@ -415,6 +441,17 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                         <p className="mt-0.5 text-[11px] font-normal text-slate-400">
                           {textoCuenta(d)}
                         </p>
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right text-slate-600"
+                        title={`Valor de la hora: ${formatCRC(d.salarioPorHora)}`}
+                      >
+                        <span className="tabular-nums">{formatHoras(d.horasTrabajadas)} h</span>
+                        {d.horasExtra > 0 && (
+                          <span className="mt-0.5 block text-[11px] font-semibold text-amber-600">
+                            +{formatHoras(d.horasExtra)} h extra
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right text-slate-600">
                         {formatCRC(d.salarioBruto)}
@@ -455,7 +492,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     </tr>
                     {puedeEditar && editandoId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
-                        <td colSpan={9} className="px-4 py-4">
+                        <td colSpan={10} className="px-4 py-4">
                           <div className="mb-3 flex items-center gap-2">
                             <Pencil className="h-3.5 w-3.5 text-brand-600" />
                             <p className="text-xs font-bold text-slate-800">
@@ -476,7 +513,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     )}
                     {canWrite && registrandoIncapacidadId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
-                        <td colSpan={9} className="px-4 py-4">
+                        <td colSpan={10} className="px-4 py-4">
                           <RegistrarIncapacidadForm
                             historialLaboralId={d.historialLaboralId}
                             empleadoNombre={d.empleadoNombre}
@@ -492,6 +529,14 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               <tfoot>
                 <tr className="border-t border-slate-100 bg-slate-50/60 text-sm font-bold text-slate-900">
                   <td className="px-3 py-2">Totales</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatHoras(totalHoras)} h
+                    {totalHorasExtra > 0 && (
+                      <span className="mt-0.5 block text-[11px] text-amber-600">
+                        +{formatHoras(totalHorasExtra)} h
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right">{formatCRC(totalBruto)}</td>
                   <td className="px-3 py-2 text-right">{formatCRC(totalDeduccionPorcentual)}</td>
                   <td className="px-3 py-2 text-right">{formatCRC(totalDeduccionManual)}</td>

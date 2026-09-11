@@ -74,6 +74,16 @@ export function formatCRC(amount: number | null | undefined) {
 }
 
 /** Agrupa de 4 en 4 para lectura: 'CR05015202001026284066' → 'CR05 0152 0200 1026 2840 66'. */
+/**
+ * Horas para mostrar: "8" si es entero, "7.5" si no. Mismo criterio que
+ * formatHoursValue en la pantalla de horarios — las horas trabajadas casi
+ * siempre caen en enteros o medias horas, y "8.00" solo agrega ruido.
+ */
+export function formatHoras(horas: number | null | undefined) {
+  const valor = horas ?? 0
+  return Number.isInteger(valor) ? String(valor) : valor.toFixed(2).replace(/0$/, '')
+}
+
 export function formatIban(numeroCuenta: string | null | undefined) {
   if (!numeroCuenta) return null
   return numeroCuenta.replace(/(.{4})/g, '$1 ').trim()
