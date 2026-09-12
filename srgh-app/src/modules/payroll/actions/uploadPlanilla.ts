@@ -9,9 +9,9 @@ import {
   calcularPlanillaPorConceptos,
   sameRowValues,
   type ConceptoPlanillaColumna,
-  type LineaCalculada,
   type PlanillaRowInput,
 } from '@/modules/payroll/lib/planilla'
+import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
@@ -123,7 +123,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
     .select(
-      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
+      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
     )
     .eq('con_activo', true)
     .returns<ConceptoPlanillaColumna[]>()
@@ -403,19 +403,9 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       return { ok: false, error: 'No se pudieron actualizar los montos de la planilla.' }
     }
 
-    const { error: errDelIngreso } = await supabase
-      .from('sgrh_nomina_linea_ingreso')
-      .delete()
-      .eq('ing_nomina_detalle_id', ndtId)
-    const { error: errDelDeduccion } = await supabase
-      .from('sgrh_nomina_linea_deduccion')
-      .delete()
-      .eq('ded_nomina_detalle_id', ndtId)
-    if (errDelIngreso || errDelDeduccion) {
-      return { ok: false, error: 'No se pudieron actualizar las líneas de la planilla.' }
-    }
-
-    const { error: errLineas } = await insertarLineas(supabase, ndtId, lineas)
+    // reemplazarLineasDetalle borra y reinserta, conservando los metadatos de
+    // las deducciones (de qué beneficio vienen, si son voluntarias).
+    const { error: errLineas } = await reemplazarLineasDetalle(supabase, ndtId, lineas)
     if (errLineas) {
       return { ok: false, error: errLineas }
     }
@@ -484,7 +474,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       if (!ndtId) continue
 
       const { lineas } = totalesPorFila.get(row.cedula)!
-      const { error: errLineas } = await insertarLineas(supabase, ndtId, lineas)
+      const { error: errLineas } = await reemplazarLineasDetalle(supabase, ndtId, lineas)
       if (errLineas) {
         return {
           ok: false,
@@ -516,43 +506,4 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     sinCambios,
     eliminados: ndtIdsEliminar.length,
   }
-}
-
-/**
- * Inserta las líneas de ingreso y deducción calculadas para un ndt_id.
- * Compartido entre "actualizar" e "insertar nuevo" — misma forma que usa
- * updateDetalleManual.ts para la edición manual.
- */
-async function insertarLineas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  ndtId: number,
-  lineas: LineaCalculada[]
-): Promise<{ error: string | null }> {
-  const ingresos = lineas
-    .filter((l) => l.esIngreso)
-    .map((l) => ({
-      ing_nomina_detalle_id: ndtId,
-      ing_concepto_id: l.con_id,
-      ing_monto: l.monto,
-    }))
-  if (ingresos.length > 0) {
-    const { error } = await supabase.from('sgrh_nomina_linea_ingreso').insert(ingresos)
-    if (error) return { error: 'No se pudieron guardar las líneas de ingreso.' }
-  }
-
-  const deducciones = lineas
-    .filter((l) => !l.esIngreso)
-    .map((l) => ({
-      ded_nomina_detalle_id: ndtId,
-      ded_concepto_id: l.con_id,
-      ded_monto: l.monto,
-      ded_porcentaje_aplicado: l.porcentajeAplicado ?? null,
-      ded_base_calculo: l.baseCalculo ?? null,
-    }))
-  if (deducciones.length > 0) {
-    const { error } = await supabase.from('sgrh_nomina_linea_deduccion').insert(deducciones)
-    if (error) return { error: 'No se pudieron guardar las líneas de deducción.' }
-  }
-
-  return { error: null }
 }

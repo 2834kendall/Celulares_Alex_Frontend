@@ -41,8 +41,20 @@ export interface ConceptoCalculo {
   /** 'ingreso' | 'deduccion' | 'patronal'. Ver esConceptoDelTrabajador. */
   con_tipo: string
   /**
-   * false = el monto se paga pero NO entra en la base de las deducciones
-   * porcentuales (ej. viáticos, que no son salario y no cotizan a la CCSS).
+   * false = el monto se paga pero NO es salario: queda fuera del salario
+   * bruto y se suma DESPUÉS de las deducciones (viáticos, que son reintegro
+   * de gastos; el aguinaldo pagado por planilla).
+   *
+   * Que quede fuera del bruto es lo que impide que infle el aguinaldo y la
+   * cesantía, porque las dos se calculan sobre ndt_salario_bruto.
+   */
+  con_afecta_salario_bruto: boolean
+  /**
+   * false = el monto no entra en la base de las deducciones porcentuales
+   * (ej. la CCSS obrera del 10,83%).
+   *
+   * Solo se mira para lo que SÍ es salario: algo puede ser salario y no
+   * cotizar, pero lo que no es salario nunca cotiza.
    */
   con_afecta_base_ccss: boolean
   con_tipo_calculo: string
@@ -84,31 +96,47 @@ export interface LineaCalculada {
   con_id: number
   con_codigo: string
   monto: number
-  /** true = suma al bruto (ingreso); false = se resta (deducción). */
+  /** true = se suma (ingreso); false = se resta (deducción). */
   esIngreso: boolean
+  /** Ingreso que no es salario: se suma después de las deducciones (viáticos). */
+  esNoSalarial?: boolean
   /** Solo presentes en deducciones tipo porcentaje (para ded_porcentaje_aplicado / ded_base_calculo). */
   porcentajeAplicado?: number
   baseCalculo?: number
 }
 
 export interface TotalesPorConceptos {
+  /** Solo lo que es salario. Base del aguinaldo y de la cesantía. */
   salarioBruto: number
   /**
-   * Parte del bruto que sí cotiza (suma de los ingresos con
+   * Parte del bruto que sí cotiza (los ingresos salariales con
    * con_afecta_base_ccss). Es la base de las deducciones porcentuales, y
-   * coincide con el bruto salvo que haya ingresos no cotizables.
+   * coincide con el bruto salvo que haya salario no cotizable.
    */
   baseCcss: number
+  /**
+   * Lo que se paga pero no es salario (viáticos). Se suma al final, después
+   * de las deducciones: no cotiza y no hace aguinaldo.
+   */
+  totalNoSalarial: number
   totalDeducciones: number
+  /** bruto − deducciones + no salarial. Es la plata que recibe la persona. */
   salarioNeto: number
   lineas: LineaCalculada[]
 }
 
 /**
  * Calcula bruto, deducciones y neto a partir de los conceptos activos del
- * catálogo (en vez de una lista fija de campos). Orden: primero se suman los
- * ingresos (manuales + horas extra automáticas) para tener el bruto, y solo
- * entonces se calculan las deducciones porcentuales (que dependen del bruto).
+ * catálogo (en vez de una lista fija de campos).
+ *
+ * El orden importa y es el del recibo:
+ *   salario base + comisión + …          → salario bruto (base de CCSS y aguinaldo)
+ *   − CCSS obrera, préstamos, …          → total de deducciones
+ *   + viáticos                           → salario neto
+ *
+ * Los viáticos van al final a propósito: son un reintegro de gastos, no
+ * salario. Si entraran al bruto pagarían CCSS y además inflarían el
+ * aguinaldo, que se acumula como bruto ÷ 12 en cada pago marcado.
  */
 export function calcularPlanillaPorConceptos(
   conceptos: ConceptoCalculo[],
@@ -117,50 +145,53 @@ export function calcularPlanillaPorConceptos(
   const lineas: LineaCalculada[] = []
   let bruto = 0
   // Base de las deducciones porcentuales. Se acumula aparte del bruto porque
-  // hay ingresos que se pagan pero no cotizan: el catálogo ya lo declaraba en
-  // con_afecta_base_ccss, pero el motor no lo miraba y le aplicaba el 10,83%
-  // de CCSS obrera a los viáticos igual que al salario.
+  // puede haber salario que no cotiza.
   let baseCcss = 0
+  // Lo que se paga pero no es salario. Se suma al final, después de las
+  // deducciones.
+  let noSalarial = 0
 
   // Las cargas patronales quedan fuera: no son plata del trabajador.
   const aplicables = conceptos.filter(esConceptoDelTrabajador)
 
+  /**
+   * Acumula un ingreso en el balde que le toca. En los dos `!== false`: si el
+   * dato faltara, el fallo seguro es el comportamiento de siempre (es salario
+   * y cotiza), no dejar de cotizar por un campo vacío.
+   */
+  const sumarIngreso = (concepto: ConceptoCalculo, monto: number) => {
+    lineas.push({
+      con_id: concepto.con_id,
+      con_codigo: concepto.con_codigo,
+      monto,
+      esIngreso: true,
+      esNoSalarial: concepto.con_afecta_salario_bruto === false,
+    })
+
+    if (concepto.con_afecta_salario_bruto === false) {
+      noSalarial += monto
+      return
+    }
+
+    bruto += monto
+    if (concepto.con_afecta_base_ccss !== false) baseCcss += monto
+  }
+
   for (const concepto of aplicables) {
     if (concepto.con_tipo_calculo === 'monto_manual_ingreso') {
       const monto = round2(input.montos[concepto.con_codigo] ?? 0)
-      if (monto > 0) {
-        lineas.push({
-          con_id: concepto.con_id,
-          con_codigo: concepto.con_codigo,
-          monto,
-          esIngreso: true,
-        })
-        bruto += monto
-        // `!== false` y no `=== true`: si el dato faltara, el fallo seguro es
-        // cotizar (comportamiento de siempre), no dejar de cotizar.
-        if (concepto.con_afecta_base_ccss !== false) baseCcss += monto
-      }
+      if (monto > 0) sumarIngreso(concepto, monto)
     } else if (concepto.con_tipo_calculo === 'horas_extra_automatico') {
       const monto = round2(
         input.horasExtra * input.salarioPorHora * ((concepto.con_porcentaje ?? 0) / 100)
       )
-      if (monto > 0) {
-        lineas.push({
-          con_id: concepto.con_id,
-          con_codigo: concepto.con_codigo,
-          monto,
-          esIngreso: true,
-        })
-        bruto += monto
-        // `!== false` y no `=== true`: si el dato faltara, el fallo seguro es
-        // cotizar (comportamiento de siempre), no dejar de cotizar.
-        if (concepto.con_afecta_base_ccss !== false) baseCcss += monto
-      }
+      if (monto > 0) sumarIngreso(concepto, monto)
     }
   }
 
   bruto = round2(bruto)
   baseCcss = round2(baseCcss)
+  noSalarial = round2(noSalarial)
   let deducciones = 0
 
   for (const concepto of aplicables) {
@@ -193,11 +224,12 @@ export function calcularPlanillaPorConceptos(
   }
 
   deducciones = round2(deducciones)
-  const neto = round2(bruto - deducciones)
+  const neto = round2(bruto - deducciones + noSalarial)
 
   return {
     salarioBruto: bruto,
     baseCcss,
+    totalNoSalarial: noSalarial,
     totalDeducciones: deducciones,
     salarioNeto: neto,
     lineas,
@@ -240,6 +272,12 @@ export function firmaCatalogo(conceptos: ConceptoPlanillaColumna[]): string {
         c.con_tipo,
         c.con_tipo_calculo,
         c.con_porcentaje ?? '',
+        // Las dos banderas deciden en qué lado del recibo cae el monto, así
+        // que cambiarlas cambia el cálculo tanto como cambiar un porcentaje.
+        // Faltaban acá: una plantilla vieja seguía pasando la validación
+        // aunque los viáticos hubieran dejado de ser salario en el medio.
+        c.con_afecta_salario_bruto ? 'S' : 'N',
+        c.con_afecta_base_ccss ? 'C' : 'N',
       ].join(':')
     )
     .join('|')

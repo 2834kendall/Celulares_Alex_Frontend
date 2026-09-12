@@ -59,7 +59,14 @@ export interface DetalleNominaItem {
   historialLaboralId: number
   empleadoNombre: string
   empleadoCedula: string
+  /** Solo lo que es salario. Es la base del aguinaldo y de la cesantía. */
   salarioBruto: number
+  /**
+   * Lo que se paga pero no es salario (viáticos): va después de las
+   * deducciones, no cotiza y no hace aguinaldo. Ya está incluido en
+   * salarioNeto; se expone aparte para poder mostrar el desglose.
+   */
+  totalNoSalarial: number
   totalDeducciones: number
   /** Parte de totalDeducciones calculada como % del bruto (ej. CCSS obrera). */
   deduccionPorcentual: number
@@ -84,6 +91,16 @@ export interface DetalleNominaItem {
   salarioPorHora: number
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
   incapacidad: IncapacidadItem | null
+  /**
+   * Plata que sale por esta persona en este periodo: salario neto + lo que la
+   * empresa paga de incapacidad.
+   *
+   * Existe para que la pantalla del periodo y el comprobante impriman EL
+   * MISMO número. El comprobante ya sumaba la incapacidad al final ("Total a
+   * pagar") mientras la planilla mostraba solo el neto, así que los dos
+   * papeles del mismo pago no cuadraban entre sí.
+   */
+  totalAPagar: number
   /** Cuenta IBAN para la transferencia, ya DESCIFRADA (sgrh_empleado_datos_pago.edp_numero_cuenta). Null si el empleado no tiene datos de pago cargados, o si los tiene pero no se pudieron descifrar — ver cuentaIlegible. */
   numeroCuenta: string | null
   /** Nombre del banco de esa cuenta (sgrh_cat_bancos.ban_nombre). Null si no hay cuenta o el banco no está definido. */
@@ -258,7 +275,9 @@ export const conceptoNominaSchema = z
       .max(500, 'El porcentaje es demasiado alto')
       .nullable(),
 
-    con_afecta_salario_bruto: z.boolean().default(false),
+    // true por defecto: lo normal es que un ingreso sea salario. Lo que se
+    // marca aparte es la excepción (viáticos), no al revés.
+    con_afecta_salario_bruto: z.boolean().default(true),
     con_afecta_base_ccss: z.boolean().default(true),
 
     // Este campo se valida en dos momentos: en el navegador (el input de

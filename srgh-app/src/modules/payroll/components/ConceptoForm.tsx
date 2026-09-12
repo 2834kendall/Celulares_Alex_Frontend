@@ -88,7 +88,11 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           con_tipo: 'ingreso',
           con_tipo_calculo: 'monto_manual_ingreso',
           con_porcentaje: null,
-          con_afecta_salario_bruto: false,
+          // Un ingreso nuevo es salario mientras no se diga lo contrario: lo
+          // raro es el viático. Con el valor anterior (false) un bono creado
+          // desde acá se pagaba después de las deducciones y no contaba para
+          // el aguinaldo, sin que nadie lo hubiera pedido.
+          con_afecta_salario_bruto: true,
           con_afecta_base_ccss: true,
           con_formula_base: '',
           con_activo: true,
@@ -218,25 +222,36 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
       )}
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
-          <input
-            type="checkbox"
-            disabled={isSubmitting}
-            {...register('con_afecta_salario_bruto')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-          />
-          Afecta el salario bruto
-        </label>
+        <div>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+            <input
+              type="checkbox"
+              disabled={isSubmitting}
+              {...register('con_afecta_salario_bruto')}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            Afecta el salario bruto
+          </label>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Destildalo solo si no es salario (viáticos): se paga después de las deducciones y no
+            cuenta para el aguinaldo ni la cesantía.
+          </p>
+        </div>
 
-        <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
-          <input
-            type="checkbox"
-            disabled={isSubmitting}
-            {...register('con_afecta_base_ccss')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-          />
-          Afecta la base de CCSS
-        </label>
+        <div>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+            <input
+              type="checkbox"
+              disabled={isSubmitting}
+              {...register('con_afecta_base_ccss')}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            Afecta la base de CCSS
+          </label>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Si está tildado, el monto entra en la base sobre la que se calcula el rebajo de la CCSS.
+          </p>
+        </div>
       </div>
 
       {isEditing && (

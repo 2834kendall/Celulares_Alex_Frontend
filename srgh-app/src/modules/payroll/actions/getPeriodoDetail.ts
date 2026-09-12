@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
+import { round2 } from '@/modules/payroll/lib/numeros'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
@@ -66,7 +67,7 @@ interface ComprobanteRow {
 interface LineaIngresoRow {
   ing_nomina_detalle_id: number
   ing_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+  sgrh_cat_conceptos_nomina: { con_codigo: string; con_afecta_salario_bruto: boolean } | null
 }
 
 interface LineaDeduccionRow {
@@ -197,6 +198,10 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   //  - porcentual: % del salario bruto (ej. CCSS obrera) — con_tipo_calculo = porcentaje_deduccion_bruto
   //  - manual: monto fijo que el patrono decide (ej. préstamo) — con_tipo_calculo = monto_manual_deduccion
   const deduccionesPorNdt = new Map<number, { porcentual: number; manual: number }>()
+  // Ingresos que no son salario (viáticos): se pagan después de las
+  // deducciones. Se suman desde las líneas y no desde una columna del detalle
+  // porque el dato de si un concepto es salario vive en el catálogo.
+  const noSalarialPorNdt = new Map<number, number>()
 
   if (idsDetalle.length > 0) {
     const { data: comprobantes } = await supabase
@@ -212,7 +217,9 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
     const [{ data: lineasIngreso }, { data: lineasDeduccion }] = await Promise.all([
       supabase
         .from('sgrh_nomina_linea_ingreso')
-        .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .select(
+          'ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_afecta_salario_bruto )'
+        )
         .in('ing_nomina_detalle_id', idsDetalle)
         .returns<LineaIngresoRow[]>(),
       supabase
@@ -230,6 +237,13 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       const montos = montosPorNdt.get(linea.ing_nomina_detalle_id) ?? {}
       montos[codigo] = linea.ing_monto
       montosPorNdt.set(linea.ing_nomina_detalle_id, montos)
+
+      if (linea.sgrh_cat_conceptos_nomina?.con_afecta_salario_bruto === false) {
+        noSalarialPorNdt.set(
+          linea.ing_nomina_detalle_id,
+          (noSalarialPorNdt.get(linea.ing_nomina_detalle_id) ?? 0) + linea.ing_monto
+        )
+      }
     }
     for (const linea of lineasDeduccion ?? []) {
       const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
@@ -329,6 +343,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       empleadoNombre: nombre,
       empleadoCedula: empleado?.emp_numero_identificacion ?? '—',
       salarioBruto: row.ndt_salario_bruto,
+      totalNoSalarial: noSalarialPorNdt.get(row.ndt_id) ?? 0,
       totalDeducciones: row.ndt_total_deducciones_obreras,
       deduccionPorcentual: deducciones.porcentual,
       deduccionManual: deducciones.manual,
@@ -343,6 +358,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       horasExtra: row.ndt_horas_extra_al_50 ?? 0,
       salarioPorHora: row.ndt_salario_por_hora,
       incapacidad,
+      totalAPagar: round2(row.ndt_salario_neto + (incapacidad?.monto ?? 0)),
       numeroCuenta: datosPago?.numeroCuenta ?? null,
       bancoNombre: datosPago?.bancoNombre ?? null,
       cuentaIlegible: datosPago?.cuentaIlegible ?? false,

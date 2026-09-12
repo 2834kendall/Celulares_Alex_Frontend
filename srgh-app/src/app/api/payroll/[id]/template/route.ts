@@ -80,7 +80,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
     .select(
-      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
+      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
     )
     .eq('con_activo', true)
     .returns<ConceptoPlanillaColumna[]>()

@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { editarDetalleSchema, type EditarDetalleInput } from '@/modules/payroll/types'
 import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
+import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 
 interface DetalleActualRow {
@@ -63,7 +64,9 @@ export async function updateDetalleManual(
 
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
-    .select('con_id, con_codigo, con_tipo, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje')
+    .select(
+      'con_id, con_codigo, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
+    )
     .eq('con_activo', true)
     .returns<ConceptoCalculo[]>()
 
@@ -97,48 +100,9 @@ export async function updateDetalleManual(
     return { ok: false, error: 'No se pudieron guardar los montos.' }
   }
 
-  const { error: errDelIngreso } = await supabase
-    .from('sgrh_nomina_linea_ingreso')
-    .delete()
-    .eq('ing_nomina_detalle_id', ndtId)
-  const { error: errDelDeduccion } = await supabase
-    .from('sgrh_nomina_linea_deduccion')
-    .delete()
-    .eq('ded_nomina_detalle_id', ndtId)
-  if (errDelIngreso || errDelDeduccion) {
-    return { ok: false, error: 'No se pudieron actualizar las líneas de la planilla.' }
-  }
-
-  const ingresos = lineas
-    .filter((l) => l.esIngreso)
-    .map((l) => ({
-      ing_nomina_detalle_id: ndtId,
-      ing_concepto_id: l.con_id,
-      ing_monto: l.monto,
-    }))
-  if (ingresos.length > 0) {
-    const { error: errIngreso } = await supabase.from('sgrh_nomina_linea_ingreso').insert(ingresos)
-    if (errIngreso) {
-      return { ok: false, error: 'No se pudieron guardar las líneas de ingreso.' }
-    }
-  }
-
-  const deducciones = lineas
-    .filter((l) => !l.esIngreso)
-    .map((l) => ({
-      ded_nomina_detalle_id: ndtId,
-      ded_concepto_id: l.con_id,
-      ded_monto: l.monto,
-      ded_porcentaje_aplicado: l.porcentajeAplicado ?? null,
-      ded_base_calculo: l.baseCalculo ?? null,
-    }))
-  if (deducciones.length > 0) {
-    const { error: errDeduccion } = await supabase
-      .from('sgrh_nomina_linea_deduccion')
-      .insert(deducciones)
-    if (errDeduccion) {
-      return { ok: false, error: 'No se pudieron guardar las deducciones.' }
-    }
+  const { error: errLineas } = await reemplazarLineasDetalle(supabase, ndtId, lineas)
+  if (errLineas) {
+    return { ok: false, error: errLineas }
   }
 
   // Si las horas trabajadas pasan del tope normal, esas horas de más quedan

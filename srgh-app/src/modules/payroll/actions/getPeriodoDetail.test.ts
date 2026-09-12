@@ -191,11 +191,13 @@ describe('getPeriodoDetail (server action)', () => {
           empleadoNombre: 'Ana Mora',
           empleadoCedula: '1-1111-1111',
           salarioBruto: 500000,
+          totalNoSalarial: 0,
           totalDeducciones: 52500,
           deduccionPorcentual: 52500,
           deduccionManual: 10000,
           cargasPatronales: 133000,
           salarioNeto: 447500,
+          totalAPagar: 447500,
           pagado: false,
           fechaPago: null,
           codigoVerificacion: 'ABCD-EFGH-JKMN',
@@ -292,6 +294,48 @@ describe('getPeriodoDetail (server action)', () => {
         porcentajePagoEmpleador: 50,
         monto: 25000,
       })
+      // Y el total a pagar la incluye. Antes el comprobante la sumaba por su
+      // cuenta y la pantalla del periodo no, así que los dos papeles del mismo
+      // pago mostraban cifras distintas.
+      expect(result.data.detalles[0].totalAPagar).toBe(472500) // 447500 + 25000
+    }
+  })
+
+  // El catálogo marca los viáticos con con_afecta_salario_bruto = false: se
+  // pagan pero no son salario, así que van después de las deducciones y no
+  // cuentan para el aguinaldo.
+  it('separa del bruto los ingresos que no son salario', async () => {
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: {
+        data: [
+          {
+            ing_nomina_detalle_id: 21,
+            ing_monto: 500000,
+            sgrh_cat_conceptos_nomina: { con_codigo: 'BASE', con_afecta_salario_bruto: true },
+          },
+          {
+            ing_nomina_detalle_id: 21,
+            ing_monto: 40000,
+            sgrh_cat_conceptos_nomina: { con_codigo: 'ING010', con_afecta_salario_bruto: false },
+          },
+        ],
+        error: null,
+      },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.detalles[0].totalNoSalarial).toBe(40000)
+      // El bruto guardado no los incluye; el neto sí.
+      expect(result.data.detalles[0].salarioBruto).toBe(500000)
+      expect(result.data.detalles[0].totalAPagar).toBe(447500)
     }
   })
   // El aviso de la pantalla sale de acá; quien realmente bloquea el pago es

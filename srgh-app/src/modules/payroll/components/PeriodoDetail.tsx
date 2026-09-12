@@ -105,6 +105,10 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const totalHoras = periodo.detalles.reduce((sum, d) => sum + d.horasTrabajadas, 0)
   const totalHorasExtra = periodo.detalles.reduce((sum, d) => sum + d.horasExtra, 0)
   const totalIncapacidad = periodo.detalles.reduce((sum, d) => sum + (d.incapacidad?.monto ?? 0), 0)
+  const totalNoSalarial = periodo.detalles.reduce((sum, d) => sum + d.totalNoSalarial, 0)
+  // Lo que de verdad sale del banco por este periodo. Es el mismo número que
+  // imprime el comprobante de cada empleado.
+  const totalAPagar = periodo.detalles.reduce((sum, d) => sum + d.totalAPagar, 0)
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     periodo.detalles,
@@ -319,9 +323,9 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                 </div>
 
                 <div className="flex items-baseline justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2">
-                  <span className={META_LABEL}>Salario neto</span>
+                  <span className={META_LABEL}>Total a pagar</span>
                   <span className="text-base font-bold tabular-nums text-slate-900">
-                    {formatCRC(d.salarioNeto)}
+                    {formatCRC(d.totalAPagar)}
                   </span>
                 </div>
 
@@ -344,6 +348,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                       label: 'Deducc. manual',
                       valor: formatCRC(d.deduccionManual),
                     },
+                    {
+                      label: 'Viáticos',
+                      valor: d.totalNoSalarial > 0 ? formatCRC(d.totalNoSalarial) : '—',
+                    },
+                    { label: 'Salario neto', valor: formatCRC(d.salarioNeto) },
                     {
                       label: 'Cargas patronales',
                       valor: formatCRC(d.cargasPatronales),
@@ -421,12 +430,17 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     Deducc. manual (neto)
                   </th>
                   <th className={TABLE_TH_RIGHT}>Cargas patronales</th>
-                  <th className={TABLE_TH_RIGHT}>Salario neto</th>
                   <th
                     className={TABLE_TH_RIGHT}
-                    title="Incapacidad por enfermedad: lo que paga la empresa, aparte del salario"
+                    title="Bruto − deducciones + viáticos. Los viáticos no cotizan, por eso van al final"
                   >
-                    Incapacidad
+                    Salario neto
+                  </th>
+                  <th
+                    className={TABLE_TH_RIGHT}
+                    title="Salario neto + lo que la empresa paga de incapacidad. Es el monto que imprime el comprobante"
+                  >
+                    Total a pagar
                   </th>
                   <th className={TABLE_TH}>Pago</th>
                   {canWrite && <th className={TABLE_TH_RIGHT}>Acciones</th>}
@@ -465,18 +479,23 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                       <td className="px-3 py-2 text-right text-slate-600">
                         {formatCRC(d.cargasPatronales)}
                       </td>
-                      <td className="px-3 py-2 text-right font-semibold text-slate-900">
-                        {formatCRC(d.salarioNeto)}
-                      </td>
                       <td className="px-3 py-2 text-right text-slate-600">
-                        {d.incapacidad ? (
+                        <span className="tabular-nums">{formatCRC(d.salarioNeto)}</span>
+                        {d.totalNoSalarial > 0 && (
+                          <span className="mt-0.5 block text-[11px] text-slate-400">
+                            incl. {formatCRC(d.totalNoSalarial)} de viáticos
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                        <span className="tabular-nums">{formatCRC(d.totalAPagar)}</span>
+                        {d.incapacidad && d.incapacidad.monto > 0 && (
                           <span
+                            className="mt-0.5 block text-[11px] font-normal text-slate-400"
                             title={`${d.incapacidad.diasEmpleador}d patrono / ${d.incapacidad.diasCcss}d CCSS`}
                           >
-                            {formatCRC(d.incapacidad.monto)}
+                            incl. {formatCRC(d.incapacidad.monto)} de incapacidad
                           </span>
-                        ) : (
-                          '—'
                         )}
                       </td>
                       <td className="px-3 py-2">
@@ -541,8 +560,22 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   <td className="px-3 py-2 text-right">{formatCRC(totalDeduccionPorcentual)}</td>
                   <td className="px-3 py-2 text-right">{formatCRC(totalDeduccionManual)}</td>
                   <td className="px-3 py-2 text-right">—</td>
-                  <td className="px-3 py-2 text-right">{formatCRC(totalNeto)}</td>
-                  <td className="px-3 py-2 text-right">{formatCRC(totalIncapacidad)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <span className="tabular-nums">{formatCRC(totalNeto)}</span>
+                    {totalNoSalarial > 0 && (
+                      <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
+                        incl. {formatCRC(totalNoSalarial)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <span className="tabular-nums">{formatCRC(totalAPagar)}</span>
+                    {totalIncapacidad > 0 && (
+                      <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
+                        incl. {formatCRC(totalIncapacidad)}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2" />
                   {canWrite && <td className="px-3 py-2" />}
                 </tr>
