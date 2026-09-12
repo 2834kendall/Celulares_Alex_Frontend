@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
+import { ScheduleColorPicker } from '@/modules/schedules/components/ScheduleColorPicker'
 
 interface ShiftTypeOption {
   tjo_id: number
@@ -40,6 +41,7 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
     handleSubmit,
     setValue,
     getValues,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ScheduleInput>({
     resolver: zodResolver(scheduleSchema),
@@ -69,8 +71,11 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           hor_hora_fin_break: '',
           hor_duracion_break_min: 10,
           hor_activo: true,
+          hor_color: null,
         },
   })
+
+  const colorValue = watch('hor_color')
 
   function toggleBreak(checked: boolean) {
     setHasBreak(checked)
@@ -275,6 +280,12 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           </div>
         )}
       </div>
+
+      <ScheduleColorPicker
+        value={colorValue}
+        disabled={isSubmitting}
+        onChange={(color) => setValue('hor_color', color)}
+      />
 
       <label
         htmlFor="hor_activo"

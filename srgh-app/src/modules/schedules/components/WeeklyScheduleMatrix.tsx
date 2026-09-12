@@ -1,21 +1,27 @@
 'use client'
 
 import { useMemo, useState, type CSSProperties } from 'react'
+import { toast } from 'sonner'
 import {
   AlertTriangle,
   Baby,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
+  Copy,
   HeartPulse,
   Loader2,
   Pencil,
   Plus,
   RotateCcw,
   Users,
+  Wand2,
 } from 'lucide-react'
 import type { EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
-import type { ScheduleRow } from '@/modules/schedules/types'
+import { getScheduleSuggestion } from '@/modules/schedules/actions/getScheduleSuggestion'
+import { pasteWeeklySchedule } from '@/modules/schedules/actions/pasteWeeklySchedule'
+import type { PasteWeeklyScheduleInput, ScheduleRow } from '@/modules/schedules/types'
 import {
   WEEKDAY_NAMES,
   currentMondayISO,
@@ -24,6 +30,7 @@ import {
   toISODate,
 } from '@/modules/schedules/lib/week'
 import { stripSeconds } from '@/modules/schedules/lib/time'
+import { lighten } from '@/lib/utils/color'
 import { useWeekNavigation } from '@/modules/schedules/hooks/useWeekNavigation'
 import {
   useWeeklyScheduleMatrix,
@@ -41,6 +48,62 @@ import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
 import { IconButton } from '@/components/ui/IconButton'
 import { DatePopover } from '@/components/ui/DatePickerButton'
 import { EmptyState } from '@/components/ui/EmptyState'
+
+type PasteEmployeeInput = PasteWeeklyScheduleInput['employees'][number]
+type PasteDayInput = PasteEmployeeInput['days'][number]
+
+interface ClipboardDay {
+  scheduleId: number | null
+  isDayOff: boolean
+  customStartTime: string | null
+  customEndTime: string | null
+  customLunchStart: string | null
+  customLunchEnd: string | null
+  customBreakStart: string | null
+  customBreakEnd: string | null
+}
+
+interface ScheduleClipboard {
+  sourceWeekStartISO: string
+  byEmployment: Record<number, ClipboardDay[]>
+}
+
+/** Forma minima que necesita `applySource`: la cumplen tanto lo copiado (ClipboardDay) como lo sugerido (SuggestedDay). */
+interface SourceDay {
+  scheduleId: number | null
+  isDayOff: boolean
+  customStartTime?: string | null
+  customEndTime?: string | null
+  customLunchStart?: string | null
+  customLunchEnd?: string | null
+  customBreakStart?: string | null
+  customBreakEnd?: string | null
+}
+
+const CLIPBOARD_STORAGE_KEY = 'sgrh_schedule_week_clipboard'
+
+function loadClipboard(): ScheduleClipboard | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(CLIPBOARD_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<ScheduleClipboard> | null
+    if (!parsed || typeof parsed.sourceWeekStartISO !== 'string' || !parsed.byEmployment) {
+      return null
+    }
+    return parsed as ScheduleClipboard
+  } catch {
+    return null
+  }
+}
+
+function saveClipboard(clipboard: ScheduleClipboard) {
+  try {
+    window.localStorage.setItem(CLIPBOARD_STORAGE_KEY, JSON.stringify(clipboard))
+  } catch {
+    // Modo privado o cuota llena: perder el portapapeles no debe romper la matriz.
+  }
+}
 
 interface WeeklyScheduleMatrixProps {
   weekStartISO: string
@@ -88,9 +151,23 @@ const NEUTRAL_STRIPE = '#E2E8F0'
 const ABSENCE_PALETTE = { fill: '#F8EBEF', border: '#E6CDD5', text: '#856874', icon: '#BC9BA6' }
 const LACTANCIA_TEXT = '#8B6A7C'
 
-function paletteFor(assignment: DayAssignmentWithAusencia): CellPalette | null {
+/** Deriva la paleta de una celda a partir del color a medida elegido en la plantilla. */
+function customSchedulePalette(hex: string): CellPalette {
+  return {
+    fill: lighten(hex, 0.55),
+    border: lighten(hex, 0.2),
+    stripe: lighten(hex, 0.4),
+  }
+}
+
+function paletteFor(
+  assignment: DayAssignmentWithAusencia,
+  colorById: Map<number, string>
+): CellPalette | null {
   if (assignment.customStartTime) return CUSTOM_PALETTE
   if (assignment.scheduleId == null) return null
+  const manualColor = colorById.get(assignment.scheduleId)
+  if (manualColor) return customSchedulePalette(manualColor)
   return SCHEDULE_PALETTE[assignment.scheduleId % SCHEDULE_PALETTE.length]
 }
 
@@ -102,7 +179,7 @@ function hatchStyle(color: string): CSSProperties {
 }
 
 /** El descanso se raya con el color del horario que mas repite el colaborador. */
-function rowStripeColor(row: EmployeeWeekRowWithAusencia) {
+function rowStripeColor(row: EmployeeWeekRowWithAusencia, colorById: Map<number, string>) {
   const counts = new Map<number, number>()
   for (const day of row.days) {
     if (day.scheduleId != null) counts.set(day.scheduleId, (counts.get(day.scheduleId) ?? 0) + 1)
@@ -117,9 +194,10 @@ function rowStripeColor(row: EmployeeWeekRowWithAusencia) {
     }
   }
 
-  return dominant == null
-    ? NEUTRAL_STRIPE
-    : SCHEDULE_PALETTE[dominant % SCHEDULE_PALETTE.length].stripe
+  if (dominant == null) return NEUTRAL_STRIPE
+  const manualColor = colorById.get(dominant)
+  if (manualColor) return customSchedulePalette(manualColor).stripe
+  return SCHEDULE_PALETTE[dominant % SCHEDULE_PALETTE.length].stripe
 }
 
 function dayNumber(dateISO: string) {
@@ -187,6 +265,7 @@ interface ScheduleCellProps {
   isSaving: boolean
   scheduleOptions: ScheduleRow[]
   currentValue: string
+  colorById: Map<number, string>
   onChange: (value: string) => void
   onEditCustom: () => void
 }
@@ -205,13 +284,14 @@ function ScheduleCell({
   isSaving,
   scheduleOptions,
   currentValue,
+  colorById,
   onChange,
   onEditCustom,
 }: ScheduleCellProps) {
   const ausencia = assignment.ausencia
   const isBlocked = Boolean(ausencia && !ausencia.isIntraday)
   const isDisabled = !canWrite || isSaving || isBlocked
-  const palette = paletteFor(assignment)
+  const palette = paletteFor(assignment, colorById)
   const range = timeRange(assignment)
 
   const content = isBlocked ? (
@@ -313,6 +393,15 @@ export function WeeklyScheduleMatrix({
   ausencias,
 }: WeeklyScheduleMatrixProps) {
   const { isNavigating, goToWeekStart } = useWeekNavigation(weekStartISO)
+
+  const colorById = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const schedule of schedules) {
+      if (schedule.hor_color) map.set(schedule.hor_id, schedule.hor_color)
+    }
+    return map
+  }, [schedules])
+
   const {
     rows: scheduleRows,
     scheduleOptions,
@@ -329,6 +418,9 @@ export function WeeklyScheduleMatrix({
   const [branchFilter, setBranchFilter] = useState<'all' | number>('all')
   const [employeeFilter, setEmployeeFilter] = useState<'all' | number>('all')
   const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>([])
+  const [clipboard, setClipboard] = useState<ScheduleClipboard | null>(() => loadClipboard())
+  const [isPasting, setIsPasting] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
 
   const branchOptions = useMemo(() => {
     const map = new Map<number, string>()
@@ -396,10 +488,153 @@ export function WeeklyScheduleMatrix({
     paginatedItems: paginatedRows,
     goToPreviousPage,
     goToNextPage,
-  } = usePagination(filteredRows, 6)
+  } = usePagination(filteredRows, 10)
 
   const isCurrentWeek = weekStartISO === currentMondayISO()
   const todayISO = toISODate(new Date())
+
+  /** Copia el horario de la semana que se esta viendo (respeta filtro de sucursal/colaborador). */
+  function handleCopyWeek() {
+    if (filteredRows.length === 0) {
+      toast.error('No hay colaboradores para copiar en esta vista.')
+      return
+    }
+
+    const byEmployment: Record<number, ClipboardDay[]> = {}
+    for (const row of filteredRows) {
+      byEmployment[row.employmentHistoryId] = row.days.map((day) => ({
+        scheduleId: day.scheduleId,
+        isDayOff: day.isDayOff,
+        customStartTime: day.customStartTime ?? null,
+        customEndTime: day.customEndTime ?? null,
+        customLunchStart: day.customLunchStart ?? null,
+        customLunchEnd: day.customLunchEnd ?? null,
+        customBreakStart: day.customBreakStart ?? null,
+        customBreakEnd: day.customBreakEnd ?? null,
+      }))
+    }
+
+    const next: ScheduleClipboard = { sourceWeekStartISO: weekStartISO, byEmployment }
+    setClipboard(next)
+    saveClipboard(next)
+    toast.success(
+      `Semana copiada (${filteredRows.length} colaborador${filteredRows.length === 1 ? '' : 'es'}).`
+    )
+  }
+
+  /**
+   * Arma, para cada colaborador visible, los dias a escribir a partir de una
+   * fuente por colaborador+dia-de-semana (lo copiado, o lo sugerido) —
+   * saltando los dias bloqueados por ausencia y los colaboradores sin fuente,
+   * y los pasa a `pasteWeeklySchedule` en una sola llamada.
+   */
+  async function applySource(
+    sourceByEmployment: Record<number, (SourceDay | null)[] | undefined>,
+    noSourceMessage: string,
+    successMessage: string
+  ) {
+    const employees: PasteEmployeeInput[] = []
+
+    for (const row of filteredRows) {
+      const source = sourceByEmployment[row.employmentHistoryId]
+      if (!source) continue
+
+      const days: PasteDayInput[] = []
+      for (let i = 0; i < 7; i++) {
+        const sourceDay = source[i]
+        if (!sourceDay) continue
+
+        const destDay = row.days[i]
+        const isBlocked = Boolean(destDay.ausencia && !destDay.ausencia.isIntraday)
+        if (isBlocked) continue
+
+        days.push({
+          assignmentId: destDay.assignmentId,
+          date: destDay.date,
+          scheduleId: sourceDay.scheduleId,
+          isDayOff: sourceDay.isDayOff,
+          customStartTime: sourceDay.customStartTime ?? null,
+          customEndTime: sourceDay.customEndTime ?? null,
+          customLunchStart: sourceDay.customLunchStart ?? null,
+          customLunchEnd: sourceDay.customLunchEnd ?? null,
+          customBreakStart: sourceDay.customBreakStart ?? null,
+          customBreakEnd: sourceDay.customBreakEnd ?? null,
+        })
+      }
+
+      if (days.length > 0) {
+        employees.push({
+          employmentHistoryId: row.employmentHistoryId,
+          employeeId: row.employeeId,
+          branchId: row.branchId,
+          days,
+        })
+      }
+    }
+
+    if (employees.length === 0) {
+      toast.error(noSourceMessage)
+      return false
+    }
+
+    const result = await pasteWeeklySchedule({ employees })
+
+    if (!result.ok) {
+      toast.error(result.error)
+      return false
+    }
+
+    toast.success(successMessage)
+    return true
+  }
+
+  /** Pega en la semana visible lo copiado de otra (o de la misma) semana. */
+  async function handlePasteWeek() {
+    if (!canWrite || isPasting) return
+
+    if (!clipboard) {
+      toast.error('No hay ningun horario copiado.')
+      return
+    }
+
+    setIsPasting(true)
+    await applySource(
+      clipboard.byEmployment,
+      'No hay dias disponibles para pegar en esta vista.',
+      'Horario pegado.'
+    )
+    setIsPasting(false)
+  }
+
+  /** Sugiere, por colaborador y dia, el turno que mas se repite en su historial previo a esta semana. */
+  async function handleGenerateSuggestion() {
+    if (!canWrite || isGenerating) return
+
+    if (filteredRows.length === 0) {
+      toast.error('No hay colaboradores para generar un horario.')
+      return
+    }
+
+    setIsGenerating(true)
+
+    const result = await getScheduleSuggestion(
+      filteredRows.map((row) => row.employmentHistoryId),
+      weekStartISO
+    )
+
+    if (!result.ok) {
+      toast.error(result.error)
+      setIsGenerating(false)
+      return
+    }
+
+    await applySource(
+      result.byEmployment,
+      'No hay suficiente historial para sugerir un horario.',
+      'Horario sugerido aplicado.'
+    )
+    setIsGenerating(false)
+  }
 
   return (
     <div className="min-w-0 space-y-3">
@@ -466,6 +701,51 @@ export function WeeklyScheduleMatrix({
                 <ChevronRight className="h-3.5 w-3.5" />
               </IconButton>
             </div>
+
+            {canWrite && (
+              <div
+                className="inline-flex items-center rounded-full border border-slate-200 p-0.5"
+                style={{ backgroundColor: RAIL_BG }}
+              >
+                <IconButton
+                  onClick={handleCopyWeek}
+                  aria-label="Copiar el horario de esta vista"
+                  title="Copiar horario"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </IconButton>
+
+                <IconButton
+                  onClick={handlePasteWeek}
+                  disabled={!clipboard || isPasting}
+                  aria-label="Pegar el horario copiado en esta vista"
+                  title={
+                    clipboard
+                      ? 'Pegar horario copiado'
+                      : 'Copia un horario primero para poder pegarlo'
+                  }
+                >
+                  {isPasting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ClipboardPaste className="h-3.5 w-3.5" />
+                  )}
+                </IconButton>
+
+                <IconButton
+                  onClick={handleGenerateSuggestion}
+                  disabled={isGenerating}
+                  aria-label="Generar horario sugerido segun el historial"
+                  title="Generar horario sugerido segun el historial"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" />
+                  )}
+                </IconButton>
+              </div>
+            )}
 
             {/*
               Ya estando en la semana actual el boton no se apaga como si
@@ -585,7 +865,7 @@ export function WeeklyScheduleMatrix({
             <MatrixEmptyState hasUnfilteredRows={scheduleRows.length > 0} />
           ) : (
             paginatedRows.map((row) => {
-              const stripe = rowStripeColor(row)
+              const stripe = rowStripeColor(row, colorById)
 
               return (
                 <div
@@ -633,6 +913,7 @@ export function WeeklyScheduleMatrix({
                             }
                             scheduleOptions={scheduleOptions}
                             currentValue={getAssignmentValue(assignment)}
+                            colorById={colorById}
                             onChange={(value) => handleAssignmentChange(row, assignment, value)}
                             onEditCustom={() => openCustomModal(row, assignment)}
                           />
@@ -688,7 +969,7 @@ export function WeeklyScheduleMatrix({
                   </tr>
                 ) : (
                   paginatedRows.map((row) => {
-                    const stripe = rowStripeColor(row)
+                    const stripe = rowStripeColor(row, colorById)
 
                     return (
                       <tr key={row.employmentHistoryId} className="h-px">
@@ -739,6 +1020,7 @@ export function WeeklyScheduleMatrix({
                                 }
                                 scheduleOptions={scheduleOptions}
                                 currentValue={getAssignmentValue(assignment)}
+                                colorById={colorById}
                                 onChange={(value) => handleAssignmentChange(row, assignment, value)}
                                 onEditCustom={() => openCustomModal(row, assignment)}
                               />

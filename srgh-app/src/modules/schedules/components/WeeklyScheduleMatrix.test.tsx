@@ -5,6 +5,8 @@ import { WeeklyScheduleMatrix } from './WeeklyScheduleMatrix'
 import { assignDaySchedule } from '@/modules/schedules/actions/assignDaySchedule'
 import { assignCustomScheduleBulk } from '@/modules/schedules/actions/assignCustomScheduleBulk'
 import { clearDayAssignment } from '@/modules/schedules/actions/clearDayAssignment'
+import { pasteWeeklySchedule } from '@/modules/schedules/actions/pasteWeeklySchedule'
+import { getScheduleSuggestion } from '@/modules/schedules/actions/getScheduleSuggestion'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import type { DayAssignment, EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
 import type { ScheduleRow } from '@/modules/schedules/types'
@@ -14,6 +16,10 @@ const push = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
   usePathname: () => '/schedule',
+}))
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }))
 
 vi.mock('@/modules/schedules/actions/assignDaySchedule', () => ({
@@ -28,9 +34,19 @@ vi.mock('@/modules/schedules/actions/clearDayAssignment', () => ({
   clearDayAssignment: vi.fn(),
 }))
 
+vi.mock('@/modules/schedules/actions/pasteWeeklySchedule', () => ({
+  pasteWeeklySchedule: vi.fn(),
+}))
+
+vi.mock('@/modules/schedules/actions/getScheduleSuggestion', () => ({
+  getScheduleSuggestion: vi.fn(),
+}))
+
 const mockAssignDaySchedule = vi.mocked(assignDaySchedule)
 const mockAssignCustomScheduleBulk = vi.mocked(assignCustomScheduleBulk)
 const mockClearDayAssignment = vi.mocked(clearDayAssignment)
+const mockPasteWeeklySchedule = vi.mocked(pasteWeeklySchedule)
+const mockGetScheduleSuggestion = vi.mocked(getScheduleSuggestion)
 
 const WEEK_START = '2026-01-05'
 const WEEK_DATES = getWeekDates(WEEK_START)
@@ -85,6 +101,7 @@ function renderMatrix(rows: EmployeeWeekRow[], canWrite = true) {
 describe('<WeeklyScheduleMatrix />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
   })
 
   it('muestra el estado vacio cuando no hay colaboradores', () => {
@@ -218,8 +235,8 @@ describe('<WeeklyScheduleMatrix />', () => {
     expect(await screen.findByText('No se pudo guardar.')).toBeInTheDocument()
   })
 
-  it('muestra la paginacion cuando hay mas de 6 colaboradores', () => {
-    const rows = Array.from({ length: 7 }, (_, i) =>
+  it('muestra la paginacion cuando hay mas de 10 colaboradores', () => {
+    const rows = Array.from({ length: 11 }, (_, i) =>
       makeRow({ employmentHistoryId: i + 1, fullName: `Empleado ${i + 1}` })
     )
     renderMatrix(rows)
@@ -227,11 +244,91 @@ describe('<WeeklyScheduleMatrix />', () => {
     expect(screen.getAllByText(/Página 1 de 2/).length).toBeGreaterThan(0)
   })
 
-  it('no muestra paginacion con 6 colaboradores o menos', () => {
-    const rows = Array.from({ length: 6 }, (_, i) =>
+  it('no muestra paginacion con 10 colaboradores o menos', () => {
+    const rows = Array.from({ length: 10 }, (_, i) =>
       makeRow({ employmentHistoryId: i + 1, fullName: `Empleado ${i + 1}` })
     )
     renderMatrix(rows)
     expect(screen.queryByText(/Página/)).not.toBeInTheDocument()
+  })
+
+  it('sin permiso de escritura no muestra los iconos de copiar/pegar/generar', () => {
+    renderMatrix([makeRow()], false)
+    expect(
+      screen.queryByRole('button', { name: 'Copiar el horario de esta vista' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('copiar habilita pegar, que estaba deshabilitado', async () => {
+    const user = userEvent.setup()
+    renderMatrix([makeRow({ days: makeDays({ 0: { scheduleId: 1, scheduleName: 'Turno A' } }) })])
+
+    const pasteButton = screen.getByRole('button', {
+      name: 'Pegar el horario copiado en esta vista',
+    })
+    expect(pasteButton).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Copiar el horario de esta vista' }))
+
+    expect(pasteButton).toBeEnabled()
+  })
+
+  it('pegar aplica lo copiado a los mismos dias de la vista actual', async () => {
+    const user = userEvent.setup()
+    mockPasteWeeklySchedule.mockResolvedValue({ ok: true })
+    renderMatrix([makeRow({ days: makeDays({ 0: { scheduleId: 1, scheduleName: 'Turno A' } }) })])
+
+    await user.click(screen.getByRole('button', { name: 'Copiar el horario de esta vista' }))
+    await user.click(screen.getByRole('button', { name: 'Pegar el horario copiado en esta vista' }))
+
+    await waitFor(() =>
+      expect(mockPasteWeeklySchedule).toHaveBeenCalledWith({
+        employees: [
+          expect.objectContaining({
+            employmentHistoryId: 1,
+            employeeId: 10,
+            branchId: 100,
+            days: expect.arrayContaining([
+              expect.objectContaining({
+                date: WEEK_DATES[0],
+                scheduleId: 1,
+                isDayOff: false,
+              }),
+            ]),
+          }),
+        ],
+      })
+    )
+  })
+
+  it('generar sugerido consulta el historial y aplica lo devuelto', async () => {
+    const user = userEvent.setup()
+    mockGetScheduleSuggestion.mockResolvedValue({
+      ok: true,
+      byEmployment: {
+        1: [{ scheduleId: 1, isDayOff: false }, null, null, null, null, null, null],
+      },
+    })
+    mockPasteWeeklySchedule.mockResolvedValue({ ok: true })
+
+    renderMatrix([makeRow()])
+
+    await user.click(
+      screen.getByRole('button', { name: 'Generar horario sugerido segun el historial' })
+    )
+
+    await waitFor(() => expect(mockGetScheduleSuggestion).toHaveBeenCalledWith([1], WEEK_START))
+    await waitFor(() =>
+      expect(mockPasteWeeklySchedule).toHaveBeenCalledWith({
+        employees: [
+          expect.objectContaining({
+            employmentHistoryId: 1,
+            days: [
+              expect.objectContaining({ date: WEEK_DATES[0], scheduleId: 1, isDayOff: false }),
+            ],
+          }),
+        ],
+      })
+    )
   })
 })

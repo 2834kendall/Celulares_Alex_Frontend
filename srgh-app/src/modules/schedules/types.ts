@@ -4,6 +4,7 @@ import type { Database } from '@/types/database.types'
 export type ScheduleRow = Database['public']['Tables']['sgrh_cat_horarios']['Row']
 
 const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
+const hexColorRegex = /^#[0-9a-fA-F]{6}$/
 
 /** Empty string is allowed too, so the field can be cleared/left blank in the form. */
 const optionalTime = z
@@ -27,6 +28,8 @@ export const scheduleSchema = z
     hor_hora_fin_break: optionalTime,
     hor_duracion_break_min: z.number().int().min(0).default(10),
     hor_activo: z.boolean().default(true),
+    /** null = sin color propio, la matriz semanal asigna uno automatico por hor_id. */
+    hor_color: z.string().regex(hexColorRegex, 'Color invalido.').nullable().optional(),
   })
   .refine((data) => data.hor_hora_salida > data.hor_hora_entrada, {
     message: 'La hora de salida debe ser posterior a la hora de entrada.',
@@ -138,3 +141,46 @@ export const assignCustomScheduleBulkSchema = z.object({
 })
 
 export type AssignCustomScheduleBulkInput = z.input<typeof assignCustomScheduleBulkSchema>
+
+const pasteDaySchema = z.object({
+  assignmentId: z.number().int().positive().nullable(),
+  date: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+  scheduleId: z.number().int().positive().nullable(),
+  isDayOff: z.boolean(),
+  customStartTime: z
+    .string()
+    .regex(timeRegex, 'Formato de hora invalido (HH:mm).')
+    .nullable()
+    .optional(),
+  customEndTime: z
+    .string()
+    .regex(timeRegex, 'Formato de hora invalido (HH:mm).')
+    .nullable()
+    .optional(),
+  customLunchStart: optionalTime,
+  customLunchEnd: optionalTime,
+  customBreakStart: optionalTime,
+  customBreakEnd: optionalTime,
+})
+
+/**
+ * Aplica, en una sola confirmacion, un conjunto de dias por colaborador —
+ * usado tanto por "pegar" (lo copiado de otra semana) como por "generar
+ * sugerido" (lo calculado a partir del historial). Un colaborador sin dias
+ * disponibles para pegar (todos bloqueados por ausencia, o sin sugerencia)
+ * simplemente no aparece en `employees`.
+ */
+export const pasteWeeklyScheduleSchema = z.object({
+  employees: z
+    .array(
+      z.object({
+        employmentHistoryId: z.number().int().positive(),
+        employeeId: z.number().int().positive(),
+        branchId: z.number().int().positive(),
+        days: z.array(pasteDaySchema).min(1).max(7),
+      })
+    )
+    .min(1, 'No hay dias disponibles para aplicar.'),
+})
+
+export type PasteWeeklyScheduleInput = z.input<typeof pasteWeeklyScheduleSchema>
