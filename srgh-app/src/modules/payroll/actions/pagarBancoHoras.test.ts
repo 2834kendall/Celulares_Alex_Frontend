@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pagarBancoHoras } from './pagarBancoHoras'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+// lineasNomina importa 'server-only', que revienta fuera de Next.js.
+vi.mock('server-only', () => ({}))
+
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
@@ -154,6 +157,7 @@ describe('pagarBancoHoras (server action)', () => {
         OK,
         OK,
       ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [OK, OK],
     })
 
@@ -181,6 +185,7 @@ describe('pagarBancoHoras (server action)', () => {
         OK,
         OK,
       ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [OK, OK],
     })
 
@@ -209,6 +214,7 @@ describe('pagarBancoHoras (server action)', () => {
         OK,
         OK,
       ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [
         {
           data: [

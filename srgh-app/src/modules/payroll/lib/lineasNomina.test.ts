@@ -44,6 +44,7 @@ describe('reemplazarLineasDetalle', () => {
   it('conserva los metadatos de las deducciones que ya existían', async () => {
     const client = createSupabaseClientMock({
       sgrh_nomina_linea_ingreso: [{ data: [], error: null }, OK, OK],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [
         {
           data: [
@@ -92,6 +93,7 @@ describe('reemplazarLineasDetalle', () => {
   it('guarda los ingresos con su monto calculado', async () => {
     const client = createSupabaseClientMock({
       sgrh_nomina_linea_ingreso: [{ data: [], error: null }, OK, OK],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
     })
 
@@ -108,6 +110,7 @@ describe('reemplazarLineasDetalle', () => {
         { data: [], error: null },
         { data: null, error: { message: 'x' } },
       ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
     })
 

@@ -1,7 +1,7 @@
 import 'server-only'
 
 import type { createClient } from '@/lib/supabase/server'
-import type { LineaCalculada } from '@/modules/payroll/lib/planilla'
+import type { LineaCalculada, LineaPatronalCalculada } from '@/modules/payroll/lib/planilla'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -55,7 +55,8 @@ interface LineaDeduccionPrevia {
 export async function reemplazarLineasDetalle(
   supabase: SupabaseServerClient,
   ndtId: number,
-  lineas: LineaCalculada[]
+  lineas: LineaCalculada[],
+  lineasPatronales: LineaPatronalCalculada[] = []
 ): Promise<{ error: string | null }> {
   const [{ data: ingresosPrevios }, { data: deduccionesPrevias }] = await Promise.all([
     supabase
@@ -133,6 +134,30 @@ export async function reemplazarLineasDetalle(
   if (deducciones.length > 0) {
     const { error } = await supabase.from('sgrh_nomina_linea_deduccion').insert(deducciones)
     if (error) return { error: 'No se pudieron guardar las líneas de deducción.' }
+  }
+
+  // Cargas patronales. No tienen metadatos que conservar: las calcula entero
+  // el motor a partir del catálogo, así que se borran y se reescriben.
+  const { error: errDelPatronal } = await supabase
+    .from('sgrh_nomina_linea_patronal')
+    .delete()
+    .eq('pat_nomina_detalle_id', ndtId)
+
+  if (errDelPatronal) {
+    return { error: 'No se pudieron actualizar las cargas patronales.' }
+  }
+
+  if (lineasPatronales.length > 0) {
+    const { error } = await supabase.from('sgrh_nomina_linea_patronal').insert(
+      lineasPatronales.map((l) => ({
+        pat_nomina_detalle_id: ndtId,
+        pat_concepto_id: l.con_id,
+        pat_monto: l.monto,
+        pat_porcentaje_aplicado: l.porcentajeAplicado,
+        pat_base_calculo: l.baseCalculo,
+      }))
+    )
+    if (error) return { error: 'No se pudieron guardar las cargas patronales.' }
   }
 
   return { error: null }

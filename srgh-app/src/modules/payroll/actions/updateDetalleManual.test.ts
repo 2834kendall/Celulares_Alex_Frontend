@@ -152,6 +152,7 @@ describe('updateDetalleManual (server action)', () => {
       ],
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
       sgrh_nomina_linea_ingreso: [OK, OK],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [OK, OK],
       // horasTrabajadas del INPUT (80) no supera el tope (88), así que
       // sincronizarMovimientoBancoHoras solo hace un select (sin movimiento
@@ -180,6 +181,7 @@ describe('updateDetalleManual (server action)', () => {
       ],
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
       sgrh_nomina_linea_ingreso: [OK, OK],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [OK, OK],
       // Sin movimiento previo (maybeSingle → null) → se inserta uno nuevo.
       sgrh_banco_horas_movimientos: [{ data: null, error: null }, OK],

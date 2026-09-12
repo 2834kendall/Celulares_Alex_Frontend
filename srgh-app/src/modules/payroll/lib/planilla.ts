@@ -67,10 +67,10 @@ export interface ConceptoCalculo {
  * trabajador y no puede entrar en el calculo de su planilla.
  *
  * Se filtra por con_tipo y no por con_tipo_calculo porque en el catalogo
- * varios patronales estan guardados como 'monto_manual_ingreso' (todavia no
- * hay motor de cargas patronales, ver el seed 04_nomina.sql). Sin este filtro
- * salian como columnas editables del Excel y, si alguien las llenaba, sumaban
- * al salario bruto del empleado y ademas le aplicaban CCSS obrera encima.
+ * varios patronales siguen guardados como 'monto_manual_ingreso'. Sin este
+ * filtro salian como columnas editables del Excel y, si alguien las llenaba,
+ * sumaban al salario bruto del empleado y ademas le aplicaban CCSS obrera
+ * encima.
  */
 export function esConceptoDelTrabajador(concepto: { con_tipo: string }): boolean {
   return concepto.con_tipo !== 'patronal'
@@ -105,6 +105,23 @@ export interface LineaCalculada {
   baseCalculo?: number
 }
 
+/**
+ * Una carga patronal calculada para un empleado: lo que la EMPRESA paga
+ * encima de su salario (CCSS patronal, INS, FODESAF…).
+ *
+ * Va en su propia lista y no en `lineas` justamente para que no se pueda
+ * mezclar por descuido con los ingresos y deducciones del trabajador: no
+ * suma al bruto, no resta del neto y no aparece en su comprobante. Se guarda
+ * en sgrh_nomina_linea_patronal y su suma en ndt_total_cargas_patronales.
+ */
+export interface LineaPatronalCalculada {
+  con_id: number
+  con_codigo: string
+  monto: number
+  porcentajeAplicado: number
+  baseCalculo: number
+}
+
 export interface TotalesPorConceptos {
   /** Solo lo que es salario. Base del aguinaldo y de la cesantía. */
   salarioBruto: number
@@ -122,7 +139,14 @@ export interface TotalesPorConceptos {
   totalDeducciones: number
   /** bruto − deducciones + no salarial. Es la plata que recibe la persona. */
   salarioNeto: number
+  /**
+   * Lo que la EMPRESA paga encima del salario (CCSS patronal y demás). No
+   * sale del salario de nadie y no cambia el neto: es el costo real de tener
+   * a esa persona en planilla.
+   */
+  totalCargasPatronales: number
   lineas: LineaCalculada[]
+  lineasPatronales: LineaPatronalCalculada[]
 }
 
 /**
@@ -226,13 +250,44 @@ export function calcularPlanillaPorConceptos(
   deducciones = round2(deducciones)
   const neto = round2(bruto - deducciones + noSalarial)
 
+  // Cargas patronales. Se calculan sobre la MISMA base que la cuota obrera:
+  // la CCSS cobra las dos partes sobre el salario cotizable, así que un
+  // ingreso exento de CCSS lo está para los dos lados.
+  //
+  // Estas no salen de `aplicables` —ese filtro las excluye a propósito— sino
+  // de los conceptos patronales con un porcentaje puesto. Mientras el
+  // concepto no tenga porcentaje no calcula nada, que es lo que deja al
+  // encargado activar solo las que necesita desde la pantalla de Conceptos.
+  const lineasPatronales: LineaPatronalCalculada[] = []
+  let cargasPatronales = 0
+
+  for (const concepto of conceptos) {
+    if (esConceptoDelTrabajador(concepto)) continue
+    if (concepto.con_tipo_calculo !== 'porcentaje_patronal_bruto') continue
+
+    const porcentaje = concepto.con_porcentaje ?? 0
+    const monto = round2(baseCcss * (porcentaje / 100))
+    if (monto <= 0) continue
+
+    lineasPatronales.push({
+      con_id: concepto.con_id,
+      con_codigo: concepto.con_codigo,
+      monto,
+      porcentajeAplicado: porcentaje,
+      baseCalculo: baseCcss,
+    })
+    cargasPatronales += monto
+  }
+
   return {
     salarioBruto: bruto,
     baseCcss,
     totalNoSalarial: noSalarial,
     totalDeducciones: deducciones,
     salarioNeto: neto,
+    totalCargasPatronales: round2(cargasPatronales),
     lineas,
+    lineasPatronales,
   }
 }
 

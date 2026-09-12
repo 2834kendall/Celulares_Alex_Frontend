@@ -8,6 +8,7 @@
 
 import { z } from 'zod'
 import type { Database } from '@/types/database.types'
+import { rangoQuincena } from '@/modules/payroll/lib/fechas'
 
 // ─── Aliases de tipos Supabase ────────────────────────────────────────────────
 
@@ -145,6 +146,25 @@ export interface PeriodoDetalle {
 
 const anioActual = new Date().getFullYear()
 
+const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Fecha del periodo: 'YYYY-MM-DD' o vacía.
+ *
+ * Las dos fechas se llenan solas a partir del mes y la quincena, pero quedan
+ * editables y se pueden borrar (la columna es nullable en la base). El campo
+ * vacío llega como '' desde el formulario y como null desde el servidor; las
+ * dos formas se normalizan a null antes de validar el formato, si no un campo
+ * borrado fallaría por "formato inválido" en vez de contarse como vacío.
+ */
+function fechaPeriodoOpcional(mensaje: string) {
+  return z
+    .string()
+    .nullable()
+    .transform((value) => (value === '' ? null : value))
+    .refine((value) => value === null || FORMATO_FECHA.test(value), { message: mensaje })
+}
+
 export const crearPeriodoSchema = z
   .object({
     npe_sucursal_id: z
@@ -170,13 +190,12 @@ export const crearPeriodoSchema = z
       .min(1, 'Quincena inválida')
       .max(2, 'Quincena inválida'),
 
-    npe_fecha_inicio_periodo: z
-      .string({ error: 'La fecha de inicio es obligatoria' })
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de inicio inválida'),
-
-    npe_fecha_fin_periodo: z
-      .string({ error: 'La fecha de fin es obligatoria' })
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de fin inválida'),
+    // Las dos fechas se llenan solas a partir del mes y la quincena, pero
+    // quedan editables y se pueden dejar en blanco (la columna es nullable en
+    // la base). Un periodo sin fechas no puede cruzar las marcas de
+    // asistencia: el formulario lo avisa antes de guardar.
+    npe_fecha_inicio_periodo: fechaPeriodoOpcional('La fecha de inicio no es válida'),
+    npe_fecha_fin_periodo: fechaPeriodoOpcional('La fecha de fin no es válida'),
 
     // Igual que con_formula_base: se valida en el navegador (string) y otra
     // vez en el servidor con el valor ya transformado (puede llegar null
@@ -188,9 +207,52 @@ export const crearPeriodoSchema = z
       .nullable()
       .transform((value) => (value === '' ? null : value)),
   })
-  .refine((data) => data.npe_fecha_fin_periodo >= data.npe_fecha_inicio_periodo, {
-    message: 'La fecha de fin debe ser posterior o igual a la de inicio',
-    path: ['npe_fecha_fin_periodo'],
+  // Las fechas son opcionales, pero si están tienen que ser coherentes. Esto
+  // corre también en el servidor: antes nadie revisaba que tuvieran que ver
+  // con el mes y la quincena elegidos, así que se podía guardar
+  // "Julio · 1ª quincena" con fechas de septiembre. Como de esas fechas salen
+  // las horas de asistencia del periodo, la planilla quedaba calculada sobre
+  // otro rango sin que nada avisara.
+  .superRefine((data, ctx) => {
+    const { npe_fecha_inicio_periodo: inicio, npe_fecha_fin_periodo: fin } = data
+
+    if (inicio === null && fin === null) return
+
+    if (inicio === null || fin === null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Poné las dos fechas o dejá las dos en blanco.',
+        path: [inicio === null ? 'npe_fecha_inicio_periodo' : 'npe_fecha_fin_periodo'],
+      })
+      return
+    }
+
+    if (fin < inicio) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'La fecha de fin debe ser posterior o igual a la de inicio',
+        path: ['npe_fecha_fin_periodo'],
+      })
+      return
+    }
+
+    const rango = rangoQuincena(data.npe_periodo_mes, data.npe_periodo_anio, data.npe_quincena)
+    if (!rango) return
+
+    if (inicio < rango.inicio || inicio > rango.fin) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Esa fecha queda fuera de la quincena elegida (del ${rango.inicio} al ${rango.fin}).`,
+        path: ['npe_fecha_inicio_periodo'],
+      })
+    }
+    if (fin < rango.inicio || fin > rango.fin) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Esa fecha queda fuera de la quincena elegida (del ${rango.inicio} al ${rango.fin}).`,
+        path: ['npe_fecha_fin_periodo'],
+      })
+    }
   })
 
 export type CrearPeriodoInput = z.infer<typeof crearPeriodoSchema>
@@ -218,6 +280,9 @@ export type ConceptoTipo = (typeof CONCEPTO_TIPOS)[number]
  *  - monto_manual_ingreso:       el usuario escribe el monto; suma al bruto (ej. Comisión).
  *  - monto_manual_deduccion:     el usuario escribe el monto; resta del neto (ej. préstamo).
  *  - porcentaje_deduccion_bruto: con_porcentaje % del salario bruto; se resta (ej. CCSS obrera).
+ *  - porcentaje_patronal_bruto:  con_porcentaje % del salario bruto, pero lo paga la EMPRESA
+ *                                encima del salario (ej. CCSS patronal). No se le rebaja a
+ *                                nadie y no cambia el neto: es el costo real de la planilla.
  *  - horas_extra_automatico:     el sistema lo calcula solo a partir de las horas trabajadas
  *                                que superen el tope normal (ver TOPE_HORAS_NORMALES_QUINCENAL
  *                                en lib/planilla.ts), multiplicadas por el salario por hora y
@@ -227,13 +292,15 @@ export const TIPOS_CALCULO_CONCEPTO = [
   'monto_manual_ingreso',
   'monto_manual_deduccion',
   'porcentaje_deduccion_bruto',
+  'porcentaje_patronal_bruto',
   'horas_extra_automatico',
 ] as const
 export type TipoCalculoConcepto = (typeof TIPOS_CALCULO_CONCEPTO)[number]
 
-/** con_porcentaje es obligatorio solo para estos dos tipos; en los demás debe quedar null. */
+/** con_porcentaje es obligatorio solo para estos tipos; en los demás debe quedar null. */
 const TIPOS_CON_PORCENTAJE = new Set<TipoCalculoConcepto>([
   'porcentaje_deduccion_bruto',
+  'porcentaje_patronal_bruto',
   'horas_extra_automatico',
 ])
 
@@ -301,7 +368,7 @@ export const conceptoNominaSchema = z
         : data.con_porcentaje === null,
     {
       message:
-        'El porcentaje es obligatorio para "% del bruto" y "horas extra automático", y debe quedar vacío en los demás tipos.',
+        'El porcentaje es obligatorio para los tipos "% del bruto" y "horas extra automático", y debe quedar vacío en los demás tipos.',
       path: ['con_porcentaje'],
     }
   )

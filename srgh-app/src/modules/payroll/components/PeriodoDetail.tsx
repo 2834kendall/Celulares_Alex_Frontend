@@ -106,6 +106,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const totalHorasExtra = periodo.detalles.reduce((sum, d) => sum + d.horasExtra, 0)
   const totalIncapacidad = periodo.detalles.reduce((sum, d) => sum + (d.incapacidad?.monto ?? 0), 0)
   const totalNoSalarial = periodo.detalles.reduce((sum, d) => sum + d.totalNoSalarial, 0)
+  const totalCargasPatronales = periodo.detalles.reduce((sum, d) => sum + d.cargasPatronales, 0)
   // Lo que de verdad sale del banco por este periodo. Es el mismo número que
   // imprime el comprobante de cada empleado.
   const totalAPagar = periodo.detalles.reduce((sum, d) => sum + d.totalAPagar, 0)
@@ -429,7 +430,12 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   >
                     Deducc. manual (neto)
                   </th>
-                  <th className={TABLE_TH_RIGHT}>Cargas patronales</th>
+                  <th
+                    className={TABLE_TH_RIGHT}
+                    title="Lo que paga la empresa encima del salario (CCSS patronal). No se le rebaja a nadie ni cambia el neto: es el costo de la planilla"
+                  >
+                    Cargas patronales
+                  </th>
                   <th
                     className={TABLE_TH_RIGHT}
                     title="Bruto − deducciones + viáticos. Los viáticos no cotizan, por eso van al final"
@@ -559,7 +565,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   <td className="px-3 py-2 text-right">{formatCRC(totalBruto)}</td>
                   <td className="px-3 py-2 text-right">{formatCRC(totalDeduccionPorcentual)}</td>
                   <td className="px-3 py-2 text-right">{formatCRC(totalDeduccionManual)}</td>
-                  <td className="px-3 py-2 text-right">—</td>
+                  <td className="px-3 py-2 text-right">{formatCRC(totalCargasPatronales)}</td>
                   <td className="px-3 py-2 text-right">
                     <span className="tabular-nums">{formatCRC(totalNeto)}</span>
                     {totalNoSalarial > 0 && (

@@ -29,6 +29,7 @@ interface DetalleExistenteRow {
   ndt_salario_bruto: number
   ndt_total_deducciones_obreras: number
   ndt_salario_neto: number
+  ndt_total_cargas_patronales: number
 }
 
 interface LineaIngresoExistenteRow {
@@ -55,7 +56,7 @@ interface ValoresPrevios {
   salarioPorHora: number
   montos: Record<string, number>
   /** Totales ya guardados, para detectar cambios que vienen del catálogo. */
-  totales: { bruto: number; deducciones: number; neto: number }
+  totales: { bruto: number; deducciones: number; neto: number; patronales: number }
 }
 
 export type UploadPlanillaResult =
@@ -179,7 +180,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const { data: detallesPrevios, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
-      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto'
+      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto, ndt_total_cargas_patronales'
     )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
@@ -213,6 +214,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
           bruto: d.ndt_salario_bruto,
           deducciones: d.ndt_total_deducciones_obreras,
           neto: d.ndt_salario_neto,
+          patronales: d.ndt_total_cargas_patronales ?? 0,
         },
       })
     }
@@ -303,7 +305,8 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     const mismoResultado =
       previo.totales.bruto === totales.salarioBruto &&
       previo.totales.deducciones === totales.totalDeducciones &&
-      previo.totales.neto === totales.salarioNeto
+      previo.totales.neto === totales.salarioNeto &&
+      previo.totales.patronales === totales.totalCargasPatronales
 
     if (mismoInput && mismoResultado) {
       sinCambios += 1
@@ -387,7 +390,14 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
   // 8. Actualizar los que cambiaron: totales recalculados + líneas desde cero
   for (const { row, ndtId, totales } of filasActualizar) {
-    const { salarioBruto, totalDeducciones, salarioNeto, lineas } = totales
+    const {
+      salarioBruto,
+      totalDeducciones,
+      salarioNeto,
+      totalCargasPatronales,
+      lineas,
+      lineasPatronales,
+    } = totales
 
     const { error: errUpdate } = await supabase
       .from('sgrh_nomina_detalle')
@@ -395,6 +405,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ndt_salario_bruto: salarioBruto,
         ndt_total_deducciones_obreras: totalDeducciones,
         ndt_salario_neto: salarioNeto,
+        ndt_total_cargas_patronales: totalCargasPatronales,
         ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
         ndt_salario_por_hora: row.salarioPorHora,
       })
@@ -405,7 +416,12 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
     // reemplazarLineasDetalle borra y reinserta, conservando los metadatos de
     // las deducciones (de qué beneficio vienen, si son voluntarias).
-    const { error: errLineas } = await reemplazarLineasDetalle(supabase, ndtId, lineas)
+    const { error: errLineas } = await reemplazarLineasDetalle(
+      supabase,
+      ndtId,
+      lineas,
+      lineasPatronales
+    )
     if (errLineas) {
       return { ok: false, error: errLineas }
     }
@@ -443,7 +459,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ndt_historial_laboral_id: porCedula.get(row.cedula)!.labId,
         ndt_salario_bruto: totales.salarioBruto,
         ndt_total_deducciones_obreras: totales.totalDeducciones,
-        ndt_total_cargas_patronales: 0,
+        ndt_total_cargas_patronales: totales.totalCargasPatronales,
         ndt_salario_neto: totales.salarioNeto,
         ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
         ndt_salario_por_hora: row.salarioPorHora,
@@ -473,8 +489,13 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       const ndtId = ndtIdPorLabNuevo.get(labId)
       if (!ndtId) continue
 
-      const { lineas } = totalesPorFila.get(row.cedula)!
-      const { error: errLineas } = await reemplazarLineasDetalle(supabase, ndtId, lineas)
+      const { lineas, lineasPatronales } = totalesPorFila.get(row.cedula)!
+      const { error: errLineas } = await reemplazarLineasDetalle(
+        supabase,
+        ndtId,
+        lineas,
+        lineasPatronales
+      )
       if (errLineas) {
         return {
           ok: false,

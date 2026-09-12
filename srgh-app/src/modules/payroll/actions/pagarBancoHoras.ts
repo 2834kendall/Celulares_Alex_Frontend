@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
+import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import {
   pagarBancoHorasSchema,
@@ -200,18 +201,22 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
   // le paga banco de horas más de una vez al mismo periodo en borrador).
   montos.HORAS_EXTRA = (montos.HORAS_EXTRA ?? 0) + parsed.data.monto
 
-  const { salarioBruto, totalDeducciones, salarioNeto, lineas } = calcularPlanillaPorConceptos(
-    conceptosParaCalculo,
-    {
-      montos,
-      horasTrabajadas: detalleDestino.ndt_horas_ordinarias_diurnas,
-      // Las horas extra guardadas del periodo destino, para que recalcular no
-      // las pierda. Con HORAS_EXTRA forzado a monto manual acá no las consume
-      // nadie, pero pasar 0 sería mentirle al motor.
-      horasExtra: detalleDestino.ndt_horas_extra_al_50 ?? 0,
-      salarioPorHora: detalleDestino.ndt_salario_por_hora,
-    }
-  )
+  const {
+    salarioBruto,
+    totalDeducciones,
+    salarioNeto,
+    totalCargasPatronales,
+    lineas,
+    lineasPatronales,
+  } = calcularPlanillaPorConceptos(conceptosParaCalculo, {
+    montos,
+    horasTrabajadas: detalleDestino.ndt_horas_ordinarias_diurnas,
+    // Las horas extra guardadas del periodo destino, para que recalcular no
+    // las pierda. Con HORAS_EXTRA forzado a monto manual acá no las consume
+    // nadie, pero pasar 0 sería mentirle al motor.
+    horasExtra: detalleDestino.ndt_horas_extra_al_50 ?? 0,
+    salarioPorHora: detalleDestino.ndt_salario_por_hora,
+  })
 
   const { error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
@@ -219,48 +224,25 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
       ndt_salario_bruto: salarioBruto,
       ndt_total_deducciones_obreras: totalDeducciones,
       ndt_salario_neto: salarioNeto,
+      ndt_total_cargas_patronales: totalCargasPatronales,
     })
     .eq('ndt_id', detalleDestino.ndt_id)
   if (errUpdate) {
     return { ok: false, error: 'No se pudieron actualizar los montos del periodo destino.' }
   }
 
-  const { error: errDelIngreso } = await supabase
-    .from('sgrh_nomina_linea_ingreso')
-    .delete()
-    .eq('ing_nomina_detalle_id', detalleDestino.ndt_id)
-  const { error: errDelDeduccion } = await supabase
-    .from('sgrh_nomina_linea_deduccion')
-    .delete()
-    .eq('ded_nomina_detalle_id', detalleDestino.ndt_id)
-  if (errDelIngreso || errDelDeduccion) {
-    return { ok: false, error: 'No se pudieron actualizar las líneas del periodo destino.' }
-  }
-
-  const ingresos = lineas
-    .filter((l) => l.esIngreso)
-    .map((l) => ({
-      ing_nomina_detalle_id: detalleDestino.ndt_id,
-      ing_concepto_id: l.con_id,
-      ing_monto: l.monto,
-    }))
-  if (ingresos.length > 0) {
-    const { error } = await supabase.from('sgrh_nomina_linea_ingreso').insert(ingresos)
-    if (error) return { ok: false, error: 'No se pudieron guardar las líneas de ingreso.' }
-  }
-
-  const deducciones = lineas
-    .filter((l) => !l.esIngreso)
-    .map((l) => ({
-      ded_nomina_detalle_id: detalleDestino.ndt_id,
-      ded_concepto_id: l.con_id,
-      ded_monto: l.monto,
-      ded_porcentaje_aplicado: l.porcentajeAplicado ?? null,
-      ded_base_calculo: l.baseCalculo ?? null,
-    }))
-  if (deducciones.length > 0) {
-    const { error } = await supabase.from('sgrh_nomina_linea_deduccion').insert(deducciones)
-    if (error) return { ok: false, error: 'No se pudieron guardar las líneas de deducción.' }
+  // Mismo reemplazo que usan la subida de Excel y la edición manual: conserva
+  // los metadatos de las deducciones que ya estaban y reescribe las cargas
+  // patronales. Antes acá había una tercera copia de este bloque, que era la
+  // única que seguía perdiendo ded_beneficio_id y compañía.
+  const { error: errLineas } = await reemplazarLineasDetalle(
+    supabase,
+    detalleDestino.ndt_id,
+    lineas,
+    lineasPatronales
+  )
+  if (errLineas) {
+    return { ok: false, error: errLineas }
   }
 
   const { error: errResolver } = await supabase

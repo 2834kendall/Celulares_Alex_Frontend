@@ -80,10 +80,14 @@ export async function updateDetalleManual(
     }
   }
 
-  const { salarioBruto, totalDeducciones, salarioNeto, lineas } = calcularPlanillaPorConceptos(
-    conceptos,
-    parsed.data
-  )
+  const {
+    salarioBruto,
+    totalDeducciones,
+    salarioNeto,
+    totalCargasPatronales,
+    lineas,
+    lineasPatronales,
+  } = calcularPlanillaPorConceptos(conceptos, parsed.data)
 
   const { error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
@@ -91,6 +95,7 @@ export async function updateDetalleManual(
       ndt_salario_bruto: salarioBruto,
       ndt_total_deducciones_obreras: totalDeducciones,
       ndt_salario_neto: salarioNeto,
+      ndt_total_cargas_patronales: totalCargasPatronales,
       ndt_horas_ordinarias_diurnas: parsed.data.horasTrabajadas,
       ndt_horas_extra_al_50: parsed.data.horasExtra,
       ndt_salario_por_hora: parsed.data.salarioPorHora,
@@ -100,7 +105,12 @@ export async function updateDetalleManual(
     return { ok: false, error: 'No se pudieron guardar los montos.' }
   }
 
-  const { error: errLineas } = await reemplazarLineasDetalle(supabase, ndtId, lineas)
+  const { error: errLineas } = await reemplazarLineasDetalle(
+    supabase,
+    ndtId,
+    lineas,
+    lineasPatronales
+  )
   if (errLineas) {
     return { ok: false, error: errLineas }
   }

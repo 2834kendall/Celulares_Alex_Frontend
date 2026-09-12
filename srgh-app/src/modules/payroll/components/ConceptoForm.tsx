@@ -36,13 +36,29 @@ const TIPO_CALCULO_LABELS: Record<TipoCalculoConcepto, string> = {
   monto_manual_ingreso: 'Monto manual — suma al bruto (ej. Comisión)',
   monto_manual_deduccion: 'Monto manual — resta del neto (ej. préstamo)',
   porcentaje_deduccion_bruto: '% del salario bruto — se resta (ej. CCSS obrera)',
+  porcentaje_patronal_bruto: '% del salario bruto — lo paga la empresa (ej. CCSS patronal)',
   horas_extra_automatico: 'Horas extra automáticas (el sistema las calcula)',
 }
 
 const TIPOS_CON_PORCENTAJE = new Set<TipoCalculoConcepto>([
   'porcentaje_deduccion_bruto',
+  'porcentaje_patronal_bruto',
   'horas_extra_automatico',
 ])
+
+const PORCENTAJE_PLACEHOLDER: Partial<Record<TipoCalculoConcepto, string>> = {
+  porcentaje_deduccion_bruto: 'ej. 10.83',
+  porcentaje_patronal_bruto: 'ej. 14.83',
+  horas_extra_automatico: 'ej. 150 (tiempo y medio)',
+}
+
+const PORCENTAJE_AYUDA: Partial<Record<TipoCalculoConcepto, string>> = {
+  porcentaje_deduccion_bruto: 'Porcentaje del salario bruto que se le rebaja al trabajador.',
+  porcentaje_patronal_bruto:
+    'Porcentaje del salario bruto que paga la empresa por encima del salario. No se le rebaja a nadie y no cambia el salario neto: sirve para saber cuánto cuesta realmente la planilla.',
+  horas_extra_automatico:
+    'Multiplicador sobre el salario por hora de las horas que superen el tope normal (100% = una vez, 150% = tiempo y medio).',
+}
 
 export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
@@ -206,17 +222,9 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             aria-invalid={!!errors.con_porcentaje}
             {...register('con_porcentaje', { valueAsNumber: true })}
             className={INPUT}
-            placeholder={
-              tipoCalculo === 'porcentaje_deduccion_bruto'
-                ? 'ej. 10.83'
-                : 'ej. 150 (tiempo y medio)'
-            }
+            placeholder={PORCENTAJE_PLACEHOLDER[tipoCalculo] ?? ''}
           />
-          <p className="mt-1 text-[11px] text-slate-400">
-            {tipoCalculo === 'porcentaje_deduccion_bruto'
-              ? 'Porcentaje del salario bruto que se resta.'
-              : 'Multiplicador sobre el salario por hora de las horas que superen el tope normal (100% = una vez, 150% = tiempo y medio).'}
-          </p>
+          <p className="mt-1 text-[11px] text-slate-400">{PORCENTAJE_AYUDA[tipoCalculo] ?? ''}</p>
           {errors.con_porcentaje && <p className={FIELD_ERROR}>{errors.con_porcentaje.message}</p>}
         </div>
       )}

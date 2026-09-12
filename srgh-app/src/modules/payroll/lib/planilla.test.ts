@@ -229,6 +229,93 @@ describe('conceptos patronales', () => {
     expect(resultado.lineas.some((l) => l.con_codigo === 'PAT001')).toBe(false)
   })
 
+  // Un patronal que sigue en su tipo manual no calcula nada. Es lo que deja
+  // al encargado activar solo las cargas que necesita: las demás quedan en el
+  // catálogo hasta que alguien les cambie el tipo y les ponga su porcentaje.
+  it('un patronal que no es de porcentaje no genera carga', () => {
+    const resultado = calcularPlanillaPorConceptos([BASE, PATRONAL], {
+      montos: { BASE: 200000 },
+      horasTrabajadas: 88,
+      horasExtra: 0,
+      salarioPorHora: 0,
+    })
+
+    expect(resultado.totalCargasPatronales).toBe(0)
+    expect(resultado.lineasPatronales).toEqual([])
+  })
+
+  it('calcula el porcentaje patronal sobre la base de CCSS, sin tocar el neto', () => {
+    const CCSS_PATRONAL = {
+      ...PATRONAL,
+      con_tipo_calculo: 'porcentaje_patronal_bruto',
+      con_porcentaje: 14.83,
+    }
+    const CCSS_OBRERA = {
+      con_id: 26,
+      con_codigo: 'CCSS_OBRERA',
+      con_nombre: 'Rebajo CCSS obrero',
+      con_tipo: 'deduccion',
+      con_afecta_salario_bruto: true,
+      con_afecta_base_ccss: true,
+      con_tipo_calculo: 'porcentaje_deduccion_bruto',
+      con_porcentaje: 10.83,
+    }
+
+    const resultado = calcularPlanillaPorConceptos([BASE, CCSS_OBRERA, CCSS_PATRONAL], {
+      montos: { BASE: 300000 },
+      horasTrabajadas: 88,
+      horasExtra: 0,
+      salarioPorHora: 0,
+    })
+
+    // Lo del trabajador no cambia: el patronal es plata de la empresa.
+    expect(resultado.salarioBruto).toBe(300000)
+    expect(resultado.totalDeducciones).toBe(32490) // 300000 × 10,83%
+    expect(resultado.salarioNeto).toBe(267510)
+
+    expect(resultado.totalCargasPatronales).toBe(44490) // 300000 × 14,83%
+    expect(resultado.lineasPatronales).toEqual([
+      {
+        con_id: 17,
+        con_codigo: 'PAT001',
+        monto: 44490,
+        porcentajeAplicado: 14.83,
+        baseCalculo: 300000,
+      },
+    ])
+    // Y no se cuela entre las líneas del trabajador.
+    expect(resultado.lineas.some((l) => l.con_codigo === 'PAT001')).toBe(false)
+  })
+
+  // La CCSS cobra las dos cuotas sobre el mismo salario cotizable, así que un
+  // ingreso exento lo está para el trabajador y para la empresa.
+  it('los ingresos que no cotizan tampoco pagan carga patronal', () => {
+    const CCSS_PATRONAL = {
+      ...PATRONAL,
+      con_tipo_calculo: 'porcentaje_patronal_bruto',
+      con_porcentaje: 14.83,
+    }
+    const VIATICOS = {
+      con_id: 10,
+      con_codigo: 'ING010',
+      con_nombre: 'Viáticos',
+      con_tipo: 'ingreso',
+      con_afecta_salario_bruto: false,
+      con_afecta_base_ccss: false,
+      con_tipo_calculo: 'monto_manual_ingreso',
+      con_porcentaje: null,
+    }
+
+    const resultado = calcularPlanillaPorConceptos([BASE, VIATICOS, CCSS_PATRONAL], {
+      montos: { BASE: 300000, ING010: 50000 },
+      horasTrabajadas: 88,
+      horasExtra: 0,
+      salarioPorHora: 0,
+    })
+
+    expect(resultado.totalCargasPatronales).toBe(44490) // sobre 300000, no sobre 350000
+  })
+
   it('no aparecen como columna editable de la plantilla', () => {
     const grupos = agruparConceptosPlanilla([BASE, PATRONAL])
 

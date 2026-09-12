@@ -188,6 +188,7 @@ describe('uploadPlanilla (server action)', () => {
         ],
         error: null,
       },
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: { data: [], error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
@@ -220,6 +221,7 @@ describe('uploadPlanilla (server action)', () => {
         { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: OK,
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: OK,
       // 88 horas trabajadas (helper fila()) no supera el tope: solo un select
       // sin movimiento pendiente que crear.
@@ -282,6 +284,7 @@ describe('uploadPlanilla (server action)', () => {
         OK,
         OK,
       ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
@@ -342,6 +345,7 @@ describe('uploadPlanilla (server action)', () => {
         OK,
         OK,
       ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
       // 96 horas superan el tope (88): sincronizarMovimientoBancoHoras hace un
       // select (sin movimiento previo) y luego un insert.
@@ -414,8 +418,8 @@ describe('uploadPlanilla (server action)', () => {
         },
         OK,
       ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
-      sgrh_nomina_linea_patronal: OK,
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
       rows: [fila('KEEP', { BASE: 100000 })],
@@ -460,6 +464,7 @@ describe('uploadPlanilla (server action)', () => {
         { data: [{ ndt_id: 100, ndt_historial_laboral_id: 80 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: OK,
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: OK,
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
@@ -532,6 +537,7 @@ describe('uploadPlanilla (server action)', () => {
         OK,
         OK,
       ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
@@ -580,6 +586,7 @@ describe('uploadPlanilla (server action)', () => {
         error: null,
       },
       sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_patronal: { data: null, error: null },
       sgrh_nomina_linea_deduccion: { data: [], error: null },
     })
     // El Excel solo trae a Ana; Beto (que ya cobro) quedo fuera.

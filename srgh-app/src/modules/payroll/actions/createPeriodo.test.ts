@@ -53,6 +53,48 @@ describe('createPeriodo (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'Datos del periodo inválidos.' })
   })
 
+  // De las fechas del periodo salen las horas de asistencia. Un periodo que
+  // dice "Julio · 1ª quincena" pero tiene fechas de setiembre calcula la
+  // planilla sobre el rango equivocado, y antes nada lo impedía.
+  it('rechaza fechas que no caen en el mes y la quincena elegidos', async () => {
+    const otroMes = await createPeriodo({
+      ...INPUT,
+      npe_fecha_inicio_periodo: '2026-09-01',
+      npe_fecha_fin_periodo: '2026-09-15',
+    })
+    expect(otroMes).toEqual({ ok: false, error: 'Datos del periodo inválidos.' })
+
+    // Fechas del mes correcto pero de la otra quincena.
+    const otraQuincena = await createPeriodo({
+      ...INPUT,
+      npe_fecha_inicio_periodo: '2026-07-16',
+      npe_fecha_fin_periodo: '2026-07-31',
+    })
+    expect(otraQuincena).toEqual({ ok: false, error: 'Datos del periodo inválidos.' })
+
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
+  it('rechaza una sola fecha: van las dos o ninguna', async () => {
+    const result = await createPeriodo({ ...INPUT, npe_fecha_fin_periodo: null })
+
+    expect(result).toEqual({ ok: false, error: 'Datos del periodo inválidos.' })
+  })
+
+  // Se pueden borrar las dos y ponerlas después: la columna es nullable y el
+  // formulario avisa que sin fechas no se leen las marcas de asistencia.
+  it('acepta un periodo sin fechas', async () => {
+    mockInsert({ data: { npe_id: 5 }, error: null })
+
+    const result = await createPeriodo({
+      ...INPUT,
+      npe_fecha_inicio_periodo: null,
+      npe_fecha_fin_periodo: null,
+    })
+
+    expect(result).toEqual({ ok: true, periodoId: 5 })
+  })
+
   it('devuelve error si el JWT no trae empresa_id', async () => {
     mockRequirePermission.mockResolvedValue({ app_metadata: {} } as unknown as Awaited<
       ReturnType<typeof requirePermission>

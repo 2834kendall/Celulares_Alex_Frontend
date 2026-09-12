@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -13,12 +13,16 @@ import {
 } from '@/modules/payroll/types'
 import { createPeriodo } from '@/modules/payroll/actions/createPeriodo'
 import { MESES } from '@/modules/payroll/lib/format'
+import { rangoQuincena } from '@/modules/payroll/lib/fechas'
 import { Button } from '@/components/ui/Button'
 import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { ControlledDateField } from '@/components/ui/ControlledDateField'
 import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 
 const ERROR_CLASSES = 'mt-1 text-[11px] font-medium text-rose-600'
+
+const BORRAR_FECHA =
+  'rounded text-[11px] font-semibold text-slate-500 outline-none transition hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-brand-500/60'
 
 interface PeriodoFormProps {
   sucursales: CatalogoItem[]
@@ -30,21 +34,58 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
 
   const hoy = new Date()
+  const mesInicial = hoy.getMonth() + 1
+  const anioInicial = hoy.getFullYear()
+  const quincenaInicial = hoy.getDate() <= 15 ? 1 : 2
+  const rangoInicial = rangoQuincena(mesInicial, anioInicial, quincenaInicial)
+
   const {
     register,
     control,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CrearPeriodoInput>({
     resolver: zodResolver(crearPeriodoSchema) as Resolver<CrearPeriodoInput>,
     mode: 'onTouched',
     defaultValues: {
-      npe_periodo_mes: hoy.getMonth() + 1,
-      npe_periodo_anio: hoy.getFullYear(),
-      npe_quincena: hoy.getDate() <= 15 ? 1 : 2,
+      npe_periodo_mes: mesInicial,
+      npe_periodo_anio: anioInicial,
+      npe_quincena: quincenaInicial,
+      npe_fecha_inicio_periodo: rangoInicial?.inicio ?? null,
+      npe_fecha_fin_periodo: rangoInicial?.fin ?? null,
       npe_observaciones: '',
     },
   })
+
+  const mes = watch('npe_periodo_mes')
+  const anio = watch('npe_periodo_anio')
+  const quincena = watch('npe_quincena')
+  const fechaInicio = watch('npe_fecha_inicio_periodo')
+  const fechaFin = watch('npe_fecha_fin_periodo')
+
+  // Al cambiar mes, año o quincena, las fechas se vuelven a llenar con las que
+  // le corresponden a esa quincena. Es una sugerencia, no una imposición:
+  // quedan editables y se pueden borrar con el botón de al lado.
+  //
+  // La dependencia es la clave armada como texto y no el objeto del rango, que
+  // se construye nuevo en cada render y dispararía el efecto para siempre.
+  const claveQuincena = `${anio}-${mes}-${quincena}`
+  useEffect(() => {
+    const [a, m, q] = claveQuincena.split('-').map(Number)
+    const rango = rangoQuincena(m, a, q)
+    if (!rango) return
+    setValue('npe_fecha_inicio_periodo', rango.inicio, { shouldValidate: true })
+    setValue('npe_fecha_fin_periodo', rango.fin, { shouldValidate: true })
+  }, [claveQuincena, setValue])
+
+  const sinFechas = !fechaInicio && !fechaFin
+
+  /** Deja el campo en blanco para que el encargado escriba la fecha que quiera. */
+  function borrarFecha(campo: 'npe_fecha_inicio_periodo' | 'npe_fecha_fin_periodo') {
+    setValue(campo, null, { shouldValidate: true, shouldDirty: true })
+  }
 
   const onSubmit = handleSubmit(async (values) => {
     setServerError(null)
@@ -139,9 +180,20 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
           </div>
 
           <div>
-            <label htmlFor="npe_fecha_inicio_periodo" className={LABEL}>
-              Inicio del periodo
-            </label>
+            <div className="flex items-baseline justify-between gap-2">
+              <label htmlFor="npe_fecha_inicio_periodo" className={LABEL}>
+                Inicio del periodo
+              </label>
+              {fechaInicio && (
+                <button
+                  type="button"
+                  onClick={() => borrarFecha('npe_fecha_inicio_periodo')}
+                  className={BORRAR_FECHA}
+                >
+                  Borrar
+                </button>
+              )}
+            </div>
             <ControlledDateField
               control={control}
               name="npe_fecha_inicio_periodo"
@@ -155,9 +207,20 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
           </div>
 
           <div>
-            <label htmlFor="npe_fecha_fin_periodo" className={LABEL}>
-              Fin del periodo
-            </label>
+            <div className="flex items-baseline justify-between gap-2">
+              <label htmlFor="npe_fecha_fin_periodo" className={LABEL}>
+                Fin del periodo
+              </label>
+              {fechaFin && (
+                <button
+                  type="button"
+                  onClick={() => borrarFecha('npe_fecha_fin_periodo')}
+                  className={BORRAR_FECHA}
+                >
+                  Borrar
+                </button>
+              )}
+            </div>
             <ControlledDateField
               control={control}
               name="npe_fecha_fin_periodo"
@@ -167,6 +230,31 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
             />
             {errors.npe_fecha_fin_periodo && (
               <p className={ERROR_CLASSES}>{errors.npe_fecha_fin_periodo.message}</p>
+            )}
+          </div>
+
+          {/*
+            Las fechas son opcionales, pero de ellas salen las horas: sin
+            rango, getHorasDelPeriodo no tiene qué leer de las marcas de
+            asistencia y el periodo se queda sin horas calculadas y sin el
+            bloqueo de pago por marcas incompletas. Mejor decirlo acá que
+            descubrirlo a la hora de pagar.
+          */}
+          <div className="sm:col-span-2">
+            {sinFechas ? (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                <p>
+                  Sin fechas, el periodo no puede leer las marcas de asistencia: no va a calcular
+                  horas ni va a avisar si alguien tiene marcas incompletas. Podés guardarlo así y
+                  ponerlas después.
+                </p>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-400">
+                Se llenan solas con el mes y la quincena. Cambialas o borralas si esta quincena va
+                de otras fechas.
+              </p>
             )}
           </div>
 
