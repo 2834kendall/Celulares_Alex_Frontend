@@ -206,6 +206,16 @@ describe('getPeriodoDetail (server action)', () => {
           horasTrabajadas: 88,
           horasExtra: 0,
           salarioPorHora: 2500,
+          // DETALLE_ROW no trae foto de asistencia (las cinco columnas en
+          // null), que es el caso de una fila anterior a esta función.
+          horasOrigen: 'sin_referencia',
+          horasAsistencia: null,
+          horasExtraAsistencia: null,
+          horasLeidasEn: null,
+          horasAjustadasEn: null,
+          marcasCambiaron: false,
+          horasAsistenciaAhora: null,
+          dias: [],
           incapacidad: null,
           numeroCuenta: 'CR05015202001026284066',
           bancoNombre: 'Banco Nacional',

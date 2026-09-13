@@ -7,6 +7,8 @@ import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
 import { round2 } from '@/modules/payroll/lib/numeros'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
+import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
+import type { DiaCalculado } from '@/modules/payroll/lib/horasPeriodo'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
 
@@ -37,6 +39,10 @@ interface DetalleRow {
   ndt_salario_por_hora: number
   ndt_dias_incapacidad_empleador: number
   ndt_dias_incapacidad_ccss: number
+  ndt_horas_asistencia: number | null
+  ndt_horas_extra_asistencia: number | null
+  ndt_horas_leidas_en: string | null
+  ndt_horas_ajustadas_en: string | null
   sgrh_historial_laboral: {
     lab_salario_base: number
     sgrh_empleados: {
@@ -137,6 +143,10 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_salario_por_hora,
       ndt_dias_incapacidad_empleador,
       ndt_dias_incapacidad_ccss,
+      ndt_horas_asistencia,
+      ndt_horas_extra_asistencia,
+      ndt_horas_leidas_en,
+      ndt_horas_ajustadas_en,
       sgrh_historial_laboral (
         lab_salario_base,
         sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
@@ -175,6 +185,13 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // decide es marcarDetallePagado, que lo vuelve a consultar. Si la lectura
   // falla no se bloquea la pantalla — se muestra la planilla igual.
   const revisarPorLab = new Map<number, { fecha: string; problema: string }[]>()
+  // Lo que dicen las marcas AHORA, para compararlo contra la foto que se
+  // guardó al armar la planilla. Si no coinciden, alguien corrigió una marca
+  // después y la planilla quedó vieja.
+  const asistenciaAhoraPorLab = new Map<number, { horas: number; horasExtra: number }>()
+  // Día por día, para poder responder "¿de dónde salió este número?" sin
+  // tener que ir a la pantalla de asistencia a reconstruirlo a mano.
+  const diasPorLab = new Map<number, DiaCalculado[]>()
   if (
     (detalles ?? []).length > 0 &&
     periodo.npe_fecha_inicio_periodo &&
@@ -191,6 +208,11 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
         if (totales.diasConProblema.length > 0) {
           revisarPorLab.set(labId, totales.diasConProblema)
         }
+        asistenciaAhoraPorLab.set(labId, {
+          horas: totales.horasOrdinarias,
+          horasExtra: totales.horasExtra,
+        })
+        diasPorLab.set(labId, totales.dias)
       }
     }
   }
@@ -337,6 +359,19 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
 
     const datosPago = empleado ? datosPagoPorEmpleado.get(empleado.emp_id) : undefined
 
+    // De dónde salieron las horas de esta fila y si siguen al día. Las dos
+    // respuestas salen de comparar números, no de una bandera guardada (ver
+    // lib/horasOrigen.ts).
+    const foto = {
+      horas: row.ndt_horas_asistencia ?? null,
+      horasExtra: row.ndt_horas_extra_asistencia ?? null,
+    }
+    const guardadas = {
+      horas: row.ndt_horas_ordinarias_diurnas,
+      horasExtra: row.ndt_horas_extra_al_50 ?? 0,
+    }
+    const asistenciaAhora = asistenciaAhoraPorLab.get(row.ndt_historial_laboral_id) ?? null
+
     return {
       id: row.ndt_id,
       historialLaboralId: row.ndt_historial_laboral_id,
@@ -357,6 +392,14 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       horasTrabajadas: row.ndt_horas_ordinarias_diurnas,
       horasExtra: row.ndt_horas_extra_al_50 ?? 0,
       salarioPorHora: row.ndt_salario_por_hora,
+      horasOrigen: origenHoras(guardadas, foto),
+      horasAsistencia: foto.horas,
+      horasExtraAsistencia: foto.horasExtra,
+      horasLeidasEn: row.ndt_horas_leidas_en ?? null,
+      horasAjustadasEn: row.ndt_horas_ajustadas_en ?? null,
+      marcasCambiaron: asistenciaAhora ? marcasCambiaron(foto, asistenciaAhora) : false,
+      horasAsistenciaAhora: asistenciaAhora,
+      dias: diasPorLab.get(row.ndt_historial_laboral_id) ?? [],
       incapacidad,
       totalAPagar: round2(row.ndt_salario_neto + (incapacidad?.monto ?? 0)),
       numeroCuenta: datosPago?.numeroCuenta ?? null,

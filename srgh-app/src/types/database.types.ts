@@ -1788,8 +1788,13 @@ export type Database = {
           ndt_fecha_pago: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
+          ndt_horas_ajustadas_en: string | null
+          ndt_horas_ajustadas_por_id: number | null
+          ndt_horas_asistencia: number | null
           ndt_horas_extra_al_50: number
           ndt_horas_extra_al_75: number
+          ndt_horas_extra_asistencia: number | null
+          ndt_horas_leidas_en: string | null
           ndt_horas_ordinarias_diurnas: number
           ndt_horas_ordinarias_mixtas: number
           ndt_horas_ordinarias_nocturnas: number
@@ -1810,8 +1815,13 @@ export type Database = {
           ndt_fecha_pago?: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
+          ndt_horas_ajustadas_en?: string | null
+          ndt_horas_ajustadas_por_id?: number | null
+          ndt_horas_asistencia?: number | null
           ndt_horas_extra_al_50?: number
           ndt_horas_extra_al_75?: number
+          ndt_horas_extra_asistencia?: number | null
+          ndt_horas_leidas_en?: string | null
           ndt_horas_ordinarias_diurnas?: number
           ndt_horas_ordinarias_mixtas?: number
           ndt_horas_ordinarias_nocturnas?: number
@@ -1832,8 +1842,13 @@ export type Database = {
           ndt_fecha_pago?: string | null
           ndt_fecha_registro?: string
           ndt_historial_laboral_id?: number
+          ndt_horas_ajustadas_en?: string | null
+          ndt_horas_ajustadas_por_id?: number | null
+          ndt_horas_asistencia?: number | null
           ndt_horas_extra_al_50?: number
           ndt_horas_extra_al_75?: number
+          ndt_horas_extra_asistencia?: number | null
+          ndt_horas_leidas_en?: string | null
           ndt_horas_ordinarias_diurnas?: number
           ndt_horas_ordinarias_mixtas?: number
           ndt_horas_ordinarias_nocturnas?: number
@@ -1847,6 +1862,13 @@ export type Database = {
           ndt_total_deducciones_obreras?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "sgrh_nom_det_horas_ajustadas_por_id_fkey"
+            columns: ["ndt_horas_ajustadas_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
           {
             foreignKeyName: "sgrh_nom_det_historial_laboral_id_fkey"
             columns: ["ndt_historial_laboral_id"]

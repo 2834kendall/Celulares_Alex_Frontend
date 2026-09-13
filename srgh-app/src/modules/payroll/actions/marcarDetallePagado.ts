@@ -9,7 +9,8 @@ import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { MENSAJE_PROBLEMA } from '@/modules/payroll/lib/horasPeriodo'
-import { formatDate } from '@/modules/payroll/lib/format'
+import { formatDate, formatHoras } from '@/modules/payroll/lib/format'
+import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 
 interface DetalleActualRow {
   ndt_id: number
@@ -17,6 +18,10 @@ interface DetalleActualRow {
   ndt_pagado: boolean
   ndt_historial_laboral_id: number
   ndt_salario_bruto: number
+  ndt_horas_ordinarias_diurnas: number
+  ndt_horas_extra_al_50: number
+  ndt_horas_asistencia: number | null
+  ndt_horas_extra_asistencia: number | null
   sgrh_nomina_periodo: {
     npe_periodo_mes: number
     npe_periodo_anio: number
@@ -206,6 +211,10 @@ export async function marcarDetallePagado(
       ndt_pagado,
       ndt_historial_laboral_id,
       ndt_salario_bruto,
+      ndt_horas_ordinarias_diurnas,
+      ndt_horas_extra_al_50,
+      ndt_horas_asistencia,
+      ndt_horas_extra_asistencia,
       sgrh_nomina_periodo (
         npe_periodo_mes, npe_periodo_anio,
         npe_fecha_inicio_periodo, npe_fecha_fin_periodo
@@ -238,9 +247,8 @@ export async function marcarDetallePagado(
       fechaFin: periodo.npe_fecha_fin_periodo,
     })
 
-    const problemas = horas.ok
-      ? (horas.data.get(detalle.ndt_historial_laboral_id)?.diasConProblema ?? [])
-      : []
+    const totales = horas.ok ? horas.data.get(detalle.ndt_historial_laboral_id) : undefined
+    const problemas = totales?.diasConProblema ?? []
 
     if (problemas.length > 0) {
       const detalleDias = problemas
@@ -252,6 +260,40 @@ export async function marcarDetallePagado(
       return {
         ok: false,
         error: `Este empleado tiene marcas de asistencia incompletas en el periodo, así que las horas calculadas están cortas: ${detalleDias}${resto}. Corregí las marcas en Asistencia antes de marcar el pago.`,
+      }
+    }
+
+    // Segundo bloqueo: alguien corrigió una marca DESPUÉS de armada la
+    // planilla. La fila guarda una foto de lo que decía la asistencia en ese
+    // momento (ver lib/horasOrigen.ts); si hoy dice otra cosa, el monto
+    // calculado ya no corresponde.
+    //
+    // Solo se bloquea cuando las horas venían de la asistencia. Si alguien las
+    // había corregido a mano a propósito, la diferencia es deliberada y no hay
+    // nada que avisar: esa decisión ya se tomó.
+    const foto = {
+      horas: detalle.ndt_horas_asistencia,
+      horasExtra: detalle.ndt_horas_extra_asistencia,
+    }
+    const guardadas = {
+      horas: detalle.ndt_horas_ordinarias_diurnas,
+      horasExtra: detalle.ndt_horas_extra_al_50 ?? 0,
+    }
+
+    if (totales && origenHoras(guardadas, foto) === 'asistencia') {
+      const ahora = { horas: totales.horasOrdinarias, horasExtra: totales.horasExtra }
+
+      if (marcasCambiaron(foto, ahora)) {
+        return {
+          ok: false,
+          // El "cómo destrabarlo" tiene que nombrar lo que de verdad
+          // funciona. Volver a subir el MISMO archivo no sirve: trae las horas
+          // viejas, y el sistema lo detecta y no lo toma como corrección. Lo
+          // que recalcula todo es descargar la plantilla otra vez, porque se
+          // genera prorrateando el salario sobre las horas que dicen las
+          // marcas hoy.
+          error: `Las marcas de este empleado cambiaron después de armar la planilla: se calculó con ${formatHoras(foto.horas ?? 0)} h (${formatHoras(foto.horasExtra ?? 0)} h extra) y hoy las marcas dicen ${formatHoras(ahora.horas)} h (${formatHoras(ahora.horasExtra)} h extra). Descargá de nuevo la plantilla del periodo y subila —viene con las horas y los montos ya recalculados— o corregí sus horas a mano en el detalle. Después marcá el pago.`,
+        }
       }
     }
   }

@@ -25,6 +25,7 @@ import {
   formatIban,
   periodoLabel,
 } from '@/modules/payroll/lib/format'
+import { MENSAJE_PROBLEMA } from '@/modules/payroll/lib/horasPeriodo'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
@@ -39,6 +40,107 @@ interface PeriodoDetailProps {
   periodo: PeriodoDetalle
   canWrite: boolean
   conceptosManuales: ConceptoNominaRow[]
+}
+
+/**
+ * De dónde salió el total de horas: un día por fila, con lo que tenía
+ * programado y lo que marcó.
+ *
+ * Existe para poder responder "¿por qué le salieron 78 h y no 88?" sin tener
+ * que ir a la pantalla de asistencia a reconstruirlo a mano. Los días que no
+ * cuentan (libre, feriado, ausencia aprobada, sin programación) se muestran
+ * igual y en gris: que un día no sume es justamente lo que suele explicar la
+ * diferencia.
+ */
+function DesgloseHoras({ detalle: d }: { detalle: DetalleNominaItem }) {
+  return (
+    <div>
+      <div className="mb-3 flex items-center gap-2">
+        <CalendarDays className="h-3.5 w-3.5 text-brand-600" />
+        <p className="text-xs font-bold text-slate-800">Horas de {d.empleadoNombre}, día por día</p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[420px] text-left text-xs">
+          <thead>
+            <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-400">
+              <th className="py-1.5 pr-3 font-semibold">Día</th>
+              <th className="py-1.5 pr-3 text-right font-semibold">Programadas</th>
+              <th className="py-1.5 pr-3 text-right font-semibold">Trabajadas</th>
+              <th className="py-1.5 pr-3 text-right font-semibold">Extra</th>
+              <th className="py-1.5 font-semibold">Nota</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.dias.map((dia) => (
+              <tr
+                key={dia.fecha}
+                className={cn(
+                  'border-b border-slate-100 last:border-0',
+                  !dia.cuenta && 'text-slate-400'
+                )}
+              >
+                <td className="py-1.5 pr-3 tabular-nums">{formatDate(dia.fecha)}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">
+                  {formatHoras(dia.horasEsperadas)}
+                </td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">
+                  {formatHoras(dia.horasOrdinarias)}
+                </td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">
+                  {dia.horasExtra > 0 ? formatHoras(dia.horasExtra) : '—'}
+                </td>
+                <td className="py-1.5 text-[11px]">
+                  {dia.problema ? (
+                    <span className="font-semibold text-amber-600">
+                      {MENSAJE_PROBLEMA[dia.problema]}
+                    </span>
+                  ) : dia.cuenta ? (
+                    ''
+                  ) : (
+                    'no cuenta para el periodo'
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-2 text-[11px] text-slate-400">
+        {d.horasLeidasEn
+          ? `Leído de las marcas el ${formatDate(d.horasLeidasEn.slice(0, 10))}. `
+          : ''}
+        Estas son las marcas de hoy; la planilla se pagó con lo que decían cuando se armó.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * "se calculó con X, las marcas dicen Y", nombrando solo lo que de verdad
+ * cambió.
+ *
+ * Las extra se mencionan aparte porque marcasCambiaron se dispara también
+ * cuando SOLO cambian ellas: sin esto, una foto de 84 h + 0 extra contra
+ * marcas de 84 h + 3 extra imprimía "se calculó con 84 h, las marcas dicen
+ * 84 h" — una alerta roja diciendo que nada cambió.
+ */
+function diferenciaHoras(d: DetalleNominaItem): string {
+  const ahora = d.horasAsistenciaAhora
+  if (!ahora) return 'las marcas cambiaron'
+
+  const partes: string[] = []
+  if (Math.abs((d.horasAsistencia ?? 0) - ahora.horas) >= 0.005) {
+    partes.push(`${formatHoras(d.horasAsistencia ?? 0)} h → ${formatHoras(ahora.horas)} h`)
+  }
+  if (Math.abs((d.horasExtraAsistencia ?? 0) - ahora.horasExtra) >= 0.005) {
+    partes.push(
+      `${formatHoras(d.horasExtraAsistencia ?? 0)} → ${formatHoras(ahora.horasExtra)} h extra`
+    )
+  }
+
+  return partes.length > 0 ? partes.join(', ') : 'las marcas cambiaron'
 }
 
 /**
@@ -66,6 +168,8 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const [editandoId, setEditandoId] = useState<number | null>(null)
   const [registrandoIncapacidadId, setRegistrandoIncapacidadId] = useState<number | null>(null)
   const [pagandoId, setPagandoId] = useState<number | null>(null)
+  /** Empleado cuyo desglose día por día está abierto. */
+  const [viendoHorasId, setViendoHorasId] = useState<number | null>(null)
 
   const puedeEditar = canWrite && periodo.estado === 'borrador'
 
@@ -96,6 +200,12 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   // Empleados a los que no se les puede marcar el pago todavía: sus marcas del
   // periodo están incompletas, así que las horas calculadas están cortas.
   const conMarcasIncompletas = periodo.detalles.filter((d) => d.diasPorRevisar.length > 0)
+  // Alguien corrigió una marca DESPUÉS de armada la planilla, así que el monto
+  // guardado ya no corresponde. Solo cuenta cuando las horas venían de la
+  // asistencia: si estaban corregidas a mano, la diferencia es deliberada.
+  const conMarcasDesactualizadas = periodo.detalles.filter(
+    (d) => d.marcasCambiaron && d.horasOrigen === 'asistencia'
+  )
   const totalDeduccionPorcentual = periodo.detalles.reduce(
     (sum, d) => sum + d.deduccionPorcentual,
     0
@@ -115,6 +225,41 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     periodo.detalles,
     8
   )
+
+  /**
+   * De dónde salieron las horas de esta fila. Solo aparece cuando hay algo que
+   * decir: si las horas son las de las marcas y siguen al día, no se muestra
+   * nada — poner "vienen de la asistencia" en cada fila sería ruido.
+   */
+  function NotaHoras({ detalle: d }: { detalle: DetalleNominaItem }) {
+    if (d.marcasCambiaron && d.horasOrigen === 'asistencia') {
+      return (
+        <span
+          className="mt-0.5 block text-[11px] font-semibold text-rose-600"
+          title={diferenciaHoras(d)}
+        >
+          las marcas cambiaron
+        </span>
+      )
+    }
+
+    if (d.horasOrigen === 'ajustadas') {
+      return (
+        <span
+          className="mt-0.5 block text-[11px] text-slate-400"
+          title={
+            d.horasAjustadasEn
+              ? `Corregidas el ${formatDate(d.horasAjustadasEn.slice(0, 10))}`
+              : undefined
+          }
+        >
+          corregidas — las marcas decían {formatHoras(d.horasAsistencia ?? 0)} h
+        </span>
+      )
+    }
+
+    return null
+  }
 
   /** Toggle de pago + acceso al comprobante. Lo rinden tarjetas y tabla. */
   function EstadoPago({ detalle: d }: { detalle: DetalleNominaItem }) {
@@ -273,6 +418,28 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
         </div>
       )}
 
+      {conMarcasDesactualizadas.length > 0 && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-semibold text-rose-900">
+            {conMarcasDesactualizadas.length} empleado(s) con la planilla desactualizada
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+            Sus marcas de asistencia cambiaron después de armar la planilla, así que el monto
+            calculado ya no corresponde y el pago está bloqueado. Descargá de nuevo la plantilla del
+            periodo y subila —viene con las horas y los montos ya recalculados— o corregí sus horas
+            a mano en el detalle. Volver a subir el mismo archivo no sirve: trae las horas viejas.
+          </p>
+          <ul className="mt-2 space-y-1 text-xs text-rose-900">
+            {conMarcasDesactualizadas.map((d) => (
+              <li key={d.id}>
+                <span className="font-semibold">{d.empleadoNombre}</span>{' '}
+                <span className="text-rose-700">— {diferenciaHoras(d)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         {resumen.map(({ key, icon: Icon, label, value, tone }) => (
           <div
@@ -329,6 +496,12 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     {formatCRC(d.totalAPagar)}
                   </span>
                 </div>
+
+                {(d.horasOrigen === 'ajustadas' || d.marcasCambiaron) && (
+                  <div className="text-right">
+                    <NotaHoras detalle={d} />
+                  </div>
+                )}
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
                   {[
@@ -472,6 +645,16 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                             +{formatHoras(d.horasExtra)} h extra
                           </span>
                         )}
+                        <NotaHoras detalle={d} />
+                        {d.dias.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setViendoHorasId(viendoHorasId === d.id ? null : d.id)}
+                            className="mt-0.5 block w-full text-right text-[11px] font-semibold text-brand-600 outline-none transition hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                          >
+                            {viendoHorasId === d.id ? 'ocultar días' : 'ver días'}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right text-slate-600">
                         {formatCRC(d.salarioBruto)}
@@ -515,6 +698,13 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                         </td>
                       )}
                     </tr>
+                    {viendoHorasId === d.id && (
+                      <tr className="border-b border-slate-100 bg-slate-50/60">
+                        <td colSpan={10} className="px-4 py-4">
+                          <DesgloseHoras detalle={d} />
+                        </td>
+                      </tr>
+                    )}
                     {puedeEditar && editandoId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
                         <td colSpan={10} className="px-4 py-4">

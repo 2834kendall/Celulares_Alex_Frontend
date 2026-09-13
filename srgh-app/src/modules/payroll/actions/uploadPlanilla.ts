@@ -12,12 +12,23 @@ import {
   type PlanillaRowInput,
 } from '@/modules/payroll/lib/planilla'
 import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
+import { getFotoAsistencia } from '@/modules/payroll/lib/horasPeriodoData'
+import {
+  camposFotoAsistencia,
+  fotoUtilizable,
+  type FotoAsistencia,
+  type LecturaAsistencia,
+} from '@/modules/payroll/lib/horasOrigen'
+import { ahoraLocal } from '@/modules/payroll/lib/fechas'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos KB
+
+/** Fila sin foto previa: la de un empleado que entra nuevo al periodo. */
+const SIN_FOTO: FotoAsistencia = { horas: null, horasExtra: null }
 
 interface DetalleExistenteRow {
   ndt_id: number
@@ -30,6 +41,8 @@ interface DetalleExistenteRow {
   ndt_total_deducciones_obreras: number
   ndt_salario_neto: number
   ndt_total_cargas_patronales: number
+  ndt_horas_asistencia: number | null
+  ndt_horas_extra_asistencia: number | null
 }
 
 interface LineaIngresoExistenteRow {
@@ -55,8 +68,12 @@ interface ValoresPrevios {
   horasExtra: number
   salarioPorHora: number
   montos: Record<string, number>
+  /** Un detalle ya pagado no se reescribe por un cambio de marcas. */
+  pagado: boolean
   /** Totales ya guardados, para detectar cambios que vienen del catálogo. */
   totales: { bruto: number; deducciones: number; neto: number; patronales: number }
+  /** Foto de la asistencia guardada, para detectar marcas corregidas después. */
+  foto: FotoAsistencia
 }
 
 export type UploadPlanillaResult =
@@ -98,13 +115,14 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return { ok: false, error: 'El archivo supera el límite de 2 MB.' }
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
+  const usuarioId = (claims.app_metadata as { usr_id?: number })?.usr_id ?? null
   const supabase = await createClient()
 
   // 1. El periodo debe existir (RLS: solo de la empresa del JWT) y estar en borrador
   const { data: periodo, error: errPeriodo } = await supabase
     .from('sgrh_nomina_periodo')
-    .select('npe_id, npe_estado, npe_sucursal_id, npe_fecha_fin_periodo')
+    .select('npe_id, npe_estado, npe_sucursal_id, npe_fecha_inicio_periodo, npe_fecha_fin_periodo')
     .eq('npe_id', periodoId)
     .maybeSingle()
 
@@ -176,11 +194,67 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
   }
 
+  // 4b. Lo que dicen las marcas de asistencia para este periodo. Es la foto
+  // que se guarda junto con cada fila: mandan las marcas, pero el Excel puede
+  // corregirlas y esa corrección tiene que quedar registrada (ver
+  // lib/horasOrigen.ts).
+  //
+  // Un periodo sin fechas se guarda sin foto: no hay marcas que leer, y "no se
+  // sabe" es la respuesta honesta. Una lectura que FALLA es otra cosa y corta
+  // la subida (ver abajo).
+  const lecturaAsistencia = await getFotoAsistencia(supabase, {
+    historialLaboralIds: empleadosResult.data.map((e) => e.labId),
+    fechaInicio: periodo.npe_fecha_inicio_periodo,
+    fechaFin: periodo.npe_fecha_fin_periodo,
+  })
+
+  // Desde que las marcas son la fuente de las horas, guardar una planilla sin
+  // poder leerlas deja las filas a medias: horas nuevas con una foto vieja,
+  // que es justamente el par con el que después se decide si alguien las
+  // corrigió y si el pago se bloquea. Un periodo SIN FECHAS es otra cosa (no
+  // hay marcas que leer) y sí se puede guardar.
+  if (lecturaAsistencia.estado === 'error') {
+    return {
+      ok: false,
+      error: 'No se pudieron leer las marcas de asistencia del periodo. Volvé a intentarlo.',
+    }
+  }
+
+  const ahora = ahoraLocal()
+
+  /** Lo que dice la asistencia del empleado, o el motivo por el que no se sabe. */
+  const lecturaDe = (labId: number): LecturaAsistencia =>
+    lecturaAsistencia.estado === 'ok'
+      ? { estado: 'ok', datos: lecturaAsistencia.datos.get(labId) ?? null }
+      : { estado: 'sin_fechas' }
+
+  /**
+   * Las cinco columnas de la foto para la fila de un empleado, o {} cuando lo
+   * correcto es no tocarlas (ver camposFotoAsistencia).
+   */
+  const fotoDe = (labId: number, row: PlanillaRowInput, previo: ValoresPrevios | null) => {
+    const resultado = camposFotoAsistencia({
+      lectura: lecturaDe(labId),
+      guardadas: { horas: row.horasTrabajadas, horasExtra: row.horasExtra },
+      guardadasPrevias: previo
+        ? { horas: previo.horasTrabajadas, horasExtra: previo.horasExtra }
+        : null,
+      fotoPrevia: previo?.foto ?? SIN_FOTO,
+      usuarioId,
+      ahora,
+    })
+
+    // No escribir = las horas que llegan son las mismas de antes y las marcas
+    // ya dicen otra cosa. La fila se queda desactualizada y bloqueada, que es
+    // lo correcto: nadie corrigió nada todavía.
+    return resultado.escribir ? resultado.campos : {}
+  }
+
   // 5. Planilla ya guardada en el periodo (para comparar, no para borrar de una vez)
   const { data: detallesPrevios, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
-      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto, ndt_total_cargas_patronales'
+      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto, ndt_total_cargas_patronales, ndt_horas_asistencia, ndt_horas_extra_asistencia'
     )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
@@ -210,11 +284,16 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         horasExtra: d.ndt_horas_extra_al_50 ?? 0,
         salarioPorHora: d.ndt_salario_por_hora,
         montos,
+        pagado: d.ndt_pagado,
         totales: {
           bruto: d.ndt_salario_bruto,
           deducciones: d.ndt_total_deducciones_obreras,
           neto: d.ndt_salario_neto,
           patronales: d.ndt_total_cargas_patronales ?? 0,
+        },
+        foto: {
+          horas: d.ndt_horas_asistencia ?? null,
+          horasExtra: d.ndt_horas_extra_asistencia ?? null,
         },
       })
     }
@@ -308,7 +387,23 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       previo.totales.neto === totales.salarioNeto &&
       previo.totales.patronales === totales.totalCargasPatronales
 
-    if (mismoInput && mismoResultado) {
+    // Y tiene que mirar si la fila TIENE foto. Las que vienen de antes de que
+    // existiera no la tienen, y sin ella el sistema no puede decir si sus
+    // horas son las de las marcas ni avisar cuando cambian. Se vuelven a
+    // guardar una vez, aunque el Excel llegue idéntico, para que queden con la
+    // suya; de ahí en adelante ya no entran por acá.
+    //
+    // No hace falta forzar el guardado cuando la foto está pero las marcas
+    // cambiaron: esa fila queda bloqueada, y lo que la destraba es una
+    // plantilla nueva, que trae horas distintas y entra igual por mismoInput.
+    //
+    // Una fila YA PAGADA tampoco se reescribe. Su planilla es historia: tiene
+    // comprobante emitido y aguinaldo acumulado con ese bruto.
+    const lectura = lecturaDe(labId)
+    const asistencia = lectura.estado === 'ok' ? lectura.datos : null
+    const tieneFoto = asistencia === null || fotoUtilizable(previo.foto)
+
+    if (mismoInput && mismoResultado && (tieneFoto || previo.pagado)) {
       sinCambios += 1
     } else {
       filasActualizar.push({ row, ndtId, totales })
@@ -407,7 +502,9 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ndt_salario_neto: salarioNeto,
         ndt_total_cargas_patronales: totalCargasPatronales,
         ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
+        ndt_horas_extra_al_50: row.horasExtra,
         ndt_salario_por_hora: row.salarioPorHora,
+        ...fotoDe(porCedula.get(row.cedula)!.labId, row, valoresPreviosPorNdt.get(ndtId) ?? null),
       })
       .eq('ndt_id', ndtId)
     if (errUpdate) {
@@ -462,8 +559,15 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ndt_total_cargas_patronales: totales.totalCargasPatronales,
         ndt_salario_neto: totales.salarioNeto,
         ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
+        // Faltaba: las horas extra del Excel se usaban para el cálculo y para
+        // el banco de horas, pero no se guardaban en la fila. La pantalla del
+        // periodo las leía de acá, así que toda planilla armada por Excel
+        // mostraba "0 h extra" aunque el archivo trajera horas.
+        ndt_horas_extra_al_50: row.horasExtra,
         ndt_salario_por_hora: row.salarioPorHora,
         ndt_fecha_registro: hoy,
+        // Fila nueva: no hay nada anterior contra lo cual comparar.
+        ...fotoDe(porCedula.get(row.cedula)!.labId, row, null),
       }
     })
 

@@ -9,6 +9,8 @@
 import { z } from 'zod'
 import type { Database } from '@/types/database.types'
 import { rangoQuincena } from '@/modules/payroll/lib/fechas'
+import type { OrigenHoras } from '@/modules/payroll/lib/horasOrigen'
+import type { DiaCalculado } from '@/modules/payroll/lib/horasPeriodo'
 
 // ─── Aliases de tipos Supabase ────────────────────────────────────────────────
 
@@ -90,6 +92,28 @@ export interface DetalleNominaItem {
   /** Horas por encima de la jornada programada, guardadas en ndt_horas_extra_al_50. */
   horasExtra: number
   salarioPorHora: number
+  /**
+   * Si las horas que se pagan son las que dijeron las marcas, si alguien las
+   * corrigió, o si no hay foto contra la cual compararlas (ver
+   * lib/horasOrigen.ts).
+   */
+  horasOrigen: OrigenHoras
+  /** Lo que dijeron las marcas cuando se armó la planilla. Null = no se pudo leer. */
+  horasAsistencia: number | null
+  horasExtraAsistencia: number | null
+  /** Cuándo se tomó esa foto ('YYYY-MM-DD HH:mm:ss' local). */
+  horasLeidasEn: string | null
+  /** Cuándo alguien dejó horas distintas a las de la asistencia. */
+  horasAjustadasEn: string | null
+  /**
+   * true cuando las marcas dicen hoy algo distinto de lo que decían al armar
+   * la planilla: alguien corrigió una marca después. La planilla quedó vieja.
+   */
+  marcasCambiaron: boolean
+  /** Lo que dicen las marcas AHORA. Null si el periodo no tiene fechas. */
+  horasAsistenciaAhora: { horas: number; horasExtra: number } | null
+  /** Día por día de la quincena, para explicar de dónde sale el total. */
+  dias: DiaCalculado[]
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
   incapacidad: IncapacidadItem | null
   /**

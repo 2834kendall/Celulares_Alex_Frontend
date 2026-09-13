@@ -18,6 +18,7 @@ import {
   type HorarioDia,
   type TotalesPeriodo,
 } from '@/modules/payroll/lib/horasPeriodo'
+import type { HorasGuardadas } from '@/modules/payroll/lib/horasOrigen'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -251,4 +252,48 @@ export async function getHorasDelPeriodo(
   }
 
   return { ok: true, data: resultado }
+}
+
+/** Resultado de leer la asistencia de un periodo, por contrato. */
+export type FotoAsistenciaPeriodo =
+  | { estado: 'ok'; datos: Map<number, HorasGuardadas> }
+  | { estado: 'sin_fechas' }
+  | { estado: 'error' }
+
+/**
+ * Lo que dicen las marcas, en la forma que se guarda junto con la planilla
+ * (ver lib/horasOrigen.ts). Es `getHorasDelPeriodo` reducida a los dos números
+ * que se fotografían.
+ *
+ * No lanza, pero SÍ distingue los dos motivos por los que puede no haber
+ * datos, y la diferencia importa: "el periodo no tiene fechas" es un hecho
+ * (no hay marcas que leer, la foto se limpia) mientras que "la consulta se
+ * cayó" no dice nada (hay que dejar la foto como estaba). Devolver un mapa
+ * vacío en los dos casos hacía que un error transitorio borrara el registro de
+ * quién había corregido las horas.
+ */
+export async function getFotoAsistencia(
+  supabase: SupabaseServerClient,
+  {
+    historialLaboralIds,
+    fechaInicio,
+    fechaFin,
+  }: { historialLaboralIds: number[]; fechaInicio: string | null; fechaFin: string | null }
+): Promise<FotoAsistenciaPeriodo> {
+  if (!fechaInicio || !fechaFin) return { estado: 'sin_fechas' }
+  if (historialLaboralIds.length === 0) return { estado: 'ok', datos: new Map() }
+
+  const horas = await getHorasDelPeriodo(supabase, {
+    historialLaboralIds,
+    fechaInicio,
+    fechaFin,
+  })
+  if (!horas.ok) return { estado: 'error' }
+
+  const datos = new Map<number, HorasGuardadas>()
+  for (const [labId, totales] of horas.data) {
+    datos.set(labId, { horas: totales.horasOrdinarias, horasExtra: totales.horasExtra })
+  }
+
+  return { estado: 'ok', datos }
 }

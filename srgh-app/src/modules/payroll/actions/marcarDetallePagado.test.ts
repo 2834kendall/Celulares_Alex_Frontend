@@ -318,6 +318,114 @@ describe('marcarDetallePagado (server action)', () => {
     expect(detalle?.value.update).not.toHaveBeenCalled()
   })
 
+  // Segundo bloqueo: alguien corrigió una marca DESPUÉS de armada la planilla,
+  // así que el monto guardado ya no corresponde a lo que dice la asistencia.
+  // La fila trae la foto de lo que decía cuando se calculó.
+  it('no deja marcar el pago si las marcas cambiaron desde que se armó la planilla', async () => {
+    mockGetHorasDelPeriodo.mockResolvedValue({
+      ok: true,
+      data: new Map([[77, { ...SIN_PROBLEMAS, horasOrdinarias: 90, horasExtra: 2 }]]),
+    })
+
+    const client = mockSupabase({
+      sgrh_nomina_detalle: {
+        data: {
+          ...DETALLE_BASE,
+          ndt_pagado: false,
+          // Se pagó lo que decía la asistencia en su momento: 84 h.
+          ndt_horas_ordinarias_diurnas: 84,
+          ndt_horas_extra_al_50: 0,
+          ndt_horas_asistencia: 84,
+          ndt_horas_extra_asistencia: 0,
+        },
+        error: null,
+      },
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('cambiaron después de armar la planilla')
+      expect(result.error).toContain('84')
+      expect(result.error).toContain('90')
+      // El "cómo destrabarlo" tiene que nombrar lo que de verdad funciona:
+      // volver a subir el MISMO archivo no recalcula nada.
+      expect(result.error).toContain('Descargá de nuevo la plantilla')
+    }
+    const detalle = client.from.mock.results.find(
+      (_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_detalle'
+    )
+    expect(detalle?.value.update).not.toHaveBeenCalled()
+  })
+
+  // Si alguien ya había corregido las horas a mano, la diferencia contra la
+  // asistencia es deliberada: esa decisión ya se tomó y no hay nada que avisar.
+  it('no bloquea cuando las horas ya estaban corregidas a mano', async () => {
+    mockGetHorasDelPeriodo.mockResolvedValue({
+      ok: true,
+      data: new Map([[77, { ...SIN_PROBLEMAS, horasOrdinarias: 90, horasExtra: 0 }]]),
+    })
+
+    mockSupabase({
+      sgrh_nomina_detalle: [
+        {
+          data: {
+            ...DETALLE_BASE,
+            ndt_pagado: false,
+            // Se pagaron 88 h aunque la asistencia decía 84: alguien lo decidió.
+            ndt_horas_ordinarias_diurnas: 88,
+            ndt_horas_extra_al_50: 0,
+            ndt_horas_asistencia: 84,
+            ndt_horas_extra_asistencia: 0,
+          },
+          error: null,
+        },
+        OK,
+        { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-16' }], error: null },
+      ],
+      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: OK,
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result).toEqual({ ok: true })
+  })
+
+  // Una fila sin foto (anterior a esta función, o de un periodo sin fechas) no
+  // se puede comparar contra nada: no se inventa un bloqueo.
+  it('no bloquea una fila que no tiene foto de asistencia', async () => {
+    mockGetHorasDelPeriodo.mockResolvedValue({
+      ok: true,
+      data: new Map([[77, { ...SIN_PROBLEMAS, horasOrdinarias: 90, horasExtra: 0 }]]),
+    })
+
+    mockSupabase({
+      sgrh_nomina_detalle: [
+        {
+          data: {
+            ...DETALLE_BASE,
+            ndt_pagado: false,
+            ndt_horas_ordinarias_diurnas: 88,
+            ndt_horas_extra_al_50: 0,
+            ndt_horas_asistencia: null,
+            ndt_horas_extra_asistencia: null,
+          },
+          error: null,
+        },
+        OK,
+        { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-16' }], error: null },
+      ],
+      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: OK,
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result).toEqual({ ok: true })
+  })
+
   it('desmarcar siempre se puede, aunque haya marcas incompletas', async () => {
     mockGetHorasDelPeriodo.mockResolvedValue({
       ok: true,

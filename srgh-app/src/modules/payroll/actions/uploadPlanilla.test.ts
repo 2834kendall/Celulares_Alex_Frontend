@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
+import { getFotoAsistencia } from '@/modules/payroll/lib/horasPeriodoData'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { PlanillaRowInput } from '@/modules/payroll/lib/planilla'
 
@@ -15,11 +16,15 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 vi.mock('@/modules/payroll/lib/planillaExcel', () => ({ parsePlanillaWorkbook: vi.fn() }))
 vi.mock('@/modules/payroll/lib/planillaData', () => ({ getEmpleadosActivos: vi.fn() }))
+// La lectura de marcas se mockea entera: acá se prueba qué guarda la subida,
+// no el cálculo de horas (que tiene sus propios tests).
+vi.mock('@/modules/payroll/lib/horasPeriodoData', () => ({ getFotoAsistencia: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockParsePlanillaWorkbook = vi.mocked(parsePlanillaWorkbook)
 const mockGetEmpleadosActivos = vi.mocked(getEmpleadosActivos)
+const mockGetFotoAsistencia = vi.mocked(getFotoAsistencia)
 
 const PERIODO_BORRADOR = { npe_id: 1, npe_estado: 'borrador', npe_sucursal_id: 2 }
 
@@ -64,9 +69,23 @@ function buildFormData(periodoId = 1): FormData {
 function mockSupabase(
   responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
 ) {
-  mockCreateClient.mockResolvedValue(
-    createSupabaseClientMock(responses) as unknown as Awaited<ReturnType<typeof createClient>>
-  )
+  const client = createSupabaseClientMock(responses)
+  mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
+  return client
+}
+
+/** Lo que se le pasó a .insert() / .update() contra una tabla. */
+function argumentos(
+  client: ReturnType<typeof createSupabaseClientMock>,
+  tabla: string,
+  metodo: 'insert' | 'update'
+): unknown[] {
+  return client.from.mock.results
+    .filter((_, i) => client.from.mock.calls[i][0] === tabla)
+    .flatMap(
+      (r) => (r.value as Record<string, { mock: { calls: unknown[][] } }>)[metodo].mock.calls
+    )
+    .map((llamada) => llamada[0])
 }
 
 const OK = { data: null, error: null }
@@ -74,9 +93,12 @@ const OK = { data: null, error: null }
 describe('uploadPlanilla (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequirePermission.mockResolvedValue(
-      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
-    )
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { usr_id: 5 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    // Por defecto no hay marcas que leer (periodo sin fechas): la fila se
+    // guarda sin foto, igual que antes de que existiera.
+    mockGetFotoAsistencia.mockResolvedValue({ estado: 'sin_fechas' })
   })
 
   it('rechaza un periodo inválido sin llamar a Supabase', async () => {
@@ -246,6 +268,101 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 0,
       eliminados: 0,
     })
+  })
+
+  // La regla del negocio: mandan las marcas, pero el Excel puede corregirlas y
+  // esa correccion tiene que quedar registrada. Cada fila guarda la foto de lo
+  // que dijo la asistencia, aparte de las horas que se pagan.
+  it('guarda la foto de la asistencia y no marca ajuste si el Excel la respeta', async () => {
+    mockGetFotoAsistencia.mockResolvedValue({
+      estado: 'ok',
+      datos: new Map([[60, { horas: 84, horasExtra: 3 }]]),
+    })
+
+    const client = mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        { data: [], error: null },
+        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60 }], error: null },
+      ],
+      sgrh_nomina_linea_ingreso: OK,
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: OK,
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('NEW', { BASE: 50000 }, { horasTrabajadas: 84, horasExtra: 3 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [{ labId: 60, cedula: 'NEW', nombre: 'Nuevo', salarioBaseMensual: 100000 }],
+    })
+
+    await uploadPlanilla(buildFormData())
+
+    const insertadas = argumentos(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<
+      string,
+      unknown
+    >[]
+
+    expect(insertadas[0]).toMatchObject({
+      ndt_horas_ordinarias_diurnas: 84,
+      // Antes las horas extra del Excel se usaban para calcular pero no se
+      // guardaban: la pantalla siempre mostraba 0.
+      ndt_horas_extra_al_50: 3,
+      ndt_horas_asistencia: 84,
+      ndt_horas_extra_asistencia: 3,
+      ndt_horas_ajustadas_por_id: null,
+      ndt_horas_ajustadas_en: null,
+    })
+    expect(insertadas[0].ndt_horas_leidas_en).toEqual(expect.any(String))
+  })
+
+  it('registra quien corrigio las horas cuando el Excel no coincide con las marcas', async () => {
+    mockGetFotoAsistencia.mockResolvedValue({
+      estado: 'ok',
+      datos: new Map([[60, { horas: 84, horasExtra: 3 }]]),
+    })
+
+    const client = mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        { data: [], error: null },
+        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60 }], error: null },
+      ],
+      sgrh_nomina_linea_ingreso: OK,
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: OK,
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    // El archivo trae 90 h donde las marcas decian 84.
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('NEW', { BASE: 50000 }, { horasTrabajadas: 90, horasExtra: 3 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [{ labId: 60, cedula: 'NEW', nombre: 'Nuevo', salarioBaseMensual: 100000 }],
+    })
+
+    await uploadPlanilla(buildFormData())
+
+    const insertadas = argumentos(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<
+      string,
+      unknown
+    >[]
+
+    expect(insertadas[0]).toMatchObject({
+      // Se paga lo del Excel...
+      ndt_horas_ordinarias_diurnas: 90,
+      // ...pero queda escrito lo que decian las marcas y quien lo cambio.
+      ndt_horas_asistencia: 84,
+      ndt_horas_ajustadas_por_id: 5,
+    })
+    expect(insertadas[0].ndt_horas_ajustadas_en).toEqual(expect.any(String))
   })
 
   it('un empleado con montos distintos se actualiza sin perder su ndt_id', async () => {
@@ -496,6 +613,166 @@ describe('uploadPlanilla (server action)', () => {
   // obrera — la fila llegaba identica, se marcaba "sin cambios" y se quedaba
   // con el monto viejo. La unica forma de forzar el recalculo era editarle
   // algo a cada empleado.
+  // Una fila anterior a que existiera la foto no la tiene, y sin ella el
+  // sistema no puede decir si sus horas son las de las marcas ni avisar cuando
+  // cambian. Se vuelve a guardar una vez aunque el Excel llegue identico, para
+  // que quede con la suya.
+  it('vuelve a guardar una fila sin foto de asistencia, aunque el Excel sea identico', async () => {
+    mockGetFotoAsistencia.mockResolvedValue({
+      estado: 'ok',
+      datos: new Map([[55, { horas: 90, horasExtra: 0 }]]),
+    })
+
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 10,
+              ndt_historial_laboral_id: 55,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+              ndt_total_cargas_patronales: 0,
+              // Fila vieja: nunca se le guardo foto.
+              ndt_horas_asistencia: null,
+              ndt_horas_extra_asistencia: null,
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 10,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    // El Excel viene con exactamente los mismos valores que ya estaban.
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toMatchObject({ ok: true, actualizados: 1, sinCambios: 0 })
+  })
+
+  // Cuando la foto YA esta y las marcas cambiaron, la fila queda bloqueada y
+  // reescribirla no arregla nada: lo que la destraba es descargar la plantilla
+  // otra vez, que trae horas distintas. Volver a subir el mismo archivo no
+  // tiene por que contar como un cambio.
+  it('no reescribe una fila identica solo porque las marcas cambiaron', async () => {
+    mockGetFotoAsistencia.mockResolvedValue({
+      estado: 'ok',
+      datos: new Map([[55, { horas: 90, horasExtra: 0 }]]),
+    })
+
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 10,
+              ndt_historial_laboral_id: 55,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+              ndt_total_cargas_patronales: 0,
+              // La planilla se armo cuando las marcas decian 88 h.
+              ndt_horas_asistencia: 88,
+              ndt_horas_extra_asistencia: 0,
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 10,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toMatchObject({ ok: true, actualizados: 0, sinCambios: 1 })
+  })
+
+  // Sin poder leer las marcas, guardar dejaria las filas a medias: horas
+  // nuevas con una foto vieja, que es el par con el que se decide si alguien
+  // las corrigio y si el pago se bloquea.
+  it('no guarda nada si la lectura de marcas falla', async () => {
+    mockGetFotoAsistencia.mockResolvedValue({ estado: 'error' })
+
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('No se pudieron leer las marcas')
+  })
+
   it('recalcula una fila identica si el catálogo cambió desde el último guardado', async () => {
     const catalogoCorregido = CONCEPTOS.map((c) =>
       c.con_codigo === 'CCSS_OBRERA' ? { ...c, con_porcentaje: 10.5 } : c

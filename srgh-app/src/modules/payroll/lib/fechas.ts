@@ -17,6 +17,24 @@ export function hoyLocal(): string {
 }
 
 /**
+ * 'YYYY-MM-DD HH:mm:ss' de este momento, en horario local.
+ *
+ * Es el formato que espera un `timestamp without time zone` de Postgres, que
+ * guarda la hora tal cual se la manda sin convertir nada. Mandarle un
+ * `toISOString()` guardaria la hora UTC como si fuera local: en Costa Rica
+ * (UTC-6) todo quedaria seis horas adelantado, y una planilla leida a las
+ * 19:00 del 31 diria que se leyo a la 01:00 del 1.
+ */
+export function ahoraLocal(): string {
+  const ahora = new Date()
+  const dos = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${ahora.getFullYear()}-${dos(ahora.getMonth() + 1)}-${dos(ahora.getDate())} ` +
+    `${dos(ahora.getHours())}:${dos(ahora.getMinutes())}:${dos(ahora.getSeconds())}`
+  )
+}
+
+/**
  * Convierte 'YYYY-MM-DD' a un `Date` a medianoche LOCAL.
  *
  * `new Date('2026-08-29')` lo interpreta como UTC y en Costa Rica devuelve el
