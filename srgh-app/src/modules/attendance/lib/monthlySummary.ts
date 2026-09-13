@@ -1,4 +1,5 @@
 import type { createClient } from '@/lib/supabase/server'
+import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import type { DayForInfraction } from '@/modules/attendance/lib/infractions'
 import {
   dateOfDay,
@@ -71,14 +72,14 @@ export type GatherMonthlyAttendanceResult =
   { ok: true; data: EmployeeMonthDays[] } | { ok: false; error: string }
 
 /**
- * Reune, por cada colaborador activo de la empresa (y sucursal fija del
- * gerente, si tiene una) de un rango de fechas, sus dias programados con la
- * hora de entrada real (si marco) — la materia prima para clasificar
+ * Reune, por cada colaborador activo de la empresa (y las sucursales del
+ * gerente, si tiene asignadas) de un rango de fechas, sus dias programados
+ * con la hora de entrada real (si marco) — la materia prima para clasificar
  * tardias/ausencias (classifyDay/summarizeMonth en lib/infractions.ts).
  *
- * Resuelve la sucursal del usuario (via uer_sucursal_id, que no viaja en el
- * JWT) puertas adentro para que el llamador solo pase el usuarioId, no una
- * consulta previa repetida en cada action que lo necesite.
+ * Resuelve el alcance de sucursales del usuario (via uer_sucursal_id, que no
+ * viaja en el JWT) puertas adentro para que el llamador solo pase el
+ * usuarioId, no una consulta previa repetida en cada action que lo necesite.
  *
  * Compartido entre checkMonthlyInfractions (dispara la advertencia del mes en
  * curso) y getMonthlyAttendanceSummary (reporte navegable por mes): ambos
@@ -92,16 +93,7 @@ export async function gatherMonthlyAttendanceDays(
   start: string,
   end: string
 ): Promise<GatherMonthlyAttendanceResult> {
-  let sucursalId: number | null = null
-  if (usuarioId) {
-    const { data: asignacion } = await supabase
-      .from('sgrh_usuarios_empresa_rol')
-      .select('uer_sucursal_id')
-      .eq('uer_usuario_id', usuarioId)
-      .eq('uer_activo', true)
-      .maybeSingle<{ uer_sucursal_id: number | null }>()
-    sucursalId = asignacion?.uer_sucursal_id ?? null
-  }
+  const sucursalScope = usuarioId ? await getUsuarioSucursalScope(supabase, usuarioId) : null
 
   let historialQuery = supabase
     .from('sgrh_historial_laboral')
@@ -116,8 +108,8 @@ export async function gatherMonthlyAttendanceDays(
     .eq('lab_empresa_id', empresaId)
     .is('lab_fecha_fin', null)
 
-  if (sucursalId !== null) {
-    historialQuery = historialQuery.eq('lab_sucursal_id', sucursalId)
+  if (sucursalScope !== null) {
+    historialQuery = historialQuery.in('lab_sucursal_id', sucursalScope)
   }
 
   const { data: historial, error: errHistorial } = await historialQuery.returns<HistorialRow[]>()

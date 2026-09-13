@@ -6,6 +6,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { invitarUsuarioSchema, type InvitarUsuarioInput } from '@/modules/users/types'
+import { syncUserSucursales } from '@/modules/users/lib/syncUserSucursales'
 
 export type InviteUserResult = { ok: true; usrId: number } | { ok: false; error: string }
 
@@ -31,18 +32,17 @@ export async function inviteUser(input: InvitarUsuarioInput): Promise<InviteUser
 
   const admin = createAdminClient()
 
-  // El cliente admin bypasea RLS: la pertenencia de la sucursal a la empresa
-  // del JWT se valida explícitamente, y ANTES de crear el auth user para no
-  // dejar invitaciones enviadas sobre un payload inválido.
-  if (parsed.data.sucursal_id) {
-    const { data: sucursal, error: sucError } = await admin
+  // El cliente admin bypasea RLS: la pertenencia de las sucursales a la
+  // empresa del JWT se valida explícitamente, y ANTES de crear el auth user
+  // para no dejar invitaciones enviadas sobre un payload inválido.
+  if (parsed.data.sucursal_ids.length > 0) {
+    const { data: sucursales, error: sucError } = await admin
       .from('sgrh_sucursales')
       .select('suc_id')
-      .eq('suc_id', parsed.data.sucursal_id)
+      .in('suc_id', parsed.data.sucursal_ids)
       .eq('suc_empresa_id', empresaId)
-      .maybeSingle()
 
-    if (sucError || !sucursal) {
+    if (sucError || (sucursales ?? []).length !== parsed.data.sucursal_ids.length) {
       return { ok: false, error: 'La sucursal seleccionada no es válida para tu empresa.' }
     }
   }
@@ -105,42 +105,16 @@ export async function inviteUser(input: InvitarUsuarioInput): Promise<InviteUser
     }
   }
 
-  // El hook del JWT lee la fila uer con LIMIT 1 y no hay UNIQUE en
-  // (usuario, empresa): si ya existe una asignación (fila huérfana re-vinculada
-  // por el trigger), se ACTUALIZA en lugar de insertar una segunda.
-  const { data: uerExistente, error: uerReadError } = await admin
-    .from('sgrh_usuarios_empresa_rol')
-    .select('uer_id')
-    .eq('uer_usuario_id', usuarioRow.usr_id)
-    .eq('uer_empresa_id', empresaId)
-    .maybeSingle()
-
-  if (uerReadError) {
-    return {
-      ok: false,
-      error: 'La invitación se envió, pero no se pudo asignar el rol al usuario.',
-    }
-  }
-
-  const uerError = uerExistente
-    ? (
-        await admin
-          .from('sgrh_usuarios_empresa_rol')
-          .update({
-            uer_rol_id: parsed.data.rol_id,
-            uer_sucursal_id: parsed.data.sucursal_id ?? null,
-            uer_activo: true,
-          })
-          .eq('uer_id', uerExistente.uer_id)
-      ).error
-    : (
-        await admin.from('sgrh_usuarios_empresa_rol').insert({
-          uer_usuario_id: usuarioRow.usr_id,
-          uer_empresa_id: empresaId,
-          uer_rol_id: parsed.data.rol_id,
-          uer_sucursal_id: parsed.data.sucursal_id ?? null,
-        })
-      ).error
+  // No hay UNIQUE en (usuario, empresa): si ya existía alguna asignación
+  // activa (fila huérfana re-vinculada por el trigger), syncUserSucursales
+  // la actualiza/completa en vez de duplicarla.
+  const { error: uerError } = await syncUserSucursales({
+    admin,
+    usrId: usuarioRow.usr_id,
+    empresaId,
+    rolId: parsed.data.rol_id,
+    sucursalIds: parsed.data.sucursal_ids,
+  })
 
   if (uerError) {
     return {

@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { decryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
 import { isLivenessProof } from '@/modules/attendance/lib/face/livenessProof'
 import { classifyDistance, euclideanDistance } from '@/modules/attendance/lib/face/faceMath'
@@ -95,18 +96,9 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
 
   const supabase = await createClient()
 
-  let sucursalId: number | null = null
-  if (meta.usr_id) {
-    const { data: asignacion } = await supabase
-      .from('sgrh_usuarios_empresa_rol')
-      .select('uer_sucursal_id')
-      .eq('uer_usuario_id', meta.usr_id)
-      .eq('uer_activo', true)
-      .maybeSingle<{ uer_sucursal_id: number | null }>()
-    sucursalId = asignacion?.uer_sucursal_id ?? null
-  }
+  const sucursalIds = meta.usr_id ? await getUsuarioSucursalScope(supabase, meta.usr_id) : null
 
-  if (sucursalId === null) {
+  if (!sucursalIds || sucursalIds.length === 0) {
     return { ok: false, error: 'Este kiosco no tiene una sucursal asignada.' }
   }
 
@@ -119,7 +111,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     `
     )
     .eq('lab_empresa_id', meta.empresa_id)
-    .eq('lab_sucursal_id', sucursalId)
+    .in('lab_sucursal_id', sucursalIds)
     .is('lab_fecha_fin', null)
     .returns<HistorialRow[]>()
 
@@ -181,7 +173,10 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     // con un MATCH.
     await supabase.from('sgrh_biometria_auditoria').insert({
       bia_empresa_id: meta.empresa_id,
-      bia_sucursal_id: sucursalId,
+      // El log de auditoria tiene una sola columna de sucursal; un kiosco es
+      // un dispositivo fisico de una sola sucursal, asi que "varias
+      // asignadas" no deberia darse en la practica — se registra la primera.
+      bia_sucursal_id: sucursalIds[0],
       bia_resultado: 'DENIED',
       bia_mejor_distancia: Number(bestDistance.toFixed(4)),
       bia_mejor_empleado_id: bestEmployeeId,

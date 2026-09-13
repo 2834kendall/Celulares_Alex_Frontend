@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
 import { marcaTipoSchema } from '@/modules/attendance/types'
@@ -90,18 +91,11 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
   const supabase = await createClient()
 
   // La sucursal del gerente NO viaja en el JWT (decision del equipo, SGRH-21):
-  // se resuelve en vivo. null = sin sucursal fija asignada (ADMIN/RRHH),
-  // que ven las marcas de toda la empresa — igual que get-sucursal-actual.ts.
-  let sucursalId: number | null = null
-  if (meta.usr_id) {
-    const { data: asignacion } = await supabase
-      .from('sgrh_usuarios_empresa_rol')
-      .select('uer_sucursal_id')
-      .eq('uer_usuario_id', meta.usr_id)
-      .eq('uer_activo', true)
-      .maybeSingle<{ uer_sucursal_id: number | null }>()
-    sucursalId = asignacion?.uer_sucursal_id ?? null
-  }
+  // se resuelve en vivo. null = sin restriccion (ADMIN/RRHH, o sin filas
+  // activas), que ven las marcas de toda la empresa — igual que
+  // get-sucursal-actual.ts. Un gerente a cargo de varias sucursales ve las
+  // marcas de todas las suyas.
+  const sucursalIds = meta.usr_id ? await getUsuarioSucursalScope(supabase, meta.usr_id) : null
 
   let historialQuery = supabase
     .from('sgrh_historial_laboral')
@@ -117,8 +111,8 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     .eq('lab_empresa_id', meta.empresa_id)
     .is('lab_fecha_fin', null)
 
-  if (sucursalId !== null) {
-    historialQuery = historialQuery.eq('lab_sucursal_id', sucursalId)
+  if (sucursalIds !== null) {
+    historialQuery = historialQuery.in('lab_sucursal_id', sucursalIds)
   }
 
   const { data: employmentHistory, error: errHistory } =

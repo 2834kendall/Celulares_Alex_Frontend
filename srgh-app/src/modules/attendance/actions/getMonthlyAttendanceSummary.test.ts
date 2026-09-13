@@ -40,7 +40,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
 
   it('calcula los limites del mes calendario a partir de cualquier fecha del mes', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
@@ -54,7 +54,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
 
   it('separa tardias y ausencias en listas de fechas, ordenadas y con el detalle correcto', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: {
         data: [
           {
@@ -142,7 +142,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
 
   it('ordena los empleados alfabeticamente', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: {
         data: [
           {
@@ -178,7 +178,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
 
   it('devuelve error generico si falla la reunion de datos del mes', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
     })
     mockCreateClient.mockResolvedValue(
