@@ -232,16 +232,32 @@ export async function getHorasDelPeriodo(
   const resultado = new Map<number, TotalesPeriodo>()
 
   for (const labId of historialLaboralIds) {
+    const horarioDe = (fecha: string) => {
+      const prog = programacionPorDia.get(clave(labId, fecha))
+      return prog ? horarioDelDia(prog) : null
+    }
+
+    const arrastradasPorDia = new Map<string, RawMark[]>(
+      fechas.map((fecha) => [fecha, salidaArrastrada(labId, fecha, horarioDe(fecha))])
+    )
+
+    // Una salida de madrugada que ya cerró el turno del día anterior no puede
+    // volver a contarse en su propio día: ahí queda como una salida suelta sin
+    // entrada. Si ese día está programado, se reportaba 'sin_entrada' y el pago
+    // de toda la quincena se trababa; si no lo está, 'sin_horario'. En los dos
+    // casos era un falso positivo del turno nocturno, no un error de nadie.
+    const yaConsumidas = new Set<number>([...arrastradasPorDia.values()].flat().map((m) => m.id))
+
     const dias: DiaProgramado[] = fechas.map((fecha) => {
       const k = clave(labId, fecha)
       const prog = programacionPorDia.get(k)
 
-      const horario = prog ? horarioDelDia(prog) : null
+      const propias = (marcasPorDia.get(k) ?? []).filter((m) => !yaConsumidas.has(m.id))
 
       return {
         fecha,
-        horario,
-        marcas: [...(marcasPorDia.get(k) ?? []), ...salidaArrastrada(labId, fecha, horario)],
+        horario: prog ? horarioDelDia(prog) : null,
+        marcas: [...propias, ...(arrastradasPorDia.get(fecha) ?? [])],
         esDiaLibre: prog?.prg_es_dia_libre ?? false,
         esFeriado: prog?.prg_es_feriado ?? false,
         tieneAusenciaAprobada: diasConAusencia.has(k),

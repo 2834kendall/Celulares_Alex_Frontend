@@ -189,6 +189,46 @@ describe('getHorasDelPeriodo', () => {
     expect(totales.diasConProblema).toEqual([])
   })
 
+  // La salida de las 6 a. m. cierra el turno de la noche anterior. En su
+  // propio día quedaba además como una salida suelta sin entrada, y se
+  // reportaba como problema del día de descanso: un falso positivo en cada
+  // turno nocturno, y bloqueo del pago cuando ese día sí estaba programado.
+  it('la salida de madrugada no vuelve a contarse en su propio día', async () => {
+    const nocturno = {
+      sgrh_cat_horarios: {
+        hor_hora_entrada: '22:00:00',
+        hor_hora_salida: '06:00:00',
+        hor_hora_inicio_almuerzo: null,
+        hor_hora_fin_almuerzo: null,
+        hor_hora_inicio_break: null,
+        hor_hora_fin_break: null,
+      },
+    }
+
+    const result = await getHorasDelPeriodo(
+      supabase({
+        // El 7 no tiene programación: es el descanso después del turno.
+        sgrh_programacion_semanal: { data: [programado('2026-07-06', nocturno)], error: null },
+        sgrh_marcas_asistencia: {
+          data: [
+            marca('2026-07-06', 'entrada', '22:00:00'),
+            marca('2026-07-07', 'salida', '06:00:00'),
+          ],
+          error: null,
+        },
+        sgrh_ausencias: { data: [], error: null },
+      }),
+      PARAMS
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const totales = result.data.get(5)!
+    expect(totales.horasOrdinarias).toBe(8)
+    expect(totales.diasConProblema).toEqual([])
+    expect(totales.diasQueBloquean).toEqual([])
+  })
+
   it('avisa si falla la consulta de marcas', async () => {
     const result = await getHorasDelPeriodo(
       supabase({

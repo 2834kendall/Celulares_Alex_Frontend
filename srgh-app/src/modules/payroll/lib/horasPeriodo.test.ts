@@ -175,6 +175,37 @@ describe('calcularDia: días que no rebajan el salario', () => {
     expect(r.cuenta).toBe(false)
     expect(r.problema).toBeNull()
   })
+
+  // Sin horario el día no puede sumar: no hay jornada contra la cual medir.
+  // Pero si la persona MARCÓ, callarlo dejaba el día en cero sin ninguna
+  // explicación, y parecía que el kiosco no había registrado nada.
+  it('un día sin horario pero CON marcas se reporta como problema', () => {
+    const r = calcularDia(
+      dia({
+        horario: null,
+        marcas: [marca('entrada', '2026-07-06 08:00:00'), marca('salida', '2026-07-06 17:00:00')],
+      })
+    )
+
+    expect(r.problema).toBe('sin_horario')
+    expect(r.horasEsperadas).toBe(0)
+    expect(r.horasOrdinarias).toBe(0)
+    expect(r.cuenta).toBe(false)
+  })
+
+  // Un día libre o feriado con marcas tampoco es "sin horario": esos ya se
+  // resolvieron antes y no hay nada que avisar.
+  it('un día libre con marcas sigue sin reportar problema', () => {
+    const r = calcularDia(
+      dia({
+        horario: null,
+        esDiaLibre: true,
+        marcas: [marca('entrada', '2026-07-06 08:00:00')],
+      })
+    )
+
+    expect(r.problema).toBeNull()
+  })
 })
 
 describe('calcularDia: marcas incompletas', () => {
@@ -218,6 +249,26 @@ describe('calcularHorasPeriodo', () => {
     expect(r.horasEsperadas).toBe(24) // los tres días programados
     expect(r.horasOrdinarias).toBe(16) // solo dos se pudieron liquidar
     expect(r.diasConProblema).toEqual([{ fecha: '2026-07-08', problema: 'sin_salida' }])
+    expect(r.diasQueBloquean).toEqual([{ fecha: '2026-07-08', problema: 'sin_salida' }])
+  })
+
+  // 'sin_horario' se avisa pero NO traba el pago. Si trabara, una marca suelta
+  // en un día que nadie programó dejaría la quincena entera sin poder pagarse,
+  // y la única salida sería asignarle un horario a ese día — lo que sube las
+  // horas esperadas y BAJA el valor de la hora de todo el periodo. Destrabar
+  // el pago terminaría cambiando el monto.
+  it('un día sin horario se avisa pero no bloquea el pago', () => {
+    const r = calcularHorasPeriodo([
+      jornadaCompleta('2026-07-06'),
+      dia({
+        fecha: '2026-07-12',
+        horario: null,
+        marcas: [marca('entrada', '2026-07-12 09:00:00'), marca('salida', '2026-07-12 12:00:00')],
+      }),
+    ])
+
+    expect(r.diasConProblema).toEqual([{ fecha: '2026-07-12', problema: 'sin_horario' }])
+    expect(r.diasQueBloquean).toEqual([])
   })
 
   it('acumula las horas extra de cada día', () => {

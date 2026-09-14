@@ -61,14 +61,34 @@ export interface DiaProgramado {
   marcas: RawMark[]
 }
 
-/** Por qué un día programado no se puede liquidar solo. */
-export type ProblemaDia = 'sin_marcas' | 'sin_entrada' | 'sin_salida'
+/** Por qué un día no se pudo liquidar solo. */
+export type ProblemaDia = 'sin_marcas' | 'sin_entrada' | 'sin_salida' | 'sin_horario'
 
 export const MENSAJE_PROBLEMA: Record<ProblemaDia, string> = {
   sin_marcas: 'No se registró ninguna marca ese día.',
   sin_entrada: 'Hay marca de salida pero no de entrada.',
   sin_salida: 'Hay marca de entrada pero no de salida.',
+  sin_horario:
+    'Marcó ese día pero no tenía horario programado, así que esas horas no se contaron. Si de verdad trabajó, asignále el horario en Horarios; si no, dejalo así.',
 }
+
+/**
+ * Problemas que BLOQUEAN marcar el pago, porque significan que las horas
+ * calculadas están cortas por un fallo del kiosco o un olvido.
+ *
+ * `sin_horario` queda deliberadamente afuera. Es un aviso, no un bloqueo: una
+ * marca suelta en un día que nadie programó (un sábado que no estaba previsto,
+ * un toque de más en el kiosco, o la salida de madrugada de un turno nocturno
+ * que cae en el día de descanso siguiente) trabaría el pago de toda la
+ * quincena. Y peor: la única forma de destrabarlo sería asignarle un horario a
+ * ese día, lo que sube las horas esperadas del periodo y BAJA el valor de la
+ * hora de todo el mundo — o sea, destrabar el pago cambiaría el monto.
+ */
+export const PROBLEMAS_QUE_BLOQUEAN: ReadonlySet<ProblemaDia> = new Set<ProblemaDia>([
+  'sin_marcas',
+  'sin_entrada',
+  'sin_salida',
+])
 
 export interface DiaCalculado {
   fecha: string
@@ -162,10 +182,22 @@ const DIA_VACIO = (fecha: string, problema: ProblemaDia | null, horasEsperadas: 
 
 /** Calcula un día: cuántas horas tenía que trabajar, cuántas trabajó, y qué falta. */
 export function calcularDia(dia: DiaProgramado): DiaCalculado {
-  // Días que no cuentan: sin programación, libre, feriado o con ausencia
-  // aprobada. No suman horas esperadas, así que tampoco rebajan el salario.
-  if (!dia.horario || dia.esDiaLibre || dia.esFeriado || dia.tieneAusenciaAprobada) {
+  // Días que no cuentan: libre, feriado o con ausencia aprobada. No suman
+  // horas esperadas, así que tampoco rebajan el salario.
+  if (dia.esDiaLibre || dia.esFeriado || dia.tieneAusenciaAprobada) {
     return DIA_VACIO(dia.fecha, null, 0)
+  }
+
+  // Sin horario no hay jornada contra la cual medir: no se sabe qué parte de
+  // lo que trabajó es ordinario y qué parte es extra, así que el día no puede
+  // sumar nada.
+  //
+  // Pero si la persona MARCÓ ese día, callarlo es peor que el problema: el
+  // día aparecía en cero, sin aviso, y quedaba la impresión de que el kiosco
+  // no había registrado nada. Se reporta como problema —igual que una marca
+  // incompleta— para que alguien le arme el horario y el día pase a contar.
+  if (!dia.horario) {
+    return DIA_VACIO(dia.fecha, dia.marcas.length > 0 ? 'sin_horario' : null, 0)
   }
 
   const horario = dia.horario
@@ -216,8 +248,10 @@ export interface TotalesPeriodo {
   horasOrdinarias: number
   /** Horas por encima de la jornada de cada día. Van al banco de horas. */
   horasExtra: number
-  /** Días programados con marcas incompletas. Bloquean el pago. */
+  /** Todos los días con algo que reportar, para mostrarlos en pantalla. */
   diasConProblema: { fecha: string; problema: ProblemaDia }[]
+  /** Solo los que impiden marcar el pago (ver PROBLEMAS_QUE_BLOQUEAN). */
+  diasQueBloquean: { fecha: string; problema: ProblemaDia }[]
   dias: DiaCalculado[]
 }
 
@@ -228,13 +262,16 @@ export function calcularHorasPeriodo(dias: DiaProgramado[]): TotalesPeriodo {
   const acumular = (campo: 'horasEsperadas' | 'horasOrdinarias' | 'horasExtra') =>
     round2(calculados.reduce((suma, d) => suma + d[campo], 0))
 
+  const conProblema = calculados
+    .filter((d): d is DiaCalculado & { problema: ProblemaDia } => d.problema !== null)
+    .map((d) => ({ fecha: d.fecha, problema: d.problema }))
+
   return {
     horasEsperadas: acumular('horasEsperadas'),
     horasOrdinarias: acumular('horasOrdinarias'),
     horasExtra: acumular('horasExtra'),
-    diasConProblema: calculados
-      .filter((d): d is DiaCalculado & { problema: ProblemaDia } => d.problema !== null)
-      .map((d) => ({ fecha: d.fecha, problema: d.problema })),
+    diasConProblema: conProblema,
+    diasQueBloquean: conProblema.filter((d) => PROBLEMAS_QUE_BLOQUEAN.has(d.problema)),
     dias: calculados,
   }
 }

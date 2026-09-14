@@ -361,6 +361,7 @@ describe('getPeriodoDetail (server action)', () => {
             horasOrdinarias: 80,
             horasExtra: 0,
             diasConProblema: [{ fecha: '2026-07-08', problema: 'sin_salida' as const }],
+            diasQueBloquean: [{ fecha: '2026-07-08', problema: 'sin_salida' as const }],
             dias: [],
           },
         ],

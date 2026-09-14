@@ -25,7 +25,11 @@ import {
   formatIban,
   periodoLabel,
 } from '@/modules/payroll/lib/format'
-import { MENSAJE_PROBLEMA } from '@/modules/payroll/lib/horasPeriodo'
+import {
+  MENSAJE_PROBLEMA,
+  PROBLEMAS_QUE_BLOQUEAN,
+  type ProblemaDia,
+} from '@/modules/payroll/lib/horasPeriodo'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
@@ -199,7 +203,19 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const totalBruto = periodo.detalles.reduce((sum, d) => sum + d.salarioBruto, 0)
   // Empleados a los que no se les puede marcar el pago todavía: sus marcas del
   // periodo están incompletas, así que las horas calculadas están cortas.
-  const conMarcasIncompletas = periodo.detalles.filter((d) => d.diasPorRevisar.length > 0)
+  const conMarcasIncompletas = periodo.detalles.filter((d) =>
+    d.diasPorRevisar.some((r) => PROBLEMAS_QUE_BLOQUEAN.has(r.problema as ProblemaDia))
+  )
+  // Días que solo se avisan: la persona marcó pero ese día no tenía horario
+  // programado, así que esas horas no entraron. No traba el pago — trabarlo
+  // obligaría a inventarle un horario a un día pasado, y eso cambiaría el
+  // valor de la hora de toda la quincena.
+  const conDiasSinHorario = periodo.detalles
+    .map((d) => ({
+      detalle: d,
+      dias: d.diasPorRevisar.filter((r) => !PROBLEMAS_QUE_BLOQUEAN.has(r.problema as ProblemaDia)),
+    }))
+    .filter((x) => x.dias.length > 0)
   // Alguien corrigió una marca DESPUÉS de armada la planilla, así que el monto
   // guardado ya no corresponde. Solo cuenta cuando las horas venían de la
   // asistencia: si estaban corregidas a mano, la diferencia es deliberada.
@@ -410,7 +426,34 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               <li key={d.id}>
                 <span className="font-semibold">{d.empleadoNombre}</span>{' '}
                 <span className="text-amber-700">
-                  — {d.diasPorRevisar.map((r) => formatDate(r.fecha)).join(', ')}
+                  —{' '}
+                  {d.diasPorRevisar
+                    .filter((r) => PROBLEMAS_QUE_BLOQUEAN.has(r.problema as ProblemaDia))
+                    .map((r) => formatDate(r.fecha))
+                    .join(', ')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {conDiasSinHorario.length > 0 && (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <p className="text-sm font-semibold text-sky-900">
+            {conDiasSinHorario.length} empleado(s) marcaron un día sin horario programado
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-sky-800">
+            Esas horas no se contaron porque no había jornada contra la cual medirlas. Si de verdad
+            trabajaron ese día, asignáles el horario en Horarios y volvé a armar el periodo; si fue
+            un toque de más en el kiosco, dejalo así. Esto no bloquea el pago.
+          </p>
+          <ul className="mt-2 space-y-1 text-xs text-sky-900">
+            {conDiasSinHorario.map(({ detalle, dias }) => (
+              <li key={detalle.id}>
+                <span className="font-semibold">{detalle.empleadoNombre}</span>{' '}
+                <span className="text-sky-700">
+                  — {dias.map((r) => formatDate(r.fecha)).join(', ')}
                 </span>
               </li>
             ))}

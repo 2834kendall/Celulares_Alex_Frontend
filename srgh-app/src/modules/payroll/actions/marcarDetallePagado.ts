@@ -248,7 +248,10 @@ export async function marcarDetallePagado(
     })
 
     const totales = horas.ok ? horas.data.get(detalle.ndt_historial_laboral_id) : undefined
-    const problemas = totales?.diasConProblema ?? []
+    // Solo los que de verdad dejan las horas cortas. Un día con marcas pero
+    // sin horario programado se avisa en la pantalla del periodo, pero no
+    // traba el pago (ver PROBLEMAS_QUE_BLOQUEAN en lib/horasPeriodo.ts).
+    const problemas = totales?.diasQueBloquean ?? []
 
     if (problemas.length > 0) {
       const detalleDias = problemas

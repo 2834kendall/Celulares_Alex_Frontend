@@ -36,6 +36,7 @@ const SIN_PROBLEMAS = {
   horasOrdinarias: 88,
   horasExtra: 0,
   diasConProblema: [],
+  diasQueBloquean: [],
   dias: [],
 }
 
@@ -295,6 +296,7 @@ describe('marcarDetallePagado (server action)', () => {
           {
             ...SIN_PROBLEMAS,
             diasConProblema: [{ fecha: '2026-06-03', problema: 'sin_salida' as const }],
+            diasQueBloquean: [{ fecha: '2026-06-03', problema: 'sin_salida' as const }],
           },
         ],
       ]),
@@ -435,6 +437,7 @@ describe('marcarDetallePagado (server action)', () => {
           {
             ...SIN_PROBLEMAS,
             diasConProblema: [{ fecha: '2026-06-03', problema: 'sin_salida' as const }],
+            diasQueBloquean: [{ fecha: '2026-06-03', problema: 'sin_salida' as const }],
           },
         ],
       ]),
