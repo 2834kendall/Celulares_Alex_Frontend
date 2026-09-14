@@ -4,9 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
-import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
+import { aplicarHorasExtraEnDetalle } from '@/modules/payroll/lib/horasExtraDetalle'
 import { periodoLabel } from '@/modules/payroll/lib/format'
+import { ahoraLocal } from '@/modules/payroll/lib/fechas'
 import {
   pagarBancoHorasSchema,
   type PagarBancoHorasInput,
@@ -34,16 +34,6 @@ interface DetalleBorradorRow {
   } | null
 }
 
-interface LineaIngresoRow {
-  ing_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
-}
-
-interface LineaDeduccionRow {
-  ded_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string; con_tipo_calculo: string } | null
-}
-
 /**
  * Paga un movimiento pendiente del banco de horas: agrega el monto como
  * ingreso al periodo en borrador más reciente del empleado, usando el mismo
@@ -61,7 +51,8 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     return { ok: false, error: 'Datos inválidos.' }
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
+  const usuarioId = (claims.app_metadata as { usr_id?: number })?.usr_id ?? null
   const supabase = await createClient()
 
   const { data: movimiento, error: errMovimiento } = await supabase
@@ -119,130 +110,15 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     }
   }
 
-  // Conceptos activos (para recalcular todo el detalle) + HORAS_EXTRA del
-  // catálogo (aunque esté inactivo), forzado a monto manual solo para esta operación.
-  const [{ data: conceptosActivos, error: errConceptos }, { data: horasExtraConcepto }] =
-    await Promise.all([
-      supabase
-        .from('sgrh_cat_conceptos_nomina')
-        .select(
-          'con_id, con_codigo, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
-        )
-        .eq('con_activo', true)
-        .returns<ConceptoCalculo[]>(),
-      supabase
-        .from('sgrh_cat_conceptos_nomina')
-        .select(
-          'con_id, con_codigo, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
-        )
-        .eq('con_codigo', 'HORAS_EXTRA')
-        .maybeSingle<ConceptoCalculo>(),
-    ])
-
-  if (errConceptos) {
-    return { ok: false, error: 'No se pudo cargar el catálogo de conceptos de nómina.' }
-  }
-  if (!horasExtraConcepto) {
-    return {
-      ok: false,
-      error:
-        'No se encontró el concepto "HORAS_EXTRA" en el catálogo. Es necesario para registrar el pago.',
-    }
-  }
-
-  const conceptosParaCalculo: ConceptoCalculo[] = [
-    ...(conceptosActivos ?? []),
-    { ...horasExtraConcepto, con_tipo_calculo: 'monto_manual_ingreso' },
-  ]
-
-  // Montos ya guardados en el periodo destino, para no perderlos al recalcular.
-  //
-  // Hay que leer las DOS tablas. Mas abajo se borran tanto las lineas de
-  // ingreso como las de deduccion y se reinsertan desde lo que devuelva el
-  // motor, asi que todo concepto manual que no llegue en `montos` desaparece.
-  // Leyendo solo los ingresos, cualquier deduccion manual que el periodo ya
-  // tuviera (prestamo, embargo, renta, cuota solidarista) se borraba en
-  // silencio y el neto del empleado subia.
-  const [
-    { data: lineasIngresoActuales, error: errLineasIngreso },
-    { data: lineasDeduccionActuales, error: errLineasDeduccion },
-  ] = await Promise.all([
-    supabase
-      .from('sgrh_nomina_linea_ingreso')
-      .select('ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
-      .eq('ing_nomina_detalle_id', detalleDestino.ndt_id)
-      .returns<LineaIngresoRow[]>(),
-    supabase
-      .from('sgrh_nomina_linea_deduccion')
-      .select('ded_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_tipo_calculo )')
-      .eq('ded_nomina_detalle_id', detalleDestino.ndt_id)
-      .returns<LineaDeduccionRow[]>(),
-  ])
-
-  if (errLineasIngreso || errLineasDeduccion) {
-    return { ok: false, error: 'No se pudo cargar el detalle del periodo destino.' }
-  }
-
-  const montos: Record<string, number> = {}
-  for (const linea of lineasIngresoActuales ?? []) {
-    const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
-    if (!codigo) continue
-    montos[codigo] = linea.ing_monto
-  }
-  // Solo las deducciones de monto manual: las porcentuales (CCSS) las vuelve a
-  // calcular el motor sobre el bruto nuevo, arrastrar su monto viejo seria un
-  // error.
-  for (const linea of lineasDeduccionActuales ?? []) {
-    const concepto = linea.sgrh_cat_conceptos_nomina
-    if (!concepto || concepto.con_tipo_calculo !== 'monto_manual_deduccion') continue
-    montos[concepto.con_codigo] = linea.ded_monto
-  }
-  // Se suma al monto de HORAS_EXTRA que ya hubiera en ese periodo (por si se
-  // le paga banco de horas más de una vez al mismo periodo en borrador).
-  montos.HORAS_EXTRA = (montos.HORAS_EXTRA ?? 0) + parsed.data.monto
-
-  const {
-    salarioBruto,
-    totalDeducciones,
-    salarioNeto,
-    totalCargasPatronales,
-    lineas,
-    lineasPatronales,
-  } = calcularPlanillaPorConceptos(conceptosParaCalculo, {
-    montos,
-    horasTrabajadas: detalleDestino.ndt_horas_ordinarias_diurnas,
-    // Las horas extra guardadas del periodo destino, para que recalcular no
-    // las pierda. Con HORAS_EXTRA forzado a monto manual acá no las consume
-    // nadie, pero pasar 0 sería mentirle al motor.
-    horasExtra: detalleDestino.ndt_horas_extra_al_50 ?? 0,
-    salarioPorHora: detalleDestino.ndt_salario_por_hora,
-  })
-
-  const { error: errUpdate } = await supabase
-    .from('sgrh_nomina_detalle')
-    .update({
-      ndt_salario_bruto: salarioBruto,
-      ndt_total_deducciones_obreras: totalDeducciones,
-      ndt_salario_neto: salarioNeto,
-      ndt_total_cargas_patronales: totalCargasPatronales,
-    })
-    .eq('ndt_id', detalleDestino.ndt_id)
-  if (errUpdate) {
-    return { ok: false, error: 'No se pudieron actualizar los montos del periodo destino.' }
-  }
-
-  // Mismo reemplazo que usan la subida de Excel y la edición manual: conserva
-  // los metadatos de las deducciones que ya estaban y reescribe las cargas
-  // patronales. Antes acá había una tercera copia de este bloque, que era la
-  // única que seguía perdiendo ded_beneficio_id y compañía.
-  const { error: errLineas } = await reemplazarLineasDetalle(
+  // Sumar el monto al detalle destino y recalcular la fila entera. Lo
+  // comparte con revertirBancoHoras, que hace lo mismo con signo contrario.
+  const { error: errAplicar } = await aplicarHorasExtraEnDetalle(
     supabase,
-    detalleDestino.ndt_id,
-    lineas,
-    lineasPatronales
+    detalleDestino,
+    parsed.data.monto
   )
-  if (errLineas) {
-    return { ok: false, error: errLineas }
+  if (errAplicar) {
+    return { ok: false, error: errAplicar }
   }
 
   const { error: errResolver } = await supabase
@@ -251,7 +127,13 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
       bhm_estado: 'pagado',
       bhm_monto_pagado: parsed.data.monto,
       bhm_nomina_detalle_pago_id: detalleDestino.ndt_id,
-      bhm_fecha_resolucion: new Date().toISOString(),
+      // La columna existía y nunca se escribía: no quedaba quién había
+      // resuelto el movimiento.
+      bhm_resuelto_por_id: usuarioId,
+      // ahoraLocal y no toISOString: la columna es `timestamp without time
+      // zone`, así que guarda la hora tal cual se la manda. Con toISOString en
+      // Costa Rica (UTC-6) todo quedaba seis horas adelantado.
+      bhm_fecha_resolucion: ahoraLocal(),
     })
     .eq('bhm_id', parsed.data.bhmId)
   if (errResolver) {

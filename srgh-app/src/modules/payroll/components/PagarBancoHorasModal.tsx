@@ -14,10 +14,12 @@ interface PagarBancoHorasModalProps {
 }
 
 /**
- * Confirma el pago de un movimiento pendiente del banco de horas. El monto
- * viene prellenado con la sugerencia (horas × salario por hora × 1.5) pero
- * es editable — el admin puede ajustarlo. Se suma como ingreso al periodo
- * actual en borrador del empleado, con CCSS deducido normalmente.
+ * Confirma el pago de un movimiento pendiente del banco de horas.
+ *
+ * El monto viene prellenado con la sugerencia (horas × salario por hora ×
+ * el multiplicador del concepto HORAS_EXTRA del catálogo) pero es editable.
+ * Se suma como ingreso al periodo actual en borrador del empleado, con CCSS
+ * deducido normalmente.
  */
 export function PagarBancoHorasModal({
   item,
@@ -61,7 +63,14 @@ export function PagarBancoHorasModal({
             className={INPUT}
           />
           <p className="mt-1 text-[11px] text-slate-400">
-            Sugerido (1.5x): {formatCRC(item.montoSugerido)}. Podés ajustarlo.
+            Sugerido ({item.factorSugerido}×): {formatCRC(item.montoSugerido)}. Podés ajustarlo.
+            {item.salarioPorHora <= 0 && (
+              <>
+                {' '}
+                El valor de la hora de este movimiento es ₡0, por eso el sugerido sale en cero:
+                suele pasar cuando el empleado no tenía horario programado en ese periodo.
+              </>
+            )}
           </p>
           {!montoValido && monto !== '' && (
             <p className="mt-1 flex items-center gap-1 text-[11px] text-rose-600">

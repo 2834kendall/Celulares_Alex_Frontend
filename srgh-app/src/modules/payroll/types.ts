@@ -582,8 +582,14 @@ export interface BancoHorasItem {
   periodoOrigenLabel: string
   horas: number
   salarioPorHora: number
-  /** Monto sugerido = horas × salario por hora × 1.5, para prellenar el pago. */
+  /** Monto sugerido = horas × salario por hora × factor, para prellenar el pago. */
   montoSugerido: number
+  /**
+   * Multiplicador con el que se calculó el sugerido, sacado del porcentaje del
+   * concepto HORAS_EXTRA del catálogo (150 → 1,5). Se expone para poder
+   * mostrarlo: "sugerido (1,5×)" sale de acá y no de un número en el código.
+   */
+  factorSugerido: number
   estado: EstadoBancoHoras
   montoPagado: number | null
   fechaResolucion: string | null
