@@ -7,6 +7,11 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { editarDetalleSchema, type EditarDetalleInput } from '@/modules/payroll/types'
 import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
 import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
+import {
+  CAMPOS_CONCEPTO_DE_LINEA,
+  fusionarAjenas,
+  leerLineasAjenas,
+} from '@/modules/payroll/lib/lineasAjenas'
 import { getFotoAsistencia } from '@/modules/payroll/lib/horasPeriodoData'
 import { camposFotoAsistencia } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal } from '@/modules/payroll/lib/fechas'
@@ -79,9 +84,7 @@ export async function updateDetalleManual(
 
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
-    .select(
-      'con_id, con_codigo, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
-    )
+    .select(CAMPOS_CONCEPTO_DE_LINEA)
     .eq('con_activo', true)
     .returns<ConceptoCalculo[]>()
 
@@ -95,6 +98,23 @@ export async function updateDetalleManual(
     }
   }
 
+  // Líneas guardadas de conceptos que el formulario NO edita porque no están
+  // activos en el catálogo. El caso real es HORAS_EXTRA, con el que se paga el
+  // banco de horas: sin esto, abrir la fila de alguien a quien se le acababa
+  // de pagar el banco y darle guardar —aunque no se cambiara nada— borraba ese
+  // pago y le bajaba el bruto, mientras el movimiento seguía diciendo
+  // "pagado". Ver lib/lineasAjenas.ts.
+  const { ajenas, error: errAjenas } = await leerLineasAjenas(supabase, ndtId, conceptos)
+  if (errAjenas) {
+    return { ok: false, error: errAjenas }
+  }
+
+  const { conceptos: conceptosCalculo, montos } = fusionarAjenas(
+    conceptos,
+    parsed.data.montos,
+    ajenas
+  )
+
   const {
     salarioBruto,
     totalDeducciones,
@@ -102,7 +122,7 @@ export async function updateDetalleManual(
     totalCargasPatronales,
     lineas,
     lineasPatronales,
-  } = calcularPlanillaPorConceptos(conceptos, parsed.data)
+  } = calcularPlanillaPorConceptos(conceptosCalculo, { ...parsed.data, montos })
 
   // Foto de lo que dicen las marcas ahora mismo. Editar el detalle es una de
   // las dos formas de corregir las horas a mano, así que acá también queda

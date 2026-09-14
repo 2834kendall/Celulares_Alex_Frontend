@@ -887,4 +887,119 @@ describe('uploadPlanilla (server action)', () => {
       expect(result.error).toContain('ya tienen el pago marcado')
     }
   })
+
+  // Regresion que costaba plata: al liquidar el banco de horas se le mete al
+  // periodo una linea de HORAS_EXTRA, un concepto DESACTIVADO y que por eso
+  // no es columna del Excel. La subida recalculaba solo con los conceptos
+  // activos y rehacia las lineas desde cero, asi que volver a subir el archivo
+  // borraba esa linea: el bruto bajaba, el empleado cobraba de menos y el
+  // movimiento del banco seguia diciendo "pagado".
+  it('conserva las líneas de conceptos que el Excel no trae (HORAS_EXTRA del banco)', async () => {
+    const HORAS_EXTRA_LINEA = {
+      con_id: 4,
+      con_codigo: 'HORAS_EXTRA',
+      con_tipo: 'ingreso',
+      con_afecta_salario_bruto: true,
+      con_afecta_base_ccss: true,
+      con_tipo_calculo: 'horas_extra_automatico',
+      con_porcentaje: 150,
+      con_activo: false,
+    }
+
+    const client = mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 20,
+              ndt_historial_laboral_id: 70,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              // 100000 de base + 30000 que se le pagaron del banco de horas.
+              ndt_salario_bruto: 130000,
+              ndt_total_deducciones_obreras: 14079,
+              ndt_salario_neto: 115921,
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 20,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: {
+                con_id: 1,
+                con_codigo: 'BASE',
+                con_tipo: 'ingreso',
+                con_afecta_salario_bruto: true,
+                con_afecta_base_ccss: true,
+                con_tipo_calculo: 'monto_manual_ingreso',
+                con_porcentaje: null,
+                con_activo: true,
+              },
+            },
+            {
+              ing_nomina_detalle_id: 20,
+              ing_monto: 30000,
+              sgrh_cat_conceptos_nomina: HORAS_EXTRA_LINEA,
+            },
+          ],
+          error: null,
+        },
+        OK,
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    // El Excel sube el salario base; HORAS_EXTRA no es columna del archivo.
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('BANCO', { BASE: 300000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [{ labId: 70, cedula: 'BANCO', nombre: 'Con Banco', salarioBaseMensual: 600000 }],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(true)
+
+    const ingresos = argumentos(client, 'sgrh_nomina_linea_ingreso', 'insert').flat() as Record<
+      string,
+      unknown
+    >[]
+
+    // La línea del banco de horas sigue ahí, con su monto intacto...
+    expect(ingresos).toContainEqual(
+      expect.objectContaining({ ing_concepto_id: 4, ing_monto: 30000 })
+    )
+    // ...y el BASE es el nuevo del Excel: se sumaron, no se pisaron.
+    expect(ingresos).toContainEqual(
+      expect.objectContaining({ ing_concepto_id: 1, ing_monto: 300000 })
+    )
+
+    // El bruto guardado incluye las dos: 300000 + 30000.
+    const updates = argumentos(client, 'sgrh_nomina_detalle', 'update') as Record<string, unknown>[]
+    expect(updates).toContainEqual(expect.objectContaining({ ndt_salario_bruto: 330000 }))
+
+    // Y la CCSS se cobra sobre ese bruto: 330000 * 10,83%.
+    const deducciones = argumentos(
+      client,
+      'sgrh_nomina_linea_deduccion',
+      'insert'
+    ).flat() as Record<string, unknown>[]
+    expect(deducciones).toContainEqual(
+      expect.objectContaining({ ded_concepto_id: 6, ded_monto: 35739 })
+    )
+  })
 })

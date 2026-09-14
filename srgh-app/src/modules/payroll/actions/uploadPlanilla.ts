@@ -12,6 +12,12 @@ import {
   type PlanillaRowInput,
 } from '@/modules/payroll/lib/planilla'
 import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
+import {
+  CAMPOS_CONCEPTO_DE_LINEA,
+  fusionarAjenas,
+  type ConceptoDeLinea,
+  type LineaAjena,
+} from '@/modules/payroll/lib/lineasAjenas'
 import { getFotoAsistencia } from '@/modules/payroll/lib/horasPeriodoData'
 import {
   camposFotoAsistencia,
@@ -29,6 +35,29 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos
 
 /** Fila sin foto previa: la de un empleado que entra nuevo al periodo. */
 const SIN_FOTO: FotoAsistencia = { horas: null, horasExtra: null }
+
+/**
+ * Recalcula una fila del Excel SIN perder las líneas que el archivo no trae.
+ *
+ * El motor solo produce líneas de los conceptos que le pasan, y la subida le
+ * pasa los ACTIVOS. Una línea de un concepto inactivo —el caso real es
+ * HORAS_EXTRA, con el que se paga el banco de horas— no tenía cómo
+ * reproducirse y se perdía en cada subida (ver lib/lineasAjenas.ts).
+ */
+function calcularConAjenas(
+  conceptosActivos: ConceptoPlanillaColumna[],
+  row: PlanillaRowInput,
+  ajenas: LineaAjena[]
+) {
+  const { conceptos, montos } = fusionarAjenas(conceptosActivos, row.montos, ajenas)
+
+  return calcularPlanillaPorConceptos(conceptos, {
+    montos,
+    horasTrabajadas: row.horasTrabajadas,
+    horasExtra: row.horasExtra,
+    salarioPorHora: row.salarioPorHora,
+  })
+}
 
 interface DetalleExistenteRow {
   ndt_id: number
@@ -48,13 +77,13 @@ interface DetalleExistenteRow {
 interface LineaIngresoExistenteRow {
   ing_nomina_detalle_id: number
   ing_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+  sgrh_cat_conceptos_nomina: ConceptoDeLinea | null
 }
 
 interface LineaDeduccionExistenteRow {
   ded_nomina_detalle_id: number
   ded_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+  sgrh_cat_conceptos_nomina: ConceptoDeLinea | null
 }
 
 interface DetalleInsertadoRow {
@@ -74,6 +103,20 @@ interface ValoresPrevios {
   totales: { bruto: number; deducciones: number; neto: number; patronales: number }
   /** Foto de la asistencia guardada, para detectar marcas corregidas después. */
   foto: FotoAsistencia
+  /**
+   * Líneas guardadas cuyo concepto NO es columna del Excel, con su monto.
+   *
+   * El caso real es el pago de horas del banco: se guarda como línea de
+   * HORAS_EXTRA, que nace inactivo en el catálogo y por eso no es columna de
+   * la plantilla. Como subir el Excel borra todas las líneas y las rehace
+   * desde lo que trae el archivo, ese pago desaparecía en silencio: el bruto
+   * bajaba y el movimiento del banco seguía diciendo "pagado" apuntando a una
+   * plata que ya no estaba.
+   *
+   * Se reinyectan al recálculo para que sobrevivan. Es lo mismo que ya hacía
+   * pagarBancoHoras al recalcular el periodo destino.
+   */
+  ajenas: { concepto: ConceptoDeLinea; monto: number; esIngreso: boolean }[]
 }
 
 export type UploadPlanillaResult =
@@ -295,6 +338,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
           horas: d.ndt_horas_asistencia ?? null,
           horasExtra: d.ndt_horas_extra_asistencia ?? null,
         },
+        ajenas: [],
       })
     }
 
@@ -304,12 +348,16 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     ] = await Promise.all([
       supabase
         .from('sgrh_nomina_linea_ingreso')
-        .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .select(
+          `ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( ${CAMPOS_CONCEPTO_DE_LINEA} )`
+        )
         .in('ing_nomina_detalle_id', idsPrevios)
         .returns<LineaIngresoExistenteRow[]>(),
       supabase
         .from('sgrh_nomina_linea_deduccion')
-        .select('ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .select(
+          `ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( ${CAMPOS_CONCEPTO_DE_LINEA} )`
+        )
         .in('ded_nomina_detalle_id', idsPrevios)
         .returns<LineaDeduccionExistenteRow[]>(),
     ])
@@ -319,16 +367,30 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
 
     for (const linea of lineasIngresoPrevias ?? []) {
-      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+      const concepto = linea.sgrh_cat_conceptos_nomina
       const previo = valoresPreviosPorNdt.get(linea.ing_nomina_detalle_id)
-      if (!previo || !codigo || !(codigo in previo.montos)) continue
-      previo.montos[codigo] = linea.ing_monto
+      if (!previo || !concepto) continue
+
+      if (concepto.con_codigo in previo.montos) {
+        previo.montos[concepto.con_codigo] = linea.ing_monto
+        continue
+      }
+      previo.ajenas.push({ concepto, monto: linea.ing_monto, esIngreso: true })
     }
     for (const linea of lineasDeduccionPrevias ?? []) {
-      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+      const concepto = linea.sgrh_cat_conceptos_nomina
       const previo = valoresPreviosPorNdt.get(linea.ded_nomina_detalle_id)
-      if (!previo || !codigo || !(codigo in previo.montos)) continue
-      previo.montos[codigo] = linea.ded_monto
+      if (!previo || !concepto) continue
+
+      if (concepto.con_codigo in previo.montos) {
+        previo.montos[concepto.con_codigo] = linea.ded_monto
+        continue
+      }
+      // Las deducciones porcentuales (CCSS) las recalcula el motor sobre el
+      // bruto nuevo; arrastrar su monto viejo sería un error.
+      if (concepto.con_tipo_calculo === 'porcentaje_deduccion_bruto') continue
+
+      previo.ajenas.push({ concepto, monto: linea.ded_monto, esIngreso: false })
     }
   }
 
@@ -368,12 +430,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       }
     )
 
-    const totales = calcularPlanillaPorConceptos(conceptos, {
-      montos: row.montos,
-      horasTrabajadas: row.horasTrabajadas,
-      horasExtra: row.horasExtra,
-      salarioPorHora: row.salarioPorHora,
-    })
+    const totales = calcularConAjenas(conceptos, row, previo.ajenas)
 
     // "Sin cambios" tiene que mirar también el RESULTADO, no solo lo que el
     // usuario escribió. Si entre una subida y otra cambió el catálogo (se

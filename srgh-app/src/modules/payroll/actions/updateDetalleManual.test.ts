@@ -191,4 +191,78 @@ describe('updateDetalleManual (server action)', () => {
 
     expect(result).toEqual({ ok: true })
   })
+
+  // Regresion que costaba plata: el formulario solo edita los conceptos
+  // ACTIVOS, y al guardar se borran TODAS las lineas para reinsertar lo que
+  // devolvio el motor. La linea de HORAS_EXTRA con la que se paga el banco de
+  // horas (concepto desactivado a proposito) no tenia como regenerarse, asi
+  // que abrir la fila de alguien a quien se le acababa de pagar y darle
+  // guardar —sin cambiar nada— le borraba el pago y le bajaba el bruto,
+  // mientras el movimiento del banco seguia diciendo "pagado".
+  it('conserva las líneas de conceptos desactivados (HORAS_EXTRA del banco)', async () => {
+    const HORAS_EXTRA_INACTIVO = {
+      con_id: 4,
+      con_codigo: 'HORAS_EXTRA',
+      con_tipo: 'ingreso',
+      con_afecta_salario_bruto: true,
+      con_afecta_base_ccss: true,
+      con_tipo_calculo: 'horas_extra_automatico',
+      con_porcentaje: 150,
+    }
+    // El catálogo activo NO trae HORAS_EXTRA: está desactivado desde que
+    // existe el banco de horas.
+    const activos = CONCEPTOS_ACTIVOS.filter((c) => c.con_codigo !== 'HORAS_EXTRA')
+
+    const client = createSupabaseClientMock({
+      sgrh_nomina_detalle: [
+        {
+          data: {
+            ndt_id: 1,
+            ndt_nomina_periodo_id: 9,
+            ndt_historial_laboral_id: 5,
+            sgrh_nomina_periodo: { npe_estado: 'borrador' },
+          },
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_cat_conceptos_nomina: { data: activos, error: null },
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [{ ing_monto: 30000, sgrh_cat_conceptos_nomina: HORAS_EXTRA_INACTIVO }],
+          error: null,
+        },
+        OK,
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await updateDetalleManual(1, INPUT)
+
+    expect(result).toEqual({ ok: true })
+
+    const llamadas = (tabla: string, metodo: 'insert' | 'update') =>
+      client.from.mock.results
+        .filter((_, i) => client.from.mock.calls[i][0] === tabla)
+        .flatMap((r) => {
+          const fn = (r.value as Record<string, { mock: { calls: unknown[][] } }>)[metodo]
+          return fn.mock.calls.map((args) => args[0])
+        })
+
+    // La línea del banco sigue ahí con su monto...
+    expect(
+      (llamadas('sgrh_nomina_linea_ingreso', 'insert') as Record<string, unknown>[][]).flat()
+    ).toContainEqual(expect.objectContaining({ ing_concepto_id: 4, ing_monto: 30000 }))
+
+    // ...y entra en el bruto: 200000 (BASE) + 30000 (COMISION) + 30000.
+    expect(llamadas('sgrh_nomina_detalle', 'update')).toContainEqual(
+      expect.objectContaining({ ndt_salario_bruto: 260000 })
+    )
+  })
 })
