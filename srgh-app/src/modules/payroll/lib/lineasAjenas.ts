@@ -106,17 +106,22 @@ interface LineaDeduccionConConcepto {
 }
 
 /**
- * Lee de un detalle las líneas que `conceptosQueSeRecalculan` no va a
- * reproducir, para poder conservarlas.
+ * Lee de un detalle lo que ya estaba guardado, partido en dos:
+ *
+ *  - `montos`: los conceptos que el motor SÍ va a recalcular, con su monto
+ *    actual. Sirve para volver a calcular la fila sin que el encargado tenga
+ *    que reescribir nada. Solo se traen las deducciones de monto manual: las
+ *    porcentuales (CCSS) las saca el motor sobre el bruto nuevo.
+ *  - `ajenas`: las líneas que el motor NO puede reproducir y hay que conservar.
  *
  * Es la versión de un solo detalle; la subida de Excel lee todos los del
- * periodo de una sola vez y arma la misma lista a mano.
+ * periodo de una sola vez y arma lo mismo a mano.
  */
-export async function leerLineasAjenas(
+export async function leerMontosGuardados(
   supabase: SupabaseServerClient,
   ndtId: number,
   conceptosQueSeRecalculan: readonly ConceptoCalculo[]
-): Promise<{ ajenas: LineaAjena[]; error: string | null }> {
+): Promise<{ montos: Record<string, number>; ajenas: LineaAjena[]; error: string | null }> {
   const codigos = new Set(conceptosQueSeRecalculan.map((c) => c.con_codigo))
 
   const [{ data: ingresos, error: errIngresos }, { data: deducciones, error: errDeducciones }] =
@@ -134,22 +139,36 @@ export async function leerLineasAjenas(
     ])
 
   if (errIngresos || errDeducciones) {
-    return { ajenas: [], error: 'No se pudieron leer las líneas guardadas del periodo.' }
+    return {
+      montos: {},
+      ajenas: [],
+      error: 'No se pudieron leer las líneas guardadas del periodo.',
+    }
   }
 
+  const montos: Record<string, number> = {}
   const ajenas: LineaAjena[] = []
+
   for (const linea of ingresos ?? []) {
     const concepto = linea.sgrh_cat_conceptos_nomina
-    if (concepto && esLineaAjena(concepto, codigos)) {
+    if (!concepto) continue
+    if (esLineaAjena(concepto, codigos)) {
       ajenas.push({ concepto, monto: linea.ing_monto, esIngreso: true })
+      continue
     }
-  }
-  for (const linea of deducciones ?? []) {
-    const concepto = linea.sgrh_cat_conceptos_nomina
-    if (concepto && esLineaAjena(concepto, codigos)) {
-      ajenas.push({ concepto, monto: linea.ded_monto, esIngreso: false })
-    }
+    montos[concepto.con_codigo] = linea.ing_monto
   }
 
-  return { ajenas, error: null }
+  for (const linea of deducciones ?? []) {
+    const concepto = linea.sgrh_cat_conceptos_nomina
+    if (!concepto) continue
+    if (esLineaAjena(concepto, codigos)) {
+      ajenas.push({ concepto, monto: linea.ded_monto, esIngreso: false })
+      continue
+    }
+    if (concepto.con_tipo_calculo !== 'monto_manual_deduccion') continue
+    montos[concepto.con_codigo] = linea.ded_monto
+  }
+
+  return { montos, ajenas, error: null }
 }

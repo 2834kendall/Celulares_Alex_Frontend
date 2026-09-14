@@ -9,6 +9,7 @@ import {
   Loader2,
   Pencil,
   Receipt,
+  RefreshCw,
   Stethoscope,
   Users,
   X,
@@ -33,6 +34,8 @@ import {
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
+import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHorasAsistencia'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
 import { ICON_CONTROL_BASE, ICON_CONTROL_TONES, IconButton } from '@/components/ui/IconButton'
@@ -163,6 +166,27 @@ function textoCuenta(d: DetalleNominaItem): string {
 }
 
 /**
+ * Las horas que dice la asistencia AHORA, si son distintas a las que tiene
+ * guardadas la planilla. null cuando no hay nada que traer.
+ *
+ * Es a propósito una comparación contra lo GUARDADO y no contra la foto: el
+ * caso más común no es que las marcas hayan cambiado, sino que la planilla se
+ * armó con el prellenado de 88 h y la asistencia nunca llegó a entrar (porque
+ * ese día no tenía horario, por ejemplo). Comparando contra la foto, esa fila
+ * no ofrecía nada y había que bajar y volver a subir el Excel entero.
+ */
+function horasNuevas(d: DetalleNominaItem): { horas: number; horasExtra: number } | null {
+  const ahora = d.horasAsistenciaAhora
+  if (!ahora) return null
+
+  const iguales =
+    Math.abs(ahora.horas - d.horasTrabajadas) < 0.005 &&
+    Math.abs(ahora.horasExtra - d.horasExtra) < 0.005
+
+  return iguales ? null : ahora
+}
+
+/**
  * Cabecera del periodo + tabla de planilla. La edición manual de ingresos
  * (BASE, FERIADO, COMISION, HORAS_EXTRA, AJUSTE) solo se ofrece mientras el
  * periodo está en borrador — igual que la subida de Excel.
@@ -174,6 +198,12 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const [pagandoId, setPagandoId] = useState<number | null>(null)
   /** Empleado cuyo desglose día por día está abierto. */
   const [viendoHorasId, setViendoHorasId] = useState<number | null>(null)
+  const [refrescandoId, setRefrescandoId] = useState<number | null>(null)
+  /** Fila cuyas horas corregidas a mano habría que pisar: se pregunta antes. */
+  const [confirmandoHoras, setConfirmandoHoras] = useState<{
+    detalle: DetalleNominaItem
+    mensaje: string
+  } | null>(null)
 
   const puedeEditar = canWrite && periodo.estado === 'borrador'
 
@@ -194,6 +224,41 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
       detalle.pagado
         ? 'Pago desmarcado.'
         : 'Pago marcado como realizado. Ya puedes ver el comprobante.'
+    )
+    router.refresh()
+  }
+
+  /**
+   * Trae las horas que dice la asistencia y recalcula esa fila.
+   *
+   * Si las horas estaban corregidas a mano, la acción no las pisa: devuelve
+   * `necesitaConfirmacion` y acá se pregunta. Reemplazar una corrección
+   * deliberada sin avisar sería borrar una decisión sin dejar rastro.
+   */
+  async function handleRefrescarHoras(detalle: DetalleNominaItem, confirmado: boolean) {
+    setConfirmandoHoras(null)
+    setRefrescandoId(detalle.id)
+    const result = await refrescarHorasAsistencia(detalle.id, confirmado)
+    setRefrescandoId(null)
+
+    if (!result.ok) {
+      if (result.necesitaConfirmacion) {
+        setConfirmandoHoras({ detalle, mensaje: result.error })
+        return
+      }
+      toast.error(result.error)
+      return
+    }
+
+    if (result.sinCambios) {
+      toast.info('Las horas de este empleado ya están al día con la asistencia.')
+      return
+    }
+
+    toast.success(
+      `Horas actualizadas: ${formatHoras(result.horas)} h${
+        result.horasExtra > 0 ? ` y ${formatHoras(result.horasExtra)} h extra` : ''
+      }.`
     )
     router.refresh()
   }
@@ -248,19 +313,17 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
    * nada — poner "vienen de la asistencia" en cada fila sería ruido.
    */
   function NotaHoras({ detalle: d }: { detalle: DetalleNominaItem }) {
-    if (d.marcasCambiaron && d.horasOrigen === 'asistencia') {
-      return (
+    const nuevas = horasNuevas(d)
+
+    const nota =
+      d.marcasCambiaron && d.horasOrigen === 'asistencia' ? (
         <span
           className="mt-0.5 block text-[11px] font-semibold text-rose-600"
           title={diferenciaHoras(d)}
         >
           las marcas cambiaron
         </span>
-      )
-    }
-
-    if (d.horasOrigen === 'ajustadas') {
-      return (
+      ) : d.horasOrigen === 'ajustadas' ? (
         <span
           className="mt-0.5 block text-[11px] text-slate-400"
           title={
@@ -271,10 +334,39 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
         >
           corregidas — las marcas decían {formatHoras(d.horasAsistencia ?? 0)} h
         </span>
-      )
-    }
+      ) : null
 
-    return null
+    // El botón solo aparece cuando de verdad hay algo distinto que traer, y
+    // nunca sobre una fila ya pagada ni un periodo cerrado. Ahorra tener que
+    // bajar y volver a subir el Excel entero por un solo empleado.
+    const boton =
+      puedeEditar && !d.pagado && nuevas ? (
+        <button
+          type="button"
+          onClick={() => handleRefrescarHoras(d, false)}
+          disabled={refrescandoId === d.id}
+          title={`La asistencia dice ${formatHoras(nuevas.horas)} h${
+            nuevas.horasExtra > 0 ? ` y ${formatHoras(nuevas.horasExtra)} h extra` : ''
+          }. Recalcula esta fila con esas horas.`}
+          className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+        >
+          {refrescandoId === d.id ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3 w-3" />
+          )}
+          traer {formatHoras(nuevas.horas)} h
+        </button>
+      ) : null
+
+    if (!nota && !boton) return null
+
+    return (
+      <>
+        {nota}
+        {boton}
+      </>
+    )
   }
 
   /** Toggle de pago + acceso al comprobante. Lo rinden tarjetas y tabla. */
@@ -468,9 +560,10 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           </p>
           <p className="mt-1 text-xs leading-relaxed text-rose-800">
             Sus marcas de asistencia cambiaron después de armar la planilla, así que el monto
-            calculado ya no corresponde y el pago está bloqueado. Descargá de nuevo la plantilla del
-            periodo y subila —viene con las horas y los montos ya recalculados— o corregí sus horas
-            a mano en el detalle. Volver a subir el mismo archivo no sirve: trae las horas viejas.
+            calculado ya no corresponde y el pago está bloqueado. Usá el botón{' '}
+            <span className="font-semibold">traer … h</span> que aparece junto a las horas de cada
+            uno, o corregilas a mano en el detalle. También podés descargar de nuevo la plantilla y
+            subirla; volver a subir el MISMO archivo no sirve, trae las horas viejas.
           </p>
           <ul className="mt-2 space-y-1 text-xs text-rose-900">
             {conMarcasDesactualizadas.map((d) => (
@@ -540,7 +633,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   </span>
                 </div>
 
-                {(d.horasOrigen === 'ajustadas' || d.marcasCambiaron) && (
+                {(d.horasOrigen === 'ajustadas' || d.marcasCambiaron || horasNuevas(d)) && (
                   <div className="text-right">
                     <NotaHoras detalle={d} />
                   </div>
@@ -828,6 +921,16 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
             onNext={goToNextPage}
           />
         </div>
+      )}
+
+      {confirmandoHoras && (
+        <ConfirmDialog
+          title={`Reemplazar las horas de ${confirmandoHoras.detalle.empleadoNombre}`}
+          message={confirmandoHoras.mensaje}
+          confirmLabel="Usar las de asistencia"
+          onCancel={() => setConfirmandoHoras(null)}
+          onConfirm={() => handleRefrescarHoras(confirmandoHoras.detalle, true)}
+        />
       )}
     </div>
   )

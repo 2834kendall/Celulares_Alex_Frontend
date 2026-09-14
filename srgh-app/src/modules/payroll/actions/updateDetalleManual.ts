@@ -10,7 +10,7 @@ import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
 import {
   CAMPOS_CONCEPTO_DE_LINEA,
   fusionarAjenas,
-  leerLineasAjenas,
+  leerMontosGuardados,
 } from '@/modules/payroll/lib/lineasAjenas'
 import { getFotoAsistencia } from '@/modules/payroll/lib/horasPeriodoData'
 import { camposFotoAsistencia } from '@/modules/payroll/lib/horasOrigen'
@@ -104,7 +104,7 @@ export async function updateDetalleManual(
   // de pagar el banco y darle guardar —aunque no se cambiara nada— borraba ese
   // pago y le bajaba el bruto, mientras el movimiento seguía diciendo
   // "pagado". Ver lib/lineasAjenas.ts.
-  const { ajenas, error: errAjenas } = await leerLineasAjenas(supabase, ndtId, conceptos)
+  const { ajenas, error: errAjenas } = await leerMontosGuardados(supabase, ndtId, conceptos)
   if (errAjenas) {
     return { ok: false, error: errAjenas }
   }

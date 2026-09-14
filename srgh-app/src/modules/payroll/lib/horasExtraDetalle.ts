@@ -19,10 +19,8 @@ import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/pa
 import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
 import {
   CAMPOS_CONCEPTO_DE_LINEA,
-  esLineaAjena,
   fusionarAjenas,
-  type ConceptoDeLinea,
-  type LineaAjena,
+  leerMontosGuardados,
 } from '@/modules/payroll/lib/lineasAjenas'
 import { round2 } from '@/modules/payroll/lib/numeros'
 
@@ -33,16 +31,6 @@ interface DetalleRow {
   ndt_horas_ordinarias_diurnas: number
   ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
-}
-
-interface LineaIngresoRow {
-  ing_monto: number
-  sgrh_cat_conceptos_nomina: ConceptoDeLinea | null
-}
-
-interface LineaDeduccionRow {
-  ded_monto: number
-  sgrh_cat_conceptos_nomina: ConceptoDeLinea | null
 }
 
 /** Diferencia que se considera redondeo y no un faltante real. */
@@ -95,60 +83,19 @@ export async function aplicarHorasExtraEnDetalle(
     ...(conceptosActivos ?? []),
     { ...horasExtraConcepto, con_tipo_calculo: 'monto_manual_ingreso' },
   ]
-  const codigosQueSeRecalculan = new Set(base.map((c) => c.con_codigo))
 
-  // Montos ya guardados, para no perderlos al recalcular. Hay que leer las DOS
-  // tablas: más abajo se borran y se rehacen todas las líneas desde lo que
-  // devuelva el motor, así que cualquier concepto que no llegue en `montos`
-  // desaparece. Leyendo solo los ingresos, una deducción manual del periodo
-  // (préstamo, embargo, renta) se borraba en silencio y el neto subía.
-  const [
-    { data: lineasIngreso, error: errLineasIngreso },
-    { data: lineasDeduccion, error: errLineasDeduccion },
-  ] = await Promise.all([
-    supabase
-      .from('sgrh_nomina_linea_ingreso')
-      .select(`ing_monto, sgrh_cat_conceptos_nomina ( ${CAMPOS_CONCEPTO_DE_LINEA} )`)
-      .eq('ing_nomina_detalle_id', detalle.ndt_id)
-      .returns<LineaIngresoRow[]>(),
-    supabase
-      .from('sgrh_nomina_linea_deduccion')
-      .select(`ded_monto, sgrh_cat_conceptos_nomina ( ${CAMPOS_CONCEPTO_DE_LINEA} )`)
-      .eq('ded_nomina_detalle_id', detalle.ndt_id)
-      .returns<LineaDeduccionRow[]>(),
-  ])
-
-  if (errLineasIngreso || errLineasDeduccion) {
-    return { error: 'No se pudo cargar el detalle del periodo.' }
-  }
-
-  const montos: Record<string, number> = {}
-  // Líneas de conceptos que el motor NO va a volver a producir (uno que se
-  // desactivó del catálogo mientras el periodo seguía en borrador): se
-  // conservan tal cual (ver lib/lineasAjenas.ts).
-  const ajenas: LineaAjena[] = []
-
-  for (const linea of lineasIngreso ?? []) {
-    const concepto = linea.sgrh_cat_conceptos_nomina
-    if (!concepto) continue
-    if (esLineaAjena(concepto, codigosQueSeRecalculan)) {
-      ajenas.push({ concepto, monto: linea.ing_monto, esIngreso: true })
-      continue
-    }
-    montos[concepto.con_codigo] = linea.ing_monto
-  }
-  for (const linea of lineasDeduccion ?? []) {
-    const concepto = linea.sgrh_cat_conceptos_nomina
-    if (!concepto) continue
-    if (esLineaAjena(concepto, codigosQueSeRecalculan)) {
-      ajenas.push({ concepto, monto: linea.ded_monto, esIngreso: false })
-      continue
-    }
-    // Solo las deducciones de monto manual: las porcentuales (CCSS) las vuelve
-    // a calcular el motor sobre el bruto nuevo, arrastrar su monto viejo sería
-    // un error.
-    if (concepto.con_tipo_calculo !== 'monto_manual_deduccion') continue
-    montos[concepto.con_codigo] = linea.ded_monto
+  // Montos ya guardados, para no perderlos al recalcular: más abajo se borran
+  // y se rehacen todas las líneas desde lo que devuelva el motor, así que
+  // cualquier concepto que no llegue acá desaparece. Leyendo solo los
+  // ingresos, una deducción manual del periodo (préstamo, embargo, renta) se
+  // borraba en silencio y el neto subía.
+  const {
+    montos,
+    ajenas,
+    error: errMontos,
+  } = await leerMontosGuardados(supabase, detalle.ndt_id, base)
+  if (errMontos) {
+    return { error: errMontos }
   }
 
   const horasExtraActual = montos.HORAS_EXTRA ?? 0
