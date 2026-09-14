@@ -12,13 +12,22 @@ import {
   leerMontosGuardados,
 } from '@/modules/payroll/lib/lineasAjenas'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
-import { salarioPorHoraPeriodo } from '@/modules/payroll/lib/horasPeriodo'
+import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
+import { prellenarDesdeAsistencia } from '@/modules/payroll/lib/prellenadoAsistencia'
+import { round2 } from '@/modules/payroll/lib/numeros'
 import { camposFotoAsistencia, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal } from '@/modules/payroll/lib/fechas'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 
 export type RefrescarHorasResult =
-  | { ok: true; horas: number; horasExtra: number; sinCambios: boolean }
+  | {
+      ok: true
+      horas: number
+      horasExtra: number
+      sinCambios: boolean
+      /** El salario base estaba editado a mano y se dejó como estaba. */
+      baseConservado: boolean
+    }
   /** Las horas estaban corregidas a mano: hay que confirmar antes de pisarlas. */
   | { ok: false; necesitaConfirmacion: true; error: string }
   | { ok: false; necesitaConfirmacion?: false; error: string }
@@ -122,16 +131,25 @@ export async function refrescarHorasAsistencia(
     return { ok: false, error: lectura.error }
   }
 
+  // Sin horas programadas la lectura son ceros, y eso no es "trabajó 0 horas":
+  // es que no hay jornada contra la cual medir, o que quien está mirando no
+  // tiene permiso para ver la asistencia (RLS filtra en silencio, sin error).
+  // Guardar esos ceros le borraría las horas buenas al empleado.
   const totales = lectura.data.get(detalle.ndt_historial_laboral_id)
-  if (!totales) {
-    return { ok: false, error: 'No se encontraron marcas de asistencia de este empleado.' }
+  if (!lecturaUtilizable(totales)) {
+    return {
+      ok: false,
+      error:
+        'Este empleado no tiene ningún día con horario programado en la quincena, así que no hay horas que traer. Asignále el horario en Horarios; si ya lo tiene, pedile a un administrador que revise tus permisos de asistencia.',
+    }
   }
 
   const guardadas = {
     horas: detalle.ndt_horas_ordinarias_diurnas,
     horasExtra: detalle.ndt_horas_extra_al_50 ?? 0,
   }
-  const asistencia = { horas: totales.horasOrdinarias, horasExtra: totales.horasExtra }
+  const leidas = totales!
+  const asistencia = { horas: leidas.horasOrdinarias, horasExtra: leidas.horasExtra }
   const fotoPrevia = {
     horas: detalle.ndt_horas_asistencia,
     horasExtra: detalle.ndt_horas_extra_asistencia,
@@ -147,6 +165,7 @@ export async function refrescarHorasAsistencia(
       horas: asistencia.horas,
       horasExtra: asistencia.horasExtra,
       sinCambios: true,
+      baseConservado: false,
     }
   }
 
@@ -177,24 +196,40 @@ export async function refrescarHorasAsistencia(
     return { ok: false, error: errMontos }
   }
 
-  // El valor de la hora sale del base prorrateado sobre las horas PROGRAMADAS
-  // del periodo, igual que en la plantilla de Excel. Asignarle un horario a un
-  // día sube esas horas esperadas, así que el valor de la hora baja: si no se
-  // recalculara acá, refrescar dejaría un número distinto al que produciría
-  // volver a subir el archivo.
-  const { data: contrato } = await supabase
+  const { data: contrato, error: errContrato } = await supabase
     .from('sgrh_historial_laboral')
     .select('lab_salario_base')
     .eq('lab_id', detalle.ndt_historial_laboral_id)
     .maybeSingle<{ lab_salario_base: number | null }>()
 
-  const salarioBase = contrato?.lab_salario_base ?? 0
-  // Sin horas programadas el prorrateo daría 0 y le dejaría la hora en cero a
-  // alguien que sí trabajó: en ese caso se conserva el valor que ya tenía.
-  const salarioPorHora =
-    totales.horasEsperadas > 0 && salarioBase > 0
-      ? salarioPorHoraPeriodo(salarioBase, totales.horasEsperadas)
-      : detalle.ndt_salario_por_hora
+  if (errContrato || !contrato) {
+    return { ok: false, error: 'No se pudo cargar el contrato del empleado.' }
+  }
+
+  const salarioBase = contrato.lab_salario_base ?? 0
+  const prellenado = prellenarDesdeAsistencia(salarioBase, leidas)
+  const salarioPorHora = salarioBase > 0 ? prellenado.salarioPorHora : detalle.ndt_salario_por_hora
+
+  // Traer las horas sin mover el BASE no cambiaba un colón: el bruto sale de
+  // los montos, no de las horas. Alguien que trabajó media quincena seguía
+  // cobrando la quincena entera y el botón parecía no hacer nada.
+  //
+  // Pero el BASE también se puede haber editado a mano, y eso no se pisa. Se
+  // reconoce comparando contra el prellenado que le correspondía a las horas
+  // que la fila tenía guardadas: las horas programadas de entonces se
+  // recuperan del valor hora guardado (valor hora = salario ÷ 2 ÷ esperadas).
+  const mitadMensual = salarioBase / 2
+  const esperadasPrevias =
+    detalle.ndt_salario_por_hora > 0 ? mitadMensual / detalle.ndt_salario_por_hora : 0
+  const basePrevioEsperado =
+    esperadasPrevias > 0
+      ? round2((mitadMensual * Math.min(guardadas.horas, esperadasPrevias)) / esperadasPrevias)
+      : round2(mitadMensual)
+
+  const baseIntacto = Math.abs((montos.BASE ?? 0) - basePrevioEsperado) < 0.5
+  if (baseIntacto && salarioBase > 0) {
+    montos.BASE = prellenado.base
+  }
 
   const { conceptos: conceptosCalculo, montos: montosFinales } = fusionarAjenas(
     conceptos,
@@ -270,5 +305,11 @@ export async function refrescarHorasAsistencia(
   revalidatePath('/payroll')
   revalidatePath(`/payroll/${detalle.ndt_nomina_periodo_id}`)
   revalidatePath('/payroll/banco-horas')
-  return { ok: true, horas: asistencia.horas, horasExtra: asistencia.horasExtra, sinCambios: false }
+  return {
+    ok: true,
+    horas: asistencia.horas,
+    horasExtra: asistencia.horasExtra,
+    sinCambios: false,
+    baseConservado: !baseIntacto,
+  }
 }

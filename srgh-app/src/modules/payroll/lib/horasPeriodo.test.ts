@@ -162,6 +162,76 @@ describe('calcularDia', () => {
   })
 })
 
+// Las marcas llegan de PostgREST en ISO, con "T" entre fecha y hora
+// ("2026-08-04T08:00:00"), no con un espacio como se ven en el SQL Editor.
+// Todos los tests de acá usaban el espacio, así que el parser partido por " "
+// pasaba verde mientras en producción devolvía NaN: la pantalla mostraba las
+// horas PROGRAMADAS bien (salen del horario, que es texto) y las TRABAJADAS
+// como "NaN", y guardar la fila fallaba.
+describe('calcularDia: formato de fecha de las marcas', () => {
+  const iso = (tipo: RawMark['tipo'], fechaHora: string) => marca(tipo, fechaHora)
+
+  it('lee las marcas en ISO con T, igual que con espacio', () => {
+    const conT = calcularDia(
+      dia({
+        marcas: [iso('entrada', '2026-07-06T08:00:00'), iso('salida', '2026-07-06T17:00:00')],
+      })
+    )
+
+    expect(conT.horasTrabajadas).toBe(8)
+    expect(conT.horasOrdinarias).toBe(8)
+    expect(conT.problema).toBeNull()
+  })
+
+  it('en ISO también cuenta la hora extra', () => {
+    const r = calcularDia(
+      dia({
+        marcas: [iso('entrada', '2026-07-06T08:00:00'), iso('salida', '2026-07-06T20:00:00')],
+      })
+    )
+
+    expect(r.horasTrabajadas).toBe(11)
+    expect(r.horasOrdinarias).toBe(8)
+    expect(r.horasExtra).toBe(3)
+  })
+
+  it('un turno nocturno en ISO cruza medianoche bien', () => {
+    const horario: HorarioDia = {
+      entrada: '22:00:00',
+      salida: '06:00:00',
+      inicioAlmuerzo: null,
+      finAlmuerzo: null,
+      inicioBreak: null,
+      finBreak: null,
+    }
+
+    const r = calcularDia(
+      dia({
+        horario,
+        marcas: [iso('entrada', '2026-07-06T22:00:00'), iso('salida', '2026-07-07T06:00:00')],
+      })
+    )
+
+    expect(r.horasTrabajadas).toBe(8)
+    expect(r.horasExtra).toBe(0)
+  })
+
+  // Si una marca no se puede leer, no puede convertirse en NaN y seguir: se
+  // reporta, se ve de qué día es, y bloquea el pago hasta arreglarla.
+  it('una marca ilegible se reporta en vez de producir NaN', () => {
+    const r = calcularDia(
+      dia({
+        marcas: [marca('entrada', 'basura'), marca('salida', '2026-07-06 17:00:00')],
+      })
+    )
+
+    expect(r.problema).toBe('marca_ilegible')
+    expect(Number.isFinite(r.horasTrabajadas)).toBe(true)
+    expect(r.horasTrabajadas).toBe(0)
+    expect(r.horasEsperadas).toBe(8)
+  })
+})
+
 describe('calcularDia: días que no rebajan el salario', () => {
   it.each([
     ['un día libre', { esDiaLibre: true }],

@@ -8,7 +8,7 @@ import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
-import { MENSAJE_PROBLEMA } from '@/modules/payroll/lib/horasPeriodo'
+import { MENSAJE_PROBLEMA, lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
 import { formatDate, formatHoras } from '@/modules/payroll/lib/format'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 
@@ -283,8 +283,11 @@ export async function marcarDetallePagado(
       horasExtra: detalle.ndt_horas_extra_al_50 ?? 0,
     }
 
-    if (totales && origenHoras(guardadas, foto) === 'asistencia') {
-      const ahora = { horas: totales.horasOrdinarias, horasExtra: totales.horasExtra }
+    // lecturaUtilizable: sin horas programadas la lectura son ceros que no
+    // dicen nada, y compararse contra ellos bloqueaba TODOS los pagos con un
+    // "hoy las marcas dicen 0 h" que era falso.
+    if (lecturaUtilizable(totales) && origenHoras(guardadas, foto) === 'asistencia') {
+      const ahora = { horas: totales!.horasOrdinarias, horasExtra: totales!.horasExtra }
 
       if (marcasCambiaron(foto, ahora)) {
         return {

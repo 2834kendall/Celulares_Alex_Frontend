@@ -62,12 +62,14 @@ export interface DiaProgramado {
 }
 
 /** Por qué un día no se pudo liquidar solo. */
-export type ProblemaDia = 'sin_marcas' | 'sin_entrada' | 'sin_salida' | 'sin_horario'
+export type ProblemaDia =
+  'sin_marcas' | 'sin_entrada' | 'sin_salida' | 'sin_horario' | 'marca_ilegible'
 
 export const MENSAJE_PROBLEMA: Record<ProblemaDia, string> = {
   sin_marcas: 'No se registró ninguna marca ese día.',
   sin_entrada: 'Hay marca de salida pero no de entrada.',
   sin_salida: 'Hay marca de entrada pero no de salida.',
+  marca_ilegible: 'La fecha y hora de una marca de ese día no se pudo leer. Avisá a soporte.',
   sin_horario:
     'Marcó ese día pero no tenía horario programado, así que esas horas no se contaron. Si de verdad trabajó, asignále el horario en Horarios; si no, dejalo así.',
 }
@@ -88,6 +90,7 @@ export const PROBLEMAS_QUE_BLOQUEAN: ReadonlySet<ProblemaDia> = new Set<Problema
   'sin_marcas',
   'sin_entrada',
   'sin_salida',
+  'marca_ilegible',
 ])
 
 export interface DiaCalculado {
@@ -111,9 +114,23 @@ function minutosDeHora(hora: string): number {
   return h * 60 + m
 }
 
-/** 'YYYY-MM-DD HH:mm:ss' → minutos desde la medianoche de `fechaBase`. */
+/**
+ * 'YYYY-MM-DD HH:mm:ss' → minutos desde la medianoche de `fechaBase`.
+ *
+ * Se parte por espacio O por 'T', y esa "T" no es un adorno: la columna
+ * mar_fecha_hora es `timestamp without time zone`, y PostgREST la devuelve en
+ * ISO — "2026-08-04T08:00:00" — mientras que el SQL Editor la muestra con un
+ * espacio. Partiendo solo por espacio, la hora quedaba pegada a la fecha, el
+ * Date.parse recibía "2026-08-04T08:00:00T00:00:00Z" y devolvía NaN. Ese NaN
+ * se propagaba a las horas trabajadas, las ordinarias y las extra, y la
+ * pantalla mostraba "NaN" mientras las PROGRAMADAS salían bien (esas vienen del
+ * horario, que es texto plano). Guardar esa fila fallaba en silencio.
+ *
+ * Devuelve NaN si la marca no se puede leer; quien llama tiene que verificarlo
+ * (ver calcularDia) en vez de arrastrarlo al cálculo.
+ */
 function minutosDesde(fechaBase: string, marca: string): number {
-  const [fecha, hora = '00:00:00'] = marca.split(' ')
+  const [fecha, hora = '00:00:00'] = marca.split(/[ T]/)
   const dias = Math.round(
     (Date.parse(`${fecha}T00:00:00Z`) - Date.parse(`${fechaBase}T00:00:00Z`)) / 86_400_000
   )
@@ -218,6 +235,14 @@ export function calcularDia(dia: DiaProgramado): DiaCalculado {
   const entrada = minutosDesde(dia.fecha, jornada.entrada.fechaHora)
   const salida = minutosDesde(dia.fecha, jornada.salida.fechaHora)
 
+  // Una marca que no se pudo leer NO puede seguir al cálculo: NaN se propaga a
+  // las horas trabajadas, a las ordinarias y a las extra, y termina intentando
+  // guardarse en la planilla. Se reporta como problema —igual que una marca
+  // incompleta— para que se vea qué día es y por qué no cuadra.
+  if (!Number.isFinite(entrada) || !Number.isFinite(salida)) {
+    return DIA_VACIO(dia.fecha, 'marca_ilegible', horasEsperadas)
+  }
+
   // Turno que cruza medianoche: si la salida quedó antes que la entrada, cayó
   // en el día siguiente. Las ventanas de almuerzo y break del horario se
   // anclan siempre al día en que ARRANCA la jornada.
@@ -253,6 +278,31 @@ export interface TotalesPeriodo {
   /** Solo los que impiden marcar el pago (ver PROBLEMAS_QUE_BLOQUEAN). */
   diasQueBloquean: { fecha: string; problema: ProblemaDia }[]
   dias: DiaCalculado[]
+}
+
+/**
+ * ¿Esta lectura de la asistencia sirve para liquidar?
+ *
+ * Sin horas PROGRAMADAS no hay jornada contra la cual medir, así que la
+ * lectura devuelve ceros — y un cero acá no significa "no trabajó", significa
+ * "no se sabe". Pasan dos cosas distintas por este camino y las dos terminan
+ * igual: al empleado nunca se le armó el horario, o quien mira la planilla no
+ * tiene permiso para ver la asistencia (RLS filtra las filas en silencio, no
+ * da error, así que la consulta "funciona" y devuelve vacío).
+ *
+ * Tratar ese cero como un dato era lo peor de los dos mundos: ponía a todo el
+ * mundo en 0 h, bloqueaba los pagos diciendo que las marcas decían 0, y
+ * ofrecía un botón "traer 0 h" que borraba las horas buenas.
+ */
+export function lecturaUtilizable(
+  totales:
+    { horasEsperadas: number; horasOrdinarias?: number; horasExtra?: number } | null | undefined
+): boolean {
+  if (!totales || !(totales.horasEsperadas > 0)) return false
+
+  // Cinturón y tirantes: un NaN colado —una marca ilegible, por ejemplo— nunca
+  // debe llegar a guardarse como las horas de alguien.
+  return Number.isFinite(totales.horasOrdinarias ?? 0) && Number.isFinite(totales.horasExtra ?? 0)
 }
 
 /** Suma los días de la quincena de un empleado. */

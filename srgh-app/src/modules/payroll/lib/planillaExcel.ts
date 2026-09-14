@@ -11,7 +11,6 @@
 import 'server-only'
 import ExcelJS from 'exceljs'
 import {
-  TOPE_HORAS_NORMALES_QUINCENAL,
   agruparConceptosPlanilla,
   firmaCatalogo,
   parsePlanillaRow,
@@ -20,6 +19,7 @@ import {
   type PlanillaRowInput,
   type RawCell,
 } from './planilla'
+import { prellenarDesdeAsistencia } from './prellenadoAsistencia'
 
 const SHEET_NAME = 'Planilla'
 
@@ -180,37 +180,31 @@ export async function buildPlanillaTemplate(
     const row = ws.getRow(rowNumber)
     row.getCell(colCedula).value = emp.cedula
     row.getCell(2).value = emp.nombre
-    // Sin lectura de marcas se cae al supuesto anterior: jornada completa.
-    const horasTrabajadas = emp.horas?.trabajadas ?? TOPE_HORAS_NORMALES_QUINCENAL
-    const salarioPorHora =
-      emp.horas?.salarioPorHora ??
-      Math.round((emp.salarioBaseMensual / 2 / TOPE_HORAS_NORMALES_QUINCENAL) * 100) / 100
-
-    row.getCell(colHoras).value = horasTrabajadas
-    row.getCell(colHorasExtra).value = emp.horas?.extra ?? 0
-    row.getCell(colSalarioHora).value = salarioPorHora
-    row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
-
-    // Salario base de la quincena: la mitad del mensual, en proporción a las
-    // horas cumplidas dentro de la jornada programada.
-    //
-    // Se prorratea sobre salario_base / 2 y NO multiplicando las horas por el
-    // valor de la hora: ese valor va redondeado a dos decimales, y multiplicarlo
-    // por 88 horas dejaba a quien cumplió su jornada completa cobrando
-    // ¢299.999,92 en vez de ¢300.000. La hora redondeada sirve para las horas
-    // extra; el base sale de la proporción.
+    // La misma cuenta que usa "cargar empleados desde asistencia", compartida
+    // en lib/prellenadoAsistencia.ts: si cada camino tuviera la suya, armar la
+    // planilla por el archivo o por el botón daría montos distintos para la
+    // misma quincena.
     //
     // Es un prellenado, no una imposición: el encargado revisa el archivo antes
     // de subirlo.
-    const mitadMensual = emp.salarioBaseMensual / 2
-    const proporcion =
-      emp.horas && emp.horas.esperadas > 0
-        ? Math.min(emp.horas.trabajadas, emp.horas.esperadas) / emp.horas.esperadas
-        : 1
+    const prellenado = prellenarDesdeAsistencia(
+      emp.salarioBaseMensual,
+      emp.horas
+        ? {
+            horasEsperadas: emp.horas.esperadas,
+            horasOrdinarias: emp.horas.trabajadas,
+            horasExtra: emp.horas.extra,
+          }
+        : null
+    )
+
+    row.getCell(colHoras).value = prellenado.horas
+    row.getCell(colHorasExtra).value = prellenado.horasExtra
+    row.getCell(colSalarioHora).value = prellenado.salarioPorHora
+    row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
 
     ingresoManual.forEach((c, i) => {
-      const monto = c.con_codigo === 'BASE' ? Math.round(mitadMensual * proporcion * 100) / 100 : 0
-      row.getCell(colIngresoInicio + i).value = monto
+      row.getCell(colIngresoInicio + i).value = c.con_codigo === 'BASE' ? prellenado.base : 0
     })
     deduccionManual.forEach((_, i) => {
       row.getCell(colDeduccionManualInicio + i).value = 0

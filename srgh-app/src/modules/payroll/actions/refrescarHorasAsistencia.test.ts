@@ -166,7 +166,13 @@ describe('refrescarHorasAsistencia (server action)', () => {
 
     const result = await refrescarHorasAsistencia(50)
 
-    expect(result).toEqual({ ok: true, horas: 88, horasExtra: 0, sinCambios: true })
+    expect(result).toEqual({
+      ok: true,
+      horas: 88,
+      horasExtra: 0,
+      sinCambios: true,
+      baseConservado: false,
+    })
     expect(llamadas(client, 'sgrh_nomina_detalle', 'update')).toEqual([])
   })
 
@@ -175,7 +181,13 @@ describe('refrescarHorasAsistencia (server action)', () => {
 
     const result = await refrescarHorasAsistencia(50)
 
-    expect(result).toEqual({ ok: true, horas: 91, horasExtra: 3, sinCambios: false })
+    expect(result).toEqual({
+      ok: true,
+      horas: 91,
+      horasExtra: 3,
+      sinCambios: false,
+      baseConservado: false,
+    })
 
     const update = llamadas(client, 'sgrh_nomina_detalle', 'update')[0] as Record<string, unknown>
     expect(update).toMatchObject({
@@ -215,19 +227,84 @@ describe('refrescarHorasAsistencia (server action)', () => {
     })
   })
 
-  // Sin horas programadas el prorrateo daría 0 y le dejaría la hora en cero a
-  // alguien que sí trabajó.
-  it('conserva el valor de la hora si el periodo no tiene horas programadas', async () => {
+  // El bug que llegó al usuario: sin permisos de asistencia (o sin horario
+  // asignado) RLS devuelve vacío SIN error, el cálculo da ceros, y eso no es
+  // "trabajó 0 horas". Guardarlo le borraba las horas buenas al empleado y le
+  // dejaba el banco de horas en cero.
+  it('no guarda ceros cuando la lectura no sirve: rechaza y explica', async () => {
     const client = escenario()
     mockGetHoras.mockResolvedValue({
       ok: true,
-      data: new Map([[5, totales({ horasEsperadas: 0, horasOrdinarias: 10, horasExtra: 0 })]]),
+      data: new Map([[5, totales({ horasEsperadas: 0, horasOrdinarias: 0, horasExtra: 0 })]]),
     })
 
-    await refrescarHorasAsistencia(50)
+    const result = await refrescarHorasAsistencia(50)
 
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('horario programado')
+      expect(result.error).toContain('permisos de asistencia')
+    }
+    expect(llamadas(client, 'sgrh_nomina_detalle', 'update')).toEqual([])
+  })
+
+  // Traer las horas sin mover el salario base no cambiaba un colón: el bruto
+  // sale de los montos, no de las horas. Quien trabajó media quincena seguía
+  // cobrando la quincena entera y el botón parecía no hacer nada.
+  it('el salario base sigue a las horas nuevas', async () => {
+    const client = escenario()
+    mockGetHoras.mockResolvedValue({
+      ok: true,
+      data: new Map([[5, totales({ horasEsperadas: 88, horasOrdinarias: 44, horasExtra: 0 })]]),
+    })
+
+    const result = await refrescarHorasAsistencia(50)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.baseConservado).toBe(false)
+
+    // Media jornada: el base baja de 300 000 a 150 000...
+    expect(
+      (llamadas(client, 'sgrh_nomina_linea_ingreso', 'insert') as unknown[][]).flat()
+    ).toContainEqual(expect.objectContaining({ ing_concepto_id: 1, ing_monto: 150000 }))
+    // ...y el bruto guardado lo refleja.
     expect(llamadas(client, 'sgrh_nomina_detalle', 'update')[0]).toMatchObject({
-      ndt_salario_por_hora: DETALLE.ndt_salario_por_hora,
+      ndt_salario_bruto: 150000,
+    })
+  })
+
+  // Pero un base editado a mano no se pisa: se actualizan las horas y se avisa
+  // que el monto quedó como estaba, para que alguien lo revise.
+  it('un salario base editado a mano se conserva y se reporta', async () => {
+    const client = escenario(
+      {},
+      {
+        sgrh_nomina_linea_ingreso: [
+          {
+            data: [{ ing_monto: 275000, sgrh_cat_conceptos_nomina: { ...CONCEPTOS[0] } }],
+            error: null,
+          },
+          OK,
+          OK,
+        ],
+      }
+    )
+    mockGetHoras.mockResolvedValue({
+      ok: true,
+      data: new Map([[5, totales({ horasEsperadas: 88, horasOrdinarias: 44, horasExtra: 0 })]]),
+    })
+
+    const result = await refrescarHorasAsistencia(50)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.baseConservado).toBe(true)
+
+    expect(
+      (llamadas(client, 'sgrh_nomina_linea_ingreso', 'insert') as unknown[][]).flat()
+    ).toContainEqual(expect.objectContaining({ ing_concepto_id: 1, ing_monto: 275000 }))
+    // Las horas sí se actualizaron.
+    expect(llamadas(client, 'sgrh_nomina_detalle', 'update')[0]).toMatchObject({
+      ndt_horas_ordinarias_diurnas: 44,
     })
   })
 

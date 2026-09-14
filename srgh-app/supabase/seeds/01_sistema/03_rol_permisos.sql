@@ -84,6 +84,14 @@ FROM (VALUES
   ('CONTADOR', 'NOMINA_READ'),       ('CONTADOR', 'NOMINA_WRITE'),
   ('CONTADOR', 'NOMINA_APPROVE'),    ('CONTADOR', 'COMPROBANTES_READ'),
   ('CONTADOR', 'REPORTES_READ'),     ('CONTADOR', 'FOTOS_READ'),
+  -- Desde que las horas de la planilla salen de las marcas del kiosco, nómina
+  -- NECESITA leer asistencia, horarios y ausencias. Sin esto RLS le filtra las
+  -- filas sin dar error: la consulta "funciona" y devuelve vacío, así que todo
+  -- el mundo aparece con 0 horas trabajadas, los pagos se bloquean solos y el
+  -- botón de traer horas ofrece "0 h". Son de LECTURA: el contador sigue sin
+  -- poder marcar asistencia ni armar horarios.
+  ('CONTADOR', 'ASISTENCIA_READ'),   ('CONTADOR', 'HORARIOS_READ'),
+  ('CONTADOR', 'AUSENCIAS_READ'),
 
   -- ── RECLUTADOR / EVALUADOR: acotados a su dominio ────────────────────────
   ('RECLUTADOR', 'EMPLEADOS_READ'),     ('RECLUTADOR', 'FOTOS_READ'),

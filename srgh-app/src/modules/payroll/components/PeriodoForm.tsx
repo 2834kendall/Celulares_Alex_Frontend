@@ -96,7 +96,22 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
       return
     }
 
-    toast.success('Periodo de nómina creado.')
+    // El periodo ya existe pase lo que pase; lo que puede fallar es la carga
+    // de los empleados, y eso se avisa sin tratarlo como un error de creación.
+    if (result.avisoCarga) {
+      toast.warning(`Periodo creado, pero no se cargaron los empleados: ${result.avisoCarga}`)
+    } else if (result.empleadosCargados === 0) {
+      toast.success('Periodo de nómina creado.')
+    } else {
+      const sinHorario =
+        result.sinAsistencia > 0
+          ? ` ${result.sinAsistencia} sin horario programado: quedaron con la jornada completa supuesta, revisalos.`
+          : ''
+      toast.success(
+        `Periodo creado con ${result.empleadosCargados} empleado(s) y sus horas de asistencia.${sinHorario}`
+      )
+    }
+
     router.push(`/payroll/${result.periodoId}`)
   })
 

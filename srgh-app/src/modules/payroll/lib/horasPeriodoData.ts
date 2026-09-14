@@ -14,6 +14,7 @@ import { marcaTipoSchema } from '@/modules/attendance/types'
 import type { RawMark } from '@/modules/attendance/lib/marks'
 import {
   calcularHorasPeriodo,
+  lecturaUtilizable,
   type DiaProgramado,
   type HorarioDia,
   type TotalesPeriodo,
@@ -306,8 +307,16 @@ export async function getFotoAsistencia(
   })
   if (!horas.ok) return { estado: 'error' }
 
+  // Un contrato sin horas programadas NO entra al mapa. Su lectura son ceros,
+  // y guardarlos como foto decía que la asistencia había dicho "0 h" — cuando
+  // lo cierto es que no había con qué medir (o que el usuario no ve la
+  // asistencia: RLS filtra las filas sin dar error). Esa foto de ceros dejaba
+  // la fila marcada para siempre como "corregidas a mano" contra alguien que
+  // no corrigió nada, y bloqueaba su pago. Quedar fuera del mapa es "sin
+  // referencia", que es exactamente lo que pasa.
   const datos = new Map<number, HorasGuardadas>()
   for (const [labId, totales] of horas.data) {
+    if (!lecturaUtilizable(totales)) continue
     datos.set(labId, { horas: totales.horasOrdinarias, horasExtra: totales.horasExtra })
   }
 

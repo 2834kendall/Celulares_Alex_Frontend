@@ -7,6 +7,7 @@ import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
 import { round2 } from '@/modules/payroll/lib/numeros'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
+import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 import type { DiaCalculado } from '@/modules/payroll/lib/horasPeriodo'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
@@ -208,10 +209,16 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
         if (totales.diasConProblema.length > 0) {
           revisarPorLab.set(labId, totales.diasConProblema)
         }
-        asistenciaAhoraPorLab.set(labId, {
-          horas: totales.horasOrdinarias,
-          horasExtra: totales.horasExtra,
-        })
+        // Una lectura sin horas programadas son ceros que no significan nada
+        // (ver lecturaUtilizable). Publicarla ponía a todos "las marcas dicen
+        // 0 h": bloqueaba los pagos y ofrecía un botón "traer 0 h" que borraba
+        // las horas buenas.
+        if (lecturaUtilizable(totales)) {
+          asistenciaAhoraPorLab.set(labId, {
+            horas: totales.horasOrdinarias,
+            horasExtra: totales.horasExtra,
+          })
+        }
         diasPorLab.set(labId, totales.dias)
       }
     }

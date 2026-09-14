@@ -35,6 +35,7 @@ import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
 import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHorasAsistencia'
+import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
@@ -199,6 +200,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   /** Empleado cuyo desglose día por día está abierto. */
   const [viendoHorasId, setViendoHorasId] = useState<number | null>(null)
   const [refrescandoId, setRefrescandoId] = useState<number | null>(null)
+  const [cargandoEmpleados, setCargandoEmpleados] = useState(false)
   /** Fila cuyas horas corregidas a mano habría que pisar: se pregunta antes. */
   const [confirmandoHoras, setConfirmandoHoras] = useState<{
     detalle: DetalleNominaItem
@@ -229,6 +231,34 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   }
 
   /**
+   * Trae a los empleados activos de la sucursal que todavía no están en el
+   * periodo, con las horas de la asistencia. A los que ya están no les toca
+   * nada: sus montos pueden estar editados a mano.
+   */
+  async function handleCargarEmpleados() {
+    setCargandoEmpleados(true)
+    const result = await cargarEmpleadosDesdeAsistencia(periodo.id)
+    setCargandoEmpleados(false)
+
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+
+    if (result.agregados === 0) {
+      toast.info('Todos los empleados activos de la sucursal ya están en este periodo.')
+      return
+    }
+
+    const aviso =
+      result.sinAsistencia > 0
+        ? ` ${result.sinAsistencia} sin marcas en el periodo: quedaron con la jornada completa supuesta, revisalos.`
+        : ''
+    toast.success(`${result.agregados} empleado(s) agregados desde la asistencia.${aviso}`)
+    router.refresh()
+  }
+
+  /**
    * Trae las horas que dice la asistencia y recalcula esa fila.
    *
    * Si las horas estaban corregidas a mano, la acción no las pisa: devuelve
@@ -255,10 +285,13 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
       return
     }
 
+    const aviso = result.baseConservado
+      ? ' El salario base estaba editado a mano y lo dejé como estaba: revisalo.'
+      : ''
     toast.success(
       `Horas actualizadas: ${formatHoras(result.horas)} h${
         result.horasExtra > 0 ? ` y ${formatHoras(result.horasExtra)} h extra` : ''
-      }.`
+      }.${aviso}`
     )
     router.refresh()
   }
@@ -596,13 +629,51 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
       {periodo.detalles.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
           <p className="text-sm font-semibold text-slate-700">Planilla vacía</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Este periodo aún no tiene empleados registrados. Sube la planilla en Excel para
-            agregarlos.
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+            Crear el periodo no trae a nadie: hay que cargar los empleados de la sucursal. Con el
+            botón se traen con las horas que dicen las marcas del kiosco; también podés descargar la
+            plantilla de Excel, revisarla y subirla.
           </p>
+          {puedeEditar && (
+            <button
+              type="button"
+              onClick={handleCargarEmpleados}
+              disabled={cargandoEmpleados}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white outline-none transition hover:bg-brand-700 disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+            >
+              {cargandoEmpleados ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Users className="h-4 w-4" />
+              )}
+              Cargar empleados desde asistencia
+            </button>
+          )}
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          {/*
+            Para los que entraron a la sucursal después de armada la planilla:
+            los agrega sin tocar a nadie que ya esté.
+          */}
+          {puedeEditar && (
+            <div className="flex justify-end px-3 pt-3 @3xl:px-4 @3xl:pt-4">
+              <button
+                type="button"
+                onClick={handleCargarEmpleados}
+                disabled={cargandoEmpleados}
+                title="Agrega a los empleados activos de la sucursal que falten, con las horas de la asistencia. No toca a los que ya están."
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+              >
+                {cargandoEmpleados ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Users className="h-3.5 w-3.5" />
+                )}
+                Agregar empleados que falten
+              </button>
+            </div>
+          )}
           {/*
             Movil: tarjeta por empleado. Son nueve columnas de montos; en
             375px el scroll horizontal dejaba al usuario adivinando cual
