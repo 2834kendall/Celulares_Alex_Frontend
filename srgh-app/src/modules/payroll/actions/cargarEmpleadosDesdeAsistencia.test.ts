@@ -53,8 +53,8 @@ const CONCEPTOS = [
 
 function totales(over: Record<string, unknown> = {}) {
   return {
-    horasEsperadas: 88,
-    horasOrdinarias: 88,
+    horasEsperadas: 96,
+    horasOrdinarias: 96,
     horasExtra: 0,
     diasConProblema: [],
     diasQueBloquean: [],
@@ -113,7 +113,15 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
     mockEmpleados.mockResolvedValue({
       ok: true,
-      data: [{ labId: 5, cedula: '1-1111-2222', nombre: 'Ana Pérez', salarioBaseMensual: 600000 }],
+      data: [
+        {
+          labId: 5,
+          cedula: '1-1111-2222',
+          nombre: 'Ana Pérez',
+          salarioBaseMensual: 600000,
+          horasSemanales: 48,
+        },
+      ],
     })
     mockGetHoras.mockResolvedValue({ ok: true, data: new Map([[5, totales()]]) })
   })
@@ -149,7 +157,13 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
 
     const result = await cargarEmpleadosDesdeAsistencia(9)
 
-    expect(result).toEqual({ ok: true, agregados: 1, yaEstaban: 0, sinAsistencia: 0 })
+    expect(result).toEqual({
+      ok: true,
+      agregados: 1,
+      yaEstaban: 0,
+      sinAsistencia: 0,
+      sinSalario: [],
+    })
 
     const fila = (
       llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<string, unknown>[]
@@ -158,15 +172,15 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
     expect(fila).toMatchObject({
       ndt_nomina_periodo_id: 9,
       ndt_historial_laboral_id: 5,
-      ndt_horas_ordinarias_diurnas: 88,
+      ndt_horas_ordinarias_diurnas: 96,
       ndt_horas_extra_al_50: 0,
-      // 600000 / 2 / 88
-      ndt_salario_por_hora: 3409.09,
+      // 600000 / 2 / 96 (jornada diurna del contrato)
+      ndt_salario_por_hora: 3125,
       // Jornada completa: cobra la mitad exacta del mensual. El base NO sale de
-      // multiplicar 88 por la hora redondeada, que daría 299 999,92.
+      // multiplicar 96 por la hora redondeada, que daría 299 999,92.
       ndt_salario_bruto: 300000,
       // La foto queda igual a lo guardado: la fila nace "origen asistencia".
-      ndt_horas_asistencia: 88,
+      ndt_horas_asistencia: 96,
     })
   })
 
@@ -175,7 +189,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
     const client = escenario()
     mockGetHoras.mockResolvedValue({
       ok: true,
-      data: new Map([[5, totales({ horasOrdinarias: 44 })]]),
+      data: new Map([[5, totales({ horasOrdinarias: 48 })]]),
     })
 
     await cargarEmpleadosDesdeAsistencia(9)
@@ -184,7 +198,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<string, unknown>[]
     )[0]
 
-    expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 44, ndt_salario_bruto: 150000 })
+    expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 48, ndt_salario_bruto: 150000 })
   })
 
   // Trabajar de más no infla el salario base: esas horas van al banco y se
@@ -193,7 +207,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
     const client = escenario()
     mockGetHoras.mockResolvedValue({
       ok: true,
-      data: new Map([[5, totales({ horasOrdinarias: 88, horasExtra: 6 })]]),
+      data: new Map([[5, totales({ horasOrdinarias: 96, horasExtra: 6 })]]),
     })
 
     await cargarEmpleadosDesdeAsistencia(9)
@@ -217,15 +231,33 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
     mockEmpleados.mockResolvedValue({
       ok: true,
       data: [
-        { labId: 5, cedula: '1-1111-2222', nombre: 'Ana Pérez', salarioBaseMensual: 600000 },
-        { labId: 6, cedula: '1-3333-4444', nombre: 'Luis Mora', salarioBaseMensual: 400000 },
+        {
+          labId: 5,
+          cedula: '1-1111-2222',
+          nombre: 'Ana Pérez',
+          salarioBaseMensual: 600000,
+          horasSemanales: 48,
+        },
+        {
+          labId: 6,
+          cedula: '1-3333-4444',
+          nombre: 'Luis Mora',
+          salarioBaseMensual: 400000,
+          horasSemanales: 48,
+        },
       ],
     })
     mockGetHoras.mockResolvedValue({ ok: true, data: new Map([[6, totales()]]) })
 
     const result = await cargarEmpleadosDesdeAsistencia(9)
 
-    expect(result).toEqual({ ok: true, agregados: 1, yaEstaban: 1, sinAsistencia: 0 })
+    expect(result).toEqual({
+      ok: true,
+      agregados: 1,
+      yaEstaban: 1,
+      sinAsistencia: 0,
+      sinSalario: [],
+    })
 
     const insertadas = llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<
       string,
@@ -247,7 +279,13 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
 
     const result = await cargarEmpleadosDesdeAsistencia(9)
 
-    expect(result).toEqual({ ok: true, agregados: 0, yaEstaban: 1, sinAsistencia: 0 })
+    expect(result).toEqual({
+      ok: true,
+      agregados: 0,
+      yaEstaban: 1,
+      sinAsistencia: 0,
+      sinSalario: [],
+    })
     expect(llamadas(client, 'sgrh_nomina_detalle', 'insert')).toEqual([])
   })
 
@@ -266,11 +304,17 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
 
     const result = await cargarEmpleadosDesdeAsistencia(9)
 
-    expect(result).toEqual({ ok: true, agregados: 1, yaEstaban: 0, sinAsistencia: 1 })
+    expect(result).toEqual({
+      ok: true,
+      agregados: 1,
+      yaEstaban: 0,
+      sinAsistencia: 1,
+      sinSalario: [],
+    })
 
     const fila = (
       llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<string, unknown>[]
     )[0]
-    expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 88, ndt_salario_bruto: 300000 })
+    expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 96, ndt_salario_bruto: 300000 })
   })
 })

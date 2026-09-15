@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   agruparConceptosPlanilla,
   calcularPlanillaPorConceptos,
+  hayConceptoSalarioBase,
   parsePlanillaRow,
   sameRowValues,
   type ConceptoPlanillaColumna,
@@ -531,5 +532,56 @@ describe('sameRowValues', () => {
       montos: { BASE: 180000, COMISION: 0 },
     }
     expect(sameRowValues(a, b)).toBe(true)
+  })
+})
+
+describe('hayConceptoSalarioBase', () => {
+  const BASE_OK = {
+    con_id: 21,
+    con_codigo: 'BASE',
+    con_tipo: 'ingreso',
+    con_afecta_salario_bruto: true,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+
+  it('reconoce el concepto con el que se paga el salario de la quincena', () => {
+    expect(hayConceptoSalarioBase([BASE_OK])).toBe(true)
+  })
+
+  it('es false si no está en la lista de conceptos activos', () => {
+    expect(hayConceptoSalarioBase([{ ...BASE_OK, con_codigo: 'SALARIO' }])).toBe(false)
+    expect(hayConceptoSalarioBase([])).toBe(false)
+  })
+
+  // Las tres condiciones que el motor necesita para recoger el monto. Sin
+  // cualquiera de ellas el monto queda huérfano y el bruto sale en ₡0.
+  it.each([
+    ['es patronal', { con_tipo: 'patronal' }],
+    ['no es de monto manual', { con_tipo_calculo: 'porcentaje_deduccion_bruto' }],
+    ['no cuenta como salario', { con_afecta_salario_bruto: false }],
+  ])('es false si el BASE %s', (_caso, cambio) => {
+    expect(hayConceptoSalarioBase([{ ...BASE_OK, ...cambio }])).toBe(false)
+  })
+
+  // La prueba de que las condiciones son las correctas: exactamente cuando
+  // esta función dice false, el motor devuelve ₡0 de bruto.
+  it('coincide con lo que el motor hace de verdad con el monto', () => {
+    const input = {
+      montos: { BASE: 235000 },
+      horasTrabajadas: 9,
+      horasExtra: 0,
+      salarioPorHora: 2448,
+    }
+
+    expect(calcularPlanillaPorConceptos([BASE_OK], input).salarioBruto).toBe(235000)
+    expect(
+      calcularPlanillaPorConceptos([{ ...BASE_OK, con_tipo: 'patronal' }], input).salarioBruto
+    ).toBe(0)
+    expect(
+      calcularPlanillaPorConceptos([{ ...BASE_OK, con_afecta_salario_bruto: false }], input)
+        .salarioBruto
+    ).toBe(0)
   })
 })

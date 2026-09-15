@@ -49,7 +49,13 @@ describe('createPeriodo (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue(CLAIMS)
-    mockCargar.mockResolvedValue({ ok: true, agregados: 3, yaEstaban: 0, sinAsistencia: 0 })
+    mockCargar.mockResolvedValue({
+      ok: true,
+      agregados: 3,
+      yaEstaban: 0,
+      sinAsistencia: 0,
+      sinSalario: [],
+    })
   })
 
   it('rechaza datos inválidos sin tocar la base', async () => {

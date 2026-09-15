@@ -10,6 +10,7 @@ import {
   conceptoNominaSchema,
   type ConceptoNominaInput,
 } from '@/modules/payroll/types'
+import { CODIGO_SALARIO_BASE, ERROR_CONCEPTO_BASE_PROTEGIDO } from '@/modules/payroll/lib/planilla'
 
 export type UpdateConceptoResult = { ok: true } | { ok: false; error: string }
 
@@ -17,6 +18,14 @@ export type UpdateConceptoResult = { ok: true } | { ok: false; error: string }
  * Actualiza un concepto existente — incluidos los precargados por el seed
  * (BASE, COMISION, CCSS_OBRERA, etc.). Todo es editable; si el concepto lo
  * usa la plantilla de Excel, el aviso vive en la UI (ConceptosList), no aquí.
+ *
+ * La excepción es BASE. El resto del sistema no conoce ningún código de
+ * memoria, pero ese sí: el prellenado desde asistencia y la plantilla de Excel
+ * escriben el salario de la quincena en `montos.BASE` y el motor lo recoge
+ * buscándolo por código. Desactivarlo, renombrarlo o sacarlo del salario bruto
+ * no daba ningún error acá y rompía la planilla allá: las filas seguían
+ * mostrando las horas bien y el total en ₡0, sin nada que explicara por qué.
+ * Se sigue pudiendo cambiar su nombre visible y su fórmula base.
  */
 export async function updateConcepto(
   id: number,
@@ -34,6 +43,35 @@ export async function updateConcepto(
   await requirePermission(PERMISOS.CATALOGOS_WRITE)
 
   const supabase = await createClient()
+
+  const { data: actual, error: errActual } = await supabase
+    .from('sgrh_cat_conceptos_nomina')
+    .select('con_codigo')
+    .eq('con_id', id)
+    .maybeSingle<{ con_codigo: string }>()
+
+  if (errActual) {
+    return { ok: false, error: 'No se pudo cargar el concepto.' }
+  }
+  if (!actual) {
+    return { ok: false, error: 'El concepto no existe o no es visible.' }
+  }
+
+  if (actual.con_codigo === CODIGO_SALARIO_BASE) {
+    // Las cuatro condiciones que el motor necesita para recoger el monto (ver
+    // hayConceptoSalarioBase). Cualquiera que falte deja la planilla en ₡0.
+    const sigueSirviendo =
+      parsed.data.con_codigo.toUpperCase() === CODIGO_SALARIO_BASE &&
+      parsed.data.con_activo &&
+      parsed.data.con_tipo === 'ingreso' &&
+      parsed.data.con_tipo_calculo === 'monto_manual_ingreso' &&
+      parsed.data.con_afecta_salario_bruto !== false
+
+    if (!sigueSirviendo) {
+      return { ok: false, error: ERROR_CONCEPTO_BASE_PROTEGIDO }
+    }
+  }
+
   const { error } = await supabase
     .from('sgrh_cat_conceptos_nomina')
     .update({

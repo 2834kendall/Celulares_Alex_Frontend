@@ -219,7 +219,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+      data: [
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -255,7 +263,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 60, cedula: 'NEW', nombre: 'Nuevo', salarioBaseMensual: 100000 }],
+      data: [
+        {
+          labId: 60,
+          cedula: 'NEW',
+          nombre: 'Nuevo',
+          salarioBaseMensual: 100000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -297,7 +313,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 60, cedula: 'NEW', nombre: 'Nuevo', salarioBaseMensual: 100000 }],
+      data: [
+        {
+          labId: 60,
+          cedula: 'NEW',
+          nombre: 'Nuevo',
+          salarioBaseMensual: 100000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     await uploadPlanilla(buildFormData())
@@ -345,7 +369,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 60, cedula: 'NEW', nombre: 'Nuevo', salarioBaseMensual: 100000 }],
+      data: [
+        {
+          labId: 60,
+          cedula: 'NEW',
+          nombre: 'Nuevo',
+          salarioBaseMensual: 100000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     await uploadPlanilla(buildFormData())
@@ -411,7 +443,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 70, cedula: 'CHG', nombre: 'Cambio', salarioBaseMensual: 600000 }],
+      data: [
+        {
+          labId: 70,
+          cedula: 'CHG',
+          nombre: 'Cambio',
+          salarioBaseMensual: 600000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -475,7 +515,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 71, cedula: 'HORAS', nombre: 'Con Horas', salarioBaseMensual: 200000 }],
+      data: [
+        {
+          labId: 71,
+          cedula: 'HORAS',
+          nombre: 'Con Horas',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -544,7 +592,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+      data: [
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -592,7 +648,13 @@ describe('uploadPlanilla (server action)', () => {
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
       data: [
-        { labId: 80, cedula: 'CONPRESTAMO', nombre: 'Con Préstamo', salarioBaseMensual: 400000 },
+        {
+          labId: 80,
+          cedula: 'CONPRESTAMO',
+          nombre: 'Con Préstamo',
+          salarioBaseMensual: 400000,
+          horasSemanales: 48,
+        },
       ],
     })
 
@@ -673,7 +735,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+      data: [
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -740,7 +810,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+      data: [
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -764,7 +842,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+      data: [
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -825,7 +911,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 }],
+      data: [
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())
@@ -874,8 +968,20 @@ describe('uploadPlanilla (server action)', () => {
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
       data: [
-        { labId: 55, cedula: 'KEEP', nombre: 'Ana', salarioBaseMensual: 200000 },
-        { labId: 66, cedula: 'OUT', nombre: 'Beto Solís', salarioBaseMensual: 200000 },
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
+        {
+          labId: 66,
+          cedula: 'OUT',
+          nombre: 'Beto Solís',
+          salarioBaseMensual: 200000,
+          horasSemanales: 48,
+        },
       ],
     })
 
@@ -967,7 +1073,15 @@ describe('uploadPlanilla (server action)', () => {
     })
     mockGetEmpleadosActivos.mockResolvedValue({
       ok: true,
-      data: [{ labId: 70, cedula: 'BANCO', nombre: 'Con Banco', salarioBaseMensual: 600000 }],
+      data: [
+        {
+          labId: 70,
+          cedula: 'BANCO',
+          nombre: 'Con Banco',
+          salarioBaseMensual: 600000,
+          horasSemanales: 48,
+        },
+      ],
     })
 
     const result = await uploadPlanilla(buildFormData())

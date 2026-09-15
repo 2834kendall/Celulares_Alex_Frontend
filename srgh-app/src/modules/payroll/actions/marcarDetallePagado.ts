@@ -304,6 +304,18 @@ export async function marcarDetallePagado(
     }
   }
 
+  // Una fila en ₡0 no es un pago: es una fila que quedó a medias. Dejarla
+  // marcar emitía un comprobante con monto cero, acumulaba ₡0 de aguinaldo y
+  // podía cerrar el periodo entero — y nadie se entera hasta que el empleado
+  // reclama. Solo se bloquea al MARCAR; desmarcar siempre se puede.
+  if (pagado && !(detalle.ndt_salario_bruto > 0)) {
+    return {
+      ok: false,
+      error:
+        'Esta fila está en ₡0, así que no hay nada que pagar. Suele ser que al empleado le falta el salario en su contrato, o que la fila se armó antes de tener las horas: revisá el detalle y volvé a calcularlo antes de marcar el pago.',
+    }
+  }
+
   const { error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
     .update({

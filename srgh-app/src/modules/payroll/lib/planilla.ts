@@ -76,6 +76,57 @@ export function esConceptoDelTrabajador(concepto: { con_tipo: string }): boolean
   return concepto.con_tipo !== 'patronal'
 }
 
+/**
+ * Código del concepto con el que se paga el salario de la quincena.
+ *
+ * Es el ÚNICO código que el sistema conoce de memoria. Todo lo que arma una
+ * planilla —el prellenado desde asistencia, la plantilla de Excel— escribe el
+ * salario ya prorrateado en `montos.BASE` y deja que el motor lo recoja desde
+ * el catálogo.
+ *
+ * Y si el catálogo no tiene ese concepto como ingreso activo del trabajador,
+ * nadie lo recoge: el motor recorre los conceptos, ninguno se llama BASE, el
+ * monto queda huérfano y la fila sale en ₡0 CON las horas correctas. Es un
+ * cero que no se distingue de "no trabajó", y llegó a producción: 9 h
+ * trabajadas, 3 extra, total a pagar ₡0.
+ *
+ * De ahí las dos defensas: el catálogo no deja desactivarlo, renombrarlo ni
+ * sacarlo del salario bruto (ver updateConcepto/deleteConcepto), y todo lo que
+ * escribe planilla lo verifica antes de guardar en vez de escribir el cero.
+ */
+export const CODIGO_SALARIO_BASE = 'BASE'
+
+export const ERROR_SIN_CONCEPTO_BASE =
+  `El catálogo de nómina no tiene un concepto activo con código ${CODIGO_SALARIO_BASE}, ` +
+  'de tipo "ingreso" y cálculo "monto manual". Sin él el salario de la quincena no lo ' +
+  'recoge ningún concepto y la planilla saldría en ₡0 aunque las horas estén bien. ' +
+  'Arreglalo en Nómina → Conceptos y volvé a intentarlo.'
+
+export const ERROR_CONCEPTO_BASE_PROTEGIDO =
+  `"${CODIGO_SALARIO_BASE}" es el concepto con el que se paga el salario de la quincena: el ` +
+  'sistema escribe el monto en él por código. Podés cambiarle el nombre, pero no desactivarlo, ' +
+  'borrarlo, cambiarle el código ni sacarlo del salario bruto — cualquier planilla que se arme ' +
+  'después saldría en ₡0 con las horas correctas. Si necesitás otro tipo de ingreso, creá un ' +
+  'concepto nuevo.'
+
+/**
+ * ¿Está el concepto del salario base, en condiciones de recibir el monto?
+ *
+ * No alcanza con que exista la fila: tiene que ser del trabajador (un patronal
+ * se filtra), de monto manual (un porcentaje no lee `montos`) y contar como
+ * salario (si `con_afecta_salario_bruto` es false el monto se paga pero el
+ * bruto queda en cero igual).
+ */
+export function hayConceptoSalarioBase(conceptos: readonly ConceptoCalculo[]): boolean {
+  return conceptos.some(
+    (c) =>
+      c.con_codigo === CODIGO_SALARIO_BASE &&
+      esConceptoDelTrabajador(c) &&
+      c.con_tipo_calculo === 'monto_manual_ingreso' &&
+      c.con_afecta_salario_bruto !== false
+  )
+}
+
 /** Datos que el usuario carga a mano en el detalle de un empleado dentro del periodo. */
 export interface DetalleManualInput {
   /** Monto por concepto (con_codigo), solo para tipos monto_manual_ingreso / monto_manual_deduccion. */

@@ -55,6 +55,11 @@ export interface EmpleadoPlantilla {
   /** Salario base mensual del contrato; es el techo de la quincena (la mitad). */
   salarioBaseMensual: number
   /**
+   * Horas semanales de la jornada pactada. De acá sale el valor de la hora
+   * (ver lib/jornada.ts); null cae a la jornada ordinaria diurna.
+   */
+  horasSemanales?: number | null
+  /**
    * Horas de la quincena según las marcas del kiosco, y el valor de la hora
    * prorrateado sobre las horas que la persona tenía programadas. Ausente
    * cuando el periodo no tiene fechas o no se pudieron leer las marcas: en ese
@@ -195,7 +200,8 @@ export async function buildPlanillaTemplate(
             horasOrdinarias: emp.horas.trabajadas,
             horasExtra: emp.horas.extra,
           }
-        : null
+        : null,
+      emp.horasSemanales
     )
 
     row.getCell(colHoras).value = prellenado.horas

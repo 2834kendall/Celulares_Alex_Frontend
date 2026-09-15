@@ -113,9 +113,9 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     const fila5 = ws.getRow(5)
     expect(fila5.getCell(1).value).toBe('1-1111-1111')
     expect(fila5.getCell(2).value).toBe('Ana Mora')
-    expect(fila5.getCell(3).value).toBe(88) // horas trabajadas por defecto = tope normal
+    expect(fila5.getCell(3).value).toBe(96) // jornada diurna supuesta: 48 h x 2 semanas
     expect(fila5.getCell(4).value).toBe(0) // horas extra
-    expect(fila5.getCell(5).value).toBe(3409.09) // 600000 / 2 / 88, redondeado
+    expect(fila5.getCell(5).value).toBe(3125) // 600000 / 2 / 96, la jornada del contrato
     expect(fila5.getCell(6).value).toBe(300000) // BASE = mitad del salario mensual
     expect(fila5.getCell(7).value).toBe(0) // COMISION en cero por defecto
     expect(fila5.getCell(8).value).toBe(0) // PRESTAMO en cero por defecto
@@ -130,16 +130,16 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
 
     expect(rows[0]).toEqual({
       cedula: '1-1111-1111',
-      horasTrabajadas: 88,
+      horasTrabajadas: 96,
       horasExtra: 0,
-      salarioPorHora: 3409.09,
+      salarioPorHora: 3125,
       montos: { BASE: 300000, COMISION: 0, PRESTAMO: 0 },
     })
     expect(rows[1]).toEqual({
       cedula: '2-2222-2222',
-      horasTrabajadas: 88,
+      horasTrabajadas: 96,
       horasExtra: 0,
-      salarioPorHora: 1704.55, // 300000 / 2 / 88
+      salarioPorHora: 1562.5, // 300000 / 2 / 96
       montos: { BASE: 150000, COMISION: 0, PRESTAMO: 0 },
     })
   })
@@ -153,7 +153,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     // Simula que el usuario edita la fila de Ana: le pone comisión, un
     // préstamo, y reporta 96 horas trabajadas (8 de extra).
     const fila5 = ws.getRow(5)
-    fila5.getCell(3).value = 88 // horas trabajadas
+    fila5.getCell(3).value = 96 // horas trabajadas
     fila5.getCell(4).value = 8 // horas extra
     fila5.getCell(7).value = 26250 // comisión
     fila5.getCell(8).value = 10000 // préstamo
@@ -169,9 +169,9 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     const ana = rows.find((r) => r.cedula === '1-1111-1111')
     expect(ana).toEqual({
       cedula: '1-1111-1111',
-      horasTrabajadas: 88,
+      horasTrabajadas: 96,
       horasExtra: 8,
-      salarioPorHora: 3409.09,
+      salarioPorHora: 3125,
       montos: { BASE: 300000, COMISION: 26250, PRESTAMO: 10000 },
     })
   })
@@ -320,9 +320,9 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
         {
           ...EMPLEADOS[0],
           horas: {
-            trabajadas: 44,
+            trabajadas: 48,
             extra: 0,
-            esperadas: 88,
+            esperadas: 96,
             salarioPorHora: 3409.09,
             diasPorRevisar: 2,
           },
@@ -335,9 +335,9 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
     await wb.xlsx.load(buffer.buffer)
     const fila = wb.getWorksheet('Planilla')!.getRow(5)
 
-    expect(fila.getCell(3).value).toBe(44) // horas trabajadas reales
+    expect(fila.getCell(3).value).toBe(48) // horas trabajadas reales
     expect(fila.getCell(4).value).toBe(0) // sin horas extra
-    expect(fila.getCell(5).value).toBe(3409.09) // valor hora prorrateado
+    expect(fila.getCell(5).value).toBe(3125) // valor hora del contrato: 600000 / 2 / 96
     expect(fila.getCell(6).value).toBe(150000) // media jornada = medio salario
     expect(fila.getCell(10).value).toBe(2) // días por revisar
   })
@@ -349,9 +349,9 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
         {
           ...EMPLEADOS[0],
           horas: {
-            trabajadas: 88,
+            trabajadas: 96,
             extra: 6,
-            esperadas: 88,
+            esperadas: 96,
             salarioPorHora: 3409.09,
             diasPorRevisar: 0,
           },
@@ -363,21 +363,23 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buffer.buffer)
 
-    // 88 x 3409.09 daria 299999.92: el base se prorratea sobre el mensual, no
+    // 96 x 3125 da 300000 justo, pero el base igual se prorratea sobre el mensual, no
     // se reconstruye multiplicando la hora redondeada.
     expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(6).value).toBe(300000)
     // Las horas extra vienen aparte, ya no se deducen de un tope.
     expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(4).value).toBe(6)
   })
 
-  it('sin lectura de marcas mantiene el supuesto anterior de jornada completa', async () => {
+  // Sin marcas se supone la jornada del contrato, no un 88 quemado: 48 h
+  // semanales x 2 = 96. Para una jornada parcial de 30 h serían 60.
+  it('sin lectura de marcas supone la jornada pactada del contrato', async () => {
     const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)
 
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buffer.buffer)
     const fila = wb.getWorksheet('Planilla')!.getRow(5)
 
-    expect(fila.getCell(3).value).toBe(88)
+    expect(fila.getCell(3).value).toBe(96)
     expect(fila.getCell(4).value).toBe(0)
     expect(fila.getCell(6).value).toBe(300000)
     expect(fila.getCell(10).value).toBe(0)

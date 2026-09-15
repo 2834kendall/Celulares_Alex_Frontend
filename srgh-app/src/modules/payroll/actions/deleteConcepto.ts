@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { CODIGO_SALARIO_BASE, ERROR_CONCEPTO_BASE_PROTEGIDO } from '@/modules/payroll/lib/planilla'
 
 export type DeleteConceptoResult = { ok: true } | { ok: false; error: string }
 
@@ -18,6 +19,21 @@ export async function deleteConcepto(id: number): Promise<DeleteConceptoResult> 
   await requirePermission(PERMISOS.CATALOGOS_WRITE)
 
   const supabase = await createClient()
+
+  // Borrar BASE no falla acá y rompe la planilla allá: el motor busca ese
+  // código para pagar el salario de la quincena. Y como el borrado cae en
+  // desactivar cuando ya tiene líneas, el daño se hacía igual por el camino
+  // largo.
+  const { data: actual } = await supabase
+    .from('sgrh_cat_conceptos_nomina')
+    .select('con_codigo')
+    .eq('con_id', id)
+    .maybeSingle<{ con_codigo: string }>()
+
+  if (actual?.con_codigo === CODIGO_SALARIO_BASE) {
+    return { ok: false, error: ERROR_CONCEPTO_BASE_PROTEGIDO }
+  }
+
   const { error: deleteError } = await supabase
     .from('sgrh_cat_conceptos_nomina')
     .delete()

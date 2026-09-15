@@ -35,6 +35,7 @@ import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
 import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHorasAsistencia'
+import { recalcularPeriodoDesdeAsistencia } from '@/modules/payroll/actions/recalcularPeriodoDesdeAsistencia'
 import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetalleEditForm } from './DetalleEditForm'
@@ -184,7 +185,18 @@ function horasNuevas(d: DetalleNominaItem): { horas: number; horasExtra: number 
     Math.abs(ahora.horas - d.horasTrabajadas) < 0.005 &&
     Math.abs(ahora.horasExtra - d.horasExtra) < 0.005
 
+  // Una fila en ₡0 con horas siempre ofrece recalcularse, aunque las horas ya
+  // estén al día: lo que se paga sale de los montos, no de las horas. Sin
+  // esto, una fila que quedaba en "9 h, 3 extra, ₡0" escondía el botón y no
+  // había manera de arreglarla desde la pantalla.
+  if (iguales && filaEnCero(d)) return ahora
+
   return iguales ? null : ahora
+}
+
+/** Tiene horas pero no tiene plata: la fila quedó a medias. */
+function filaEnCero(d: DetalleNominaItem): boolean {
+  return d.salarioBruto <= 0 && d.horasTrabajadas > 0
 }
 
 /**
@@ -201,6 +213,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const [viendoHorasId, setViendoHorasId] = useState<number | null>(null)
   const [refrescandoId, setRefrescandoId] = useState<number | null>(null)
   const [cargandoEmpleados, setCargandoEmpleados] = useState(false)
+  const [recalculandoTodo, setRecalculandoTodo] = useState(false)
   /** Fila cuyas horas corregidas a mano habría que pisar: se pregunta antes. */
   const [confirmandoHoras, setConfirmandoHoras] = useState<{
     detalle: DetalleNominaItem
@@ -255,6 +268,46 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
         ? ` ${result.sinAsistencia} sin marcas en el periodo: quedaron con la jornada completa supuesta, revisalos.`
         : ''
     toast.success(`${result.agregados} empleado(s) agregados desde la asistencia.${aviso}`)
+    router.refresh()
+  }
+
+  /**
+   * Vuelve a calcular todas las filas del periodo con la asistencia.
+   *
+   * La planilla guarda montos, no fórmulas: una fila armada antes de un
+   * arreglo del cálculo sigue mostrando el número viejo hasta que alguien la
+   * recalcule. Esto lo hace de una sola vez, sin tener que adivinar cuáles
+   * filas quedaron mal.
+   */
+  async function handleRecalcularTodo() {
+    setRecalculandoTodo(true)
+    const result = await recalcularPeriodoDesdeAsistencia(periodo.id)
+    setRecalculandoTodo(false)
+
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+
+    // Las omitidas son lo importante del mensaje: son las que siguen mal y
+    // necesitan que alguien vaya a verlas. Se nombran en vez de contarlas.
+    if (result.omitidas.length > 0) {
+      const lista = result.omitidas
+        .slice(0, 3)
+        .map((o) => `${o.nombre}: ${o.motivo}`)
+        .join(' · ')
+      const resto = result.omitidas.length > 3 ? ` (+${result.omitidas.length - 3} más)` : ''
+      toast.warning(`${result.omitidas.length} sin recalcular — ${lista}${resto}`, {
+        duration: 12000,
+      })
+    }
+
+    if (result.recalculadas > 0) {
+      toast.success(`${result.recalculadas} fila(s) recalculadas desde la asistencia.`)
+    } else if (result.omitidas.length === 0) {
+      toast.info('Toda la planilla ya estaba al día con la asistencia.')
+    }
+
     router.refresh()
   }
 
@@ -320,6 +373,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const conMarcasDesactualizadas = periodo.detalles.filter(
     (d) => d.marcasCambiaron && d.horasOrigen === 'asistencia'
   )
+  // Filas con horas y sin plata. Nadie decide pagarle ₡0 a alguien que trabajó:
+  // es una fila que quedó a medias (nació sin salario base, o se armó antes de
+  // que la asistencia entrara al cálculo). Se avisa arriba porque en la tabla,
+  // entre nueve columnas de montos, un 0 no salta a la vista.
+  const conFilasEnCero = periodo.detalles.filter(filaEnCero)
   const totalDeduccionPorcentual = periodo.detalles.reduce(
     (sum, d) => sum + d.deduccionPorcentual,
     0
@@ -378,9 +436,13 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           type="button"
           onClick={() => handleRefrescarHoras(d, false)}
           disabled={refrescandoId === d.id}
-          title={`La asistencia dice ${formatHoras(nuevas.horas)} h${
-            nuevas.horasExtra > 0 ? ` y ${formatHoras(nuevas.horasExtra)} h extra` : ''
-          }. Recalcula esta fila con esas horas.`}
+          title={
+            filaEnCero(d)
+              ? 'Esta fila tiene horas pero está en ₡0. Recalcula el salario desde la asistencia.'
+              : `La asistencia dice ${formatHoras(nuevas.horas)} h${
+                  nuevas.horasExtra > 0 ? ` y ${formatHoras(nuevas.horasExtra)} h extra` : ''
+                }. Recalcula esta fila con esas horas.`
+          }
           className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
         >
           {refrescandoId === d.id ? (
@@ -388,7 +450,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           ) : (
             <RefreshCw className="h-3 w-3" />
           )}
-          traer {formatHoras(nuevas.horas)} h
+          {filaEnCero(d) ? 'recalcular — está en ₡0' : `traer ${formatHoras(nuevas.horas)} h`}
         </button>
       ) : null
 
@@ -609,6 +671,41 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
         </div>
       )}
 
+      {conFilasEnCero.length > 0 && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-semibold text-rose-900">
+            {conFilasEnCero.length} empleado(s) con horas trabajadas y ₡0 a pagar
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+            Su fila tiene las horas pero no tiene el salario: quedó a medias. La planilla guarda
+            montos, no fórmulas, así que la fila no se arregla sola.{' '}
+            {puedeEditar ? (
+              <>
+                Usá <span className="font-semibold">Recalcular desde asistencia</span>, arriba de la
+                tabla. Si después sigue en ₡0, es que a esa persona le falta el salario base en su
+                contrato (Historial Laboral).
+              </>
+            ) : (
+              <>
+                Hay que recalcularla con el periodo en borrador y con permiso de escritura sobre
+                nómina.
+              </>
+            )}
+          </p>
+          <ul className="mt-2 space-y-1 text-xs text-rose-900">
+            {conFilasEnCero.map((d) => (
+              <li key={d.id}>
+                <span className="font-semibold">{d.empleadoNombre}</span>{' '}
+                <span className="text-rose-700">
+                  — {formatHoras(d.horasTrabajadas)} h
+                  {d.horasExtra > 0 ? ` y ${formatHoras(d.horasExtra)} h extra` : ''}, ₡0
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         {resumen.map(({ key, icon: Icon, label, value, tone }) => (
           <div
@@ -657,7 +754,26 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
             los agrega sin tocar a nadie que ya esté.
           */}
           {puedeEditar && (
-            <div className="flex justify-end px-3 pt-3 @3xl:px-4 @3xl:pt-4">
+            <div className="flex flex-wrap justify-end gap-x-4 gap-y-2 px-3 pt-3 @3xl:px-4 @3xl:pt-4">
+              {/*
+                Rehace la cuenta de todas las filas. Hace falta porque los
+                montos quedan escritos en la fila: arreglar el cálculo en el
+                código no mueve una planilla ya armada.
+              */}
+              <button
+                type="button"
+                onClick={handleRecalcularTodo}
+                disabled={recalculandoTodo}
+                title="Vuelve a calcular todas las filas con las horas de la asistencia y el salario del contrato. No toca las filas ya pagadas ni las horas corregidas a mano."
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+              >
+                {recalculandoTodo ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Recalcular desde asistencia
+              </button>
               <button
                 type="button"
                 onClick={handleCargarEmpleados}
@@ -704,7 +820,10 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   </span>
                 </div>
 
-                {(d.horasOrigen === 'ajustadas' || d.marcasCambiaron || horasNuevas(d)) && (
+                {(d.horasOrigen === 'ajustadas' ||
+                  d.marcasCambiaron ||
+                  horasNuevas(d) ||
+                  filaEnCero(d)) && (
                   <div className="text-right">
                     <NotaHoras detalle={d} />
                   </div>

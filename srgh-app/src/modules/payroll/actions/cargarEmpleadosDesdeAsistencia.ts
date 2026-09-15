@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
+import {
+  ERROR_SIN_CONCEPTO_BASE,
+  calcularPlanillaPorConceptos,
+  hayConceptoSalarioBase,
+  type ConceptoCalculo,
+} from '@/modules/payroll/lib/planilla'
 import { CAMPOS_CONCEPTO_DE_LINEA } from '@/modules/payroll/lib/lineasAjenas'
 import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
@@ -16,7 +21,14 @@ import { ahoraLocal, hoyLocal } from '@/modules/payroll/lib/fechas'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 
 export type CargarEmpleadosResult =
-  | { ok: true; agregados: number; yaEstaban: number; sinAsistencia: number }
+  | {
+      ok: true
+      agregados: number
+      yaEstaban: number
+      sinAsistencia: number
+      /** Nombres de quienes quedarían en ₡0 por no tener salario en su contrato. */
+      sinSalario: string[]
+    }
   | { ok: false; error: string }
 
 interface PeriodoRow {
@@ -103,7 +115,21 @@ export async function cargarEmpleadosDesdeAsistencia(
   const faltantes = empleadosResult.data.filter((e) => !existentes.has(e.labId))
 
   if (faltantes.length === 0) {
-    return { ok: true, agregados: 0, yaEstaban: existentes.size, sinAsistencia: 0 }
+    return { ok: true, agregados: 0, yaEstaban: existentes.size, sinAsistencia: 0, sinSalario: [] }
+  }
+
+  // Un contrato sin salario produce una fila con horas y ₡0 a pagar, que es
+  // exactamente el tipo de cifra que nadie revisa hasta que el empleado
+  // reclama. No se carga: se nombra a quién le falta el dato.
+  const sinSalario = faltantes.filter((e) => !(e.salarioBaseMensual > 0)).map((e) => e.nombre)
+
+  const conSalario = faltantes.filter((e) => e.salarioBaseMensual > 0)
+
+  if (conSalario.length === 0) {
+    return {
+      ok: false,
+      error: `Ningún empleado por agregar tiene salario base en su contrato (${sinSalario.slice(0, 5).join(', ')}). Corregilo en Historial Laboral y volvé a intentarlo.`,
+    }
   }
 
   const { data: conceptos, error: errConceptos } = await supabase
@@ -121,13 +147,18 @@ export async function cargarEmpleadosDesdeAsistencia(
       error: 'No hay conceptos activos en el catálogo. Creá al menos uno en "Conceptos de nómina".',
     }
   }
+  // Sin el concepto BASE todas las filas nacerían en ₡0 con las horas bien
+  // puestas. Cargar la planilla entera así es peor que no cargarla.
+  if (!hayConceptoSalarioBase(conceptos)) {
+    return { ok: false, error: ERROR_SIN_CONCEPTO_BASE }
+  }
 
   // Sin fechas no hay marcas que leer: las filas salen con el supuesto de
   // jornada completa, igual que la plantilla. No es motivo para no cargarlas.
   const conFechas = Boolean(periodo.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo)
   const lectura = conFechas
     ? await getHorasDelPeriodo(supabase, {
-        historialLaboralIds: faltantes.map((e) => e.labId),
+        historialLaboralIds: conSalario.map((e) => e.labId),
         fechaInicio: periodo.npe_fecha_inicio_periodo!,
         fechaFin: periodo.npe_fecha_fin_periodo!,
       })
@@ -142,7 +173,7 @@ export async function cargarEmpleadosDesdeAsistencia(
   const hoy = hoyLocal()
   let sinAsistencia = 0
 
-  const calculado = faltantes.map((empleado) => {
+  const calculado = conSalario.map((empleado) => {
     // Ojo: getHorasDelPeriodo SIEMPRE devuelve una entrada por contrato, aunque
     // sea de ceros. Lo que decide si sirve es que tenga horas programadas (ver
     // lecturaUtilizable): un empleado sin horario asignado, o un usuario sin
@@ -151,7 +182,11 @@ export async function cargarEmpleadosDesdeAsistencia(
     const totales = lecturaUtilizable(leido) ? leido : null
     if (!totales) sinAsistencia += 1
 
-    const fila = prellenarDesdeAsistencia(empleado.salarioBaseMensual, totales)
+    const fila = prellenarDesdeAsistencia(
+      empleado.salarioBaseMensual,
+      totales,
+      empleado.horasSemanales
+    )
     const montos: Record<string, number> = { BASE: fila.base }
 
     const resultado = calcularPlanillaPorConceptos(conceptos, {
@@ -239,5 +274,6 @@ export async function cargarEmpleadosDesdeAsistencia(
     agregados: insertados.length,
     yaEstaban: existentes.size,
     sinAsistencia,
+    sinSalario,
   }
 }

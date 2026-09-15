@@ -24,12 +24,28 @@ const INPUT: ConceptoNominaInput = {
   con_activo: true,
 }
 
-function mockUpdate(result: { data: unknown; error: unknown }) {
+/**
+ * Primero se lee el concepto que se va a tocar (para saber si es el BASE, que
+ * está protegido) y después se escribe. La cola del mock respeta ese orden.
+ */
+function mockUpdate(result: { data: unknown; error: unknown }, codigoActual = 'CCSS_OBRERA') {
   mockCreateClient.mockResolvedValue(
-    createSupabaseClientMock({ sgrh_cat_conceptos_nomina: result }) as unknown as Awaited<
-      ReturnType<typeof createClient>
-    >
+    createSupabaseClientMock({
+      sgrh_cat_conceptos_nomina: [{ data: { con_codigo: codigoActual }, error: null }, result],
+    }) as unknown as Awaited<ReturnType<typeof createClient>>
   )
+}
+
+const BASE_VALIDO: ConceptoNominaInput = {
+  con_codigo: 'BASE',
+  con_nombre: 'Salario base',
+  con_tipo: 'ingreso',
+  con_tipo_calculo: 'monto_manual_ingreso',
+  con_porcentaje: null,
+  con_afecta_salario_bruto: true,
+  con_afecta_base_ccss: true,
+  con_formula_base: null,
+  con_activo: true,
 }
 
 describe('updateConcepto (server action)', () => {
@@ -78,5 +94,39 @@ describe('updateConcepto (server action)', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('dos veces')
     expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
+  // El motor escribe el salario de la quincena en el concepto de código BASE y
+  // lo recoge buscándolo por ese código. Romper cualquiera de las condiciones
+  // que necesita dejaba la planilla en ₡0 con las horas correctas, sin error.
+  describe('protege el concepto BASE', () => {
+    it.each([
+      ['desactivarlo', { con_activo: false }],
+      ['cambiarle el código', { con_codigo: 'SALARIO' }],
+      ['volverlo deducción', { con_tipo: 'deduccion' as const }],
+      [
+        'volverlo un porcentaje',
+        { con_tipo_calculo: 'porcentaje_deduccion_bruto' as const, con_porcentaje: 10 },
+      ],
+      ['sacarlo del salario bruto', { con_afecta_salario_bruto: false }],
+    ])('no deja %s', async (_caso, cambio) => {
+      mockUpdate({ data: null, error: null }, 'BASE')
+
+      const result = await updateConcepto(21, { ...BASE_VALIDO, ...cambio })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('₡0')
+    })
+
+    it('sí deja cambiarle el nombre visible', async () => {
+      mockUpdate({ data: null, error: null }, 'BASE')
+
+      const result = await updateConcepto(21, {
+        ...BASE_VALIDO,
+        con_nombre: 'Salario base quincenal',
+      })
+
+      expect(result).toEqual({ ok: true })
+    })
   })
 })

@@ -480,4 +480,35 @@ describe('marcarDetallePagado (server action)', () => {
 
     expect(result).toEqual({ ok: true })
   })
+
+  // Una fila en ₡0 no es un pago: es una fila a medias. Marcarla emitía un
+  // comprobante con monto cero, acumulaba ₡0 de aguinaldo y podía cerrar el
+  // periodo entero sin que nadie lo notara.
+  it('no deja marcar como pagada una fila en ₡0', async () => {
+    mockSupabase({
+      sgrh_nomina_detalle: { data: { ...DETALLE_BASE, ndt_salario_bruto: 0 }, error: null },
+    })
+
+    const result = await marcarDetallePagado(10, true)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('está en ₡0')
+  })
+
+  // Desmarcar sí se puede siempre: es la salida cuando algo quedó mal.
+  it('desmarcar una fila en ₡0 sigue permitido', async () => {
+    mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_salario_bruto: 0, ndt_pagado: true }, error: null },
+        { data: null, error: null },
+      ],
+      sgrh_provisiones_anuales: { data: null, error: null },
+      sgrh_comprobantes_pago: { data: null, error: null },
+      sgrh_nomina_periodo: { data: null, error: null },
+    })
+
+    const result = await marcarDetallePagado(10, false)
+
+    expect(result.ok).toBe(true)
+  })
 })
