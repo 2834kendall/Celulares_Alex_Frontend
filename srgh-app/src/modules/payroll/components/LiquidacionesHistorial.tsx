@@ -61,9 +61,9 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
                 </div>
 
                 <div className="flex items-baseline justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2">
-                  <span className={META_LABEL}>Total</span>
+                  <span className={META_LABEL}>Neto entregado</span>
                   <span className="text-base font-bold tabular-nums text-slate-900">
-                    {formatCRC(item.total)}
+                    {formatCRC(item.neto)}
                   </span>
                 </div>
 
@@ -90,7 +90,7 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
                   <th className={TABLE_TH}>Cédula</th>
                   <th className={TABLE_TH}>Fecha de salida</th>
                   <th className={TABLE_TH}>Motivo</th>
-                  <th className={TABLE_TH_RIGHT}>Total</th>
+                  <th className={TABLE_TH_RIGHT}>Neto</th>
                   <th className={TABLE_TH}>Estado</th>
                 </tr>
               </thead>
@@ -101,8 +101,11 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
                     <td className={TABLE_TD}>{item.empleadoCedula}</td>
                     <td className={TABLE_TD}>{formatDate(item.fechaSalida)}</td>
                     <td className={TABLE_TD}>{item.motivoNombre}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800">
-                      {formatCRC(item.total)}
+                    <td
+                      className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800"
+                      title={`Bruto ${formatCRC(item.total)}`}
+                    >
+                      {formatCRC(item.neto)}
                     </td>
                     <td className="px-3 py-2">
                       <Badge tone={item.pagado ? 'emerald' : 'amber'} size="xs">

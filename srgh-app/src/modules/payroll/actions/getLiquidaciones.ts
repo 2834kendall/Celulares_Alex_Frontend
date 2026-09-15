@@ -9,6 +9,7 @@ interface LiquidacionRow {
   liq_id: number
   liq_fecha_salida: string
   liq_total: number
+  liq_neto: number | null
   liq_pagado: boolean
   liq_created_at: string
   sgrh_cat_motivos_salida: { mot_nombre: string } | null
@@ -43,6 +44,7 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       liq_id,
       liq_fecha_salida,
       liq_total,
+      liq_neto,
       liq_pagado,
       liq_created_at,
       sgrh_cat_motivos_salida ( mot_nombre ),
@@ -73,6 +75,8 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       fechaSalida: row.liq_fecha_salida,
       motivoNombre: row.sgrh_cat_motivos_salida?.mot_nombre ?? '—',
       total: row.liq_total,
+      // Filas de antes de la migración no tienen neto: se muestra el bruto.
+      neto: row.liq_neto ?? row.liq_total,
       pagado: row.liq_pagado,
       createdAt: row.liq_created_at,
     }

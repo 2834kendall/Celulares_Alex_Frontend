@@ -497,6 +497,10 @@ export type ProcesarLiquidacionInput = z.infer<typeof procesarLiquidacionSchema>
 
 export interface LiquidacionCalculada {
   liqId: number
+  /** Promedio de los últimos seis meses ÷ 30 (Art. 30 CT), o el contrato si no hubo con qué. */
+  salarioDiario: number
+  /** Días del mes de salida que no se habían pagado por planilla. */
+  diasSalarioPendiente: number
   salarioProporcional: number
   aguinaldoProporcional: number
   vacacionesPagadas: number
@@ -504,7 +508,14 @@ export interface LiquidacionCalculada {
   preaviso: number
   diasCesantia: number
   cesantia: number
+  /** Bruto: suma de todos los rubros. */
   total: number
+  /** Cuota obrera sobre salario pendiente y vacaciones. Preaviso, cesantía y aguinaldo no cotizan. */
+  deduccionesObreras: number
+  /** total − deduccionesObreras. Es lo que se le entrega a la persona. */
+  neto: number
+  /** Cosas que el cálculo no pudo resolver solo y alguien tiene que mirar. */
+  advertencias: string[]
 }
 
 /** Una fila del historial de liquidaciones ya generadas (sección de solo lectura). */
@@ -514,7 +525,10 @@ export interface LiquidacionListItem {
   empleadoCedula: string
   fechaSalida: string
   motivoNombre: string
+  /** Bruto. */
   total: number
+  /** Lo que se le entregó a la persona: bruto menos cuota obrera. */
+  neto: number
   pagado: boolean
   createdAt: string
 }

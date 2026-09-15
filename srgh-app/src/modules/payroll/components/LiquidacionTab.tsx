@@ -223,7 +223,27 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             </p>
           ) : (
             <div>
-              <ResultadoLinea label="Salario proporcional" valor={resultado.salarioProporcional} />
+              {/*
+                Lo que el cálculo no pudo resolver solo va PRIMERO: una
+                quincena sin pagar o un salario supuesto cambian el monto, y
+                quien lee el total tiene que saberlo antes de firmarlo.
+              */}
+              {resultado.advertencias.length > 0 && (
+                <ul className="mb-3 space-y-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+                  {resultado.advertencias.map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
+              )}
+              <p className="mb-1 text-[11px] text-slate-400">
+                Salario diario {formatCRC(resultado.salarioDiario)} · promedio de los últimos seis
+                meses ÷ 30
+              </p>
+              <ResultadoLinea
+                label="Salario pendiente"
+                valor={resultado.salarioProporcional}
+                dias={resultado.diasSalarioPendiente}
+              />
               <ResultadoLinea
                 label="Aguinaldo proporcional"
                 valor={resultado.aguinaldoProporcional}
@@ -242,9 +262,26 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
                 valor={resultado.cesantia}
                 dias={resultado.diasCesantia}
               />
+              <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs text-slate-600">
+                <span>Total bruto</span>
+                <span className="tabular-nums font-medium">{formatCRC(resultado.total)}</span>
+              </div>
+              {/*
+                Solo cotiza lo que es salario: pendiente y vacaciones. Preaviso
+                y cesantía son indemnizaciones; el aguinaldo está exento.
+              */}
+              <div className="flex items-center justify-between py-1 text-xs text-slate-600">
+                <span>
+                  Cuota obrera CCSS{' '}
+                  <span className="text-slate-400">(sobre salario pendiente y vacaciones)</span>
+                </span>
+                <span className="tabular-nums font-medium text-rose-700">
+                  − {formatCRC(resultado.deduccionesObreras)}
+                </span>
+              </div>
               <div className="mt-2 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
-                <span>Total</span>
-                <span className="tabular-nums">{formatCRC(resultado.total)}</span>
+                <span>Neto a entregar</span>
+                <span className="tabular-nums">{formatCRC(resultado.neto)}</span>
               </div>
             </div>
           )}

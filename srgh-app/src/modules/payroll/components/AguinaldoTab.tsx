@@ -52,9 +52,10 @@ export function AguinaldoTab({ anio, items, canWrite }: AguinaldoTabProps) {
       <div className="flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-800">
         <Gift className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <p>
-          Ciclo {anio - 1} - {anio} (diciembre a noviembre). El monto se calcula solo: salario bruto
-          de cada quincena pagada ÷ 12. Si un empleado no tiene pagos marcados como pagados todavía
-          en este ciclo, aparece en ₡0.
+          Ciclo {anio - 1} - {anio}: del 1 de diciembre de {anio - 1} al 30 de noviembre de {anio},
+          se paga en diciembre de {anio}. El monto se calcula solo: salario bruto de cada quincena
+          pagada ÷ 12. Si un empleado no tiene pagos marcados como pagados todavía en este ciclo,
+          aparece en ₡0. Las quincenas de diciembre ya cuentan para el ciclo siguiente.
         </p>
       </div>
 

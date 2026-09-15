@@ -1633,6 +1633,7 @@ export type Database = {
           liq_aguinaldo_proporcional: number
           liq_cesantia: number
           liq_created_at: string
+          liq_deducciones_obreras: number
           liq_dias_cesantia: number
           liq_dias_preaviso: number
           liq_dias_trabajados_mes: number
@@ -1642,6 +1643,7 @@ export type Database = {
           liq_historial_laboral_id: number
           liq_id: number
           liq_motivo_salida_id: number
+          liq_neto: number
           liq_observaciones: string | null
           liq_pagado: boolean
           liq_preaviso: number
@@ -1654,6 +1656,7 @@ export type Database = {
           liq_aguinaldo_proporcional?: number
           liq_cesantia?: number
           liq_created_at?: string
+          liq_deducciones_obreras?: number
           liq_dias_cesantia?: number
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
@@ -1663,6 +1666,7 @@ export type Database = {
           liq_historial_laboral_id: number
           liq_id?: never
           liq_motivo_salida_id: number
+          liq_neto?: number
           liq_observaciones?: string | null
           liq_pagado?: boolean
           liq_preaviso?: number
@@ -1675,6 +1679,7 @@ export type Database = {
           liq_aguinaldo_proporcional?: number
           liq_cesantia?: number
           liq_created_at?: string
+          liq_deducciones_obreras?: number
           liq_dias_cesantia?: number
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
@@ -1684,6 +1689,7 @@ export type Database = {
           liq_historial_laboral_id?: number
           liq_id?: never
           liq_motivo_salida_id?: number
+          liq_neto?: number
           liq_observaciones?: string | null
           liq_pagado?: boolean
           liq_preaviso?: number

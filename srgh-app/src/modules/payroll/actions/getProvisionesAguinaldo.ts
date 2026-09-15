@@ -3,7 +3,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
 import type { AguinaldoItem } from '@/modules/payroll/types'
 
 interface HistorialActivoRow {
@@ -27,18 +26,31 @@ export type GetProvisionesAguinaldoResult =
   { ok: true; data: { anio: number; items: AguinaldoItem[] } } | { ok: false; error: string }
 
 /**
- * Aguinaldo del ciclo actual (diciembre-noviembre) para todos los empleados
+ * Aguinaldo del ciclo que toca pagar este año, para todos los empleados
  * activos. El monto viene de sgrh_provisiones_anuales, que se va acumulando
  * automáticamente cada vez que se marca un pago de nómina como pagado (ver
  * marcarDetallePagado.ts) — si un empleado activo no tiene pagos marcados
  * todavía en el ciclo, aparece con monto ₡0, no desaparece de la lista.
+ *
+ * El ciclo N va del 1 de diciembre de N−1 al 30 de noviembre de N y se paga
+ * en diciembre de N. Por eso el ciclo que se muestra es el del AÑO EN CURSO,
+ * todo el año: de enero a noviembre es el que se está acumulando, y en
+ * diciembre es el que hay que pagar antes del día 20. Antes se usaba
+ * anioCicloAguinaldo(hoy), que en diciembre salta al ciclo siguiente: la
+ * pantalla mostraba una sola quincena acumulada justo el mes en que se paga,
+ * y el aguinaldo cerrado no aparecía por ningún lado.
+ *
+ * Las quincenas de diciembre sí acumulan en el ciclo siguiente (eso lo
+ * decide anioCicloAguinaldo al marcar cada pago); solo cambia qué ciclo se
+ * enseña.
  */
-export async function getProvisionesAguinaldo(): Promise<GetProvisionesAguinaldoResult> {
+export async function getProvisionesAguinaldo(
+  anioCiclo?: number
+): Promise<GetProvisionesAguinaldoResult> {
   await requirePermission(PERMISOS.NOMINA_READ)
 
   const supabase = await createClient()
-  const hoy = new Date()
-  const anio = anioCicloAguinaldo(hoy.getMonth() + 1, hoy.getFullYear())
+  const anio = anioCiclo ?? new Date().getFullYear()
 
   const { data: activos, error: errActivos } = await supabase
     .from('sgrh_historial_laboral')

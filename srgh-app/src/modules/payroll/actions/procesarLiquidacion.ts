@@ -5,11 +5,16 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
+  QUINCENAS_PROMEDIO_LIQUIDACION,
   anioCicloAguinaldo,
+  calcularAntiguedad,
   calcularLiquidacion,
-  calcularMesesAntiguedad,
+  calcularSalarioDiario,
+  diasSalarioPendiente,
 } from '@/modules/payroll/lib/liquidacion'
+import { esConceptoDelTrabajador } from '@/modules/payroll/lib/planilla'
 import { parseFechaLocal } from '@/modules/payroll/lib/fechas'
+import { periodoLabel } from '@/modules/payroll/lib/format'
 import {
   procesarLiquidacionSchema,
   type LiquidacionCalculada,
@@ -23,7 +28,8 @@ interface HistorialRow {
   lab_id: number
   lab_fecha_inicio: string
   lab_fecha_fin: string | null
-  lab_salario_real: number
+  lab_salario_base: number | null
+  lab_salario_real: number | null
 }
 
 interface MotivoRow {
@@ -42,7 +48,12 @@ interface DetalleHistoricoRow {
   } | null
 }
 
-/** Interpreta 'YYYY-MM-DD' en horario local (evita el corrimiento de Date por UTC). */
+interface ConceptoDeduccionRow {
+  con_tipo: string
+  con_tipo_calculo: string
+  con_porcentaje: number | null
+}
+
 /**
  * Clave comparable a nivel de quincena (no solo mes) para poder ordenar y
  * filtrar periodos correctamente cuando hay dos quincenas en el mismo mes.
@@ -51,19 +62,42 @@ function claveQuincenal(anio: number, mes: number, quincena: number): number {
   return (anio * 12 + mes) * 2 + (quincena - 1)
 }
 
+function claveDe(p: DetalleHistoricoRow): number {
+  const periodo = p.sgrh_nomina_periodo!
+  return claveQuincenal(periodo.npe_periodo_anio, periodo.npe_periodo_mes, periodo.npe_quincena)
+}
+
+function etiquetaDe(p: DetalleHistoricoRow): string {
+  const periodo = p.sgrh_nomina_periodo!
+  return periodoLabel(periodo.npe_periodo_mes, periodo.npe_periodo_anio, periodo.npe_quincena)
+}
+
 /**
  * Calcula la liquidación de un empleado y la deja guardada en
  * sgrh_liquidaciones (registro auditable, no se puede procesar dos veces
  * para el mismo contrato). También cierra el expediente laboral
  * (lab_fecha_fin, lab_motivo_salida_id).
  *
- * El salario diario usado en todos los rubros es el promedio bruto de los
- * últimos 6 pagos de nómina de este empleado ÷ 30 (o el salario del
- * contrato si todavía no tiene historial de pagos). El aguinaldo
- * proporcional se recalcula desde el historial real de pagos del ciclo
- * diciembre-noviembre en curso, no desde la provisión acumulada, para que
- * sea correcto aunque la provisión tenga huecos de antes de que existiera
- * este sistema.
+ * De dónde sale cada número:
+ *
+ *  - Salario diario: promedio de las quincenas PAGADAS de los últimos seis
+ *    meses (12 quincenas contando la de salida), entre 30. Art. 30 CT. Con
+ *    menos de dos quincenas pagadas se usa el salario del contrato y se
+ *    avisa.
+ *  - Salario pendiente: solo los días del mes de salida que no se pagaron
+ *    por planilla. Si la primera quincena ya se pagó, se deben los días
+ *    16 en adelante, no el mes entero.
+ *  - Aguinaldo proporcional: lo pagado por planilla desde el 1° de diciembre
+ *    anterior, más el salario pendiente de este finiquito, entre 12. Se
+ *    recalcula desde los pagos reales y no desde la provisión acumulada,
+ *    para que sea correcto aunque la provisión tenga huecos.
+ *  - Deducciones: cuota obrera del catálogo (CCSS) sobre salario pendiente y
+ *    vacaciones. Preaviso, cesantía y aguinaldo no cotizan.
+ *
+ * Solo cuentan las planillas ya pagadas. Una en borrador dentro de la
+ * ventana no es un monto real todavía, pero tampoco se ignora en silencio:
+ * se devuelve como advertencia para que se pague antes de cerrar el finiquito
+ * o se sepa que quedó fuera.
  */
 export async function procesarLiquidacion(
   input: ProcesarLiquidacionInput
@@ -80,7 +114,7 @@ export async function procesarLiquidacion(
 
   const { data: historial, error: errHistorial } = await supabase
     .from('sgrh_historial_laboral')
-    .select('lab_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_real')
+    .select('lab_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real')
     .eq('lab_id', data.historialLaboralId)
     .maybeSingle<HistorialRow>()
 
@@ -92,6 +126,15 @@ export async function procesarLiquidacion(
   }
   if (historial.lab_fecha_fin) {
     return { ok: false, error: 'Este empleado ya tiene una salida registrada.' }
+  }
+
+  const fechaSalida = parseFechaLocal(data.fechaSalida)
+  const fechaIngreso = parseFechaLocal(historial.lab_fecha_inicio)
+  if (fechaSalida.getTime() < fechaIngreso.getTime()) {
+    return {
+      ok: false,
+      error: `La fecha de salida es anterior a la de ingreso (${historial.lab_fecha_inicio}).`,
+    }
   }
 
   const { data: motivo, error: errMotivo } = await supabase
@@ -119,79 +162,115 @@ export async function procesarLiquidacion(
     return { ok: false, error: 'No se pudo cargar el historial de pagos del empleado.' }
   }
 
-  const fechaSalida = parseFechaLocal(data.fechaSalida)
-  const fechaIngreso = parseFechaLocal(historial.lab_fecha_inicio)
+  // La cuota obrera sale del catálogo, igual que en la planilla: no se quema
+  // el 10,83 % acá. Si el catálogo no tiene ninguna deducción porcentual, la
+  // liquidación sale sin deducciones y eso es decisión del catálogo.
+  const { data: conceptos, error: errConceptos } = await supabase
+    .from('sgrh_cat_conceptos_nomina')
+    .select('con_tipo, con_tipo_calculo, con_porcentaje')
+    .eq('con_activo', true)
+    .eq('con_tipo_calculo', 'porcentaje_deduccion_bruto')
+    .returns<ConceptoDeduccionRow[]>()
+
+  if (errConceptos) {
+    return { ok: false, error: 'No se pudo cargar el catálogo de conceptos de nómina.' }
+  }
+  const porcentajeDeduccionObrera = (conceptos ?? [])
+    .filter(esConceptoDelTrabajador)
+    .reduce((acc, c) => acc + (c.con_porcentaje ?? 0), 0)
+
   const anioSalida = fechaSalida.getFullYear()
   const mesSalida = fechaSalida.getMonth() + 1
+  const diaSalida = fechaSalida.getDate()
   // Las quincenas del sistema se parten por día 15 del mes.
-  const quincenaSalida = fechaSalida.getDate() <= 15 ? 1 : 2
+  const quincenaSalida = diaSalida <= 15 ? 1 : 2
   const claveSalida = claveQuincenal(anioSalida, mesSalida, quincenaSalida)
 
   const cicloAnio = anioCicloAguinaldo(mesSalida, anioSalida)
   // Diciembre del año anterior al cierre del ciclo, desde la 1ra quincena.
   const claveInicioCiclo = claveQuincenal(cicloAnio - 1, 12, 1)
+  // Seis meses hacia atrás contando la quincena de salida.
+  const claveInicioPromedio = claveSalida - (QUINCENAS_PROMEDIO_LIQUIDACION - 1)
 
-  // Solo cuentan las planillas ya pagadas: una en borrador o aprobada pero
-  // no pagada todavía no es un monto real devengado.
-  const pagosVisibles = (historico ?? []).filter(
-    (p) => p.sgrh_nomina_periodo !== null && p.ndt_pagado
-  )
+  const conPeriodo = (historico ?? []).filter((p) => p.sgrh_nomina_periodo !== null)
+  const hastaSalida = conPeriodo.filter((p) => claveDe(p) <= claveSalida)
+  const pagados = hastaSalida.filter((p) => p.ndt_pagado)
+  const sinPagar = hastaSalida.filter((p) => !p.ndt_pagado)
 
-  const sumaSalariosBrutosCicloAguinaldo = pagosVisibles
-    .filter((p) => {
-      const periodo = p.sgrh_nomina_periodo!
-      const clave = claveQuincenal(
-        periodo.npe_periodo_anio,
-        periodo.npe_periodo_mes,
-        periodo.npe_quincena
-      )
-      return clave >= claveInicioCiclo && clave <= claveSalida
-    })
+  const advertencias: string[] = []
+
+  const sumaSalariosBrutosCicloAguinaldo = pagados
+    .filter((p) => claveDe(p) >= claveInicioCiclo)
     .reduce((acc, p) => acc + p.ndt_salario_bruto, 0)
 
-  const ultimosSeis = pagosVisibles
-    .filter((p) => {
-      const periodo = p.sgrh_nomina_periodo!
-      const clave = claveQuincenal(
-        periodo.npe_periodo_anio,
-        periodo.npe_periodo_mes,
-        periodo.npe_quincena
-      )
-      return clave <= claveSalida
-    })
-    .sort((a, b) => {
-      const periodoA = a.sgrh_nomina_periodo!
-      const periodoB = b.sgrh_nomina_periodo!
-      const claveA = claveQuincenal(
-        periodoA.npe_periodo_anio,
-        periodoA.npe_periodo_mes,
-        periodoA.npe_quincena
-      )
-      const claveB = claveQuincenal(
-        periodoB.npe_periodo_anio,
-        periodoB.npe_periodo_mes,
-        periodoB.npe_quincena
-      )
-      return claveB - claveA
-    })
-    .slice(0, 6)
+  const brutosVentanaPromedio = pagados
+    .filter((p) => claveDe(p) >= claveInicioPromedio)
+    .map((p) => p.ndt_salario_bruto)
 
-  const salarioDiario =
-    ultimosSeis.length > 0
-      ? ultimosSeis.reduce((acc, p) => acc + p.ndt_salario_bruto, 0) / ultimosSeis.length / 30
-      : historial.lab_salario_real / 30
+  // Para el salario del contrato: lo que la planilla paga es lab_salario_base;
+  // lab_salario_real solo cuando el base no está.
+  const salarioContrato =
+    (historial.lab_salario_base ?? 0) > 0
+      ? historial.lab_salario_base!
+      : (historial.lab_salario_real ?? 0)
 
-  const mesesAntiguedad = calcularMesesAntiguedad(fechaIngreso, fechaSalida)
-  const diasTrabajadosMesActual = Math.min(fechaSalida.getDate(), 30)
+  const { salarioDiario, origen: origenSalario } = calcularSalarioDiario(
+    brutosVentanaPromedio,
+    salarioContrato
+  )
+  if (origenSalario === 'contrato') {
+    advertencias.push(
+      `No hay suficientes quincenas pagadas en los últimos seis meses para promediar: el salario diario salió del salario del contrato (₡${salarioContrato.toLocaleString('es-CR')} ÷ 30).`
+    )
+  }
+  if (salarioDiario <= 0) {
+    return {
+      ok: false,
+      error:
+        'No hay salario con qué calcular: el empleado no tiene quincenas pagadas y su contrato no tiene salario base.',
+    }
+  }
+
+  const clavePrimeraQuincenaMes = claveQuincenal(anioSalida, mesSalida, 1)
+  const primeraQuincenaPagada = pagados.some((p) => claveDe(p) === clavePrimeraQuincenaMes)
+  const quincenaDeSalidaPagada = pagados.some((p) => claveDe(p) === claveSalida)
+
+  const diasTrabajadosMesActual = diasSalarioPendiente({
+    diaSalida,
+    primeraQuincenaPagada,
+    quincenaDeSalidaPagada,
+  })
+  if (quincenaDeSalidaPagada) {
+    advertencias.push(
+      'La quincena de salida ya está marcada como pagada por planilla, así que el finiquito no incluye salario pendiente.'
+    )
+  }
+
+  // Lo que está en borrador no entra en ningún promedio ni en el aguinaldo,
+  // y nadie tiene por qué adivinarlo mirando el resultado.
+  if (sinPagar.length > 0) {
+    const etiquetas = sinPagar
+      .sort((a, b) => claveDe(a) - claveDe(b))
+      .map(etiquetaDe)
+      .slice(0, 4)
+    const resto = sinPagar.length > 4 ? ` y ${sinPagar.length - 4} más` : ''
+    advertencias.push(
+      `Hay ${sinPagar.length} quincena(s) sin marcar como pagadas (${etiquetas.join(', ')}${resto}). No entraron en el promedio ni en el aguinaldo: pagalas por planilla antes de cerrar el finiquito, o quedarán fuera.`
+    )
+  }
+
+  const antiguedad = calcularAntiguedad(fechaIngreso, fechaSalida)
 
   const resultado = calcularLiquidacion({
     salarioDiario,
     diasTrabajadosMesActual,
     sumaSalariosBrutosCicloAguinaldo,
     diasVacacionesPendientes: data.diasVacacionesPendientes,
-    mesesAntiguedad,
+    mesesAntiguedad: antiguedad.meses,
+    diasSobrantesAntiguedad: antiguedad.diasSobrantes,
     generaCesantia: motivo.mot_genera_cesantia,
     generaPreaviso: motivo.mot_genera_preaviso,
+    porcentajeDeduccionObrera,
   })
 
   const { data: inserted, error: errInsert } = await supabase
@@ -211,6 +290,9 @@ export async function procesarLiquidacion(
       liq_dias_cesantia: resultado.diasCesantia,
       liq_cesantia: resultado.cesantia,
       liq_total: resultado.total,
+      liq_deducciones_obreras: resultado.deduccionesObreras,
+      liq_neto: resultado.neto,
+      liq_observaciones: advertencias.length > 0 ? advertencias.join('\n') : null,
     })
     .select('liq_id')
     .single<{ liq_id: number }>()
@@ -257,6 +339,8 @@ export async function procesarLiquidacion(
     ok: true,
     data: {
       liqId: inserted.liq_id,
+      salarioDiario,
+      diasSalarioPendiente: diasTrabajadosMesActual,
       salarioProporcional: resultado.salarioProporcional,
       aguinaldoProporcional: resultado.aguinaldoProporcional,
       vacacionesPagadas: resultado.vacacionesPagadas,
@@ -265,6 +349,9 @@ export async function procesarLiquidacion(
       diasCesantia: resultado.diasCesantia,
       cesantia: resultado.cesantia,
       total: resultado.total,
+      deduccionesObreras: resultado.deduccionesObreras,
+      neto: resultado.neto,
+      advertencias,
     },
   }
 }

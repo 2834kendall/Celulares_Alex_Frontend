@@ -12,6 +12,7 @@ function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem
     fechaSalida: '2026-07-15',
     motivoNombre: 'Renuncia',
     total: 300000,
+    neto: 300000,
     pagado: false,
     createdAt: '2026-07-15T10:00:00',
     ...overrides,
