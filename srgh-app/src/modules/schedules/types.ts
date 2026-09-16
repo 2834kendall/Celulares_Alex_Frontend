@@ -145,6 +145,8 @@ export type AssignCustomScheduleBulkInput = z.input<typeof assignCustomScheduleB
 const pasteDaySchema = z.object({
   assignmentId: z.number().int().positive().nullable(),
   date: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+  // Sucursal de este dia; puede rotar respecto a la de casa del colaborador.
+  branchId: z.number().int().positive(),
   scheduleId: z.number().int().positive().nullable(),
   isDayOff: z.boolean(),
   customStartTime: z
@@ -176,7 +178,6 @@ export const pasteWeeklyScheduleSchema = z.object({
       z.object({
         employmentHistoryId: z.number().int().positive(),
         employeeId: z.number().int().positive(),
-        branchId: z.number().int().positive(),
         days: z.array(pasteDaySchema).min(1).max(7),
       })
     )

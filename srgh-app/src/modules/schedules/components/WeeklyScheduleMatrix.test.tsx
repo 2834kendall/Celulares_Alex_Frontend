@@ -8,8 +8,13 @@ import { clearDayAssignment } from '@/modules/schedules/actions/clearDayAssignme
 import { pasteWeeklySchedule } from '@/modules/schedules/actions/pasteWeeklySchedule'
 import { getScheduleSuggestion } from '@/modules/schedules/actions/getScheduleSuggestion'
 import { getWeekDates } from '@/modules/schedules/lib/week'
-import type { DayAssignment, EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
+import type {
+  DayAssignment,
+  EmployeeWeekRow,
+  SucursalOption,
+} from '@/modules/schedules/actions/getWeeklySchedule'
 import type { ScheduleRow } from '@/modules/schedules/types'
+import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
 
 const push = vi.fn()
 
@@ -55,6 +60,11 @@ const schedules: ScheduleRow[] = [
   { hor_id: 1, hor_nombre: 'Turno A', hor_activo: true } as ScheduleRow,
 ]
 
+const sucursales: SucursalOption[] = [
+  { id: 100, nombre: 'Sucursal Central' },
+  { id: 200, nombre: 'Sucursal Norte' },
+]
+
 function makeDays(
   overrides: Partial<Record<number, Partial<DayAssignment>>> = {}
 ): DayAssignment[] {
@@ -67,6 +77,8 @@ function makeDays(
     endTime: null,
     isDayOff: false,
     hours: 0,
+    branchId: 100,
+    branchName: 'Sucursal Central',
     ...overrides[index],
   }))
 }
@@ -86,14 +98,20 @@ function makeRow(overrides: Partial<EmployeeWeekRow> = {}): EmployeeWeekRow {
   }
 }
 
-function renderMatrix(rows: EmployeeWeekRow[], canWrite = true) {
+function renderMatrix(
+  rows: EmployeeWeekRow[],
+  canWrite = true,
+  ausencias: AusenciaOverlayEntry[] = []
+) {
   return render(
     <WeeklyScheduleMatrix
       weekStartISO={WEEK_START}
       weekDates={WEEK_DATES}
       rows={rows}
+      sucursales={sucursales}
       schedules={schedules}
       canWrite={canWrite}
+      ausencias={ausencias}
     />
   )
 }
@@ -120,6 +138,107 @@ describe('<WeeklyScheduleMatrix />', () => {
   it('muestra el total semanal formateado', () => {
     renderMatrix([makeRow({ weeklyTotal: 7.5 })])
     expect(screen.getAllByText('7.5 Hrs').length).toBeGreaterThan(0)
+  })
+
+  describe('alerta de colaboradores sin horario', () => {
+    // Los 7 dias con asignacion real, sin huecos.
+    function fullyAssignedDays(): DayAssignment[] {
+      return makeDays(
+        Object.fromEntries(
+          WEEK_DATES.map((_, index) => [
+            index,
+            { assignmentId: index + 1, scheduleId: 1, scheduleName: 'Turno A' },
+          ])
+        )
+      )
+    }
+
+    it('avisa cuando un colaborador tiene al menos un dia sin horario', () => {
+      // makeRow() por defecto: los 7 dias sin assignmentId (el caso comun en un
+      // wizard recien creado o una semana que nadie llego a programar).
+      renderMatrix([makeRow()])
+
+      expect(screen.getByText('1 colaborador sin horario asignado esta semana')).toBeInTheDocument()
+      expect(screen.getAllByText(/Ana Perez/).length).toBeGreaterThan(0)
+    })
+
+    it('no avisa cuando el colaborador tiene los 7 dias cubiertos', () => {
+      renderMatrix([makeRow({ days: fullyAssignedDays() })])
+
+      expect(screen.queryByText(/sin horario asignado esta semana/)).not.toBeInTheDocument()
+    })
+
+    it('un dia sin horario pero cubierto por una ausencia no cuenta como hueco', () => {
+      // Dia 0 sin assignmentId pero cubierto por una incapacidad: no es un hueco.
+      const days = fullyAssignedDays()
+      days[0] = { ...days[0], assignmentId: null, scheduleId: null }
+
+      renderMatrix([makeRow({ days })], true, [
+        {
+          employmentHistoryId: 1,
+          date: WEEK_DATES[0],
+          tipoNombre: 'Incapacidad',
+          isIntraday: false,
+        },
+      ])
+
+      expect(screen.queryByText(/sin horario asignado esta semana/)).not.toBeInTheDocument()
+    })
+
+    it('pluraliza cuando hay mas de un colaborador con huecos', () => {
+      renderMatrix([
+        makeRow({ employmentHistoryId: 1, fullName: 'Ana Perez' }),
+        makeRow({ employmentHistoryId: 2, fullName: 'Luis Mora' }),
+      ])
+
+      expect(
+        screen.getByText('2 colaboradores sin horario asignado esta semana')
+      ).toBeInTheDocument()
+    })
+
+    it('clic en el aviso filtra la lista a solo quienes tienen huecos, y de nuevo la restaura', async () => {
+      const user = userEvent.setup()
+      renderMatrix([
+        makeRow({ employmentHistoryId: 1, fullName: 'Ana Perez' }),
+        makeRow({ employmentHistoryId: 2, fullName: 'Luis Mora', days: fullyAssignedDays() }),
+      ])
+
+      expect(screen.getAllByText('Luis Mora').length).toBeGreaterThan(0)
+
+      await user.click(screen.getByRole('button', { name: /sin horario asignado esta semana/i }))
+
+      expect(screen.getAllByText('Ana Perez').length).toBeGreaterThan(0)
+      expect(screen.queryAllByText('Luis Mora')).toHaveLength(0)
+
+      await user.click(screen.getByRole('button', { name: /mostrando solo a ellos/i }))
+
+      expect(screen.getAllByText('Luis Mora').length).toBeGreaterThan(0)
+    })
+
+    it('el boton "X" descarta el aviso sin quitar a nadie de la lista', async () => {
+      const user = userEvent.setup()
+      renderMatrix([makeRow()])
+
+      await user.click(screen.getByRole('button', { name: 'Descartar este aviso' }))
+
+      expect(screen.queryByText(/sin horario asignado esta semana/)).not.toBeInTheDocument()
+      expect(screen.getAllByText('Ana Perez').length).toBeGreaterThan(0)
+    })
+
+    it('descartar el aviso tambien apaga el filtro si estaba activo', async () => {
+      const user = userEvent.setup()
+      renderMatrix([
+        makeRow({ employmentHistoryId: 1, fullName: 'Ana Perez' }),
+        makeRow({ employmentHistoryId: 2, fullName: 'Luis Mora', days: fullyAssignedDays() }),
+      ])
+
+      await user.click(screen.getByRole('button', { name: /sin horario asignado esta semana/i }))
+      expect(screen.queryAllByText('Luis Mora')).toHaveLength(0)
+
+      await user.click(screen.getByRole('button', { name: 'Descartar este aviso' }))
+
+      expect(screen.getAllByText('Luis Mora').length).toBeGreaterThan(0)
+    })
   })
 
   it('el calendario navega a la semana que contiene la fecha elegida', async () => {
@@ -177,6 +296,43 @@ describe('<WeeklyScheduleMatrix />', () => {
     await waitFor(() =>
       expect(mockAssignDaySchedule).toHaveBeenCalledWith(
         expect.objectContaining({ scheduleId: 1, isDayOff: false })
+      )
+    )
+  })
+
+  it('muestra el icono de sucursal solo en dias con una asignacion real', () => {
+    renderMatrix([
+      makeRow({
+        days: makeDays({
+          0: { scheduleId: 1, scheduleName: 'Turno A', assignmentId: 7 },
+          // Martes (index 1) sin asignar: no tiene sentido elegir sucursal.
+        }),
+      }),
+    ])
+
+    expect(screen.getAllByLabelText('Sucursal de Ana Perez el Lunes').length).toBeGreaterThan(0)
+    expect(screen.queryAllByLabelText('Sucursal de Ana Perez el Martes')).toHaveLength(0)
+  })
+
+  it('cambiar la sucursal de una celda asignada conserva el horario y llama a la action', async () => {
+    mockAssignDaySchedule.mockResolvedValue({ ok: true })
+    renderMatrix([
+      makeRow({
+        days: makeDays({ 0: { scheduleId: 1, scheduleName: 'Turno A', assignmentId: 7 } }),
+      }),
+    ])
+
+    const [branchSelect] = screen.getAllByLabelText('Sucursal de Ana Perez el Lunes')
+    await userEvent.selectOptions(branchSelect, '200')
+
+    await waitFor(() =>
+      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assignmentId: 7,
+          branchId: 200,
+          scheduleId: 1,
+          isDayOff: false,
+        })
       )
     )
   })
@@ -287,10 +443,10 @@ describe('<WeeklyScheduleMatrix />', () => {
           expect.objectContaining({
             employmentHistoryId: 1,
             employeeId: 10,
-            branchId: 100,
             days: expect.arrayContaining([
               expect.objectContaining({
                 date: WEEK_DATES[0],
+                branchId: 100,
                 scheduleId: 1,
                 isDayOff: false,
               }),
@@ -324,7 +480,12 @@ describe('<WeeklyScheduleMatrix />', () => {
           expect.objectContaining({
             employmentHistoryId: 1,
             days: [
-              expect.objectContaining({ date: WEEK_DATES[0], scheduleId: 1, isDayOff: false }),
+              expect.objectContaining({
+                date: WEEK_DATES[0],
+                branchId: 100,
+                scheduleId: 1,
+                isDayOff: false,
+              }),
             ],
           }),
         ],

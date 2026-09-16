@@ -10,6 +10,7 @@ import {
   type PasteWeeklyScheduleInput,
 } from '@/modules/schedules/types'
 import { upsertDayAssignment } from '@/modules/schedules/lib/dayAssignment'
+import { branchesBelongToEmpresa } from '@/modules/schedules/lib/validateBranches'
 
 export type PasteWeeklyScheduleResult = { ok: true } | { ok: false; error: string }
 
@@ -29,9 +30,22 @@ export async function pasteWeeklySchedule(
   }
 
   // RLS policies on sgrh_programacion_semanal require ASISTENCIA_WRITE.
-  await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const empresaId = (claims.app_metadata as { empresa_id?: number })?.empresa_id
+
+  if (!empresaId) {
+    return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
+  }
 
   const supabase = await createClient()
+
+  const branchIds = parsed.data.employees.flatMap((employee) =>
+    employee.days.map((day) => day.branchId)
+  )
+
+  if (!(await branchesBelongToEmpresa(supabase, empresaId, branchIds))) {
+    return { ok: false, error: 'La sucursal seleccionada no es válida para tu empresa.' }
+  }
 
   const writes = parsed.data.employees.flatMap((employee) =>
     employee.days.map((day) => {
@@ -47,7 +61,7 @@ export async function pasteWeeklySchedule(
 
       return upsertDayAssignment(supabase, day.assignmentId, {
         prg_empleado_id: employee.employeeId,
-        prg_sucursal_id: employee.branchId,
+        prg_sucursal_id: day.branchId,
         prg_historial_laboral_id: employee.employmentHistoryId,
         prg_horario_id: day.isDayOff || isCustom ? null : day.scheduleId,
         prg_fecha: day.date,

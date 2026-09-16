@@ -135,13 +135,9 @@ END;
 $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public;
 
 -- ---------------------------------------------------------------------
--- 2. Helpers de RLS: sucursal_id (escalar) -> sucursal_ids (array)
+-- 2. get_sucursal_ids(): nombre nuevo, va primero porque las policies que
+--    la referencian exigen que ya exista al crearse.
 -- ---------------------------------------------------------------------
-DROP FUNCTION IF EXISTS public.get_sucursal_id();
-
--- Sucursales a las que está adscrito el usuario, o NULL si opera a nivel
--- empresa. Reemplaza a get_sucursal_id(): incluso un usuario con una sola
--- sucursal asignada ahora se lee como un array de un elemento.
 CREATE OR REPLACE FUNCTION public.get_sucursal_ids()
 RETURNS int[] AS $$
   SELECT CASE
@@ -153,25 +149,6 @@ RETURNS int[] AS $$
   END;
 $$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
 
--- ¿Puede el usuario actual ver registros de esta sucursal?
---
--- Misma idea que antes (empresa + sucursal van siempre juntas), pero la
--- restricción de sucursal ahora es "pertenece al conjunto asignado" en
--- vez de "es exactamente la mía".
-CREATE OR REPLACE FUNCTION public.sucursal_visible(p_sucursal_id int)
-RETURNS boolean AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.sgrh_sucursales
-    WHERE suc_id = p_sucursal_id
-      AND suc_empresa_id = (SELECT public.get_empresa_id())
-  )
-  AND (
-    public.get_sucursal_ids() IS NULL
-    OR p_sucursal_id = ANY (public.get_sucursal_ids())
-  );
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
 REVOKE EXECUTE ON FUNCTION public.get_sucursal_ids ()
 FROM PUBLIC, anon, authenticated;
 
@@ -179,8 +156,8 @@ GRANT EXECUTE ON FUNCTION public.get_sucursal_ids ()
 TO authenticated;
 
 -- ---------------------------------------------------------------------
--- 3. Único call site que leía get_sucursal_id() directo (no vía
---    sucursal_visible): biometria_select, sobre sgrh_biometria_empleado.
+-- 3. biometria_select: unico call site directo de get_sucursal_id(). Va
+--    antes del DROP de abajo, o Postgres no deja borrar la funcion (2BP01).
 -- ---------------------------------------------------------------------
 DROP POLICY IF EXISTS "biometria_select" ON public.sgrh_biometria_empleado;
 CREATE POLICY "biometria_select" ON public.sgrh_biometria_empleado
@@ -206,3 +183,25 @@ CREATE POLICY "biometria_select" ON public.sgrh_biometria_empleado
       )
     )
   );
+
+-- Ahora sí: ninguna policy activa depende ya de get_sucursal_id().
+DROP FUNCTION IF EXISTS public.get_sucursal_id();
+
+-- ¿Puede el usuario actual ver registros de esta sucursal?
+--
+-- Misma idea que antes (empresa + sucursal van siempre juntas), pero la
+-- restricción de sucursal ahora es "pertenece al conjunto asignado" en
+-- vez de "es exactamente la mía".
+CREATE OR REPLACE FUNCTION public.sucursal_visible(p_sucursal_id int)
+RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.sgrh_sucursales
+    WHERE suc_id = p_sucursal_id
+      AND suc_empresa_id = (SELECT public.get_empresa_id())
+  )
+  AND (
+    public.get_sucursal_ids() IS NULL
+    OR p_sucursal_id = ANY (public.get_sucursal_ids())
+  );
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;

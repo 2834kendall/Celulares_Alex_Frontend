@@ -6,7 +6,8 @@ import { TimeSelect } from '@/components/ui/TimeSelect'
 import { WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
 import { IconButton } from '@/components/ui/IconButton'
 import { Button } from '@/components/ui/Button'
-import { LABEL } from '@/components/ui/styles'
+import { LABEL, SELECT } from '@/components/ui/styles'
+import type { SucursalOption } from '@/modules/schedules/actions/getWeeklySchedule'
 
 export interface CustomHoursValues {
   startTime: string
@@ -17,6 +18,8 @@ export interface CustomHoursValues {
   breakEnd: string | null
   /** Fechas ISO de la semana visible a las que se debe aplicar este horario. */
   applyToDates: string[]
+  // Una sola sucursal para todos los dias marcados en esta confirmacion.
+  branchId: number
 }
 
 interface CustomHoursModalProps {
@@ -34,6 +37,9 @@ interface CustomHoursModalProps {
   initialLunchEnd?: string | null
   initialBreakStart?: string | null
   initialBreakEnd?: string | null
+  // Sucursales de la empresa; el selector solo se rinde si hay mas de una.
+  sucursales: SucursalOption[]
+  initialBranchId: number
   onClose: () => void
   onConfirm: (values: CustomHoursValues) => Promise<void> | void
 }
@@ -107,11 +113,14 @@ export function CustomHoursModal({
   initialLunchEnd,
   initialBreakStart,
   initialBreakEnd,
+  sucursales,
+  initialBranchId,
   onClose,
   onConfirm,
 }: CustomHoursModalProps) {
   const [startTime, setStartTime] = useState(initialStartTime)
   const [endTime, setEndTime] = useState(initialEndTime)
+  const [branchId, setBranchId] = useState(initialBranchId)
 
   const [hasLunch, setHasLunch] = useState(Boolean(initialLunchStart && initialLunchEnd))
   const [lunchStart, setLunchStart] = useState(initialLunchStart ?? '12:00')
@@ -145,6 +154,7 @@ export function CustomHoursModal({
       breakStart: hasBreak ? breakStart : null,
       breakEnd: hasBreak ? breakEnd : null,
       applyToDates,
+      branchId,
     })
     setIsSaving(false)
   }
@@ -216,6 +226,25 @@ export function CustomHoursModal({
                   )
                 })}
               </div>
+              {sucursales.length > 1 && (
+                <div className="mt-3">
+                  <label className={LABEL} htmlFor="custom-branch">
+                    Sucursal (aplica a todos los días marcados)
+                  </label>
+                  <select
+                    id="custom-branch"
+                    className={SELECT}
+                    value={branchId}
+                    onChange={(event) => setBranchId(Number(event.target.value))}
+                  >
+                    {sucursales.map((sucursal) => (
+                      <option key={sucursal.id} value={sucursal.id}>
+                        {sucursal.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {applyToDates.length === 0 && (
                 <p className="mt-1 text-[10px] text-rose-600">Seleccione al menos un día.</p>
               )}
