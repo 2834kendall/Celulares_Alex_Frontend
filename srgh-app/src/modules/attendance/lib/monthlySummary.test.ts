@@ -10,7 +10,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
   it('devuelve vacio y no consulta el resto si no hay colaboradores', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: { data: [], error: null },
     })
 
@@ -44,7 +44,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
   it('devuelve error si falla la carga de colaboradores', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
     })
 
@@ -61,7 +61,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
   it('junta nombre, tolerancia y hora real de entrada por dia, con la fecha, filtrando por la sucursal fija del usuario', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: {
         data: [
           {
@@ -136,12 +136,12 @@ describe('gatherMonthlyAttendanceDays', () => {
     const historialCall = client.from.mock.results.find(
       (_r, i) => client.from.mock.calls[i][0] === 'sgrh_historial_laboral'
     )!.value
-    expect(historialCall.eq).toHaveBeenCalledWith('lab_sucursal_id', 100)
+    expect(historialCall.in).toHaveBeenCalledWith('lab_sucursal_id', [100])
   })
 
   it('ignora dias futuros: un horario ya asignado para manana no cuenta como ausencia', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: {
         data: [
           {
@@ -192,7 +192,7 @@ describe('gatherMonthlyAttendanceDays', () => {
     vi.setSystemTime(new Date('2026-07-31T14:05:00.000Z')) // 08:05 CR (UTC-6)
 
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: {
         data: [
           {
@@ -242,7 +242,7 @@ describe('gatherMonthlyAttendanceDays', () => {
     vi.setSystemTime(new Date('2026-07-31T17:10:00.000Z')) // 11:10 CR (UTC-6)
 
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: {
         data: [
           {
@@ -305,7 +305,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
   it('marca como justificados los dias cubiertos por una ausencia aprobada, recortada al mes', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: {
         data: [
           {
@@ -363,7 +363,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
   it('devuelve error si falla la consulta de ausencias, en vez de contarlas como inasistencia', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: {
         data: [
           {
@@ -397,7 +397,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
   it('usa "Sin nombre" si el empleado no viene en el join', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100, sgrh_empleados: null }],
         error: null,
@@ -424,7 +424,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
   it('devuelve error generico si falla alguna de las consultas del mes', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100, sgrh_empleados: null }],
         error: null,

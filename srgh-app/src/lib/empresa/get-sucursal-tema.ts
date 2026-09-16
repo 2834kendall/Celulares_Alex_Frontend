@@ -25,14 +25,20 @@ interface AsignacionRow {
 }
 
 /**
- * Tema (nombre + colores de apariencia) de la sucursal fija del usuario
+ * Tema (nombre + colores de apariencia) de una sucursal del usuario
  * autenticado. No viene en el JWT — el hook de Auth solo inyecta
- * usr_id/emp_id/rol/empresa_id/permisos — asi que se consulta en vivo. RLS
- * (`uer_select`) siempre permite ver la propia fila, sin importar el rol.
+ * usr_id/emp_id/rol/empresa_id/permisos/sucursal_ids (ids, sin nombre ni
+ * colores) — asi que se consulta en vivo. RLS (`uer_select`) siempre
+ * permite ver las propias filas, sin importar el rol.
+ *
+ * Un usuario a cargo de varias sucursales puede tener varias filas activas:
+ * el tema es puramente cosmetico (nombre + colores del shell), asi que se
+ * toma la primera sin mas criterio — no hay una nocion de "sucursal
+ * principal" que decidir aqui.
  *
  * Devuelve el tema "vacio" (sin id, sin colores) cuando el usuario no tiene
- * una sucursal fija asignada (tipico de ADMIN/RRHH, que operan sobre toda
- * la empresa) o si la consulta falla — en ambos casos el shell usa los
+ * ninguna sucursal fija asignada (tipico de ADMIN/RRHH, que operan sobre
+ * toda la empresa) o si la consulta falla — en ambos casos el shell usa los
  * colores por defecto del sistema.
  */
 export async function getSucursalTema(usrId: number | null | undefined): Promise<SucursalTema> {
@@ -46,6 +52,9 @@ export async function getSucursalTema(usrId: number | null | undefined): Promise
     )
     .eq('uer_usuario_id', usrId)
     .eq('uer_activo', true)
+    .not('uer_sucursal_id', 'is', null)
+    .order('uer_id', { ascending: true })
+    .limit(1)
     .maybeSingle<AsignacionRow>()
 
   if (error || !data?.sgrh_sucursales) return SIN_TEMA

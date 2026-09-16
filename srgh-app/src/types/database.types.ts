@@ -635,6 +635,7 @@ export type Database = {
       sgrh_cat_horarios: {
         Row: {
           hor_activo: boolean
+          hor_color: string | null
           hor_duracion_almuerzo_min: number
           hor_duracion_break_min: number
           hor_empresa_id: number
@@ -650,6 +651,7 @@ export type Database = {
         }
         Insert: {
           hor_activo?: boolean
+          hor_color?: string | null
           hor_duracion_almuerzo_min?: number
           hor_duracion_break_min?: number
           hor_empresa_id: number
@@ -665,6 +667,7 @@ export type Database = {
         }
         Update: {
           hor_activo?: boolean
+          hor_color?: string | null
           hor_duracion_almuerzo_min?: number
           hor_duracion_break_min?: number
           hor_empresa_id?: number
@@ -2649,7 +2652,7 @@ export type Database = {
       get_emp_id: { Args: never; Returns: number }
       get_empresa_id: { Args: never; Returns: number }
       get_rol: { Args: never; Returns: string }
-      get_sucursal_id: { Args: never; Returns: number }
+      get_sucursal_ids: { Args: never; Returns: number[] }
       get_usr_id: { Args: never; Returns: number }
       sucursal_visible: { Args: { p_sucursal_id: number }; Returns: boolean }
       tiene_permiso: { Args: { p_codigo: string }; Returns: boolean }

@@ -18,7 +18,7 @@ const CLAIMS = { app_metadata: { empresa_id: 1 } } as unknown as Awaited<
   ReturnType<typeof requirePermission>
 >
 
-const UER_OK = { data: { uer_id: 55 }, error: null }
+const UER_OK = { data: [{ uer_id: 55 }], error: null }
 const USUARIO_OK = { data: { usr_auth_id: 'auth-ana' }, error: null }
 
 function mockAdmin(
@@ -84,9 +84,24 @@ describe('setUserActive (server action)', () => {
 
     const uerUpdateBuilder = admin.from.mock.results[3].value
     expect(uerUpdateBuilder.update).toHaveBeenCalledWith({ uer_activo: false })
-    expect(uerUpdateBuilder.eq).toHaveBeenCalledWith('uer_id', 55)
+    expect(uerUpdateBuilder.in).toHaveBeenCalledWith('uer_id', [55])
 
     expect(mockRevalidatePath).toHaveBeenCalledWith('/employees')
+  })
+
+  it('desactiva TODAS las filas uer de un usuario a cargo de varias sucursales', async () => {
+    const admin = mockAdmin({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_id: 55 }, { uer_id: 56 }], error: null },
+      sgrh_usuarios: USUARIO_OK,
+    })
+
+    const result = await setUserActive(7, false)
+
+    expect(result).toEqual({ ok: true })
+
+    const uerUpdateBuilder = admin.from.mock.results[3].value
+    expect(uerUpdateBuilder.update).toHaveBeenCalledWith({ uer_activo: false })
+    expect(uerUpdateBuilder.in).toHaveBeenCalledWith('uer_id', [55, 56])
   })
 
   it('reactivar levanta el ban y enciende los flags', async () => {

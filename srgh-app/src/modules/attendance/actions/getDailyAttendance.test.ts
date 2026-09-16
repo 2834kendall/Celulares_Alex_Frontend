@@ -33,7 +33,7 @@ describe('getDailyAttendance (server action)', () => {
   it('devuelve error si falla la carga del historial laboral', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
@@ -45,7 +45,7 @@ describe('getDailyAttendance (server action)', () => {
 
   it('no consulta programacion ni marcas cuando no hay colaboradores activos', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
@@ -61,7 +61,7 @@ describe('getDailyAttendance (server action)', () => {
   it('cruza marcas y programacion, calculando la diferencia solo en la entrada', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: {
           data: [
             {
@@ -133,7 +133,7 @@ describe('getDailyAttendance (server action)', () => {
     // con 'T' al leerlo — la tabla mostraba "2026-" en vez de la hora.
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: {
           data: [
             {
@@ -177,7 +177,7 @@ describe('getDailyAttendance (server action)', () => {
   it('ignora una marca cuyo tipo no calza con el vocabulario valido', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: {
           data: [
             {
@@ -220,7 +220,7 @@ describe('getDailyAttendance (server action)', () => {
 
   it('sin sucursal asignada al gerente, no filtra el historial por sucursal', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
       sgrh_historial_laboral: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(

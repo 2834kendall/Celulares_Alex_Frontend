@@ -18,11 +18,15 @@ function makeDay(date: string, overrides: Partial<MyDayAssignment> = {}): MyDayA
     date,
     isDayOff: false,
     isHoliday: false,
+    scheduleId: null,
     scheduleName: null,
+    scheduleColor: null,
+    isCustom: false,
     startTime: null,
     endTime: null,
     hours: 0,
     observaciones: null,
+    branchName: null,
     ...overrides,
   }
 }
@@ -32,6 +36,7 @@ describe('MyScheduleView', () => {
     const days = WEEK_DATES.map((date, i) =>
       i === 1
         ? makeDay(date, {
+            scheduleId: 1,
             scheduleName: 'Turno A',
             startTime: '08:00:00',
             endTime: '17:00:00',
@@ -51,10 +56,37 @@ describe('MyScheduleView', () => {
 
     expect(screen.getByText('Turno A')).toBeInTheDocument()
     expect(screen.getByText('08:00 - 17:00')).toBeInTheDocument()
-    expect(screen.getByText('8')).toBeInTheDocument()
+    // Aparece dos veces: la etiqueta del dia y el total semanal (ambos 8 en este caso).
+    expect(screen.getAllByText('8 h')).toHaveLength(2)
   })
 
-  it('marca dia libre y feriado con su badge, sin mostrar horario', () => {
+  it('muestra la sucursal del dia cuando el turno la trae', () => {
+    const days = WEEK_DATES.map((date, i) =>
+      i === 1
+        ? makeDay(date, {
+            scheduleId: 1,
+            scheduleName: 'Turno A',
+            startTime: '08:00:00',
+            endTime: '17:00:00',
+            hours: 8,
+            branchName: 'Sucursal Norte',
+          })
+        : makeDay(date)
+    )
+
+    render(
+      <MyScheduleView
+        weekStartISO={WEEK_DATES[0]}
+        weekDates={WEEK_DATES}
+        days={days}
+        weeklyTotal={8}
+      />
+    )
+
+    expect(screen.getByText('Sucursal Norte')).toBeInTheDocument()
+  })
+
+  it('marca dia libre con el rayado y feriado con su badge, sin mostrar horario', () => {
     const days = WEEK_DATES.map((date, i) => {
       if (i === 0) return makeDay(date, { isDayOff: true })
       if (i === 1) return makeDay(date, { isHoliday: true, observaciones: 'Feriado pagado' })
@@ -70,7 +102,8 @@ describe('MyScheduleView', () => {
       />
     )
 
-    expect(screen.getByText('Día libre')).toBeInTheDocument()
+    // El dia libre se raya como en la matriz de gestion (mismo lenguaje visual).
+    expect(screen.getByText('Descanso')).toBeInTheDocument()
     expect(screen.getByText('Feriado')).toBeInTheDocument()
     expect(screen.getByText('Feriado pagado')).toBeInTheDocument()
   })
@@ -90,9 +123,9 @@ describe('MyScheduleView', () => {
     expect(screen.getAllByText('Sin asignar')).toHaveLength(7)
   })
 
-  it('muestra el total semanal en el pie de la tabla', () => {
+  it('muestra el total semanal en el pie', () => {
     const days = WEEK_DATES.map((date, i) =>
-      i < 5 ? makeDay(date, { hours: 8, scheduleName: 'Turno A' }) : makeDay(date)
+      i < 5 ? makeDay(date, { hours: 8, scheduleId: 1, scheduleName: 'Turno A' }) : makeDay(date)
     )
 
     render(

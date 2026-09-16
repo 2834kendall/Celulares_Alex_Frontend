@@ -54,9 +54,23 @@ describe('getWeeklySchedule (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los colaboradores.' })
   })
 
+  it('devuelve error si falla la carga de sucursales', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: { data: [], error: null },
+        sgrh_sucursales: { data: null, error: { message: 'boom' } },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result).toEqual({ ok: false, error: 'No se pudieron cargar las sucursales.' })
+  })
+
   it('no consulta programacion cuando no hay colaboradores activos', async () => {
     const client = createSupabaseClientMock({
       sgrh_historial_laboral: { data: [], error: null },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_nombre: 'Central' }], error: null },
     })
     mockCreateClient.mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>
@@ -64,9 +78,15 @@ describe('getWeeklySchedule (server action)', () => {
 
     const result = await getWeeklySchedule(WEEK_START)
 
-    expect(result).toEqual({ ok: true, weekDates: WEEK_DATES, data: [] })
-    expect(client.from).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({
+      ok: true,
+      weekDates: WEEK_DATES,
+      data: [],
+      sucursales: [{ id: 100, nombre: 'Central' }],
+    })
+    expect(client.from).toHaveBeenCalledTimes(2)
     expect(client.from).toHaveBeenCalledWith('sgrh_historial_laboral')
+    expect(client.from).toHaveBeenCalledWith('sgrh_sucursales')
   })
 
   it('devuelve error si falla la carga de la programacion semanal', async () => {
@@ -84,6 +104,7 @@ describe('getWeeklySchedule (server action)', () => {
           ],
           error: null,
         },
+        sgrh_sucursales: { data: [], error: null },
         sgrh_programacion_semanal: { data: null, error: { message: 'boom' } },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
@@ -109,7 +130,15 @@ describe('getWeeklySchedule (server action)', () => {
                 emp_apellido_2: null,
               },
               sgrh_cat_puestos: { pue_nombre: 'Cajera' },
+              sgrh_sucursales: { suc_id: 100, suc_nombre: 'Central' },
             },
+          ],
+          error: null,
+        },
+        sgrh_sucursales: {
+          data: [
+            { suc_id: 100, suc_nombre: 'Central' },
+            { suc_id: 200, suc_nombre: 'Norte' },
           ],
           error: null,
         },
@@ -121,6 +150,8 @@ describe('getWeeklySchedule (server action)', () => {
               prg_fecha: '2026-01-06',
               prg_es_dia_libre: false,
               prg_horario_id: 5,
+              prg_sucursal_id: 100,
+              sgrh_sucursales: { suc_id: 100, suc_nombre: 'Central' },
               sgrh_cat_horarios: {
                 hor_id: 5,
                 hor_nombre: 'Turno A',
@@ -144,6 +175,8 @@ describe('getWeeklySchedule (server action)', () => {
               prg_fecha: '2026-01-07',
               prg_es_dia_libre: true,
               prg_horario_id: null,
+              prg_sucursal_id: 100,
+              sgrh_sucursales: { suc_id: 100, suc_nombre: 'Central' },
               sgrh_cat_horarios: null,
               prg_hora_entrada_custom: null,
               prg_hora_salida_custom: null,
@@ -153,11 +186,14 @@ describe('getWeeklySchedule (server action)', () => {
               prg_hora_fin_break_custom: null,
             },
             {
+              // Este dia rota a la sucursal Norte, distinta de la de casa (Central).
               prg_id: 3,
               prg_historial_laboral_id: 1,
               prg_fecha: '2026-01-08',
               prg_es_dia_libre: false,
               prg_horario_id: null,
+              prg_sucursal_id: 200,
+              sgrh_sucursales: { suc_id: 200, suc_nombre: 'Norte' },
               sgrh_cat_horarios: null,
               prg_hora_entrada_custom: '09:00:00',
               prg_hora_salida_custom: '18:00:00',
@@ -179,15 +215,28 @@ describe('getWeeklySchedule (server action)', () => {
 
     expect(result.weekDates).toEqual(WEEK_DATES)
     expect(result.data).toHaveLength(1)
+    expect(result.sucursales).toEqual([
+      { id: 100, nombre: 'Central' },
+      { id: 200, nombre: 'Norte' },
+    ])
 
     const row = result.data[0]
     expect(row.fullName).toBe('Ana Perez')
     expect(row.position).toBe('Cajera')
     expect(row.weeklyTotal).toBe(16.5)
+    expect(row.branchId).toBe(100)
 
     const [mon, tue, wed, thu] = row.days
 
-    expect(mon).toMatchObject({ date: '2026-01-05', assignmentId: null, hours: 0, isDayOff: false })
+    // Lunes sin fila propia: hereda la sucursal de casa del empleado.
+    expect(mon).toMatchObject({
+      date: '2026-01-05',
+      assignmentId: null,
+      hours: 0,
+      isDayOff: false,
+      branchId: 100,
+      branchName: 'Central',
+    })
 
     expect(tue).toMatchObject({
       date: '2026-01-06',
@@ -196,10 +245,13 @@ describe('getWeeklySchedule (server action)', () => {
       scheduleName: 'Turno A',
       hours: 8,
       isDayOff: false,
+      branchId: 100,
+      branchName: 'Central',
     })
 
     expect(wed).toMatchObject({ date: '2026-01-07', assignmentId: 2, isDayOff: true, hours: 0 })
 
+    // Jueves: rotacion a otra sucursal, la fila propia manda sobre la de casa.
     expect(thu).toMatchObject({
       date: '2026-01-08',
       assignmentId: 3,
@@ -207,6 +259,8 @@ describe('getWeeklySchedule (server action)', () => {
       hours: 8.5,
       customStartTime: '09:00:00',
       customEndTime: '18:00:00',
+      branchId: 200,
+      branchName: 'Norte',
     })
   })
 
@@ -230,6 +284,7 @@ describe('getWeeklySchedule (server action)', () => {
           ],
           error: null,
         },
+        sgrh_sucursales: { data: [{ suc_id: 100, suc_nombre: 'Central' }], error: null },
         sgrh_programacion_semanal: {
           data: [
             {
@@ -239,6 +294,8 @@ describe('getWeeklySchedule (server action)', () => {
               prg_fecha: '2026-01-05',
               prg_es_dia_libre: false,
               prg_horario_id: 5,
+              prg_sucursal_id: 100,
+              sgrh_sucursales: { suc_id: 100, suc_nombre: 'Central' },
               sgrh_cat_horarios: {
                 hor_id: 5,
                 hor_nombre: 'Turno A',
@@ -263,6 +320,8 @@ describe('getWeeklySchedule (server action)', () => {
               prg_fecha: '2026-01-06',
               prg_es_dia_libre: false,
               prg_horario_id: 5,
+              prg_sucursal_id: 100,
+              sgrh_sucursales: { suc_id: 100, suc_nombre: 'Central' },
               sgrh_cat_horarios: {
                 hor_id: 5,
                 hor_nombre: 'Turno A',

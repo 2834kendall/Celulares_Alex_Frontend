@@ -86,7 +86,7 @@ describe('verifyFace (server action)', () => {
   it('falla si el kiosco no tiene sucursal asignada', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [], error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
@@ -98,7 +98,7 @@ describe('verifyFace (server action)', () => {
   it('MATCH de alta confianza con vector identico, con ticket firmado valido', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],
@@ -120,7 +120,7 @@ describe('verifyFace (server action)', () => {
   it('MATCH con tolerancia en la banda 0.4-0.5 (luz/angulo)', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.45) }],
@@ -139,7 +139,7 @@ describe('verifyFace (server action)', () => {
   it('REQUIRE_PIN en la zona de incertidumbre 0.5-0.6', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.55) }],
@@ -155,7 +155,7 @@ describe('verifyFace (server action)', () => {
 
   it('DENIED sobre 0.6 y guarda el log de auditoria', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: HISTORIAL,
       sgrh_biometria_empleado: {
         data: [{ bio_empleado_id: 11, bio_vector: vecAtDistance(0.8) }],
@@ -186,7 +186,7 @@ describe('verifyFace (server action)', () => {
 
   it('sin vectores enrolados responde REQUIRE_PIN sin tocar la auditoria', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: HISTORIAL,
       sgrh_biometria_empleado: { data: [], error: null },
     })
@@ -203,7 +203,7 @@ describe('verifyFace (server action)', () => {
   it('elige al empleado mas cercano cuando hay varios enrolados', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [
@@ -226,7 +226,7 @@ describe('verifyFace (server action)', () => {
   it('ignora vectores corruptos o de otra dimension sin romperse', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [
@@ -246,7 +246,7 @@ describe('verifyFace (server action)', () => {
   it('devuelve error generico si falla la carga de vectores', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: { data: null, error: { message: 'boom' } },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -267,7 +267,7 @@ describe('verifyFace (server action)', () => {
     function conVectorCoincidente() {
       mockCreateClient.mockResolvedValue(
         createSupabaseClientMock({
-          sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+          sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
           sgrh_historial_laboral: HISTORIAL,
           sgrh_biometria_empleado: {
             data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],

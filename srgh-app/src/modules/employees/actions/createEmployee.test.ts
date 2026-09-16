@@ -270,7 +270,16 @@ describe('createEmployee (server action)', () => {
     const result = await createEmployee({ ...VALID_INPUT, usuario: USUARIO })
 
     expect(result).toEqual({ ok: true, empId: 10, usuarioWarning: undefined })
-    expect(mockInviteUser).toHaveBeenCalledWith({ ...USUARIO, empleado_id: 10 })
+    expect(mockInviteUser).toHaveBeenCalledWith({ ...USUARIO, sucursal_ids: [], empleado_id: 10 })
+  })
+
+  it('convierte la sucursal unica del wizard en sucursal_ids al invitar', async () => {
+    mockInviteUser.mockResolvedValue({ ok: true, usrId: 7 })
+    mockRpc({ data: 10, error: null })
+
+    await createEmployee({ ...VALID_INPUT, usuario: { ...USUARIO, sucursal_id: 2 } })
+
+    expect(mockInviteUser).toHaveBeenCalledWith({ ...USUARIO, sucursal_ids: [2], empleado_id: 10 })
   })
 
   it('no revierte el alta si la invitación falla — devuelve warning', async () => {

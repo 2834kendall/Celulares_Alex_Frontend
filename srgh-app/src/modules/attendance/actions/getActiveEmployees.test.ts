@@ -20,7 +20,7 @@ describe('getActiveEmployees (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequireAnyPermission.mockResolvedValue(
-      claims({ usr_id: 7, empresa_id: 1, sucursal_id: 100 })
+      claims({ usr_id: 7, empresa_id: 1, sucursal_ids: [100] })
     )
   })
 
@@ -48,12 +48,12 @@ describe('getActiveEmployees (server action)', () => {
   })
 
   it('resuelve la sucursal contra la tabla cuando el JWT no trae el claim', async () => {
-    // El hook desplegado todavia no emite sucursal_id. Con la asignacion viva
+    // El hook desplegado todavia no emite sucursal_ids. Con la asignacion viva
     // en sgrh_usuarios_empresa_rol el kiosco tiene que abrir igual.
     mockRequireAnyPermission.mockResolvedValue(claims({ usr_id: 7, empresa_id: 1 }))
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_historial_laboral: {
           data: [
             {
@@ -83,11 +83,11 @@ describe('getActiveEmployees (server action)', () => {
     // Sin sucursal ni en el claim ni en la tabla. En un kiosco eso es un error
     // de configuracion: no se cae de vuelta a "toda la empresa".
     mockRequireAnyPermission.mockResolvedValue(
-      claims({ usr_id: 7, empresa_id: 1, sucursal_id: null })
+      claims({ usr_id: 7, empresa_id: 1, sucursal_ids: null })
     )
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: null, error: null },
+        sgrh_usuarios_empresa_rol: { data: [], error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 

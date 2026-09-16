@@ -99,6 +99,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
               weekStartISO={weekStartISO}
               weekDates={weeklyScheduleResult.weekDates}
               rows={weeklyScheduleResult.data}
+              sucursales={weeklyScheduleResult.sucursales}
               schedules={schedulesResult.data}
               canWrite={canWriteMatrix}
               ausencias={ausenciaOverlay}

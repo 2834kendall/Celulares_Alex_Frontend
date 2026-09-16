@@ -3,7 +3,7 @@ import { cookies } from 'next/headers'
 /**
  * Sucursal que un admin (EMPRESAS_WRITE) eligio ver desde el selector de la
  * barra superior — SOLO afecta el TEMA (colores + nombre en el shell), nunca
- * el alcance de los datos. `get_empresa_id()`/`get_sucursal_id()` siguen
+ * el alcance de los datos. `get_empresa_id()`/`get_sucursal_ids()` siguen
  * leyendo unicamente del JWT: esta cookie jamas debe entrar en una query ni
  * en una policy de RLS. Es la manera de que un ADMIN sin sucursal fija pueda
  * comprobar como se ve la apariencia guardada en Configuracion navegando la
