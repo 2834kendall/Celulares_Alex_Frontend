@@ -41,6 +41,14 @@ export function formatInCostaRica(date: Date): string {
   return `${year}-${month}-${day} ${hour}:${minute}:${second}`
 }
 
+/**
+ * Instante (epoch ms) de una hora de pared de Costa Rica "YYYY-MM-DD HH:mm:ss".
+ * El desfase es siempre -06:00 (Costa Rica no tiene horario de verano).
+ */
+export function costaRicaWallTimeToEpochMs(fechaHora: string): number {
+  return Date.parse(`${fechaHora.replace(' ', 'T')}-06:00`)
+}
+
 /** El "ahora" de Costa Rica, listo para insertarse en mar_fecha_hora. */
 export function nowInCostaRica(): string {
   return formatInCostaRica(new Date())

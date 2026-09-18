@@ -10,7 +10,6 @@ interface EmployeeJoin {
   emp_nombre: string
   emp_apellido_1: string
   emp_apellido_2: string | null
-  emp_fecha_nacimiento: string | null
 }
 
 interface HistorialRow {
@@ -20,8 +19,6 @@ interface HistorialRow {
 export interface ActiveEmployeeOption {
   employeeId: number
   fullName: string
-  /** Solo para validar el PIN de respaldo — nunca se muestra en el kiosco. */
-  birthDateISO: string | null
 }
 
 export type GetActiveEmployeesResult =
@@ -75,7 +72,7 @@ export async function getActiveEmployees(): Promise<GetActiveEmployeesResult> {
     .from('sgrh_historial_laboral')
     .select(
       `
-      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_fecha_nacimiento )
+      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2 )
     `
     )
     .eq('lab_empresa_id', meta.empresa_id)
@@ -98,7 +95,6 @@ export async function getActiveEmployees(): Promise<GetActiveEmployeesResult> {
     options.push({
       employeeId: employee.emp_id,
       fullName: `${employee.emp_nombre} ${employee.emp_apellido_1}${employee.emp_apellido_2 ? ' ' + employee.emp_apellido_2 : ''}`,
-      birthDateISO: employee.emp_fecha_nacimiento,
     })
   }
 

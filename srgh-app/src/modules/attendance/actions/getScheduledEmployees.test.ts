@@ -43,7 +43,6 @@ const ANA = {
     emp_nombre: 'Ana',
     emp_apellido_1: 'Perez',
     emp_apellido_2: null,
-    emp_fecha_nacimiento: '1990-05-01',
   },
 }
 
@@ -98,7 +97,7 @@ describe('getScheduledEmployees (server action)', () => {
 
     expect(result).toEqual({
       ok: true,
-      data: [{ employeeId: 10, fullName: 'Ana Perez', birthDateISO: '1990-05-01' }],
+      data: [{ employeeId: 10, fullName: 'Ana Perez' }],
     })
 
     const programacionCall = client.from.mock.results.find(
@@ -200,7 +199,6 @@ describe('getScheduledEmployees (server action)', () => {
                 emp_nombre: 'Zoe',
                 emp_apellido_1: 'Ultimo',
                 emp_apellido_2: null,
-                emp_fecha_nacimiento: null,
               },
             },
             ANA,

@@ -15,8 +15,13 @@ export interface QueuedMark {
   fechaHora: string
   latitud: number | null
   longitud: number | null
-  pin: string | null
   dispositivoId: string | null
+  /**
+   * Ticket de Face ID con que se verifico a la persona antes de marcar. El
+   * servidor lo valida contra la hora del EVENTO, asi que sigue sirviendo
+   * aunque la marca se sincronice mucho despues.
+   */
+  ticketFacial: string
 }
 
 /** Una marca que el servidor rechazo de forma definitiva, con el motivo. */

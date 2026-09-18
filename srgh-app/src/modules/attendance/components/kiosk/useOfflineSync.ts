@@ -83,7 +83,7 @@ export function useOfflineSync() {
           tipo: mark.tipo,
           latitud: mark.latitud,
           longitud: mark.longitud,
-          pin: mark.pin,
+          ticketFacial: mark.ticketFacial,
           dispositivoId: mark.dispositivoId,
           // La hora capturada al encolar, no la de este intento de envio: es
           // lo que distingue "marco a las 8:00 y no habia red" de "marco a
@@ -178,7 +178,7 @@ export function useOfflineSync() {
           fechaHora: nowInCostaRica(),
           latitud: input.latitud,
           longitud: input.longitud,
-          pin: input.pin,
+          ticketFacial: input.ticketFacial,
           dispositivoId: input.dispositivoId,
         })
         await refreshPendingCount()

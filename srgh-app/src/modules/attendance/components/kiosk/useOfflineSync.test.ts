@@ -23,7 +23,7 @@ const input: KioskMarkInput = {
   tipo: 'entrada',
   latitud: null,
   longitud: null,
-  pin: null,
+  ticketFacial: '10.1.firma',
   dispositivoId: null,
 }
 
@@ -122,7 +122,7 @@ describe('useOfflineSync', () => {
       fechaHora: '2026-08-14 08:00:00',
       latitud: null,
       longitud: null,
-      pin: null,
+      ticketFacial: '10.1.firma',
       dispositivoId: null,
     })
 
@@ -150,7 +150,7 @@ describe('useOfflineSync', () => {
       fechaHora: '2026-08-14 08:00:00',
       latitud: null,
       longitud: null,
-      pin: null,
+      ticketFacial: '10.1.firma',
       dispositivoId: null,
     })
 
@@ -185,7 +185,7 @@ describe('useOfflineSync', () => {
       fechaHora: '2026-08-14 08:00:00',
       latitud: null,
       longitud: null,
-      pin: null,
+      ticketFacial: '10.1.firma',
       dispositivoId: null,
     })
 

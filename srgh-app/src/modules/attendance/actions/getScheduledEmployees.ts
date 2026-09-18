@@ -13,7 +13,6 @@ interface EmployeeJoin {
   emp_nombre: string
   emp_apellido_1: string
   emp_apellido_2: string | null
-  emp_fecha_nacimiento: string | null
 }
 
 interface HistorialRow {
@@ -97,7 +96,7 @@ export async function getScheduledEmployees(): Promise<GetScheduledEmployeesResu
     .from('sgrh_historial_laboral')
     .select(
       `
-      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_fecha_nacimiento )
+      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2 )
     `
     )
     // El cruce contra el historial no es solo para traer el nombre: acota por
@@ -124,7 +123,6 @@ export async function getScheduledEmployees(): Promise<GetScheduledEmployeesResu
     options.push({
       employeeId: employee.emp_id,
       fullName: `${employee.emp_nombre} ${employee.emp_apellido_1}${employee.emp_apellido_2 ? ' ' + employee.emp_apellido_2 : ''}`,
-      birthDateISO: employee.emp_fecha_nacimiento,
     })
   }
 

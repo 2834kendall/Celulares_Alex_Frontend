@@ -62,7 +62,6 @@ describe('getActiveEmployees (server action)', () => {
                 emp_nombre: 'Ana',
                 emp_apellido_1: 'Perez',
                 emp_apellido_2: null,
-                emp_fecha_nacimiento: null,
               },
             },
           ],
@@ -75,7 +74,7 @@ describe('getActiveEmployees (server action)', () => {
 
     expect(result).toEqual({
       ok: true,
-      data: [{ employeeId: 10, fullName: 'Ana Perez', birthDateISO: null }],
+      data: [{ employeeId: 10, fullName: 'Ana Perez' }],
     })
   })
 
@@ -122,7 +121,6 @@ describe('getActiveEmployees (server action)', () => {
                 emp_nombre: 'Bruno',
                 emp_apellido_1: 'Mora',
                 emp_apellido_2: null,
-                emp_fecha_nacimiento: '1985-03-10',
               },
             },
             {
@@ -131,7 +129,6 @@ describe('getActiveEmployees (server action)', () => {
                 emp_nombre: 'Ana',
                 emp_apellido_1: 'Perez',
                 emp_apellido_2: null,
-                emp_fecha_nacimiento: null,
               },
             },
           ],
@@ -145,8 +142,8 @@ describe('getActiveEmployees (server action)', () => {
     expect(result).toEqual({
       ok: true,
       data: [
-        { employeeId: 10, fullName: 'Ana Perez', birthDateISO: null },
-        { employeeId: 20, fullName: 'Bruno Mora', birthDateISO: '1985-03-10' },
+        { employeeId: 10, fullName: 'Ana Perez' },
+        { employeeId: 20, fullName: 'Bruno Mora' },
       ],
     })
   })
