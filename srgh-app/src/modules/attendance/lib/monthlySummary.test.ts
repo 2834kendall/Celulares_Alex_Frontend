@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { gatherMonthlyAttendanceDays } from './monthlySummary'
+import { DEFAULT_TARDINESS_TYPES } from './infractions'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { createClient } from '@/lib/supabase/server'
 
@@ -48,7 +49,7 @@ function mocks(options: {
   enOtras?: QueryResult
   plantilla?: QueryResult
   detalle?: QueryResult
-  sucursales?: QueryResult
+  tipos?: QueryResult
   marcas?: QueryResult
   ausencias?: QueryResult
   sucursalId?: number | null
@@ -61,13 +62,13 @@ function mocks(options: {
     },
     sgrh_programacion_semanal: [options.turnos ?? vacio, options.enOtras ?? vacio],
     sgrh_historial_laboral: [options.plantilla ?? vacio, options.detalle ?? vacio],
-    sgrh_sucursales: options.sucursales ?? vacio,
+    // Catalogo vacio: el lector cae a los tipos por defecto (leve desde 1,
+    // tardia desde 6, grave desde 11).
+    sgrh_cat_tipos_tardia: options.tipos ?? vacio,
     sgrh_marcas_asistencia: options.marcas ?? vacio,
     sgrh_ausencias: options.ausencias ?? vacio,
   }
 }
-
-const TOLERANCIA_100 = { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null }
 
 /** Mocks del caso feliz: Ana con un dia programado en su sucursal. */
 function anaConUnDia(extra: Parameters<typeof mocks>[0] = {}) {
@@ -76,7 +77,6 @@ function anaConUnDia(extra: Parameters<typeof mocks>[0] = {}) {
     plantilla: { data: [{ lab_id: 1 }], error: null },
     enOtras: { data: [{ prg_historial_laboral_id: 1 }], error: null },
     detalle: { data: [ANA], error: null },
-    sucursales: TOLERANCIA_100,
     ...extra,
   })
 }
@@ -97,8 +97,7 @@ describe('gatherMonthlyAttendanceDays', () => {
       '2026-07-31'
     )
 
-    expect(result).toEqual({ ok: true, data: [] })
-    expect(client.from).not.toHaveBeenCalledWith('sgrh_sucursales')
+    expect(result).toEqual({ ok: true, data: [], tipos: DEFAULT_TARDINESS_TYPES })
     expect(client.from).not.toHaveBeenCalledWith('sgrh_marcas_asistencia')
   })
 
@@ -162,6 +161,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     expect(result).toEqual({
       ok: true,
+      tipos: DEFAULT_TARDINESS_TYPES,
       data: [{ employeeId: 10, employmentHistoryId: 1, fullName: 'Ana Perez', days: [] }],
     })
   })
@@ -186,10 +186,10 @@ describe('gatherMonthlyAttendanceDays', () => {
       '2026-07-31'
     )
 
-    expect(result).toEqual({ ok: true, data: [] })
+    expect(result).toEqual({ ok: true, data: [], tipos: DEFAULT_TARDINESS_TYPES })
   })
 
-  it('junta nombre, tolerancia y hora real de entrada por dia, con la fecha, acotando por la sucursal del usuario', async () => {
+  it('junta nombre y hora real de entrada por dia, con la fecha, acotando por la sucursal del usuario', async () => {
     const client = createSupabaseClientMock(
       anaConUnDia({
         sucursalId: 100,
@@ -219,6 +219,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     expect(result).toEqual({
       ok: true,
+      tipos: DEFAULT_TARDINESS_TYPES,
       data: [
         {
           employeeId: 10,
@@ -232,7 +233,6 @@ describe('gatherMonthlyAttendanceDays', () => {
               isHoliday: false,
               expectedStart: '08:00',
               entradaTime: '08:20',
-              toleranciaMinutos: 5,
               entradaMarkId: 77,
               isJustifiedTardiness: false,
               tardiaJustificacion: null,
@@ -250,19 +250,39 @@ describe('gatherMonthlyAttendanceDays', () => {
     expect(programacionCall.in).toHaveBeenCalledWith('prg_sucursal_id', [100])
   })
 
-  it('toma la tolerancia de la sucursal del dia, no la del contrato', async () => {
-    // Ana tiene contrato en la 100 pero ese dia la trasladaron a la 200.
+  it('devuelve el catalogo de la empresa para que el llamador clasifique con las mismas reglas', async () => {
+    const catalogo = [
+      {
+        tta_id: 7,
+        tta_nombre: 'Tarde',
+        tta_desde_minutos: 3,
+        tta_cuenta_advertencia: true,
+        tta_color: '#123456',
+      },
+    ]
+    const client = createSupabaseClientMock(anaConUnDia({ tipos: { data: catalogo, error: null } }))
+
+    const result = await gatherMonthlyAttendanceDays(
+      asClient(client),
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result.ok && result.tipos).toEqual([
+      { id: 7, nombre: 'Tarde', desdeMinutos: 3, cuentaAdvertencia: true, color: '#123456' },
+    ])
+
+    const catalogoCall = client.from.mock.results.find(
+      (_r, i) => client.from.mock.calls[i][0] === 'sgrh_cat_tipos_tardia'
+    )!.value
+    expect(catalogoCall.eq).toHaveBeenCalledWith('tta_empresa_id', 1)
+  })
+
+  it('devuelve error si falla la carga del catalogo, en vez de clasificar con reglas ajenas', async () => {
     const client = createSupabaseClientMock(
-      anaConUnDia({
-        turnos: { data: [assignment({ prg_sucursal_id: 200 })], error: null },
-        sucursales: {
-          data: [
-            { suc_id: 100, suc_tolerancia_tardia_minutos: 5 },
-            { suc_id: 200, suc_tolerancia_tardia_minutos: 15 },
-          ],
-          error: null,
-        },
-      })
+      anaConUnDia({ tipos: { data: null, error: { message: 'boom' } } })
     )
 
     const result = await gatherMonthlyAttendanceDays(
@@ -273,8 +293,7 @@ describe('gatherMonthlyAttendanceDays', () => {
       '2026-07-31'
     )
 
-    expect(result.ok).toBe(true)
-    expect(result.ok ? result.data[0].days[0].toleranciaMinutos : null).toBe(15)
+    expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los tipos de tardia.' })
   })
 
   it('ignora dias futuros: un horario ya asignado para manana no cuenta como ausencia', async () => {
@@ -303,11 +322,12 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     expect(result).toEqual({
       ok: true,
+      tipos: DEFAULT_TARDINESS_TYPES,
       data: [{ employeeId: 10, employmentHistoryId: 1, fullName: 'Ana Perez', days: [] }],
     })
   })
 
-  it('el turno de HOY que todavia no llega a su hora+tolerancia no cuenta como ausencia', async () => {
+  it('el turno de HOY que todavia no llega al primer tipo de tardia no cuenta como ausencia', async () => {
     // "Ahora" en Costa Rica: 31-jul 08:05 a. m. — el turno empieza a las 11am.
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-31T14:05:00.000Z')) // 08:05 CR (UTC-6)
@@ -336,12 +356,13 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     expect(result).toEqual({
       ok: true,
+      tipos: DEFAULT_TARDINESS_TYPES,
       data: [{ employeeId: 10, employmentHistoryId: 1, fullName: 'Ana Perez', days: [] }],
     })
   })
 
-  it('el turno de HOY ya vencido (hora+tolerancia pasada) sin marca si cuenta como ausencia', async () => {
-    // "Ahora" en Costa Rica: 31-jul 11:10 a. m. — turno 11am + tolerancia 5min = 11:05.
+  it('el turno de HOY ya vencido (paso el primer tipo de tardia) sin marca si cuenta como ausencia', async () => {
+    // "Ahora" en Costa Rica: 31-jul 11:10 a. m. — turno 11am, tardanza desde el minuto 1.
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-31T17:10:00.000Z')) // 11:10 CR (UTC-6)
 
@@ -369,6 +390,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     expect(result).toEqual({
       ok: true,
+      tipos: DEFAULT_TARDINESS_TYPES,
       data: [
         {
           employeeId: 10,
@@ -382,7 +404,6 @@ describe('gatherMonthlyAttendanceDays', () => {
               isHoliday: false,
               expectedStart: '11:00',
               entradaTime: null,
-              toleranciaMinutos: 5,
               entradaMarkId: null,
               isJustifiedTardiness: false,
               tardiaJustificacion: null,
@@ -475,6 +496,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     expect(result).toEqual({
       ok: true,
+      tipos: DEFAULT_TARDINESS_TYPES,
       data: [{ employeeId: 10, employmentHistoryId: 1, fullName: 'Sin nombre', days: [] }],
     })
   })
@@ -492,12 +514,12 @@ describe('gatherMonthlyAttendanceDays', () => {
       '2026-07-31'
     )
 
-    expect(result).toEqual({ ok: true, data: [] })
+    expect(result).toEqual({ ok: true, data: [], tipos: DEFAULT_TARDINESS_TYPES })
   })
 
   it('devuelve error generico si falla alguna de las consultas del mes', async () => {
     const client = createSupabaseClientMock(
-      anaConUnDia({ sucursales: { data: null, error: { message: 'boom' } } })
+      anaConUnDia({ marcas: { data: null, error: { message: 'boom' } } })
     )
 
     const result = await gatherMonthlyAttendanceDays(

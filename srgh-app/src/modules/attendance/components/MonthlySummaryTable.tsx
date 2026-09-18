@@ -15,7 +15,7 @@ import type {
   MonthlyEmployeeSummary,
   TardyDay,
 } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
-import { TARDINESS_LABEL, type TardinessLevel } from '@/modules/attendance/lib/infractions'
+import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
 import { JustifyTardinessModal } from '@/modules/attendance/components/JustifyTardinessModal'
 import { useMonthNavigation } from '@/modules/attendance/hooks/useMonthNavigation'
 import { usePagination } from '@/hooks/usePagination'
@@ -43,17 +43,6 @@ interface MonthlySummaryTableProps {
 interface JustifyTarget {
   employeeName: string
   day: TardyDay
-}
-
-/**
- * Un color por banda, de menor a mayor. Aca SI se colorea (a diferencia del
- * chip neutro del panel diario de SGRH-21): el reporte mensual conoce la
- * tolerancia de cada sucursal, asi que clasificar tiene base.
- */
-const LEVEL_CHIP: Record<TardinessLevel, string> = {
-  leve: 'bg-amber-50 text-amber-700 ring-amber-200',
-  tardia: 'bg-orange-50 text-orange-700 ring-orange-200',
-  grave: 'bg-rose-50 text-rose-700 ring-rose-200',
 }
 
 function formatMonth(monthISO: string) {
@@ -207,10 +196,19 @@ export function MonthlySummaryTable({ monthISO, rows, canWrite }: MonthlySummary
                                           — llego a las {d.entradaTime} (+{d.diffMinutes} min)
                                         </span>
                                         <span
-                                          className={`rounded px-1 py-px text-[10px] font-semibold ring-1 ring-inset ${LEVEL_CHIP[d.level]}`}
+                                          style={tardinessChipStyle(d.tipo.color)}
+                                          className="rounded px-1 py-px text-[10px] font-semibold"
                                         >
-                                          {TARDINESS_LABEL[d.level]}
+                                          {d.tipo.nombre}
                                         </span>
+                                        {/* Un tipo configurado para no contar: se ve, pero
+                                            hay que decir que no suma, o el conteo de la fila
+                                            parece no cuadrar con la lista. */}
+                                        {!d.isJustified && !d.countsTowardWarning && (
+                                          <span className="rounded bg-slate-100 px-1 py-px text-[10px] font-semibold text-slate-500">
+                                            No suma
+                                          </span>
+                                        )}
                                         {d.isJustified && (
                                           <span
                                             className="rounded bg-slate-100 px-1 py-px text-[10px] font-semibold text-slate-600"
@@ -273,7 +271,7 @@ export function MonthlySummaryTable({ monthISO, rows, canWrite }: MonthlySummary
           markId={justifying.day.markId!}
           employeeName={justifying.employeeName}
           dateISO={justifying.day.date}
-          level={justifying.day.level}
+          tipoNombre={justifying.day.tipo.nombre}
           diffMinutes={justifying.day.diffMinutes}
           isJustified={justifying.day.isJustified}
           currentJustification={justifying.day.justification}

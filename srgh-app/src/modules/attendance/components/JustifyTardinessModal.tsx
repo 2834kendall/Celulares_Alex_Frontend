@@ -7,7 +7,6 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { justifyTardiness } from '@/modules/attendance/actions/justifyTardiness'
 import { justifyTardinessSchema } from '@/modules/attendance/types'
-import { TARDINESS_LABEL, type TardinessLevel } from '@/modules/attendance/lib/infractions'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
@@ -17,7 +16,8 @@ interface JustifyTardinessModalProps {
   employeeName: string
   /** Dia de la tardanza, "YYYY-MM-DD" — solo para encabezar el modal. */
   dateISO: string
-  level: TardinessLevel
+  /** Nombre del tipo de tardia del catalogo, ej. "Tardia grave". */
+  tipoNombre: string
   diffMinutes: number
   /** Ya estaba justificada: el modal pasa a ofrecer retirarla. */
   isJustified: boolean
@@ -48,7 +48,7 @@ export function JustifyTardinessModal({
   markId,
   employeeName,
   dateISO,
-  level,
+  tipoNombre,
   diffMinutes,
   isJustified,
   currentJustification,
@@ -108,9 +108,8 @@ export function JustifyTardinessModal({
         )}
 
         <p className="text-sm text-slate-600">
-          {TARDINESS_LABEL[level]} de{' '}
-          <span className="font-semibold tabular-nums">{diffMinutes} min</span>. Justificarla la
-          deja visible en el reporte, pero deja de contar para el mes.
+          {tipoNombre} de <span className="font-semibold tabular-nums">{diffMinutes} min</span>.
+          Justificarla la deja visible en el reporte, pero deja de contar para el mes.
         </p>
 
         <div>

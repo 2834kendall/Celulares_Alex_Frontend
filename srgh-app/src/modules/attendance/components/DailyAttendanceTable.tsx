@@ -16,7 +16,7 @@ import type {
   DailyMarkInfo,
   DailyTardiness,
 } from '@/modules/attendance/actions/getDailyAttendance'
-import { TARDINESS_LABEL, type TardinessLevel } from '@/modules/attendance/lib/infractions'
+import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
@@ -60,16 +60,10 @@ function formatDay(dateISO: string) {
 }
 
 /**
- * Colores de la banda de tardanza. Una tardanza justificada se pinta en
- * gris: sigue estando (el atraso ocurrio y hay que poder verlo), pero deja
- * de gritar, porque ya no cuenta para el mes.
+ * Una tardanza justificada se pinta en gris y tachada: sigue estando (el
+ * atraso ocurrio y hay que poder verlo), pero deja de gritar, porque ya no
+ * cuenta para el mes. Las demas toman el color de su tipo en el catalogo.
  */
-const LEVEL_CHIP: Record<TardinessLevel, string> = {
-  leve: 'bg-amber-50 text-amber-700',
-  tardia: 'bg-orange-100 text-orange-800',
-  grave: 'bg-rose-100 text-rose-800',
-}
-
 const JUSTIFIED_CHIP = 'bg-slate-100 text-slate-500 line-through'
 
 /**
@@ -108,15 +102,20 @@ function MarkCell({
               title={
                 tardiness
                   ? tardiness.isJustified
-                    ? `${TARDINESS_LABEL[tardiness.level]} justificada: ${tardiness.justification ?? ''}`
-                    : TARDINESS_LABEL[tardiness.level]
+                    ? `${tardiness.tipo.nombre} justificada: ${tardiness.justification ?? ''}`
+                    : tardiness.tipo.nombre
+                  : undefined
+              }
+              style={
+                tardiness && !tardiness.isJustified
+                  ? tardinessChipStyle(tardiness.tipo.color)
                   : undefined
               }
               className={`rounded px-1 py-px text-[10px] font-medium tabular-nums ${
                 tardiness
                   ? tardiness.isJustified
                     ? JUSTIFIED_CHIP
-                    : LEVEL_CHIP[tardiness.level]
+                    : ''
                   : 'bg-slate-100 text-slate-500'
               }`}
             >

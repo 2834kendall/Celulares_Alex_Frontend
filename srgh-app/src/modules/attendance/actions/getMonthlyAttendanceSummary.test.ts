@@ -41,6 +41,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
   it('calcula los limites del mes calendario a partir de cualquier fecha del mes', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: { data: [], error: null },
       sgrh_historial_laboral: { data: [], error: null },
     })
@@ -67,10 +68,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         ],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 2 }],
-        error: null,
-      },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: {
         data: [
           {
@@ -150,7 +148,8 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
           date: '2026-07-10',
           entradaTime: '08:15',
           diffMinutes: 15,
-          level: 'grave',
+          tipo: { nombre: 'Tardia grave', color: '#E11D48' },
+          countsTowardWarning: true,
           markId: 77,
           isJustified: false,
           justification: null,
@@ -188,10 +187,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         ],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 0 }],
-        error: null,
-      },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
@@ -222,7 +218,8 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         date: '2026-07-10',
         entradaTime: '08:03',
         diffMinutes: 3,
-        level: 'leve',
+        tipo: { nombre: 'Tardia leve', color: '#F59E0B' },
+        countsTowardWarning: false,
         markId: 90,
         isJustified: true,
         justification: 'El sistema estaba caido.',
@@ -252,7 +249,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         ],
         error: null,
       },
-      sgrh_sucursales: { data: [], error: null },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: {
         data: [1, 2].map((prg_historial_laboral_id) => ({
           prg_historial_laboral_id,
@@ -297,7 +294,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         error: null,
       },
       sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
-      sgrh_sucursales: { data: [], error: null },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })

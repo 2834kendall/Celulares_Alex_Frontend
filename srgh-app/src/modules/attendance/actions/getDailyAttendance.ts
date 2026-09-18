@@ -7,7 +7,8 @@ import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
 import { getDayAssignments, type DayAssignment } from '@/modules/attendance/lib/workingDay'
-import { classifyTardiness, type TardinessLevel } from '@/modules/attendance/lib/infractions'
+import { classifyTardiness, type TardinessBadge } from '@/modules/attendance/lib/infractions'
+import { loadTardinessTypes } from '@/modules/attendance/lib/tardinessTypes'
 import { marcaTipoSchema } from '@/modules/attendance/types'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 
@@ -41,14 +42,6 @@ interface MarkDbRow {
   mar_tardia_justificacion: string | null
 }
 
-/**
- * Minutos de gracia si la sucursal no aparece en la consulta. Desde SGRH-87
- * el valor por defecto de la columna es 0 (la tardanza cuenta desde el
- * primer minuto); este fallback solo cubre el caso raro de una sucursal que
- * no se pudo leer, y se queda del lado indulgente.
- */
-const DEFAULT_TOLERANCIA_MINUTOS = 0
-
 export interface DailyMarkInfo {
   /** mar_id — lo necesita el modal de correccion para saber que fila actualizar. */
   id: number
@@ -60,7 +53,8 @@ export interface DailyMarkInfo {
 
 /** Tardanza de la entrada, ya clasificada. null si llego a tiempo. */
 export interface DailyTardiness {
-  level: TardinessLevel
+  /** Tipo del catalogo de la empresa en que cae el atraso. */
+  tipo: TardinessBadge
   /** Minutos de atraso contra la hora esperada. Siempre positivo. */
   diffMinutes: number
   /** El encargado la justifico: se sigue viendo, pero no cuenta para el mes. */
@@ -285,26 +279,15 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     })
   }
 
-  // Tolerancia de cada sucursal en juego: la del DIA cuando hay turno, y si
-  // no, aquella donde se marco o la del contrato. Es la misma regla de
-  // procedencia que branchId mas abajo.
-  const branchIds = Array.from(
-    new Set([
-      ...assignments.data.map((a) => a.branchId),
-      ...(marks ?? []).map((m) => m.mar_sucursal_id),
-      ...employmentHistory.map((h) => h.lab_sucursal_id),
-    ])
-  )
+  // Catalogo de tipos de tardia de la empresa: define desde que minuto hay
+  // tardanza y de que tipo es cada una.
+  const tiposResult = await loadTardinessTypes(supabase, meta.empresa_id)
 
-  const { data: tolerancias } = await supabase
-    .from('sgrh_sucursales')
-    .select('suc_id, suc_tolerancia_tardia_minutos')
-    .in('suc_id', branchIds)
-    .returns<{ suc_id: number; suc_tolerancia_tardia_minutos: number }[]>()
+  if (!tiposResult.ok) {
+    return { ok: false, error: tiposResult.error }
+  }
 
-  const toleranciaBySucursal = new Map(
-    (tolerancias ?? []).map((t) => [t.suc_id, t.suc_tolerancia_tardia_minutos])
-  )
+  const tipos = tiposResult.data
 
   // Una sola firma para toda la jornada (ver signEmployeePhotos).
   const fotoUrls = await signEmployeePhotos(
@@ -343,15 +326,14 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     const entrada = markInfo(journey.entrada, assignment?.expectedStart ?? null)
 
     // Un dia libre, feriado o sin turno no tiene tardanza: no habia hora a la
-    // que llegar. Es el mismo criterio de classifyDay, que aca no se puede
+    // que llegar. Es el mismo criterio de tardinessOfDay, que aca no se puede
     // reusar tal cual porque trabaja sobre el mes y no sobre la fila del dia.
-    const cuentaLaTardanza =
+    const tipo =
       entrada?.diffMinutes != null &&
       !(assignment?.isDayOff ?? false) &&
-      !(assignment?.isHoliday ?? false) &&
-      entrada.diffMinutes > (toleranciaBySucursal.get(branchId) ?? DEFAULT_TOLERANCIA_MINUTOS)
-
-    const level = cuentaLaTardanza ? classifyTardiness(entrada!.diffMinutes!) : null
+      !(assignment?.isHoliday ?? false)
+        ? classifyTardiness(entrada.diffMinutes, tipos)
+        : null
     const justificacion = journey.entrada
       ? justificacionByMarkId.get(journey.entrada.id)
       : undefined
@@ -373,9 +355,9 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       salida: markInfo(journey.salida, null),
       duplicateMarksCount: journey.duplicates.length,
       isOpen: journey.isOpen,
-      tardiness: level
+      tardiness: tipo
         ? {
-            level,
+            tipo: { nombre: tipo.nombre, color: tipo.color },
             diffMinutes: entrada!.diffMinutes!,
             isJustified: justificacion?.justificada ?? false,
             justification: justificacion?.motivo ?? null,

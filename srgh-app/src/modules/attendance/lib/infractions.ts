@@ -3,40 +3,65 @@ import { diffMinutes } from '@/modules/attendance/lib/time'
 export type DayAttendanceStatus =
   'a_tiempo' | 'tardio' | 'tardio_justificado' | 'ausente' | 'no_aplica'
 
-/** Gravedad de una tardanza. El orden es el de la escala, de menor a mayor. */
-export const TARDINESS_LEVELS = ['leve', 'tardia', 'grave'] as const
-
-export type TardinessLevel = (typeof TARDINESS_LEVELS)[number]
-
 /**
- * Cortes de la escala, en minutos de atraso (SGRH-87, pedido del cliente el
- * 2026-09-17, en sus palabras: "si entraba 10:00 y entro 10:01 ya es tardia,
- * solamente que la podriamos catalogar como tardia leve, despues de 5 minutos
- * tardia, y mas de 10, tardia moderada o grave").
+ * Un tipo de tardia del catalogo de la empresa (sgrh_cat_tipos_tardia).
  *
- * "Despues de 5" es a partir del minuto 6 y "mas de 10" a partir del 11, asi
- * que los cortes son cerrados por arriba: leve 1-5, tardia 6-10, grave 11+.
+ * Solo guarda el minuto donde EMPIEZA: termina un minuto antes de que empiece
+ * el siguiente, y el ultimo queda abierto. Asi es imposible configurar huecos
+ * o solapamientos — ver la migracion del catalogo.
  */
-const HASTA_LEVE = 5
-const HASTA_TARDIA = 10
-
-/**
- * Banda de una tardanza segun los minutos de atraso, o null si no llego
- * tarde. NO aplica tolerancia: recibe el atraso crudo y solo lo clasifica.
- * Quien decide si ese atraso cuenta como tardanza es classifyDay, que si
- * conoce la tolerancia de la sucursal.
- */
-export function classifyTardiness(minutosDeAtraso: number): TardinessLevel | null {
-  if (minutosDeAtraso <= 0) return null
-  if (minutosDeAtraso <= HASTA_LEVE) return 'leve'
-  if (minutosDeAtraso <= HASTA_TARDIA) return 'tardia'
-  return 'grave'
+export interface TardinessType {
+  id: number
+  nombre: string
+  /** Minuto de atraso desde el que una entrada cae en este tipo. */
+  desdeMinutos: number
+  /** Si suma al conteo del mes que dispara la advertencia. */
+  cuentaAdvertencia: boolean
+  /** Hex, o null para el color por defecto. */
+  color: string | null
 }
 
-export const TARDINESS_LABEL: Record<TardinessLevel, string> = {
-  leve: 'Tardia leve',
-  tardia: 'Tardia',
-  grave: 'Tardia grave',
+/**
+ * Los tres tipos que pidio el cliente (2026-09-17): leve desde el minuto 1,
+ * tardia desde el 6, grave desde el 11. Son los que la migracion siembra en
+ * cada empresa.
+ *
+ * Aca solo como red de seguridad: si por algun motivo una empresa se quedara
+ * sin tipos, la alternativa seria no registrar ninguna tardanza, en silencio.
+ * No deberia pasar — la migracion los crea para toda empresa, nueva o vieja,
+ * y deleteTipoTardia no deja borrar el ultimo.
+ */
+export const DEFAULT_TARDINESS_TYPES: TardinessType[] = [
+  { id: -1, nombre: 'Tardia leve', desdeMinutos: 1, cuentaAdvertencia: true, color: '#F59E0B' },
+  { id: -2, nombre: 'Tardia', desdeMinutos: 6, cuentaAdvertencia: true, color: '#EA580C' },
+  { id: -3, nombre: 'Tardia grave', desdeMinutos: 11, cuentaAdvertencia: true, color: '#E11D48' },
+]
+
+/** Lo que la pantalla necesita de un tipo para pintarlo: nombre y color. */
+export type TardinessBadge = Pick<TardinessType, 'nombre' | 'color'>
+
+/** Color para un tipo sin color propio: el ambar de la tardia leve. */
+export const DEFAULT_TARDINESS_COLOR = '#F59E0B'
+
+/**
+ * Tipo de una tardanza segun los minutos de atraso, o null si no llego tarde.
+ *
+ * "Llegar tarde" empieza en el minuto del PRIMER tipo: un atraso menor no es
+ * tardanza. Ese umbral cumple el papel que antes tenia la tolerancia por
+ * sucursal, que el catalogo reemplazo.
+ */
+export function classifyTardiness(
+  minutosDeAtraso: number,
+  tipos: TardinessType[]
+): TardinessType | null {
+  let match: TardinessType | null = null
+
+  for (const tipo of [...tipos].sort((a, b) => a.desdeMinutos - b.desdeMinutos)) {
+    if (minutosDeAtraso >= tipo.desdeMinutos) match = tipo
+    else break
+  }
+
+  return match
 }
 
 export interface DayForInfraction {
@@ -48,7 +73,6 @@ export interface DayForInfraction {
   expectedStart: string | null
   /** "HH:mm" de la marca de entrada. null si no marco. */
   entradaTime: string | null
-  toleranciaMinutos: number
   /**
    * Un encargado declaro que esta tardanza no es responsabilidad del
    * colaborador (el sistema fallo y no pudo marcar estando ya en tienda, u
@@ -56,6 +80,20 @@ export interface DayForInfraction {
    * reporte, pero no cuenta.
    */
   isJustifiedTardiness: boolean
+}
+
+/**
+ * El tipo de tardia de un dia, o null si no hubo: dia que no aplica, sin
+ * marca de entrada, o llegada antes del primer tipo del catalogo.
+ */
+export function tardinessOfDay(
+  day: DayForInfraction,
+  tipos: TardinessType[]
+): TardinessType | null {
+  if (day.isJustifiedAbsence || day.isDayOff || day.isHoliday) return null
+  if (!day.expectedStart || !day.entradaTime) return null
+
+  return classifyTardiness(diffMinutes(day.entradaTime, day.expectedStart), tipos)
 }
 
 /**
@@ -72,7 +110,7 @@ export interface DayForInfraction {
  * ('tardio_justificado' vs 'tardio') en vez de volverse "a tiempo": el atraso
  * ocurrio y el reporte tiene que poder mostrarlo, solo que sin sumarlo.
  */
-export function classifyDay(day: DayForInfraction): DayAttendanceStatus {
+export function classifyDay(day: DayForInfraction, tipos: TardinessType[]): DayAttendanceStatus {
   if (day.isJustifiedAbsence || day.isDayOff || day.isHoliday || !day.expectedStart) {
     return 'no_aplica'
   }
@@ -81,11 +119,20 @@ export function classifyDay(day: DayForInfraction): DayAttendanceStatus {
     return 'ausente'
   }
 
-  if (diffMinutes(day.entradaTime, day.expectedStart) <= day.toleranciaMinutos) {
+  if (!tardinessOfDay(day, tipos)) {
     return 'a_tiempo'
   }
 
   return day.isJustifiedTardiness ? 'tardio_justificado' : 'tardio'
+}
+
+/**
+ * Si la tardanza de este dia suma para la advertencia del mes: tiene que ser
+ * una tardanza, no estar justificada, y ser de un tipo que cuente.
+ */
+export function countsTowardWarning(day: DayForInfraction, tipos: TardinessType[]): boolean {
+  if (classifyDay(day, tipos) !== 'tardio') return false
+  return tardinessOfDay(day, tipos)?.cuentaAdvertencia ?? false
 }
 
 export interface MonthlyInfractionSummary {
@@ -93,14 +140,16 @@ export interface MonthlyInfractionSummary {
   ausencias: number
 }
 
-export function summarizeMonth(days: DayForInfraction[]): MonthlyInfractionSummary {
+export function summarizeMonth(
+  days: DayForInfraction[],
+  tipos: TardinessType[]
+): MonthlyInfractionSummary {
   let tardias = 0
   let ausencias = 0
 
   for (const day of days) {
-    const status = classifyDay(day)
-    if (status === 'tardio') tardias++
-    else if (status === 'ausente') ausencias++
+    if (countsTowardWarning(day, tipos)) tardias++
+    else if (classifyDay(day, tipos) === 'ausente') ausencias++
   }
 
   return { tardias, ausencias }
@@ -111,9 +160,9 @@ export function summarizeMonth(days: DayForInfraction[]): MonthlyInfractionSumma
  * 1 ausencia en el mes disparan la advertencia. Pendiente de discutir si
  * pasa a ser configurable por el gerente (ver backlog de SGRH-21).
  *
- * Las tres tardias cuentan igual sin importar la banda — tres leves ya
- * avisan (decision del cliente, 2026-09-17). La banda esta para que el
- * encargado vea la gravedad en el reporte, no para filtrar el conteo.
+ * Que tipos suman lo decide cada empresa en su catalogo
+ * (tta_cuenta_advertencia); por defecto cuentan los tres, asi que tres leves
+ * ya avisan (decision del cliente, 2026-09-17).
  */
 const TARDIAS_LIMITE = 3
 const AUSENCIAS_LIMITE = 1

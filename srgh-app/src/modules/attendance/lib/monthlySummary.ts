@@ -1,6 +1,11 @@
 import type { createClient } from '@/lib/supabase/server'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
-import type { DayForInfraction } from '@/modules/attendance/lib/infractions'
+import {
+  classifyTardiness,
+  type DayForInfraction,
+  type TardinessType,
+} from '@/modules/attendance/lib/infractions'
+import { loadTardinessTypes } from '@/modules/attendance/lib/tardinessTypes'
 import {
   dateOfDay,
   diffMinutes,
@@ -13,8 +18,6 @@ import { marcaTipoSchema } from '@/modules/attendance/types'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
-const DEFAULT_TOLERANCIA_MINUTOS = 2
-
 interface EmployeeJoin {
   emp_nombre: string
   emp_apellido_1: string
@@ -26,11 +29,6 @@ interface HistorialRow {
   lab_empleado_id: number
   lab_sucursal_id: number
   sgrh_empleados: EmployeeJoin | null
-}
-
-interface SucursalToleranciaRow {
-  suc_id: number
-  suc_tolerancia_tardia_minutos: number
 }
 
 interface AssignmentJoin {
@@ -92,7 +90,13 @@ export interface EmployeeMonthDays {
 }
 
 export type GatherMonthlyAttendanceResult =
-  { ok: true; data: EmployeeMonthDays[] } | { ok: false; error: string }
+  | {
+      ok: true
+      data: EmployeeMonthDays[]
+      /** Catalogo de la empresa: los llamadores lo necesitan para clasificar. */
+      tipos: TardinessType[]
+    }
+  | { ok: false; error: string }
 
 /**
  * Reune, por cada colaborador que trabajo en el rango dentro de las
@@ -105,8 +109,9 @@ export type GatherMonthlyAttendanceResult =
  * a alguien un dia puntual, y con el filtro viejo ese dia se contaba en la
  * sucursal de origen aunque se hubiera trabajado en otra. Ver lib/workingDay.ts.
  *
- * La tolerancia tambien se toma de la sucursal del dia — es una regla de la
- * tienda donde se presento, no de la que figura en su contrato.
+ * A partir de que minuto hay tardanza lo define el catalogo de tipos de la
+ * empresa (sgrh_cat_tipos_tardia), que se devuelve junto con los dias para
+ * que el llamador clasifique con las mismas reglas con que se filtro.
  *
  * Resuelve el alcance de sucursales del usuario (via uer_sucursal_id, que no
  * viaja en el JWT) puertas adentro para que el llamador solo pase el
@@ -114,7 +119,7 @@ export type GatherMonthlyAttendanceResult =
  *
  * Compartido entre checkMonthlyInfractions (dispara la advertencia del mes en
  * curso) y getMonthlyAttendanceSummary (reporte navegable por mes): ambos
- * necesitan exactamente la misma reunion de tolerancia+programacion+marcas,
+ * necesitan exactamente la misma reunion de catalogo+programacion+marcas,
  * solo difieren en que hacen con el resultado.
  */
 export async function gatherMonthlyAttendanceDays(
@@ -125,6 +130,14 @@ export async function gatherMonthlyAttendanceDays(
   end: string
 ): Promise<GatherMonthlyAttendanceResult> {
   const sucursalScope = usuarioId ? await getUsuarioSucursalScope(supabase, usuarioId) : null
+
+  const tiposResult = await loadTardinessTypes(supabase, empresaId)
+
+  if (!tiposResult.ok) {
+    return { ok: false, error: tiposResult.error }
+  }
+
+  const tipos = tiposResult.data
 
   let assignmentsQuery = supabase
     .from('sgrh_programacion_semanal')
@@ -203,10 +216,8 @@ export async function gatherMonthlyAttendanceDays(
   )
 
   if (historyIds.length === 0) {
-    return { ok: true, data: [] }
+    return { ok: true, data: [], tipos }
   }
-
-  const sucursalIds = Array.from(new Set((assignments ?? []).map((a) => a.prg_sucursal_id)))
 
   // El cruce contra el historial acota por empresa y descarta contratos ya
   // cerrados: la programacion queda como historico y sobrevive a la salida
@@ -214,7 +225,6 @@ export async function gatherMonthlyAttendanceDays(
   // ex-empleado, y checkMonthlyInfractions le mandaria advertencias.
   const [
     { data: historial, error: errHistorial },
-    { data: tolerancias, error: errTolerancias },
     { data: marks, error: errMarks },
     { data: ausencias, error: errAusencias },
   ] = await Promise.all([
@@ -232,11 +242,6 @@ export async function gatherMonthlyAttendanceDays(
       .eq('lab_empresa_id', empresaId)
       .is('lab_fecha_fin', null)
       .returns<HistorialRow[]>(),
-    supabase
-      .from('sgrh_sucursales')
-      .select('suc_id, suc_tolerancia_tardia_minutos')
-      .in('suc_id', sucursalIds)
-      .returns<SucursalToleranciaRow[]>(),
     supabase
       .from('sgrh_marcas_asistencia')
       .select(
@@ -265,17 +270,13 @@ export async function gatherMonthlyAttendanceDays(
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
   }
 
-  if (errTolerancias || errMarks || errAusencias) {
+  if (errMarks || errAusencias) {
     return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
   }
 
   if (historial.length === 0) {
-    return { ok: true, data: [] }
+    return { ok: true, data: [], tipos }
   }
-
-  const toleranciaBySucursal = new Map(
-    (tolerancias ?? []).map((t) => [t.suc_id, t.suc_tolerancia_tardia_minutos])
-  )
 
   // Dias futuros (ej. un horario ya asignado para mañana) todavia no
   // pudieron marcarse — no cuentan como tardia ni ausencia hasta que
@@ -283,8 +284,8 @@ export async function gatherMonthlyAttendanceDays(
   // resto del mes se veia como "ausente" apenas se le asignaba horario.
   const today = todayInCostaRica()
   // Hora actual de Costa Rica: el DIA de hoy entra al calculo, pero un turno
-  // de hoy que todavia no llego a su hora+tolerancia tampoco es ausencia
-  // todavia — recien se sabe al cerrarse esa ventana.
+  // de hoy que todavia no llego al minuto del primer tipo de tardia tampoco
+  // es ausencia todavia — recien se sabe al cerrarse esa ventana.
   const nowTime = timeOfDay(nowInCostaRica())
 
   const assignmentsByHist = new Map<number, AssignmentRow[]>()
@@ -351,19 +352,15 @@ export async function gatherMonthlyAttendanceDays(
           entradaMarkId: entrada?.markId ?? null,
           isJustifiedTardiness: entrada?.justificada ?? false,
           tardiaJustificacion: entrada?.justificacion ?? null,
-          // La tolerancia es la de la tienda donde le tocaba presentarse ese
-          // dia, no la de la sucursal de su contrato.
-          toleranciaMinutos:
-            toleranciaBySucursal.get(a.prg_sucursal_id) ?? DEFAULT_TOLERANCIA_MINUTOS,
         }
       })
       .filter((day) => {
         // Solo se filtra el dia de HOY, sin marca todavia, con horario real
         // (dia libre/feriado/sin programacion ya son 'no_aplica', no hace
-        // falta tocarlos aca). Si la hora esperada + tolerancia ya paso,
-        // se deja pasar — recien ahi es una ausencia/tardanza real.
+        // falta tocarlos aca). Si ya llego el minuto en que habria sido
+        // tardanza, se deja pasar — recien ahi es una ausencia real.
         if (day.date !== today || day.entradaTime || !day.expectedStart) return true
-        return diffMinutes(nowTime, day.expectedStart) > day.toleranciaMinutos
+        return classifyTardiness(diffMinutes(nowTime, day.expectedStart), tipos) !== null
       })
 
     return {
@@ -376,5 +373,5 @@ export async function gatherMonthlyAttendanceDays(
     }
   })
 
-  return { ok: true, data }
+  return { ok: true, data, tipos }
 }

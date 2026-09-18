@@ -31,6 +31,7 @@ describe('checkMonthlyInfractions (server action)', () => {
   it('no hace nada si nadie tiene programacion este mes', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: { data: [], error: null },
       sgrh_historial_laboral: { data: [], error: null },
     })
@@ -41,7 +42,7 @@ describe('checkMonthlyInfractions (server action)', () => {
     const result = await checkMonthlyInfractions()
 
     expect(result).toEqual({ ok: true })
-    expect(client.from).not.toHaveBeenCalledWith('sgrh_sucursales')
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_marcas_asistencia')
   })
 
   it('inserta una advertencia cuando un empleado supera el limite de tardias', async () => {
@@ -51,10 +52,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 2 }],
-        error: null,
-      },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: {
         data: [
           {
@@ -141,10 +139,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 2 }],
-        error: null,
-      },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: {
         data: [
           {
@@ -182,15 +177,23 @@ describe('checkMonthlyInfractions (server action)', () => {
     expect(notifBuilders[0].insert).not.toHaveBeenCalled()
   })
 
-  it('no advierte a un empleado dentro de la tolerancia', async () => {
+  it('no advierte a quien llega antes del primer tipo de tardia del catalogo', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 10 }],
+      sgrh_cat_tipos_tardia: {
+        data: [
+          {
+            tta_id: 1,
+            tta_nombre: 'Tarde',
+            tta_desde_minutos: 11,
+            tta_cuenta_advertencia: true,
+            tta_color: null,
+          },
+        ],
         error: null,
       },
       sgrh_programacion_semanal: {
@@ -239,8 +242,16 @@ describe('checkMonthlyInfractions (server action)', () => {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 10 }],
+      sgrh_cat_tipos_tardia: {
+        data: [
+          {
+            tta_id: 1,
+            tta_nombre: 'Tarde',
+            tta_desde_minutos: 11,
+            tta_cuenta_advertencia: true,
+            tta_color: null,
+          },
+        ],
         error: null,
       },
       sgrh_programacion_semanal: {
@@ -288,7 +299,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: { data: null, error: { message: 'boom' } },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: {
         data: [
           {
@@ -303,7 +314,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
-      sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_marcas_asistencia: { data: null, error: { message: 'boom' } },
       sgrh_ausencias: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
