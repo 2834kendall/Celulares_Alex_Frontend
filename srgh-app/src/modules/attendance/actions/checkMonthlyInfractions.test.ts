@@ -32,6 +32,7 @@ describe('checkMonthlyInfractions (server action)', () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_programacion_semanal: { data: [], error: null },
+      sgrh_historial_laboral: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>
@@ -40,7 +41,6 @@ describe('checkMonthlyInfractions (server action)', () => {
     const result = await checkMonthlyInfractions()
 
     expect(result).toEqual({ ok: true })
-    expect(client.from).not.toHaveBeenCalledWith('sgrh_historial_laboral')
     expect(client.from).not.toHaveBeenCalledWith('sgrh_sucursales')
   })
 

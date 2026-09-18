@@ -131,7 +131,54 @@ export async function gatherMonthlyAttendanceDays(
     return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
   }
 
-  const historyIds = Array.from(new Set((assignments ?? []).map((a) => a.prg_historial_laboral_id)))
+  const conDiasAca = Array.from(new Set((assignments ?? []).map((a) => a.prg_historial_laboral_id)))
+
+  // Plantilla de la sucursal, tenga o no dias programados en el rango.
+  //
+  // Sin esto el reporte solo listaba a quien alguien hubiera planificado, y
+  // el gerente no podia distinguir "no tiene tardias" de "no aparece, ¿por
+  // que?" — con la plantilla real a la vista, un mes sin programar se lee
+  // como lo que es. Mismo criterio que el panel diario.
+  let rosterQuery = supabase
+    .from('sgrh_historial_laboral')
+    .select('lab_id')
+    .eq('lab_empresa_id', empresaId)
+    .is('lab_fecha_fin', null)
+
+  if (sucursalScope !== null) {
+    rosterQuery = rosterQuery.in('lab_sucursal_id', sucursalScope)
+  }
+
+  const { data: roster, error: errRoster } = await rosterQuery.returns<{ lab_id: number }[]>()
+
+  if (errRoster) {
+    return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
+  }
+
+  const rosterIds = (roster ?? []).map((r) => r.lab_id)
+
+  // Quien tiene programacion en el rango pero TODA en otras sucursales no
+  // entra: sus tardias se cuentan en el reporte de la tienda donde trabajo,
+  // y sumarlo aca con cero seria contarlo dos veces en dos paneles.
+  const { data: enOtras, error: errOtras } = rosterIds.length
+    ? await supabase
+        .from('sgrh_programacion_semanal')
+        .select('prg_historial_laboral_id')
+        .gte('prg_fecha', start)
+        .lte('prg_fecha', end)
+        .in('prg_historial_laboral_id', rosterIds)
+        .returns<{ prg_historial_laboral_id: number }[]>()
+    : { data: [], error: null }
+
+  if (errOtras) {
+    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
+  }
+
+  const conAlgunaProgramacion = new Set((enOtras ?? []).map((p) => p.prg_historial_laboral_id))
+
+  const historyIds = Array.from(
+    new Set([...conDiasAca, ...rosterIds.filter((id) => !conAlgunaProgramacion.has(id))])
+  )
 
   if (historyIds.length === 0) {
     return { ok: true, data: [] }

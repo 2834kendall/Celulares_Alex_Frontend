@@ -124,8 +124,62 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     return { ok: false, error: 'No se pudieron cargar las marcas del dia.' }
   }
 
+  // Plantilla de la sucursal: los contratos activos, tengan turno hoy o no.
+  //
+  // "Sin turno no se marca" es una regla del KIOSCO, no de esta pantalla. El
+  // panel es donde el encargado corrige y agrega marcas a mano, asi que
+  // esconder a quien no quedo programado le quita justamente la herramienta
+  // para arreglarlo — y deja el dia en blanco cuando nadie planifico, que es
+  // lo contrario de lo que el gerente necesita ver.
+  let rosterQuery = supabase
+    .from('sgrh_historial_laboral')
+    .select('lab_id')
+    .eq('lab_empresa_id', meta.empresa_id)
+    .is('lab_fecha_fin', null)
+
+  if (sucursalIds !== null) {
+    rosterQuery = rosterQuery.in('lab_sucursal_id', sucursalIds)
+  }
+
+  const { data: roster, error: errRoster } = await rosterQuery.returns<{ lab_id: number }[]>()
+
+  if (errRoster) {
+    return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
+  }
+
+  const rosterIds = (roster ?? []).map((r) => r.lab_id)
+
+  // De la plantilla se descuenta a quien ese dia fue trasladado a OTRA
+  // sucursal: ya aparece en el panel de la tienda donde de verdad trabajo, y
+  // sin este descuento saldria en los dos a la vez — el bug que este ticket
+  // vino a cerrar.
+  //
+  // La consulta va sin filtro de sucursal a proposito, pero la RLS de
+  // programacion_semanal solo deja ver las sucursales del usuario: un gerente
+  // que no alcanza a ver la otra tienda no se entera del traslado y sigue
+  // viendo a esa persona en su panel. Es una degradacion aceptable — en el
+  // panel solo duplica una fila de lectura, no habilita a nadie a marcar.
+  const { data: elsewhere, error: errElsewhere } = rosterIds.length
+    ? await supabase
+        .from('sgrh_programacion_semanal')
+        .select('prg_historial_laboral_id, prg_sucursal_id')
+        .eq('prg_fecha', dateISO)
+        .in('prg_historial_laboral_id', rosterIds)
+        .returns<{ prg_historial_laboral_id: number; prg_sucursal_id: number }[]>()
+    : { data: [], error: null }
+
+  if (errElsewhere) {
+    return { ok: false, error: 'No se pudo cargar la programacion del dia.' }
+  }
+
+  const trasladados = new Set(
+    (elsewhere ?? [])
+      .filter((p) => sucursalIds !== null && !sucursalIds.includes(p.prg_sucursal_id))
+      .map((p) => p.prg_historial_laboral_id)
+  )
+
   // Las marcas se consultan por sucursal y no por la lista de programados, y
-  // despues se unen las dos: una marca cuya programacion se borro o se movio
+  // despues se unen las tres: una marca cuya programacion se borro o se movio
   // a otra tienda despues del hecho seguiria existiendo, y dejarla fuera la
   // volveria invisible para todos. Es preferible una fila sin turno asignado
   // a una marca que no aparece en ningun panel.
@@ -133,6 +187,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     new Set([
       ...assignments.data.map((a) => a.employmentHistoryId),
       ...(marks ?? []).map((m) => m.mar_historial_laboral_id),
+      ...rosterIds.filter((id) => !trasladados.has(id)),
     ])
   )
 
