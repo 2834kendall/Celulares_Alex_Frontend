@@ -30,6 +30,7 @@ interface HistorialRow {
   lab_fecha_fin: string | null
   lab_salario_base: number | null
   lab_salario_real: number | null
+  sgrh_empleados: { emp_fecha_ingreso_original: string | null } | null
 }
 
 interface MotivoRow {
@@ -102,7 +103,24 @@ function etiquetaDe(p: DetalleHistoricoRow): string {
 export async function procesarLiquidacion(
   input: ProcesarLiquidacionInput
 ): Promise<ProcesarLiquidacionResult> {
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
+
+  // Liquidar toca DOS tablas con permisos distintos: sgrh_liquidaciones pide
+  // NOMINA_WRITE y cerrar el expediente pide HISTORIAL_WRITE. El rol CONTADOR
+  // tiene el primero y no el segundo, y RLS no devuelve error cuando bloquea
+  // un UPDATE: filtra la fila, el UPDATE toca 0 registros y PostgREST responde
+  // "todo bien". Resultado: liquidación guardada, empleado todavía activo, y
+  // como liq_historial_laboral_id es UNIQUE ya no se puede reintentar.
+  //
+  // Por eso se corta ANTES de escribir nada, no después.
+  const permisos = ((claims.app_metadata ?? {}) as { permisos?: string[] }).permisos ?? []
+  if (!permisos.includes(PERMISOS.HISTORIAL_WRITE)) {
+    return {
+      ok: false,
+      error:
+        'Para liquidar hace falta también permiso de escritura sobre Historial Laboral: la liquidación cierra el expediente del empleado. Pedile a un administrador que te agregue HISTORIAL_WRITE, o que un usuario con ese permiso procese la salida.',
+    }
+  }
 
   const parsed = procesarLiquidacionSchema.safeParse(input)
   if (!parsed.success) {
@@ -114,7 +132,10 @@ export async function procesarLiquidacion(
 
   const { data: historial, error: errHistorial } = await supabase
     .from('sgrh_historial_laboral')
-    .select('lab_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real')
+    .select(
+      `lab_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
+       sgrh_empleados ( emp_fecha_ingreso_original )`
+    )
     .eq('lab_id', data.historialLaboralId)
     .maybeSingle<HistorialRow>()
 
@@ -129,8 +150,21 @@ export async function procesarLiquidacion(
   }
 
   const fechaSalida = parseFechaLocal(data.fechaSalida)
-  const fechaIngreso = parseFechaLocal(historial.lab_fecha_inicio)
-  if (fechaSalida.getTime() < fechaIngreso.getTime()) {
+
+  // La antigüedad para cesantía y preaviso es la RELACIÓN LABORAL con la
+  // empresa, no el contrato vigente. Un traslado de sucursal o un cambio de
+  // puesto cierra un lab_id y abre otro; medir desde lab_fecha_inicio le
+  // borraba a la persona todos los años anteriores al último contrato y le
+  // pagaba una liquidación de meses en vez de años. La fecha real vive en
+  // sgrh_empleados.emp_fecha_ingreso_original.
+  //
+  // Si falta (empleado viejo sin el dato), se cae al inicio del contrato y se
+  // avisa: es lo único que hay, pero puede quedar corto.
+  const ingresoOriginal = historial.sgrh_empleados?.emp_fecha_ingreso_original ?? null
+  const fechaIngreso = parseFechaLocal(ingresoOriginal ?? historial.lab_fecha_inicio)
+  const fechaInicioContrato = parseFechaLocal(historial.lab_fecha_inicio)
+
+  if (fechaSalida.getTime() < fechaInicioContrato.getTime()) {
     return {
       ok: false,
       error: `La fecha de salida es anterior a la de ingreso (${historial.lab_fecha_inicio}).`,
@@ -259,6 +293,16 @@ export async function procesarLiquidacion(
     )
   }
 
+  if (!ingresoOriginal) {
+    advertencias.push(
+      'El empleado no tiene fecha de ingreso original registrada, así que la antigüedad se midió desde el inicio de este contrato. Si tuvo contratos anteriores, la cesantía y el preaviso quedan cortos: cargá la fecha en su ficha y volvé a calcular.'
+    )
+  } else if (ingresoOriginal !== historial.lab_fecha_inicio) {
+    advertencias.push(
+      `La antigüedad se midió desde el ingreso a la empresa (${ingresoOriginal}), no desde el inicio de este contrato (${historial.lab_fecha_inicio}).`
+    )
+  }
+
   const antiguedad = calcularAntiguedad(fechaIngreso, fechaSalida)
 
   const resultado = calcularLiquidacion({
@@ -317,19 +361,24 @@ export async function procesarLiquidacion(
     }
   }
 
-  const { error: errCierre } = await supabase
+  // Se pide la fila de vuelta para CONTAR lo que se escribió. Sin el select,
+  // un UPDATE que RLS filtró devuelve error null y cero filas: indistinguible
+  // de un cierre correcto. El pre-chequeo de arriba cubre el caso conocido;
+  // esto cubre cualquier otro (empresa que no coincide, fila movida).
+  const { data: cerrado, error: errCierre } = await supabase
     .from('sgrh_historial_laboral')
     .update({
       lab_fecha_fin: data.fechaSalida,
       lab_motivo_salida_id: data.motivoSalidaId,
     })
     .eq('lab_id', data.historialLaboralId)
+    .select('lab_id')
+    .returns<{ lab_id: number }[]>()
 
-  if (errCierre) {
+  if (errCierre || !cerrado || cerrado.length === 0) {
     return {
       ok: false,
-      error:
-        'La liquidación se calculó y se guardó, pero no se pudo cerrar el expediente del empleado. Revisalo manualmente en Historial Laboral.',
+      error: `La liquidación se guardó (n.° ${inserted.liq_id}) pero el expediente del empleado NO se cerró: sigue apareciendo como activo. Cerralo a mano en Historial Laboral poniéndole la fecha de salida ${data.fechaSalida} y el motivo, o pedile a alguien con permiso de Historial que lo haga.`,
     }
   }
 

@@ -317,4 +317,39 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
     )[0]
     expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 96, ndt_salario_bruto: 300000 })
   })
+  // Hallazgo del informe técnico: la base permite dos contratos abiertos para
+  // el mismo empleado. Cargar la planilla le armaba una fila por contrato y le
+  // pagaba la quincena dos veces, sin aviso: las dos filas son válidas.
+  it('no carga la planilla si alguien tiene dos contratos activos', async () => {
+    const client = escenario()
+    mockEmpleados.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          labId: 5,
+          cedula: '1-1111-2222',
+          nombre: 'Ana Pérez',
+          salarioBaseMensual: 600000,
+          horasSemanales: 48,
+        },
+        {
+          // Mismo empleado, contrato viejo sin cerrar.
+          labId: 9,
+          cedula: '1-1111-2222',
+          nombre: 'Ana Pérez',
+          salarioBaseMensual: 600000,
+          horasSemanales: 48,
+        },
+      ],
+    })
+
+    const result = await cargarEmpleadosDesdeAsistencia(9)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('Ana Pérez')
+      expect(result.error).toContain('dos veces')
+    }
+    expect(llamadas(client, 'sgrh_nomina_detalle', 'insert')).toHaveLength(0)
+  })
 })

@@ -111,6 +111,28 @@ export async function cargarEmpleadosDesdeAsistencia(
     return { ok: false, error: 'No se pudo revisar quién ya está en el periodo.' }
   }
 
+  // La base no impide que un empleado tenga dos contratos abiertos a la vez
+  // (falta un índice único parcial sobre lab_empleado_id WHERE lab_fecha_fin
+  // IS NULL). Si pasa, esta carga le arma DOS filas de planilla a la misma
+  // persona y se le paga la quincena dos veces, sin que nada lo avise: las dos
+  // filas son válidas por separado.
+  //
+  // No se puede arreglar desde acá —el contrato duplicado hay que cerrarlo en
+  // Historial Laboral— pero sí se puede no pagarlo: se corta y se nombra a
+  // quién le pasa.
+  const porCedula = new Map<string, string>()
+  const duplicados = new Set<string>()
+  for (const e of empleadosResult.data) {
+    if (porCedula.has(e.cedula)) duplicados.add(porCedula.get(e.cedula)!)
+    else porCedula.set(e.cedula, e.nombre)
+  }
+  if (duplicados.size > 0) {
+    return {
+      ok: false,
+      error: `Estos empleados tienen más de un contrato activo en la sucursal (${[...duplicados].join(', ')}), así que la planilla les crearía una fila por contrato y se les pagaría dos veces. Cerrá el contrato viejo en Historial Laboral y volvé a intentarlo.`,
+    }
+  }
+
   const existentes = new Set((yaEnPeriodo ?? []).map((d) => d.ndt_historial_laboral_id))
   const faltantes = empleadosResult.data.filter((e) => !existentes.has(e.labId))
 

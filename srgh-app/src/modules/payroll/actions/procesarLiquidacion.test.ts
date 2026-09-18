@@ -19,6 +19,7 @@ const HISTORIAL = {
   lab_fecha_fin: null,
   lab_salario_base: 300000,
   lab_salario_real: 300000,
+  sgrh_empleados: { emp_fecha_ingreso_original: '2020-01-15' },
 }
 
 // Renuncia sin responsabilidad patronal: no genera cesantía ni preaviso.
@@ -40,7 +41,8 @@ const INPUT: ProcesarLiquidacionInput = {
 }
 
 const INSERTED = { data: { liq_id: 100 }, error: null }
-const OK = { data: null, error: null }
+/** El UPDATE de cierre devuelve la fila que tocó: así se sabe que no fue 0. */
+const CERRADO = { data: [{ lab_id: 1 }], error: null }
 
 type Respuesta = { data: unknown; error: unknown }
 
@@ -75,7 +77,7 @@ function seisMesesPagados(bruto = 150000) {
 
 function escenario(over: Record<string, Respuesta | Respuesta[]> = {}) {
   return mockSupabase({
-    sgrh_historial_laboral: [{ data: HISTORIAL, error: null }, OK],
+    sgrh_historial_laboral: [{ data: HISTORIAL, error: null }, CERRADO],
     sgrh_cat_motivos_salida: { data: MOTIVO_SIN_DERECHOS, error: null },
     sgrh_nomina_detalle: { data: [], error: null },
     sgrh_cat_conceptos_nomina: { data: CONCEPTOS_DEDUCCION, error: null },
@@ -94,9 +96,9 @@ function insercion(client: ReturnType<typeof mockSupabase>) {
 describe('procesarLiquidacion (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequirePermission.mockResolvedValue(
-      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
-    )
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE'] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
   })
 
   it('rechaza datos inválidos', async () => {
@@ -329,10 +331,88 @@ describe('procesarLiquidacion (server action)', () => {
 
     const result = await procesarLiquidacion(INPUT)
 
-    expect(result).toEqual({
-      ok: false,
-      error:
-        'La liquidación se calculó y se guardó, pero no se pudo cerrar el expediente del empleado. Revisalo manualmente en Historial Laboral.',
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('NO se cerró')
+      expect(result.error).toContain('100')
+    }
+  })
+
+  // El hallazgo del informe: RLS no devuelve error cuando bloquea un UPDATE.
+  // Filtra la fila, se tocan 0 registros y PostgREST responde "todo bien". La
+  // liquidación quedaba guardada, el empleado activo, y como
+  // liq_historial_laboral_id es UNIQUE ya no se podía reintentar.
+  it('detecta el cierre bloqueado por RLS aunque no venga ningún error', async () => {
+    escenario({
+      sgrh_historial_laboral: [
+        { data: HISTORIAL, error: null },
+        { data: [], error: null },
+      ],
     })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('sigue apareciendo como activo')
+  })
+
+  // Mejor todavía: con un rol sin HISTORIAL_WRITE (el CONTADOR del seed) no se
+  // escribe NADA, así no queda el estado a medias que no se puede reintentar.
+  it('no escribe nada si el usuario no puede cerrar el expediente', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { permisos: ['NOMINA_WRITE'] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    escenario()
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('HISTORIAL_WRITE')
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
+  // La antigüedad es la relación laboral con la empresa, no el contrato
+  // vigente. Un traslado abre un lab_id nuevo; medir desde ahí le borraba a la
+  // persona los años anteriores y le pagaba meses en vez de años.
+  it('mide la antigüedad desde el ingreso original, no desde el contrato actual', async () => {
+    escenario({
+      sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null },
+      sgrh_historial_laboral: [
+        {
+          data: {
+            ...HISTORIAL,
+            // Traslado reciente: el contrato vigente arrancó hace 5 meses.
+            lab_fecha_inicio: '2025-08-15',
+            sgrh_empleados: { emp_fecha_ingreso_original: '2020-01-15' },
+          },
+          error: null,
+        },
+        CERRADO,
+      ],
+    })
+
+    const result = await procesarLiquidacion({ ...INPUT, motivoSalidaId: 6 })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // 6 años desde 2020, no 5 meses desde el traslado.
+    expect(result.data.diasCesantia).toBe(129)
+    expect(result.data.diasPreaviso).toBe(30)
+    expect(result.data.advertencias.some((a) => a.includes('ingreso a la empresa'))).toBe(true)
+  })
+
+  it('sin fecha de ingreso original usa el contrato y avisa que puede quedar corta', async () => {
+    escenario({
+      sgrh_historial_laboral: [
+        { data: { ...HISTORIAL, sgrh_empleados: null }, error: null },
+        CERRADO,
+      ],
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.advertencias.some((a) => a.includes('ingreso original'))).toBe(true)
   })
 })
