@@ -10,7 +10,7 @@ export default async function KioscoPage() {
 
   if (!result.ok) {
     return (
-      <div className="text-center text-slate-300">
+      <div className="my-auto max-w-md rounded-3xl bg-white p-6 text-center text-base text-slate-700 shadow-xl shadow-blue-900/5 ring-1 ring-blue-100">
         <p>{result.error}</p>
       </div>
     )
