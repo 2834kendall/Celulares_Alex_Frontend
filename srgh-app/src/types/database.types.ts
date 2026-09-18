@@ -1726,6 +1726,10 @@ export type Database = {
           mar_observacion: string | null
           mar_registrado_por_id: number | null
           mar_sucursal_id: number
+          mar_tardia_justificacion: string | null
+          mar_tardia_justificada: boolean
+          mar_tardia_justificada_at: string | null
+          mar_tardia_justificada_por_id: number | null
           mar_tipo: string
         }
         Insert: {
@@ -1741,6 +1745,10 @@ export type Database = {
           mar_observacion?: string | null
           mar_registrado_por_id?: number | null
           mar_sucursal_id: number
+          mar_tardia_justificacion?: string | null
+          mar_tardia_justificada?: boolean
+          mar_tardia_justificada_at?: string | null
+          mar_tardia_justificada_por_id?: number | null
           mar_tipo: string
         }
         Update: {
@@ -1756,6 +1764,10 @@ export type Database = {
           mar_observacion?: string | null
           mar_registrado_por_id?: number | null
           mar_sucursal_id?: number
+          mar_tardia_justificacion?: string | null
+          mar_tardia_justificada?: boolean
+          mar_tardia_justificada_at?: string | null
+          mar_tardia_justificada_por_id?: number | null
           mar_tipo?: string
         }
         Relationships: [
@@ -1769,6 +1781,13 @@ export type Database = {
           {
             foreignKeyName: "sgrh_asi_mar_registrado_por_id_fkey"
             columns: ["mar_registrado_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+          {
+            foreignKeyName: "sgrh_asi_mar_tardia_justificada_por_id_fkey"
+            columns: ["mar_tardia_justificada_por_id"]
             isOneToOne: false
             referencedRelation: "sgrh_usuarios"
             referencedColumns: ["usr_id"]

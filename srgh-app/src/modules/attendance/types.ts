@@ -112,3 +112,28 @@ export const getMonthlyAttendanceSummarySchema = z.object({
 })
 
 export type GetMonthlyAttendanceSummaryInput = z.input<typeof getMonthlyAttendanceSummarySchema>
+
+/** Minimo del motivo, igual que la justificacion de una correccion manual. */
+const MOTIVO_MINIMO = 10
+
+/**
+ * Marcar (o desmarcar) una tardanza como justificada (SGRH-87). `markId` es la
+ * marca de ENTRADA que llego tarde.
+ *
+ * El mismo esquema cubre poner y quitar: con `justificada: false` el motivo
+ * sobra y se limpia. Cuando se justifica, el motivo es obligatorio — la razon
+ * de existir de esto es dejar por escrito POR QUE no cuenta, y una
+ * justificacion sin motivo no se puede auditar despues.
+ */
+export const justifyTardinessSchema = z
+  .object({
+    markId: z.number().int().positive(),
+    justificada: z.boolean(),
+    motivo: z.string().trim().max(500, 'Maximo 500 caracteres.').nullable().default(null),
+  })
+  .refine((v) => !v.justificada || (v.motivo !== null && v.motivo.length >= MOTIVO_MINIMO), {
+    message: `Escriba un motivo de al menos ${MOTIVO_MINIMO} caracteres.`,
+    path: ['motivo'],
+  })
+
+export type JustifyTardinessInput = z.input<typeof justifyTardinessSchema>

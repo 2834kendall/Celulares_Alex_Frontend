@@ -63,6 +63,7 @@ function mocks(options: {
   plantilla?: QueryResult
   detalle?: QueryResult
   marcas?: QueryResult
+  tolerancias?: QueryResult
   sucursalId?: number | null
 }) {
   const vacio = { data: [], error: null }
@@ -74,6 +75,11 @@ function mocks(options: {
     sgrh_programacion_semanal: [options.turnos ?? vacio, options.trasladados ?? vacio],
     sgrh_marcas_asistencia: options.marcas ?? vacio,
     sgrh_historial_laboral: [options.plantilla ?? vacio, options.detalle ?? vacio],
+    // Tolerancia por sucursal: con 0, un minuto de atraso ya es tardanza.
+    sgrh_sucursales: options.tolerancias ?? {
+      data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 0 }],
+      error: null,
+    },
   }
 }
 

@@ -3,7 +3,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { classifyDay } from '@/modules/attendance/lib/infractions'
+import {
+  classifyDay,
+  classifyTardiness,
+  type TardinessLevel,
+} from '@/modules/attendance/lib/infractions'
 import { gatherMonthlyAttendanceDays } from '@/modules/attendance/lib/monthlySummary'
 import { diffMinutes, monthBoundsInCostaRica } from '@/modules/attendance/lib/time'
 import {
@@ -16,6 +20,18 @@ export interface TardyDay {
   /** "HH:mm" real de la entrada. */
   entradaTime: string
   diffMinutes: number
+  /** Banda de gravedad (SGRH-87): leve 1-5 min, tardia 6-10, grave 11+. */
+  level: TardinessLevel
+  /**
+   * mar_id de la entrada. Lo necesita el modal para saber que tardanza
+   * esta justificando; null solo en el caso teorico de un dia clasificado
+   * como tardio sin marca detras, que classifyDay no produce.
+   */
+  markId: number | null
+  /** El encargado ya la justifico: se muestra, pero no suma al conteo. */
+  isJustified: boolean
+  /** Motivo escrito al justificarla. */
+  justification: string | null
 }
 
 export interface MonthlyEmployeeSummary {
@@ -24,7 +40,11 @@ export interface MonthlyEmployeeSummary {
   fullName: string
   tardias: number
   ausencias: number
-  /** Ordenados cronologicamente — el detalle que summarizeMonth solo cuenta. */
+  /**
+   * Ordenados cronologicamente — el detalle que summarizeMonth solo cuenta.
+   * Incluye las justificadas: siguen viendose en el reporte aunque no sumen
+   * a `tardias`, para no perder la trazabilidad del atraso.
+   */
   tardyDays: TardyDay[]
   absentDays: string[]
 }
@@ -79,14 +99,22 @@ export async function getMonthlyAttendanceSummary(
     for (const day of employee.days) {
       const status = classifyDay(day)
 
-      if (status === 'tardio') {
-        // classifyDay solo devuelve 'tardio' cuando entradaTime y expectedStart
-        // son ambos no-nulos (si entradaTime faltara, el resultado seria
-        // 'ausente' antes de llegar aca) — las aserciones son seguras.
+      if (status === 'tardio' || status === 'tardio_justificado') {
+        // Las dos ramas solo se alcanzan con entradaTime y expectedStart
+        // no-nulos (sin entrada el resultado seria 'ausente' antes de llegar
+        // aca) — las aserciones son seguras.
+        const atraso = diffMinutes(day.entradaTime!, day.expectedStart!)
+
         tardyDays.push({
           date: day.date,
           entradaTime: day.entradaTime!,
-          diffMinutes: diffMinutes(day.entradaTime!, day.expectedStart!),
+          diffMinutes: atraso,
+          // classifyTardiness nunca devuelve null aca: si el atraso fuera
+          // <= 0 el dia habria salido 'a_tiempo'.
+          level: classifyTardiness(atraso) ?? 'leve',
+          markId: day.entradaMarkId,
+          isJustified: status === 'tardio_justificado',
+          justification: day.tardiaJustificacion,
         })
       } else if (status === 'ausente') {
         absentDays.push(day.date)
@@ -100,7 +128,9 @@ export async function getMonthlyAttendanceSummary(
       employeeId: employee.employeeId,
       employmentHistoryId: employee.employmentHistoryId,
       fullName: employee.fullName,
-      tardias: tardyDays.length,
+      // Solo las NO justificadas: es el numero que dispara la advertencia
+      // del mes, y el que el encargado necesita ver como "deuda" real.
+      tardias: tardyDays.filter((d) => !d.isJustified).length,
       ausencias: absentDays.length,
       tardyDays,
       absentDays,

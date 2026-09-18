@@ -27,6 +27,7 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
     salida: null,
     duplicateMarksCount: 0,
     isOpen: true,
+    tardiness: null,
     ...overrides,
   }
 }

@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MonthlySummaryTable } from './MonthlySummaryTable'
+
+vi.mock('@/modules/attendance/actions/justifyTardiness', () => ({
+  justifyTardiness: vi.fn(),
+}))
 import type { MonthlyEmployeeSummary } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
 
 const push = vi.fn()
@@ -30,14 +34,18 @@ describe('<MonthlySummaryTable />', () => {
   })
 
   it('muestra el estado vacio sin colaboradores', () => {
-    render(<MonthlySummaryTable monthISO="2026-07-01" rows={[]} />)
+    render(<MonthlySummaryTable monthISO="2026-07-01" rows={[]} canWrite />)
 
     expect(screen.getByText('No hay colaboradores activos en esta sucursal')).toBeInTheDocument()
   })
 
   it('lista a los colaboradores con sus totales del mes', () => {
     render(
-      <MonthlySummaryTable monthISO="2026-07-01" rows={[makeRow({ tardias: 2, ausencias: 1 })]} />
+      <MonthlySummaryTable
+        monthISO="2026-07-01"
+        rows={[makeRow({ tardias: 2, ausencias: 1 })]}
+        canWrite
+      />
     )
 
     const row = screen.getByRole('row', { name: /Ana Perez/ })
@@ -46,7 +54,7 @@ describe('<MonthlySummaryTable />', () => {
   })
 
   it('no muestra boton de expandir si no tiene tardias ni ausencias', () => {
-    render(<MonthlySummaryTable monthISO="2026-07-01" rows={[makeRow()]} />)
+    render(<MonthlySummaryTable monthISO="2026-07-01" rows={[makeRow()]} canWrite />)
 
     expect(screen.queryByLabelText('Ver dias')).not.toBeInTheDocument()
   })
@@ -60,10 +68,21 @@ describe('<MonthlySummaryTable />', () => {
           makeRow({
             tardias: 1,
             ausencias: 1,
-            tardyDays: [{ date: '2026-07-10', entradaTime: '08:15', diffMinutes: 15 }],
+            tardyDays: [
+              {
+                date: '2026-07-10',
+                entradaTime: '08:15',
+                diffMinutes: 15,
+                level: 'grave',
+                markId: 77,
+                isJustified: false,
+                justification: null,
+              },
+            ],
             absentDays: ['2026-07-05'],
           }),
         ]}
+        canWrite
       />
     )
 
@@ -81,7 +100,7 @@ describe('<MonthlySummaryTable />', () => {
 
   it('navega al mes siguiente y anterior preservando el pathname', async () => {
     const user = userEvent.setup()
-    render(<MonthlySummaryTable monthISO="2026-07-01" rows={[]} />)
+    render(<MonthlySummaryTable monthISO="2026-07-01" rows={[]} canWrite />)
 
     await user.click(screen.getByLabelText('Mes siguiente'))
     expect(push).toHaveBeenCalledWith('/attendance?month=2026-08-01')

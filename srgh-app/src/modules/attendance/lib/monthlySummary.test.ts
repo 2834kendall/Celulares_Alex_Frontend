@@ -196,9 +196,12 @@ describe('gatherMonthlyAttendanceDays', () => {
         marcas: {
           data: [
             {
+              mar_id: 77,
               mar_historial_laboral_id: 1,
               mar_tipo: 'entrada',
               mar_fecha_hora: '2026-07-01T08:20:00',
+              mar_tardia_justificada: false,
+              mar_tardia_justificacion: null,
             },
           ],
           error: null,
@@ -230,6 +233,9 @@ describe('gatherMonthlyAttendanceDays', () => {
               expectedStart: '08:00',
               entradaTime: '08:20',
               toleranciaMinutos: 5,
+              entradaMarkId: 77,
+              isJustifiedTardiness: false,
+              tardiaJustificacion: null,
             },
           ],
         },
@@ -377,6 +383,9 @@ describe('gatherMonthlyAttendanceDays', () => {
               expectedStart: '11:00',
               entradaTime: null,
               toleranciaMinutos: 5,
+              entradaMarkId: null,
+              isJustifiedTardiness: false,
+              tardiaJustificacion: null,
             },
           ],
         },

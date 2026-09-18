@@ -7,6 +7,7 @@ import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
 import { getDayAssignments, type DayAssignment } from '@/modules/attendance/lib/workingDay'
+import { classifyTardiness, type TardinessLevel } from '@/modules/attendance/lib/infractions'
 import { marcaTipoSchema } from '@/modules/attendance/types'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 
@@ -36,7 +37,17 @@ interface MarkDbRow {
   mar_sucursal_id: number
   mar_tipo: string
   mar_fecha_hora: string
+  mar_tardia_justificada: boolean | null
+  mar_tardia_justificacion: string | null
 }
+
+/**
+ * Minutos de gracia si la sucursal no aparece en la consulta. Desde SGRH-87
+ * el valor por defecto de la columna es 0 (la tardanza cuenta desde el
+ * primer minuto); este fallback solo cubre el caso raro de una sucursal que
+ * no se pudo leer, y se queda del lado indulgente.
+ */
+const DEFAULT_TOLERANCIA_MINUTOS = 0
 
 export interface DailyMarkInfo {
   /** mar_id — lo necesita el modal de correccion para saber que fila actualizar. */
@@ -45,6 +56,16 @@ export interface DailyMarkInfo {
   time: string
   /** Diferencia contra la hora esperada, en minutos. Positivo = tarde. null si no hay hora esperada con que comparar. Dato neutro: no clasifica tardanza. */
   diffMinutes: number | null
+}
+
+/** Tardanza de la entrada, ya clasificada. null si llego a tiempo. */
+export interface DailyTardiness {
+  level: TardinessLevel
+  /** Minutos de atraso contra la hora esperada. Siempre positivo. */
+  diffMinutes: number
+  /** El encargado la justifico: se sigue viendo, pero no cuenta para el mes. */
+  isJustified: boolean
+  justification: string | null
 }
 
 export interface DailyAttendanceRow {
@@ -66,6 +87,11 @@ export interface DailyAttendanceRow {
   salida: DailyMarkInfo | null
   duplicateMarksCount: number
   isOpen: boolean
+  /**
+   * Clasificacion del atraso de la entrada (SGRH-87). null cuando llego a
+   * tiempo, no marco, o no hay hora esperada con que comparar.
+   */
+  tardiness: DailyTardiness | null
 }
 
 export type GetDailyAttendanceResult =
@@ -110,7 +136,9 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
   let marksQuery = supabase
     .from('sgrh_marcas_asistencia')
-    .select('mar_id, mar_historial_laboral_id, mar_sucursal_id, mar_tipo, mar_fecha_hora')
+    .select(
+      'mar_id, mar_historial_laboral_id, mar_sucursal_id, mar_tipo, mar_fecha_hora, mar_tardia_justificada, mar_tardia_justificacion'
+    )
     .gte('mar_fecha_hora', `${dateISO} 00:00:00`)
     .lte('mar_fecha_hora', `${dateISO} 23:59:59`)
 
@@ -231,6 +259,9 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
   // ella la fila caeria a la del contrato y el modal de correccion guardaria
   // la marca corregida en la tienda equivocada.
   const markBranchByHistoryId = new Map<number, number>()
+  // Justificacion por mar_id: solo la de la entrada se termina usando, pero
+  // indexar por id evita repetir el recorrido buscando cual era.
+  const justificacionByMarkId = new Map<number, { justificada: boolean; motivo: string | null }>()
 
   for (const m of marks ?? []) {
     // mar_tipo es varchar sin enum en los tipos generados: se valida aca y se
@@ -247,7 +278,33 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     if (!markBranchByHistoryId.has(m.mar_historial_laboral_id)) {
       markBranchByHistoryId.set(m.mar_historial_laboral_id, m.mar_sucursal_id)
     }
+
+    justificacionByMarkId.set(m.mar_id, {
+      justificada: m.mar_tardia_justificada ?? false,
+      motivo: m.mar_tardia_justificacion,
+    })
   }
+
+  // Tolerancia de cada sucursal en juego: la del DIA cuando hay turno, y si
+  // no, aquella donde se marco o la del contrato. Es la misma regla de
+  // procedencia que branchId mas abajo.
+  const branchIds = Array.from(
+    new Set([
+      ...assignments.data.map((a) => a.branchId),
+      ...(marks ?? []).map((m) => m.mar_sucursal_id),
+      ...employmentHistory.map((h) => h.lab_sucursal_id),
+    ])
+  )
+
+  const { data: tolerancias } = await supabase
+    .from('sgrh_sucursales')
+    .select('suc_id, suc_tolerancia_tardia_minutos')
+    .in('suc_id', branchIds)
+    .returns<{ suc_id: number; suc_tolerancia_tardia_minutos: number }[]>()
+
+  const toleranciaBySucursal = new Map(
+    (tolerancias ?? []).map((t) => [t.suc_id, t.suc_tolerancia_tardia_minutos])
+  )
 
   // Una sola firma para toda la jornada (ver signEmployeePhotos).
   const fotoUrls = await signEmployeePhotos(
@@ -278,6 +335,27 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       }
     }
 
+    // El orden importa: manda el turno del dia, despues donde se marco de
+    // verdad, y la del contrato solo como ultimo recurso.
+    const branchId =
+      assignment?.branchId ?? markBranchByHistoryId.get(h.lab_id) ?? h.lab_sucursal_id
+
+    const entrada = markInfo(journey.entrada, assignment?.expectedStart ?? null)
+
+    // Un dia libre, feriado o sin turno no tiene tardanza: no habia hora a la
+    // que llegar. Es el mismo criterio de classifyDay, que aca no se puede
+    // reusar tal cual porque trabaja sobre el mes y no sobre la fila del dia.
+    const cuentaLaTardanza =
+      entrada?.diffMinutes != null &&
+      !(assignment?.isDayOff ?? false) &&
+      !(assignment?.isHoliday ?? false) &&
+      entrada.diffMinutes > (toleranciaBySucursal.get(branchId) ?? DEFAULT_TOLERANCIA_MINUTOS)
+
+    const level = cuentaLaTardanza ? classifyTardiness(entrada!.diffMinutes!) : null
+    const justificacion = journey.entrada
+      ? justificacionByMarkId.get(journey.entrada.id)
+      : undefined
+
     return {
       employmentHistoryId: h.lab_id,
       employeeId: h.lab_empleado_id,
@@ -285,18 +363,24 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       // emp_foto_path nunca cruza al cliente: solo la URL firmada opaca.
       fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,
       position: h.sgrh_cat_puestos?.pue_nombre ?? null,
-      // El orden importa: manda el turno del dia, despues donde se marco de
-      // verdad, y la del contrato solo como ultimo recurso.
-      branchId: assignment?.branchId ?? markBranchByHistoryId.get(h.lab_id) ?? h.lab_sucursal_id,
+      branchId,
       isDayOff: assignment?.isDayOff ?? false,
       isHoliday: assignment?.isHoliday ?? false,
       expectedStart: assignment?.expectedStart ?? null,
-      entrada: markInfo(journey.entrada, assignment?.expectedStart ?? null),
+      entrada,
       inicioAlmuerzo: markInfo(journey.inicioAlmuerzo, null),
       finAlmuerzo: markInfo(journey.finAlmuerzo, null),
       salida: markInfo(journey.salida, null),
       duplicateMarksCount: journey.duplicates.length,
       isOpen: journey.isOpen,
+      tardiness: level
+        ? {
+            level,
+            diffMinutes: entrada!.diffMinutes!,
+            isJustified: justificacion?.justificada ?? false,
+            justification: justificacion?.motivo ?? null,
+          }
+        : null,
     }
   })
 

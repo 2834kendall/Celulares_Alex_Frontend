@@ -60,7 +60,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   )
 
   const resumenContent = monthlyResult.ok ? (
-    <MonthlySummaryTable monthISO={monthISO} rows={monthlyResult.data} />
+    <MonthlySummaryTable monthISO={monthISO} rows={monthlyResult.data} canWrite={canWrite} />
   ) : (
     <Alert size="md">{monthlyResult.error}</Alert>
   )

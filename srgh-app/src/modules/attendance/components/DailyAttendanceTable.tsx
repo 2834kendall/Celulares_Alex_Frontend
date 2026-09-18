@@ -14,7 +14,9 @@ import {
 import type {
   DailyAttendanceRow,
   DailyMarkInfo,
+  DailyTardiness,
 } from '@/modules/attendance/actions/getDailyAttendance'
+import { TARDINESS_LABEL, type TardinessLevel } from '@/modules/attendance/lib/infractions'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
@@ -58,18 +60,37 @@ function formatDay(dateISO: string) {
 }
 
 /**
- * Muestra la hora y, solo si viene informada, la diferencia en minutos —
- * como dato neutro (sin colorear "tarde"/"a tiempo"): la tolerancia todavia
- * no esta implementada, y colorear esto seria clasificar sin base.
+ * Colores de la banda de tardanza. Una tardanza justificada se pinta en
+ * gris: sigue estando (el atraso ocurrio y hay que poder verlo), pero deja
+ * de gritar, porque ya no cuenta para el mes.
+ */
+const LEVEL_CHIP: Record<TardinessLevel, string> = {
+  leve: 'bg-amber-50 text-amber-700',
+  tardia: 'bg-orange-100 text-orange-800',
+  grave: 'bg-rose-100 text-rose-800',
+}
+
+const JUSTIFIED_CHIP = 'bg-slate-100 text-slate-500 line-through'
+
+/**
+ * Muestra la hora y, si viene informada, la diferencia en minutos.
+ *
+ * Hasta SGRH-87 el chip era deliberadamente neutro porque la tolerancia no
+ * estaba implementada y colorear habria sido clasificar sin base. Ahora si
+ * hay base: `tardiness` llega ya clasificado contra la tolerancia de la
+ * sucursal del dia, y solo la ENTRADA lo trae — las demas marcas siguen
+ * mostrando su desfase en gris, sin juzgarlo.
  */
 function MarkCell({
   mark,
   canWrite,
   onEdit,
+  tardiness = null,
 }: {
   mark: DailyMarkInfo | null
   canWrite: boolean
   onEdit: () => void
+  tardiness?: DailyTardiness | null
 }) {
   return (
     <div className="group/celda flex items-center gap-1.5 whitespace-nowrap">
@@ -77,12 +98,28 @@ function MarkCell({
         <span className="inline-flex items-baseline gap-1.5">
           <span className="text-[13px] font-semibold tabular-nums text-slate-700">{mark.time}</span>
           {mark.diffMinutes !== null && mark.diffMinutes !== 0 && (
-            // Chip neutro, nunca coloreado: separa visualmente el desfase de
-            // la hora sin sugerir si estuvo bien o mal. Clasificar es tarea
-            // del resumen mensual, que si conoce la tolerancia; aca solo se
-            // informa el dato crudo. Sin parentesis, que a 40 celdas por
-            // pantalla eran cuatro caracteres de ruido cada uno.
-            <span className="rounded bg-slate-100 px-1 py-px text-[10px] font-medium tabular-nums text-slate-500">
+            // Sin parentesis alrededor del numero: a 40 celdas por pantalla
+            // eran cuatro caracteres de ruido cada uno.
+            //
+            // El color sale de la banda cuando la hay, y vuelve al gris de
+            // siempre cuando no: en salida y almuerzo el desfase se informa
+            // sin juzgarlo, porque nadie definio todavia que es "tarde" ahi.
+            <span
+              title={
+                tardiness
+                  ? tardiness.isJustified
+                    ? `${TARDINESS_LABEL[tardiness.level]} justificada: ${tardiness.justification ?? ''}`
+                    : TARDINESS_LABEL[tardiness.level]
+                  : undefined
+              }
+              className={`rounded px-1 py-px text-[10px] font-medium tabular-nums ${
+                tardiness
+                  ? tardiness.isJustified
+                    ? JUSTIFIED_CHIP
+                    : LEVEL_CHIP[tardiness.level]
+                  : 'bg-slate-100 text-slate-500'
+              }`}
+            >
               {mark.diffMinutes > 0 ? '+' : ''}
               {mark.diffMinutes}
             </span>
@@ -426,6 +463,7 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                         mark={row.entrada}
                         canWrite={canWrite}
                         onEdit={() => setEditing({ row, tipo: 'entrada' })}
+                        tardiness={row.tardiness}
                       />
                     </td>
                     <td className="px-3 py-2">

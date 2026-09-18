@@ -106,17 +106,23 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
-          // 10 de julio: tardio (15 min tarde)
+          // 10 de julio: tardio (15 min tarde -> banda grave)
           {
+            mar_id: 77,
             mar_historial_laboral_id: 1,
             mar_tipo: 'entrada',
             mar_fecha_hora: '2026-07-10 08:15:00',
+            mar_tardia_justificada: false,
+            mar_tardia_justificacion: null,
           },
           // 2 de julio: a tiempo (no cuenta)
           {
+            mar_id: 78,
             mar_historial_laboral_id: 1,
             mar_tipo: 'entrada',
             mar_fecha_hora: '2026-07-02 08:00:00',
+            mar_tardia_justificada: false,
+            mar_tardia_justificacion: null,
           },
           // 5 de julio: sin marca -> ausente
         ],
@@ -139,9 +145,91 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
       fullName: 'Ana Perez',
       tardias: 1,
       ausencias: 1,
-      tardyDays: [{ date: '2026-07-10', entradaTime: '08:15', diffMinutes: 15 }],
+      tardyDays: [
+        {
+          date: '2026-07-10',
+          entradaTime: '08:15',
+          diffMinutes: 15,
+          level: 'grave',
+          markId: 77,
+          isJustified: false,
+          justification: null,
+        },
+      ],
       absentDays: ['2026-07-05'],
     })
+  })
+
+  it('una tardanza justificada se lista pero no suma al conteo', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      sgrh_programacion_semanal: {
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
+            prg_fecha: '2026-07-10',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+          },
+        ],
+        error: null,
+      },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_sucursales: {
+        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 0 }],
+        error: null,
+      },
+      sgrh_ausencias: { data: [], error: null },
+      sgrh_marcas_asistencia: {
+        data: [
+          {
+            mar_id: 90,
+            mar_historial_laboral_id: 1,
+            mar_tipo: 'entrada',
+            mar_fecha_hora: '2026-07-10 08:03:00',
+            mar_tardia_justificada: true,
+            mar_tardia_justificacion: 'El sistema estaba caido.',
+          },
+        ],
+        error: null,
+      },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getMonthlyAttendanceSummary(validInput)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    // Sigue viendose el dia, con su banda y su motivo...
+    expect(result.data[0].tardyDays).toEqual([
+      {
+        date: '2026-07-10',
+        entradaTime: '08:03',
+        diffMinutes: 3,
+        level: 'leve',
+        markId: 90,
+        isJustified: true,
+        justification: 'El sistema estaba caido.',
+      },
+    ])
+    // ...pero no cuenta.
+    expect(result.data[0].tardias).toBe(0)
   })
 
   it('ordena los empleados alfabeticamente', async () => {

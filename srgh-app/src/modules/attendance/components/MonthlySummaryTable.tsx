@@ -11,7 +11,12 @@ import {
   Loader2,
   Users,
 } from 'lucide-react'
-import type { MonthlyEmployeeSummary } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
+import type {
+  MonthlyEmployeeSummary,
+  TardyDay,
+} from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
+import { TARDINESS_LABEL, type TardinessLevel } from '@/modules/attendance/lib/infractions'
+import { JustifyTardinessModal } from '@/modules/attendance/components/JustifyTardinessModal'
 import { useMonthNavigation } from '@/modules/attendance/hooks/useMonthNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
@@ -30,6 +35,25 @@ interface MonthlySummaryTableProps {
   /** "YYYY-MM-01" — el mes que se esta viendo. */
   monthISO: string
   rows: MonthlyEmployeeSummary[]
+  /** ASISTENCIA_WRITE: sin el, las tardias se ven pero no se justifican. */
+  canWrite: boolean
+}
+
+/** Fila del detalle sobre la que esta abierto el modal de justificacion. */
+interface JustifyTarget {
+  employeeName: string
+  day: TardyDay
+}
+
+/**
+ * Un color por banda, de menor a mayor. Aca SI se colorea (a diferencia del
+ * chip neutro del panel diario de SGRH-21): el reporte mensual conoce la
+ * tolerancia de cada sucursal, asi que clasificar tiene base.
+ */
+const LEVEL_CHIP: Record<TardinessLevel, string> = {
+  leve: 'bg-amber-50 text-amber-700 ring-amber-200',
+  tardia: 'bg-orange-50 text-orange-700 ring-orange-200',
+  grave: 'bg-rose-50 text-rose-700 ring-rose-200',
 }
 
 function formatMonth(monthISO: string) {
@@ -52,9 +76,10 @@ function formatDayShort(dateISO: string) {
  * gerente. Navegable mes a mes, a diferencia de esa accion (que solo mira el
  * mes en curso).
  */
-export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps) {
+export function MonthlySummaryTable({ monthISO, rows, canWrite }: MonthlySummaryTableProps) {
   const { isNavigating, goToPreviousMonth, goToNextMonth } = useMonthNavigation(monthISO)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [justifying, setJustifying] = useState<JustifyTarget | null>(null)
 
   const totalTardias = rows.reduce((sum, r) => sum + r.tardias, 0)
   const totalAusencias = rows.reduce((sum, r) => sum + r.ausencias, 0)
@@ -113,7 +138,10 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
               <tbody>
                 {paginatedItems.map((row) => {
                   const expanded = expandedId === row.employmentHistoryId
-                  const hasDetail = row.tardias > 0 || row.ausencias > 0
+                  // Por el DETALLE, no por el conteo: una tardanza justificada
+                  // no suma a row.tardias pero sigue teniendo dia que mostrar, y
+                  // sin esto la fila quedaba sin forma de desplegarse.
+                  const hasDetail = row.tardyDays.length > 0 || row.absentDays.length > 0
                   return (
                     <Fragment key={row.employmentHistoryId}>
                       <tr className={TABLE_ROW}>
@@ -168,11 +196,40 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
                                   </p>
                                   <ul className="space-y-0.5">
                                     {row.tardyDays.map((d) => (
-                                      <li key={d.date} className="text-slate-600">
+                                      <li
+                                        key={d.date}
+                                        className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-slate-600"
+                                      >
                                         <span className="font-medium capitalize">
                                           {formatDayShort(d.date)}
-                                        </span>{' '}
-                                        — llego a las {d.entradaTime} (+{d.diffMinutes} min)
+                                        </span>
+                                        <span>
+                                          — llego a las {d.entradaTime} (+{d.diffMinutes} min)
+                                        </span>
+                                        <span
+                                          className={`rounded px-1 py-px text-[10px] font-semibold ring-1 ring-inset ${LEVEL_CHIP[d.level]}`}
+                                        >
+                                          {TARDINESS_LABEL[d.level]}
+                                        </span>
+                                        {d.isJustified && (
+                                          <span
+                                            className="rounded bg-slate-100 px-1 py-px text-[10px] font-semibold text-slate-600"
+                                            title={d.justification ?? undefined}
+                                          >
+                                            Justificada
+                                          </span>
+                                        )}
+                                        {canWrite && d.markId !== null && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setJustifying({ employeeName: row.fullName, day: d })
+                                            }
+                                            className="rounded text-[10px] font-semibold text-brand-700 underline underline-offset-2 outline-none hover:text-brand-800 focus-visible:ring-2 focus-visible:ring-brand-600/40"
+                                          >
+                                            {d.isJustified ? 'Ver motivo' : 'Justificar'}
+                                          </button>
+                                        )}
                                       </li>
                                     ))}
                                   </ul>
@@ -209,6 +266,19 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
             onNext={goToNextPage}
           />
         </div>
+      )}
+
+      {justifying && (
+        <JustifyTardinessModal
+          markId={justifying.day.markId!}
+          employeeName={justifying.employeeName}
+          dateISO={justifying.day.date}
+          level={justifying.day.level}
+          diffMinutes={justifying.day.diffMinutes}
+          isJustified={justifying.day.isJustified}
+          currentJustification={justifying.day.justification}
+          onClose={() => setJustifying(null)}
+        />
       )}
     </div>
   )

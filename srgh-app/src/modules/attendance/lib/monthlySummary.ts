@@ -48,9 +48,21 @@ interface AssignmentRow {
 }
 
 interface MarkDbRow {
+  mar_id: number
   mar_historial_laboral_id: number
   mar_tipo: string
   mar_fecha_hora: string
+  mar_tardia_justificada: boolean | null
+  mar_tardia_justificacion: string | null
+}
+
+/** La entrada valida de un dia, con lo que hace falta para justificarla. */
+interface EntradaDelDia {
+  markId: number
+  /** "HH:mm" */
+  time: string
+  justificada: boolean
+  justificacion: string | null
 }
 
 interface AusenciaRow {
@@ -59,8 +71,18 @@ interface AusenciaRow {
   aus_fecha_fin: string
 }
 
-/** Un DayForInfraction con su fecha — el calculo puro (classifyDay) no la necesita, pero reportarla si. */
-export type DayForInfractionWithDate = DayForInfraction & { date: string }
+/**
+ * Un DayForInfraction con lo que el calculo puro (classifyDay) no necesita
+ * pero el reporte si: la fecha, y de que marca de entrada salio — sin el
+ * mar_id, el modal no sabria que tardanza esta justificando.
+ */
+export type DayForInfractionWithDate = DayForInfraction & {
+  date: string
+  /** mar_id de la entrada, null si no marco ese dia. */
+  entradaMarkId: number | null
+  /** Motivo escrito al justificar, null si no esta justificada. */
+  tardiaJustificacion: string | null
+}
 
 export interface EmployeeMonthDays {
   employeeId: number
@@ -217,7 +239,9 @@ export async function gatherMonthlyAttendanceDays(
       .returns<SucursalToleranciaRow[]>(),
     supabase
       .from('sgrh_marcas_asistencia')
-      .select('mar_historial_laboral_id, mar_tipo, mar_fecha_hora')
+      .select(
+        'mar_id, mar_historial_laboral_id, mar_tipo, mar_fecha_hora, mar_tardia_justificada, mar_tardia_justificacion'
+      )
       .in('mar_historial_laboral_id', historyIds)
       .eq('mar_tipo', 'entrada')
       .gte('mar_fecha_hora', `${start} 00:00:00`)
@@ -290,7 +314,7 @@ export async function gatherMonthlyAttendanceDays(
 
   // Primera marca de entrada valida por (historial, fecha) — mismo criterio
   // de "primera cronologica gana" que groupIntoDayJourney, aplicado por dia.
-  const entradaByHistAndDate = new Map<string, string>()
+  const entradaByHistAndDate = new Map<string, EntradaDelDia>()
   for (const m of marks ?? []) {
     const parsedTipo = marcaTipoSchema.safeParse(m.mar_tipo)
     if (!parsedTipo.success || parsedTipo.data !== 'entrada') continue
@@ -299,8 +323,13 @@ export async function gatherMonthlyAttendanceDays(
     const key = `${m.mar_historial_laboral_id}|${date}`
     const time = timeOfDay(m.mar_fecha_hora)
     const existing = entradaByHistAndDate.get(key)
-    if (!existing || time < existing) {
-      entradaByHistAndDate.set(key, time)
+    if (!existing || time < existing.time) {
+      entradaByHistAndDate.set(key, {
+        markId: m.mar_id,
+        time,
+        justificada: m.mar_tardia_justificada ?? false,
+        justificacion: m.mar_tardia_justificacion,
+      })
     }
   }
 
@@ -311,13 +340,17 @@ export async function gatherMonthlyAttendanceDays(
     const days: DayForInfractionWithDate[] = myAssignments
       .map((a) => {
         const expectedRaw = a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
+        const entrada = entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         return {
           date: a.prg_fecha,
           isJustifiedAbsence: justifiedDays.has(`${h.lab_id}|${a.prg_fecha}`),
           isDayOff: a.prg_es_dia_libre,
           isHoliday: a.prg_es_feriado,
           expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,
-          entradaTime: entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null,
+          entradaTime: entrada?.time ?? null,
+          entradaMarkId: entrada?.markId ?? null,
+          isJustifiedTardiness: entrada?.justificada ?? false,
+          tardiaJustificacion: entrada?.justificacion ?? null,
           // La tolerancia es la de la tienda donde le tocaba presentarse ese
           // dia, no la de la sucursal de su contrato.
           toleranciaMinutos:
