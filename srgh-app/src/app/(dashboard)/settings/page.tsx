@@ -4,9 +4,11 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getSucursalTema } from '@/lib/empresa/get-sucursal-tema'
 import { resolveShellTheme } from '@/lib/empresa/resolve-shell-theme'
 import { getPuestos } from '@/modules/settings/actions/getPuestos'
+import { getTiposTardia } from '@/modules/settings/actions/getTiposTardia'
 import { SucursalAppearanceForm } from '@/modules/settings/components/SucursalAppearanceForm'
 import { SucursalAppearancePanel } from '@/modules/settings/components/SucursalAppearancePanel'
 import { PuestosList } from '@/modules/settings/components/PuestosList'
+import { TiposTardiaList } from '@/modules/settings/components/TiposTardiaList'
 import { SettingsTabs } from '@/modules/settings/components/SettingsTabs'
 import { Alert } from '@/components/ui/Alert'
 import type { SgrhJwtClaims } from '@/types/auth'
@@ -19,7 +21,9 @@ export default async function SettingsPage() {
   // la propia — la misma que RLS exige para el UPDATE de `sgrh_sucursales`.
   // Tenga o no ademas una sucursal fija asignada, ve y elige entre TODAS.
   const administraEmpresa = permisos.includes(PERMISOS.EMPRESAS_WRITE)
-  const puedeEditarPuestos = permisos.includes(PERMISOS.CATALOGOS_WRITE)
+  // CATALOGOS_WRITE gobierna todos los catalogos de la empresa: puestos y
+  // tipos de tardia se editan con el mismo permiso, igual que en la RLS.
+  const puedeEditarCatalogos = permisos.includes(PERMISOS.CATALOGOS_WRITE)
 
   // `tema` es la sucursal FIJA propia del usuario (para saber cual
   // preseleccionar en el panel). `theme` es el tema OFICIAL que el shell
@@ -29,10 +33,11 @@ export default async function SettingsPage() {
   // SucursalAppearanceForm). Sin esto ultimo, cambiar de tarjeta o de pagina
   // dejaba pegado el color de PRUEBA de lo ultimo editado, ignorando lo que
   // decia el selector de arriba.
-  const [tema, theme, puestosResult] = await Promise.all([
+  const [tema, theme, puestosResult, tiposTardiaResult] = await Promise.all([
     getSucursalTema(meta.usr_id ?? null),
     resolveShellTheme(meta.usr_id ?? null, permisos),
     getPuestos(),
+    getTiposTardia(),
   ])
 
   const sucursales = theme.sucursales
@@ -71,9 +76,16 @@ export default async function SettingsPage() {
         }
         puestosContent={
           puestosResult.ok ? (
-            <PuestosList puestos={puestosResult.data} canWrite={puedeEditarPuestos} />
+            <PuestosList puestos={puestosResult.data} canWrite={puedeEditarCatalogos} />
           ) : (
             <Alert size="md">{puestosResult.error}</Alert>
+          )
+        }
+        tardiasContent={
+          tiposTardiaResult.ok ? (
+            <TiposTardiaList tipos={tiposTardiaResult.data} canWrite={puedeEditarCatalogos} />
+          ) : (
+            <Alert size="md">{tiposTardiaResult.error}</Alert>
           )
         }
       />
