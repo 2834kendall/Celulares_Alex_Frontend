@@ -6,6 +6,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
+import { getDayAssignments, type DayAssignment } from '@/modules/attendance/lib/workingDay'
 import { marcaTipoSchema } from '@/modules/attendance/types'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 
@@ -29,21 +30,10 @@ interface EmploymentHistoryRow {
   sgrh_cat_puestos: PositionJoin | null
 }
 
-interface AssignmentJoin {
-  hor_hora_entrada: string
-}
-
-interface AssignmentRow {
-  prg_historial_laboral_id: number
-  prg_es_dia_libre: boolean
-  prg_es_feriado: boolean
-  prg_hora_entrada_custom: string | null
-  sgrh_cat_horarios: AssignmentJoin | null
-}
-
 interface MarkDbRow {
   mar_id: number
   mar_historial_laboral_id: number
+  mar_sucursal_id: number
   mar_tipo: string
   mar_fecha_hora: string
 }
@@ -64,6 +54,7 @@ export interface DailyAttendanceRow {
   /** URL firmada de la foto, o null si no tiene (el Avatar cae a iniciales). */
   fotoUrl: string | null
   position: string | null
+  /** La sucursal DEL DIA (prg_sucursal_id), no la del contrato — ver lib/workingDay.ts. */
   branchId: number
   isDayOff: boolean
   isHoliday: boolean
@@ -80,6 +71,18 @@ export interface DailyAttendanceRow {
 export type GetDailyAttendanceResult =
   { ok: true; date: string; data: DailyAttendanceRow[] } | { ok: false; error: string }
 
+/**
+ * Quienes trabajaron ESE dia en las sucursales que ve el usuario, con sus
+ * marcas.
+ *
+ * Arranca desde la programacion del dia y no desde el contrato (ver
+ * lib/workingDay.ts). Antes listaba a todos los activos por lab_sucursal_id,
+ * y desde SGRH-84 eso mostraba mal a los dos lados de un traslado: el gerente
+ * de la sucursal de origen seguia viendo a alguien que ese dia no estuvo ahi,
+ * y el de destino no lo veia aunque hubiera trabajado en su tienda — con el
+ * agravante de que la RLS de marcas filtra por sucursal_visible(mar_sucursal_id),
+ * asi que la marca era visible para el gerente equivocado.
+ */
 export async function getDailyAttendance(dateISO: string): Promise<GetDailyAttendanceResult> {
   const claims = await requirePermission(PERMISOS.ASISTENCIA_READ)
   const meta = claims.app_metadata as { empresa_id?: number; usr_id?: number }
@@ -94,10 +97,50 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
   // se resuelve en vivo. null = sin restriccion (ADMIN/RRHH, o sin filas
   // activas), que ven las marcas de toda la empresa — igual que
   // get-sucursal-actual.ts. Un gerente a cargo de varias sucursales ve las
-  // marcas de todas las suyas.
+  // marcas de todas las suyas en una sola pantalla.
   const sucursalIds = meta.usr_id ? await getUsuarioSucursalScope(supabase, meta.usr_id) : null
 
-  let historialQuery = supabase
+  // Dia libre y feriado se traen tambien: el panel los muestra como tales.
+  // Filtrar por "se trabaja" es cosa del kiosco, no de esta vista.
+  const assignments = await getDayAssignments(supabase, dateISO, sucursalIds)
+
+  if (!assignments.ok) {
+    return { ok: false, error: assignments.error }
+  }
+
+  let marksQuery = supabase
+    .from('sgrh_marcas_asistencia')
+    .select('mar_id, mar_historial_laboral_id, mar_sucursal_id, mar_tipo, mar_fecha_hora')
+    .gte('mar_fecha_hora', `${dateISO} 00:00:00`)
+    .lte('mar_fecha_hora', `${dateISO} 23:59:59`)
+
+  if (sucursalIds !== null) {
+    marksQuery = marksQuery.in('mar_sucursal_id', sucursalIds)
+  }
+
+  const { data: marks, error: errMarks } = await marksQuery.returns<MarkDbRow[]>()
+
+  if (errMarks) {
+    return { ok: false, error: 'No se pudieron cargar las marcas del dia.' }
+  }
+
+  // Las marcas se consultan por sucursal y no por la lista de programados, y
+  // despues se unen las dos: una marca cuya programacion se borro o se movio
+  // a otra tienda despues del hecho seguiria existiendo, y dejarla fuera la
+  // volveria invisible para todos. Es preferible una fila sin turno asignado
+  // a una marca que no aparece en ningun panel.
+  const historyIds = Array.from(
+    new Set([
+      ...assignments.data.map((a) => a.employmentHistoryId),
+      ...(marks ?? []).map((m) => m.mar_historial_laboral_id),
+    ])
+  )
+
+  if (historyIds.length === 0) {
+    return { ok: true, date: dateISO, data: [] }
+  }
+
+  const { data: employmentHistory, error: errHistory } = await supabase
     .from('sgrh_historial_laboral')
     .select(
       `
@@ -108,15 +151,12 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       sgrh_cat_puestos ( pue_nombre )
     `
     )
+    // Sin `lab_fecha_fin is null`: si alguien salio de la empresa a mitad de
+    // mes, sus marcas de los dias que si trabajo tienen que seguir viendose
+    // al navegar hacia atras en el panel.
+    .in('lab_id', historyIds)
     .eq('lab_empresa_id', meta.empresa_id)
-    .is('lab_fecha_fin', null)
-
-  if (sucursalIds !== null) {
-    historialQuery = historialQuery.in('lab_sucursal_id', sucursalIds)
-  }
-
-  const { data: employmentHistory, error: errHistory } =
-    await historialQuery.returns<EmploymentHistoryRow[]>()
+    .returns<EmploymentHistoryRow[]>()
 
   if (errHistory) {
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
@@ -126,47 +166,17 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     return { ok: true, date: dateISO, data: [] }
   }
 
-  const historyIds = employmentHistory.map((h) => h.lab_id)
-
-  const [{ data: assignments, error: errAssignments }, { data: marks, error: errMarks }] =
-    await Promise.all([
-      supabase
-        .from('sgrh_programacion_semanal')
-        .select(
-          `
-          prg_historial_laboral_id,
-          prg_es_dia_libre,
-          prg_es_feriado,
-          prg_hora_entrada_custom,
-          sgrh_cat_horarios ( hor_hora_entrada )
-        `
-        )
-        .in('prg_historial_laboral_id', historyIds)
-        .eq('prg_fecha', dateISO)
-        .returns<AssignmentRow[]>(),
-      supabase
-        .from('sgrh_marcas_asistencia')
-        .select('mar_id, mar_historial_laboral_id, mar_tipo, mar_fecha_hora')
-        .in('mar_historial_laboral_id', historyIds)
-        .gte('mar_fecha_hora', `${dateISO} 00:00:00`)
-        .lte('mar_fecha_hora', `${dateISO} 23:59:59`)
-        .returns<MarkDbRow[]>(),
-    ])
-
-  if (errAssignments) {
-    return { ok: false, error: 'No se pudo cargar la programacion del dia.' }
-  }
-
-  if (errMarks) {
-    return { ok: false, error: 'No se pudieron cargar las marcas del dia.' }
-  }
-
-  const assignmentByHistoryId = new Map<number, AssignmentRow>()
-  for (const a of assignments ?? []) {
-    assignmentByHistoryId.set(a.prg_historial_laboral_id, a)
+  const assignmentByHistoryId = new Map<number, DayAssignment>()
+  for (const a of assignments.data) {
+    assignmentByHistoryId.set(a.employmentHistoryId, a)
   }
 
   const marksByHistoryId = new Map<number, RawMark[]>()
+  // Sucursal donde de verdad se marco, para las filas sin programacion: sin
+  // ella la fila caeria a la del contrato y el modal de correccion guardaria
+  // la marca corregida en la tienda equivocada.
+  const markBranchByHistoryId = new Map<number, number>()
+
   for (const m of marks ?? []) {
     // mar_tipo es varchar sin enum en los tipos generados: se valida aca y se
     // descarta en silencio una fila que no calce (no deberia ocurrir con el
@@ -178,6 +188,10 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     const list = marksByHistoryId.get(m.mar_historial_laboral_id) ?? []
     list.push(rawMark)
     marksByHistoryId.set(m.mar_historial_laboral_id, list)
+
+    if (!markBranchByHistoryId.has(m.mar_historial_laboral_id)) {
+      markBranchByHistoryId.set(m.mar_historial_laboral_id, m.mar_sucursal_id)
+    }
   }
 
   // Una sola firma para toda la jornada (ver signEmployeePhotos).
@@ -192,11 +206,6 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       : 'Sin nombre'
 
     const assignment = assignmentByHistoryId.get(h.lab_id)
-    const expectedStart = assignment
-      ? timeOfDay(
-          assignment.prg_hora_entrada_custom ?? assignment.sgrh_cat_horarios?.hor_hora_entrada ?? ''
-        )
-      : null
 
     const journey = groupIntoDayJourney(marksByHistoryId.get(h.lab_id) ?? [])
 
@@ -221,11 +230,13 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       // emp_foto_path nunca cruza al cliente: solo la URL firmada opaca.
       fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,
       position: h.sgrh_cat_puestos?.pue_nombre ?? null,
-      branchId: h.lab_sucursal_id,
-      isDayOff: assignment?.prg_es_dia_libre ?? false,
-      isHoliday: assignment?.prg_es_feriado ?? false,
-      expectedStart: expectedStart || null,
-      entrada: markInfo(journey.entrada, expectedStart),
+      // El orden importa: manda el turno del dia, despues donde se marco de
+      // verdad, y la del contrato solo como ultimo recurso.
+      branchId: assignment?.branchId ?? markBranchByHistoryId.get(h.lab_id) ?? h.lab_sucursal_id,
+      isDayOff: assignment?.isDayOff ?? false,
+      isHoliday: assignment?.isHoliday ?? false,
+      expectedStart: assignment?.expectedStart ?? null,
+      entrada: markInfo(journey.entrada, assignment?.expectedStart ?? null),
       inicioAlmuerzo: markInfo(journey.inicioAlmuerzo, null),
       finAlmuerzo: markInfo(journey.finAlmuerzo, null),
       salida: markInfo(journey.salida, null),

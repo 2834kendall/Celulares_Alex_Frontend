@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
+import { getDayAssignments, isWorkable } from '@/modules/attendance/lib/workingDay'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 import { decryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
 import { isLivenessProof } from '@/modules/attendance/lib/face/livenessProof'
 import { classifyDistance, euclideanDistance } from '@/modules/attendance/lib/face/faceMath'
@@ -102,6 +104,29 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     return { ok: false, error: 'Este kiosco no tiene una sucursal asignada.' }
   }
 
+  // El set de candidatos es quien trabaja HOY aca, no quien tiene esta
+  // sucursal en su contrato: desde SGRH-84 el gerente puede trasladar a
+  // alguien un dia puntual, y con el filtro viejo (lab_sucursal_id) su cara
+  // ni siquiera entraba a la comparacion — el kiosco lo mandaba al PIN, y el
+  // selector del PIN tampoco lo listaba: quedaba sin poder marcar.
+  //
+  // Acotar el set al dia tiene un segundo efecto deseable: menos vectores
+  // contra los que comparar es menos superficie para un falso positivo.
+  const assignments = await getDayAssignments(supabase, todayInCostaRica(), sucursalIds)
+
+  if (!assignments.ok) {
+    return { ok: false, error: assignments.error }
+  }
+
+  const historyIds = assignments.data.filter(isWorkable).map((a) => a.employmentHistoryId)
+
+  // Nadie programado hoy aca: no hay contra quien comparar. Mismo trato que
+  // 'nadie enrolado' — se cae al PIN, que igual va a rebotar en
+  // registerKioskMark si de verdad no le toca trabajar.
+  if (historyIds.length === 0) {
+    return { ok: true, status: 'REQUIRE_PIN' }
+  }
+
   const { data: historial, error: errHistorial } = await supabase
     .from('sgrh_historial_laboral')
     .select(
@@ -110,8 +135,11 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
       sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
     `
     )
+    // Ademas del nombre, este cruce acota por empresa y descarta contratos ya
+    // cerrados: la programacion queda como historico y sobrevive a la salida
+    // del colaborador.
+    .in('lab_id', historyIds)
     .eq('lab_empresa_id', meta.empresa_id)
-    .in('lab_sucursal_id', sucursalIds)
     .is('lab_fecha_fin', null)
     .returns<HistorialRow[]>()
 

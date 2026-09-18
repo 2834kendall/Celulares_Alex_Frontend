@@ -35,6 +35,23 @@ async function encryptedProbe(liveness: unknown = LIVE) {
   return encryptFacePayload({ vector: PROBE, liveness }, KEY)
 }
 
+/**
+ * Los candidatos del reconocimiento salen de quien tiene turno HOY en la
+ * sucursal del kiosco, no de quien la tiene en su contrato.
+ */
+const PROGRAMACION = {
+  data: [10, 11].map((prg_empleado_id) => ({
+    prg_historial_laboral_id: prg_empleado_id - 9,
+    prg_empleado_id,
+    prg_sucursal_id: 100,
+    prg_es_dia_libre: false,
+    prg_es_feriado: false,
+    prg_hora_entrada_custom: null,
+    sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+  })),
+  error: null,
+}
+
 const HISTORIAL = {
   data: [
     {
@@ -95,10 +112,43 @@ describe('verifyFace (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'Este kiosco no tiene una sucursal asignada.' })
   })
 
+  it('cae al PIN si hoy no hay nadie con turno en esta sucursal', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
+
+    expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_empleado')
+  })
+
+  it('acota los candidatos a la sucursal del dia', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
+
+    const programacionCall = client.from.mock.results.find(
+      (_r, i) => client.from.mock.calls[i][0] === 'sgrh_programacion_semanal'
+    )!.value
+    expect(programacionCall.in).toHaveBeenCalledWith('prg_sucursal_id', [100])
+  })
+
   it('MATCH de alta confianza con vector identico, con ticket firmado valido', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],
@@ -121,6 +171,7 @@ describe('verifyFace (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.45) }],
@@ -140,6 +191,7 @@ describe('verifyFace (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.55) }],
@@ -156,6 +208,7 @@ describe('verifyFace (server action)', () => {
   it('DENIED sobre 0.6 y guarda el log de auditoria', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: PROGRAMACION,
       sgrh_historial_laboral: HISTORIAL,
       sgrh_biometria_empleado: {
         data: [{ bio_empleado_id: 11, bio_vector: vecAtDistance(0.8) }],
@@ -187,6 +240,7 @@ describe('verifyFace (server action)', () => {
   it('sin vectores enrolados responde REQUIRE_PIN sin tocar la auditoria', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: PROGRAMACION,
       sgrh_historial_laboral: HISTORIAL,
       sgrh_biometria_empleado: { data: [], error: null },
     })
@@ -204,6 +258,7 @@ describe('verifyFace (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [
@@ -227,6 +282,7 @@ describe('verifyFace (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [
@@ -247,6 +303,7 @@ describe('verifyFace (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: { data: null, error: { message: 'boom' } },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -268,6 +325,7 @@ describe('verifyFace (server action)', () => {
       mockCreateClient.mockResolvedValue(
         createSupabaseClientMock({
           sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+          sgrh_programacion_semanal: PROGRAMACION,
           sgrh_historial_laboral: HISTORIAL,
           sgrh_biometria_empleado: {
             data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],

@@ -1,7 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, KeyRound, ScanFace, ShieldX, WifiOff } from 'lucide-react'
+import {
+  AlertTriangle,
+  CalendarOff,
+  CheckCircle2,
+  KeyRound,
+  ScanFace,
+  ShieldX,
+  WifiOff,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { SearchSelect, type SearchSelectOption } from '@/components/ui/SearchSelect'
 import type { ActiveEmployeeOption } from '@/modules/attendance/actions/getActiveEmployees'
@@ -81,7 +89,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
   const [manualMode, setManualMode] = useState(false)
   const [rejection, setRejection] = useState<Rejection | null>(null)
 
-  const { isOnline, pendingCount, submitMark } = useOfflineSync()
+  const { isOnline, pendingCount, discardedCount, submitMark } = useOfflineSync()
 
   const faceConfigured = Boolean(process.env.NEXT_PUBLIC_FACE_VECTOR_KEY)
   // Sin internet la camara queda deshabilitada DE INMEDIATO: la verificacion
@@ -210,6 +218,34 @@ export function KioskScreen({ employees }: KioskScreenProps) {
 
   const activeFullName = verified?.fullName ?? selectedEmployee?.fullName ?? null
 
+  // Marcas que quedaron sin registrar y ya no se van a reintentar: el
+  // encargado tiene que agregarlas a mano desde el panel diario. Se anuncia
+  // aunque haya conexion — justamente aparece cuando la recupera.
+  const discardedNotice = discardedCount > 0 && (
+    <div className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800">
+      <AlertTriangle className="h-4 w-4" />
+      {discardedCount} marca{discardedCount === 1 ? '' : 's'} sin registrar — avisa al encargado
+    </div>
+  )
+
+  // Sin nadie programado hoy aca no hay a quien marcar: ni selector ni
+  // camara tendrian contra quien resolver. Decirlo es mejor que mostrar un
+  // selector vacio que parece roto.
+  if (employees.length === 0) {
+    return (
+      <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-6 text-center">
+        {discardedNotice}
+        <CalendarOff className="h-20 w-20 text-slate-300" />
+        <div>
+          <p className="text-2xl font-bold">Hoy no hay turnos en esta sucursal</p>
+          <p className="mt-2 text-base text-slate-600">
+            Si deberias estar trabajando, avisa al encargado para que revise la programacion.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   if (successLabel) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
@@ -242,6 +278,8 @@ export function KioskScreen({ employees }: KioskScreenProps) {
           {pendingCount > 0 && ` (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})`}
         </div>
       )}
+
+      {discardedNotice}
 
       <div className="text-center">
         <h1 className="text-3xl font-bold tracking-tight">Control de asistencia</h1>

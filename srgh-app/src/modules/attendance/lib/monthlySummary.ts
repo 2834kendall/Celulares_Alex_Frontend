@@ -39,6 +39,7 @@ interface AssignmentJoin {
 
 interface AssignmentRow {
   prg_historial_laboral_id: number
+  prg_sucursal_id: number
   prg_fecha: string
   prg_es_dia_libre: boolean
   prg_es_feriado: boolean
@@ -72,10 +73,18 @@ export type GatherMonthlyAttendanceResult =
   { ok: true; data: EmployeeMonthDays[] } | { ok: false; error: string }
 
 /**
- * Reune, por cada colaborador activo de la empresa (y las sucursales del
- * gerente, si tiene asignadas) de un rango de fechas, sus dias programados
- * con la hora de entrada real (si marco) — la materia prima para clasificar
- * tardias/ausencias (classifyDay/summarizeMonth en lib/infractions.ts).
+ * Reune, por cada colaborador que trabajo en el rango dentro de las
+ * sucursales que ve el usuario, sus dias programados con la hora de entrada
+ * real (si marco) — la materia prima para clasificar tardias/ausencias
+ * (classifyDay/summarizeMonth en lib/infractions.ts).
+ *
+ * El alcance sale de prg_sucursal_id (la sucursal DEL DIA) y no de
+ * lab_sucursal_id (la del contrato): desde SGRH-84 el gerente puede trasladar
+ * a alguien un dia puntual, y con el filtro viejo ese dia se contaba en la
+ * sucursal de origen aunque se hubiera trabajado en otra. Ver lib/workingDay.ts.
+ *
+ * La tolerancia tambien se toma de la sucursal del dia — es una regla de la
+ * tienda donde se presento, no de la que figura en su contrato.
  *
  * Resuelve el alcance de sucursales del usuario (via uer_sucursal_id, que no
  * viaja en el JWT) puertas adentro para que el llamador solo pase el
@@ -95,63 +104,70 @@ export async function gatherMonthlyAttendanceDays(
 ): Promise<GatherMonthlyAttendanceResult> {
   const sucursalScope = usuarioId ? await getUsuarioSucursalScope(supabase, usuarioId) : null
 
-  let historialQuery = supabase
-    .from('sgrh_historial_laboral')
+  let assignmentsQuery = supabase
+    .from('sgrh_programacion_semanal')
     .select(
       `
-      lab_id,
-      lab_empleado_id,
-      lab_sucursal_id,
-      sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
+      prg_historial_laboral_id,
+      prg_sucursal_id,
+      prg_fecha,
+      prg_es_dia_libre,
+      prg_es_feriado,
+      prg_hora_entrada_custom,
+      sgrh_cat_horarios ( hor_hora_entrada )
     `
     )
-    .eq('lab_empresa_id', empresaId)
-    .is('lab_fecha_fin', null)
+    .gte('prg_fecha', start)
+    .lte('prg_fecha', end)
 
   if (sucursalScope !== null) {
-    historialQuery = historialQuery.in('lab_sucursal_id', sucursalScope)
+    assignmentsQuery = assignmentsQuery.in('prg_sucursal_id', sucursalScope)
   }
 
-  const { data: historial, error: errHistorial } = await historialQuery.returns<HistorialRow[]>()
+  const { data: assignments, error: errAssignments } =
+    await assignmentsQuery.returns<AssignmentRow[]>()
 
-  if (errHistorial) {
-    return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
+  if (errAssignments) {
+    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
   }
 
-  if (historial.length === 0) {
+  const historyIds = Array.from(new Set((assignments ?? []).map((a) => a.prg_historial_laboral_id)))
+
+  if (historyIds.length === 0) {
     return { ok: true, data: [] }
   }
 
-  const historyIds = historial.map((h) => h.lab_id)
-  const sucursalIds = Array.from(new Set(historial.map((h) => h.lab_sucursal_id)))
+  const sucursalIds = Array.from(new Set((assignments ?? []).map((a) => a.prg_sucursal_id)))
 
+  // El cruce contra el historial acota por empresa y descarta contratos ya
+  // cerrados: la programacion queda como historico y sobrevive a la salida
+  // del colaborador — sin este filtro se le seguirian contando ausencias a un
+  // ex-empleado, y checkMonthlyInfractions le mandaria advertencias.
   const [
+    { data: historial, error: errHistorial },
     { data: tolerancias, error: errTolerancias },
-    { data: assignments, error: errAssignments },
     { data: marks, error: errMarks },
     { data: ausencias, error: errAusencias },
   ] = await Promise.all([
+    supabase
+      .from('sgrh_historial_laboral')
+      .select(
+        `
+        lab_id,
+        lab_empleado_id,
+        lab_sucursal_id,
+        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
+      `
+      )
+      .in('lab_id', historyIds)
+      .eq('lab_empresa_id', empresaId)
+      .is('lab_fecha_fin', null)
+      .returns<HistorialRow[]>(),
     supabase
       .from('sgrh_sucursales')
       .select('suc_id, suc_tolerancia_tardia_minutos')
       .in('suc_id', sucursalIds)
       .returns<SucursalToleranciaRow[]>(),
-    supabase
-      .from('sgrh_programacion_semanal')
-      .select(
-        `
-        prg_historial_laboral_id,
-        prg_fecha,
-        prg_es_dia_libre,
-        prg_es_feriado,
-        prg_hora_entrada_custom,
-        sgrh_cat_horarios ( hor_hora_entrada )
-      `
-      )
-      .in('prg_historial_laboral_id', historyIds)
-      .gte('prg_fecha', start)
-      .lte('prg_fecha', end)
-      .returns<AssignmentRow[]>(),
     supabase
       .from('sgrh_marcas_asistencia')
       .select('mar_historial_laboral_id, mar_tipo, mar_fecha_hora')
@@ -174,8 +190,16 @@ export async function gatherMonthlyAttendanceDays(
       .returns<AusenciaRow[]>(),
   ])
 
-  if (errTolerancias || errAssignments || errMarks || errAusencias) {
+  if (errHistorial) {
+    return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
+  }
+
+  if (errTolerancias || errMarks || errAusencias) {
     return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
+  }
+
+  if (historial.length === 0) {
+    return { ok: true, data: [] }
   }
 
   const toleranciaBySucursal = new Map(
@@ -234,7 +258,6 @@ export async function gatherMonthlyAttendanceDays(
   }
 
   const data: EmployeeMonthDays[] = historial.map((h) => {
-    const tolerancia = toleranciaBySucursal.get(h.lab_sucursal_id) ?? DEFAULT_TOLERANCIA_MINUTOS
     const myAssignments = assignmentsByHist.get(h.lab_id) ?? []
     const employee = h.sgrh_empleados
 
@@ -248,7 +271,10 @@ export async function gatherMonthlyAttendanceDays(
           isHoliday: a.prg_es_feriado,
           expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,
           entradaTime: entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null,
-          toleranciaMinutos: tolerancia,
+          // La tolerancia es la de la tienda donde le tocaba presentarse ese
+          // dia, no la de la sucursal de su contrato.
+          toleranciaMinutos:
+            toleranciaBySucursal.get(a.prg_sucursal_id) ?? DEFAULT_TOLERANCIA_MINUTOS,
         }
       })
       .filter((day) => {

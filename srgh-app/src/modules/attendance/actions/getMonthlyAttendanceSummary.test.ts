@@ -41,7 +41,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
   it('calcula los limites del mes calendario a partir de cualquier fecha del mes', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
-      sgrh_historial_laboral: { data: [], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>
@@ -74,6 +74,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         data: [
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-10',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -82,6 +83,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
           },
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-02',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -90,6 +92,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
           },
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-05',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -161,7 +164,18 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         error: null,
       },
       sgrh_sucursales: { data: [], error: null },
-      sgrh_programacion_semanal: { data: [], error: null },
+      sgrh_programacion_semanal: {
+        data: [1, 2].map((prg_historial_laboral_id) => ({
+          prg_historial_laboral_id,
+          prg_sucursal_id: 100,
+          prg_fecha: '2099-01-01',
+          prg_es_dia_libre: false,
+          prg_es_feriado: false,
+          prg_hora_entrada_custom: null,
+          sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+        })),
+        error: null,
+      },
       sgrh_marcas_asistencia: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })
@@ -179,7 +193,24 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
   it('devuelve error generico si falla la reunion de datos del mes', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      sgrh_programacion_semanal: {
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
+            prg_fecha: '2026-07-01',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+          },
+        ],
+        error: null,
+      },
       sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
+      sgrh_sucursales: { data: [], error: null },
+      sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>

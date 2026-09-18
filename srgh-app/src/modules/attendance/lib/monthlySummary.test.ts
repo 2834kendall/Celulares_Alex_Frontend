@@ -3,19 +3,47 @@ import { gatherMonthlyAttendanceDays } from './monthlySummary'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { createClient } from '@/lib/supabase/server'
 
+type ClientMock = ReturnType<typeof createSupabaseClientMock>
+
+/** El cliente real que recibe gatherMonthlyAttendanceDays, sin el `as unknown` repetido. */
+function asClient(client: ClientMock) {
+  return client as unknown as Awaited<ReturnType<typeof createClient>>
+}
+
+const ANA = {
+  lab_id: 1,
+  lab_empleado_id: 10,
+  lab_sucursal_id: 100,
+  sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+}
+
+/** Fila de programacion con los valores por defecto del caso feliz. */
+function assignment(overrides: Record<string, unknown> = {}) {
+  return {
+    prg_historial_laboral_id: 1,
+    prg_sucursal_id: 100,
+    prg_fecha: '2026-07-01',
+    prg_es_dia_libre: false,
+    prg_es_feriado: false,
+    prg_hora_entrada_custom: null,
+    sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+    ...overrides,
+  }
+}
+
 describe('gatherMonthlyAttendanceDays', () => {
   afterEach(() => {
     vi.useRealTimers()
   })
 
-  it('devuelve vacio y no consulta el resto si no hay colaboradores', async () => {
+  it('devuelve vacio y no consulta el resto si nadie tiene programacion en el rango', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
-      sgrh_historial_laboral: { data: [], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
       1,
       5,
       '2026-07-01',
@@ -23,33 +51,49 @@ describe('gatherMonthlyAttendanceDays', () => {
     )
 
     expect(result).toEqual({ ok: true, data: [] })
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_historial_laboral')
     expect(client.from).not.toHaveBeenCalledWith('sgrh_sucursales')
   })
 
   it('no consulta la sucursal fija si no hay usuarioId', async () => {
     const client = createSupabaseClientMock({
-      sgrh_historial_laboral: { data: [], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
     })
 
-    await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    await gatherMonthlyAttendanceDays(asClient(client), 1, undefined, '2026-07-01', '2026-07-31')
+
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_usuarios_empresa_rol')
+  })
+
+  it('devuelve error si falla la carga de la programacion', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      sgrh_programacion_semanal: { data: null, error: { message: 'boom' } },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      asClient(client),
       1,
-      undefined,
+      5,
       '2026-07-01',
       '2026-07-31'
     )
 
-    expect(client.from).not.toHaveBeenCalledWith('sgrh_usuarios_empresa_rol')
+    expect(result).toEqual({ ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' })
   })
 
   it('devuelve error si falla la carga de colaboradores', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      sgrh_programacion_semanal: { data: [assignment()], error: null },
       sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
+      sgrh_sucursales: { data: [], error: null },
+      sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
       1,
       5,
       '2026-07-01',
@@ -59,35 +103,13 @@ describe('gatherMonthlyAttendanceDays', () => {
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los colaboradores.' })
   })
 
-  it('junta nombre, tolerancia y hora real de entrada por dia, con la fecha, filtrando por la sucursal fija del usuario', async () => {
+  it('junta nombre, tolerancia y hora real de entrada por dia, con la fecha, acotando por la sucursal del usuario', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
-      sgrh_historial_laboral: {
-        data: [
-          {
-            lab_id: 1,
-            lab_empleado_id: 10,
-            lab_sucursal_id: 100,
-            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
-          },
-        ],
-        error: null,
-      },
+      sgrh_programacion_semanal: { data: [assignment()], error: null },
+      sgrh_historial_laboral: { data: [ANA], error: null },
       sgrh_sucursales: {
         data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }],
-        error: null,
-      },
-      sgrh_programacion_semanal: {
-        data: [
-          {
-            prg_historial_laboral_id: 1,
-            prg_fecha: '2026-07-01',
-            prg_es_dia_libre: false,
-            prg_es_feriado: false,
-            prg_hora_entrada_custom: null,
-            sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
-          },
-        ],
         error: null,
       },
       sgrh_marcas_asistencia: {
@@ -104,7 +126,7 @@ describe('gatherMonthlyAttendanceDays', () => {
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
       1,
       5,
       '2026-07-01',
@@ -133,38 +155,24 @@ describe('gatherMonthlyAttendanceDays', () => {
       ],
     })
 
-    const historialCall = client.from.mock.results.find(
-      (_r, i) => client.from.mock.calls[i][0] === 'sgrh_historial_laboral'
+    // El alcance se pone sobre la sucursal DEL DIA, no sobre la del contrato:
+    // es lo que hace que un traslado se cuente donde de verdad se trabajo.
+    const programacionCall = client.from.mock.results.find(
+      (_r, i) => client.from.mock.calls[i][0] === 'sgrh_programacion_semanal'
     )!.value
-    expect(historialCall.in).toHaveBeenCalledWith('lab_sucursal_id', [100])
+    expect(programacionCall.in).toHaveBeenCalledWith('prg_sucursal_id', [100])
   })
 
-  it('ignora dias futuros: un horario ya asignado para manana no cuenta como ausencia', async () => {
+  it('toma la tolerancia de la sucursal del dia, no la del contrato', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
-      sgrh_historial_laboral: {
+      // Ana tiene contrato en la 100 pero ese dia la trasladaron a la 200.
+      sgrh_programacion_semanal: { data: [assignment({ prg_sucursal_id: 200 })], error: null },
+      sgrh_historial_laboral: { data: [ANA], error: null },
+      sgrh_sucursales: {
         data: [
-          {
-            lab_id: 1,
-            lab_empleado_id: 10,
-            lab_sucursal_id: 100,
-            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
-          },
-        ],
-        error: null,
-      },
-      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
-      sgrh_programacion_semanal: {
-        // Fecha bien en el futuro respecto a "hoy" real — sin marca posible.
-        data: [
-          {
-            prg_historial_laboral_id: 1,
-            prg_fecha: '2099-01-01',
-            prg_es_dia_libre: false,
-            prg_es_feriado: false,
-            prg_hora_entrada_custom: null,
-            sgrh_cat_horarios: { hor_hora_entrada: '11:00:00' },
-          },
+          { suc_id: 100, suc_tolerancia_tardia_minutos: 5 },
+          { suc_id: 200, suc_tolerancia_tardia_minutos: 15 },
         ],
         error: null,
       },
@@ -173,7 +181,38 @@ describe('gatherMonthlyAttendanceDays', () => {
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok ? result.data[0].days[0].toleranciaMinutos : null).toBe(15)
+  })
+
+  it('ignora dias futuros: un horario ya asignado para manana no cuenta como ausencia', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      // Fecha bien en el futuro respecto a "hoy" real — sin marca posible.
+      sgrh_programacion_semanal: {
+        data: [
+          assignment({
+            prg_fecha: '2099-01-01',
+            sgrh_cat_horarios: { hor_hora_entrada: '11:00:00' },
+          }),
+        ],
+        error: null,
+      },
+      sgrh_historial_laboral: { data: [ANA], error: null },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
+      sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      asClient(client),
       1,
       5,
       '2026-07-01',
@@ -193,37 +232,23 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
-      sgrh_historial_laboral: {
-        data: [
-          {
-            lab_id: 1,
-            lab_empleado_id: 10,
-            lab_sucursal_id: 100,
-            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
-          },
-        ],
-        error: null,
-      },
-      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
       sgrh_programacion_semanal: {
         data: [
-          {
-            prg_historial_laboral_id: 1,
+          assignment({
             prg_fecha: '2026-07-31',
-            prg_es_dia_libre: false,
-            prg_es_feriado: false,
-            prg_hora_entrada_custom: null,
             sgrh_cat_horarios: { hor_hora_entrada: '11:00:00' },
-          },
+          }),
         ],
         error: null,
       },
+      sgrh_historial_laboral: { data: [ANA], error: null },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
       1,
       5,
       '2026-07-01',
@@ -243,37 +268,23 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
-      sgrh_historial_laboral: {
-        data: [
-          {
-            lab_id: 1,
-            lab_empleado_id: 10,
-            lab_sucursal_id: 100,
-            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
-          },
-        ],
-        error: null,
-      },
-      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
       sgrh_programacion_semanal: {
         data: [
-          {
-            prg_historial_laboral_id: 1,
+          assignment({
             prg_fecha: '2026-07-31',
-            prg_es_dia_libre: false,
-            prg_es_feriado: false,
-            prg_hora_entrada_custom: null,
             sgrh_cat_horarios: { hor_hora_entrada: '11:00:00' },
-          },
+          }),
         ],
         error: null,
       },
+      sgrh_historial_laboral: { data: [ANA], error: null },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
       1,
       5,
       '2026-07-01',
@@ -306,29 +317,14 @@ describe('gatherMonthlyAttendanceDays', () => {
   it('marca como justificados los dias cubiertos por una ausencia aprobada, recortada al mes', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
-      sgrh_historial_laboral: {
-        data: [
-          {
-            lab_id: 1,
-            lab_empleado_id: 10,
-            lab_sucursal_id: 100,
-            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
-          },
-        ],
-        error: null,
-      },
-      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
       sgrh_programacion_semanal: {
-        data: ['2026-07-01', '2026-07-02', '2026-07-03'].map((prg_fecha) => ({
-          prg_historial_laboral_id: 1,
-          prg_fecha,
-          prg_es_dia_libre: false,
-          prg_es_feriado: false,
-          prg_hora_entrada_custom: null,
-          sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
-        })),
+        data: ['2026-07-01', '2026-07-02', '2026-07-03'].map((prg_fecha) =>
+          assignment({ prg_fecha })
+        ),
         error: null,
       },
+      sgrh_historial_laboral: { data: [ANA], error: null },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
       // Incapacidad que arranca el mes anterior: cubre el 1 y el 2 de julio,
       // no el 3. El recorte al rango es lo que se esta probando.
@@ -345,7 +341,7 @@ describe('gatherMonthlyAttendanceDays', () => {
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
       1,
       5,
       '2026-07-01',
@@ -364,25 +360,15 @@ describe('gatherMonthlyAttendanceDays', () => {
   it('devuelve error si falla la consulta de ausencias, en vez de contarlas como inasistencia', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
-      sgrh_historial_laboral: {
-        data: [
-          {
-            lab_id: 1,
-            lab_empleado_id: 10,
-            lab_sucursal_id: 100,
-            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
-          },
-        ],
-        error: null,
-      },
+      sgrh_programacion_semanal: { data: [assignment()], error: null },
+      sgrh_historial_laboral: { data: [ANA], error: null },
       sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
-      sgrh_programacion_semanal: { data: [], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
       sgrh_ausencias: { data: null, error: { message: 'boom' } },
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
       1,
       5,
       '2026-07-01',
@@ -398,22 +384,23 @@ describe('gatherMonthlyAttendanceDays', () => {
   it('usa "Sin nombre" si el empleado no viene en el join', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      // Dia futuro: entra al cruce de colaboradores pero no genera dias.
+      sgrh_programacion_semanal: { data: [assignment({ prg_fecha: '2099-01-01' })], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100, sgrh_empleados: null }],
         error: null,
       },
       sgrh_sucursales: { data: [], error: null },
-      sgrh_programacion_semanal: { data: [], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2099-01-31'
     )
 
     expect(result).toEqual({
@@ -422,21 +409,44 @@ describe('gatherMonthlyAttendanceDays', () => {
     })
   })
 
-  it('devuelve error generico si falla alguna de las consultas del mes', async () => {
+  it('no reporta a quien ya no tiene contrato activo aunque el dia siguiera programado', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
-      sgrh_historial_laboral: {
-        data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100, sgrh_empleados: null }],
-        error: null,
-      },
-      sgrh_sucursales: { data: null, error: { message: 'boom' } },
-      sgrh_programacion_semanal: { data: [], error: null },
+      sgrh_programacion_semanal: { data: [assignment()], error: null },
+      // El filtro lab_fecha_fin is null lo deja fuera: la programacion queda
+      // como historico y sobrevive a la salida del colaborador.
+      sgrh_historial_laboral: { data: [], error: null },
+      sgrh_sucursales: { data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 5 }], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })
 
     const result = await gatherMonthlyAttendanceDays(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+      asClient(client),
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31'
+    )
+
+    expect(result).toEqual({ ok: true, data: [] })
+  })
+
+  it('devuelve error generico si falla alguna de las consultas del mes', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      sgrh_programacion_semanal: { data: [assignment()], error: null },
+      sgrh_historial_laboral: {
+        data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100, sgrh_empleados: null }],
+        error: null,
+      },
+      sgrh_sucursales: { data: null, error: { message: 'boom' } },
+      sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
+    })
+
+    const result = await gatherMonthlyAttendanceDays(
+      asClient(client),
       1,
       5,
       '2026-07-01',

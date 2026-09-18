@@ -1,12 +1,12 @@
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { getActiveEmployees } from '@/modules/attendance/actions/getActiveEmployees'
+import { getScheduledEmployees } from '@/modules/attendance/actions/getScheduledEmployees'
 import { KioskScreen } from '@/modules/attendance/components/kiosk/KioskScreen'
 
 export default async function KioscoPage() {
   await requirePermission(PERMISOS.ASISTENCIA_WRITE)
 
-  const result = await getActiveEmployees()
+  const result = await getScheduledEmployees()
 
   if (!result.ok) {
     return (
