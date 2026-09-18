@@ -28,6 +28,10 @@ describe('isWorkable', () => {
     employeeId: 10,
     branchId: 100,
     expectedStart: '08:00',
+    expectedLunchStart: null,
+    expectedLunchEnd: null,
+    expectedBreakStart: null,
+    expectedBreakEnd: null,
     isDayOff: false,
     isHoliday: false,
   }
@@ -61,10 +65,75 @@ describe('getDayAssignments', () => {
           employeeId: 10,
           branchId: 200,
           expectedStart: '08:00',
+          expectedLunchStart: null,
+          expectedLunchEnd: null,
+          expectedBreakStart: null,
+          expectedBreakEnd: null,
           isDayOff: false,
           isHoliday: false,
         },
       ],
+    })
+  })
+
+  it('toma almuerzo y receso de la plantilla si el dia no es personalizado', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_programacion_semanal: {
+        data: [
+          row({
+            // Almuerzo personalizado suelto, sin entrada/salida propias: se ignora.
+            prg_hora_inicio_almuerzo_custom: '11:00:00',
+            sgrh_cat_horarios: {
+              hor_hora_entrada: '08:00:00',
+              hor_hora_inicio_almuerzo: '12:00:00',
+              hor_hora_fin_almuerzo: '13:00:00',
+              hor_hora_inicio_break: '10:00:00',
+              hor_hora_fin_break: '10:10:00',
+            },
+          }),
+        ],
+        error: null,
+      },
+    })
+
+    const result = await getDayAssignments(asClient(client), '2026-07-25', null)
+
+    expect(result.ok && result.data[0]).toMatchObject({
+      expectedLunchStart: '12:00',
+      expectedLunchEnd: '13:00',
+      expectedBreakStart: '10:00',
+      expectedBreakEnd: '10:10',
+    })
+  })
+
+  it('un dia personalizado usa su propio almuerzo, aunque no tenga receso', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_programacion_semanal: {
+        data: [
+          row({
+            prg_hora_entrada_custom: '09:00:00',
+            prg_hora_salida_custom: '17:00:00',
+            prg_hora_inicio_almuerzo_custom: '13:00:00',
+            prg_hora_fin_almuerzo_custom: '13:30:00',
+            sgrh_cat_horarios: {
+              hor_hora_entrada: '08:00:00',
+              hor_hora_inicio_break: '10:00:00',
+              hor_hora_fin_break: '10:10:00',
+            },
+          }),
+        ],
+        error: null,
+      },
+    })
+
+    const result = await getDayAssignments(asClient(client), '2026-07-25', null)
+
+    expect(result.ok && result.data[0]).toMatchObject({
+      expectedStart: '09:00',
+      expectedLunchStart: '13:00',
+      expectedLunchEnd: '13:30',
+      expectedBreakStart: null,
+      expectedBreakEnd: null,
     })
   })
 

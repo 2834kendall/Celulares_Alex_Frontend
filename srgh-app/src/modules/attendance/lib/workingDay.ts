@@ -21,6 +21,16 @@ export interface DayAssignment {
   branchId: number
   /** "HH:mm" de entrada esperada, null si la fila no define ninguna. */
   expectedStart: string | null
+  /**
+   * "HH:mm" del almuerzo y del receso programados, null si el turno no los
+   * tiene. Salen del horario personalizado del dia cuando lo hay, y si no de
+   * la plantilla — el mismo criterio con que la matriz semanal calcula las
+   * horas (SGRH-88).
+   */
+  expectedLunchStart: string | null
+  expectedLunchEnd: string | null
+  expectedBreakStart: string | null
+  expectedBreakEnd: string | null
   isDayOff: boolean
   isHoliday: boolean
 }
@@ -32,7 +42,22 @@ interface DayAssignmentDbRow {
   prg_es_dia_libre: boolean
   prg_es_feriado: boolean
   prg_hora_entrada_custom: string | null
-  sgrh_cat_horarios: { hor_hora_entrada: string } | null
+  prg_hora_salida_custom: string | null
+  prg_hora_inicio_almuerzo_custom: string | null
+  prg_hora_fin_almuerzo_custom: string | null
+  prg_hora_inicio_break_custom: string | null
+  prg_hora_fin_break_custom: string | null
+  sgrh_cat_horarios: {
+    hor_hora_entrada: string
+    hor_hora_inicio_almuerzo: string | null
+    hor_hora_fin_almuerzo: string | null
+    hor_hora_inicio_break: string | null
+    hor_hora_fin_break: string | null
+  } | null
+}
+
+function hhmm(value: string | null | undefined): string | null {
+  return value ? timeOfDay(value) : null
 }
 
 export type DayAssignmentsResult =
@@ -51,11 +76,27 @@ export function isWorkable(day: DayAssignment): boolean {
 function toDayAssignment(row: DayAssignmentDbRow): DayAssignment {
   const expectedRaw = row.prg_hora_entrada_custom ?? row.sgrh_cat_horarios?.hor_hora_entrada ?? ''
 
+  // Un dia es "personalizado" cuando trae entrada Y salida propias, igual que
+  // en getWeeklySchedule. En ese caso el almuerzo y el receso tambien son los
+  // propios (pueden no existir); si no, los de la plantilla.
+  const isCustom = Boolean(row.prg_hora_entrada_custom && row.prg_hora_salida_custom)
+  const horario = row.sgrh_cat_horarios
+
   return {
     employmentHistoryId: row.prg_historial_laboral_id,
     employeeId: row.prg_empleado_id,
     branchId: row.prg_sucursal_id,
     expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,
+    expectedLunchStart: hhmm(
+      isCustom ? row.prg_hora_inicio_almuerzo_custom : horario?.hor_hora_inicio_almuerzo
+    ),
+    expectedLunchEnd: hhmm(
+      isCustom ? row.prg_hora_fin_almuerzo_custom : horario?.hor_hora_fin_almuerzo
+    ),
+    expectedBreakStart: hhmm(
+      isCustom ? row.prg_hora_inicio_break_custom : horario?.hor_hora_inicio_break
+    ),
+    expectedBreakEnd: hhmm(isCustom ? row.prg_hora_fin_break_custom : horario?.hor_hora_fin_break),
     isDayOff: row.prg_es_dia_libre,
     isHoliday: row.prg_es_feriado,
   }
@@ -77,7 +118,18 @@ async function queryDayAssignments(
       prg_es_dia_libre,
       prg_es_feriado,
       prg_hora_entrada_custom,
-      sgrh_cat_horarios ( hor_hora_entrada )
+      prg_hora_salida_custom,
+      prg_hora_inicio_almuerzo_custom,
+      prg_hora_fin_almuerzo_custom,
+      prg_hora_inicio_break_custom,
+      prg_hora_fin_break_custom,
+      sgrh_cat_horarios (
+        hor_hora_entrada,
+        hor_hora_inicio_almuerzo,
+        hor_hora_fin_almuerzo,
+        hor_hora_inicio_break,
+        hor_hora_fin_break
+      )
     `
     )
     .eq('prg_fecha', dateISO)

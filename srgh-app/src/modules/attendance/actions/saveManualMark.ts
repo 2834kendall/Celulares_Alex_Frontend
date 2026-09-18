@@ -4,15 +4,15 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { manualMarkSchema, type ManualMarkInput } from '@/modules/attendance/types'
+import { manualMarkSchema, marcaTipoSchema, type ManualMarkInput } from '@/modules/attendance/types'
+import { MARK_LABELS } from '@/modules/attendance/lib/marks'
 
 export type SaveManualMarkResult = { ok: true } | { ok: false; error: string }
 
-const MARK_LABEL: Record<string, string> = {
-  entrada: 'entrada',
-  salida: 'salida',
-  inicio_almuerzo: 'inicio de almuerzo',
-  fin_almuerzo: 'fin de almuerzo',
+/** Nombre de la marca en minuscula, para meterlo dentro de una oracion. */
+function markLabel(tipo: string): string {
+  const parsed = marcaTipoSchema.safeParse(tipo)
+  return parsed.success ? MARK_LABELS[parsed.data].toLowerCase() : tipo
 }
 
 /**
@@ -36,7 +36,7 @@ async function notifyEmployee(
     ntf_tipo_notificacion: 'informacion',
     ntf_canal: 'app',
     ntf_titulo: 'Marca de asistencia actualizada',
-    ntf_mensaje: `Un encargado ${accion} tu marca de ${MARK_LABEL[tipo] ?? tipo}.`,
+    ntf_mensaje: `Un encargado ${accion} tu marca de ${markLabel(tipo)}.`,
   })
 }
 
