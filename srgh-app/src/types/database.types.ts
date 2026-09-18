@@ -1005,6 +1005,44 @@ export type Database = {
         }
         Relationships: []
       }
+      sgrh_cat_tipos_tardia: {
+        Row: {
+          tta_color: string | null
+          tta_created_at: string
+          tta_cuenta_advertencia: boolean
+          tta_desde_minutos: number
+          tta_empresa_id: number
+          tta_id: number
+          tta_nombre: string
+        }
+        Insert: {
+          tta_color?: string | null
+          tta_created_at?: string
+          tta_cuenta_advertencia?: boolean
+          tta_desde_minutos: number
+          tta_empresa_id: number
+          tta_id?: never
+          tta_nombre: string
+        }
+        Update: {
+          tta_color?: string | null
+          tta_created_at?: string
+          tta_cuenta_advertencia?: boolean
+          tta_desde_minutos?: number
+          tta_empresa_id?: number
+          tta_id?: never
+          tta_nombre?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_cat_tta_empresa_id_fkey"
+            columns: ["tta_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       sgrh_comisiones_calculadas: {
         Row: {
           cal_created_at: string
@@ -2500,7 +2538,6 @@ export type Database = {
           suc_nombre: string
           suc_radio_geocerca_metros: number
           suc_telefono: string | null
-          suc_tolerancia_tardia_minutos: number
         }
         Insert: {
           suc_activa?: boolean
@@ -2517,7 +2554,6 @@ export type Database = {
           suc_nombre: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
-          suc_tolerancia_tardia_minutos?: number
         }
         Update: {
           suc_activa?: boolean
@@ -2534,7 +2570,6 @@ export type Database = {
           suc_nombre?: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
-          suc_tolerancia_tardia_minutos?: number
         }
         Relationships: [
           {
