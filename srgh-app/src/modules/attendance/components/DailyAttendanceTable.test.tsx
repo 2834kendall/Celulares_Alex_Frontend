@@ -22,12 +22,17 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
     isHoliday: false,
     expectedStart: '08:00',
     entrada: { id: 1, time: '08:04', diffMinutes: 4 },
+    inicioReceso: null,
+    finReceso: null,
     inicioAlmuerzo: null,
     finAlmuerzo: null,
     salida: null,
     duplicateMarksCount: 0,
     isOpen: true,
     tardiness: null,
+    lunchTardiness: null,
+    lunchExcessMinutes: null,
+    breakExcessMinutes: null,
     ...overrides,
   }
 }
@@ -100,8 +105,8 @@ describe('<DailyAttendanceTable />', () => {
   it('abre el modal de agregar marca cuando la celda esta vacia', async () => {
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={[makeRow()]} canWrite={true} />)
 
-    // inicioAlmuerzo/finAlmuerzo/salida vienen null en makeRow(): las tres
-    // celdas muestran "Agregar marca", se toma la primera.
+    // Todo menos la entrada viene null en makeRow(): esas celdas muestran
+    // "Agregar marca", se toma la primera.
     await userEvent.click(tabla().getAllByLabelText('Agregar marca')[0])
 
     expect(screen.getByRole('heading', { name: 'Agregar marca' })).toBeInTheDocument()

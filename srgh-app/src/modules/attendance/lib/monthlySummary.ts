@@ -33,6 +33,7 @@ interface HistorialRow {
 
 interface AssignmentJoin {
   hor_hora_entrada: string
+  hor_hora_fin_almuerzo: string | null
 }
 
 interface AssignmentRow {
@@ -42,6 +43,8 @@ interface AssignmentRow {
   prg_es_dia_libre: boolean
   prg_es_feriado: boolean
   prg_hora_entrada_custom: string | null
+  prg_hora_salida_custom: string | null
+  prg_hora_fin_almuerzo_custom: string | null
   sgrh_cat_horarios: AssignmentJoin | null
 }
 
@@ -54,8 +57,11 @@ interface MarkDbRow {
   mar_tardia_justificacion: string | null
 }
 
-/** La entrada valida de un dia, con lo que hace falta para justificarla. */
-interface EntradaDelDia {
+/**
+ * La marca valida de un dia (la entrada, o el regreso del almuerzo), con lo
+ * que hace falta para justificarla.
+ */
+interface MarcaDelDia {
   markId: number
   /** "HH:mm" */
   time: string
@@ -80,6 +86,10 @@ export type DayForInfractionWithDate = DayForInfraction & {
   entradaMarkId: number | null
   /** Motivo escrito al justificar, null si no esta justificada. */
   tardiaJustificacion: string | null
+  /** mar_id del fin del almuerzo, null si no lo marco (SGRH-88). */
+  finAlmuerzoMarkId: number | null
+  /** Motivo de la justificacion de la tardanza al volver del almuerzo. */
+  lunchJustificacion: string | null
 }
 
 export interface EmployeeMonthDays {
@@ -149,7 +159,9 @@ export async function gatherMonthlyAttendanceDays(
       prg_es_dia_libre,
       prg_es_feriado,
       prg_hora_entrada_custom,
-      sgrh_cat_horarios ( hor_hora_entrada )
+      prg_hora_salida_custom,
+      prg_hora_fin_almuerzo_custom,
+      sgrh_cat_horarios ( hor_hora_entrada, hor_hora_fin_almuerzo )
     `
     )
     .gte('prg_fecha', start)
@@ -248,7 +260,9 @@ export async function gatherMonthlyAttendanceDays(
         'mar_id, mar_historial_laboral_id, mar_tipo, mar_fecha_hora, mar_tardia_justificada, mar_tardia_justificacion'
       )
       .in('mar_historial_laboral_id', historyIds)
-      .eq('mar_tipo', 'entrada')
+      // La entrada y el regreso del almuerzo: las dos marcas que pueden
+      // llegar tarde (SGRH-88).
+      .in('mar_tipo', ['entrada', 'fin_almuerzo'])
       .gte('mar_fecha_hora', `${start} 00:00:00`)
       .lte('mar_fecha_hora', `${end} 23:59:59`)
       .returns<MarkDbRow[]>(),
@@ -313,19 +327,28 @@ export async function gatherMonthlyAttendanceDays(
     }
   }
 
-  // Primera marca de entrada valida por (historial, fecha) — mismo criterio
-  // de "primera cronologica gana" que groupIntoDayJourney, aplicado por dia.
-  const entradaByHistAndDate = new Map<string, EntradaDelDia>()
+  // Primera marca valida por (historial, fecha) de cada tipo — mismo
+  // criterio de "primera cronologica gana" que groupIntoDayJourney.
+  const entradaByHistAndDate = new Map<string, MarcaDelDia>()
+  const finAlmuerzoByHistAndDate = new Map<string, MarcaDelDia>()
   for (const m of marks ?? []) {
     const parsedTipo = marcaTipoSchema.safeParse(m.mar_tipo)
-    if (!parsedTipo.success || parsedTipo.data !== 'entrada') continue
+    if (!parsedTipo.success) continue
+
+    const destino =
+      parsedTipo.data === 'entrada'
+        ? entradaByHistAndDate
+        : parsedTipo.data === 'fin_almuerzo'
+          ? finAlmuerzoByHistAndDate
+          : null
+    if (!destino) continue
 
     const date = dateOfDay(m.mar_fecha_hora)
     const key = `${m.mar_historial_laboral_id}|${date}`
     const time = timeOfDay(m.mar_fecha_hora)
-    const existing = entradaByHistAndDate.get(key)
+    const existing = destino.get(key)
     if (!existing || time < existing.time) {
-      entradaByHistAndDate.set(key, {
+      destino.set(key, {
         markId: m.mar_id,
         time,
         justificada: m.mar_tardia_justificada ?? false,
@@ -342,6 +365,13 @@ export async function gatherMonthlyAttendanceDays(
       .map((a) => {
         const expectedRaw = a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
         const entrada = entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
+        const finAlmuerzo = finAlmuerzoByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
+        // Mismo criterio que lib/workingDay.ts: horario personalizado del dia
+        // si trae entrada y salida propias, y si no el de la plantilla.
+        const isCustom = Boolean(a.prg_hora_entrada_custom && a.prg_hora_salida_custom)
+        const lunchEndRaw = isCustom
+          ? a.prg_hora_fin_almuerzo_custom
+          : a.sgrh_cat_horarios?.hor_hora_fin_almuerzo
         return {
           date: a.prg_fecha,
           isJustifiedAbsence: justifiedDays.has(`${h.lab_id}|${a.prg_fecha}`),
@@ -352,6 +382,11 @@ export async function gatherMonthlyAttendanceDays(
           entradaMarkId: entrada?.markId ?? null,
           isJustifiedTardiness: entrada?.justificada ?? false,
           tardiaJustificacion: entrada?.justificacion ?? null,
+          expectedLunchEnd: lunchEndRaw ? timeOfDay(lunchEndRaw) : null,
+          finAlmuerzoTime: finAlmuerzo?.time ?? null,
+          finAlmuerzoMarkId: finAlmuerzo?.markId ?? null,
+          isJustifiedLunchTardiness: finAlmuerzo?.justificada ?? false,
+          lunchJustificacion: finAlmuerzo?.justificacion ?? null,
         }
       })
       .filter((day) => {

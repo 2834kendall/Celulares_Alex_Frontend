@@ -186,14 +186,17 @@ export function MonthlySummaryTable({ monthISO, rows, canWrite }: MonthlySummary
                                   <ul className="space-y-0.5">
                                     {row.tardyDays.map((d) => (
                                       <li
-                                        key={d.date}
+                                        key={`${d.date}-${d.kind}`}
                                         className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-slate-600"
                                       >
                                         <span className="font-medium capitalize">
                                           {formatDayShort(d.date)}
                                         </span>
                                         <span>
-                                          — llego a las {d.entradaTime} (+{d.diffMinutes} min)
+                                          {d.kind === 'entrada'
+                                            ? `— llego a las ${d.time}`
+                                            : `— volvio del almuerzo a las ${d.time}`}{' '}
+                                          (+{d.diffMinutes} min)
                                         </span>
                                         <span
                                           style={tardinessChipStyle(d.tipo.color)}
@@ -272,6 +275,7 @@ export function MonthlySummaryTable({ monthISO, rows, canWrite }: MonthlySummary
           employeeName={justifying.employeeName}
           dateISO={justifying.day.date}
           tipoNombre={justifying.day.tipo.nombre}
+          kind={justifying.day.kind}
           diffMinutes={justifying.day.diffMinutes}
           isJustified={justifying.day.isJustified}
           currentJustification={justifying.day.justification}

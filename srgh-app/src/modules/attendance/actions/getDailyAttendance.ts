@@ -7,7 +7,13 @@ import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
 import { getDayAssignments, type DayAssignment } from '@/modules/attendance/lib/workingDay'
-import { classifyTardiness, type TardinessBadge } from '@/modules/attendance/lib/infractions'
+import {
+  classifyTardiness,
+  PAID_BREAK_MINUTES,
+  periodExcessMinutes,
+  type TardinessBadge,
+  type TardinessType,
+} from '@/modules/attendance/lib/infractions'
 import { loadTardinessTypes } from '@/modules/attendance/lib/tardinessTypes'
 import { marcaTipoSchema } from '@/modules/attendance/types'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
@@ -76,6 +82,8 @@ export interface DailyAttendanceRow {
   /** "HH:mm", null si no hay programacion para este dia. */
   expectedStart: string | null
   entrada: DailyMarkInfo | null
+  inicioReceso: DailyMarkInfo | null
+  finReceso: DailyMarkInfo | null
   inicioAlmuerzo: DailyMarkInfo | null
   finAlmuerzo: DailyMarkInfo | null
   salida: DailyMarkInfo | null
@@ -86,6 +94,44 @@ export interface DailyAttendanceRow {
    * tiempo, no marco, o no hay hora esperada con que comparar.
    */
   tardiness: DailyTardiness | null
+  /** Tardanza al volver del almuerzo, con el mismo catalogo (SGRH-88). */
+  lunchTardiness: DailyTardiness | null
+  /**
+   * Minutos que el almuerzo se paso de su duracion programada. null si no hay
+   * almuerzo programado o no se marco completo; 0 si no se paso.
+   */
+  lunchExcessMinutes: number | null
+  /**
+   * Minutos de receso por encima de los pagados. null si no se marco
+   * completo; 0 si no se paso.
+   */
+  breakExcessMinutes: number | null
+}
+
+/**
+ * Clasifica una marca que puede llegar tarde (la entrada o el regreso del
+ * almuerzo) contra el catalogo, con su justificacion. null si llego a
+ * tiempo o no hay hora esperada con que comparar.
+ */
+function tardinessOf(
+  info: DailyMarkInfo | null,
+  raw: RawMark | null,
+  tipos: TardinessType[],
+  justificaciones: Map<number, { justificada: boolean; motivo: string | null }>
+): DailyTardiness | null {
+  if (!info || !raw || info.diffMinutes === null) return null
+
+  const tipo = classifyTardiness(info.diffMinutes, tipos)
+  if (!tipo) return null
+
+  const justificacion = justificaciones.get(raw.id)
+
+  return {
+    tipo: { nombre: tipo.nombre, color: tipo.color },
+    diffMinutes: info.diffMinutes,
+    isJustified: justificacion?.justificada ?? false,
+    justification: justificacion?.motivo ?? null,
+  }
 }
 
 export type GetDailyAttendanceResult =
@@ -304,10 +350,9 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
     const journey = groupIntoDayJourney(marksByHistoryId.get(h.lab_id) ?? [])
 
-    // La diferencia en minutos solo aplica a ENTRADA (RF-08, tardanza de
-    // llegada). Salida/almuerzo no tienen una hora esperada propia cargada
-    // aca — compararlas contra expectedStart (hora de ENTRADA del turno)
-    // seria incorrecto, asi que quedan solo con su hora, sin diffMinutes.
+    // Cada marca se compara contra SU hora programada: la entrada contra la
+    // entrada, el almuerzo y el receso contra los suyos (SGRH-88). La salida
+    // sigue sin comparacion — nadie definio todavia que es "salir tarde".
     function markInfo(mark: RawMark | null, expected: string | null): DailyMarkInfo | null {
       if (!mark) return null
       const time = timeOfDay(mark.fechaHora)
@@ -328,15 +373,27 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     // Un dia libre, feriado o sin turno no tiene tardanza: no habia hora a la
     // que llegar. Es el mismo criterio de tardinessOfDay, que aca no se puede
     // reusar tal cual porque trabaja sobre el mes y no sobre la fila del dia.
-    const tipo =
-      entrada?.diffMinutes != null &&
-      !(assignment?.isDayOff ?? false) &&
-      !(assignment?.isHoliday ?? false)
-        ? classifyTardiness(entrada.diffMinutes, tipos)
+    const noSeTrabaja = (assignment?.isDayOff ?? false) || (assignment?.isHoliday ?? false)
+
+    const inicioReceso = markInfo(journey.inicioReceso, assignment?.expectedBreakStart ?? null)
+    const finReceso = markInfo(journey.finReceso, assignment?.expectedBreakEnd ?? null)
+    const inicioAlmuerzo = markInfo(journey.inicioAlmuerzo, assignment?.expectedLunchStart ?? null)
+    const finAlmuerzo = markInfo(journey.finAlmuerzo, assignment?.expectedLunchEnd ?? null)
+
+    const tardiness = noSeTrabaja
+      ? null
+      : tardinessOf(entrada, journey.entrada, tipos, justificacionByMarkId)
+    const lunchTardiness = noSeTrabaja
+      ? null
+      : tardinessOf(finAlmuerzo, journey.finAlmuerzo, tipos, justificacionByMarkId)
+
+    // El almuerzo se mide contra la duracion PROGRAMADA (fin - inicio del
+    // turno), no contra la hora: quien sale a la 1 en vez de a las 12 y toma
+    // su hora completa no se paso de nada.
+    const lunchAllowed =
+      assignment?.expectedLunchStart && assignment?.expectedLunchEnd
+        ? diffMinutes(assignment.expectedLunchEnd, assignment.expectedLunchStart)
         : null
-    const justificacion = journey.entrada
-      ? justificacionByMarkId.get(journey.entrada.id)
-      : undefined
 
     return {
       employmentHistoryId: h.lab_id,
@@ -350,19 +407,25 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       isHoliday: assignment?.isHoliday ?? false,
       expectedStart: assignment?.expectedStart ?? null,
       entrada,
-      inicioAlmuerzo: markInfo(journey.inicioAlmuerzo, null),
-      finAlmuerzo: markInfo(journey.finAlmuerzo, null),
+      inicioReceso,
+      finReceso,
+      inicioAlmuerzo,
+      finAlmuerzo,
       salida: markInfo(journey.salida, null),
       duplicateMarksCount: journey.duplicates.length,
       isOpen: journey.isOpen,
-      tardiness: tipo
-        ? {
-            tipo: { nombre: tipo.nombre, color: tipo.color },
-            diffMinutes: entrada!.diffMinutes!,
-            isJustified: justificacion?.justificada ?? false,
-            justification: justificacion?.motivo ?? null,
-          }
-        : null,
+      tardiness,
+      lunchTardiness,
+      lunchExcessMinutes:
+        inicioAlmuerzo && finAlmuerzo && lunchAllowed !== null
+          ? periodExcessMinutes(inicioAlmuerzo.time, finAlmuerzo.time, lunchAllowed)
+          : null,
+      // El receso se mide contra los minutos pagados, con o sin receso
+      // programado: es la regla con que la matriz semanal calcula las horas.
+      breakExcessMinutes:
+        inicioReceso && finReceso
+          ? periodExcessMinutes(inicioReceso.time, finReceso.time, PAID_BREAK_MINUTES)
+          : null,
     }
   })
 

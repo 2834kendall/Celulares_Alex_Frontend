@@ -43,12 +43,17 @@ interface EditingTarget {
 
 const MARK_FIELD: Record<
   MarkType,
-  keyof Pick<DailyAttendanceRow, 'entrada' | 'salida' | 'inicioAlmuerzo' | 'finAlmuerzo'>
+  keyof Pick<
+    DailyAttendanceRow,
+    'entrada' | 'inicioReceso' | 'finReceso' | 'inicioAlmuerzo' | 'finAlmuerzo' | 'salida'
+  >
 > = {
   entrada: 'entrada',
-  salida: 'salida',
+  inicio_receso: 'inicioReceso',
+  fin_receso: 'finReceso',
   inicio_almuerzo: 'inicioAlmuerzo',
   fin_almuerzo: 'finAlmuerzo',
+  salida: 'salida',
 }
 
 function formatDay(dateISO: string) {
@@ -199,6 +204,18 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
           <AlertTriangle className="h-3 w-3" /> Sin salida
         </span>
       )}
+      {/* Excesos (SGRH-88): el almuerzo contra su duracion programada, el
+          receso contra los minutos pagados. 0 no se muestra. */}
+      {(row.lunchExcessMinutes ?? 0) > 0 && (
+        <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
+          Almuerzo +{row.lunchExcessMinutes} min
+        </span>
+      )}
+      {(row.breakExcessMinutes ?? 0) > 0 && (
+        <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
+          Receso +{row.breakExcessMinutes} min
+        </span>
+      )}
       {row.duplicateMarksCount > 0 && (
         <span className="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
           {row.duplicateMarksCount} marca(s) duplicada(s)
@@ -208,9 +225,11 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
   )
 }
 
-/** Las cuatro marcas en el orden de la jornada, para recorrerlas sin repetirlas. */
+/** Las marcas en el orden de la jornada, para recorrerlas sin repetirlas. */
 const MARK_SLOTS: { tipo: MarkType; label: string }[] = [
   { tipo: 'entrada', label: 'Entrada' },
+  { tipo: 'inicio_receso', label: 'Inicio receso' },
+  { tipo: 'fin_receso', label: 'Fin receso' },
   { tipo: 'inicio_almuerzo', label: 'Inicio almuerzo' },
   { tipo: 'fin_almuerzo', label: 'Fin almuerzo' },
   { tipo: 'salida', label: 'Salida' },
@@ -424,7 +443,7 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
 
                   <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
                     <span className="text-[11px] font-medium tabular-nums text-slate-400">
-                      {marcadas} de 4 marcas
+                      {marcadas} de {MARK_SLOTS.length} marcas
                     </span>
                     <StatusBadges row={row} />
                   </div>
@@ -439,6 +458,8 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                 <tr>
                   <th className={TABLE_TH}>Colaborador</th>
                   <th className={TABLE_TH}>Entrada</th>
+                  <th className={TABLE_TH}>Inicio receso</th>
+                  <th className={TABLE_TH}>Fin receso</th>
                   <th className={TABLE_TH}>Inicio almuerzo</th>
                   <th className={TABLE_TH}>Fin almuerzo</th>
                   <th className={TABLE_TH}>Salida</th>
@@ -467,6 +488,20 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
+                        mark={row.inicioReceso}
+                        canWrite={canWrite}
+                        onEdit={() => setEditing({ row, tipo: 'inicio_receso' })}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={row.finReceso}
+                        canWrite={canWrite}
+                        onEdit={() => setEditing({ row, tipo: 'fin_receso' })}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
                         mark={row.inicioAlmuerzo}
                         canWrite={canWrite}
                         onEdit={() => setEditing({ row, tipo: 'inicio_almuerzo' })}
@@ -477,6 +512,7 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                         mark={row.finAlmuerzo}
                         canWrite={canWrite}
                         onEdit={() => setEditing({ row, tipo: 'fin_almuerzo' })}
+                        tardiness={row.lunchTardiness}
                       />
                     </td>
                     <td className="px-3 py-2">

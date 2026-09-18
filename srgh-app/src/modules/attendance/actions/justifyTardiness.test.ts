@@ -80,7 +80,7 @@ describe('justifyTardiness (server action)', () => {
     })
   })
 
-  it('rechaza justificar una marca que no es de entrada', async () => {
+  it('rechaza justificar una marca que no puede llegar tarde (ej. la salida)', async () => {
     const client = useClient(
       createSupabaseClientMock({
         sgrh_marcas_asistencia: {
@@ -92,7 +92,10 @@ describe('justifyTardiness (server action)', () => {
 
     const result = await justifyTardiness({ markId: 5, justificada: true, motivo: MOTIVO })
 
-    expect(result).toEqual({ ok: false, error: 'Solo se puede justificar una marca de entrada.' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'Solo se puede justificar la entrada o el regreso del almuerzo.',
+    })
     expect(lastCallOn(client, 'sgrh_marcas_asistencia').update).not.toHaveBeenCalled()
   })
 

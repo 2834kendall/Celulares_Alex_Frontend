@@ -146,7 +146,8 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
       tardyDays: [
         {
           date: '2026-07-10',
-          entradaTime: '08:15',
+          kind: 'entrada',
+          time: '08:15',
           diffMinutes: 15,
           tipo: { nombre: 'Tardia grave', color: '#E11D48' },
           countsTowardWarning: true,
@@ -216,7 +217,8 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
     expect(result.data[0].tardyDays).toEqual([
       {
         date: '2026-07-10',
-        entradaTime: '08:03',
+        kind: 'entrada',
+        time: '08:03',
         diffMinutes: 3,
         tipo: { nombre: 'Tardia leve', color: '#F59E0B' },
         countsTowardWarning: false,

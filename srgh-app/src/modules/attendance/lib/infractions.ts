@@ -80,6 +80,15 @@ export interface DayForInfraction {
    * reporte, pero no cuenta.
    */
   isJustifiedTardiness: boolean
+  /**
+   * "HH:mm" en que debia terminar el almuerzo, y en que se marco el fin.
+   * Opcionales: un dia sin almuerzo programado o sin marcarlo simplemente
+   * no tiene tardanza de regreso (SGRH-88).
+   */
+  expectedLunchEnd?: string | null
+  finAlmuerzoTime?: string | null
+  /** Justificacion de la tardanza al volver del almuerzo, sobre su propia marca. */
+  isJustifiedLunchTardiness?: boolean
 }
 
 /**
@@ -130,6 +139,50 @@ export function classifyDay(day: DayForInfraction, tipos: TardinessType[]): DayA
  * Si la tardanza de este dia suma para la advertencia del mes: tiene que ser
  * una tardanza, no estar justificada, y ser de un tipo que cuente.
  */
+/**
+ * Tipo de tardia al VOLVER del almuerzo, o null si volvio a tiempo, el dia no
+ * aplica o falta alguna de las dos horas (SGRH-88).
+ *
+ * Se clasifica con el MISMO catalogo que la entrada: volver 3 minutos tarde
+ * del almuerzo es una tardia leve igual que entrar 3 minutos tarde. Dos
+ * escalas distintas serian dos reglas que nadie recuerda.
+ */
+export function lunchTardinessOfDay(
+  day: DayForInfraction,
+  tipos: TardinessType[]
+): TardinessType | null {
+  if (day.isJustifiedAbsence || day.isDayOff || day.isHoliday) return null
+  if (!day.expectedLunchEnd || !day.finAlmuerzoTime) return null
+
+  return classifyTardiness(diffMinutes(day.finAlmuerzoTime, day.expectedLunchEnd), tipos)
+}
+
+/** Si la tardanza al volver del almuerzo suma para la advertencia del mes. */
+export function lunchCountsTowardWarning(day: DayForInfraction, tipos: TardinessType[]): boolean {
+  if (day.isJustifiedLunchTardiness) return false
+  return lunchTardinessOfDay(day, tipos)?.cuentaAdvertencia ?? false
+}
+
+/**
+ * Minutos que un periodo (almuerzo o receso) se paso de lo permitido; 0 si
+ * no se paso. Recibe "HH:mm" de inicio y fin reales.
+ */
+export function periodExcessMinutes(
+  inicio: string,
+  fin: string,
+  minutosPermitidos: number
+): number {
+  return Math.max(0, diffMinutes(fin, inicio) - minutosPermitidos)
+}
+
+/**
+ * Minutos de receso pagados: solo el exceso sobre esto se descuenta de las
+ * horas. Es la misma regla que modules/schedules/lib/hours.ts
+ * (PAID_BREAK_MINUTES); se repite aca porque cada modulo de negocio es
+ * independiente. Si una cambia, la otra tiene que cambiar con ella.
+ */
+export const PAID_BREAK_MINUTES = 10
+
 export function countsTowardWarning(day: DayForInfraction, tipos: TardinessType[]): boolean {
   if (classifyDay(day, tipos) !== 'tardio') return false
   return tardinessOfDay(day, tipos)?.cuentaAdvertencia ?? false
@@ -148,6 +201,8 @@ export function summarizeMonth(
   let ausencias = 0
 
   for (const day of days) {
+    // Un mismo dia puede sumar dos tardias: al entrar y al volver del almuerzo.
+    if (lunchCountsTowardWarning(day, tipos)) tardias++
     if (countsTowardWarning(day, tipos)) tardias++
     else if (classifyDay(day, tipos) === 'ausente') ausencias++
   }

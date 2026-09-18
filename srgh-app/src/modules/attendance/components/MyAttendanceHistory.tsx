@@ -55,6 +55,7 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
                 <tr>
                   <th className="py-1.5 text-left font-semibold">Dia</th>
                   <th className="py-1.5 text-left font-semibold">Entrada</th>
+                  <th className="py-1.5 text-left font-semibold">Receso</th>
                   <th className="py-1.5 text-left font-semibold">Almuerzo</th>
                   <th className="py-1.5 text-left font-semibold">Salida</th>
                 </tr>
@@ -67,6 +68,15 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
                     </td>
                     <td className="py-2">
                       <MarkTime time={day.entrada?.time} />
+                    </td>
+                    <td className="py-2">
+                      <MarkTime time={day.inicioReceso?.time} />
+                      {day.finReceso && (
+                        <>
+                          {' '}
+                          – <MarkTime time={day.finReceso.time} />
+                        </>
+                      )}
                     </td>
                     <td className="py-2">
                       <MarkTime time={day.inicioAlmuerzo?.time} />

@@ -71,7 +71,8 @@ describe('<MonthlySummaryTable />', () => {
             tardyDays: [
               {
                 date: '2026-07-10',
-                entradaTime: '08:15',
+                kind: 'entrada',
+                time: '08:15',
                 diffMinutes: 15,
                 tipo: { nombre: 'Tardia grave', color: '#E11D48' },
                 countsTowardWarning: true,

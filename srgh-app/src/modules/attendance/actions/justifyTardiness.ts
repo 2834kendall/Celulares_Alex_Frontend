@@ -93,11 +93,14 @@ export async function justifyTardiness(
     return { ok: false, error: 'La marca no existe o no pertenece a tus sucursales.' }
   }
 
-  // Solo la entrada llega tarde. Una salida o un almuerzo no tienen tardanza
-  // que justificar, y dejar pasar eso llenaria la tabla de filas que ningun
-  // reporte lee.
-  if (mark.mar_tipo !== 'entrada') {
-    return { ok: false, error: 'Solo se puede justificar una marca de entrada.' }
+  // Solo la entrada y el regreso del almuerzo pueden llegar tarde (SGRH-88).
+  // Una salida o un receso no tienen tardanza que justificar, y dejar pasar
+  // eso llenaria la tabla de filas que ningun reporte lee.
+  if (mark.mar_tipo !== 'entrada' && mark.mar_tipo !== 'fin_almuerzo') {
+    return {
+      ok: false,
+      error: 'Solo se puede justificar la entrada o el regreso del almuerzo.',
+    }
   }
 
   const payload = justificada

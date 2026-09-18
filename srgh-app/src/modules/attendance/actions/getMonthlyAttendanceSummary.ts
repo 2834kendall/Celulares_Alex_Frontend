@@ -6,6 +6,8 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import {
   classifyDay,
   countsTowardWarning,
+  lunchCountsTowardWarning,
+  lunchTardinessOfDay,
   tardinessOfDay,
   type TardinessBadge,
 } from '@/modules/attendance/lib/infractions'
@@ -16,10 +18,14 @@ import {
   type GetMonthlyAttendanceSummaryInput,
 } from '@/modules/attendance/types'
 
+/** Que marca llego tarde: la entrada o el regreso del almuerzo (SGRH-88). */
+export type TardinessKind = 'entrada' | 'almuerzo'
+
 export interface TardyDay {
   date: string
-  /** "HH:mm" real de la entrada. */
-  entradaTime: string
+  kind: TardinessKind
+  /** "HH:mm" real de la marca que llego tarde. */
+  time: string
   diffMinutes: number
   /** Tipo del catalogo de la empresa en que cae el atraso. */
   tipo: TardinessBadge
@@ -29,9 +35,9 @@ export interface TardyDay {
    */
   countsTowardWarning: boolean
   /**
-   * mar_id de la entrada. Lo necesita el modal para saber que tardanza
-   * esta justificando; null solo en el caso teorico de un dia clasificado
-   * como tardio sin marca detras, que classifyDay no produce.
+   * mar_id de la marca que llego tarde. Lo necesita el modal para saber que
+   * tardanza esta justificando; null solo en el caso teorico de un dia
+   * clasificado como tardio sin marca detras, que la clasificacion no produce.
    */
   markId: number | null
   /** El encargado ya la justifico: se muestra, pero no suma al conteo. */
@@ -118,7 +124,8 @@ export async function getMonthlyAttendanceSummary(
 
         tardyDays.push({
           date: day.date,
-          entradaTime: day.entradaTime!,
+          kind: 'entrada',
+          time: day.entradaTime!,
           diffMinutes: atraso,
           tipo: { nombre: tipo.nombre, color: tipo.color },
           countsTowardWarning: countsTowardWarning(day, gathered.tipos),
@@ -129,9 +136,30 @@ export async function getMonthlyAttendanceSummary(
       } else if (status === 'ausente') {
         absentDays.push(day.date)
       }
+
+      // El regreso del almuerzo es independiente de la entrada: se puede
+      // llegar a tiempo y volver tarde, o las dos cosas el mismo dia.
+      const tipoAlmuerzo = lunchTardinessOfDay(day, gathered.tipos)
+      if (tipoAlmuerzo) {
+        tardyDays.push({
+          date: day.date,
+          kind: 'almuerzo',
+          time: day.finAlmuerzoTime!,
+          diffMinutes: diffMinutes(day.finAlmuerzoTime!, day.expectedLunchEnd!),
+          tipo: { nombre: tipoAlmuerzo.nombre, color: tipoAlmuerzo.color },
+          countsTowardWarning: lunchCountsTowardWarning(day, gathered.tipos),
+          markId: day.finAlmuerzoMarkId,
+          isJustified: day.isJustifiedLunchTardiness ?? false,
+          justification: day.lunchJustificacion,
+        })
+      }
     }
 
-    tardyDays.sort((a, b) => a.date.localeCompare(b.date))
+    // Por fecha, y dentro del dia la entrada antes que el almuerzo.
+    tardyDays.sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) || (a.kind === b.kind ? 0 : a.kind === 'entrada' ? -1 : 1)
+    )
     absentDays.sort((a, b) => a.localeCompare(b))
 
     return {

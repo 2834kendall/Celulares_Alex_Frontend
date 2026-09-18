@@ -18,6 +18,8 @@ interface JustifyTardinessModalProps {
   dateISO: string
   /** Nombre del tipo de tardia del catalogo, ej. "Tardia grave". */
   tipoNombre: string
+  /** Que marca llego tarde: la entrada o el regreso del almuerzo. */
+  kind: 'entrada' | 'almuerzo'
   diffMinutes: number
   /** Ya estaba justificada: el modal pasa a ofrecer retirarla. */
   isJustified: boolean
@@ -49,6 +51,7 @@ export function JustifyTardinessModal({
   employeeName,
   dateISO,
   tipoNombre,
+  kind,
   diffMinutes,
   isJustified,
   currentJustification,
@@ -108,8 +111,9 @@ export function JustifyTardinessModal({
         )}
 
         <p className="text-sm text-slate-600">
-          {tipoNombre} de <span className="font-semibold tabular-nums">{diffMinutes} min</span>.
-          Justificarla la deja visible en el reporte, pero deja de contar para el mes.
+          {tipoNombre} de <span className="font-semibold tabular-nums">{diffMinutes} min</span>
+          {kind === 'almuerzo' ? ' al volver del almuerzo' : ' al entrar'}. Justificarla la deja
+          visible en el reporte, pero deja de contar para el mes.
         </p>
 
         <div>
