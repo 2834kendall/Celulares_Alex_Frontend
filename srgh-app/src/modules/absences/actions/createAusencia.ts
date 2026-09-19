@@ -90,5 +90,8 @@ export async function createAusencia(input: CreateAusenciaInput): Promise<Create
   }
 
   revalidatePath('/schedule')
+  // El resumen mensual de asistencia deja de contar como ausencia los dias
+  // que esta cubre (se justifica desde ahi, SGRH-88).
+  revalidatePath('/attendance')
   return { ok: true }
 }
