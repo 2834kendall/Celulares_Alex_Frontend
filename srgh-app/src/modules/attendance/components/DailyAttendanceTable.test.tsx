@@ -20,6 +20,7 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
     branchId: 100,
     isDayOff: false,
     isHoliday: false,
+    ausencia: null,
     expectedStart: '08:00',
     entrada: { id: 1, time: '08:04', diffMinutes: 4 },
     inicioReceso: null,

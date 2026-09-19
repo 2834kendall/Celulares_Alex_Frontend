@@ -59,7 +59,20 @@ export interface MonthlyEmployeeSummary {
    * perder la trazabilidad del atraso.
    */
   tardyDays: TardyDay[]
+  /** Dias de turno sin marca y sin ausencia registrada: no justificados. */
   absentDays: string[]
+  /**
+   * Dias de turno sin marca cubiertos por una ausencia aprobada (permiso,
+   * incapacidad, vacaciones...). No suman, pero se muestran para que el
+   * encargado vea que ya estan resueltos y con que tipo.
+   */
+  justifiedAbsences: JustifiedAbsenceDay[]
+}
+
+export interface JustifiedAbsenceDay {
+  date: string
+  /** Nombre del tipo de ausencia, ej. "Cita Médica". */
+  tipoNombre: string
 }
 
 export type GetMonthlyAttendanceSummaryResult =
@@ -108,6 +121,7 @@ export async function getMonthlyAttendanceSummary(
   const data: MonthlyEmployeeSummary[] = gathered.data.map((employee) => {
     const tardyDays: TardyDay[] = []
     const absentDays: string[] = []
+    const justifiedAbsences: JustifiedAbsenceDay[] = []
 
     for (const day of employee.days) {
       const status = classifyDay(day, gathered.tipos)
@@ -135,6 +149,15 @@ export async function getMonthlyAttendanceSummary(
         })
       } else if (status === 'ausente') {
         absentDays.push(day.date)
+      } else if (
+        day.ausenciaTipo &&
+        !day.entradaTime &&
+        !day.isDayOff &&
+        !day.isHoliday &&
+        day.expectedStart
+      ) {
+        // Habria sido ausencia, pero la cubre una ausencia aprobada.
+        justifiedAbsences.push({ date: day.date, tipoNombre: day.ausenciaTipo })
       }
 
       // El regreso del almuerzo es independiente de la entrada: se puede
@@ -161,6 +184,7 @@ export async function getMonthlyAttendanceSummary(
         a.date.localeCompare(b.date) || (a.kind === b.kind ? 0 : a.kind === 'entrada' ? -1 : 1)
     )
     absentDays.sort((a, b) => a.localeCompare(b))
+    justifiedAbsences.sort((a, b) => a.date.localeCompare(b.date))
 
     return {
       employeeId: employee.employeeId,
@@ -172,6 +196,7 @@ export async function getMonthlyAttendanceSummary(
       ausencias: absentDays.length,
       tardyDays,
       absentDays,
+      justifiedAbsences,
     }
   })
 

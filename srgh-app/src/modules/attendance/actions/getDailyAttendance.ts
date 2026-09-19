@@ -38,6 +38,11 @@ interface EmploymentHistoryRow {
   sgrh_cat_puestos: PositionJoin | null
 }
 
+interface AusenciaDelDiaRow {
+  aus_historial_laboral_id: number
+  sgrh_cat_tipos_ausencia: { tau_nombre: string; tau_es_intradia: boolean } | null
+}
+
 interface MarkDbRow {
   mar_id: number
   mar_historial_laboral_id: number
@@ -79,6 +84,12 @@ export interface DailyAttendanceRow {
   branchId: number
   isDayOff: boolean
   isHoliday: boolean
+  /**
+   * Tipo de la ausencia aprobada que cubre el dia (ej. "Incapacidad por
+   * Enfermedad"), null si no hay. Registrada desde Horarios o justificada
+   * desde "Por justificar" (SGRH-88).
+   */
+  ausencia: string | null
   /** "HH:mm", null si no hay programacion para este dia. */
   expectedStart: string | null
   entrada: DailyMarkInfo | null
@@ -335,6 +346,31 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
   const tipos = tiposResult.data
 
+  // Ausencias aprobadas que cubren el dia. Leerlas exige AUSENCIAS_READ,
+  // que tienen todos los roles que ven este panel; sin el, RLS devuelve cero
+  // filas y el panel se ve como antes. Un error tampoco tumba el panel: es un
+  // dato de contexto, las marcas siguen siendo lo principal.
+  const { data: ausencias } = await supabase
+    .from('sgrh_ausencias')
+    .select('aus_historial_laboral_id, sgrh_cat_tipos_ausencia ( tau_nombre, tau_es_intradia )')
+    .in(
+      'aus_historial_laboral_id',
+      employmentHistory.map((h) => h.lab_id)
+    )
+    .eq('aus_estado', 'aprobada')
+    .lte('aus_fecha_inicio', dateISO)
+    .gte('aus_fecha_fin', dateISO)
+    .returns<AusenciaDelDiaRow[]>()
+
+  const ausenciaByHistoryId = new Map<number, string>()
+  for (const a of ausencias ?? []) {
+    // Lactancia y demas intradia no cubren el dia: se trabaja igual.
+    if (!a.sgrh_cat_tipos_ausencia || a.sgrh_cat_tipos_ausencia.tau_es_intradia) continue
+    if (!ausenciaByHistoryId.has(a.aus_historial_laboral_id)) {
+      ausenciaByHistoryId.set(a.aus_historial_laboral_id, a.sgrh_cat_tipos_ausencia.tau_nombre)
+    }
+  }
+
   // Una sola firma para toda la jornada (ver signEmployeePhotos).
   const fotoUrls = await signEmployeePhotos(
     employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)
@@ -405,6 +441,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       branchId,
       isDayOff: assignment?.isDayOff ?? false,
       isHoliday: assignment?.isHoliday ?? false,
+      ausencia: ausenciaByHistoryId.get(h.lab_id) ?? null,
       expectedStart: assignment?.expectedStart ?? null,
       entrada,
       inicioReceso,

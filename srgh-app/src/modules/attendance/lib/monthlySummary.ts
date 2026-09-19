@@ -73,6 +73,7 @@ interface AusenciaRow {
   aus_historial_laboral_id: number
   aus_fecha_inicio: string
   aus_fecha_fin: string
+  sgrh_cat_tipos_ausencia: { tau_nombre: string; tau_es_intradia: boolean } | null
 }
 
 /**
@@ -90,6 +91,11 @@ export type DayForInfractionWithDate = DayForInfraction & {
   finAlmuerzoMarkId: number | null
   /** Motivo de la justificacion de la tardanza al volver del almuerzo. */
   lunchJustificacion: string | null
+  /**
+   * Tipo de la ausencia aprobada que cubre el dia (ej. "Cita Médica"), null
+   * si no hay. Es lo que el reporte muestra como "justificada".
+   */
+  ausenciaTipo: string | null
 }
 
 export interface EmployeeMonthDays {
@@ -272,7 +278,9 @@ export async function gatherMonthlyAttendanceDays(
     // fin>=inicio_rango en vez de meter ambas fechas dentro del mes.
     supabase
       .from('sgrh_ausencias')
-      .select('aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin')
+      .select(
+        'aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin, sgrh_cat_tipos_ausencia ( tau_nombre, tau_es_intradia )'
+      )
       .in('aus_historial_laboral_id', historyIds)
       .eq('aus_estado', 'aprobada')
       .lte('aus_fecha_inicio', end)
@@ -317,13 +325,21 @@ export async function gatherMonthlyAttendanceDays(
   // Ojo: leer esta tabla exige el permiso AUSENCIAS_READ. Si el rol que abre
   // el panel no lo tiene, RLS no devuelve error — devuelve cero filas, y
   // todo vuelve a contarse como ausencia sin ninguna señal visible.
-  const justifiedDays = new Set<string>()
+  const justifiedDays = new Map<string, string>()
   for (const a of ausencias ?? []) {
+    // Lactancia y demas intradia se miden en horas dentro de un dia
+    // trabajado: no cubren el dia. Antes una lactancia de meses dejaba todos
+    // esos dias fuera del calculo, tardias incluidas.
+    if (a.sgrh_cat_tipos_ausencia?.tau_es_intradia) continue
+
     const from = a.aus_fecha_inicio > start ? a.aus_fecha_inicio : start
     const to = a.aus_fecha_fin < end ? a.aus_fecha_fin : end
 
     for (let d = from; d <= to; d = shiftISODate(d, 1)) {
-      justifiedDays.add(`${a.aus_historial_laboral_id}|${d}`)
+      justifiedDays.set(
+        `${a.aus_historial_laboral_id}|${d}`,
+        a.sgrh_cat_tipos_ausencia?.tau_nombre ?? 'Ausencia justificada'
+      )
     }
   }
 
@@ -372,9 +388,11 @@ export async function gatherMonthlyAttendanceDays(
         const lunchEndRaw = isCustom
           ? a.prg_hora_fin_almuerzo_custom
           : a.sgrh_cat_horarios?.hor_hora_fin_almuerzo
+        const ausenciaTipo = justifiedDays.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         return {
           date: a.prg_fecha,
-          isJustifiedAbsence: justifiedDays.has(`${h.lab_id}|${a.prg_fecha}`),
+          isJustifiedAbsence: ausenciaTipo !== null,
+          ausenciaTipo,
           isDayOff: a.prg_es_dia_libre,
           isHoliday: a.prg_es_feriado,
           expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,

@@ -229,6 +229,7 @@ describe('gatherMonthlyAttendanceDays', () => {
             {
               date: '2026-07-01',
               isJustifiedAbsence: false,
+              ausenciaTipo: null,
               isDayOff: false,
               isHoliday: false,
               expectedStart: '08:00',
@@ -405,6 +406,7 @@ describe('gatherMonthlyAttendanceDays', () => {
             {
               date: '2026-07-31',
               isJustifiedAbsence: false,
+              ausenciaTipo: null,
               isDayOff: false,
               isHoliday: false,
               expectedStart: '11:00',
@@ -441,6 +443,7 @@ describe('gatherMonthlyAttendanceDays', () => {
               aus_historial_laboral_id: 1,
               aus_fecha_inicio: '2026-06-28',
               aus_fecha_fin: '2026-07-02',
+              sgrh_cat_tipos_ausencia: { tau_nombre: 'Incapacidad por Enfermedad' },
             },
           ],
           error: null,
@@ -458,10 +461,10 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     expect(result.ok).toBe(true)
     const days = result.ok ? result.data[0].days : []
-    expect(days.map((d) => [d.date, d.isJustifiedAbsence])).toEqual([
-      ['2026-07-01', true],
-      ['2026-07-02', true],
-      ['2026-07-03', false],
+    expect(days.map((d) => [d.date, d.isJustifiedAbsence, d.ausenciaTipo])).toEqual([
+      ['2026-07-01', true, 'Incapacidad por Enfermedad'],
+      ['2026-07-02', true, 'Incapacidad por Enfermedad'],
+      ['2026-07-03', false, null],
     ])
   })
 

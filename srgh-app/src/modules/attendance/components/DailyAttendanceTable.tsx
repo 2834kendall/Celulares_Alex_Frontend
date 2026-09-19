@@ -194,6 +194,11 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
           Dia libre
         </span>
       )}
+      {row.ausencia && (
+        <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+          {row.ausencia}
+        </span>
+      )}
       {row.isHoliday && (
         <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
           Feriado

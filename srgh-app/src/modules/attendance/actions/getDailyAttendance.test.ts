@@ -64,6 +64,7 @@ function mocks(options: {
   detalle?: QueryResult
   marcas?: QueryResult
   tipos?: QueryResult
+  ausencias?: QueryResult
   sucursalId?: number | null
 }) {
   const vacio = { data: [], error: null }
@@ -77,6 +78,7 @@ function mocks(options: {
     sgrh_historial_laboral: [options.plantilla ?? vacio, options.detalle ?? vacio],
     // Catalogo vacio: el lector usa los tipos por defecto (desde el minuto 1).
     sgrh_cat_tipos_tardia: options.tipos ?? vacio,
+    sgrh_ausencias: options.ausencias ?? vacio,
   }
 }
 
@@ -382,5 +384,39 @@ describe('getDailyAttendance (server action)', () => {
       'lab_sucursal_id',
       expect.anything()
     )
+  })
+
+  it('marca a quien tiene una ausencia aprobada ese dia, e ignora la lactancia', async () => {
+    useClient(
+      createSupabaseClientMock(
+        mocks({
+          plantilla: { data: [{ lab_id: 1 }], error: null },
+          detalle: { data: [ANA_HISTORIAL], error: null },
+          ausencias: {
+            data: [
+              {
+                aus_historial_laboral_id: 1,
+                sgrh_cat_tipos_ausencia: {
+                  tau_nombre: 'Permiso de Lactancia',
+                  tau_es_intradia: true,
+                },
+              },
+              {
+                aus_historial_laboral_id: 1,
+                sgrh_cat_tipos_ausencia: {
+                  tau_nombre: 'Incapacidad por Enfermedad',
+                  tau_es_intradia: false,
+                },
+              },
+            ],
+            error: null,
+          },
+        })
+      )
+    )
+
+    const result = await getDailyAttendance(DATE)
+
+    expect(result.ok && result.data[0].ausencia).toBe('Incapacidad por Enfermedad')
   })
 })

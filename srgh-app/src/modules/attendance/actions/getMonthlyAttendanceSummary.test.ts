@@ -157,6 +157,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         },
       ],
       absentDays: ['2026-07-05'],
+      justifiedAbsences: [],
     })
   })
 
@@ -307,5 +308,60 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
     const result = await getMonthlyAttendanceSummary(validInput)
 
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los colaboradores.' })
+  })
+  it('un dia sin marca cubierto por una ausencia aprobada sale como justificada, no como ausencia', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
+      sgrh_programacion_semanal: {
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
+            prg_fecha: '2026-07-05',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+          },
+        ],
+        error: null,
+      },
+      sgrh_ausencias: {
+        data: [
+          {
+            aus_historial_laboral_id: 1,
+            aus_fecha_inicio: '2026-07-05',
+            aus_fecha_fin: '2026-07-05',
+            sgrh_cat_tipos_ausencia: { tau_nombre: 'Cita Médica' },
+          },
+        ],
+        error: null,
+      },
+      sgrh_marcas_asistencia: { data: [], error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getMonthlyAttendanceSummary(validInput)
+
+    if (!result.ok) throw new Error('esperaba ok')
+    expect(result.data[0].ausencias).toBe(0)
+    expect(result.data[0].absentDays).toEqual([])
+    expect(result.data[0].justifiedAbsences).toEqual([
+      { date: '2026-07-05', tipoNombre: 'Cita Médica' },
+    ])
   })
 })
