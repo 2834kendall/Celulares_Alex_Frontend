@@ -424,8 +424,8 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       : tardinessOf(finAlmuerzo, journey.finAlmuerzo, tipos, justificacionByMarkId)
 
     // El almuerzo se mide contra la duracion PROGRAMADA (fin - inicio del
-    // turno), no contra la hora: quien sale a la 1 en vez de a las 12 y toma
-    // su hora completa no se paso de nada.
+    // turno). El kiosco solo deja tomarlo dentro de su ventana (SGRH-88),
+    // asi que un exceso aca es tiempo de mas de verdad.
     const lunchAllowed =
       assignment?.expectedLunchStart && assignment?.expectedLunchEnd
         ? diffMinutes(assignment.expectedLunchEnd, assignment.expectedLunchStart)

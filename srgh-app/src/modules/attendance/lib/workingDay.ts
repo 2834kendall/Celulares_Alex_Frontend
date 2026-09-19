@@ -27,6 +27,8 @@ export interface DayAssignment {
   branchId: number
   /** "HH:mm" de entrada esperada, null si la fila no define ninguna. */
   expectedStart: string | null
+  /** "HH:mm" de salida esperada, null si la fila no define ninguna. */
+  expectedEnd: string | null
   /**
    * "HH:mm" del almuerzo y del receso programados, null si el turno no los
    * tiene. Salen del horario personalizado del dia cuando lo hay, y si no de
@@ -55,6 +57,7 @@ interface DayAssignmentDbRow {
   prg_hora_fin_break_custom: string | null
   sgrh_cat_horarios: {
     hor_hora_entrada: string
+    hor_hora_salida: string | null
     hor_hora_inicio_almuerzo: string | null
     hor_hora_fin_almuerzo: string | null
     hor_hora_inicio_break: string | null
@@ -93,6 +96,7 @@ function toDayAssignment(row: DayAssignmentDbRow): DayAssignment {
     employeeId: row.prg_empleado_id,
     branchId: row.prg_sucursal_id,
     expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,
+    expectedEnd: hhmm(isCustom ? row.prg_hora_salida_custom : horario?.hor_hora_salida),
     expectedLunchStart: hhmm(
       isCustom ? row.prg_hora_inicio_almuerzo_custom : horario?.hor_hora_inicio_almuerzo
     ),
@@ -131,6 +135,7 @@ async function queryDayAssignments(
       prg_hora_fin_break_custom,
       sgrh_cat_horarios (
         hor_hora_entrada,
+        hor_hora_salida,
         hor_hora_inicio_almuerzo,
         hor_hora_fin_almuerzo,
         hor_hora_inicio_break,

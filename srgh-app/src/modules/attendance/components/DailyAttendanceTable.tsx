@@ -80,6 +80,58 @@ const JUSTIFIED_CHIP = 'bg-slate-100 text-slate-500 line-through'
  * sucursal del dia, y solo la ENTRADA lo trae — las demas marcas siguen
  * mostrando su desfase en gris, sin juzgarlo.
  */
+/**
+ * "10 min antes" / "5 min despues", o null si marco a la hora o no hay hora
+ * programada con que comparar.
+ */
+function diffLabel(diffMinutes: number | null): string | null {
+  if (diffMinutes === null || diffMinutes === 0) return null
+
+  return diffMinutes > 0 ? `${diffMinutes} min despues` : `${Math.abs(diffMinutes)} min antes`
+}
+
+/**
+ * Punto discreto que cuenta el desfase de una marca que NO es tardia: llego
+ * antes, salio antes a almorzar, volvio antes. Al tocarlo (o al apuntarlo)
+ * aparece el detalle.
+ *
+ * Reemplaza al numero suelto ("-70") que se repetia en cada celda: era ruido
+ * en una tabla de 40 celdas por pantalla, y encima se leia como un problema
+ * cuando no lo es.
+ */
+function DiffDot({ minutes, time }: { minutes: number | null; time: string }) {
+  const [open, setOpen] = useState(false)
+  const label = diffLabel(minutes)
+
+  if (!label) return null
+
+  const detalle = `Marco a las ${time}, ${label} de su hora programada.`
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setOpen(false)}
+        aria-expanded={open}
+        aria-label={detalle}
+        title={detalle}
+        className="flex h-5 w-5 items-center justify-center rounded-full text-slate-300 outline-none transition hover:text-slate-500 focus-visible:ring-2 focus-visible:ring-brand-500/60 pointer-coarse:h-8 pointer-coarse:w-8"
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute left-1/2 top-full z-20 mt-1 w-max max-w-56 -translate-x-1/2 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-lg"
+        >
+          {detalle}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function MarkCell({
   mark,
   canWrite,
@@ -96,37 +148,27 @@ function MarkCell({
       {mark ? (
         <span className="inline-flex items-baseline gap-1.5">
           <span className="text-[13px] font-semibold tabular-nums text-slate-700">{mark.time}</span>
-          {mark.diffMinutes !== null && mark.diffMinutes !== 0 && (
-            // Sin parentesis alrededor del numero: a 40 celdas por pantalla
-            // eran cuatro caracteres de ruido cada uno.
-            //
-            // El color sale de la banda cuando la hay, y vuelve al gris de
-            // siempre cuando no: en salida y almuerzo el desfase se informa
-            // sin juzgarlo, porque nadie definio todavia que es "tarde" ahi.
+          {/* Numero SOLO cuando es una tardia: es lo unico que el encargado
+              tiene que resolver. El resto del desfase (llego antes, salio
+              antes a almorzar) es informacion de contexto y llenaba la
+              tabla de "-2 -10 -70" que nadie mira; queda en un punto que se
+              toca. */}
+          {tardiness ? (
             <span
               title={
-                tardiness
-                  ? tardiness.isJustified
-                    ? `${tardiness.tipo.nombre} justificada: ${tardiness.justification ?? ''}`
-                    : tardiness.tipo.nombre
-                  : undefined
+                tardiness.isJustified
+                  ? `${tardiness.tipo.nombre} justificada: ${tardiness.justification ?? ''}`
+                  : tardiness.tipo.nombre
               }
-              style={
-                tardiness && !tardiness.isJustified
-                  ? tardinessChipStyle(tardiness.tipo.color)
-                  : undefined
-              }
+              style={!tardiness.isJustified ? tardinessChipStyle(tardiness.tipo.color) : undefined}
               className={`rounded px-1 py-px text-[10px] font-medium tabular-nums ${
-                tardiness
-                  ? tardiness.isJustified
-                    ? JUSTIFIED_CHIP
-                    : ''
-                  : 'bg-slate-100 text-slate-500'
+                tardiness.isJustified ? JUSTIFIED_CHIP : ''
               }`}
             >
-              {mark.diffMinutes > 0 ? '+' : ''}
-              {mark.diffMinutes}
+              +{tardiness.diffMinutes}
             </span>
+          ) : (
+            <DiffDot minutes={mark.diffMinutes} time={mark.time} />
           )}
         </span>
       ) : (
@@ -274,10 +316,12 @@ function MarkTile({
       {mark ? (
         <span className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
           <span className="text-sm font-semibold tabular-nums text-slate-800">{mark.time}</span>
-          {mark.diffMinutes !== null && mark.diffMinutes !== 0 && (
-            <span className="text-[10px] font-medium tabular-nums text-slate-400">
-              {mark.diffMinutes > 0 ? '+' : ''}
-              {mark.diffMinutes} min
+          {/* En movil la tarjeta ENTERA es el boton de corregir, asi que el
+              desfase no puede ser otro boton: va como texto, y solo cuando
+              hay algo que decir. */}
+          {diffLabel(mark.diffMinutes) && (
+            <span className="text-[10px] font-medium text-slate-400">
+              {diffLabel(mark.diffMinutes)}
             </span>
           )}
         </span>

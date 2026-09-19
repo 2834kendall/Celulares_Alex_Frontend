@@ -401,4 +401,127 @@ describe('registerKioskMark (server action)', () => {
       })
     })
   })
+
+  describe('la hora del almuerzo del horario', () => {
+    const CON_ALMUERZO = {
+      ...ASSIGNMENT,
+      sgrh_cat_horarios: {
+        hor_hora_entrada: '08:00:00',
+        hor_hora_inicio_almuerzo: '12:00:00',
+        hor_hora_fin_almuerzo: '13:00:00',
+      },
+    }
+
+    function mockConAlmuerzo(marcas: unknown[]) {
+      return clientConTurno({
+        sgrh_programacion_semanal: { data: [CON_ALMUERZO], error: null },
+        sgrh_marcas_asistencia: [
+          { data: marcas, error: null },
+          { data: null, error: null },
+        ],
+      })
+    }
+
+    const ENTRADA = {
+      mar_id: 1,
+      mar_tipo: 'entrada',
+      mar_fecha_hora: '2026-08-14 08:00:00',
+    }
+
+    it('rechaza empezar el almuerzo fuera de su ventana', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T16:00:00Z')) // 10:00 en Costa Rica
+      const client = useClient(mockConAlmuerzo([ENTRADA]))
+
+      const result = await registerKioskMark(await validInput({ tipo: 'inicio_almuerzo' }))
+
+      expect(result).toEqual({
+        ok: false,
+        error:
+          'Tu almuerzo es de 12:00 a 13:00. Si necesitas tomarlo a otra hora, avisa al encargado.',
+        definitivo: true,
+      })
+      expect(insertedMark(client)).toBeUndefined()
+    })
+
+    it('acepta empezarlo dentro de la media hora previa', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T17:40:00Z')) // 11:40 en Costa Rica
+      const client = useClient(mockConAlmuerzo([ENTRADA]))
+
+      expect(await registerKioskMark(await validInput({ tipo: 'inicio_almuerzo' }))).toEqual({
+        ok: true,
+      })
+      expect(insertedMark(client)).toEqual(expect.objectContaining({ mar_tipo: 'inicio_almuerzo' }))
+    })
+
+    it('cerrar el almuerzo nunca se bloquea por la hora', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T21:00:00Z')) // 15:00 en Costa Rica
+      const client = useClient(
+        mockConAlmuerzo([
+          ENTRADA,
+          { mar_id: 2, mar_tipo: 'inicio_almuerzo', mar_fecha_hora: '2026-08-14 12:00:00' },
+        ])
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'fin_almuerzo' }))).toEqual({
+        ok: true,
+      })
+      expect(insertedMark(client)).toEqual(expect.objectContaining({ mar_tipo: 'fin_almuerzo' }))
+    })
+  })
+
+  describe('la hora de salida del horario', () => {
+    const CON_SALIDA = {
+      ...ASSIGNMENT,
+      sgrh_cat_horarios: { hor_hora_entrada: '08:00:00', hor_hora_salida: '17:00:00' },
+    }
+
+    function mockConSalida() {
+      return clientConTurno({
+        sgrh_programacion_semanal: { data: [CON_SALIDA], error: null },
+        sgrh_marcas_asistencia: [
+          {
+            data: [{ mar_id: 1, mar_tipo: 'entrada', mar_fecha_hora: '2026-08-14 08:00:00' }],
+            error: null,
+          },
+          { data: null, error: null },
+        ],
+      })
+    }
+
+    it('rechaza una salida marcada por error mucho antes de su hora', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T16:00:00Z')) // 10:00 en Costa Rica
+      const client = useClient(mockConSalida())
+
+      const result = await registerKioskMark(await validInput({ tipo: 'salida' }))
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'Tu salida es a las 17:00. Si necesitas salir antes, avisa al encargado.',
+        definitivo: true,
+      })
+      expect(insertedMark(client)).toBeUndefined()
+    })
+
+    it('acepta la salida desde quince minutos antes', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T22:50:00Z')) // 16:50 en Costa Rica
+      const client = useClient(mockConSalida())
+
+      expect(await registerKioskMark(await validInput({ tipo: 'salida' }))).toEqual({ ok: true })
+      expect(insertedMark(client)).toEqual(expect.objectContaining({ mar_tipo: 'salida' }))
+    })
+
+    it('quedarse de mas no impide cerrar la jornada', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-15T01:30:00Z')) // 19:30 en Costa Rica
+      const client = useClient(mockConSalida())
+
+      expect(await registerKioskMark(await validInput({ tipo: 'salida' }))).toEqual({ ok: true })
+      expect(insertedMark(client)).toEqual(expect.objectContaining({ mar_tipo: 'salida' }))
+    })
+  })
 })

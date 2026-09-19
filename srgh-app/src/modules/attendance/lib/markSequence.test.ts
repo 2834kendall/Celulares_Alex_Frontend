@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   allowedNextMarks,
+  isExitWindowOpen,
   describeSequenceRejection,
   groupIntoDayJourney,
+  isLunchWindowOpen,
   type RawMark,
 } from './marks'
 
@@ -94,5 +96,73 @@ describe('describeSequenceRejection', () => {
 
   it('despues de la salida lo dice directo', () => {
     expect(describeSequenceRejection('entrada', [])).toBe('Ya registraste tu salida de hoy.')
+  })
+
+  describe('la ventana del almuerzo', () => {
+    it('esta abierta dentro de la media hora previa o posterior', () => {
+      expect(isLunchWindowOpen('12:00', '12:00')).toBe(true)
+      expect(isLunchWindowOpen('11:30', '12:00')).toBe(true)
+      expect(isLunchWindowOpen('12:30', '12:00')).toBe(true)
+    })
+
+    it('esta cerrada fuera de esa media hora', () => {
+      expect(isLunchWindowOpen('11:29', '12:00')).toBe(false)
+      expect(isLunchWindowOpen('12:31', '12:00')).toBe(false)
+      expect(isLunchWindowOpen('08:05', '12:00')).toBe(false)
+    })
+
+    it('sin almuerzo programado no hay hora que respetar', () => {
+      expect(isLunchWindowOpen('08:05', null)).toBe(true)
+    })
+
+    it('fuera de la ventana el kiosco no ofrece empezar el almuerzo', () => {
+      const jornada = groupIntoDayJourney([mark(1, 'entrada', '08:00')])
+
+      expect(allowedNextMarks(jornada, { lunchWindowOpen: false })).toEqual([
+        'inicio_receso',
+        'salida',
+      ])
+      expect(allowedNextMarks(jornada, { lunchWindowOpen: true })).toEqual([
+        'inicio_receso',
+        'inicio_almuerzo',
+        'salida',
+      ])
+    })
+
+    it('el almuerzo abierto se puede cerrar aunque la ventana ya paso', () => {
+      const jornada = groupIntoDayJourney([
+        mark(1, 'entrada', '08:00'),
+        mark(2, 'inicio_almuerzo', '12:00'),
+      ])
+
+      expect(allowedNextMarks(jornada, { lunchWindowOpen: false })).toEqual(['fin_almuerzo'])
+    })
+  })
+
+  describe('la ventana de la salida', () => {
+    it('se abre quince minutos antes de la hora de salida', () => {
+      expect(isExitWindowOpen('16:45', '17:00')).toBe(true)
+      expect(isExitWindowOpen('17:00', '17:00')).toBe(true)
+      // Quedarse de mas no impide cerrar la jornada.
+      expect(isExitWindowOpen('19:30', '17:00')).toBe(true)
+    })
+
+    it('esta cerrada antes de eso', () => {
+      expect(isExitWindowOpen('16:44', '17:00')).toBe(false)
+      expect(isExitWindowOpen('10:00', '17:00')).toBe(false)
+    })
+
+    it('sin hora de salida programada no hay nada que respetar', () => {
+      expect(isExitWindowOpen('10:00', null)).toBe(true)
+    })
+
+    it('antes de su hora el kiosco no ofrece la salida', () => {
+      const jornada = groupIntoDayJourney([mark(1, 'entrada', '08:00')])
+
+      expect(allowedNextMarks(jornada, { exitWindowOpen: false })).toEqual([
+        'inicio_receso',
+        'inicio_almuerzo',
+      ])
+    })
   })
 })

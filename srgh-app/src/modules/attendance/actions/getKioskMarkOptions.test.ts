@@ -167,4 +167,35 @@ describe('getKioskMarkOptions (server action)', () => {
 
     expect(await getKioskMarkOptions(10)).toEqual({ ok: true, allowed: ['entrada'] })
   })
+
+  it('fuera de la hora del almuerzo no ofrece empezarlo', async () => {
+    vi.useFakeTimers()
+    // 09:00 en Costa Rica, con almuerzo programado a las 12:00.
+    vi.setSystemTime(new Date(`${todayInCostaRica()}T15:00:00Z`))
+    useClient(
+      createSupabaseClientMock({
+        sgrh_programacion_semanal: {
+          data: [
+            {
+              ...TURNO.data[0],
+              sgrh_cat_horarios: {
+                hor_hora_entrada: '08:00:00',
+                hor_hora_inicio_almuerzo: '12:00:00',
+                hor_hora_fin_almuerzo: '13:00:00',
+              },
+            },
+          ],
+          error: null,
+        },
+        sgrh_marcas_asistencia: { data: [marca(1, 'entrada', '08:00:00')], error: null },
+      })
+    )
+
+    expect(await getKioskMarkOptions(10)).toEqual({
+      ok: true,
+      allowed: ['inicio_receso', 'salida'],
+    })
+
+    vi.useRealTimers()
+  })
 })
