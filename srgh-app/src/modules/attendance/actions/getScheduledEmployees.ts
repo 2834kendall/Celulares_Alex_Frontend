@@ -1,8 +1,8 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { requireAnyPermission } from '@/lib/auth/require-permission'
-import { PERMISOS } from '@/lib/permissions/catalog'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { getDayAssignments, isWorkable } from '@/modules/attendance/lib/workingDay'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
@@ -46,11 +46,11 @@ export type GetScheduledEmployeesResult =
  * Si el kiosco no tiene sucursal asignada es un error de configuracion: no se
  * debe caer de vuelta a "mostrar toda la empresa" en un dispositivo expuesto.
  *
- * Acepta ASISTENCIA_KIOSCO (el permiso estrecho del rol KIOSCO) o
- * EMPLEADOS_READ (gerentes y RRHH, que ven la misma pantalla).
+ * Acepta ASISTENCIA_KIOSCO (el permiso del rol KIOSCO) o ASISTENCIA_WRITE
+ * (el encargado que abre la pantalla con su cuenta): ver lib/kioskAccess.ts.
  */
 export async function getScheduledEmployees(): Promise<GetScheduledEmployeesResult> {
-  const claims = await requireAnyPermission([PERMISOS.ASISTENCIA_KIOSCO, PERMISOS.EMPLEADOS_READ])
+  const claims = await requireKioskAccess()
   const meta = claims.app_metadata as {
     usr_id?: number
     empresa_id?: number
@@ -78,7 +78,11 @@ export async function getScheduledEmployees(): Promise<GetScheduledEmployeesResu
     return { ok: false, error: 'Este kiosco no tiene una sucursal asignada.' }
   }
 
-  const assignments = await getDayAssignments(supabase, todayInCostaRica(), sucursalIds)
+  // Programacion y contratos con el cliente admin: la cuenta KIOSCO no puede
+  // leer esas tablas (ver lib/kioskAccess.ts). Acotado a las sucursales de la
+  // cuenta, ya validadas arriba, y a la empresa del JWT.
+  const admin = createAdminClient()
+  const assignments = await getDayAssignments(admin, todayInCostaRica(), sucursalIds)
 
   if (!assignments.ok) {
     return { ok: false, error: assignments.error }
@@ -92,7 +96,7 @@ export async function getScheduledEmployees(): Promise<GetScheduledEmployeesResu
     return { ok: true, data: [] }
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from('sgrh_historial_laboral')
     .select(
       `

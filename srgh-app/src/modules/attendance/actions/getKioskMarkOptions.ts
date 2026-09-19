@@ -2,10 +2,15 @@
 
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth/require-permission'
-import { PERMISOS } from '@/lib/permissions/catalog'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
 import { allowedNextMarks, type MarkType } from '@/modules/attendance/lib/marks'
-import { loadDayJourney, resolveKioskSucursalIds } from '@/modules/attendance/lib/dayJourney'
+import {
+  absenceBlocksMarkMessage,
+  findApprovedAbsence,
+  loadDayJourney,
+  resolveKioskSucursalIds,
+} from '@/modules/attendance/lib/dayJourney'
 import { findWorkableDay } from '@/modules/attendance/lib/workingDay'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
@@ -27,7 +32,7 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
     return { ok: false, error: 'Colaborador invalido.' }
   }
 
-  const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const claims = await requireKioskAccess()
   const meta = claims.app_metadata as {
     usr_id?: number
     empresa_id?: number
@@ -46,13 +51,27 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
   }
 
   const hoy = todayInCostaRica()
-  const turno = await findWorkableDay(supabase, hoy, employeeId, sucursalIds)
+  // Programacion, ausencias y jornada con el cliente admin: la cuenta KIOSCO
+  // no puede leer esas tablas (ver lib/kioskAccess.ts). Acotado a las
+  // sucursales de la cuenta, ya validadas arriba.
+  const admin = createAdminClient()
+  const turno = await findWorkableDay(admin, hoy, employeeId, sucursalIds)
 
   if (!turno) {
     return { ok: false, error: 'No tienes turno asignado en esta sucursal hoy.' }
   }
 
-  const jornada = await loadDayJourney(supabase, turno.employmentHistoryId, hoy)
+  const ausencia = await findApprovedAbsence(admin, turno.employmentHistoryId, hoy)
+
+  if (!ausencia.ok) {
+    return { ok: false, error: ausencia.error }
+  }
+
+  if (ausencia.tipo) {
+    return { ok: false, error: absenceBlocksMarkMessage(ausencia.tipo) }
+  }
+
+  const jornada = await loadDayJourney(admin, turno.employmentHistoryId, hoy)
 
   if (!jornada.ok) {
     return { ok: false, error: jornada.error }

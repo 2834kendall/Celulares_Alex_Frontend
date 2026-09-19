@@ -68,6 +68,14 @@ export async function justifyTardiness(
   const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
   const meta = claims.app_metadata as { usr_id?: number; empresa_id?: number }
 
+  // Tarea del encargado, no del kiosco: la cuenta KIOSCO tiene
+  // ASISTENCIA_WRITE para registrar su marca, pero no ASISTENCIA_READ. Sin
+  // esta guarda, la sesion de la tablet podia invocar esta accion (SGRH-88).
+  const permisos = (claims.app_metadata as { permisos?: string[] }).permisos ?? []
+  if (!permisos.includes(PERMISOS.ASISTENCIA_READ)) {
+    return { ok: false, error: 'No tienes permiso para justificar tardias.' }
+  }
+
   // Sin usuario no se puede justificar: el CHECK de la base exige saber QUIEN
   // lo hizo, y una justificacion anonima no se puede auditar.
   if (!meta.usr_id) {

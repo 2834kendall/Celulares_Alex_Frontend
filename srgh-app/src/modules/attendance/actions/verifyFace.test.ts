@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { verifyFace } from './verifyFace'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth/require-permission'
+import { requireAnyPermission as requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import { encryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
 import type { LivenessProof } from '@/modules/attendance/lib/face/livenessProof'
@@ -9,9 +9,22 @@ import { verifyFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 import { FACE_EMBEDDING_DIM } from '@/modules/attendance/lib/face/model'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
-vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
+
+// Programacion, contratos y rostros se leen con el cliente admin (la cuenta
+// KIOSCO no puede leer esas tablas). El admin del test delega en el mismo
+// cliente simulado que devuelve createClient.
+let clienteActual: { from: (tabla: string) => unknown } | null = null
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({ from: (tabla: string) => clienteActual!.from(tabla) }),
+}))
+
+function setClient(client: unknown) {
+  clienteActual = client as { from: (tabla: string) => unknown }
+  mockCreateClient.mockResolvedValue(client as Awaited<ReturnType<typeof createClient>>)
+}
 const mockRequirePermission = vi.mocked(requirePermission)
 
 const KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)))
@@ -101,7 +114,7 @@ describe('verifyFace (server action)', () => {
   })
 
   it('falla si el kiosco no tiene sucursal asignada', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [], error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -117,9 +130,7 @@ describe('verifyFace (server action)', () => {
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_programacion_semanal: { data: [], error: null },
     })
-    mockCreateClient.mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+    setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
@@ -132,9 +143,7 @@ describe('verifyFace (server action)', () => {
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_programacion_semanal: { data: [], error: null },
     })
-    mockCreateClient.mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+    setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
 
     await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
@@ -145,7 +154,7 @@ describe('verifyFace (server action)', () => {
   })
 
   it('MATCH de alta confianza con vector identico, con ticket firmado valido', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_programacion_semanal: PROGRAMACION,
@@ -168,7 +177,7 @@ describe('verifyFace (server action)', () => {
   })
 
   it('MATCH con tolerancia en la banda 0.4-0.5 (luz/angulo)', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_programacion_semanal: PROGRAMACION,
@@ -188,7 +197,7 @@ describe('verifyFace (server action)', () => {
   })
 
   it('REQUIRE_PIN en la zona de incertidumbre 0.5-0.6', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_programacion_semanal: PROGRAMACION,
@@ -216,9 +225,7 @@ describe('verifyFace (server action)', () => {
       },
       sgrh_biometria_auditoria: { data: null, error: null },
     })
-    mockCreateClient.mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+    setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: 'tablet-1' })
 
@@ -244,9 +251,7 @@ describe('verifyFace (server action)', () => {
       sgrh_historial_laboral: HISTORIAL,
       sgrh_biometria_empleado: { data: [], error: null },
     })
-    mockCreateClient.mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+    setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
@@ -255,7 +260,7 @@ describe('verifyFace (server action)', () => {
   })
 
   it('elige al empleado mas cercano cuando hay varios enrolados', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_programacion_semanal: PROGRAMACION,
@@ -279,7 +284,7 @@ describe('verifyFace (server action)', () => {
   })
 
   it('ignora vectores corruptos o de otra dimension sin romperse', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_programacion_semanal: PROGRAMACION,
@@ -300,7 +305,7 @@ describe('verifyFace (server action)', () => {
   })
 
   it('devuelve error generico si falla la carga de vectores', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_programacion_semanal: PROGRAMACION,
@@ -322,7 +327,7 @@ describe('verifyFace (server action)', () => {
    */
   describe('exigencia de prueba de vida', () => {
     function conVectorCoincidente() {
-      mockCreateClient.mockResolvedValue(
+      setClient(
         createSupabaseClientMock({
           sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
           sgrh_programacion_semanal: PROGRAMACION,

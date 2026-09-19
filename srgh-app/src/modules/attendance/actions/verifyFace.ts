@@ -1,8 +1,8 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth/require-permission'
-import { PERMISOS } from '@/lib/permissions/catalog'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { getDayAssignments, isWorkable } from '@/modules/attendance/lib/workingDay'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
@@ -60,7 +60,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     return { ok: false, error: 'Datos de verificacion invalidos.' }
   }
 
-  const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const claims = await requireKioskAccess()
   const meta = claims.app_metadata as { usr_id?: number; empresa_id?: number }
 
   if (!meta.empresa_id) {
@@ -112,7 +112,12 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   //
   // Acotar el set al dia tiene un segundo efecto deseable: menos vectores
   // contra los que comparar es menos superficie para un falso positivo.
-  const assignments = await getDayAssignments(supabase, todayInCostaRica(), sucursalIds)
+  // Programacion, contratos, rostros y auditoria con el cliente admin: la
+  // cuenta KIOSCO no puede leer ni escribir esas tablas (ver
+  // lib/kioskAccess.ts). Todo acotado a las sucursales de la cuenta y a la
+  // empresa del JWT.
+  const admin = createAdminClient()
+  const assignments = await getDayAssignments(admin, todayInCostaRica(), sucursalIds)
 
   if (!assignments.ok) {
     return { ok: false, error: assignments.error }
@@ -127,7 +132,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     return { ok: true, status: 'REQUIRE_PIN' }
   }
 
-  const { data: historial, error: errHistorial } = await supabase
+  const { data: historial, error: errHistorial } = await admin
     .from('sgrh_historial_laboral')
     .select(
       `
@@ -161,9 +166,10 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     return { ok: true, status: 'REQUIRE_PIN' }
   }
 
-  const { data: vectores, error: errVectores } = await supabase
+  const { data: vectores, error: errVectores } = await admin
     .from('sgrh_biometria_empleado')
     .select('bio_empleado_id, bio_vector')
+    .eq('bio_empresa_id', meta.empresa_id)
     .in('bio_empleado_id', Array.from(nameByEmployee.keys()))
     .eq('bio_modelo', FACE_MODEL_ID)
     .returns<BiometriaRow[]>()
@@ -199,7 +205,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     // Log de auditoria obligatorio en DENIED. Best-effort: si el insert
     // falla no se le esconde el resultado al kiosco, pero tampoco se miente
     // con un MATCH.
-    await supabase.from('sgrh_biometria_auditoria').insert({
+    await admin.from('sgrh_biometria_auditoria').insert({
       bia_empresa_id: meta.empresa_id,
       // El log de auditoria tiene una sola columna de sucursal; un kiosco es
       // un dispositivo fisico de una sola sucursal, asi que "varias

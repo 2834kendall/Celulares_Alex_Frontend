@@ -36,7 +36,7 @@ describe('justifyTardiness (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue({
-      app_metadata: { usr_id: 99, empresa_id: 1 },
+      app_metadata: { usr_id: 99, empresa_id: 1, permisos: ['ASISTENCIA_READ'] },
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
   })
 
@@ -57,7 +57,7 @@ describe('justifyTardiness (server action)', () => {
     // El CHECK de la base exige saber QUIEN lo hizo: una justificacion
     // anonima no se puede auditar.
     mockRequirePermission.mockResolvedValue({
-      app_metadata: { empresa_id: 1 },
+      app_metadata: { empresa_id: 1, permisos: ['ASISTENCIA_READ'] },
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
 
     const result = await justifyTardiness({ markId: 5, justificada: true, motivo: MOTIVO })
@@ -172,5 +172,24 @@ describe('justifyTardiness (server action)', () => {
     const result = await justifyTardiness({ markId: 5, justificada: true, motivo: MOTIVO })
 
     expect(result).toEqual({ ok: false, error: 'No se pudo guardar la justificacion.' })
+  })
+
+  it('la cuenta KIOSCO no puede justificar (tiene WRITE para marcar, pero no READ)', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {
+        usr_id: 99,
+        empresa_id: 1,
+        permisos: ['ASISTENCIA_KIOSCO', 'ASISTENCIA_WRITE'],
+      },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+
+    const result = await justifyTardiness({
+      markId: 5,
+      justificada: true,
+      motivo: 'El sistema estaba caido esa manana',
+    })
+
+    expect(result).toEqual({ ok: false, error: 'No tienes permiso para justificar tardias.' })
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

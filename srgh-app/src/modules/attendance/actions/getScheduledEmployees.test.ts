@@ -19,7 +19,15 @@ function claims(app_metadata: Record<string, unknown>) {
   return { app_metadata } as unknown as Awaited<ReturnType<typeof requireAnyPermission>>
 }
 
+// Programacion y contratos se leen con el cliente admin (la cuenta KIOSCO no
+// puede leer esas tablas). El admin del test delega en el mismo cliente.
+let clienteActual: ClientMock | null = null
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({ from: (tabla: string) => clienteActual!.from(tabla) }),
+}))
+
 function useClient(client: ClientMock) {
+  clienteActual = client
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -54,14 +62,14 @@ describe('getScheduledEmployees (server action)', () => {
     )
   })
 
-  it('acepta tanto el permiso estrecho del kiosco como EMPLEADOS_READ', async () => {
+  it('acepta el permiso del kiosco o el del encargado (ASISTENCIA_WRITE)', async () => {
     useClient(createSupabaseClientMock({ sgrh_programacion_semanal: { data: [], error: null } }))
 
     await getScheduledEmployees()
 
     expect(mockRequireAnyPermission).toHaveBeenCalledWith([
       PERMISOS.ASISTENCIA_KIOSCO,
-      PERMISOS.EMPLEADOS_READ,
+      PERMISOS.ASISTENCIA_WRITE,
     ])
   })
 

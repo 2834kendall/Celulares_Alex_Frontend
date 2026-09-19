@@ -1,15 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { registerKioskMark } from './registerKioskMark'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth/require-permission'
+import { requireAnyPermission as requirePermission } from '@/lib/auth/require-permission'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import { signFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 import type { KioskMarkInput } from '@/modules/attendance/types'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
-vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+
+// Jornada y ausencias se leen con el cliente admin (la cuenta KIOSCO no puede
+// leer esas tablas). El admin del test delega en el mismo cliente del test,
+// salvo sgrh_ausencias, que por defecto viene vacia: nadie tiene ausencia.
+let ausenciasAdmin: { data: unknown; error: unknown } = { data: [], error: null }
+let clienteActual: { from: (tabla: string) => unknown } | null = null
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({
+    from: (tabla: string) =>
+      tabla === 'sgrh_ausencias'
+        ? createSupabaseClientMock({ sgrh_ausencias: ausenciasAdmin }).from(tabla)
+        : clienteActual!.from(tabla),
+  }),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
@@ -61,6 +75,7 @@ function clientConTurno(overrides: Record<string, unknown> = {}) {
 
 function useClient(client: ClientMock) {
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
+  clienteActual = client
   return client
 }
 
@@ -75,6 +90,7 @@ function insertedMark(client: ClientMock) {
 describe('registerKioskMark (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ausenciasAdmin = { data: [], error: null }
     vi.stubEnv('FACE_TICKET_SECRET', TICKET_SECRET)
     mockRequirePermission.mockResolvedValue({
       app_metadata: { usr_id: 999, empresa_id: 1, sucursal_ids: [100] },
@@ -354,6 +370,35 @@ describe('registerKioskMark (server action)', () => {
     expect(await registerKioskMark(await validInput())).toEqual({
       ok: false,
       error: 'No se pudo registrar la marca.',
+    })
+  })
+
+  describe('ausencias aprobadas', () => {
+    it('rechaza de forma definitiva a quien tiene una ausencia aprobada ese dia', async () => {
+      ausenciasAdmin = {
+        data: [{ sgrh_cat_tipos_ausencia: { tau_nombre: 'Vacaciones', tau_es_intradia: false } }],
+        error: null,
+      }
+      const client = useClient(clientConTurno())
+
+      const result = await registerKioskMark(await validInput())
+
+      expect(result).toEqual({
+        ok: false,
+        error: expect.stringContaining('Vacaciones'),
+        definitivo: true,
+      })
+      expect(client.from).not.toHaveBeenCalledWith('sgrh_marcas_asistencia')
+    })
+
+    it('si no se pudo revisar la ausencia, no marca pero reintenta (no es definitivo)', async () => {
+      ausenciasAdmin = { data: null, error: { message: 'boom' } }
+      useClient(clientConTurno())
+
+      expect(await registerKioskMark(await validInput())).toEqual({
+        ok: false,
+        error: 'No se pudo revisar si tienes una ausencia registrada hoy.',
+      })
     })
   })
 })

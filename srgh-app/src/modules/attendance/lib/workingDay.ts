@@ -1,7 +1,13 @@
 import type { createClient } from '@/lib/supabase/server'
+import type { createAdminClient } from '@/lib/supabase/admin'
 import { timeOfDay } from '@/modules/attendance/lib/time'
 
-type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
+/**
+ * El cliente del usuario (paneles, con RLS) o el admin (el kiosco, que no
+ * puede leer programacion: ver lib/kioskAccess.ts).
+ */
+type SupabaseServerClient =
+  Awaited<ReturnType<typeof createClient>> | ReturnType<typeof createAdminClient>
 
 /**
  * Un dia visto desde la PROGRAMACION y no desde el contrato.

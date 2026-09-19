@@ -28,7 +28,7 @@ describe('saveManualMark (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue({
-      app_metadata: { usr_id: 5, empresa_id: 1 },
+      app_metadata: { usr_id: 5, empresa_id: 1, permisos: ['ASISTENCIA_READ'] },
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
   })
 
@@ -113,5 +113,23 @@ describe('saveManualMark (server action)', () => {
     expect(markBuilder.update).toHaveBeenCalled()
     expect(markBuilder.eq).toHaveBeenCalledWith('mar_id', 77)
     expect(markBuilder.insert).not.toHaveBeenCalled()
+  })
+
+  it('la cuenta KIOSCO no puede registrar marcas manuales (tiene WRITE, pero no READ)', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {
+        usr_id: 5,
+        empresa_id: 1,
+        permisos: ['ASISTENCIA_KIOSCO', 'ASISTENCIA_WRITE'],
+      },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+
+    const result = await saveManualMark(validInput)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'No tienes permiso para registrar marcas manuales.',
+    })
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

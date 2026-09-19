@@ -2,8 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth/require-permission'
-import { PERMISOS } from '@/lib/permissions/catalog'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
 import { kioskMarkSchema, type KioskMarkInput } from '@/modules/attendance/types'
 import { haversineDistanceMeters } from '@/modules/attendance/lib/geofence'
 import {
@@ -12,7 +12,12 @@ import {
   nowInCostaRica,
 } from '@/modules/attendance/lib/time'
 import { findWorkableDay } from '@/modules/attendance/lib/workingDay'
-import { loadDayJourney, resolveKioskSucursalIds } from '@/modules/attendance/lib/dayJourney'
+import {
+  absenceBlocksMarkMessage,
+  findApprovedAbsence,
+  loadDayJourney,
+  resolveKioskSucursalIds,
+} from '@/modules/attendance/lib/dayJourney'
 import { allowedNextMarks, describeSequenceRejection } from '@/modules/attendance/lib/marks'
 import { verifyFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 
@@ -65,7 +70,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
     return { ok: false, error: 'Datos de marca invalidos.', definitivo: true }
   }
 
-  const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const claims = await requireKioskAccess()
   const meta = claims.app_metadata as {
     usr_id?: number
     empresa_id?: number
@@ -123,7 +128,13 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   // el momento en que la persona marco.
   const fechaEvento = dateOfDay(fechaHora ?? nowInCostaRica())
 
-  const assignment = await findWorkableDay(supabase, fechaEvento, employeeId, sucursalIds)
+  // Desde aca todo va con el cliente admin: la cuenta KIOSCO no puede leer
+  // programacion, contratos, ausencias ni marcas, ni insertar marcas (ver
+  // lib/kioskAccess.ts). Cada consulta queda acotada a las sucursales de la
+  // cuenta, validadas arriba, o a la empresa del JWT.
+  const admin = createAdminClient()
+
+  const assignment = await findWorkableDay(admin, fechaEvento, employeeId, sucursalIds)
 
   if (!assignment) {
     return {
@@ -137,7 +148,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   // con maybeSingle reventaba si alguien llegaba a tener dos contratos
   // activos, y devolvia "no tiene contrato activo" — el mensaje mas engañoso
   // posible. La programacion ya apunta al contrato concreto.
-  const { data: historial, error: errHistorial } = await supabase
+  const { data: historial, error: errHistorial } = await admin
     .from('sgrh_historial_laboral')
     .select('lab_id')
     .eq('lab_id', assignment.employmentHistoryId)
@@ -153,6 +164,19 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
     return { ok: false, error: 'El empleado no tiene un contrato activo.', definitivo: true }
   }
 
+  // Un dia cubierto por una ausencia aprobada (incapacidad, vacaciones,
+  // permiso) no se marca: ya esta resuelto por la ausencia, y si la persona
+  // volvio antes, el encargado ajusta la ausencia y registra la marca.
+  const ausencia = await findApprovedAbsence(admin, historial.lab_id, fechaEvento)
+
+  if (!ausencia.ok) {
+    return { ok: false, error: ausencia.error }
+  }
+
+  if (ausencia.tipo) {
+    return { ok: false, error: absenceBlocksMarkMessage(ausencia.tipo), definitivo: true }
+  }
+
   // Secuencia de la jornada (SGRH-88): solo se acepta la marca que
   // corresponde segun lo ya marcado ese dia — no se puede salir sin haber
   // entrado, ni empezar el almuerzo con el receso abierto. El kiosco ya
@@ -162,7 +186,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   //
   // Se mira el dia del EVENTO: una marca encolada ayer se valida contra lo
   // que se marco ayer.
-  const jornada = await loadDayJourney(supabase, historial.lab_id, fechaEvento)
+  const jornada = await loadDayJourney(admin, historial.lab_id, fechaEvento)
 
   if (!jornada.ok) {
     return { ok: false, error: 'No se pudo validar la secuencia de marcas.' }
@@ -179,7 +203,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   // sucursal DEL DIA, que es donde la persona esta parada.
   let distancia: number | null = null
   if (latitud !== null && longitud !== null) {
-    const { data: sucursal } = await supabase
+    const { data: sucursal } = await admin
       .from('sgrh_sucursales')
       .select('suc_latitud, suc_longitud')
       .eq('suc_id', assignment.branchId)
@@ -205,7 +229,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
       : null,
   ].filter((o): o is string => o !== null)
 
-  const { error } = await supabase.from('sgrh_marcas_asistencia').insert({
+  const { error } = await admin.from('sgrh_marcas_asistencia').insert({
     mar_historial_laboral_id: historial.lab_id,
     mar_sucursal_id: assignment.branchId,
     mar_tipo: tipo,

@@ -7,7 +7,7 @@ import { EnrollScreen } from '@/modules/attendance/components/kiosk/face/EnrollS
 /**
  * Ruta oculta de enrolamiento facial: no aparece en ninguna navegacion; el
  * gerente la abre a mano en el dispositivo. Gated con EMPLEADOS_WRITE — la
- * cuenta KIOSCO (EMPLEADOS_READ + ASISTENCIA_WRITE) NO puede entrar aca, y
+ * cuenta KIOSCO (solo ASISTENCIA_KIOSCO) NO puede entrar aca, y
  * el RLS de sgrh_biometria_empleado rechaza sus escrituras aunque lo
  * intentara por fetch directo.
  */
