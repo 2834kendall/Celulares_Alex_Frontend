@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Check, Clock, Loader2 } from 'lucide-react'
+import { Check, Clock, Loader2, Plus } from 'lucide-react'
 import {
   tipoTardiaSchema,
   type TipoTardiaInput,
@@ -166,11 +166,29 @@ export function TipoTardiaForm({ tipo, onSuccess }: TipoTardiaFormProps) {
                   </button>
                 )
               })}
+              {/* Un color elegido con la ruedita (o que ya traia el tipo) se ve
+                  como una muestra mas, marcada, igual que en horarios. */}
+              {field.value &&
+                !PRESETS.some((p) => p.hex.toLowerCase() === field.value?.toLowerCase()) && (
+                  <button
+                    type="button"
+                    aria-label={`Color personalizado ${field.value}`}
+                    aria-pressed
+                    disabled={isSubmitting}
+                    style={{ backgroundColor: field.value }}
+                    className="flex h-7 w-7 items-center justify-center rounded-full border border-black/10 ring-2 ring-slate-400 ring-offset-1 transition disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                  </button>
+                )}
               <label
-                className="relative flex h-7 cursor-pointer items-center rounded-full border border-dashed border-slate-300 px-2.5 text-[11px] font-medium text-slate-500 transition hover:border-brand-400 hover:text-brand-700"
-                title="Elegir otro color"
+                className={`relative flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-300 bg-white text-slate-400 transition hover:border-brand-400 hover:text-brand-600 ${
+                  isSubmitting ? 'pointer-events-none opacity-50' : ''
+                }`}
+                title="Agregar otro color"
               >
-                Otro
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only">Agregar color personalizado</span>
                 <input
                   type="color"
                   value={field.value ?? '#F59E0B'}
