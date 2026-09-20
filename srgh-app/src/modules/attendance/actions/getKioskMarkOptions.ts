@@ -92,6 +92,7 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
     allowed: allowedNextMarks(jornada.journey, {
       lunchWindowOpen: isLunchWindowOpen(ahora, turno.expectedLunchStart),
       exitWindowOpen: isExitWindowOpen(ahora, turno.expectedEnd),
+      breakScheduled: turno.expectedBreakStart !== null,
     }),
   }
 }

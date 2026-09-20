@@ -23,6 +23,7 @@ import {
   allowedNextMarks,
   describeExitWindow,
   describeLunchWindow,
+  describeNoBreak,
   describeSequenceRejection,
   isExitWindowOpen,
   isLunchWindowOpen,
@@ -227,9 +228,15 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
     }
   }
 
+  // Un horario sin receso no da derecho a tomarlo: el kiosco ni lo ofrece.
+  if (tipo === 'inicio_receso' && assignment.expectedBreakStart === null) {
+    return { ok: false, error: describeNoBreak(), definitivo: true }
+  }
+
   const permitidas = allowedNextMarks(jornada.journey, {
     lunchWindowOpen: almuerzoAbierto,
     exitWindowOpen: salidaAbierta,
+    breakScheduled: assignment.expectedBreakStart !== null,
   })
 
   if (!permitidas.includes(tipo)) {

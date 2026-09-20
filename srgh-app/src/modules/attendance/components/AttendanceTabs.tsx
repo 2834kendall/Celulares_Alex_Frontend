@@ -26,13 +26,20 @@ export function AttendanceTabs({
 }: AttendanceTabsProps) {
   const tabs: TabDefinition<Tab>[] = [
     { id: 'diario', label: 'Diario', icon: CalendarDays, content: diarioContent },
-    { id: 'resumen', label: 'Resumen mensual', icon: BarChart3, content: resumenContent },
+    {
+      id: 'resumen',
+      label: 'Resumen mensual',
+      shortLabel: 'Mensual',
+      icon: BarChart3,
+      content: resumenContent,
+    },
   ]
 
   if (justificarContent !== undefined) {
     tabs.push({
       id: 'justificar',
       label: pendingCount > 0 ? `Por justificar (${pendingCount})` : 'Por justificar',
+      shortLabel: pendingCount > 0 ? `Justificar (${pendingCount})` : 'Justificar',
       icon: ClipboardCheck,
       content: justificarContent,
     })

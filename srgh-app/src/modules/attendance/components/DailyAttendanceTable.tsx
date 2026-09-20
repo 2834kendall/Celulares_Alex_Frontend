@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
   CalendarDays,
@@ -16,7 +17,7 @@ import type {
   DailyMarkInfo,
   DailyTardiness,
 } from '@/modules/attendance/actions/getDailyAttendance'
-import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
+import { DEFAULT_TARDINESS_COLOR } from '@/modules/attendance/lib/infractions'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
@@ -25,7 +26,7 @@ import { ManualMarkModal } from '@/modules/attendance/components/ManualMarkModal
 import type { MarkType } from '@/modules/attendance/lib/marks'
 import { IconButton } from '@/components/ui/IconButton'
 import { DatePickerButton } from '@/components/ui/DatePickerButton'
-import { todayInCostaRica } from '@/modules/attendance/lib/time'
+import { formatMinutes, todayInCostaRica } from '@/modules/attendance/lib/time'
 import { META_LABEL, TABLE_HEAD, TABLE_ROW, TABLE_SCROLL, TABLE_TH } from '@/components/ui/styles'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
@@ -65,69 +66,117 @@ function formatDay(dateISO: string) {
 }
 
 /**
- * Una tardanza justificada se pinta en gris y tachada: sigue estando (el
- * atraso ocurrio y hay que poder verlo), pero deja de gritar, porque ya no
- * cuenta para el mes. Las demas toman el color de su tipo en el catalogo.
- */
-const JUSTIFIED_CHIP = 'bg-slate-100 text-slate-500 line-through'
-
-/**
- * Muestra la hora y, si viene informada, la diferencia en minutos.
- *
- * Hasta SGRH-87 el chip era deliberadamente neutro porque la tolerancia no
- * estaba implementada y colorear habria sido clasificar sin base. Ahora si
- * hay base: `tardiness` llega ya clasificado contra la tolerancia de la
- * sucursal del dia, y solo la ENTRADA lo trae — las demas marcas siguen
- * mostrando su desfase en gris, sin juzgarlo.
- */
-/**
  * "10 min antes" / "5 min despues", o null si marco a la hora o no hay hora
  * programada con que comparar.
  */
 function diffLabel(diffMinutes: number | null): string | null {
   if (diffMinutes === null || diffMinutes === 0) return null
 
-  return diffMinutes > 0 ? `${diffMinutes} min despues` : `${Math.abs(diffMinutes)} min antes`
+  return `${formatMinutes(diffMinutes)} ${diffMinutes > 0 ? 'despues' : 'antes'}`
+}
+
+/** Lo que dice el punto de una marca al tocarlo. */
+function markDetail(
+  time: string,
+  diffMinutes: number | null,
+  tardiness: DailyTardiness | null
+): string | null {
+  if (tardiness) {
+    const base = `${tardiness.tipo.nombre}: llego ${formatMinutes(tardiness.diffMinutes)} tarde.`
+    if (!tardiness.isJustified) return base
+
+    return (
+      base +
+      (tardiness.justification ? ` Justificada: ${tardiness.justification}` : ' Justificada.')
+    )
+  }
+
+  const label = diffLabel(diffMinutes)
+
+  return label ? `Marco a las ${time}, ${label} de su hora programada.` : null
 }
 
 /**
- * Punto discreto que cuenta el desfase de una marca que NO es tardia: llego
- * antes, salio antes a almorzar, volvio antes. Al tocarlo (o al apuntarlo)
- * aparece el detalle.
+ * Punto al lado de la hora que cuenta que paso con esa marca: la tardia y sus
+ * minutos, o el desfase cuando no la hay.
  *
- * Reemplaza al numero suelto ("-70") que se repetia en cada celda: era ruido
- * en una tabla de 40 celdas por pantalla, y encima se leia como un problema
- * cuando no lo es.
+ * Reemplaza a los numeros sueltos ("-70", "+728") que se repetian en cada
+ * celda: en una tabla de 40 celdas por pantalla eran ruido, y un atraso de
+ * doce horas escrito en minutos ni siquiera se entendia. El COLOR ya dice si
+ * hay algo que mirar (el del tipo de tardia, o gris cuando es solo
+ * contexto); el numero aparece al apuntarlo.
+ *
+ * Se muestra con el puntero encima, sin tener que hacer clic — leer una fila
+ * no deberia costar cuatro clics. El clic queda igual para tactil, donde no
+ * hay hover, y el foco lo abre para quien navega con teclado.
  */
-function DiffDot({ minutes, time }: { minutes: number | null; time: string }) {
-  const [open, setOpen] = useState(false)
-  const label = diffLabel(minutes)
+function MarkDot({
+  time,
+  diffMinutes,
+  tardiness,
+}: {
+  time: string
+  diffMinutes: number | null
+  tardiness: DailyTardiness | null
+}) {
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
+  const detalle = markDetail(time, diffMinutes, tardiness)
 
-  if (!label) return null
+  if (!detalle) return null
 
-  const detalle = `Marco a las ${time}, ${label} de su hora programada.`
+  // Una tardia justificada deja de pintarse con el color de su banda: se
+  // sigue pudiendo consultar, pero ya no reclama atencion.
+  const color =
+    tardiness && !tardiness.isJustified ? (tardiness.tipo.color ?? DEFAULT_TARDINESS_COLOR) : null
+
+  function abrir(event: { currentTarget: HTMLElement }) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    // El recuadro se centra en el punto, pero se mantiene dentro de la
+    // pantalla: en la ultima columna, centrado a secas, se salia por la
+    // derecha y empujaba scroll horizontal en el celular.
+    const mitad = Math.min(128, window.innerWidth / 2 - 8)
+    const centro = rect.left + rect.width / 2
+
+    setAnchor({
+      x: Math.min(Math.max(centro, mitad + 8), window.innerWidth - mitad - 8),
+      y: rect.bottom + 6,
+    })
+  }
 
   return (
-    <span className="relative inline-flex">
+    <span className="inline-flex">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        onBlur={() => setOpen(false)}
-        aria-expanded={open}
+        onClick={(e) => (anchor ? setAnchor(null) : abrir(e))}
+        onMouseEnter={abrir}
+        onMouseLeave={() => setAnchor(null)}
+        onFocus={abrir}
+        onBlur={() => setAnchor(null)}
+        aria-expanded={anchor !== null}
         aria-label={detalle}
-        title={detalle}
-        className="flex h-5 w-5 items-center justify-center rounded-full text-slate-300 outline-none transition hover:text-slate-500 focus-visible:ring-2 focus-visible:ring-brand-500/60 pointer-coarse:h-8 pointer-coarse:w-8"
+        className={`flex h-5 w-5 items-center justify-center rounded-full outline-none transition hover:scale-125 focus-visible:ring-2 focus-visible:ring-brand-500/60 motion-reduce:hover:scale-100 pointer-coarse:h-8 pointer-coarse:w-8 ${
+          color ? '' : 'text-slate-300 hover:text-slate-500'
+        }`}
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      </button>
-      {open && (
         <span
-          role="tooltip"
-          className="absolute left-1/2 top-full z-20 mt-1 w-max max-w-56 -translate-x-1/2 whitespace-normal rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-lg"
-        >
-          {detalle}
-        </span>
-      )}
+          style={color ? { backgroundColor: color } : undefined}
+          className={`rounded-full ${color ? 'h-2 w-2 ring-2 ring-white' : 'h-1.5 w-1.5 bg-current'}`}
+        />
+      </button>
+      {/* En un portal y con position fixed: el recuadro vive fuera del
+          scroller de la tabla, que si no lo recorta contra su borde — y en
+          la ultima columna se salia de la pantalla. */}
+      {anchor !== null &&
+        createPortal(
+          <span
+            role="tooltip"
+            style={{ top: anchor.y, left: anchor.x }}
+            className="pointer-events-none fixed z-50 w-max max-w-[min(16rem,calc(100vw-2rem))] -translate-x-1/2 whitespace-normal rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium leading-snug text-white shadow-lg"
+          >
+            {detalle}
+          </span>,
+          document.body
+        )}
     </span>
   )
 }
@@ -148,28 +197,7 @@ function MarkCell({
       {mark ? (
         <span className="inline-flex items-baseline gap-1.5">
           <span className="text-[13px] font-semibold tabular-nums text-slate-700">{mark.time}</span>
-          {/* Numero SOLO cuando es una tardia: es lo unico que el encargado
-              tiene que resolver. El resto del desfase (llego antes, salio
-              antes a almorzar) es informacion de contexto y llenaba la
-              tabla de "-2 -10 -70" que nadie mira; queda en un punto que se
-              toca. */}
-          {tardiness ? (
-            <span
-              title={
-                tardiness.isJustified
-                  ? `${tardiness.tipo.nombre} justificada: ${tardiness.justification ?? ''}`
-                  : tardiness.tipo.nombre
-              }
-              style={!tardiness.isJustified ? tardinessChipStyle(tardiness.tipo.color) : undefined}
-              className={`rounded px-1 py-px text-[10px] font-medium tabular-nums ${
-                tardiness.isJustified ? JUSTIFIED_CHIP : ''
-              }`}
-            >
-              +{tardiness.diffMinutes}
-            </span>
-          ) : (
-            <DiffDot minutes={mark.diffMinutes} time={mark.time} />
-          )}
+          <MarkDot time={mark.time} diffMinutes={mark.diffMinutes} tardiness={tardiness} />
         </span>
       ) : (
         <span className="text-sm text-slate-300">—</span>
@@ -255,12 +283,12 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
           receso contra los minutos pagados. 0 no se muestra. */}
       {(row.lunchExcessMinutes ?? 0) > 0 && (
         <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
-          Almuerzo +{row.lunchExcessMinutes} min
+          Almuerzo +{formatMinutes(row.lunchExcessMinutes ?? 0)}
         </span>
       )}
       {(row.breakExcessMinutes ?? 0) > 0 && (
         <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
-          Receso +{row.breakExcessMinutes} min
+          Receso +{formatMinutes(row.breakExcessMinutes ?? 0)}
         </span>
       )}
       {row.duplicateMarksCount > 0 && (
@@ -296,11 +324,13 @@ function MarkTile({
   mark,
   canWrite,
   onEdit,
+  tardiness = null,
 }: {
   label: string
   mark: DailyMarkInfo | null
   canWrite: boolean
   onEdit: () => void
+  tardiness?: DailyTardiness | null
 }) {
   const body = (
     <>
@@ -314,15 +344,40 @@ function MarkTile({
           ))}
       </span>
       {mark ? (
-        <span className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
+        <span className="mt-1 block">
           <span className="text-sm font-semibold tabular-nums text-slate-800">{mark.time}</span>
           {/* En movil la tarjeta ENTERA es el boton de corregir, asi que el
-              desfase no puede ser otro boton: va como texto, y solo cuando
-              hay algo que decir. */}
-          {diffLabel(mark.diffMinutes) && (
-            <span className="text-[10px] font-medium text-slate-400">
-              {diffLabel(mark.diffMinutes)}
+              detalle no puede ser otro boton con su recuadro: se escribe.
+              Hay lugar, y asi la tardia deja de ser invisible en el celular
+              — antes solo se veia en la tabla de escritorio. */}
+          {tardiness ? (
+            <span className="mt-1 flex min-w-0 items-start gap-1.5">
+              <span
+                aria-hidden="true"
+                style={
+                  tardiness.isJustified
+                    ? undefined
+                    : { backgroundColor: tardiness.tipo.color ?? DEFAULT_TARDINESS_COLOR }
+                }
+                className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                  tardiness.isJustified ? 'bg-slate-300' : ''
+                }`}
+              />
+              <span
+                className={`min-w-0 break-words text-[10px] font-medium ${
+                  tardiness.isJustified ? 'text-slate-400' : 'text-slate-600'
+                }`}
+              >
+                {tardiness.tipo.nombre} · {formatMinutes(tardiness.diffMinutes)}
+                {tardiness.isJustified ? ' · justificada' : ''}
+              </span>
             </span>
+          ) : (
+            diffLabel(mark.diffMinutes) && (
+              <span className="mt-1 block text-[10px] font-medium text-slate-400">
+                {diffLabel(mark.diffMinutes)}
+              </span>
+            )
           )}
         </span>
       ) : (
@@ -486,6 +541,13 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                         mark={row[MARK_FIELD[tipo]]}
                         canWrite={canWrite}
                         onEdit={() => setEditing({ row, tipo })}
+                        tardiness={
+                          tipo === 'entrada'
+                            ? row.tardiness
+                            : tipo === 'fin_almuerzo'
+                              ? row.lunchTardiness
+                              : null
+                        }
                       />
                     ))}
                   </div>

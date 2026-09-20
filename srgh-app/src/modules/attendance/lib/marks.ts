@@ -150,6 +150,11 @@ export function isExitWindowOpen(
   return diffMinutes(now, expectedEnd) >= -tolerancia
 }
 
+/** El aviso de que su horario no contempla receso. */
+export function describeNoBreak() {
+  return 'Tu horario no tiene receso asignado. Avisa al encargado si necesitas uno.'
+}
+
 /** El aviso de que todavia no es la hora de salir. */
 export function describeExitWindow(expectedEnd: string) {
   return `Tu salida es a las ${expectedEnd}. Si necesitas salir antes, avisa al encargado.`
@@ -175,6 +180,9 @@ export function describeLunchWindow(expectedLunchStart: string, expectedLunchEnd
  * esta fuera de alcance (decision del cliente, 2026-09-17), y bloquear la
  * salida solo obligaria a inventar marcas de almuerzo para poder irse.
  *
+ * El receso solo se ofrece si el horario del dia lo contempla: preguntarle
+ * por un receso a quien no lo tiene invita a tomarlo (SGRH-88).
+ *
  * El almuerzo y la salida, en cambio, SI respetan la hora del horario: ver
  * isLunchWindowOpen e isExitWindowOpen. Tomar el almuerzo cuando a cada
  * quien le parezca desordena la planilla, que liquida sobre la jornada
@@ -183,9 +191,14 @@ export function describeLunchWindow(expectedLunchStart: string, expectedLunchEnd
  */
 export function allowedNextMarks(
   journey: DayJourney,
-  ventanas: { lunchWindowOpen?: boolean; exitWindowOpen?: boolean } = {}
+  ventanas: {
+    lunchWindowOpen?: boolean
+    exitWindowOpen?: boolean
+    /** El horario del dia contempla receso. Si no, no hay nada que marcar. */
+    breakScheduled?: boolean
+  } = {}
 ): MarkType[] {
-  const { lunchWindowOpen = true, exitWindowOpen = true } = ventanas
+  const { lunchWindowOpen = true, exitWindowOpen = true, breakScheduled = true } = ventanas
   if (!journey.entrada) return ['entrada']
   if (journey.salida) return []
 
@@ -193,7 +206,7 @@ export function allowedNextMarks(
   if (journey.inicioAlmuerzo && !journey.finAlmuerzo) return ['fin_almuerzo']
 
   const next: MarkType[] = []
-  if (!journey.inicioReceso) next.push('inicio_receso')
+  if (!journey.inicioReceso && breakScheduled) next.push('inicio_receso')
   if (!journey.inicioAlmuerzo && lunchWindowOpen) next.push('inicio_almuerzo')
   if (exitWindowOpen) next.push('salida')
 

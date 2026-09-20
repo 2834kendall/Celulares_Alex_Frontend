@@ -130,3 +130,23 @@ export function monthBoundsInCostaRica(dateISO: string): { start: string; end: s
     end: `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`,
   }
 }
+
+/**
+ * Una cantidad de minutos escrita para leerse: "45 min", "1 h", "12 h 8 min".
+ *
+ * Pasada la hora, los minutos sueltos dejan de decir algo: "+728 min" hay que
+ * dividirlo mentalmente para entender que son doce horas. Con `compacta` se
+ * abrevia ("12 h 8 m") para los chips de la tabla, donde el ancho manda.
+ */
+export function formatMinutes(minutes: number, compacta = false): string {
+  const total = Math.abs(minutes)
+
+  if (total < 60) return `${total} ${compacta ? 'm' : 'min'}`
+
+  const horas = Math.floor(total / 60)
+  const resto = total % 60
+
+  if (resto === 0) return `${horas} h`
+
+  return `${horas} h ${resto} ${compacta ? 'm' : 'min'}`
+}

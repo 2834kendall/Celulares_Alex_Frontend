@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { justifyTardiness } from '@/modules/attendance/actions/justifyTardiness'
 import { justifyTardinessSchema } from '@/modules/attendance/types'
+import { formatMinutes } from '@/modules/attendance/lib/time'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 
@@ -111,7 +112,8 @@ export function JustifyTardinessModal({
         )}
 
         <p className="text-sm text-slate-600">
-          {tipoNombre} de <span className="font-semibold tabular-nums">{diffMinutes} min</span>
+          {tipoNombre} de{' '}
+          <span className="font-semibold tabular-nums">{formatMinutes(diffMinutes)}</span>
           {kind === 'almuerzo' ? ' al volver del almuerzo' : ' al entrar'}. Justificarla la deja
           visible en el reporte, pero deja de contar para el mes.
         </p>

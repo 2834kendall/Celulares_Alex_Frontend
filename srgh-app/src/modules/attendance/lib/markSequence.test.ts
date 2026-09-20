@@ -165,4 +165,24 @@ describe('describeSequenceRejection', () => {
       ])
     })
   })
+
+  describe('horarios sin receso', () => {
+    it('no ofrecen marcar receso', () => {
+      const jornada = groupIntoDayJourney([mark(1, 'entrada', '08:00')])
+
+      expect(allowedNextMarks(jornada, { breakScheduled: false })).toEqual([
+        'inicio_almuerzo',
+        'salida',
+      ])
+    })
+
+    it('un receso ya abierto se puede cerrar igual', () => {
+      const jornada = groupIntoDayJourney([
+        mark(1, 'entrada', '08:00'),
+        mark(2, 'inicio_receso', '10:00'),
+      ])
+
+      expect(allowedNextMarks(jornada, { breakScheduled: false })).toEqual(['fin_receso'])
+    })
+  })
 })

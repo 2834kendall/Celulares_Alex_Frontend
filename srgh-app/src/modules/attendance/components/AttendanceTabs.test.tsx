@@ -92,7 +92,8 @@ describe('<AttendanceTabs />', () => {
       />
     )
 
-    expect(screen.getByRole('tab', { name: 'Por justificar (4)' })).toHaveAttribute(
+    // El nombre accesible junta el texto corto (celular) y el largo.
+    expect(screen.getByRole('tab', { name: /Por justificar \(4\)/ })).toHaveAttribute(
       'aria-selected',
       'true'
     )

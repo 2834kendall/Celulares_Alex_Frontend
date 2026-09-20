@@ -191,10 +191,8 @@ describe('getKioskMarkOptions (server action)', () => {
       })
     )
 
-    expect(await getKioskMarkOptions(10)).toEqual({
-      ok: true,
-      allowed: ['inicio_receso', 'salida'],
-    })
+    // Sin receso en el horario tampoco se ofrece el receso.
+    expect(await getKioskMarkOptions(10)).toEqual({ ok: true, allowed: ['salida'] })
 
     vi.useRealTimers()
   })

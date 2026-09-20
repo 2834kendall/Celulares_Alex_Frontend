@@ -524,4 +524,17 @@ describe('registerKioskMark (server action)', () => {
       expect(insertedMark(client)).toEqual(expect.objectContaining({ mar_tipo: 'salida' }))
     })
   })
+
+  it('rechaza el receso cuando el horario del dia no lo contempla', async () => {
+    const client = useClient(clientConTurno())
+
+    const result = await registerKioskMark(await validInput({ tipo: 'inicio_receso' }))
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Tu horario no tiene receso asignado. Avisa al encargado si necesitas uno.',
+      definitivo: true,
+    })
+    expect(insertedMark(client)).toBeUndefined()
+  })
 })
