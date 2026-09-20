@@ -8,6 +8,8 @@ import { checkMonthlyInfractions } from '@/modules/attendance/actions/checkMonth
 import { AttendanceTabs } from '@/modules/attendance/components/AttendanceTabs'
 import { DailyAttendanceTable } from '@/modules/attendance/components/DailyAttendanceTable'
 import { MonthlySummaryTable } from '@/modules/attendance/components/MonthlySummaryTable'
+import { PendingJustifications } from '@/modules/attendance/components/PendingJustifications'
+import { buildJustificationQueue } from '@/modules/attendance/lib/pendingJustifications'
 import {
   isValidISODate,
   monthBoundsInCostaRica,
@@ -65,5 +67,32 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
     <Alert size="md">{monthlyResult.error}</Alert>
   )
 
-  return <AttendanceTabs diarioContent={diarioContent} resumenContent={resumenContent} />
+  // Justificar una tardia exige ASISTENCIA_WRITE; una ausencia, registrar una
+  // ausencia aprobada (AUSENCIAS_APPROVE). Sin ninguno, no hay pestaña.
+  const canJustifyAbsences = permisos.includes(PERMISOS.AUSENCIAS_APPROVE)
+  const canJustify = canWrite || canJustifyAbsences
+
+  const justificarContent = !canJustify ? undefined : monthlyResult.ok ? (
+    <PendingJustifications
+      monthISO={monthISO}
+      rows={monthlyResult.data}
+      canWrite={canWrite}
+      canJustifyAbsences={canJustifyAbsences}
+    />
+  ) : (
+    <Alert size="md">{monthlyResult.error}</Alert>
+  )
+
+  const pendingCount = monthlyResult.ok
+    ? buildJustificationQueue(monthlyResult.data).pending.length
+    : 0
+
+  return (
+    <AttendanceTabs
+      diarioContent={diarioContent}
+      resumenContent={resumenContent}
+      justificarContent={justificarContent}
+      pendingCount={pendingCount}
+    />
+  )
 }

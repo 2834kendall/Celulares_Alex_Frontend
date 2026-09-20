@@ -1,8 +1,8 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import {
-  AlertTriangle,
+  CalendarCheck2,
   CalendarX2,
   ChevronDown,
   ChevronLeft,
@@ -12,17 +12,13 @@ import {
   Users,
 } from 'lucide-react'
 import type { MonthlyEmployeeSummary } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
+import { buildJustificationQueue } from '@/modules/attendance/lib/pendingJustifications'
+import { IncidentRow } from '@/modules/attendance/components/IncidentRow'
 import { useMonthNavigation } from '@/modules/attendance/hooks/useMonthNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { IconButton } from '@/components/ui/IconButton'
-import {
-  TABLE_HEAD,
-  TABLE_ROW,
-  TABLE_TD_STRONG,
-  TABLE_TH,
-  TABLE_WRAP,
-} from '@/components/ui/styles'
+import { TABLE_WRAP } from '@/components/ui/styles'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
 
@@ -32,6 +28,8 @@ interface MonthlySummaryTableProps {
   rows: MonthlyEmployeeSummary[]
 }
 
+type Filter = 'incidencias' | 'todos'
+
 function formatMonth(monthISO: string) {
   const label = new Intl.DateTimeFormat('es-CR', { month: 'long', year: 'numeric' }).format(
     new Date(`${monthISO}T00:00:00`)
@@ -39,28 +37,50 @@ function formatMonth(monthISO: string) {
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
-function formatDayShort(dateISO: string) {
-  return new Intl.DateTimeFormat('es-CR', { day: '2-digit', month: 'short' }).format(
-    new Date(`${dateISO}T00:00:00`)
-  )
+function initials(fullName: string) {
+  const parts = fullName.trim().split(/\s+/)
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase()
+}
+
+function hasIncidents(row: MonthlyEmployeeSummary) {
+  return row.tardyDays.length > 0 || row.absentDays.length > 0 || row.justifiedAbsences.length > 0
+}
+
+/** Todos los dias de una persona, pendientes y resueltos, lo mas reciente primero. */
+function detailItems(row: MonthlyEmployeeSummary) {
+  const { pending, resolved } = buildJustificationQueue([row])
+  return [...pending, ...resolved].sort((a, b) => b.date.localeCompare(a.date))
+}
+
+function plural(n: number, singular: string, pluralForm: string) {
+  return `${n} ${n === 1 ? singular : pluralForm}`
 }
 
 /**
  * Resumen mensual de tardias/ausencias por colaborador (RF-07/RF-08), con el
- * detalle de que dias exactamente — lo que checkMonthlyInfractions calcula
- * puertas adentro para la advertencia silenciosa, pero nunca le mostraba al
- * gerente. Navegable mes a mes, a diferencia de esa accion (que solo mira el
- * mes en curso).
+ * detalle de que dias exactamente. Solo consulta: justificar se hace en la
+ * pestaña "Por justificar" (SGRH-88), que junta lo pendiente de todos.
+ *
+ * Lista en vez de tabla: con dos numeros por persona, una tabla de ancho
+ * completo dejaba los conteos lejos del nombre. Cada colaborador es una fila
+ * tocable con sus conteos como chips, y al abrirla cada dia es una tarjeta.
+ * Arranca filtrado a quienes tienen algo que ver.
  */
 export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps) {
   const { isNavigating, goToPreviousMonth, goToNextMonth } = useMonthNavigation(monthISO)
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
+  const withIncidents = rows.filter(hasIncidents)
+  // Si nadie tiene nada, arrancar en "con incidencias" mostraria una lista
+  // vacia: se abre directo en "todos".
+  const [filter, setFilter] = useState<Filter>(withIncidents.length > 0 ? 'incidencias' : 'todos')
+  const visibleRows = filter === 'incidencias' ? withIncidents : rows
+
   const totalTardias = rows.reduce((sum, r) => sum + r.tardias, 0)
   const totalAusencias = rows.reduce((sum, r) => sum + r.ausencias, 0)
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
-    rows,
+    visibleRows,
     10
   )
 
@@ -77,19 +97,47 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="min-w-0 flex-1 basis-48">
-          <h2 className="text-sm font-bold capitalize text-slate-900">{formatMonth(monthISO)}</h2>
-          <p className="truncate text-xs text-slate-500">Tardias y ausencias por colaborador.</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1">
           <IconButton onClick={goToPreviousMonth} disabled={isNavigating} aria-label="Mes anterior">
             <ChevronLeft className="h-4 w-4" />
           </IconButton>
-          {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+          <h2 className="min-w-0 truncate px-1 text-sm font-bold text-slate-900">
+            {formatMonth(monthISO)}
+          </h2>
           <IconButton onClick={goToNextMonth} disabled={isNavigating} aria-label="Mes siguiente">
             <ChevronRight className="h-4 w-4" />
           </IconButton>
+          {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
         </div>
+
+        {rows.length > 0 && (
+          <div
+            role="group"
+            aria-label="Filtrar colaboradores"
+            className="inline-flex shrink-0 rounded-xl bg-slate-100 p-0.5 text-xs font-semibold"
+          >
+            {(
+              [
+                ['incidencias', `Con incidencias (${withIncidents.length})`],
+                ['todos', `Todos (${rows.length})`],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+                className={`min-h-9 rounded-[10px] px-3 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-600/40 pointer-coarse:min-h-11 ${
+                  filter === value
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -98,110 +146,83 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
           title="No hay colaboradores activos en esta sucursal"
           description="Verifica que existan contratos activos asignados a esta sucursal."
         />
+      ) : visibleRows.length === 0 ? (
+        <EmptyState
+          icon={CalendarCheck2}
+          title="Nadie tiene tardias ni ausencias este mes"
+          description="Cambia a “Todos” para ver a todo el personal."
+        />
       ) : (
         <div className={TABLE_WRAP}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className={TABLE_HEAD}>
-                <tr>
-                  <th className={TABLE_TH}>Colaborador</th>
-                  <th className={TABLE_TH}>Tardias</th>
-                  <th className={TABLE_TH}>Ausencias</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedItems.map((row) => {
-                  const expanded = expandedId === row.employmentHistoryId
-                  const hasDetail = row.tardias > 0 || row.ausencias > 0
-                  return (
-                    <Fragment key={row.employmentHistoryId}>
-                      <tr className={TABLE_ROW}>
-                        <td className={TABLE_TD_STRONG}>{row.fullName}</td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={
-                              row.tardias > 0
-                                ? 'font-semibold tabular-nums text-amber-700'
-                                : 'tabular-nums text-slate-400'
-                            }
-                          >
-                            {row.tardias}
+          <ul className="divide-y divide-slate-100">
+            {paginatedItems.map((row) => {
+              const expanded = expandedId === row.employmentHistoryId
+              const withDetail = hasIncidents(row)
+              const detailId = `detalle-${row.employmentHistoryId}`
+
+              return (
+                <li key={row.employmentHistoryId}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(expanded ? null : row.employmentHistoryId)}
+                    disabled={!withDetail}
+                    aria-expanded={withDetail ? expanded : undefined}
+                    aria-controls={withDetail ? detailId : undefined}
+                    className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left outline-none transition enabled:hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-600/40 disabled:cursor-default sm:px-4"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600"
+                    >
+                      {initials(row.fullName)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-slate-800">
+                        {row.fullName}
+                      </span>
+                      <span className="mt-1 flex flex-wrap gap-1.5">
+                        {row.tardias > 0 && (
+                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
+                            {plural(row.tardias, 'tardia', 'tardias')}
                           </span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={
-                              row.ausencias > 0
-                                ? 'font-semibold tabular-nums text-rose-700'
-                                : 'tabular-nums text-slate-400'
-                            }
-                          >
-                            {row.ausencias}
+                        )}
+                        {row.ausencias > 0 && (
+                          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 ring-1 ring-inset ring-rose-200">
+                            {plural(row.ausencias, 'ausencia', 'ausencias')}
                           </span>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {hasDetail && (
-                            <IconButton
-                              onClick={() =>
-                                setExpandedId(expanded ? null : row.employmentHistoryId)
-                              }
-                              aria-label={expanded ? 'Ocultar dias' : 'Ver dias'}
-                              aria-expanded={expanded}
-                              tone="blue"
-                            >
-                              <ChevronDown
-                                className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`}
-                              />
-                            </IconButton>
-                          )}
-                        </td>
-                      </tr>
-                      {expanded && (
-                        <tr className="border-t border-slate-100 bg-slate-50/50">
-                          <td colSpan={4} className="px-3 py-3">
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                              {row.tardyDays.length > 0 && (
-                                <div>
-                                  <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                                    <Clock className="h-3 w-3" /> Tardias
-                                  </p>
-                                  <ul className="space-y-0.5">
-                                    {row.tardyDays.map((d) => (
-                                      <li key={d.date} className="text-slate-600">
-                                        <span className="font-medium capitalize">
-                                          {formatDayShort(d.date)}
-                                        </span>{' '}
-                                        — llego a las {d.entradaTime} (+{d.diffMinutes} min)
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                              {row.absentDays.length > 0 && (
-                                <div>
-                                  <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
-                                    <AlertTriangle className="h-3 w-3" /> Ausencias
-                                  </p>
-                                  <ul className="space-y-0.5">
-                                    {row.absentDays.map((date) => (
-                                      <li key={date} className="capitalize text-slate-600">
-                                        {formatDayShort(date)}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                        )}
+                        {row.tardias === 0 && row.ausencias === 0 && (
+                          <span className="text-[11px] text-slate-400">
+                            {withDetail ? 'Todo justificado' : 'Sin incidencias'}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                    {withDetail && (
+                      <ChevronDown
+                        aria-hidden="true"
+                        className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                      />
+                    )}
+                  </button>
+
+                  {expanded && (
+                    <ul
+                      id={detailId}
+                      className="space-y-1.5 border-t border-slate-100 bg-slate-50/60 px-3 py-3 sm:px-4"
+                    >
+                      {detailItems(row).map((item) => (
+                        <IncidentRow
+                          key={`${item.kind}-${item.date}-${item.kind === 'tardia' ? item.day.kind : ''}`}
+                          item={item}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
           <Pagination
             page={page}
             totalPages={totalPages}

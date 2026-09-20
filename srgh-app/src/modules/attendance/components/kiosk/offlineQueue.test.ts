@@ -10,7 +10,7 @@ function mark(overrides: Partial<QueuedMark> = {}): QueuedMark {
     fechaHora: '2026-07-25 08:04:00',
     latitud: null,
     longitud: null,
-    pin: null,
+    ticketFacial: '10.1.firma',
     dispositivoId: null,
     ...overrides,
   }

@@ -2,23 +2,47 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth/require-permission'
-import { PERMISOS } from '@/lib/permissions/catalog'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
 import { kioskMarkSchema, type KioskMarkInput } from '@/modules/attendance/types'
-import { isValidPin } from '@/modules/attendance/lib/pin'
 import { haversineDistanceMeters } from '@/modules/attendance/lib/geofence'
-import { nowInCostaRica } from '@/modules/attendance/lib/time'
+import {
+  costaRicaWallTimeToEpochMs,
+  dateOfDay,
+  nowInCostaRica,
+  timeOfDay,
+} from '@/modules/attendance/lib/time'
+import { findWorkableDay } from '@/modules/attendance/lib/workingDay'
+import {
+  absenceBlocksMarkMessage,
+  findApprovedAbsence,
+  loadDayJourney,
+  resolveKioskSucursalIds,
+} from '@/modules/attendance/lib/dayJourney'
+import {
+  allowedNextMarks,
+  describeExitWindow,
+  describeLunchWindow,
+  describeNoBreak,
+  describeSequenceRejection,
+  isExitWindowOpen,
+  isLunchWindowOpen,
+} from '@/modules/attendance/lib/marks'
 import { verifyFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 
-export type RegisterKioskMarkResult = { ok: true } | { ok: false; error: string }
+/**
+ * `definitivo` distingue el rechazo que no va a cambiar por reintentar (no
+ * esta programado, rostro no verificado, contrato cerrado) del fallo pasajero que
+ * si conviene reintentar (la base no respondio). Lo necesita la cola offline:
+ * sin esta marca, una marca encolada que el servidor rechaza para siempre se
+ * reintentaba cada 60 segundos indefinidamente, sin drenar nunca y sin que
+ * nadie se enterara — ver useOfflineSync.
+ */
+export type RegisterKioskMarkResult =
+  { ok: true } | { ok: false; error: string; definitivo?: boolean }
 
 interface HistorialRow {
   lab_id: number
-  lab_sucursal_id: number
-}
-
-interface EmployeeBirthRow {
-  emp_fecha_nacimiento: string | null
 }
 
 interface SucursalCoordsRow {
@@ -29,80 +53,205 @@ interface SucursalCoordsRow {
 /**
  * Registra la marca de un empleado desde el kiosco. La sesion es la de la
  * cuenta KIOSCO (sin login por empleado): el frontend solo manda el
- * employeeId elegido en el selector — hoy mock de la camara, mañana
- * reconocimiento facial sin cambiar este contrato.
+ * employeeId que reconocio Face ID, junto con el ticket que lo prueba.
  *
- * Metodo de verificacion: FACIAL solo si viene un ticket HMAC valido emitido
- * por verifyFace para ESTE empleado (la palabra del cliente no basta — un
- * fetch a mano podria decir "fue facial"). Cualquier otro caso, incluido un
- * ticket expirado de una marca que paso por la cola offline, se degrada a
- * MANUAL sin rechazar la marca: el metodo describe la verificacion, no
- * condiciona el registro.
+ * Marcar exige estar PROGRAMADO ese dia en la sucursal de este kiosco. No
+ * alcanza con tener contrato activo: si no le toca trabajar aca hoy, no marca
+ * (decision del cliente, 2026-09-17). La guarda vive del lado del servidor y
+ * no solo en los botones del kiosco — esconder un boton no es una regla, y
+ * esta accion es invocable directamente.
+ *
+ * De ahi sale ademas la sucursal de la marca: mar_sucursal_id guarda DONDE se
+ * marco (prg_sucursal_id, la sucursal del dia), no la del contrato. Si no, la
+ * geocerca mediria la distancia contra una tienda en la que la persona no
+ * estuvo, y el resumen mensual la contaria en la sucursal equivocada.
+ *
+ * Solo Face ID (SGRH-88, decision del cliente): sin un ticket HMAC valido
+ * emitido por verifyFace para ESTE empleado, no hay marca. El PIN de respaldo
+ * se elimino — si el rostro no se reconoce, la marca la registra el
+ * encargado desde el panel, con su justificacion. Por eso toda marca que
+ * entra por aca queda como FACIAL.
  */
 export async function registerKioskMark(input: KioskMarkInput): Promise<RegisterKioskMarkResult> {
   const parsed = kioskMarkSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de marca invalidos.' }
+    return { ok: false, error: 'Datos de marca invalidos.', definitivo: true }
   }
 
-  const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
-  const meta = claims.app_metadata as { usr_id?: number; empresa_id?: number }
+  const claims = await requireKioskAccess()
+  const meta = claims.app_metadata as {
+    usr_id?: number
+    empresa_id?: number
+    sucursal_ids?: number[] | null
+  }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
   }
 
-  const { employeeId, tipo, latitud, longitud, pin, dispositivoId, ticketFacial, fechaHora } =
+  const { employeeId, tipo, latitud, longitud, dispositivoId, ticketFacial, fechaHora } =
     parsed.data
 
-  // Una marca que trae su propia hora viene de la cola offline: el rostro no
-  // se pudo verificar contra el servidor en el momento del evento, asi que
-  // sube como MANUAL aunque cargue un ticket. Hasta ahora eso pasaba por
-  // omision (la cola nunca mandaba ticket); dejarlo explicito evita que un
-  // cambio futuro en el kiosco convierta una marca diferida en "FACIAL".
-  let metodoVerificacion: 'FACIAL' | 'MANUAL' = 'MANUAL'
   const ticketSecret = process.env.FACE_TICKET_SECRET
-  if (!fechaHora && ticketFacial && ticketSecret) {
-    if (await verifyFaceTicket(ticketFacial, employeeId, ticketSecret)) {
-      metodoVerificacion = 'FACIAL'
+
+  if (!ticketSecret) {
+    return { ok: false, error: 'El reconocimiento facial no esta configurado en el servidor.' }
+  }
+
+  // El ticket vence a los pocos minutos de emitido. Una marca en linea se
+  // valida contra el reloj del servidor; una que viene de la cola offline,
+  // contra la hora del EVENTO: prueba que la cara se verifico justo antes de
+  // marcar, aunque la marca llegue horas despues. Una hora futura no se
+  // acepta (margen de un minuto por diferencias de reloj de la tablet).
+  const ahoraMs = Date.now()
+  const eventoMs = fechaHora ? costaRicaWallTimeToEpochMs(fechaHora) : ahoraMs
+
+  const rostroVerificado =
+    Number.isFinite(eventoMs) &&
+    eventoMs <= ahoraMs + 60_000 &&
+    (await verifyFaceTicket(ticketFacial, employeeId, ticketSecret, eventoMs))
+
+  if (!rostroVerificado) {
+    return {
+      ok: false,
+      error: 'No se pudo verificar tu rostro. Avisa al encargado para que registre tu marca.',
+      definitivo: true,
     }
   }
 
   const supabase = await createClient()
 
-  const { data: historial, error: errHistorial } = await supabase
+  // El claim del JWT si el hook ya lo emite, y si no, por consulta. Sin
+  // sucursal no se marca — en un dispositivo fisicamente expuesto nunca se cae
+  // a "toda la empresa".
+  const sucursalIds = await resolveKioskSucursalIds(supabase, meta)
+
+  if (!sucursalIds || sucursalIds.length === 0) {
+    return { ok: false, error: 'Este kiosco no tiene una sucursal asignada.' }
+  }
+
+  // El dia que se valida es el del EVENTO, no el de hoy: una marca que estuvo
+  // encolada desde ayer se comprueba contra la programacion de ayer.
+  // Validarla contra la de hoy la rechazaria por una razon que no existia en
+  // el momento en que la persona marco.
+  const fechaEvento = dateOfDay(fechaHora ?? nowInCostaRica())
+
+  // Desde aca todo va con el cliente admin: la cuenta KIOSCO no puede leer
+  // programacion, contratos, ausencias ni marcas, ni insertar marcas (ver
+  // lib/kioskAccess.ts). Cada consulta queda acotada a las sucursales de la
+  // cuenta, validadas arriba, o a la empresa del JWT.
+  const admin = createAdminClient()
+
+  const assignment = await findWorkableDay(admin, fechaEvento, employeeId, sucursalIds)
+
+  if (!assignment) {
+    return {
+      ok: false,
+      error: 'No tienes turno asignado en esta sucursal para esta fecha.',
+      definitivo: true,
+    }
+  }
+
+  // Por lab_id (llave primaria) y no por lab_empleado_id: buscar por empleado
+  // con maybeSingle reventaba si alguien llegaba a tener dos contratos
+  // activos, y devolvia "no tiene contrato activo" — el mensaje mas engañoso
+  // posible. La programacion ya apunta al contrato concreto.
+  const { data: historial, error: errHistorial } = await admin
     .from('sgrh_historial_laboral')
-    .select('lab_id, lab_sucursal_id')
-    .eq('lab_empleado_id', employeeId)
+    .select('lab_id')
+    .eq('lab_id', assignment.employmentHistoryId)
     .eq('lab_empresa_id', meta.empresa_id)
     .is('lab_fecha_fin', null)
     .maybeSingle<HistorialRow>()
 
-  if (errHistorial || !historial) {
-    return { ok: false, error: 'El empleado no tiene un contrato activo.' }
+  if (errHistorial) {
+    return { ok: false, error: 'No se pudo validar el contrato del colaborador.' }
   }
 
-  if (pin) {
-    const { data: empleado } = await supabase
-      .from('sgrh_empleados')
-      .select('emp_fecha_nacimiento')
-      .eq('emp_id', employeeId)
-      .maybeSingle<EmployeeBirthRow>()
+  if (!historial) {
+    return { ok: false, error: 'El empleado no tiene un contrato activo.', definitivo: true }
+  }
 
-    if (!isValidPin(pin, empleado?.emp_fecha_nacimiento ?? null)) {
-      return { ok: false, error: 'PIN incorrecto.' }
+  // Un dia cubierto por una ausencia aprobada (incapacidad, vacaciones,
+  // permiso) no se marca: ya esta resuelto por la ausencia, y si la persona
+  // volvio antes, el encargado ajusta la ausencia y registra la marca.
+  const ausencia = await findApprovedAbsence(admin, historial.lab_id, fechaEvento)
+
+  if (!ausencia.ok) {
+    return { ok: false, error: ausencia.error }
+  }
+
+  if (ausencia.tipo) {
+    return { ok: false, error: absenceBlocksMarkMessage(ausencia.tipo), definitivo: true }
+  }
+
+  // Secuencia de la jornada (SGRH-88): solo se acepta la marca que
+  // corresponde segun lo ya marcado ese dia — no se puede salir sin haber
+  // entrado, ni empezar el almuerzo con el receso abierto. El kiosco ya
+  // esconde los botones que no van, pero esta accion es invocable
+  // directamente, y la cola offline manda marcas que el kiosco no pudo
+  // validar al hacerlas.
+  //
+  // Se mira el dia del EVENTO: una marca encolada ayer se valida contra lo
+  // que se marco ayer.
+  const jornada = await loadDayJourney(admin, historial.lab_id, fechaEvento)
+
+  if (!jornada.ok) {
+    return { ok: false, error: 'No se pudo validar la secuencia de marcas.' }
+  }
+
+  // El almuerzo se toma a la hora del horario (SGRH-88, decision del
+  // cliente): tomarlo cuando a cada quien le parezca desordena la planilla,
+  // que liquida sobre la jornada programada. Se mide contra la hora del
+  // EVENTO, para que una marca que estuvo en la cola offline se juzgue por
+  // cuando se hizo y no por cuando se sincronizo.
+  const horaEvento = timeOfDay(fechaHora ?? nowInCostaRica())
+  const almuerzoAbierto = isLunchWindowOpen(horaEvento, assignment.expectedLunchStart)
+  const salidaAbierta = isExitWindowOpen(horaEvento, assignment.expectedEnd)
+
+  if (tipo === 'inicio_almuerzo' && !almuerzoAbierto) {
+    return {
+      ok: false,
+      error: describeLunchWindow(assignment.expectedLunchStart!, assignment.expectedLunchEnd!),
+      definitivo: true,
     }
   }
 
-  // La distancia a la sucursal es informativa (no bloquea el marcado):
-  // nadie definio una regla de rechazo por geocerca todavia.
+  // Una salida antes de tiempo casi siempre es un toque por error, y cierra
+  // el dia: despues de marcarla no queda nada por marcar.
+  if (tipo === 'salida' && !salidaAbierta) {
+    return {
+      ok: false,
+      error: describeExitWindow(assignment.expectedEnd!),
+      definitivo: true,
+    }
+  }
+
+  // Un horario sin receso no da derecho a tomarlo: el kiosco ni lo ofrece.
+  if (tipo === 'inicio_receso' && assignment.expectedBreakStart === null) {
+    return { ok: false, error: describeNoBreak(), definitivo: true }
+  }
+
+  const permitidas = allowedNextMarks(jornada.journey, {
+    lunchWindowOpen: almuerzoAbierto,
+    exitWindowOpen: salidaAbierta,
+    breakScheduled: assignment.expectedBreakStart !== null,
+  })
+
+  if (!permitidas.includes(tipo)) {
+    return { ok: false, error: describeSequenceRejection(tipo, permitidas), definitivo: true }
+  }
+
+  // La distancia a la sucursal es informativa (no bloquea el marcado): nadie
+  // definio una regla de rechazo por geocerca todavia. Se mide contra la
+  // sucursal DEL DIA, que es donde la persona esta parada.
   let distancia: number | null = null
   if (latitud !== null && longitud !== null) {
-    const { data: sucursal } = await supabase
+    const { data: sucursal } = await admin
       .from('sgrh_sucursales')
       .select('suc_latitud, suc_longitud')
-      .eq('suc_id', historial.lab_sucursal_id)
+      .eq('suc_id', assignment.branchId)
       .maybeSingle<SucursalCoordsRow>()
 
     if (sucursal?.suc_latitud != null && sucursal?.suc_longitud != null) {
@@ -120,21 +269,20 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   // hora en que el empleado marco, no a la que se restablecio el internet:
   // de lo contrario el resumen mensual la lee como una tardanza inventada.
   const observaciones = [
-    pin ? 'Marcado con PIN de respaldo (camara no disponible).' : null,
     fechaHora
       ? 'Marca sincronizada desde la cola offline: la hora es la del evento, no la de sincronizacion.'
       : null,
   ].filter((o): o is string => o !== null)
 
-  const { error } = await supabase.from('sgrh_marcas_asistencia').insert({
+  const { error } = await admin.from('sgrh_marcas_asistencia').insert({
     mar_historial_laboral_id: historial.lab_id,
-    mar_sucursal_id: historial.lab_sucursal_id,
+    mar_sucursal_id: assignment.branchId,
     mar_tipo: tipo,
     mar_fecha_hora: fechaHora ?? nowInCostaRica(),
     mar_latitud_marcada: latitud,
     mar_longitud_marcada: longitud,
     mar_distancia_geocerca_metros: distancia,
-    mar_metodo_verificacion: metodoVerificacion,
+    mar_metodo_verificacion: 'FACIAL',
     mar_dispositivo_id: dispositivoId,
     mar_registrado_por_id: meta.usr_id ?? null,
     mar_observacion: observaciones.length > 0 ? observaciones.join(' ') : null,

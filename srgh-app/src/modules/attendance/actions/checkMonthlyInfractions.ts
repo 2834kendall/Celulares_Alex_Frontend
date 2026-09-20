@@ -43,7 +43,7 @@ export async function checkMonthlyInfractions(): Promise<CheckMonthlyInfractions
   }
 
   for (const employee of gathered.data) {
-    const summary = summarizeMonth(employee.days)
+    const summary = summarizeMonth(employee.days, gathered.tipos)
     if (!shouldWarn(summary)) continue
 
     const { data: yaAvisado } = await supabase

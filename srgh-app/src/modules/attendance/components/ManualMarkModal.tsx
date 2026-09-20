@@ -8,18 +8,11 @@ import { TimeSelect } from '@/components/ui/TimeSelect'
 import { DateField } from '@/components/ui/DatePickerButton'
 import { saveManualMark } from '@/modules/attendance/actions/saveManualMark'
 import { manualMarkSchema } from '@/modules/attendance/types'
-import type { MarkType } from '@/modules/attendance/lib/marks'
+import { MARK_LABELS, type MarkType } from '@/modules/attendance/lib/marks'
 import { timeOfDay } from '@/modules/attendance/lib/time'
 import { Button } from '@/components/ui/Button'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
-
-const MARK_LABELS: Record<MarkType, string> = {
-  entrada: 'Entrada',
-  salida: 'Salida',
-  inicio_almuerzo: 'Inicio de almuerzo',
-  fin_almuerzo: 'Fin de almuerzo',
-}
 
 interface ManualMarkModalProps {
   employmentHistoryId: number

@@ -1005,6 +1005,44 @@ export type Database = {
         }
         Relationships: []
       }
+      sgrh_cat_tipos_tardia: {
+        Row: {
+          tta_color: string | null
+          tta_created_at: string
+          tta_cuenta_advertencia: boolean
+          tta_desde_minutos: number
+          tta_empresa_id: number
+          tta_id: number
+          tta_nombre: string
+        }
+        Insert: {
+          tta_color?: string | null
+          tta_created_at?: string
+          tta_cuenta_advertencia?: boolean
+          tta_desde_minutos: number
+          tta_empresa_id: number
+          tta_id?: never
+          tta_nombre: string
+        }
+        Update: {
+          tta_color?: string | null
+          tta_created_at?: string
+          tta_cuenta_advertencia?: boolean
+          tta_desde_minutos?: number
+          tta_empresa_id?: number
+          tta_id?: never
+          tta_nombre?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_cat_tta_empresa_id_fkey"
+            columns: ["tta_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       sgrh_comisiones_calculadas: {
         Row: {
           cal_created_at: string
@@ -1726,6 +1764,10 @@ export type Database = {
           mar_observacion: string | null
           mar_registrado_por_id: number | null
           mar_sucursal_id: number
+          mar_tardia_justificacion: string | null
+          mar_tardia_justificada: boolean
+          mar_tardia_justificada_at: string | null
+          mar_tardia_justificada_por_id: number | null
           mar_tipo: string
         }
         Insert: {
@@ -1741,6 +1783,10 @@ export type Database = {
           mar_observacion?: string | null
           mar_registrado_por_id?: number | null
           mar_sucursal_id: number
+          mar_tardia_justificacion?: string | null
+          mar_tardia_justificada?: boolean
+          mar_tardia_justificada_at?: string | null
+          mar_tardia_justificada_por_id?: number | null
           mar_tipo: string
         }
         Update: {
@@ -1756,6 +1802,10 @@ export type Database = {
           mar_observacion?: string | null
           mar_registrado_por_id?: number | null
           mar_sucursal_id?: number
+          mar_tardia_justificacion?: string | null
+          mar_tardia_justificada?: boolean
+          mar_tardia_justificada_at?: string | null
+          mar_tardia_justificada_por_id?: number | null
           mar_tipo?: string
         }
         Relationships: [
@@ -1769,6 +1819,13 @@ export type Database = {
           {
             foreignKeyName: "sgrh_asi_mar_registrado_por_id_fkey"
             columns: ["mar_registrado_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+          {
+            foreignKeyName: "sgrh_asi_mar_tardia_justificada_por_id_fkey"
+            columns: ["mar_tardia_justificada_por_id"]
             isOneToOne: false
             referencedRelation: "sgrh_usuarios"
             referencedColumns: ["usr_id"]
@@ -2481,7 +2538,6 @@ export type Database = {
           suc_nombre: string
           suc_radio_geocerca_metros: number
           suc_telefono: string | null
-          suc_tolerancia_tardia_minutos: number
         }
         Insert: {
           suc_activa?: boolean
@@ -2498,7 +2554,6 @@ export type Database = {
           suc_nombre: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
-          suc_tolerancia_tardia_minutos?: number
         }
         Update: {
           suc_activa?: boolean
@@ -2515,7 +2570,6 @@ export type Database = {
           suc_nombre?: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
-          suc_tolerancia_tardia_minutos?: number
         }
         Relationships: [
           {
