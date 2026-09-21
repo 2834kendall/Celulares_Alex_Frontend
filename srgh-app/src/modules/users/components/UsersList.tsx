@@ -54,6 +54,13 @@ const FECHA_ACCESO = new Intl.DateTimeFormat('es-CR', {
 
 type EstadoFiltro = 'todos' | UsuarioEstado
 
+/** Vacío = nivel empresa; una o más = la lista, separada por coma. */
+function nombreSucursales(usuario: UsuarioListItem): string {
+  return usuario.sucursales.length > 0
+    ? usuario.sucursales.map((sucursal) => sucursal.nombre).join(', ')
+    : 'Todas'
+}
+
 interface UsersListProps {
   usuarios: UsuarioListItem[]
   roles: CatalogoItem[]
@@ -257,7 +264,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
                   {[
                     { label: 'Empleado', valor: usuario.empleado_nombre ?? '—' },
                     { label: 'Rol', valor: usuario.rol_nombre },
-                    { label: 'Sucursal', valor: usuario.sucursal_nombre ?? 'Todas' },
+                    { label: 'Sucursal', valor: nombreSucursales(usuario) },
                     {
                       label: 'Último acceso',
                       valor: usuario.ultimo_acceso
@@ -305,7 +312,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
                       <td className={TABLE_TD_STRONG}>{usuario.email}</td>
                       <td className={TABLE_TD}>{usuario.empleado_nombre ?? '—'}</td>
                       <td className={TABLE_TD}>{usuario.rol_nombre}</td>
-                      <td className={TABLE_TD}>{usuario.sucursal_nombre ?? 'Todas'}</td>
+                      <td className={TABLE_TD}>{nombreSucursales(usuario)}</td>
                       <td className="px-3 py-2">
                         <EstadoBadge estado={usuario.estado} />
                       </td>

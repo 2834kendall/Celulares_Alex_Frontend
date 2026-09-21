@@ -116,15 +116,24 @@ FROM (VALUES
   ('EMPLEADO', 'MI_HORARIO_READ'),
 
   -- ── KIOSCO: tablet compartida. El rol más restringido del sistema. ──────
-  -- Exactamente dos permisos, y ninguno es de lectura general:
-  --   ASISTENCIA_KIOSCO  ve solo empleados con asignación ACTIVA en SU sucursal
-  --   ASISTENCIA_WRITE   registra la marca
+  -- Un solo permiso, ASISTENCIA_KIOSCO, que no abre ninguna tabla: habilita
+  -- las acciones del kiosco, y es el SERVIDOR el que lee y escribe (con el
+  -- cliente admin, acotado a la sucursal de la cuenta). Ver
+  -- src/modules/attendance/lib/kioskAccess.ts.
+  --
+  -- Sin ASISTENCIA_WRITE (SGRH-88): las politicas de marcas y programacion
+  -- solo piden ese permiso, y la sesion de la tablet podia insertar marcas
+  -- sin Face ID o asignarse turnos llamando a la API directamente.
+  --
+  -- OJO: este seed solo AGREGA filas. Quitarle un permiso a un rol aca no lo
+  -- quita de una base existente: eso lo hace una migracion (la de SGRH-88
+  -- para este caso).
   --
   -- Sin EMPLEADOS_READ (antes lo tenía): ese permiso le abría el expediente
   -- completo de toda la empresa desde un dispositivo físicamente expuesto con
   -- sesión permanente. Sin FOTOS_READ ni DOCUMENTOS_*: no debe poder firmar
   -- URLs de archivos. Sin ASISTENCIA_READ: registra marcas, no las consulta.
-  ('KIOSCO', 'ASISTENCIA_KIOSCO'), ('KIOSCO', 'ASISTENCIA_WRITE')
+  ('KIOSCO', 'ASISTENCIA_KIOSCO')
 ) AS m(rol, permiso)
 JOIN public.sgrh_cat_roles    r ON r.rol_codigo = m.rol
 JOIN public.sgrh_cat_permisos p ON p.per_codigo = m.permiso

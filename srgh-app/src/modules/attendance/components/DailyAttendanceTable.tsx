@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
   CalendarDays,
@@ -14,7 +15,9 @@ import {
 import type {
   DailyAttendanceRow,
   DailyMarkInfo,
+  DailyTardiness,
 } from '@/modules/attendance/actions/getDailyAttendance'
+import { DEFAULT_TARDINESS_COLOR } from '@/modules/attendance/lib/infractions'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
@@ -23,7 +26,7 @@ import { ManualMarkModal } from '@/modules/attendance/components/ManualMarkModal
 import type { MarkType } from '@/modules/attendance/lib/marks'
 import { IconButton } from '@/components/ui/IconButton'
 import { DatePickerButton } from '@/components/ui/DatePickerButton'
-import { todayInCostaRica } from '@/modules/attendance/lib/time'
+import { formatMinutes, todayInCostaRica } from '@/modules/attendance/lib/time'
 import { META_LABEL, TABLE_HEAD, TABLE_ROW, TABLE_SCROLL, TABLE_TH } from '@/components/ui/styles'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
@@ -41,12 +44,17 @@ interface EditingTarget {
 
 const MARK_FIELD: Record<
   MarkType,
-  keyof Pick<DailyAttendanceRow, 'entrada' | 'salida' | 'inicioAlmuerzo' | 'finAlmuerzo'>
+  keyof Pick<
+    DailyAttendanceRow,
+    'entrada' | 'inicioReceso' | 'finReceso' | 'inicioAlmuerzo' | 'finAlmuerzo' | 'salida'
+  >
 > = {
   entrada: 'entrada',
-  salida: 'salida',
+  inicio_receso: 'inicioReceso',
+  fin_receso: 'finReceso',
   inicio_almuerzo: 'inicioAlmuerzo',
   fin_almuerzo: 'finAlmuerzo',
+  salida: 'salida',
 }
 
 function formatDay(dateISO: string) {
@@ -58,35 +66,138 @@ function formatDay(dateISO: string) {
 }
 
 /**
- * Muestra la hora y, solo si viene informada, la diferencia en minutos —
- * como dato neutro (sin colorear "tarde"/"a tiempo"): la tolerancia todavia
- * no esta implementada, y colorear esto seria clasificar sin base.
+ * "10 min antes" / "5 min despues", o null si marco a la hora o no hay hora
+ * programada con que comparar.
  */
+function diffLabel(diffMinutes: number | null): string | null {
+  if (diffMinutes === null || diffMinutes === 0) return null
+
+  return `${formatMinutes(diffMinutes)} ${diffMinutes > 0 ? 'despues' : 'antes'}`
+}
+
+/** Lo que dice el punto de una marca al tocarlo. */
+function markDetail(
+  time: string,
+  diffMinutes: number | null,
+  tardiness: DailyTardiness | null
+): string | null {
+  if (tardiness) {
+    const base = `${tardiness.tipo.nombre}: llego ${formatMinutes(tardiness.diffMinutes)} tarde.`
+    if (!tardiness.isJustified) return base
+
+    return (
+      base +
+      (tardiness.justification ? ` Justificada: ${tardiness.justification}` : ' Justificada.')
+    )
+  }
+
+  const label = diffLabel(diffMinutes)
+
+  return label ? `Marco a las ${time}, ${label} de su hora programada.` : null
+}
+
+/**
+ * Punto al lado de la hora que cuenta que paso con esa marca: la tardia y sus
+ * minutos, o el desfase cuando no la hay.
+ *
+ * Reemplaza a los numeros sueltos ("-70", "+728") que se repetian en cada
+ * celda: en una tabla de 40 celdas por pantalla eran ruido, y un atraso de
+ * doce horas escrito en minutos ni siquiera se entendia. El COLOR ya dice si
+ * hay algo que mirar (el del tipo de tardia, o gris cuando es solo
+ * contexto); el numero aparece al apuntarlo.
+ *
+ * Se muestra con el puntero encima, sin tener que hacer clic — leer una fila
+ * no deberia costar cuatro clics. El clic queda igual para tactil, donde no
+ * hay hover, y el foco lo abre para quien navega con teclado.
+ */
+function MarkDot({
+  time,
+  diffMinutes,
+  tardiness,
+}: {
+  time: string
+  diffMinutes: number | null
+  tardiness: DailyTardiness | null
+}) {
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
+  const detalle = markDetail(time, diffMinutes, tardiness)
+
+  if (!detalle) return null
+
+  // Una tardia justificada deja de pintarse con el color de su banda: se
+  // sigue pudiendo consultar, pero ya no reclama atencion.
+  const color =
+    tardiness && !tardiness.isJustified ? (tardiness.tipo.color ?? DEFAULT_TARDINESS_COLOR) : null
+
+  function abrir(event: { currentTarget: HTMLElement }) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    // El recuadro se centra en el punto, pero se mantiene dentro de la
+    // pantalla: en la ultima columna, centrado a secas, se salia por la
+    // derecha y empujaba scroll horizontal en el celular.
+    const mitad = Math.min(128, window.innerWidth / 2 - 8)
+    const centro = rect.left + rect.width / 2
+
+    setAnchor({
+      x: Math.min(Math.max(centro, mitad + 8), window.innerWidth - mitad - 8),
+      y: rect.bottom + 6,
+    })
+  }
+
+  return (
+    <span className="inline-flex">
+      <button
+        type="button"
+        onClick={(e) => (anchor ? setAnchor(null) : abrir(e))}
+        onMouseEnter={abrir}
+        onMouseLeave={() => setAnchor(null)}
+        onFocus={abrir}
+        onBlur={() => setAnchor(null)}
+        aria-expanded={anchor !== null}
+        aria-label={detalle}
+        className={`flex h-5 w-5 items-center justify-center rounded-full outline-none transition hover:scale-125 focus-visible:ring-2 focus-visible:ring-brand-500/60 motion-reduce:hover:scale-100 pointer-coarse:h-8 pointer-coarse:w-8 ${
+          color ? '' : 'text-slate-300 hover:text-slate-500'
+        }`}
+      >
+        <span
+          style={color ? { backgroundColor: color } : undefined}
+          className={`rounded-full ${color ? 'h-2 w-2 ring-2 ring-white' : 'h-1.5 w-1.5 bg-current'}`}
+        />
+      </button>
+      {/* En un portal y con position fixed: el recuadro vive fuera del
+          scroller de la tabla, que si no lo recorta contra su borde — y en
+          la ultima columna se salia de la pantalla. */}
+      {anchor !== null &&
+        createPortal(
+          <span
+            role="tooltip"
+            style={{ top: anchor.y, left: anchor.x }}
+            className="pointer-events-none fixed z-50 w-max max-w-[min(16rem,calc(100vw-2rem))] -translate-x-1/2 whitespace-normal rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium leading-snug text-white shadow-lg"
+          >
+            {detalle}
+          </span>,
+          document.body
+        )}
+    </span>
+  )
+}
+
 function MarkCell({
   mark,
   canWrite,
   onEdit,
+  tardiness = null,
 }: {
   mark: DailyMarkInfo | null
   canWrite: boolean
   onEdit: () => void
+  tardiness?: DailyTardiness | null
 }) {
   return (
     <div className="group/celda flex items-center gap-1.5 whitespace-nowrap">
       {mark ? (
         <span className="inline-flex items-baseline gap-1.5">
           <span className="text-[13px] font-semibold tabular-nums text-slate-700">{mark.time}</span>
-          {mark.diffMinutes !== null && mark.diffMinutes !== 0 && (
-            // Chip neutro, nunca coloreado: separa visualmente el desfase de
-            // la hora sin sugerir si estuvo bien o mal. Clasificar es tarea
-            // del resumen mensual, que si conoce la tolerancia; aca solo se
-            // informa el dato crudo. Sin parentesis, que a 40 celdas por
-            // pantalla eran cuatro caracteres de ruido cada uno.
-            <span className="rounded bg-slate-100 px-1 py-px text-[10px] font-medium tabular-nums text-slate-500">
-              {mark.diffMinutes > 0 ? '+' : ''}
-              {mark.diffMinutes}
-            </span>
-          )}
+          <MarkDot time={mark.time} diffMinutes={mark.diffMinutes} tardiness={tardiness} />
         </span>
       ) : (
         <span className="text-sm text-slate-300">—</span>
@@ -153,6 +264,11 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
           Dia libre
         </span>
       )}
+      {row.ausencia && (
+        <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+          {row.ausencia}
+        </span>
+      )}
       {row.isHoliday && (
         <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
           Feriado
@@ -161,6 +277,18 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
       {row.isOpen && (
         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
           <AlertTriangle className="h-3 w-3" /> Sin salida
+        </span>
+      )}
+      {/* Excesos (SGRH-88): el almuerzo contra su duracion programada, el
+          receso contra los minutos pagados. 0 no se muestra. */}
+      {(row.lunchExcessMinutes ?? 0) > 0 && (
+        <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
+          Almuerzo +{formatMinutes(row.lunchExcessMinutes ?? 0)}
+        </span>
+      )}
+      {(row.breakExcessMinutes ?? 0) > 0 && (
+        <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
+          Receso +{formatMinutes(row.breakExcessMinutes ?? 0)}
         </span>
       )}
       {row.duplicateMarksCount > 0 && (
@@ -172,9 +300,11 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
   )
 }
 
-/** Las cuatro marcas en el orden de la jornada, para recorrerlas sin repetirlas. */
+/** Las marcas en el orden de la jornada, para recorrerlas sin repetirlas. */
 const MARK_SLOTS: { tipo: MarkType; label: string }[] = [
   { tipo: 'entrada', label: 'Entrada' },
+  { tipo: 'inicio_receso', label: 'Inicio receso' },
+  { tipo: 'fin_receso', label: 'Fin receso' },
   { tipo: 'inicio_almuerzo', label: 'Inicio almuerzo' },
   { tipo: 'fin_almuerzo', label: 'Fin almuerzo' },
   { tipo: 'salida', label: 'Salida' },
@@ -194,11 +324,13 @@ function MarkTile({
   mark,
   canWrite,
   onEdit,
+  tardiness = null,
 }: {
   label: string
   mark: DailyMarkInfo | null
   canWrite: boolean
   onEdit: () => void
+  tardiness?: DailyTardiness | null
 }) {
   const body = (
     <>
@@ -212,13 +344,40 @@ function MarkTile({
           ))}
       </span>
       {mark ? (
-        <span className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
+        <span className="mt-1 block">
           <span className="text-sm font-semibold tabular-nums text-slate-800">{mark.time}</span>
-          {mark.diffMinutes !== null && mark.diffMinutes !== 0 && (
-            <span className="text-[10px] font-medium tabular-nums text-slate-400">
-              {mark.diffMinutes > 0 ? '+' : ''}
-              {mark.diffMinutes} min
+          {/* En movil la tarjeta ENTERA es el boton de corregir, asi que el
+              detalle no puede ser otro boton con su recuadro: se escribe.
+              Hay lugar, y asi la tardia deja de ser invisible en el celular
+              — antes solo se veia en la tabla de escritorio. */}
+          {tardiness ? (
+            <span className="mt-1 flex min-w-0 items-start gap-1.5">
+              <span
+                aria-hidden="true"
+                style={
+                  tardiness.isJustified
+                    ? undefined
+                    : { backgroundColor: tardiness.tipo.color ?? DEFAULT_TARDINESS_COLOR }
+                }
+                className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                  tardiness.isJustified ? 'bg-slate-300' : ''
+                }`}
+              />
+              <span
+                className={`min-w-0 break-words text-[10px] font-medium ${
+                  tardiness.isJustified ? 'text-slate-400' : 'text-slate-600'
+                }`}
+              >
+                {tardiness.tipo.nombre} · {formatMinutes(tardiness.diffMinutes)}
+                {tardiness.isJustified ? ' · justificada' : ''}
+              </span>
             </span>
+          ) : (
+            diffLabel(mark.diffMinutes) && (
+              <span className="mt-1 block text-[10px] font-medium text-slate-400">
+                {diffLabel(mark.diffMinutes)}
+              </span>
+            )
           )}
         </span>
       ) : (
@@ -382,13 +541,20 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                         mark={row[MARK_FIELD[tipo]]}
                         canWrite={canWrite}
                         onEdit={() => setEditing({ row, tipo })}
+                        tardiness={
+                          tipo === 'entrada'
+                            ? row.tardiness
+                            : tipo === 'fin_almuerzo'
+                              ? row.lunchTardiness
+                              : null
+                        }
                       />
                     ))}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
                     <span className="text-[11px] font-medium tabular-nums text-slate-400">
-                      {marcadas} de 4 marcas
+                      {marcadas} de {MARK_SLOTS.length} marcas
                     </span>
                     <StatusBadges row={row} />
                   </div>
@@ -403,6 +569,8 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                 <tr>
                   <th className={TABLE_TH}>Colaborador</th>
                   <th className={TABLE_TH}>Entrada</th>
+                  <th className={TABLE_TH}>Inicio receso</th>
+                  <th className={TABLE_TH}>Fin receso</th>
                   <th className={TABLE_TH}>Inicio almuerzo</th>
                   <th className={TABLE_TH}>Fin almuerzo</th>
                   <th className={TABLE_TH}>Salida</th>
@@ -426,6 +594,21 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                         mark={row.entrada}
                         canWrite={canWrite}
                         onEdit={() => setEditing({ row, tipo: 'entrada' })}
+                        tardiness={row.tardiness}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={row.inicioReceso}
+                        canWrite={canWrite}
+                        onEdit={() => setEditing({ row, tipo: 'inicio_receso' })}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={row.finReceso}
+                        canWrite={canWrite}
+                        onEdit={() => setEditing({ row, tipo: 'fin_receso' })}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -440,6 +623,7 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                         mark={row.finAlmuerzo}
                         canWrite={canWrite}
                         onEdit={() => setEditing({ row, tipo: 'fin_almuerzo' })}
+                        tardiness={row.lunchTardiness}
                       />
                     </td>
                     <td className="px-3 py-2">

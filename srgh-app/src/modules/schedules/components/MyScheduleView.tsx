@@ -1,17 +1,11 @@
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Building2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
-import {
-  CARD,
-  TABLE_HEAD,
-  TABLE_ROW,
-  TABLE_TH,
-  TABLE_TH_RIGHT,
-  TABLE_TD_NUM,
-} from '@/components/ui/styles'
+import { CARD } from '@/components/ui/styles'
 import { stripSeconds } from '@/modules/schedules/lib/time'
 import { formatHoursValue } from '@/modules/schedules/lib/hours'
 import { shiftWeekISO, WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
+import { NEUTRAL_STRIPE, hatchStyle, paletteForSchedule } from '@/modules/schedules/lib/cellPalette'
 import type { MyDayAssignment } from '@/modules/schedules/actions/getMySchedule'
 
 interface MyScheduleViewProps {
@@ -26,7 +20,11 @@ function formatDateLabel(iso: string): string {
   return `${day}/${month}`
 }
 
-/** Vista de solo lectura: el propio horario semanal, sin edicion ni datos de otros. */
+function dayNumber(iso: string): number {
+  return Number(iso.slice(8, 10))
+}
+
+// Misma matriz visual que WeeklyScheduleMatrix, pero de una sola fila y solo lectura.
 export function MyScheduleView({
   weekStartISO,
   weekDates,
@@ -63,58 +61,99 @@ export function MyScheduleView({
         </div>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
-        <table className="w-full text-sm">
-          <thead className={TABLE_HEAD}>
-            <tr>
-              <th className={TABLE_TH}>Día</th>
-              <th className={TABLE_TH}>Turno</th>
-              <th className={TABLE_TH}>Horario</th>
-              <th className={TABLE_TH_RIGHT}>Horas</th>
-            </tr>
-          </thead>
-          <tbody>
-            {days.map((day, i) => (
-              <tr key={day.date} className={TABLE_ROW}>
-                <td className="px-3 py-2">
-                  <span className="font-medium text-slate-800">{WEEKDAY_NAMES[i]}</span>{' '}
-                  <span className="text-slate-400">{formatDateLabel(day.date)}</span>
-                </td>
-                <td className="px-3 py-2 text-slate-600">
-                  {day.isDayOff ? (
-                    <Badge tone="slate">Día libre</Badge>
-                  ) : day.isHoliday ? (
-                    <Badge tone="amber">Feriado</Badge>
-                  ) : day.scheduleName ? (
-                    day.scheduleName
-                  ) : (
-                    <span className="text-slate-400">Sin asignar</span>
-                  )}
-                  {day.observaciones && (
-                    <p className="mt-0.5 text-[11px] text-slate-400">{day.observaciones}</p>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-slate-600">
-                  {day.startTime && day.endTime
-                    ? `${stripSeconds(day.startTime)} - ${stripSeconds(day.endTime)}`
-                    : '—'}
-                </td>
-                <td className={TABLE_TD_NUM + ' text-right'}>{formatHoursValue(day.hours)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t border-slate-200 bg-slate-50/60">
-              <td colSpan={3} className="px-3 py-2 text-right text-xs font-semibold text-slate-500">
-                Total de la semana
-              </td>
-              <td className="px-3 py-2 text-right text-sm font-bold text-slate-900">
-                {formatHoursValue(weeklyTotal)} h
-              </td>
-            </tr>
-          </tfoot>
-        </table>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
+        {days.map((day, index) => (
+          <MyScheduleDayCard key={day.date} day={day} dayIndex={index} />
+        ))}
       </div>
+
+      <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-100/70 px-4 py-2.5">
+        <span className="text-xs font-semibold text-slate-500">Total de la semana</span>
+        <span className="text-sm font-bold tabular-nums text-slate-900">
+          {formatHoursValue(weeklyTotal)} h
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function MyScheduleDayCard({ day, dayIndex }: { day: MyDayAssignment; dayIndex: number }) {
+  const palette = paletteForSchedule({
+    scheduleId: day.scheduleId,
+    isCustom: day.isCustom,
+    manualColor: day.scheduleColor,
+  })
+  const range =
+    day.startTime && day.endTime
+      ? `${stripSeconds(day.startTime)} - ${stripSeconds(day.endTime)}`
+      : null
+  const showBranch = !day.isDayOff && palette != null && day.branchName
+
+  return (
+    <div className="flex flex-col">
+      <div className="mb-1.5 flex items-baseline justify-between px-0.5">
+        <p className="text-[11px] font-bold text-slate-700">
+          {WEEKDAY_NAMES[dayIndex].slice(0, 3)} {dayNumber(day.date)}
+        </p>
+        <p className="text-[10px] font-semibold tabular-nums text-slate-400">
+          {day.hours > 0 ? `${formatHoursValue(day.hours)} h` : '—'}
+        </p>
+      </div>
+
+      <div className="flex min-h-[76px] flex-1 flex-col overflow-hidden rounded-lg border text-center">
+        {day.isDayOff ? (
+          <div className="flex-1 rounded-lg" style={hatchStyle(NEUTRAL_STRIPE)}>
+            <span className="sr-only">Descanso</span>
+          </div>
+        ) : palette ? (
+          <div
+            className="flex flex-1 flex-col"
+            style={{ backgroundColor: palette.fill, borderColor: palette.border }}
+          >
+            <div className="flex flex-1 flex-col items-center justify-center gap-px px-1.5 py-1.5">
+              {day.isHoliday && (
+                <Badge tone="amber" className="mb-0.5">
+                  Feriado
+                </Badge>
+              )}
+              <p className="line-clamp-2 text-[11px] font-bold leading-[1.25] text-slate-800">
+                {day.isCustom ? 'Personalizado' : (day.scheduleName ?? 'Sin asignar')}
+              </p>
+              {range && (
+                <p className="whitespace-nowrap text-[11px] leading-[1.3] tabular-nums text-slate-600">
+                  {range}
+                </p>
+              )}
+            </div>
+            {showBranch && (
+              <div
+                className="flex shrink-0 items-center justify-center gap-1 px-1.5 py-1"
+                style={{ borderTop: `1px solid ${palette.border}` }}
+                title={day.branchName ?? undefined}
+              >
+                <Building2 className="h-2.5 w-2.5 shrink-0 text-slate-500" />
+                <span className="min-w-0 truncate text-[9.5px] font-semibold leading-none text-slate-600">
+                  {day.branchName}
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-slate-200 px-1.5 py-1.5">
+            {day.isHoliday ? (
+              <Badge tone="amber">Feriado</Badge>
+            ) : (
+              <span className="text-[11px] text-slate-400">Sin asignar</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {day.observaciones && (
+        <p className="mt-1 line-clamp-2 px-0.5 text-[10px] leading-tight text-slate-400">
+          {day.observaciones}
+        </p>
+      )}
     </div>
   )
 }

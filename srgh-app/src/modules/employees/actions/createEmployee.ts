@@ -88,7 +88,14 @@ export async function createEmployee(
 
   let usuarioWarning: string | undefined
   if (parsed.data.usuario) {
-    const inviteResult = await inviteUser({ ...parsed.data.usuario, empleado_id: empId })
+    const { sucursal_id, ...usuario } = parsed.data.usuario
+    // El wizard de alta solo captura UNA sucursal inicial; agregar más se
+    // hace despues desde el tab de usuarios (ver EditUserDialog).
+    const inviteResult = await inviteUser({
+      ...usuario,
+      sucursal_ids: sucursal_id ? [sucursal_id] : [],
+      empleado_id: empId,
+    })
     if (!inviteResult.ok) {
       usuarioWarning = `Empleado creado, pero la cuenta de usuario no se completó: ${inviteResult.error}`
     }
