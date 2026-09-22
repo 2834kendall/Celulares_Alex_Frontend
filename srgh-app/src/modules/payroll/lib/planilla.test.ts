@@ -72,6 +72,34 @@ describe('calcularPlanillaPorConceptos', () => {
     expect(resultado.salarioNeto).toBe(200664.12)
   })
 
+  // El ajuste automático puede ser negativo (Q2 de 16 días con el real cerca
+  // del base): tiene que restar del bruto y de la base de la CCSS, no perderse.
+  it('un AJUSTE negativo resta del bruto; otro ingreso negativo se ignora', () => {
+    const conAjuste = [
+      ...CONCEPTOS,
+      {
+        con_id: 6,
+        con_codigo: 'AJUSTE',
+        con_tipo: 'ingreso',
+        con_afecta_salario_bruto: true,
+        con_afecta_base_ccss: true,
+        con_tipo_calculo: 'monto_manual_ingreso',
+        con_porcentaje: null,
+      },
+    ]
+    const resultado = calcularPlanillaPorConceptos(conAjuste, {
+      montos: { BASE: 229333.33, AJUSTE: -14333.33, COMISION: -500 },
+      horasTrabajadas: 96,
+      horasExtra: 0,
+      salarioPorHora: 1791.67,
+    })
+
+    expect(resultado.salarioBruto).toBe(215000)
+    expect(resultado.baseCcss).toBe(215000)
+    expect(resultado.lineas.find((l) => l.con_codigo === 'AJUSTE')?.monto).toBe(-14333.33)
+    expect(resultado.lineas.some((l) => l.con_codigo === 'COMISION')).toBe(false)
+  })
+
   it('sin horas extra (horas trabajadas dentro del tope) no agrega monto de horas extra', () => {
     const resultado = calcularPlanillaPorConceptos(CONCEPTOS, {
       montos: { BASE: 180000 },
@@ -438,13 +466,21 @@ describe('parsePlanillaRow', () => {
   })
 
   it('rechaza montos negativos', () => {
-    const result = parsePlanillaRow(7, '1-1111-1111', 88, 0, 2500, columnas({ AJUSTE: -100 }))
+    const result = parsePlanillaRow(7, '1-1111-1111', 88, 0, 2500, columnas({ COMISION: -100 }))
 
     expect(result.ok).toBe(false)
     if (result.ok === false) {
       expect(result.error.fila).toBe(7)
-      expect(result.error.mensaje).toContain('AJUSTE')
+      expect(result.error.mensaje).toContain('COMISION')
     }
+  })
+
+  // El ajuste lo recalcula el servidor; en el archivo es informativo y puede
+  // venir negativo (Q2 de 16 días con el real cerca del base).
+  it('acepta un ajuste negativo', () => {
+    const result = parsePlanillaRow(7, '1-1111-1111', 88, 0, 2500, columnas({ AJUSTE: -100 }))
+
+    expect(result.ok).toBe(true)
   })
 
   it('rechaza montos no numéricos', () => {

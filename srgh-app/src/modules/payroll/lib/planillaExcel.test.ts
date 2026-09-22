@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import ExcelJS from 'exceljs'
 import { buildPlanillaTemplate, parsePlanillaWorkbook } from './planillaExcel'
 import type { ConceptoPlanillaColumna } from './planilla'
+import type { HorasDeAsistencia } from './prellenadoAsistencia'
 
 // planillaExcel.ts importa 'server-only' (lanza error si se carga fuera de un
 // entorno de servidor — este test corre en jsdom). Next.js lo neutraliza vía
@@ -67,9 +68,38 @@ const CONCEPTOS: ConceptoPlanillaColumna[] = [
   },
 ]
 
+/** Lectura de marcas: `ordinarias` trabajadas de `programadas`, sin ausencias. */
+function lectura(ordinarias: number, programadas: number, extra = 0): HorasDeAsistencia {
+  return {
+    horasEsperadas: programadas,
+    horasOrdinarias: ordinarias,
+    horasExtra: extra,
+    horasAcreditadas: 0,
+    diasAcreditadosSinHorario: 0,
+    periodoCubiertoPorAusencias: false,
+    horasProgramadasTotales: programadas,
+    diasJustificadosSinHorario: 0,
+    diasSinProgramar: 0,
+  }
+}
+
+// Los dos cumplieron su horario completo (96 de 96 h), con el real igual al
+// base: la Q1 paga base ÷ 30 × 15 = la mitad, sin ajuste.
 const EMPLEADOS = [
-  { cedula: '1-1111-1111', nombre: 'Ana Mora', salarioBaseMensual: 600000 },
-  { cedula: '2-2222-2222', nombre: 'Beto Solís', salarioBaseMensual: 300000 },
+  {
+    cedula: '1-1111-1111',
+    nombre: 'Ana Mora',
+    salarioBaseMensual: 600000,
+    salarioRealMensual: 600000,
+    horas: { lectura: lectura(96, 96), diasPorRevisar: 0 },
+  },
+  {
+    cedula: '2-2222-2222',
+    nombre: 'Beto Solís',
+    salarioBaseMensual: 300000,
+    salarioRealMensual: 300000,
+    horas: { lectura: lectura(96, 96), diasPorRevisar: 0 },
+  },
 ]
 
 const PERIODO_ID = 42
@@ -78,6 +108,7 @@ const INFO = {
   titulo: 'Planilla de prueba',
   subtitulo: 'Sucursal Central',
   periodoId: PERIODO_ID,
+  quincena: { anio: 2026, mes: 8, quincena: 1 },
 }
 
 describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
@@ -113,10 +144,10 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     const fila5 = ws.getRow(5)
     expect(fila5.getCell(1).value).toBe('1-1111-1111')
     expect(fila5.getCell(2).value).toBe('Ana Mora')
-    expect(fila5.getCell(3).value).toBe(96) // jornada diurna supuesta: 48 h x 2 semanas
+    expect(fila5.getCell(3).value).toBe(96) // horas de las marcas
     expect(fila5.getCell(4).value).toBe(0) // horas extra
-    expect(fila5.getCell(5).value).toBe(3125) // 600000 / 2 / 96, la jornada del contrato
-    expect(fila5.getCell(6).value).toBe(300000) // BASE = mitad del salario mensual
+    expect(fila5.getCell(5).value).toBe(2500) // salario real 600000 / 30 / 8
+    expect(fila5.getCell(6).value).toBe(300000) // BASE = 600000 / 30 x 15
     expect(fila5.getCell(7).value).toBe(0) // COMISION en cero por defecto
     expect(fila5.getCell(8).value).toBe(0) // PRESTAMO en cero por defecto
   })
@@ -132,14 +163,14 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
       cedula: '1-1111-1111',
       horasTrabajadas: 96,
       horasExtra: 0,
-      salarioPorHora: 3125,
+      salarioPorHora: 2500,
       montos: { BASE: 300000, COMISION: 0, PRESTAMO: 0 },
     })
     expect(rows[1]).toEqual({
       cedula: '2-2222-2222',
       horasTrabajadas: 96,
       horasExtra: 0,
-      salarioPorHora: 1562.5, // 300000 / 2 / 96
+      salarioPorHora: 1250, // 300000 / 30 / 8
       montos: { BASE: 150000, COMISION: 0, PRESTAMO: 0 },
     })
   })
@@ -171,7 +202,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
       cedula: '1-1111-1111',
       horasTrabajadas: 96,
       horasExtra: 8,
-      salarioPorHora: 3125,
+      salarioPorHora: 2500,
       montos: { BASE: 300000, COMISION: 26250, PRESTAMO: 10000 },
     })
   })
@@ -310,78 +341,70 @@ describe('parsePlanillaWorkbook: archivos que no corresponden', () => {
   })
 })
 
-// La plantilla dejo de suponer que todos trabajaron la jornada completa: las
-// horas salen de las marcas del kiosco y el base se prorratea sobre ellas.
+// La plantilla aplica la regla de pago: base ÷ 30 por día de la quincena y
+// el ajuste hasta el salario real, los dos por el cumplimiento del horario.
 describe('buildPlanillaTemplate: horas reales de asistencia', () => {
-  it('prorratea el salario base según las horas cumplidas', async () => {
-    const buffer = await buildPlanillaTemplate(
-      INFO,
-      [
-        {
-          ...EMPLEADOS[0],
-          horas: {
-            trabajadas: 48,
-            extra: 0,
-            esperadas: 96,
-            salarioPorHora: 3409.09,
-            diasPorRevisar: 2,
-          },
-        },
-      ],
-      CONCEPTOS
-    )
-
+  const leerFila = async (empleado: (typeof EMPLEADOS)[number] | object, conceptos = CONCEPTOS) => {
+    const buffer = await buildPlanillaTemplate(INFO, [{ ...EMPLEADOS[0], ...empleado }], conceptos)
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buffer.buffer)
-    const fila = wb.getWorksheet('Planilla')!.getRow(5)
+    return wb.getWorksheet('Planilla')!
+  }
+
+  it('prorratea el salario base según el cumplimiento del horario', async () => {
+    const ws = await leerFila({ horas: { lectura: lectura(48, 96), diasPorRevisar: 2 } })
+    const fila = ws.getRow(5)
 
     expect(fila.getCell(3).value).toBe(48) // horas trabajadas reales
-    expect(fila.getCell(4).value).toBe(0) // sin horas extra
-    expect(fila.getCell(5).value).toBe(3125) // valor hora del contrato: 600000 / 2 / 96
-    expect(fila.getCell(6).value).toBe(150000) // media jornada = medio salario
+    expect(fila.getCell(5).value).toBe(2500) // valor hora del salario real
+    expect(fila.getCell(6).value).toBe(150000) // mitad del horario = mitad de la base
     expect(fila.getCell(10).value).toBe(2) // días por revisar
   })
 
-  it('cumplir la jornada completa prellena el base exacto, sin arrastre de redondeo', async () => {
-    const buffer = await buildPlanillaTemplate(
-      INFO,
-      [
-        {
-          ...EMPLEADOS[0],
-          horas: {
-            trabajadas: 96,
-            extra: 6,
-            esperadas: 96,
-            salarioPorHora: 3409.09,
-            diasPorRevisar: 0,
-          },
-        },
-      ],
-      CONCEPTOS
-    )
+  it('las horas extra van aparte y no suben la base', async () => {
+    const ws = await leerFila({ horas: { lectura: lectura(96, 96, 6), diasPorRevisar: 0 } })
 
-    const wb = new ExcelJS.Workbook()
-    await wb.xlsx.load(buffer.buffer)
-
-    // 96 x 3125 da 300000 justo, pero el base igual se prorratea sobre el mensual, no
-    // se reconstruye multiplicando la hora redondeada.
-    expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(6).value).toBe(300000)
-    // Las horas extra vienen aparte, ya no se deducen de un tope.
-    expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(4).value).toBe(6)
+    expect(ws.getRow(5).getCell(6).value).toBe(300000)
+    expect(ws.getRow(5).getCell(4).value).toBe(6)
   })
 
-  // Sin marcas se supone la jornada del contrato, no un 88 quemado: 48 h
-  // semanales x 2 = 96. Para una jornada parcial de 30 h serían 60.
-  it('sin lectura de marcas supone la jornada pactada del contrato', async () => {
-    const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)
+  // Regla del negocio: sin horas programadas el cumplimiento es 0.
+  it('sin lectura de marcas la fila sale en ₡0 para que se revise', async () => {
+    const ws = await leerFila({ horas: undefined })
+    const fila = ws.getRow(5)
 
-    const wb = new ExcelJS.Workbook()
-    await wb.xlsx.load(buffer.buffer)
-    const fila = wb.getWorksheet('Planilla')!.getRow(5)
+    expect(fila.getCell(3).value).toBe(0)
+    expect(fila.getCell(6).value).toBe(0)
+  })
 
-    expect(fila.getCell(3).value).toBe(96)
-    expect(fila.getCell(4).value).toBe(0)
-    expect(fila.getCell(6).value).toBe(300000)
-    expect(fila.getCell(10).value).toBe(0)
+  it('prellena el ajuste hasta el salario real, en una columna gris', async () => {
+    const conAjuste: ConceptoPlanillaColumna[] = [
+      ...CONCEPTOS,
+      {
+        con_id: 6,
+        con_codigo: 'AJUSTE',
+        con_nombre: 'Ajuste',
+        con_tipo: 'ingreso',
+        con_afecta_salario_bruto: true,
+        con_afecta_base_ccss: true,
+        con_tipo_calculo: 'monto_manual_ingreso',
+        con_porcentaje: null,
+      },
+    ]
+    const ws = await leerFila(
+      {
+        salarioBaseMensual: 400000,
+        salarioRealMensual: 430000,
+        horas: { lectura: lectura(96, 96), diasPorRevisar: 0 },
+      },
+      conAjuste
+    )
+
+    // Columnas de ingreso manual: BASE (6), COMISION (7), AJUSTE (8).
+    expect(ws.getRow(4).getCell(8).value).toBe('Ajuste')
+    expect(ws.getRow(5).getCell(6).value).toBe(200000)
+    expect(ws.getRow(5).getCell(8).value).toBe(15000)
+    const relleno = ws.getRow(5).getCell(8).fill as { fgColor?: { argb?: string } }
+    expect(relleno.fgColor?.argb).toBe('FFF1F5F9')
   })
 })

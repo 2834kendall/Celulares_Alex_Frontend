@@ -52,19 +52,39 @@ export function horasJornadaQuincena(horasSemanales: number | null | undefined):
   return round2(semanales * SEMANAS_POR_QUINCENA)
 }
 
+/** Días de la semana laboral ordinaria (Art. 136 CT: jornada de 6 días). */
+export const DIAS_LABORALES_POR_SEMANA = 6
+
+/** Mes comercial: el salario diario es el mensual ÷ 30, tenga el mes los días que tenga. */
+export const DIAS_MES_COMERCIAL = 30
+
 /**
- * Valor de una hora ordinaria: el salario de la quincena entre las horas de la
- * jornada pactada.
+ * Horas de un día de la jornada pactada: horas semanales ÷ 6. DIURNA (48 h)
+ * da 8. Sin jornada en el contrato, la ordinaria diurna.
+ */
+export function horasPorDia(horasSemanales: number | null | undefined): number {
+  const semanales =
+    typeof horasSemanales === 'number' && Number.isFinite(horasSemanales) && horasSemanales > 0
+      ? horasSemanales
+      : HORAS_SEMANALES_POR_DEFECTO
+  return semanales / DIAS_LABORALES_POR_SEMANA
+}
+
+/**
+ * Valor de una hora ordinaria: salario REAL mensual ÷ 30 ÷ horas del día
+ * (₡430.000 en jornada de 48 h → 430.000 ÷ 30 ÷ 8 = ₡1.791,67).
  *
- * Es el número sobre el que se paga la hora extra (× 1,5 por ley), así que un
- * error acá se multiplica. Por eso NO depende de lo que la persona trabajó ni
- * de lo que alguien alcanzó a programar.
+ * Sale del salario real y no del base porque es lo que la persona gana de
+ * verdad, y en Costa Rica la hora extra se paga sobre el salario ordinario
+ * efectivo (decisión del negocio). Es el número sobre el que se paga la hora
+ * extra (× 1,5), así que un error acá se multiplica: por eso NO depende de lo
+ * que la persona trabajó ni de lo que alguien alcanzó a programar.
  */
 export function valorHoraOrdinaria(
-  salarioBaseMensual: number,
+  salarioMensual: number,
   horasSemanales: number | null | undefined
 ): number {
-  if (!Number.isFinite(salarioBaseMensual) || salarioBaseMensual <= 0) return 0
+  if (!Number.isFinite(salarioMensual) || salarioMensual <= 0) return 0
 
-  return round2(salarioBaseMensual / 2 / horasJornadaQuincena(horasSemanales))
+  return round2(salarioMensual / DIAS_MES_COMERCIAL / horasPorDia(horasSemanales))
 }

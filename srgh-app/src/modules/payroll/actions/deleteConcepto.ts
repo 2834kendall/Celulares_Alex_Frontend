@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { CODIGO_SALARIO_BASE, ERROR_CONCEPTO_BASE_PROTEGIDO } from '@/modules/payroll/lib/planilla'
+import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  ERROR_CONCEPTO_AJUSTE_PROTEGIDO,
+  ERROR_CONCEPTO_BASE_PROTEGIDO,
+} from '@/modules/payroll/lib/planilla'
 
 export type DeleteConceptoResult = { ok: true } | { ok: false; error: string }
 
@@ -32,6 +37,9 @@ export async function deleteConcepto(id: number): Promise<DeleteConceptoResult> 
 
   if (actual?.con_codigo === CODIGO_SALARIO_BASE) {
     return { ok: false, error: ERROR_CONCEPTO_BASE_PROTEGIDO }
+  }
+  if (actual?.con_codigo === CODIGO_AJUSTE) {
+    return { ok: false, error: ERROR_CONCEPTO_AJUSTE_PROTEGIDO }
   }
 
   const { error: deleteError } = await supabase

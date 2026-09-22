@@ -9,6 +9,7 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 interface HistorialActivoRow {
   lab_id: number
   lab_salario_base: number
+  lab_salario_real: number | null
   sgrh_empleados: {
     emp_numero_identificacion: string
     emp_nombre: string
@@ -23,6 +24,8 @@ export interface EmpleadoActivo {
   cedula: string
   nombre: string
   salarioBaseMensual: number
+  /** lab_salario_real: el objetivo de la quincena es la mitad (ver prellenadoAsistencia). */
+  salarioRealMensual: number | null
   /**
    * Horas semanales de la jornada pactada en el contrato. Es el divisor del
    * valor de la hora (ver lib/jornada.ts): null cuando el contrato no la tiene
@@ -49,6 +52,7 @@ export async function getEmpleadosActivos(
       `
       lab_id,
       lab_salario_base,
+      lab_salario_real,
       sgrh_empleados ( emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_apellido_2 ),
       sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )
     `
@@ -74,6 +78,7 @@ export async function getEmpleadosActivos(
         .filter(Boolean)
         .join(' '),
       salarioBaseMensual: row.lab_salario_base,
+      salarioRealMensual: row.lab_salario_real ?? null,
       horasSemanales: row.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
     }))
 
@@ -95,6 +100,7 @@ export async function getTodosEmpleadosActivos(
       `
       lab_id,
       lab_salario_base,
+      lab_salario_real,
       sgrh_empleados ( emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_apellido_2 ),
       sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )
     `
@@ -119,6 +125,7 @@ export async function getTodosEmpleadosActivos(
         .filter(Boolean)
         .join(' '),
       salarioBaseMensual: row.lab_salario_base,
+      salarioRealMensual: row.lab_salario_real ?? null,
       horasSemanales: row.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
     }))
 

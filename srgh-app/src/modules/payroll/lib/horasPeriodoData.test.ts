@@ -45,7 +45,10 @@ function marca(fecha: string, tipo: string, hora: string) {
 }
 
 function supabase(r: Respuestas) {
-  return createSupabaseClientMock(r) as unknown as Awaited<ReturnType<typeof createClient>>
+  return createSupabaseClientMock({
+    sgrh_cat_feriados: { data: [], error: null },
+    ...r,
+  }) as unknown as Awaited<ReturnType<typeof createClient>>
 }
 
 const PARAMS = { historialLaboralIds: [5], fechaInicio: '2026-07-06', fechaFin: '2026-07-07' }
@@ -87,6 +90,30 @@ describe('getHorasDelPeriodo', () => {
     expect(totales.diasConProblema).toEqual([])
   })
 
+  it('un día sin fila de programación se marca sinProgramar, a diferencia de un día libre', async () => {
+    const result = await getHorasDelPeriodo(
+      supabase({
+        // Solo el 06 tiene fila; el 07 no tiene ninguna (nadie lo cargó).
+        sgrh_programacion_semanal: { data: [programado('2026-07-06')], error: null },
+        sgrh_marcas_asistencia: {
+          data: [
+            marca('2026-07-06', 'entrada', '08:00:00'),
+            marca('2026-07-06', 'salida', '17:00:00'),
+          ],
+          error: null,
+        },
+        sgrh_ausencias: { data: [], error: null },
+      }),
+      PARAMS
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const totales = result.data.get(5)!
+    expect(totales.diasSinProgramar).toBe(1)
+    expect(totales.diasConProblema).toEqual([{ fecha: '2026-07-07', problema: 'sin_programar' }])
+  })
+
   it('un día con ausencia aprobada no suma horas esperadas', async () => {
     const result = await getHorasDelPeriodo(
       supabase({
@@ -122,6 +149,130 @@ describe('getHorasDelPeriodo', () => {
     // aparece como "sin marcas".
     expect(totales.horasEsperadas).toBe(8)
     expect(totales.diasConProblema).toEqual([])
+  })
+
+  // Cuánto se paga de cada día de ausencia lo decide su tipo en el catálogo,
+  // no una regla fija: vacaciones y permisos con goce, completo; sin goce,
+  // nada; y las incapacidades CCSS/INS, nada en el base porque se pagan como
+  // subsidio por su propio camino.
+  describe('fracción pagada según el tipo de ausencia', () => {
+    const tipo = (over: Record<string, unknown>) => ({
+      tau_codigo: 'VAC',
+      tau_requiere_documento_ccss: false,
+      tau_porcentaje_pago_empleador: 100,
+      tau_paga_empleador_dias: 0,
+      tau_es_intradia: false,
+      ...over,
+    })
+    const leer = async (ausencia: Record<string, unknown>) => {
+      const result = await getHorasDelPeriodo(
+        supabase({
+          sgrh_programacion_semanal: {
+            data: [programado('2026-07-06'), programado('2026-07-07')],
+            error: null,
+          },
+          sgrh_marcas_asistencia: { data: [], error: null },
+          sgrh_ausencias: {
+            data: [
+              {
+                aus_historial_laboral_id: 5,
+                aus_fecha_inicio: '2026-07-06',
+                aus_fecha_fin: '2026-07-07',
+                ...ausencia,
+              },
+            ],
+            error: null,
+          },
+        }),
+        PARAMS
+      )
+      if (!result.ok) throw new Error(result.error)
+      return result.data.get(5)!
+    }
+
+    it('vacaciones: se acreditan las 16 h programadas', async () => {
+      const t = await leer({ sgrh_cat_tipos_ausencia: tipo({}) })
+      expect(t.horasAcreditadas).toBe(16)
+      expect(t.diasJustificados).toBe(2)
+      expect(t.dias.map((d) => d.justificacion?.codigo)).toEqual(['VAC', 'VAC'])
+    })
+
+    it('permiso sin goce: no se acredita nada', async () => {
+      const t = await leer({
+        sgrh_cat_tipos_ausencia: tipo({ tau_codigo: 'PERM_SG', tau_porcentaje_pago_empleador: 0 }),
+      })
+      expect(t.horasAcreditadas).toBe(0)
+      expect(t.diasJustificados).toBe(2)
+    })
+
+    it('incapacidad CCSS: no se acredita en el base, se paga como subsidio aparte', async () => {
+      const t = await leer({
+        sgrh_cat_tipos_ausencia: tipo({
+          tau_codigo: 'INC_ENF',
+          tau_requiere_documento_ccss: true,
+          tau_porcentaje_pago_empleador: 50,
+          tau_paga_empleador_dias: 3,
+        }),
+      })
+      expect(t.horasAcreditadas).toBe(0)
+    })
+
+    it('permiso con tope de días: solo se pagan los primeros, contados desde el inicio', async () => {
+      const t = await leer({
+        sgrh_cat_tipos_ausencia: tipo({ tau_codigo: 'PERM_CG', tau_paga_empleador_dias: 1 }),
+      })
+      expect(t.dias.map((d) => d.horasAcreditadas)).toEqual([8, 0])
+    })
+
+    // Vacaciones y una incapacidad encima (registrarla desde nómina no chequea
+    // traslape en la base): gana el subsidio, o esos días se pagaban dos veces.
+    it('si una incapacidad se superpone a unas vacaciones, gana la incapacidad', async () => {
+      const result = await getHorasDelPeriodo(
+        supabase({
+          sgrh_programacion_semanal: {
+            data: [programado('2026-07-06'), programado('2026-07-07')],
+            error: null,
+          },
+          sgrh_marcas_asistencia: { data: [], error: null },
+          sgrh_ausencias: {
+            data: [
+              {
+                aus_historial_laboral_id: 5,
+                aus_fecha_inicio: '2026-07-01',
+                aus_fecha_fin: '2026-07-15',
+                sgrh_cat_tipos_ausencia: tipo({}),
+              },
+              {
+                aus_historial_laboral_id: 5,
+                aus_fecha_inicio: '2026-07-07',
+                aus_fecha_fin: '2026-07-07',
+                sgrh_cat_tipos_ausencia: tipo({
+                  tau_codigo: 'INC_ENF',
+                  tau_requiere_documento_ccss: true,
+                  tau_porcentaje_pago_empleador: 50,
+                }),
+              },
+            ],
+            error: null,
+          },
+        }),
+        PARAMS
+      )
+      if (!result.ok) throw new Error(result.error)
+      const t = result.data.get(5)!
+      expect(t.dias.map((d) => d.justificacion?.codigo)).toEqual(['VAC', 'INC_ENF'])
+      expect(t.horasAcreditadas).toBe(8)
+    })
+
+    // El tope se cuenta desde que empezó la ausencia, no desde que empezó el
+    // periodo: una ausencia que viene de la quincena anterior ya gastó días.
+    it('el tope cuenta los días de la ausencia anteriores al periodo', async () => {
+      const t = await leer({
+        aus_fecha_inicio: '2026-07-05',
+        sgrh_cat_tipos_ausencia: tipo({ tau_codigo: 'PERM_CG', tau_paga_empleador_dias: 1 }),
+      })
+      expect(t.horasAcreditadas).toBe(0)
+    })
   })
 
   it('reporta el día al que le falta la salida', async () => {
@@ -243,5 +394,47 @@ describe('getHorasDelPeriodo', () => {
       ok: false,
       error: 'No se pudieron cargar las marcas de asistencia.',
     })
+  })
+
+  // Nadie llena prg_es_feriado al programar: el feriado se lee del catálogo.
+  it('acredita un feriado de pago obligatorio del catálogo aunque la programación no lo marque', async () => {
+    const result = await getHorasDelPeriodo(
+      supabase({
+        sgrh_programacion_semanal: {
+          data: [programado('2026-07-06'), programado('2026-07-07')],
+          error: null,
+        },
+        sgrh_marcas_asistencia: {
+          data: [
+            marca('2026-07-06', 'entrada', '08:00:00'),
+            marca('2026-07-06', 'salida', '17:00:00'),
+          ],
+          error: null,
+        },
+        sgrh_ausencias: { data: [], error: null },
+        sgrh_cat_feriados: { data: [{ fer_fecha: '2026-07-07' }], error: null },
+      }),
+      PARAMS
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const totales = result.data.get(5)!
+    expect(totales.horasAcreditadas).toBe(8)
+    expect(totales.diasQueBloquean).toEqual([])
+  })
+
+  it('devuelve error si no puede leer los feriados', async () => {
+    const result = await getHorasDelPeriodo(
+      supabase({
+        sgrh_programacion_semanal: { data: [], error: null },
+        sgrh_marcas_asistencia: { data: [], error: null },
+        sgrh_ausencias: { data: [], error: null },
+        sgrh_cat_feriados: { data: null, error: { message: 'boom' } },
+      }),
+      PARAMS
+    )
+
+    expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los feriados del periodo.' })
   })
 })

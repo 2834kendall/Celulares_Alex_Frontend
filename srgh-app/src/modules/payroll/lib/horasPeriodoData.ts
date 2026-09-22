@@ -17,6 +17,7 @@ import {
   lecturaUtilizable,
   type DiaProgramado,
   type HorarioDia,
+  type JustificacionDia,
   type TotalesPeriodo,
 } from '@/modules/payroll/lib/horasPeriodo'
 import type { HorasGuardadas } from '@/modules/payroll/lib/horasOrigen'
@@ -53,10 +54,23 @@ interface MarcaRow {
   mar_fecha_hora: string
 }
 
+interface TipoAusenciaRow {
+  tau_codigo: string
+  tau_requiere_documento_ccss: boolean
+  tau_porcentaje_pago_empleador: number | null
+  tau_paga_empleador_dias: number | null
+  tau_es_intradia: boolean
+}
+
 interface AusenciaRow {
   aus_historial_laboral_id: number
   aus_fecha_inicio: string
   aus_fecha_fin: string
+  sgrh_cat_tipos_ausencia: TipoAusenciaRow | null
+}
+
+interface FeriadoRow {
+  fer_fecha: string
 }
 
 export interface GetHorasParams {
@@ -74,6 +88,43 @@ function sumarDias(fecha: string, dias: number): string {
   const d = new Date(`${fecha}T00:00:00Z`)
   d.setUTCDate(d.getUTCDate() + dias)
   return d.toISOString().slice(0, 10)
+}
+
+/** Días calendario entre dos fechas 'YYYY-MM-DD' (fin − inicio). */
+function diasEntre(inicio: string, fin: string): number {
+  return Math.round(
+    (Date.parse(`${fin}T00:00:00Z`) - Date.parse(`${inicio}T00:00:00Z`)) / 86_400_000
+  )
+}
+
+/**
+ * Cuánto de un día de ausencia se paga como SALARIO, según el catálogo.
+ *
+ *  - Incapacidades y licencias certificadas por la CCSS o el INS
+ *    (tau_requiere_documento_ccss): 0. Durante ellas el salario se suspende y
+ *    lo que corresponde se paga como subsidio, por registrarIncapacidad y
+ *    sincronizarAusenciaEnNomina. Acreditarlas también en el base las pagaba
+ *    dos veces.
+ *  - El resto (vacaciones, permisos): tau_porcentaje_pago_empleador, durante
+ *    los primeros tau_paga_empleador_dias días de la ausencia contados desde
+ *    su inicio; 0 días = toda la ausencia. Después de ese tope, 0.
+ *
+ * Sin tipo (fila huérfana o sin permiso para leer el catálogo) se paga
+ * completo: es lo que el cálculo hacía antes de leer el tipo, y rebajarle a
+ * alguien una ausencia aprobada por un dato que no se pudo leer es peor.
+ */
+function fraccionPagadaDeAusencia(row: AusenciaRow, fecha: string): number {
+  const tipo = row.sgrh_cat_tipos_ausencia
+  if (!tipo) return 1
+  if (tipo.tau_requiere_documento_ccss) return 0
+
+  const porcentaje = Number(tipo.tau_porcentaje_pago_empleador ?? 0)
+  if (!Number.isFinite(porcentaje) || porcentaje <= 0) return 0
+
+  const tope = Number(tipo.tau_paga_empleador_dias ?? 0)
+  if (tope > 0 && diasEntre(row.aus_fecha_inicio, fecha) >= tope) return 0
+
+  return Math.min(porcentaje, 100) / 100
 }
 
 function rangoDeFechas(inicio: string, fin: string): string[] {
@@ -122,6 +173,7 @@ export async function getHorasDelPeriodo(
     { data: programacion, error: errProgramacion },
     { data: marcas, error: errMarcas },
     { data: ausencias, error: errAusencias },
+    { data: feriados, error: errFeriados },
   ] = await Promise.all([
     supabase
       .from('sgrh_programacion_semanal')
@@ -157,17 +209,39 @@ export async function getHorasDelPeriodo(
       .returns<MarcaRow[]>(),
     supabase
       .from('sgrh_ausencias')
-      .select('aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin')
+      .select(
+        `aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin,
+         sgrh_cat_tipos_ausencia (
+           tau_codigo, tau_requiere_documento_ccss, tau_porcentaje_pago_empleador,
+           tau_paga_empleador_dias, tau_es_intradia
+         )`
+      )
       .in('aus_historial_laboral_id', historialLaboralIds)
       .eq('aus_estado', 'aprobada')
       .lte('aus_fecha_inicio', fechaFin)
       .gte('aus_fecha_fin', fechaInicio)
       .returns<AusenciaRow[]>(),
+    // Nadie llena prg_es_feriado al programar (el comentario de la columna dice
+    // que sí, pero ningún código lo hace), así que el feriado se lee también
+    // del catálogo. Solo los de pago obligatorio: esos se pagan aunque no se
+    // trabajen (Art. 148-149 CT). La RLS ya deja solo los nacionales y los de
+    // la empresa del usuario.
+    supabase
+      .from('sgrh_cat_feriados')
+      .select('fer_fecha')
+      .eq('fer_activo', true)
+      .eq('fer_es_pago_obligatorio', true)
+      .gte('fer_fecha', fechaInicio)
+      .lte('fer_fecha', fechaFin)
+      .returns<FeriadoRow[]>(),
   ])
 
   if (errProgramacion) return { ok: false, error: 'No se pudo cargar la programación del periodo.' }
   if (errMarcas) return { ok: false, error: 'No se pudieron cargar las marcas de asistencia.' }
   if (errAusencias) return { ok: false, error: 'No se pudieron cargar las ausencias aprobadas.' }
+  if (errFeriados) return { ok: false, error: 'No se pudieron cargar los feriados del periodo.' }
+
+  const fechasFeriado = new Set((feriados ?? []).map((f) => f.fer_fecha.slice(0, 10)))
 
   const clave = (labId: number, fecha: string) => `${labId}|${fecha}`
 
@@ -190,12 +264,32 @@ export async function getHorasDelPeriodo(
     marcasPorDia.set(k, lista)
   }
 
-  const diasConAusencia = new Set<string>()
+  // La ausencia de cada día, con cuánto se paga. Si dos ausencias cayeran el
+  // mismo día (la pantalla de ausencias lo impide; registrar una incapacidad
+  // desde nómina y la base, no):
+  //  - un subsidio (incapacidad CCSS/INS) le gana a todo: suspende el salario,
+  //    y si ganaran unas vacaciones, ese día se pagaba en el base Y como
+  //    incapacidad;
+  //  - entre las demás, la que más paga: ante la duda, no se rebaja.
+  const ausenciaPorDia = new Map<string, JustificacionDia>()
   for (const row of ausencias ?? []) {
     const desde = row.aus_fecha_inicio > fechaInicio ? row.aus_fecha_inicio : fechaInicio
     const hasta = row.aus_fecha_fin < fechaFin ? row.aus_fecha_fin : fechaFin
     for (const fecha of rangoDeFechas(desde, hasta)) {
-      diasConAusencia.add(clave(row.aus_historial_laboral_id, fecha))
+      const k = clave(row.aus_historial_laboral_id, fecha)
+      const nueva: JustificacionDia = {
+        motivo: 'ausencia',
+        codigo: row.sgrh_cat_tipos_ausencia?.tau_codigo ?? null,
+        esIntradia: row.sgrh_cat_tipos_ausencia?.tau_es_intradia ?? false,
+        fraccionPagada: fraccionPagadaDeAusencia(row, fecha),
+        esSubsidio: row.sgrh_cat_tipos_ausencia?.tau_requiere_documento_ccss === true,
+      }
+      const previa = ausenciaPorDia.get(k)
+      const gana =
+        !previa ||
+        (nueva.esSubsidio && !previa.esSubsidio) ||
+        (nueva.esSubsidio === previa.esSubsidio && nueva.fraccionPagada > previa.fraccionPagada)
+      if (gana) ausenciaPorDia.set(k, nueva)
     }
   }
 
@@ -260,8 +354,17 @@ export async function getHorasDelPeriodo(
         horario: prog ? horarioDelDia(prog) : null,
         marcas: [...propias, ...(arrastradasPorDia.get(fecha) ?? [])],
         esDiaLibre: prog?.prg_es_dia_libre ?? false,
-        esFeriado: prog?.prg_es_feriado ?? false,
-        tieneAusenciaAprobada: diasConAusencia.has(k),
+        esFeriado: (prog?.prg_es_feriado ?? false) || fechasFeriado.has(fecha),
+        tieneAusenciaAprobada: ausenciaPorDia.has(k),
+        ausencia: ausenciaPorDia.get(k) ?? null,
+        // Sin fila de programación no se sabe si el día era libre o si a
+        // alguien se le quedó el horario sin cargar: son datos distintos y
+        // horasPeriodo.ts los trata distinto (ver DiaProgramado.sinProgramar).
+        // La cola de un turno nocturno (la madrugada que ya cerró el turno
+        // del día anterior) tampoco tiene fila propia y no es un hueco: si el
+        // día de ayer se explicó con una salida arrastrada hacia este día, no
+        // es un dato que falte, es la continuación de un turno.
+        sinProgramar: !prog && (arrastradasPorDia.get(sumarDias(fecha, -1)) ?? []).length === 0,
       }
     })
 
@@ -273,7 +376,15 @@ export async function getHorasDelPeriodo(
 
 /** Resultado de leer la asistencia de un periodo, por contrato. */
 export type FotoAsistenciaPeriodo =
-  | { estado: 'ok'; datos: Map<number, HorasGuardadas> }
+  | {
+      estado: 'ok'
+      datos: Map<number, HorasGuardadas>
+      /**
+       * La lectura completa de cada contrato con horas programadas (mismas
+       * claves que `datos`). La usa quien tiene que calcular el ajuste.
+       */
+      totales: Map<number, TotalesPeriodo>
+    }
   | { estado: 'sin_fechas' }
   | { estado: 'error' }
 
@@ -298,7 +409,9 @@ export async function getFotoAsistencia(
   }: { historialLaboralIds: number[]; fechaInicio: string | null; fechaFin: string | null }
 ): Promise<FotoAsistenciaPeriodo> {
   if (!fechaInicio || !fechaFin) return { estado: 'sin_fechas' }
-  if (historialLaboralIds.length === 0) return { estado: 'ok', datos: new Map() }
+  if (historialLaboralIds.length === 0) {
+    return { estado: 'ok', datos: new Map(), totales: new Map() }
+  }
 
   const horas = await getHorasDelPeriodo(supabase, {
     historialLaboralIds,
@@ -315,10 +428,12 @@ export async function getFotoAsistencia(
   // no corrigió nada, y bloqueaba su pago. Quedar fuera del mapa es "sin
   // referencia", que es exactamente lo que pasa.
   const datos = new Map<number, HorasGuardadas>()
+  const totalesUtiles = new Map<number, TotalesPeriodo>()
   for (const [labId, totales] of horas.data) {
     if (!lecturaUtilizable(totales)) continue
     datos.set(labId, { horas: totales.horasOrdinarias, horasExtra: totales.horasExtra })
+    totalesUtiles.set(labId, totales)
   }
 
-  return { estado: 'ok', datos }
+  return { estado: 'ok', datos, totales: totalesUtiles }
 }

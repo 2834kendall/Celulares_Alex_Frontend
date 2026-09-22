@@ -23,9 +23,9 @@ describe('horasJornadaQuincena', () => {
 })
 
 describe('valorHoraOrdinaria', () => {
-  it('sale del salario y de la jornada pactada, no de lo que se trabajó', () => {
-    // 470 000 mensuales, jornada diurna: 470000 / 2 / 96
-    expect(valorHoraOrdinaria(470000, 48)).toBe(2447.92)
+  it('sale del salario ÷ 30 ÷ horas del día, no de lo que se trabajó', () => {
+    // 470 000 mensuales, jornada diurna (8 h/día): 470000 / 30 / 8
+    expect(valorHoraOrdinaria(470000, 48)).toBe(1958.33)
   })
 
   // El bug que llegó al usuario: con un solo día programado en la quincena, el
@@ -35,7 +35,7 @@ describe('valorHoraOrdinaria', () => {
   it('no cambia porque falten días por programar', () => {
     const conJornadaCompleta = valorHoraOrdinaria(470000, 48)
 
-    expect(conJornadaCompleta).toBe(2447.92)
+    expect(conJornadaCompleta).toBe(1958.33)
     expect(conJornadaCompleta).toBeLessThan(26111.11)
   })
 
@@ -51,9 +51,9 @@ describe('valorHoraOrdinaria', () => {
 
   // La hora extra se paga sobre este valor, por ley a tiempo y medio.
   it('la hora extra de una jornada diurna sale a tiempo y medio del valor real', () => {
-    const hora = valorHoraOrdinaria(480000, 48) // 480000 / 2 / 96 = 2500
+    const hora = valorHoraOrdinaria(480000, 48) // 480000 / 30 / 8 = 2000
 
-    expect(hora).toBe(2500)
-    expect(hora * 1.5).toBe(3750)
+    expect(hora).toBe(2000)
+    expect(hora * 1.5).toBe(3000)
   })
 })

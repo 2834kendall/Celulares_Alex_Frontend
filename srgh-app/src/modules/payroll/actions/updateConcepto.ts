@@ -10,7 +10,12 @@ import {
   conceptoNominaSchema,
   type ConceptoNominaInput,
 } from '@/modules/payroll/types'
-import { CODIGO_SALARIO_BASE, ERROR_CONCEPTO_BASE_PROTEGIDO } from '@/modules/payroll/lib/planilla'
+import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  ERROR_CONCEPTO_AJUSTE_PROTEGIDO,
+  ERROR_CONCEPTO_BASE_PROTEGIDO,
+} from '@/modules/payroll/lib/planilla'
 
 export type UpdateConceptoResult = { ok: true } | { ok: false; error: string }
 
@@ -69,6 +74,21 @@ export async function updateConcepto(
 
     if (!sigueSirviendo) {
       return { ok: false, error: ERROR_CONCEPTO_BASE_PROTEGIDO }
+    }
+  }
+
+  // Mismo resguardo para el ajuste automático: el sistema escribe su monto
+  // por código, y sin él la diferencia entre el base y el real no se paga.
+  if (actual.con_codigo === CODIGO_AJUSTE) {
+    const sigueSirviendo =
+      parsed.data.con_codigo.toUpperCase() === CODIGO_AJUSTE &&
+      parsed.data.con_activo &&
+      parsed.data.con_tipo === 'ingreso' &&
+      parsed.data.con_tipo_calculo === 'monto_manual_ingreso' &&
+      parsed.data.con_afecta_salario_bruto !== false
+
+    if (!sigueSirviendo) {
+      return { ok: false, error: ERROR_CONCEPTO_AJUSTE_PROTEGIDO }
     }
   }
 

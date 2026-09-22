@@ -96,6 +96,25 @@ export function esConceptoDelTrabajador(concepto: { con_tipo: string }): boolean
  */
 export const CODIGO_SALARIO_BASE = 'BASE'
 
+/**
+ * Código del concepto con el que se paga el ajuste entre el salario base de
+ * la quincena y el objetivo (salario real ÷ 2). Lo calcula el sistema en cada
+ * fila (ver lib/prellenadoAsistencia.ts): no se digita, ni en el Excel ni en
+ * el detalle. Es el único ingreso que puede ser negativo.
+ */
+export const CODIGO_AJUSTE = 'AJUSTE'
+
+export const ERROR_SIN_CONCEPTO_AJUSTE =
+  `El catálogo de nómina no tiene un concepto activo con código ${CODIGO_AJUSTE}, ` +
+  'de tipo "ingreso" y cálculo "monto manual". El sistema escribe ahí la diferencia entre el ' +
+  'salario base de la quincena y el salario real; sin él, esa diferencia no se pagaría. ' +
+  'Arreglalo en Nómina → Conceptos y volvé a intentarlo.'
+
+export const ERROR_CONCEPTO_AJUSTE_PROTEGIDO =
+  `"${CODIGO_AJUSTE}" es el concepto con el que el sistema paga la diferencia entre el salario ` +
+  'base y el real: escribe el monto en él por código. Podés cambiarle el nombre, pero no ' +
+  'desactivarlo, borrarlo, cambiarle el código ni sacarlo del salario bruto.'
+
 export const ERROR_SIN_CONCEPTO_BASE =
   `El catálogo de nómina no tiene un concepto activo con código ${CODIGO_SALARIO_BASE}, ` +
   'de tipo "ingreso" y cálculo "monto manual". Sin él el salario de la quincena no lo ' +
@@ -121,6 +140,17 @@ export function hayConceptoSalarioBase(conceptos: readonly ConceptoCalculo[]): b
   return conceptos.some(
     (c) =>
       c.con_codigo === CODIGO_SALARIO_BASE &&
+      esConceptoDelTrabajador(c) &&
+      c.con_tipo_calculo === 'monto_manual_ingreso' &&
+      c.con_afecta_salario_bruto !== false
+  )
+}
+
+/** ¿Está el concepto del ajuste automático, en condiciones de recibir el monto? */
+export function hayConceptoAjuste(conceptos: readonly ConceptoCalculo[]): boolean {
+  return conceptos.some(
+    (c) =>
+      c.con_codigo === CODIGO_AJUSTE &&
       esConceptoDelTrabajador(c) &&
       c.con_tipo_calculo === 'monto_manual_ingreso' &&
       c.con_afecta_salario_bruto !== false
@@ -255,7 +285,10 @@ export function calcularPlanillaPorConceptos(
   for (const concepto of aplicables) {
     if (concepto.con_tipo_calculo === 'monto_manual_ingreso') {
       const monto = round2(input.montos[concepto.con_codigo] ?? 0)
-      if (monto > 0) sumarIngreso(concepto, monto)
+      // El ajuste es el único ingreso que puede ser negativo (ver
+      // CODIGO_AJUSTE): descartarlo haría que el mes no sume el salario real.
+      const admiteNegativo = concepto.con_codigo === CODIGO_AJUSTE
+      if (monto > 0 || (admiteNegativo && monto !== 0)) sumarIngreso(concepto, monto)
     } else if (concepto.con_tipo_calculo === 'horas_extra_automatico') {
       const monto = round2(
         input.horasExtra * input.salarioPorHora * ((concepto.con_porcentaje ?? 0) / 100)
@@ -524,7 +557,9 @@ export function parsePlanillaRow(
         error: { fila, mensaje: `El campo "${etiqueta}" no es un número válido.` },
       }
     }
-    if (n < 0) {
+    // El ajuste lo recalcula el servidor al subir; en el archivo es solo
+    // informativo y puede venir negativo.
+    if (n < 0 && codigo !== CODIGO_AJUSTE) {
       return {
         ok: false,
         error: { fila, mensaje: `El campo "${etiqueta}" no puede ser negativo.` },

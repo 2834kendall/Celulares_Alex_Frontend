@@ -76,4 +76,13 @@ describe('deleteConcepto (server action)', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('₡0')
   })
+
+  it('no deja borrar el concepto AJUSTE', async () => {
+    mockDelete([{ data: null, error: null }], 'AJUSTE')
+
+    const result = await deleteConcepto(25)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('AJUSTE')
+  })
 })

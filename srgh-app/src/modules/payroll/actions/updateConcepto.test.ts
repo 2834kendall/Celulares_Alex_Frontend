@@ -129,4 +129,35 @@ describe('updateConcepto (server action)', () => {
       expect(result).toEqual({ ok: true })
     })
   })
+
+  // El sistema escribe el ajuste hasta el salario real en AJUSTE por código:
+  // sin él, esa diferencia no se paga.
+  describe('protege el concepto AJUSTE', () => {
+    const AJUSTE_VALIDO: ConceptoNominaInput = {
+      ...BASE_VALIDO,
+      con_codigo: 'AJUSTE',
+      con_nombre: 'Ajuste',
+    }
+
+    it.each([
+      ['desactivarlo', { con_activo: false }],
+      ['cambiarle el código', { con_codigo: 'OTRO' }],
+      ['sacarlo del salario bruto', { con_afecta_salario_bruto: false }],
+    ])('no deja %s', async (_caso, cambio) => {
+      mockUpdate({ data: null, error: null }, 'AJUSTE')
+
+      const result = await updateConcepto(25, { ...AJUSTE_VALIDO, ...cambio })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('AJUSTE')
+    })
+
+    it('sí deja cambiarle el nombre visible', async () => {
+      mockUpdate({ data: null, error: null }, 'AJUSTE')
+
+      const result = await updateConcepto(25, { ...AJUSTE_VALIDO, con_nombre: 'Ajuste automático' })
+
+      expect(result).toEqual({ ok: true })
+    })
+  })
 })

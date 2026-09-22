@@ -11,6 +11,8 @@
 import 'server-only'
 import ExcelJS from 'exceljs'
 import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
   agruparConceptosPlanilla,
   firmaCatalogo,
   parsePlanillaRow,
@@ -19,7 +21,11 @@ import {
   type PlanillaRowInput,
   type RawCell,
 } from './planilla'
-import { prellenarDesdeAsistencia } from './prellenadoAsistencia'
+import {
+  prellenarDesdeAsistencia,
+  type HorasDeAsistencia,
+  type QuincenaRef,
+} from './prellenadoAsistencia'
 
 const SHEET_NAME = 'Planilla'
 
@@ -52,27 +58,22 @@ const LABEL_REVISAR = 'Días por revisar'
 export interface EmpleadoPlantilla {
   cedula: string
   nombre: string
-  /** Salario base mensual del contrato; es el techo de la quincena (la mitad). */
+  /** Salario base mensual del contrato: base ÷ 30 por día de la quincena. */
   salarioBaseMensual: number
+  /** Salario real mensual: el objetivo de la quincena es la mitad. */
+  salarioRealMensual?: number | null
   /**
    * Horas semanales de la jornada pactada. De acá sale el valor de la hora
    * (ver lib/jornada.ts); null cae a la jornada ordinaria diurna.
    */
   horasSemanales?: number | null
   /**
-   * Horas de la quincena según las marcas del kiosco, y el valor de la hora
-   * prorrateado sobre las horas que la persona tenía programadas. Ausente
-   * cuando el periodo no tiene fechas o no se pudieron leer las marcas: en ese
-   * caso la plantilla vuelve al comportamiento anterior (jornada completa
-   * supuesta) para no dejar al encargado sin planilla.
+   * Lo que dicen las marcas del kiosco para la quincena. Ausente cuando el
+   * periodo no tiene fechas o no se pudieron leer: por regla el cumplimiento
+   * es 0 y la fila sale en ₡0 para que se revise.
    */
   horas?: {
-    /** Horas dentro de la jornada programada. */
-    trabajadas: number
-    /** Horas por encima de la jornada programada de cada día. */
-    extra: number
-    esperadas: number
-    salarioPorHora: number
+    lectura: HorasDeAsistencia
     /** Días programados con marcas incompletas; hay que corregirlos antes de pagar. */
     diasPorRevisar: number
   }
@@ -83,6 +84,8 @@ export interface PlantillaInfo {
   subtitulo: string
   /** Periodo al que pertenece la plantilla; se sella en la hoja oculta. */
   periodoId: number
+  /** Qué quincena es: define los días de salario base (ver diasDeLaQuincena). */
+  quincena: QuincenaRef
 }
 
 /** Convierte un índice de columna 1-based a su letra de Excel (1 → A, 27 → AA). */
@@ -132,7 +135,11 @@ export async function buildPlanillaTemplate(
     { label: LABEL_HORAS, editable: true },
     { label: LABEL_HORAS_EXTRA, editable: true },
     { label: LABEL_SALARIO_HORA, editable: true },
-    ...ingresoManual.map((c) => ({ label: c.con_nombre, editable: true })),
+    // El ajuste va en gris: lo recalcula el servidor al subir el archivo.
+    ...ingresoManual.map((c) => ({
+      label: c.con_nombre,
+      editable: c.con_codigo !== CODIGO_AJUSTE,
+    })),
     ...deduccionManual.map((c) => ({ label: c.con_nombre, editable: true })),
     ...horasExtra.map((c) => ({ label: `${c.con_nombre} (calculado)`, editable: false })),
     { label: LABEL_REVISAR, editable: false },
@@ -193,15 +200,13 @@ export async function buildPlanillaTemplate(
     // Es un prellenado, no una imposición: el encargado revisa el archivo antes
     // de subirlo.
     const prellenado = prellenarDesdeAsistencia(
-      emp.salarioBaseMensual,
-      emp.horas
-        ? {
-            horasEsperadas: emp.horas.esperadas,
-            horasOrdinarias: emp.horas.trabajadas,
-            horasExtra: emp.horas.extra,
-          }
-        : null,
-      emp.horasSemanales
+      {
+        salarioBaseMensual: emp.salarioBaseMensual,
+        salarioRealMensual: emp.salarioRealMensual ?? null,
+        horasSemanales: emp.horasSemanales ?? null,
+      },
+      emp.horas?.lectura ?? null,
+      info.quincena
     )
 
     row.getCell(colHoras).value = prellenado.horas
@@ -210,7 +215,19 @@ export async function buildPlanillaTemplate(
     row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
 
     ingresoManual.forEach((c, i) => {
-      row.getCell(colIngresoInicio + i).value = c.con_codigo === 'BASE' ? prellenado.base : 0
+      row.getCell(colIngresoInicio + i).value =
+        c.con_codigo === CODIGO_SALARIO_BASE
+          ? prellenado.base
+          : c.con_codigo === CODIGO_AJUSTE
+            ? prellenado.ajuste
+            : 0
+      if (c.con_codigo === CODIGO_AJUSTE) {
+        row.getCell(colIngresoInicio + i).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLOR_CALCULADO_FILL },
+        }
+      }
     })
     deduccionManual.forEach((_, i) => {
       row.getCell(colDeduccionManualInicio + i).value = 0
