@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/Button'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
-import { ScheduleColorPicker } from '@/modules/schedules/components/ScheduleColorPicker'
+import { ColorPicker } from '@/components/ui/ColorPicker'
 
 interface ShiftTypeOption {
   tjo_id: number
@@ -281,10 +281,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
         )}
       </div>
 
-      <ScheduleColorPicker
+      <ColorPicker
         value={colorValue}
         disabled={isSubmitting}
         onChange={(color) => setValue('hor_color', color)}
+        label="Color de la plantilla"
+        description="Se usa en la matriz semanal para distinguir el turno de un vistazo. Sin color propio, se asigna uno automatico."
+        storageKey="sgrh_schedule_custom_colors"
       />
 
       <label
