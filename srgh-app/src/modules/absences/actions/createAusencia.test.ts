@@ -78,6 +78,11 @@ describe('createAusencia (server action)', () => {
       sgrh_ausencias: [
         { data: [], error: null },
         { data: null, error: null },
+        // La nómina lee el tipo de la ausencia recién guardada: una incapacidad CCSS.
+        {
+          data: [{ aus_id: 1, sgrh_cat_tipos_ausencia: { tau_requiere_documento_ccss: true } }],
+          error: null,
+        },
       ],
       sgrh_cat_tipos_ausencia: {
         data: { tau_paga_empleador_dias: 3, tau_es_intradia: false },
