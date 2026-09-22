@@ -358,13 +358,71 @@ export type Database = {
           },
         ]
       }
+      sgrh_candidato_documentos: {
+        Row: {
+          cdo_candidato_id: number
+          cdo_created_at: string
+          cdo_creado_por: number | null
+          cdo_empresa_id: number
+          cdo_id: number
+          cdo_mime: string
+          cdo_nombre: string
+          cdo_path: string
+          cdo_tipo: string
+        }
+        Insert: {
+          cdo_candidato_id: number
+          cdo_created_at?: string
+          cdo_creado_por?: number | null
+          cdo_empresa_id: number
+          cdo_id?: never
+          cdo_mime: string
+          cdo_nombre: string
+          cdo_path: string
+          cdo_tipo: string
+        }
+        Update: {
+          cdo_candidato_id?: number
+          cdo_created_at?: string
+          cdo_creado_por?: number | null
+          cdo_empresa_id?: number
+          cdo_id?: never
+          cdo_mime?: string
+          cdo_nombre?: string
+          cdo_path?: string
+          cdo_tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_candidato_documentos_cdo_candidato_id_fkey"
+            columns: ["cdo_candidato_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_candidatos"
+            referencedColumns: ["cdt_id"]
+          },
+          {
+            foreignKeyName: "sgrh_candidato_documentos_cdo_creado_por_fkey"
+            columns: ["cdo_creado_por"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+          {
+            foreignKeyName: "sgrh_candidato_documentos_cdo_empresa_id_fkey"
+            columns: ["cdo_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       sgrh_candidatos: {
         Row: {
           cdt_apellido_1: string
           cdt_apellido_2: string | null
           cdt_created_at: string
-          cdt_cv_url: string | null
           cdt_email: string
+          cdt_empresa_id: number
           cdt_fuente_reclutamiento: string | null
           cdt_id: number
           cdt_nombre: string
@@ -376,8 +434,8 @@ export type Database = {
           cdt_apellido_1: string
           cdt_apellido_2?: string | null
           cdt_created_at?: string
-          cdt_cv_url?: string | null
           cdt_email: string
+          cdt_empresa_id: number
           cdt_fuente_reclutamiento?: string | null
           cdt_id?: never
           cdt_nombre: string
@@ -389,8 +447,8 @@ export type Database = {
           cdt_apellido_1?: string
           cdt_apellido_2?: string | null
           cdt_created_at?: string
-          cdt_cv_url?: string | null
           cdt_email?: string
+          cdt_empresa_id?: number
           cdt_fuente_reclutamiento?: string | null
           cdt_id?: never
           cdt_nombre?: string
@@ -399,6 +457,13 @@ export type Database = {
           cdt_tipo_identificacion_id?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "sgrh_candidatos_cdt_empresa_id_fkey"
+            columns: ["cdt_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
           {
             foreignKeyName: "sgrh_rec_cdt_tipo_identificacion_id_fkey"
             columns: ["cdt_tipo_identificacion_id"]
@@ -547,6 +612,56 @@ export type Database = {
           },
         ]
       }
+      sgrh_cat_areas_seleccion: {
+        Row: {
+          are_activo: boolean
+          are_id: number
+          are_nombre: string
+          are_tipo_aplicacion: string
+        }
+        Insert: {
+          are_activo?: boolean
+          are_id?: never
+          are_nombre: string
+          are_tipo_aplicacion?: string
+        }
+        Update: {
+          are_activo?: boolean
+          are_id?: never
+          are_nombre?: string
+          are_tipo_aplicacion?: string
+        }
+        Relationships: []
+      }
+      sgrh_cat_criterios_seleccion: {
+        Row: {
+          cri_activo: boolean
+          cri_area_id: number
+          cri_descripcion: string
+          cri_id: number
+        }
+        Insert: {
+          cri_activo?: boolean
+          cri_area_id: number
+          cri_descripcion: string
+          cri_id?: never
+        }
+        Update: {
+          cri_activo?: boolean
+          cri_area_id?: number
+          cri_descripcion?: string
+          cri_id?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_cat_criterios_seleccion_cri_area_id_fkey"
+            columns: ["cri_area_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_areas_seleccion"
+            referencedColumns: ["are_id"]
+          },
+        ]
+      }
       sgrh_cat_distritos: {
         Row: {
           dis_canton_id: number
@@ -579,18 +694,21 @@ export type Database = {
       sgrh_cat_etapas_seleccion: {
         Row: {
           eta_activo: boolean
+          eta_fase: number | null
           eta_id: number
           eta_nombre: string
           eta_orden: number
         }
         Insert: {
           eta_activo?: boolean
+          eta_fase?: number | null
           eta_id?: never
           eta_nombre: string
           eta_orden: number
         }
         Update: {
           eta_activo?: boolean
+          eta_fase?: number | null
           eta_id?: never
           eta_nombre?: string
           eta_orden?: number
@@ -2272,38 +2390,95 @@ export type Database = {
           },
         ]
       }
+      sgrh_postulacion_puntajes: {
+        Row: {
+          psc_criterio_id: number
+          psc_id: number
+          psc_no_aplica: boolean
+          psc_observacion: string | null
+          psc_postulacion_id: number
+          psc_puntaje: number | null
+        }
+        Insert: {
+          psc_criterio_id: number
+          psc_id?: never
+          psc_no_aplica?: boolean
+          psc_observacion?: string | null
+          psc_postulacion_id: number
+          psc_puntaje?: number | null
+        }
+        Update: {
+          psc_criterio_id?: number
+          psc_id?: never
+          psc_no_aplica?: boolean
+          psc_observacion?: string | null
+          psc_postulacion_id?: number
+          psc_puntaje?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_postulacion_puntajes_psc_criterio_id_fkey"
+            columns: ["psc_criterio_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_criterios_seleccion"
+            referencedColumns: ["cri_id"]
+          },
+          {
+            foreignKeyName: "sgrh_postulacion_puntajes_psc_postulacion_id_fkey"
+            columns: ["psc_postulacion_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_postulaciones"
+            referencedColumns: ["pos_id"]
+          },
+        ]
+      }
       sgrh_postulaciones: {
         Row: {
           pos_candidato_id: number
           pos_created_at: string
+          pos_empleado_id: number | null
           pos_empresa_id: number
           pos_estado_final: string
+          pos_etapa_actual_id: number | null
+          pos_fecha_cierre: string | null
           pos_fecha_postula: string
           pos_id: number
+          pos_motivo_descarte: string | null
           pos_observaciones: string | null
           pos_puesto_id: number
+          pos_puntaje_promedio: number | null
           pos_sucursal_id: number | null
         }
         Insert: {
           pos_candidato_id: number
           pos_created_at?: string
+          pos_empleado_id?: number | null
           pos_empresa_id: number
           pos_estado_final?: string
+          pos_etapa_actual_id?: number | null
+          pos_fecha_cierre?: string | null
           pos_fecha_postula?: string
           pos_id?: never
+          pos_motivo_descarte?: string | null
           pos_observaciones?: string | null
           pos_puesto_id: number
+          pos_puntaje_promedio?: number | null
           pos_sucursal_id?: number | null
         }
         Update: {
           pos_candidato_id?: number
           pos_created_at?: string
+          pos_empleado_id?: number | null
           pos_empresa_id?: number
           pos_estado_final?: string
+          pos_etapa_actual_id?: number | null
+          pos_fecha_cierre?: string | null
           pos_fecha_postula?: string
           pos_id?: never
+          pos_motivo_descarte?: string | null
           pos_observaciones?: string | null
           pos_puesto_id?: number
+          pos_puntaje_promedio?: number | null
           pos_sucursal_id?: number | null
         }
         Relationships: [
@@ -2315,11 +2490,25 @@ export type Database = {
             referencedColumns: ["cdt_id"]
           },
           {
+            foreignKeyName: "sgrh_postulaciones_pos_empleado_id_fkey"
+            columns: ["pos_empleado_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+          {
             foreignKeyName: "sgrh_rec_pos_empresa_id_fkey"
             columns: ["pos_empresa_id"]
             isOneToOne: false
             referencedRelation: "sgrh_empresas"
             referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_postulaciones_pos_etapa_actual_id_fkey"
+            columns: ["pos_etapa_actual_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_etapas_seleccion"
+            referencedColumns: ["eta_id"]
           },
           {
             foreignKeyName: "sgrh_rec_pos_puesto_id_fkey"
@@ -2708,6 +2897,17 @@ export type Database = {
       get_rol: { Args: never; Returns: string }
       get_sucursal_ids: { Args: never; Returns: number[] }
       get_usr_id: { Args: never; Returns: number }
+      registrar_etapa_postulacion: {
+        Args: {
+          p_etapa_id: number
+          p_fecha: string
+          p_notas?: string
+          p_postulacion_id: number
+          p_resultado: string
+          p_responsable_id?: number
+        }
+        Returns: number
+      }
       sucursal_visible: { Args: { p_sucursal_id: number }; Returns: boolean }
       tiene_permiso: { Args: { p_codigo: string }; Returns: boolean }
     }
