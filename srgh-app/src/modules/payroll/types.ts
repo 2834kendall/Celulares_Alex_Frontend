@@ -112,6 +112,17 @@ export interface DetalleNominaItem {
   marcasCambiaron: boolean
   /** Lo que dicen las marcas AHORA. Null si el periodo no tiene fechas. */
   horasAsistenciaAhora: { horas: number; horasExtra: number } | null
+  /**
+   * El salario guardado quedó viejo: el BASE lo puso el sistema con otra
+   * regla, o el AJUSTE no es el que da la regla de hoy (ver
+   * evaluarBaseGuardado). Se corrige con "Recalcular desde asistencia";
+   * mientras tanto no se deja marcar el pago.
+   */
+  baseDesactualizado: boolean
+  /** Lo que daría el BASE hoy, para mostrarlo. null si no hay con qué calcularlo. */
+  baseEsperado: number | null
+  /** Lo que daría el AJUSTE hoy. null si no hay con qué calcularlo. */
+  ajusteEsperado: number | null
   /** Día por día de la quincena, para explicar de dónde sale el total. */
   dias: DiaCalculado[]
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
@@ -575,6 +586,8 @@ export type RegistrarIncapacidadResult =
       periodosActualizados: PeriodoAfectadoIncapacidad[]
       /** Días de la incapacidad que cayeron en periodos que todavía no existen. */
       diasSinPeriodo: number
+      /** Periodos ya pagados que no se tocaron, con los días que les faltaron. */
+      periodosPagadosOmitidos: PeriodoAfectadoIncapacidad[]
     }
   | { ok: false; error: string }
 

@@ -5,8 +5,12 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  ERROR_SIN_CONCEPTO_AJUSTE,
   ERROR_SIN_CONCEPTO_BASE,
   calcularPlanillaPorConceptos,
+  hayConceptoAjuste,
   hayConceptoSalarioBase,
   type ConceptoCalculo,
 } from '@/modules/payroll/lib/planilla'
@@ -18,8 +22,11 @@ import {
 } from '@/modules/payroll/lib/lineasAjenas'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
-import { prellenarDesdeAsistencia } from '@/modules/payroll/lib/prellenadoAsistencia'
-import { round2 } from '@/modules/payroll/lib/numeros'
+import {
+  basesDelSistema,
+  esBaseDelSistema,
+  prellenarDesdeAsistencia,
+} from '@/modules/payroll/lib/prellenadoAsistencia'
 import { camposFotoAsistencia, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal } from '@/modules/payroll/lib/fechas'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
@@ -39,6 +46,7 @@ export type RefrescarHorasResult =
 
 interface ContratoRow {
   lab_salario_base: number | null
+  lab_salario_real: number | null
   sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
 }
 
@@ -56,6 +64,9 @@ interface DetalleRow {
   ndt_horas_extra_asistencia: number | null
   sgrh_nomina_periodo: {
     npe_estado: string
+    npe_periodo_mes: number
+    npe_periodo_anio: number
+    npe_quincena: number
     npe_fecha_inicio_periodo: string | null
     npe_fecha_fin_periodo: string | null
   } | null
@@ -99,7 +110,10 @@ export async function refrescarHorasAsistencia(
        ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora,
        ndt_salario_bruto, ndt_salario_neto,
        ndt_horas_asistencia, ndt_horas_extra_asistencia,
-       sgrh_nomina_periodo ( npe_estado, npe_fecha_inicio_periodo, npe_fecha_fin_periodo )`
+       sgrh_nomina_periodo (
+         npe_estado, npe_periodo_mes, npe_periodo_anio, npe_quincena,
+         npe_fecha_inicio_periodo, npe_fecha_fin_periodo
+       )`
     )
     .eq('ndt_id', ndtId)
     .maybeSingle<DetalleRow>()
@@ -212,6 +226,9 @@ export async function refrescarHorasAsistencia(
   if (!hayConceptoSalarioBase(conceptos)) {
     return { ok: false, error: ERROR_SIN_CONCEPTO_BASE }
   }
+  if (!hayConceptoAjuste(conceptos)) {
+    return { ok: false, error: ERROR_SIN_CONCEPTO_AJUSTE }
+  }
 
   const { montos, ajenas, error: errMontos } = await leerMontosGuardados(supabase, ndtId, conceptos)
   if (errMontos) {
@@ -220,7 +237,9 @@ export async function refrescarHorasAsistencia(
 
   const { data: contrato, error: errContrato } = await supabase
     .from('sgrh_historial_laboral')
-    .select('lab_salario_base, sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )')
+    .select(
+      'lab_salario_base, lab_salario_real, sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )'
+    )
     .eq('lab_id', detalle.ndt_historial_laboral_id)
     .maybeSingle<ContratoRow>()
 
@@ -237,39 +256,46 @@ export async function refrescarHorasAsistencia(
     }
   }
 
-  const horasSemanales = contrato.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null
-  const prellenado = prellenarDesdeAsistencia(salarioBase, leidas, horasSemanales)
+  const contratoPago = {
+    salarioBaseMensual: salarioBase,
+    salarioRealMensual: contrato.lab_salario_real,
+    horasSemanales: contrato.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
+  }
+  const quincena = {
+    anio: periodo.npe_periodo_anio,
+    mes: periodo.npe_periodo_mes,
+    quincena: periodo.npe_quincena,
+  }
+  const prellenado = prellenarDesdeAsistencia(contratoPago, leidas, quincena)
 
   // Traer las horas sin mover el BASE no cambiaba un colón: el bruto sale de
   // los montos, no de las horas. Alguien que trabajó media quincena seguía
   // cobrando la quincena entera y el botón parecía no hacer nada.
   //
   // Pero el BASE también se puede haber editado a mano, y eso no se pisa. Se
-  // considera intacto en tres casos:
+  // considera intacto —o sea, lo puso el sistema y se puede rehacer— si:
   //
   //  - No hay BASE, o está en cero. Eso NO es una edición: es una ausencia, y
   //    tratarla como decisión deliberada era el bug que dejaba filas con horas
   //    y ₡0 a pagar, avisando además "el salario base estaba editado a mano"
   //    contra alguien que no editó nada.
-  //  - Coincide con lo que le tocaría a las horas que la fila tiene guardadas.
-  //  - Coincide con la quincena entera, que es como nacen las filas cuando la
-  //    asistencia todavía no servía.
-  const mitadMensual = salarioBase / 2
-  const baseSegunHorasGuardadas = prellenarDesdeAsistencia(
-    salarioBase,
-    { ...leidas, horasOrdinarias: guardadas.horas, horasExtra: guardadas.horasExtra },
-    horasSemanales
-  ).base
-
-  const baseActual = montos.BASE ?? 0
+  //  - Coincide con lo que el sistema le habría puesto a esas horas con
+  //    CUALQUIERA de las reglas que existieron (ver basesDelSistema). Mirar
+  //    solo la regla de hoy hacía que una fila armada con la regla vieja —la
+  //    que rebajaba las vacaciones— se leyera como "editada a mano", y el
+  //    recálculo la dejaba igual justo cuando había que corregirla.
+  const baseActual = montos[CODIGO_SALARIO_BASE] ?? 0
   const baseIntacto =
     baseActual <= 0 ||
-    Math.abs(baseActual - baseSegunHorasGuardadas) < 0.5 ||
-    Math.abs(baseActual - round2(mitadMensual)) < 0.5
+    esBaseDelSistema(baseActual, basesDelSistema(contratoPago, guardadas, leidas, quincena))
 
   if (baseIntacto) {
-    montos.BASE = prellenado.base
+    montos[CODIGO_SALARIO_BASE] = prellenado.base
   }
+  // El ajuste no se digita: siempre es el de la regla, aunque el BASE se haya
+  // conservado a mano. Uno escrito a mano antes de que fuera automático se
+  // reemplaza acá.
+  montos[CODIGO_AJUSTE] = prellenado.ajuste
 
   const { conceptos: conceptosCalculo, montos: montosFinales } = fusionarAjenas(
     conceptos,
@@ -296,7 +322,7 @@ export async function refrescarHorasAsistencia(
   // es el mismo y es silencioso: guardar ₡0 junto a unas horas correctas
   // produce una fila que parece calculada y no lo está. Mejor no escribir nada
   // y decirlo.
-  if (salarioBruto <= 0 && prellenado.base > 0) {
+  if (salarioBruto <= 0 && prellenado.pagoTotal > 0) {
     return {
       ok: false,
       error:

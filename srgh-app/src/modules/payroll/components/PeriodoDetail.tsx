@@ -52,6 +52,31 @@ interface PeriodoDetailProps {
 }
 
 /**
+ * Por qué se pagó (o no) un día que no se trabajó. Nombra el código del tipo
+ * de ausencia tal cual: es lo que el encargado busca en el catálogo.
+ */
+function textoJustificacion(dia: DetalleNominaItem['dias'][number]): string | null {
+  const j = dia.justificacion
+  if (!j) return null
+
+  const quien = j.motivo === 'feriado' ? 'Feriado' : `Ausencia ${j.codigo ?? 'aprobada'}`
+  const horas =
+    dia.horasAcreditadas > 0
+      ? `${formatHoras(dia.horasAcreditadas)} h`
+      : dia.diaAcreditadoSinHorario > 0
+        ? 'jornada diaria promedio'
+        : null
+
+  if (j.fraccionPagada <= 0) {
+    return j.motivo === 'ausencia'
+      ? `${quien}: no se paga en el salario (sin goce, o subsidio que se paga aparte)`
+      : `${quien}: no se paga`
+  }
+  if (j.esIntradia) return horas ? `${quien}: se pagan ${horas} que faltaron` : quien
+  return horas ? `${quien}: se pagan ${horas}` : quien
+}
+
+/**
  * De dónde salió el total de horas: un día por fila, con lo que tenía
  * programado y lo que marcó.
  *
@@ -100,11 +125,14 @@ function DesgloseHoras({ detalle: d }: { detalle: DetalleNominaItem }) {
                   {dia.horasExtra > 0 ? formatHoras(dia.horasExtra) : '—'}
                 </td>
                 <td className="py-1.5 text-[11px]">
+                  {textoJustificacion(dia) && (
+                    <span className="block text-emerald-700">{textoJustificacion(dia)}</span>
+                  )}
                   {dia.problema ? (
-                    <span className="font-semibold text-amber-600">
+                    <span className="block font-semibold text-amber-600">
                       {MENSAJE_PROBLEMA[dia.problema]}
                     </span>
-                  ) : dia.cuenta ? (
+                  ) : dia.cuenta || dia.justificacion ? (
                     ''
                   ) : (
                     'no cuenta para el periodo'
@@ -342,7 +370,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
       ? ' El salario base estaba editado a mano y lo dejé como estaba: revisalo.'
       : ''
     toast.success(
-      `Horas actualizadas: ${formatHoras(result.horas)} h${
+      `Fila recalculada: ${formatHoras(result.horas)} h${
         result.horasExtra > 0 ? ` y ${formatHoras(result.horasExtra)} h extra` : ''
       }.${aviso}`
     )
@@ -378,6 +406,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   // que la asistencia entrara al cálculo). Se avisa arriba porque en la tabla,
   // entre nueve columnas de montos, un 0 no salta a la vista.
   const conFilasEnCero = periodo.detalles.filter(filaEnCero)
+  // El salario base guardado salió de una regla vieja (antes, vacaciones y
+  // feriados rebajaban el base). El pago está bloqueado hasta recalcular.
+  const conBaseDesactualizado = periodo.detalles.filter(
+    (d) => d.baseDesactualizado && !d.pagado && !filaEnCero(d)
+  )
   const totalDeduccionPorcentual = periodo.detalles.reduce(
     (sum, d) => sum + d.deduccionPorcentual,
     0
@@ -430,8 +463,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     // El botón solo aparece cuando de verdad hay algo distinto que traer, y
     // nunca sobre una fila ya pagada ni un periodo cerrado. Ahorra tener que
     // bajar y volver a subir el Excel entero por un solo empleado.
+    // También aparece si el salario base guardado salió de una regla vieja
+    // (ej. vacaciones que rebajaban el base), aunque las horas no cambien.
+    const baseViejo = d.baseDesactualizado && d.baseEsperado !== null
     const boton =
-      puedeEditar && !d.pagado && nuevas ? (
+      puedeEditar && !d.pagado && (nuevas || baseViejo) ? (
         <button
           type="button"
           onClick={() => handleRefrescarHoras(d, false)}
@@ -439,9 +475,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           title={
             filaEnCero(d)
               ? 'Esta fila tiene horas pero está en ₡0. Recalcula el salario desde la asistencia.'
-              : `La asistencia dice ${formatHoras(nuevas.horas)} h${
-                  nuevas.horasExtra > 0 ? ` y ${formatHoras(nuevas.horasExtra)} h extra` : ''
-                }. Recalcula esta fila con esas horas.`
+              : !nuevas
+                ? `El salario guardado ya no corresponde; con la regla actual es ${formatCRC(d.baseEsperado ?? 0)} de base y ${formatCRC(d.ajusteEsperado ?? 0)} de ajuste. Recalcula esta fila.`
+                : `La asistencia dice ${formatHoras(nuevas.horas)} h${
+                    nuevas.horasExtra > 0 ? ` y ${formatHoras(nuevas.horasExtra)} h extra` : ''
+                  }. Recalcula esta fila con esas horas.`
           }
           className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
         >
@@ -450,7 +488,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           ) : (
             <RefreshCw className="h-3 w-3" />
           )}
-          {filaEnCero(d) ? 'recalcular — está en ₡0' : `traer ${formatHoras(nuevas.horas)} h`}
+          {filaEnCero(d)
+            ? 'recalcular — está en ₡0'
+            : nuevas
+              ? `traer ${formatHoras(nuevas.horas)} h`
+              : 'recalcular salario'}
         </button>
       ) : null
 
@@ -628,20 +670,24 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
       {conDiasSinHorario.length > 0 && (
         <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
           <p className="text-sm font-semibold text-sky-900">
-            {conDiasSinHorario.length} empleado(s) marcaron un día sin horario programado
+            {conDiasSinHorario.length} empleado(s) con días para revisar
           </p>
           <p className="mt-1 text-xs leading-relaxed text-sky-800">
-            Esas horas no se contaron porque no había jornada contra la cual medirlas. Si de verdad
-            trabajaron ese día, asignáles el horario en Horarios y volvé a armar el periodo; si fue
-            un toque de más en el kiosco, dejalo así. Esto no bloquea el pago.
+            Marcas en días sin horario, en feriados, en días libres o con ausencia, y días pagados
+            sin horario programado. Ninguno bloquea el pago, pero algunos pueden significar plata
+            que falta pagar (un feriado trabajado se paga doble). Cada línea dice qué hacer.
           </p>
           <ul className="mt-2 space-y-1 text-xs text-sky-900">
             {conDiasSinHorario.map(({ detalle, dias }) => (
               <li key={detalle.id}>
-                <span className="font-semibold">{detalle.empleadoNombre}</span>{' '}
-                <span className="text-sky-700">
-                  — {dias.map((r) => formatDate(r.fecha)).join(', ')}
-                </span>
+                <span className="font-semibold">{detalle.empleadoNombre}</span>
+                <ul className="ml-3 mt-0.5 space-y-0.5 text-sky-700">
+                  {dias.map((r) => (
+                    <li key={`${r.fecha}-${r.problema}`}>
+                      {formatDate(r.fecha)} — {MENSAJE_PROBLEMA[r.problema as ProblemaDia]}
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>
@@ -699,6 +745,43 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                 <span className="text-rose-700">
                   — {formatHoras(d.horasTrabajadas)} h
                   {d.horasExtra > 0 ? ` y ${formatHoras(d.horasExtra)} h extra` : ''}, ₡0
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {conBaseDesactualizado.length > 0 && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-semibold text-rose-900">
+            {conBaseDesactualizado.length} empleado(s) con el salario desactualizado
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+            Su fila se armó con una regla de pago anterior: el salario base ahora es base ÷ 30 por
+            día de la quincena, y la diferencia hasta el salario real se paga como ajuste
+            automático, los dos según el cumplimiento del horario. El pago está bloqueado hasta
+            recalcularla.{' '}
+            {puedeEditar ? (
+              <>
+                Usá <span className="font-semibold">Recalcular desde asistencia</span>, arriba de la
+                tabla, o el botón <span className="font-semibold">recalcular salario</span> de cada
+                fila. Un base editado a mano se conserva; el ajuste siempre se recalcula.
+              </>
+            ) : (
+              <>
+                Hay que recalcularlo con el periodo en borrador y con permiso de escritura sobre
+                nómina.
+              </>
+            )}
+          </p>
+          <ul className="mt-2 space-y-1 text-xs text-rose-900">
+            {conBaseDesactualizado.map((d) => (
+              <li key={d.id}>
+                <span className="font-semibold">{d.empleadoNombre}</span>{' '}
+                <span className="text-rose-700">
+                  — base {formatCRC(d.baseEsperado ?? 0)} + ajuste{' '}
+                  {formatCRC(d.ajusteEsperado ?? 0)}
                 </span>
               </li>
             ))}

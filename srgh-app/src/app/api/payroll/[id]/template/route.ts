@@ -5,7 +5,6 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { buildPlanillaTemplate } from '@/modules/payroll/lib/planillaExcel'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
-import { salarioPorHoraPeriodo } from '@/modules/payroll/lib/horasPeriodo'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import type { ConceptoPlanillaColumna } from '@/modules/payroll/lib/planilla'
 
@@ -102,9 +101,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   // Horas reales de la quincena, a partir de las marcas del kiosco. Si el
-  // periodo no tiene fechas o la lectura falla, la plantilla sale igual con el
-  // supuesto anterior (jornada completa): dejar al encargado sin planilla
-  // seria peor que darle un prellenado que igual va a revisar.
+  // periodo no tiene fechas o la lectura falla, la plantilla sale igual pero
+  // en ₡0 (sin horas programadas el cumplimiento es 0): dejar al encargado sin
+  // planilla seria peor, y el cero salta a la vista al revisarla.
   const conFechas = periodo.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo
   const horasResult = conFechas
     ? await getHorasDelPeriodo(supabase, {
@@ -122,13 +121,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     return {
       ...empleado,
-      horas: {
-        trabajadas: totales.horasOrdinarias,
-        extra: totales.horasExtra,
-        esperadas: totales.horasEsperadas,
-        salarioPorHora: salarioPorHoraPeriodo(empleado.salarioBaseMensual, totales.horasEsperadas),
-        diasPorRevisar: totales.diasConProblema.length,
-      },
+      horas: { lectura: totales, diasPorRevisar: totales.diasQueBloquean.length },
     }
   })
 
@@ -139,7 +132,20 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   )}`
   const subtitulo = `Sucursal: ${periodo.sgrh_sucursales?.suc_nombre ?? '—'} · Montos por quincena en colones`
 
-  const buffer = await buildPlanillaTemplate({ titulo, subtitulo, periodoId }, empleados, conceptos)
+  const buffer = await buildPlanillaTemplate(
+    {
+      titulo,
+      subtitulo,
+      periodoId,
+      quincena: {
+        anio: periodo.npe_periodo_anio,
+        mes: periodo.npe_periodo_mes,
+        quincena: periodo.npe_quincena,
+      },
+    },
+    empleados,
+    conceptos
+  )
 
   const filename = `planilla-${periodo.npe_periodo_anio}-${String(periodo.npe_periodo_mes).padStart(2, '0')}-q${periodo.npe_quincena}.xlsx`
 

@@ -26,6 +26,7 @@ const DETALLE_BASE = {
   sgrh_nomina_periodo: {
     npe_periodo_mes: 6,
     npe_periodo_anio: 2026,
+    npe_quincena: 1,
     npe_fecha_inicio_periodo: '2026-06-01',
     npe_fecha_fin_periodo: '2026-06-15',
   },
@@ -37,6 +38,13 @@ const SIN_PROBLEMAS = {
   horasExtra: 0,
   diasConProblema: [],
   diasQueBloquean: [],
+  horasAcreditadas: 0,
+  diasAcreditadosSinHorario: 0,
+  diasJustificados: 0,
+  periodoCubiertoPorAusencias: false,
+  horasProgramadasTotales: 88,
+  diasJustificadosSinHorario: 0,
+  diasSinProgramar: 0,
   dias: [],
 }
 
@@ -47,6 +55,14 @@ function mockSupabase(
     // Sin comprobante previo: la acción emite uno al marcar el pago. Los
     // tests que quieran otro escenario lo declaran ellos.
     sgrh_comprobantes_pago: { data: null, error: null },
+    // Verificación del BASE contra la asistencia. Por defecto no hay nada que
+    // verificar (contrato sin salario): cada test que quiera probarla la
+    // declara.
+    sgrh_nomina_linea_ingreso: { data: [], error: null },
+    sgrh_historial_laboral: {
+      data: { lab_salario_base: 0, sgrh_cat_tipos_jornada: null },
+      error: null,
+    },
     ...responses,
   })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
@@ -508,6 +524,155 @@ describe('marcarDetallePagado (server action)', () => {
     })
 
     const result = await marcarDetallePagado(10, false)
+
+    expect(result.ok).toBe(true)
+  })
+  // Vacaciones aprobadas DESPUÉS de armar la fila: las horas trabajadas no
+  // cambian, así que el bloqueo por marcas no salta, pero el salario que
+  // corresponde es otro. Pagarla así era pagar media quincena por una semana
+  // de vacaciones.
+  describe('BASE desactualizado', () => {
+    const CON_VACACIONES = {
+      ...SIN_PROBLEMAS,
+      horasEsperadas: 48,
+      horasOrdinarias: 48,
+      horasAcreditadas: 48,
+      horasProgramadasTotales: 96,
+      diasJustificados: 6,
+    }
+    const fila = {
+      ...DETALLE_BASE,
+      ndt_horas_ordinarias_diurnas: 48,
+      ndt_horas_extra_al_50: 0,
+      ndt_horas_asistencia: 48,
+      ndt_horas_extra_asistencia: 0,
+    }
+    const contrato = {
+      data: {
+        lab_salario_base: 600000,
+        lab_salario_real: 600000,
+        sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: 48 },
+      },
+      error: null,
+    }
+    const baseDe = (monto: number) => ({
+      data: [{ ing_monto: monto, sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' } }],
+      error: null,
+    })
+
+    it('no deja pagar un BASE que armó el sistema con la regla vieja', async () => {
+      mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map([[77, CON_VACACIONES]]) })
+      mockSupabase({
+        sgrh_nomina_detalle: { data: { ...fila, ndt_pagado: false }, error: null },
+        // 48 de 96 h sin acreditar las vacaciones: la mitad de 300.000.
+        sgrh_nomina_linea_ingreso: baseDe(150000),
+        sgrh_historial_laboral: contrato,
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('Recalcular desde asistencia')
+    })
+
+    it('deja pagar un BASE corregido a mano (no es de ninguna regla del sistema)', async () => {
+      mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map([[77, CON_VACACIONES]]) })
+      mockSupabase({
+        sgrh_nomina_detalle: [{ data: { ...fila, ndt_pagado: false }, error: null }, OK],
+        sgrh_nomina_linea_ingreso: baseDe(212345),
+        sgrh_historial_laboral: contrato,
+        sgrh_nomina_periodo: OK,
+        sgrh_provisiones_anuales: OK,
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(true)
+    })
+
+    // El ajuste ya no se digita: uno que no es el de la regla traba el pago.
+    it('no deja pagar si el ajuste no es el de la regla', async () => {
+      mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map([[77, CON_VACACIONES]]) })
+      mockSupabase({
+        sgrh_nomina_detalle: { data: { ...fila, ndt_pagado: false }, error: null },
+        // Base correcto (600.000 ÷ 30 × 15) pero sin el ajuste hasta el real.
+        sgrh_nomina_linea_ingreso: baseDe(300000),
+        sgrh_historial_laboral: {
+          data: { ...contrato.data, lab_salario_real: 645000 },
+          error: null,
+        },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toMatch(/₡22\D?500 de ajuste/)
+    })
+
+    it('si no puede verificar el BASE, no marca el pago', async () => {
+      mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map([[77, CON_VACACIONES]]) })
+      mockSupabase({
+        sgrh_nomina_detalle: { data: { ...fila, ndt_pagado: false }, error: null },
+        sgrh_nomina_linea_ingreso: { data: null, error: { message: 'boom' } },
+        sgrh_historial_laboral: contrato,
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('No se pudo verificar')
+    })
+  })
+
+  // Una quincena entera de incapacidad o de permiso sin goce va en ₡0 de
+  // salario, y tiene que poder marcarse: si no, el periodo no se cierra nunca.
+  it('deja marcar en ₡0 una quincena cubierta entera por ausencias', async () => {
+    mockGetHorasDelPeriodo.mockResolvedValue({
+      ok: true,
+      data: new Map([
+        [
+          77,
+          {
+            ...SIN_PROBLEMAS,
+            horasEsperadas: 0,
+            horasOrdinarias: 0,
+            diasJustificados: 15,
+            periodoCubiertoPorAusencias: true,
+          },
+        ],
+      ]),
+    })
+    mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_salario_bruto: 0, ndt_pagado: false }, error: null },
+        OK,
+      ],
+      sgrh_nomina_periodo: OK,
+      sgrh_provisiones_anuales: OK,
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result.ok).toBe(true)
+  })
+
+  // Regla del negocio: tenía horario y no marcó ningún día → 0 h, ₡0. Es el
+  // monto correcto, no una fila a medias, y el periodo tiene que poder cerrarse.
+  it('deja marcar en ₡0 a quien tenía horario y no vino ningún día', async () => {
+    mockGetHorasDelPeriodo.mockResolvedValue({
+      ok: true,
+      data: new Map([[77, { ...SIN_PROBLEMAS, horasOrdinarias: 0 }]]),
+    })
+    mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_salario_bruto: 0, ndt_pagado: false }, error: null },
+        OK,
+      ],
+      sgrh_nomina_periodo: OK,
+      sgrh_provisiones_anuales: OK,
+    })
+
+    const result = await marcarDetallePagado(1, true)
 
     expect(result.ok).toBe(true)
   })

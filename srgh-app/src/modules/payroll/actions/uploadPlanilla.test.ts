@@ -26,7 +26,14 @@ const mockParsePlanillaWorkbook = vi.mocked(parsePlanillaWorkbook)
 const mockGetEmpleadosActivos = vi.mocked(getEmpleadosActivos)
 const mockGetFotoAsistencia = vi.mocked(getFotoAsistencia)
 
-const PERIODO_BORRADOR = { npe_id: 1, npe_estado: 'borrador', npe_sucursal_id: 2 }
+const PERIODO_BORRADOR = {
+  npe_id: 1,
+  npe_estado: 'borrador',
+  npe_sucursal_id: 2,
+  npe_periodo_mes: 8,
+  npe_periodo_anio: 2026,
+  npe_quincena: 1,
+}
 
 // Conceptos activos "base" del catálogo: un ingreso manual (BASE) y la
 // deducción porcentual de CCSS — el mínimo para que la planilla calcule algo.
@@ -48,6 +55,15 @@ const CONCEPTOS = [
     con_afecta_base_ccss: true,
     con_tipo_calculo: 'porcentaje_deduccion_bruto',
     con_porcentaje: 10.83,
+  },
+  {
+    con_id: 25,
+    con_codigo: 'AJUSTE',
+    con_nombre: 'Ajuste',
+    con_afecta_salario_bruto: true,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
   },
 ]
 
@@ -225,6 +241,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'KEEP',
           nombre: 'Ana',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -269,6 +286,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'NEW',
           nombre: 'Nuevo',
           salarioBaseMensual: 100000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -286,6 +304,91 @@ describe('uploadPlanilla (server action)', () => {
     })
   })
 
+  // El ajuste no se toma del archivo: se recalcula con las horas de la fila y
+  // el cumplimiento del horario. 88 de 96 h programadas en la Q1 de agosto,
+  // base 400.000 y real 430.000: objetivo 215.000 × 88/96 = 197.083,33; base
+  // 200.000 × 88/96 = 183.333,33; ajuste 13.750.
+  it('recalcula el ajuste en el servidor e ignora el del archivo', async () => {
+    mockGetFotoAsistencia.mockResolvedValue({
+      estado: 'ok',
+      datos: new Map([[60, { horas: 88, horasExtra: 0 }]]),
+      totales: new Map([
+        [
+          60,
+          {
+            horasEsperadas: 96,
+            horasOrdinarias: 88,
+            horasExtra: 0,
+            horasAcreditadas: 0,
+            diasAcreditadosSinHorario: 0,
+            diasJustificados: 0,
+            periodoCubiertoPorAusencias: false,
+            horasProgramadasTotales: 96,
+            diasJustificadosSinHorario: 0,
+            diasSinProgramar: 0,
+            diasConProblema: [],
+            diasQueBloquean: [],
+            dias: [],
+          },
+        ],
+      ]),
+    })
+    const client = mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        { data: [], error: null },
+        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60 }], error: null },
+      ],
+      sgrh_nomina_linea_ingreso: OK,
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: OK,
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('NEW', { BASE: 183333.33, AJUSTE: 99999 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          labId: 60,
+          cedula: 'NEW',
+          nombre: 'Nuevo',
+          salarioBaseMensual: 400000,
+          salarioRealMensual: 430000,
+          horasSemanales: 48,
+        },
+      ],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(true)
+    const lineas = argumentos(client, 'sgrh_nomina_linea_ingreso', 'insert').flat()
+    expect(lineas).toContainEqual(
+      expect.objectContaining({ ing_concepto_id: 25, ing_monto: 13750 })
+    )
+    expect(lineas).not.toContainEqual(expect.objectContaining({ ing_monto: 99999 }))
+    expect(argumentos(client, 'sgrh_nomina_detalle', 'insert').flat()).toContainEqual(
+      expect.objectContaining({ ndt_salario_bruto: 197083.33 })
+    )
+  })
+
+  it('rechaza la subida si el catálogo no tiene el concepto AJUSTE', async () => {
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS.slice(0, 2), error: null },
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('AJUSTE')
+    expect(mockParsePlanillaWorkbook).not.toHaveBeenCalled()
+  })
+
   // La regla del negocio: mandan las marcas, pero el Excel puede corregirlas y
   // esa correccion tiene que quedar registrada. Cada fila guarda la foto de lo
   // que dijo la asistencia, aparte de las horas que se pagan.
@@ -293,6 +396,7 @@ describe('uploadPlanilla (server action)', () => {
     mockGetFotoAsistencia.mockResolvedValue({
       estado: 'ok',
       datos: new Map([[60, { horas: 84, horasExtra: 3 }]]),
+      totales: new Map(),
     })
 
     const client = mockSupabase({
@@ -319,6 +423,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'NEW',
           nombre: 'Nuevo',
           salarioBaseMensual: 100000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -348,6 +453,7 @@ describe('uploadPlanilla (server action)', () => {
     mockGetFotoAsistencia.mockResolvedValue({
       estado: 'ok',
       datos: new Map([[60, { horas: 84, horasExtra: 3 }]]),
+      totales: new Map(),
     })
 
     const client = mockSupabase({
@@ -375,6 +481,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'NEW',
           nombre: 'Nuevo',
           salarioBaseMensual: 100000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -449,6 +556,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'CHG',
           nombre: 'Cambio',
           salarioBaseMensual: 600000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -521,6 +629,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'HORAS',
           nombre: 'Con Horas',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -598,6 +707,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'KEEP',
           nombre: 'Ana',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -653,6 +763,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'CONPRESTAMO',
           nombre: 'Con Préstamo',
           salarioBaseMensual: 400000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -683,6 +794,7 @@ describe('uploadPlanilla (server action)', () => {
     mockGetFotoAsistencia.mockResolvedValue({
       estado: 'ok',
       datos: new Map([[55, { horas: 90, horasExtra: 0 }]]),
+      totales: new Map(),
     })
 
     mockSupabase({
@@ -741,6 +853,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'KEEP',
           nombre: 'Ana',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -759,6 +872,7 @@ describe('uploadPlanilla (server action)', () => {
     mockGetFotoAsistencia.mockResolvedValue({
       estado: 'ok',
       datos: new Map([[55, { horas: 90, horasExtra: 0 }]]),
+      totales: new Map(),
     })
 
     mockSupabase({
@@ -816,6 +930,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'KEEP',
           nombre: 'Ana',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -848,6 +963,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'KEEP',
           nombre: 'Ana',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -917,6 +1033,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'KEEP',
           nombre: 'Ana',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -973,6 +1090,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'KEEP',
           nombre: 'Ana',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
         {
@@ -980,6 +1098,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'OUT',
           nombre: 'Beto Solís',
           salarioBaseMensual: 200000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],
@@ -1079,6 +1198,7 @@ describe('uploadPlanilla (server action)', () => {
           cedula: 'BANCO',
           nombre: 'Con Banco',
           salarioBaseMensual: 600000,
+          salarioRealMensual: null,
           horasSemanales: 48,
         },
       ],

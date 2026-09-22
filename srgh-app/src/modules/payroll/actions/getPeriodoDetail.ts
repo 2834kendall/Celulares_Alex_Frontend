@@ -9,7 +9,9 @@ import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
-import type { DiaCalculado } from '@/modules/payroll/lib/horasPeriodo'
+import type { DiaCalculado, TotalesPeriodo } from '@/modules/payroll/lib/horasPeriodo'
+import { evaluarBaseGuardado } from '@/modules/payroll/lib/prellenadoAsistencia'
+import { CODIGO_AJUSTE, CODIGO_SALARIO_BASE } from '@/modules/payroll/lib/planilla'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
 
@@ -46,6 +48,8 @@ interface DetalleRow {
   ndt_horas_ajustadas_en: string | null
   sgrh_historial_laboral: {
     lab_salario_base: number
+    lab_salario_real: number | null
+    sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
     sgrh_empleados: {
       emp_id: number
       emp_nombre: string
@@ -150,6 +154,8 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_horas_ajustadas_en,
       sgrh_historial_laboral (
         lab_salario_base,
+        lab_salario_real,
+        sgrh_cat_tipos_jornada ( tjo_horas_max_semanales ),
         sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
       )
     `
@@ -193,6 +199,9 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // Día por día, para poder responder "¿de dónde salió este número?" sin
   // tener que ir a la pantalla de asistencia a reconstruirlo a mano.
   const diasPorLab = new Map<number, DiaCalculado[]>()
+  // La lectura completa, para saber si el BASE guardado sigue correspondiendo
+  // (ver evaluarBaseGuardado).
+  const totalesPorLab = new Map<number, TotalesPeriodo>()
   if (
     (detalles ?? []).length > 0 &&
     periodo.npe_fecha_inicio_periodo &&
@@ -220,6 +229,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
           })
         }
         diasPorLab.set(labId, totales.dias)
+        totalesPorLab.set(labId, totales)
       }
     }
   }
@@ -379,6 +389,30 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
     }
     const asistenciaAhora = asistenciaAhoraPorLab.get(row.ndt_historial_laboral_id) ?? null
 
+    // Un BASE que puso el sistema y que hoy daría otro monto sin que cambien
+    // las horas: ausencias o feriados aprobados después de armar la fila. Solo
+    // importa mientras no esté pagada; lo pagado no se toca.
+    const montosFila = montosPorNdt.get(row.ndt_id) ?? {}
+    const evaluacionBase = row.ndt_pagado
+      ? { desactualizado: false, esperado: null, ajusteEsperado: null }
+      : evaluarBaseGuardado({
+          baseGuardado: montosFila[CODIGO_SALARIO_BASE] ?? 0,
+          ajusteGuardado: montosFila[CODIGO_AJUSTE] ?? 0,
+          contrato: {
+            salarioBaseMensual: row.sgrh_historial_laboral?.lab_salario_base ?? 0,
+            salarioRealMensual: row.sgrh_historial_laboral?.lab_salario_real ?? null,
+            horasSemanales:
+              row.sgrh_historial_laboral?.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
+          },
+          guardadas,
+          lectura: totalesPorLab.get(row.ndt_historial_laboral_id) ?? null,
+          quincena: {
+            anio: periodo.npe_periodo_anio,
+            mes: periodo.npe_periodo_mes,
+            quincena: periodo.npe_quincena,
+          },
+        })
+
     return {
       id: row.ndt_id,
       historialLaboralId: row.ndt_historial_laboral_id,
@@ -406,6 +440,9 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       horasAjustadasEn: row.ndt_horas_ajustadas_en ?? null,
       marcasCambiaron: asistenciaAhora ? marcasCambiaron(foto, asistenciaAhora) : false,
       horasAsistenciaAhora: asistenciaAhora,
+      baseDesactualizado: evaluacionBase.desactualizado,
+      baseEsperado: evaluacionBase.esperado,
+      ajusteEsperado: evaluacionBase.ajusteEsperado,
       dias: diasPorLab.get(row.ndt_historial_laboral_id) ?? [],
       incapacidad,
       totalAPagar: round2(row.ndt_salario_neto + (incapacidad?.monto ?? 0)),

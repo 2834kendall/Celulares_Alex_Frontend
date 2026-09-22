@@ -28,14 +28,17 @@ const DETALLE = {
   ndt_pagado: false,
   ndt_horas_ordinarias_diurnas: 96,
   ndt_horas_extra_al_50: 0,
-  // 600000 / 2 / 96, y el neto tras la CCSS del 10,83 %.
-  ndt_salario_por_hora: 3125,
+  // Salario real 600000 / 30 / 8, y el neto tras la CCSS del 10,83 %.
+  ndt_salario_por_hora: 2500,
   ndt_salario_bruto: 300000,
   ndt_salario_neto: 267510,
   ndt_horas_asistencia: 96,
   ndt_horas_extra_asistencia: 0,
   sgrh_nomina_periodo: {
     npe_estado: 'borrador',
+    npe_periodo_mes: 9,
+    npe_periodo_anio: 2026,
+    npe_quincena: 1,
     npe_fecha_inicio_periodo: '2026-09-01',
     npe_fecha_fin_periodo: '2026-09-15',
   },
@@ -60,6 +63,15 @@ const CONCEPTOS = [
     con_tipo_calculo: 'porcentaje_deduccion_bruto',
     con_porcentaje: 10.83,
   },
+  {
+    con_id: 25,
+    con_codigo: 'AJUSTE',
+    con_tipo: 'ingreso',
+    con_afecta_salario_bruto: true,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  },
 ]
 
 /** 99 h trabajadas de 96 programadas, con 3 de extra. */
@@ -70,6 +82,13 @@ function totales(over: Record<string, unknown> = {}) {
     horasExtra: 3,
     diasConProblema: [],
     diasQueBloquean: [],
+    horasAcreditadas: 0,
+    diasAcreditadosSinHorario: 0,
+    diasJustificados: 0,
+    periodoCubiertoPorAusencias: false,
+    horasProgramadasTotales: (over.horasEsperadas as number | undefined) ?? 96,
+    diasJustificadosSinHorario: 0,
+    diasSinProgramar: 0,
     dias: [],
     ...over,
   }
@@ -93,6 +112,7 @@ function escenario(
     sgrh_historial_laboral: {
       data: {
         lab_salario_base: 600000,
+        lab_salario_real: 600000,
         sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: 48 },
       },
       error: null,
@@ -218,12 +238,9 @@ describe('refrescarHorasAsistencia (server action)', () => {
     ).toContainEqual(expect.objectContaining({ ded_concepto_id: 6, ded_monto: 32490 }))
   })
 
-  // Asignarle un horario a un día sube las horas programadas del periodo, y el
-  // valor de la hora se prorratea sobre esas horas. Si no se recalculara,
-  // refrescar dejaría un número distinto al de volver a subir el Excel.
   // Un solo día programado no cambia lo que vale la hora: eso lo dice el
-  // contrato. Antes salía de dividir el salario entre las horas programadas
-  // (600000 / 2 / 9 = ₡33.333) y el banco de horas sugería diez veces de más.
+  // contrato (salario real ÷ 30 ÷ 8). El pago, en cambio, es el cumplimiento
+  // del horario cargado (regla del negocio): 9 de 9 h programadas es el 100 %.
   it('el valor de la hora sale del contrato, no de las horas programadas', async () => {
     const client = escenario()
     mockGetHoras.mockResolvedValue({
@@ -233,10 +250,9 @@ describe('refrescarHorasAsistencia (server action)', () => {
 
     await refrescarHorasAsistencia(50)
 
-    // 600000 / 2 / 96 = 3125, y el base son 9 de esas 96 horas.
     expect(llamadas(client, 'sgrh_nomina_detalle', 'update')[0]).toMatchObject({
-      ndt_salario_por_hora: 3125,
-      ndt_salario_bruto: 28125,
+      ndt_salario_por_hora: 2500,
+      ndt_salario_bruto: 300000,
     })
   })
 
@@ -385,10 +401,10 @@ describe('refrescarHorasAsistencia (server action)', () => {
 
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.sinCambios).toBe(false)
-    // 9 de 96 horas: 300000 × 9 / 96.
+    // El valor hora de la fila vieja (33.333) se corrige al del contrato.
     expect(llamadas(client, 'sgrh_nomina_detalle', 'update')[0]).toMatchObject({
-      ndt_salario_por_hora: 3125,
-      ndt_salario_bruto: 28125,
+      ndt_salario_por_hora: 2500,
+      ndt_salario_bruto: 300000,
     })
   })
 
@@ -410,7 +426,7 @@ describe('refrescarHorasAsistencia (server action)', () => {
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.baseConservado).toBe(false)
 
-    // 99 h de una jornada de 96: la proporción se recorta a 1, cobra la quincena.
+    // 99 h de 96 programadas: el cumplimiento se recorta a 1, cobra la quincena.
     expect(
       (llamadas(client, 'sgrh_nomina_linea_ingreso', 'insert') as unknown[][]).flat()
     ).toContainEqual(expect.objectContaining({ ing_concepto_id: 1, ing_monto: 300000 }))
@@ -419,7 +435,7 @@ describe('refrescarHorasAsistencia (server action)', () => {
     })
   })
 
-  // El valor de la hora sale del CONTRATO (600000 / 2 / 96 = 3125), no de las
+  // El valor de la hora sale del CONTRATO (600000 / 30 / 8 = 2500), no de las
   // horas que alguien alcanzó a programar. Con 9 h programadas daba ₡26.111 y
   // el banco de horas sugería pagar diez veces de más.
   it('el valor de la hora sale de la jornada del contrato, no del periodo', async () => {
@@ -432,7 +448,7 @@ describe('refrescarHorasAsistencia (server action)', () => {
     await refrescarHorasAsistencia(50)
 
     expect(llamadas(client, 'sgrh_nomina_detalle', 'update')[0]).toMatchObject({
-      ndt_salario_por_hora: 3125,
+      ndt_salario_por_hora: 2500,
     })
   })
 
@@ -531,6 +547,173 @@ describe('refrescarHorasAsistencia (server action)', () => {
       const result = await refrescarHorasAsistencia(50)
 
       expect(result.ok).toBe(false)
+      expect(llamadas(client, 'sgrh_nomina_detalle', 'update')).toHaveLength(0)
+    })
+  })
+  // Hallazgo de la auditoría: una fila armada con la regla que no acreditaba
+  // las vacaciones (48 h trabajadas + 48 h de vacaciones → BASE de 150.000)
+  // se leía como "BASE editado a mano" y el recálculo la dejaba igual,
+  // respondiendo "sin cambios". Justo la fila que había que corregir.
+  it('rehace un BASE armado con una regla vieja aunque las horas no cambien', async () => {
+    const client = escenario(
+      {
+        ndt_horas_ordinarias_diurnas: 48,
+        ndt_horas_extra_al_50: 0,
+        ndt_horas_asistencia: 48,
+        ndt_horas_extra_asistencia: 0,
+        ndt_salario_por_hora: 2500,
+        ndt_salario_bruto: 150000,
+        ndt_salario_neto: 133755,
+      },
+      {
+        sgrh_nomina_linea_ingreso: [
+          {
+            data: [{ ing_monto: 150000, sgrh_cat_conceptos_nomina: { ...CONCEPTOS[0] } }],
+            error: null,
+          },
+          OK,
+          OK,
+        ],
+      }
+    )
+    mockGetHoras.mockResolvedValue({
+      ok: true,
+      data: new Map([
+        [
+          5,
+          totales({
+            horasEsperadas: 48,
+            horasOrdinarias: 48,
+            horasExtra: 0,
+            horasAcreditadas: 48,
+            horasProgramadasTotales: 96,
+            diasJustificados: 6,
+          }),
+        ],
+      ]),
+    })
+
+    const result = await refrescarHorasAsistencia(50)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.sinCambios).toBe(false)
+      expect(result.baseConservado).toBe(false)
+    }
+    expect(llamadas(client, 'sgrh_nomina_detalle', 'update')[0]).toMatchObject({
+      ndt_salario_bruto: 300000,
+    })
+  })
+
+  // Y uno corregido a mano sigue sin tocarse.
+  it('un BASE que no es de ninguna regla del sistema se conserva', async () => {
+    const client = escenario(
+      { ndt_horas_ordinarias_diurnas: 48, ndt_horas_asistencia: 48, ndt_salario_bruto: 212345 },
+      {
+        sgrh_nomina_linea_ingreso: [
+          {
+            data: [{ ing_monto: 212345, sgrh_cat_conceptos_nomina: { ...CONCEPTOS[0] } }],
+            error: null,
+          },
+          OK,
+          OK,
+        ],
+      }
+    )
+    mockGetHoras.mockResolvedValue({
+      ok: true,
+      data: new Map([
+        [
+          5,
+          totales({
+            horasEsperadas: 48,
+            horasOrdinarias: 48,
+            horasExtra: 0,
+            horasAcreditadas: 48,
+            horasProgramadasTotales: 96,
+          }),
+        ],
+      ]),
+    })
+
+    const result = await refrescarHorasAsistencia(50)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.baseConservado).toBe(true)
+    const escrito = llamadas(client, 'sgrh_nomina_linea_ingreso', 'insert') as unknown[][]
+    expect(escrito.flat()).toContainEqual(expect.objectContaining({ ing_monto: 212345 }))
+  })
+
+  // El ajuste hasta el salario real se escribe solo, y uno puesto a mano
+  // antes de que fuera automático se reemplaza.
+  describe('ajuste automático', () => {
+    const conReal = {
+      sgrh_historial_laboral: {
+        data: {
+          lab_salario_base: 600000,
+          lab_salario_real: 645000,
+          sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: 48 },
+        },
+        error: null,
+      },
+    }
+
+    it('escribe el ajuste hasta real ÷ 2 cuando se cumplió el horario', async () => {
+      const client = escenario({}, conReal)
+
+      await refrescarHorasAsistencia(50)
+
+      const lineas = (llamadas(client, 'sgrh_nomina_linea_ingreso', 'insert') as unknown[][]).flat()
+      expect(lineas).toContainEqual(
+        expect.objectContaining({ ing_concepto_id: 1, ing_monto: 300000 })
+      )
+      expect(lineas).toContainEqual(
+        expect.objectContaining({ ing_concepto_id: 25, ing_monto: 22500 })
+      )
+      expect(llamadas(client, 'sgrh_nomina_detalle', 'update')[0]).toMatchObject({
+        ndt_salario_bruto: 322500,
+        ndt_salario_por_hora: 2687.5, // 645000 / 30 / 8
+      })
+    })
+
+    it('reemplaza un ajuste digitado a mano por el de la regla', async () => {
+      const client = escenario(
+        {},
+        {
+          ...conReal,
+          sgrh_nomina_linea_ingreso: [
+            {
+              data: [
+                { ing_monto: 300000, sgrh_cat_conceptos_nomina: { ...CONCEPTOS[0] } },
+                { ing_monto: 50000, sgrh_cat_conceptos_nomina: { ...CONCEPTOS[2] } },
+              ],
+              error: null,
+            },
+            OK,
+            OK,
+          ],
+        }
+      )
+
+      await refrescarHorasAsistencia(50)
+
+      const lineas = (llamadas(client, 'sgrh_nomina_linea_ingreso', 'insert') as unknown[][]).flat()
+      expect(lineas).toContainEqual(
+        expect.objectContaining({ ing_concepto_id: 25, ing_monto: 22500 })
+      )
+      expect(lineas).not.toContainEqual(expect.objectContaining({ ing_monto: 50000 }))
+    })
+
+    it('no guarda nada si el catálogo no tiene el concepto AJUSTE', async () => {
+      const client = escenario(
+        {},
+        { sgrh_cat_conceptos_nomina: { data: CONCEPTOS.slice(0, 2), error: null } }
+      )
+
+      const result = await refrescarHorasAsistencia(50)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('AJUSTE')
       expect(llamadas(client, 'sgrh_nomina_detalle', 'update')).toHaveLength(0)
     })
   })

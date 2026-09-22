@@ -5,8 +5,12 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  ERROR_SIN_CONCEPTO_AJUSTE,
   agruparConceptosPlanilla,
   calcularPlanillaPorConceptos,
+  hayConceptoAjuste,
   sameRowValues,
   type ConceptoPlanillaColumna,
   type PlanillaRowInput,
@@ -27,6 +31,10 @@ import {
 } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal } from '@/modules/payroll/lib/fechas'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
+import {
+  baseParaHorasEditadas,
+  prellenarDesdeAsistencia,
+} from '@/modules/payroll/lib/prellenadoAsistencia'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
@@ -165,7 +173,9 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // 1. El periodo debe existir (RLS: solo de la empresa del JWT) y estar en borrador
   const { data: periodo, error: errPeriodo } = await supabase
     .from('sgrh_nomina_periodo')
-    .select('npe_id, npe_estado, npe_sucursal_id, npe_fecha_inicio_periodo, npe_fecha_fin_periodo')
+    .select(
+      'npe_id, npe_estado, npe_sucursal_id, npe_periodo_mes, npe_periodo_anio, npe_quincena, npe_fecha_inicio_periodo, npe_fecha_fin_periodo'
+    )
     .eq('npe_id', periodoId)
     .maybeSingle()
 
@@ -199,6 +209,12 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       error:
         'No hay conceptos activos en el catálogo. Crea al menos uno en "Conceptos de nómina" antes de subir la planilla.',
     }
+  }
+
+  // El ajuste lo escribe el servidor en cada fila: sin su concepto activo esa
+  // diferencia no la recoge nadie y todos cobrarían solo el base.
+  if (!hayConceptoAjuste(conceptos)) {
+    return { ok: false, error: ERROR_SIN_CONCEPTO_AJUSTE }
   }
 
   const { ingresoManual, deduccionManual } = agruparConceptosPlanilla(conceptos)
@@ -261,6 +277,48 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       ok: false,
       error: 'No se pudieron leer las marcas de asistencia del periodo. Volvé a intentarlo.',
     }
+  }
+
+  // El AJUSTE no se toma del archivo: se recalcula con las horas que trae cada
+  // fila y el cumplimiento de su horario (ver lib/prellenadoAsistencia.ts).
+  // En la plantilla va en gris y es solo informativo.
+  const quincena = {
+    anio: periodo.npe_periodo_anio,
+    mes: periodo.npe_periodo_mes,
+    quincena: periodo.npe_quincena,
+  }
+  for (const row of rows) {
+    const empleado = porCedula.get(row.cedula)!
+    const lectura =
+      lecturaAsistencia.estado === 'ok'
+        ? (lecturaAsistencia.totales.get(empleado.labId) ?? null)
+        : null
+    const fila = prellenarDesdeAsistencia(
+      {
+        salarioBaseMensual: empleado.salarioBaseMensual,
+        salarioRealMensual: empleado.salarioRealMensual,
+        horasSemanales: empleado.horasSemanales,
+      },
+      lectura
+        ? { ...lectura, horasOrdinarias: row.horasTrabajadas, horasExtra: row.horasExtra }
+        : null,
+      quincena
+    )
+    row.montos[CODIGO_AJUSTE] = fila.ajuste
+    // Si cambiaron las horas y el BASE es el que prellenó el sistema, sigue a
+    // las horas nuevas; uno corregido a mano se respeta.
+    row.montos[CODIGO_SALARIO_BASE] = baseParaHorasEditadas({
+      baseIngresado: row.montos[CODIGO_SALARIO_BASE] ?? 0,
+      contrato: {
+        salarioBaseMensual: empleado.salarioBaseMensual,
+        salarioRealMensual: empleado.salarioRealMensual,
+        horasSemanales: empleado.horasSemanales,
+      },
+      lectura,
+      horasPrevias: null,
+      horasNuevas: { horas: row.horasTrabajadas, horasExtra: row.horasExtra },
+      quincena,
+    }).base
   }
 
   const ahora = ahoraLocal()

@@ -8,8 +8,18 @@ import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
-import { MENSAJE_PROBLEMA, lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
-import { formatDate, formatHoras } from '@/modules/payroll/lib/format'
+import {
+  MENSAJE_PROBLEMA,
+  lecturaUtilizable,
+  type TotalesPeriodo,
+} from '@/modules/payroll/lib/horasPeriodo'
+import {
+  cumplimientoQuincena,
+  evaluarBaseGuardado,
+  type QuincenaRef,
+} from '@/modules/payroll/lib/prellenadoAsistencia'
+import { CODIGO_AJUSTE, CODIGO_SALARIO_BASE } from '@/modules/payroll/lib/planilla'
+import { formatCRC, formatDate, formatHoras } from '@/modules/payroll/lib/format'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 
 interface DetalleActualRow {
@@ -25,6 +35,7 @@ interface DetalleActualRow {
   sgrh_nomina_periodo: {
     npe_periodo_mes: number
     npe_periodo_anio: number
+    npe_quincena: number
     npe_fecha_inicio_periodo: string | null
     npe_fecha_fin_periodo: string | null
   } | null
@@ -191,6 +202,89 @@ async function sincronizarEstadoPeriodo(
  * proporcional de aguinaldo de este período en la provisión anual del
  * empleado.
  */
+interface LineaIngresoBaseRow {
+  ing_monto: number
+  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+}
+
+interface ContratoBaseRow {
+  lab_salario_base: number | null
+  lab_salario_real: number | null
+  sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
+}
+
+/**
+ * Lee el BASE guardado y el contrato, y dice si ese BASE quedó viejo (ver
+ * evaluarBaseGuardado). Si no se puede leer, NO se da por bueno: se devuelve
+ * el error y el pago espera. Pagar sin poder verificar es justamente lo que
+ * esto evita.
+ */
+async function verificarBaseGuardado(
+  supabase: SupabaseServerClient,
+  params: {
+    ndtId: number
+    historialLaboralId: number
+    guardadas: { horas: number; horasExtra: number }
+    lectura: TotalesPeriodo
+    quincena: QuincenaRef
+  }
+): Promise<
+  | {
+      ok: true
+      desactualizado: boolean
+      guardado: number
+      esperado: number | null
+      ajusteGuardado: number
+      ajusteEsperado: number | null
+    }
+  | { ok: false; error: string }
+> {
+  const [{ data: lineas, error: errLineas }, { data: contrato, error: errContrato }] =
+    await Promise.all([
+      supabase
+        .from('sgrh_nomina_linea_ingreso')
+        .select('ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .eq('ing_nomina_detalle_id', params.ndtId)
+        .returns<LineaIngresoBaseRow[]>(),
+      supabase
+        .from('sgrh_historial_laboral')
+        .select(
+          'lab_salario_base, lab_salario_real, sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )'
+        )
+        .eq('lab_id', params.historialLaboralId)
+        .maybeSingle<ContratoBaseRow>(),
+    ])
+
+  if (errLineas || errContrato || !contrato) {
+    return {
+      ok: false,
+      error:
+        'No se pudo verificar el salario base de esta fila contra la asistencia, así que no marqué el pago. Intentá de nuevo.',
+    }
+  }
+
+  const sumar = (codigo: string) =>
+    (lineas ?? [])
+      .filter((l) => l.sgrh_cat_conceptos_nomina?.con_codigo === codigo)
+      .reduce((acc, l) => acc + l.ing_monto, 0)
+  const guardado = sumar(CODIGO_SALARIO_BASE)
+  const ajusteGuardado = sumar(CODIGO_AJUSTE)
+
+  const { desactualizado, esperado, ajusteEsperado } = evaluarBaseGuardado({
+    baseGuardado: guardado,
+    ajusteGuardado,
+    contrato: {
+      salarioBaseMensual: contrato.lab_salario_base ?? 0,
+      salarioRealMensual: contrato.lab_salario_real ?? null,
+      horasSemanales: contrato.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
+    },
+    guardadas: params.guardadas,
+    lectura: params.lectura,
+    quincena: params.quincena,
+  })
+  return { ok: true, desactualizado, guardado, esperado, ajusteGuardado, ajusteEsperado }
+}
+
 export async function marcarDetallePagado(
   ndtId: number,
   pagado: boolean
@@ -216,7 +310,7 @@ export async function marcarDetallePagado(
       ndt_horas_asistencia,
       ndt_horas_extra_asistencia,
       sgrh_nomina_periodo (
-        npe_periodo_mes, npe_periodo_anio,
+        npe_periodo_mes, npe_periodo_anio, npe_quincena,
         npe_fecha_inicio_periodo, npe_fecha_fin_periodo
       )
     `
@@ -240,6 +334,7 @@ export async function marcarDetallePagado(
   // Solo se revisa al MARCAR. Desmarcar siempre se puede: es la salida cuando
   // algo quedo mal.
   const periodo = detalle.sgrh_nomina_periodo
+  let totales: TotalesPeriodo | undefined
   if (pagado && periodo?.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo) {
     const horas = await getHorasDelPeriodo(supabase, {
       historialLaboralIds: [detalle.ndt_historial_laboral_id],
@@ -247,7 +342,7 @@ export async function marcarDetallePagado(
       fechaFin: periodo.npe_fecha_fin_periodo,
     })
 
-    const totales = horas.ok ? horas.data.get(detalle.ndt_historial_laboral_id) : undefined
+    totales = horas.ok ? horas.data.get(detalle.ndt_historial_laboral_id) : undefined
     // Solo los que de verdad dejan las horas cortas. Un día con marcas pero
     // sin horario programado se avisa en la pantalla del periodo, pero no
     // traba el pago (ver PROBLEMAS_QUE_BLOQUEAN en lib/horasPeriodo.ts).
@@ -302,13 +397,48 @@ export async function marcarDetallePagado(
         }
       }
     }
+
+    // Tercer bloqueo: el BASE quedó viejo sin que cambien las horas. Pasa
+    // cuando unas vacaciones, un feriado o una incapacidad se aprueban DESPUÉS
+    // de armar la fila: las horas trabajadas son las mismas, así que el
+    // bloqueo anterior no salta, pero el salario que corresponde es otro. Solo
+    // se mira un BASE que puso el sistema; uno corregido a mano se respeta.
+    if (lecturaUtilizable(totales)) {
+      const verificacion = await verificarBaseGuardado(supabase, {
+        ndtId,
+        historialLaboralId: detalle.ndt_historial_laboral_id,
+        guardadas,
+        lectura: totales!,
+        quincena: {
+          anio: periodo!.npe_periodo_anio,
+          mes: periodo!.npe_periodo_mes,
+          quincena: periodo!.npe_quincena,
+        },
+      })
+      if (!verificacion.ok) return { ok: false, error: verificacion.error }
+      if (verificacion.desactualizado) {
+        return {
+          ok: false,
+          error: `El salario de esta fila ya no corresponde: se guardó ${formatCRC(verificacion.guardado)} de base y ${formatCRC(verificacion.ajusteGuardado)} de ajuste, y con la regla de hoy le toca ${formatCRC(verificacion.esperado!)} de base y ${formatCRC(verificacion.ajusteEsperado!)} de ajuste. Usá "Recalcular desde asistencia" en el periodo y después marcá el pago.`,
+        }
+      }
+    }
   }
 
   // Una fila en ₡0 no es un pago: es una fila que quedó a medias. Dejarla
   // marcar emitía un comprobante con monto cero, acumulaba ₡0 de aguinaldo y
   // podía cerrar el periodo entero — y nadie se entera hasta que el empleado
   // reclama. Solo se bloquea al MARCAR; desmarcar siempre se puede.
-  if (pagado && !(detalle.ndt_salario_bruto > 0)) {
+  // La excepción: una quincena entera de incapacidad o de permiso sin goce
+  // SÍ va en ₡0 de salario (la incapacidad se paga como subsidio aparte). Sin
+  // poder marcarla, el periodo no se podía cerrar nunca.
+  //
+  // Y otra: tenía horario y no vino ningún día (sin marcas, cuenta 0 h). El
+  // cumplimiento es 0 y el ₡0 es el monto correcto, no una fila a medias.
+  const ceroJustificado =
+    totales?.periodoCubiertoPorAusencias === true ||
+    (lecturaUtilizable(totales) && cumplimientoQuincena(totales!, null).ratio === 0)
+  if (pagado && !(detalle.ndt_salario_bruto > 0) && !ceroJustificado) {
     return {
       ok: false,
       error:

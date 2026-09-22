@@ -5,8 +5,12 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  ERROR_SIN_CONCEPTO_AJUSTE,
   ERROR_SIN_CONCEPTO_BASE,
   calcularPlanillaPorConceptos,
+  hayConceptoAjuste,
   hayConceptoSalarioBase,
   type ConceptoCalculo,
 } from '@/modules/payroll/lib/planilla'
@@ -35,6 +39,9 @@ interface PeriodoRow {
   npe_id: number
   npe_estado: string
   npe_sucursal_id: number
+  npe_periodo_mes: number
+  npe_periodo_anio: number
+  npe_quincena: number
   npe_fecha_inicio_periodo: string | null
   npe_fecha_fin_periodo: string | null
 }
@@ -76,7 +83,9 @@ export async function cargarEmpleadosDesdeAsistencia(
 
   const { data: periodo, error: errPeriodo } = await supabase
     .from('sgrh_nomina_periodo')
-    .select('npe_id, npe_estado, npe_sucursal_id, npe_fecha_inicio_periodo, npe_fecha_fin_periodo')
+    .select(
+      'npe_id, npe_estado, npe_sucursal_id, npe_periodo_mes, npe_periodo_anio, npe_quincena, npe_fecha_inicio_periodo, npe_fecha_fin_periodo'
+    )
     .eq('npe_id', periodoId)
     .maybeSingle<PeriodoRow>()
 
@@ -174,9 +183,21 @@ export async function cargarEmpleadosDesdeAsistencia(
   if (!hayConceptoSalarioBase(conceptos)) {
     return { ok: false, error: ERROR_SIN_CONCEPTO_BASE }
   }
+  // Lo mismo con el ajuste: sin su concepto, la diferencia hasta el salario
+  // real no la recoge nadie y todos cobrarían solo el base.
+  if (!hayConceptoAjuste(conceptos)) {
+    return { ok: false, error: ERROR_SIN_CONCEPTO_AJUSTE }
+  }
 
-  // Sin fechas no hay marcas que leer: las filas salen con el supuesto de
-  // jornada completa, igual que la plantilla. No es motivo para no cargarlas.
+  const quincena = {
+    anio: periodo.npe_periodo_anio,
+    mes: periodo.npe_periodo_mes,
+    quincena: periodo.npe_quincena,
+  }
+
+  // Sin fechas no hay marcas que leer: por regla, sin horas programadas el
+  // cumplimiento es 0 y la fila sale en ₡0 (y el pago queda trabado hasta
+  // revisarla). Se carga igual y se cuenta en `sinAsistencia`.
   const conFechas = Boolean(periodo.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo)
   const lectura = conFechas
     ? await getHorasDelPeriodo(supabase, {
@@ -205,11 +226,18 @@ export async function cargarEmpleadosDesdeAsistencia(
     if (!totales) sinAsistencia += 1
 
     const fila = prellenarDesdeAsistencia(
-      empleado.salarioBaseMensual,
+      {
+        salarioBaseMensual: empleado.salarioBaseMensual,
+        salarioRealMensual: empleado.salarioRealMensual,
+        horasSemanales: empleado.horasSemanales,
+      },
       totales,
-      empleado.horasSemanales
+      quincena
     )
-    const montos: Record<string, number> = { BASE: fila.base }
+    const montos: Record<string, number> = {
+      [CODIGO_SALARIO_BASE]: fila.base,
+      [CODIGO_AJUSTE]: fila.ajuste,
+    }
 
     const resultado = calcularPlanillaPorConceptos(conceptos, {
       montos,

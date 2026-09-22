@@ -26,6 +26,9 @@ const PERIODO = {
   npe_id: 9,
   npe_estado: 'borrador',
   npe_sucursal_id: 2,
+  npe_periodo_mes: 9,
+  npe_periodo_anio: 2026,
+  npe_quincena: 1,
   npe_fecha_inicio_periodo: '2026-09-01',
   npe_fecha_fin_periodo: '2026-09-15',
 }
@@ -34,6 +37,15 @@ const CONCEPTOS = [
   {
     con_id: 1,
     con_codigo: 'BASE',
+    con_tipo: 'ingreso',
+    con_afecta_salario_bruto: true,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  },
+  {
+    con_id: 25,
+    con_codigo: 'AJUSTE',
     con_tipo: 'ingreso',
     con_afecta_salario_bruto: true,
     con_afecta_base_ccss: true,
@@ -58,6 +70,13 @@ function totales(over: Record<string, unknown> = {}) {
     horasExtra: 0,
     diasConProblema: [],
     diasQueBloquean: [],
+    horasAcreditadas: 0,
+    diasAcreditadosSinHorario: 0,
+    diasJustificados: 0,
+    periodoCubiertoPorAusencias: false,
+    horasProgramadasTotales: (over.horasEsperadas as number | undefined) ?? 96,
+    diasJustificadosSinHorario: 0,
+    diasSinProgramar: 0,
     dias: [],
     ...over,
   }
@@ -119,6 +138,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           cedula: '1-1111-2222',
           nombre: 'Ana Pérez',
           salarioBaseMensual: 600000,
+          salarioRealMensual: 645000,
           horasSemanales: 48,
         },
       ],
@@ -174,14 +194,41 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       ndt_historial_laboral_id: 5,
       ndt_horas_ordinarias_diurnas: 96,
       ndt_horas_extra_al_50: 0,
-      // 600000 / 2 / 96 (jornada diurna del contrato)
-      ndt_salario_por_hora: 3125,
-      // Jornada completa: cobra la mitad exacta del mensual. El base NO sale de
-      // multiplicar 96 por la hora redondeada, que daría 299 999,92.
-      ndt_salario_bruto: 300000,
+      // Salario real 645000 / 30 / 8
+      ndt_salario_por_hora: 2687.5,
+      // Horario cumplido: cobra el objetivo, real ÷ 2 = 322.500. La base de la
+      // Q1 es 600000 / 30 x 15 = 300.000 y el ajuste, 22.500.
+      ndt_salario_bruto: 322500,
       // La foto queda igual a lo guardado: la fila nace "origen asistencia".
       ndt_horas_asistencia: 96,
     })
+
+    // El ajuste se escribe solo, como línea del concepto AJUSTE.
+    const lineas = llamadas(client, 'sgrh_nomina_linea_ingreso', 'insert').flat() as Record<
+      string,
+      unknown
+    >[]
+    expect(lineas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ing_concepto_id: 1, ing_monto: 300000 }),
+        expect.objectContaining({ ing_concepto_id: 25, ing_monto: 22500 }),
+      ])
+    )
+  })
+
+  it('no carga nada si el catálogo no tiene el concepto AJUSTE', async () => {
+    const client = escenario({
+      sgrh_cat_conceptos_nomina: {
+        data: CONCEPTOS.filter((c) => c.con_codigo !== 'AJUSTE'),
+        error: null,
+      },
+    })
+
+    const result = await cargarEmpleadosDesdeAsistencia(9)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('AJUSTE')
+    expect(llamadas(client, 'sgrh_nomina_detalle', 'insert')).toHaveLength(0)
   })
 
   // Media quincena trabajada: cobra la mitad, no el salario entero.
@@ -198,7 +245,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<string, unknown>[]
     )[0]
 
-    expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 48, ndt_salario_bruto: 150000 })
+    expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 48, ndt_salario_bruto: 161250 })
   })
 
   // Trabajar de más no infla el salario base: esas horas van al banco y se
@@ -216,7 +263,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<string, unknown>[]
     )[0]
 
-    expect(fila).toMatchObject({ ndt_salario_bruto: 300000, ndt_horas_extra_al_50: 6 })
+    expect(fila).toMatchObject({ ndt_salario_bruto: 322500, ndt_horas_extra_al_50: 6 })
   })
 
   // El caso de un periodo que ya se armó y al que entró alguien nuevo: no se
@@ -236,6 +283,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           cedula: '1-1111-2222',
           nombre: 'Ana Pérez',
           salarioBaseMensual: 600000,
+          salarioRealMensual: 645000,
           horasSemanales: 48,
         },
         {
@@ -243,6 +291,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           cedula: '1-3333-4444',
           nombre: 'Luis Mora',
           salarioBaseMensual: 400000,
+          salarioRealMensual: 400000,
           horasSemanales: 48,
         },
       ],
@@ -295,7 +344,9 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
   // acá con horasEsperadas en 0. Eso NO es "trabajó 0 horas": es que no hay con
   // qué medir. Antes se guardaba esa fila como "0 h trabajadas, salario
   // completo a pagar" y sin ningún aviso.
-  it('a quien no tiene horario lo carga con la jornada supuesta, y lo reporta', async () => {
+  // Regla del negocio: sin horas programadas el cumplimiento es 0. La fila se
+  // carga en ₡0 (el pago queda trabado hasta revisarla) y se reporta.
+  it('a quien no tiene horario lo carga en ₡0, y lo reporta', async () => {
     const client = escenario()
     mockGetHoras.mockResolvedValue({
       ok: true,
@@ -315,7 +366,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
     const fila = (
       llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<string, unknown>[]
     )[0]
-    expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 96, ndt_salario_bruto: 300000 })
+    expect(fila).toMatchObject({ ndt_horas_ordinarias_diurnas: 0, ndt_salario_bruto: 0 })
   })
   // Hallazgo del informe técnico: la base permite dos contratos abiertos para
   // el mismo empleado. Cargar la planilla le armaba una fila por contrato y le
@@ -330,6 +381,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           cedula: '1-1111-2222',
           nombre: 'Ana Pérez',
           salarioBaseMensual: 600000,
+          salarioRealMensual: 645000,
           horasSemanales: 48,
         },
         {
@@ -338,6 +390,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           cedula: '1-1111-2222',
           nombre: 'Ana Pérez',
           salarioBaseMensual: 600000,
+          salarioRealMensual: 645000,
           horasSemanales: 48,
         },
       ],
