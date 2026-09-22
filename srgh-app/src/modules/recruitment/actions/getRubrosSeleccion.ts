@@ -15,6 +15,8 @@ interface AreaRow {
   are_id: number
   are_nombre: string
   are_activo: boolean
+  are_color: string | null
+  are_peso: number
   sgrh_cat_criterios_seleccion: CriterioJoin[]
 }
 
@@ -27,13 +29,19 @@ export type GetRubrosSeleccionResult =
  * rubro es un área con su criterio activo asociado.
  */
 export async function getRubrosSeleccion(): Promise<GetRubrosSeleccionResult> {
-  await requirePermission(PERMISOS.RECLUTAMIENTO_READ)
+  // CATALOGOS_WRITE y no RECLUTAMIENTO_READ: este listado es la pantalla de
+  // ADMINISTRACIÓN del catálogo (vive en Configuración), y es el mismo
+  // permiso que exigen create/update/delete. Pedir RECLUTAMIENTO_READ acá
+  // haría que un admin de catálogos sin acceso a Reclutamiento se comiera un
+  // redirect a /unauthorized al abrir Configuración. Para LEER los criterios
+  // al calificar está getSelectionCriteria, que sí pide RECLUTAMIENTO_READ.
+  await requirePermission(PERMISOS.CATALOGOS_WRITE)
 
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_cat_areas_seleccion')
     .select(
-      'are_id, are_nombre, are_activo, sgrh_cat_criterios_seleccion ( cri_id, cri_descripcion, cri_activo )'
+      'are_id, are_nombre, are_activo, are_color, are_peso, sgrh_cat_criterios_seleccion ( cri_id, cri_descripcion, cri_activo )'
     )
     .eq('are_activo', true)
     .order('are_id', { ascending: true })
@@ -55,6 +63,8 @@ export async function getRubrosSeleccion(): Promise<GetRubrosSeleccionResult> {
       nombre: area.are_nombre,
       descripcion: criterio?.cri_descripcion ?? '',
       activo: area.are_activo,
+      color: area.are_color,
+      peso: area.are_peso,
     }
   })
 

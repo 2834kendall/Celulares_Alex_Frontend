@@ -10,6 +10,7 @@ import type {
   PostulacionDetalle,
 } from '@/modules/recruitment/types'
 import { ESTADO_POSTULACION_LABELS, RESULTADO_ETAPA_LABELS } from '@/modules/recruitment/lib/format'
+import { weightedAverageScore } from '@/modules/recruitment/lib/scoring'
 import { formatDate } from '@/modules/employees/lib/format'
 import { advanceStage } from '@/modules/recruitment/actions/advanceStage'
 import { rejectPostulacion } from '@/modules/recruitment/actions/rejectPostulacion'
@@ -336,16 +337,13 @@ function ScoreForm({
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [promedio, setPromedio] = useState<number | null>(
-    existentes.length > 0
-      ? (() => {
-          const aplicables = existentes.filter((p) => !p.noAplica && p.puntaje !== null)
-          if (aplicables.length === 0) return null
-          return Math.round(
-            aplicables.reduce((a, p) => a + (p.puntaje ?? 0), 0) / aplicables.length
-          )
-        })()
-      : null
+  // Mismo cálculo que usa el servidor al guardar (savePostulacionScores):
+  // si acá se hiciera un promedio simple, el número mostrado al abrir la
+  // ficha no coincidiría con el que quedó guardado en pos_puntaje_promedio.
+  const [promedio, setPromedio] = useState<number | null>(() =>
+    weightedAverageScore(
+      existentes.map((p) => ({ puntaje: p.noAplica ? null : p.puntaje, peso: p.peso }))
+    )
   )
 
   async function handleSubmit(e: React.FormEvent) {
@@ -405,9 +403,19 @@ function ScoreForm({
             key={c.id}
             className="grid grid-cols-[1fr_auto] items-start gap-2 sm:grid-cols-[2fr_auto_auto]"
           >
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-slate-800">{c.descripcion}</p>
-              <p className="truncate text-[10px] text-slate-400">{c.areaNombre}</p>
+            <div className="flex min-w-0 items-start gap-2">
+              <span
+                aria-hidden="true"
+                className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
+                style={{ backgroundColor: c.color ?? '#e2e8f0' }}
+              />
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-slate-800">{c.descripcion}</p>
+                <p className="truncate text-[10px] text-slate-400">
+                  {c.areaNombre}
+                  {c.peso !== 1 && ` · pesa ×${c.peso}`}
+                </p>
+              </div>
             </div>
             <input
               type="number"

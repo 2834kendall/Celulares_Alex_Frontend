@@ -500,20 +500,26 @@ export type Database = {
       sgrh_cat_areas_seleccion: {
         Row: {
           are_activo: boolean
+          are_color: string | null
           are_id: number
           are_nombre: string
+          are_peso: number
           are_tipo_aplicacion: string
         }
         Insert: {
           are_activo?: boolean
+          are_color?: string | null
           are_id?: never
           are_nombre: string
+          are_peso?: number
           are_tipo_aplicacion?: string
         }
         Update: {
           are_activo?: boolean
+          are_color?: string | null
           are_id?: never
           are_nombre?: string
+          are_peso?: number
           are_tipo_aplicacion?: string
         }
         Relationships: []

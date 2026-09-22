@@ -238,6 +238,10 @@ export interface RubroSeleccionRow {
   nombre: string
   descripcion: string
   activo: boolean
+  /** Hex o null (sin color propio). Solo presentación. */
+  color: string | null
+  /** Cuánto pesa en el promedio ponderado. 1 = igual que los demás. */
+  peso: number
 }
 
 export const rubroSeleccionSchema = z.object({
@@ -251,6 +255,16 @@ export const rubroSeleccionSchema = z.object({
     .trim()
     .min(3, 'La descripción debe tener al menos 3 caracteres.')
     .max(200, 'La descripción no puede superar los 200 caracteres.'),
+  // El mismo formato que exige el CHECK de la tabla; null = sin color propio.
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'El color debe ser un hex de 6 dígitos.')
+    .nullable(),
+  // Rango alineado al CHECK sgrh_cat_areas_seleccion_peso_rango.
+  peso: z
+    .number({ error: 'El peso es obligatorio' })
+    .min(0.1, 'El peso mínimo es 0.1')
+    .max(10, 'El peso máximo es 10'),
 })
 
 export type RubroSeleccionInput = z.infer<typeof rubroSeleccionSchema>
@@ -271,6 +285,10 @@ export interface CriterioSeleccionItem {
   descripcion: string
   areaId: number
   areaNombre: string
+  /** Hex o null. Se usa para distinguirlo en el formulario de puntaje. */
+  color: string | null
+  /** Peso en el promedio ponderado (ver recruitment/lib/scoring.ts). */
+  peso: number
 }
 
 // ─── View Model — Documento de candidato ─────────────────────────────────────
@@ -322,6 +340,8 @@ export interface PuntajeCriterioItem {
   criterioId: number
   criterioDescripcion: string
   areaNombre: string
+  color: string | null
+  peso: number
   puntaje: number | null
   noAplica: boolean
   observacion: string | null

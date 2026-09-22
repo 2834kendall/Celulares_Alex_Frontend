@@ -24,7 +24,11 @@ export async function updateCriterioSeleccion(
   const supabase = await createClient()
   const { error: areaError } = await supabase
     .from('sgrh_cat_areas_seleccion')
-    .update({ are_nombre: parsed.data.nombre })
+    .update({
+      are_nombre: parsed.data.nombre,
+      are_color: parsed.data.color,
+      are_peso: parsed.data.peso,
+    })
     .eq('are_id', areaId)
 
   if (areaError) {

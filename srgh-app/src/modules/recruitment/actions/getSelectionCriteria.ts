@@ -8,6 +8,8 @@ import type { CriterioSeleccionItem } from '@/modules/recruitment/types'
 interface AreaQueryRow {
   are_id: number
   are_nombre: string
+  are_color: string | null
+  are_peso: number
   sgrh_cat_criterios_seleccion: { cri_id: number; cri_descripcion: string; cri_activo: boolean }[]
 }
 
@@ -30,7 +32,7 @@ export async function getSelectionCriteria(): Promise<GetSelectionCriteriaResult
   const { data, error } = await supabase
     .from('sgrh_cat_areas_seleccion')
     .select(
-      'are_id, are_nombre, sgrh_cat_criterios_seleccion ( cri_id, cri_descripcion, cri_activo )'
+      'are_id, are_nombre, are_color, are_peso, sgrh_cat_criterios_seleccion ( cri_id, cri_descripcion, cri_activo )'
     )
     .eq('are_activo', true)
     .order('are_id', { ascending: true })
@@ -48,6 +50,8 @@ export async function getSelectionCriteria(): Promise<GetSelectionCriteriaResult
         descripcion: criterio.cri_descripcion,
         areaId: area.are_id,
         areaNombre: area.are_nombre,
+        color: area.are_color,
+        peso: area.are_peso,
       }))
   )
 

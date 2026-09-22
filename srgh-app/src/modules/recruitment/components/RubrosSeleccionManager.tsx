@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { RubroSeleccionForm } from './RubroSeleccionForm'
 import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 import { Alert } from '@/components/ui/Alert'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
@@ -127,11 +128,27 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
                 }`}
               >
                 <div className="flex items-start gap-2.5">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-brand-600"
+                    style={
+                      rubro.color
+                        ? { backgroundColor: rubro.color, color: '#1e293b' }
+                        : { backgroundColor: 'var(--color-brand-50, #eff6ff)' }
+                    }
+                  >
                     <ClipboardList className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-slate-900">{rubro.nombre}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-bold text-slate-900">{rubro.nombre}</p>
+                      {/* El peso solo se anuncia cuando NO es el normal: un
+                          "×1" en todas las tarjetas sería ruido. */}
+                      {rubro.peso !== 1 && (
+                        <Badge tone="amber" size="xs">
+                          ×{rubro.peso}
+                        </Badge>
+                      )}
+                    </div>
                     <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
                       {rubro.descripcion || 'Sin descripción.'}
                     </p>

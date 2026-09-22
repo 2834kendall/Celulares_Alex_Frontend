@@ -66,7 +66,11 @@ interface PuntajeQueryRow {
   psc_observacion: string | null
   sgrh_cat_criterios_seleccion: {
     cri_descripcion: string
-    sgrh_cat_areas_seleccion: { are_nombre: string } | null
+    sgrh_cat_areas_seleccion: {
+      are_nombre: string
+      are_color: string | null
+      are_peso: number
+    } | null
   } | null
 }
 
@@ -180,7 +184,7 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
       .select(
         `
         psc_postulacion_id, psc_criterio_id, psc_puntaje, psc_no_aplica, psc_observacion,
-        sgrh_cat_criterios_seleccion ( cri_descripcion, sgrh_cat_areas_seleccion ( are_nombre ) )
+        sgrh_cat_criterios_seleccion ( cri_descripcion, sgrh_cat_areas_seleccion ( are_nombre, are_color, are_peso ) )
       `
       )
       .in('psc_postulacion_id', posIds)
@@ -196,6 +200,8 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
         criterioId: row.psc_criterio_id,
         criterioDescripcion: row.sgrh_cat_criterios_seleccion?.cri_descripcion ?? '—',
         areaNombre: row.sgrh_cat_criterios_seleccion?.sgrh_cat_areas_seleccion?.are_nombre ?? '—',
+        color: row.sgrh_cat_criterios_seleccion?.sgrh_cat_areas_seleccion?.are_color ?? null,
+        peso: row.sgrh_cat_criterios_seleccion?.sgrh_cat_areas_seleccion?.are_peso ?? 1,
         puntaje: row.psc_puntaje,
         noAplica: row.psc_no_aplica,
         observacion: row.psc_observacion,

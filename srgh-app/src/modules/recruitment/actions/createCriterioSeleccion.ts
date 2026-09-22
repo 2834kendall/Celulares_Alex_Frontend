@@ -28,7 +28,13 @@ export async function createCriterioSeleccion(
   const supabase = await createClient()
   const { data: area, error: areaError } = await supabase
     .from('sgrh_cat_areas_seleccion')
-    .insert({ are_nombre: parsed.data.nombre, are_tipo_aplicacion: 'ambos', are_activo: true })
+    .insert({
+      are_nombre: parsed.data.nombre,
+      are_tipo_aplicacion: 'ambos',
+      are_activo: true,
+      are_color: parsed.data.color,
+      are_peso: parsed.data.peso,
+    })
     .select('are_id')
     .single()
 

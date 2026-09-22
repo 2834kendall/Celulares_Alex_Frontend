@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ClipboardList, Loader2 } from 'lucide-react'
+import { ColorPicker } from '@/components/ui/ColorPicker'
 import {
   rubroSeleccionSchema,
   type RubroSeleccionInput,
@@ -30,13 +31,25 @@ export function RubroSeleccionForm({ rubro, onSuccess }: RubroSeleccionFormProps
     register,
     handleSubmit,
     reset,
+    control,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<RubroSeleccionInput>({
     resolver: zodResolver(rubroSeleccionSchema),
     defaultValues: rubro
-      ? { nombre: rubro.nombre, descripcion: rubro.descripcion }
-      : { nombre: '', descripcion: '' },
+      ? {
+          nombre: rubro.nombre,
+          descripcion: rubro.descripcion,
+          color: rubro.color,
+          peso: rubro.peso,
+        }
+      : { nombre: '', descripcion: '', color: null, peso: 1 },
   })
+
+  // useWatch (no watch): watch() devuelve una función que el compilador de
+  // React no puede memoizar — es la advertencia que ya arrastran
+  // ScheduleForm y ConceptoForm. Acá se evita desde el principio.
+  const colorValue = useWatch({ control, name: 'color' })
 
   async function onSubmit(input: RubroSeleccionInput) {
     setServerError(null)
@@ -50,7 +63,7 @@ export function RubroSeleccionForm({ rubro, onSuccess }: RubroSeleccionFormProps
       return
     }
 
-    if (!isEditing) reset({ nombre: '', descripcion: '' })
+    if (!isEditing) reset({ nombre: '', descripcion: '', color: null, peso: 1 })
     onSuccess?.()
   }
 
@@ -92,6 +105,38 @@ export function RubroSeleccionForm({ rubro, onSuccess }: RubroSeleccionFormProps
         />
         {errors.descripcion && <p className={FIELD_ERROR}>{errors.descripcion.message}</p>}
       </div>
+
+      <div>
+        <label className={LABEL} htmlFor="criterio_peso">
+          Peso
+        </label>
+        <p className="mb-1 text-[11px] text-slate-500">
+          Cuánto vale este criterio frente a los demás. 1 = igual que el resto; 2 = vale el doble.
+          El promedio del candidato se calcula con estos pesos.
+        </p>
+        <input
+          id="criterio_peso"
+          type="number"
+          min={0.1}
+          max={10}
+          step={0.1}
+          disabled={isSubmitting}
+          aria-invalid={!!errors.peso}
+          {...register('peso', { valueAsNumber: true })}
+          className={`${INPUT} w-28`}
+        />
+        {errors.peso && <p className={FIELD_ERROR}>{errors.peso.message}</p>}
+      </div>
+
+      <ColorPicker
+        value={colorValue}
+        disabled={isSubmitting}
+        onChange={(color) => setValue('color', color)}
+        label="Color del criterio"
+        description="Sirve para reconocerlo de un vistazo al calificar al candidato. Sin color propio se muestra en gris."
+        emptyLabel="Sin color"
+        storageKey="sgrh_criterios_custom_colors"
+      />
 
       <Button type="submit" disabled={isSubmitting} size="lg" block>
         {isSubmitting ? (
