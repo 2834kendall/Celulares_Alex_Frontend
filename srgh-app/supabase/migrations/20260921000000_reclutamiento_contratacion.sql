@@ -24,6 +24,13 @@
 --      CHECK sobre pos_estado_final.
 --   5. pet_resultado tampoco tenia restriccion, aunque el comentario de
 --      la tabla ya documentaba el vocabulario esperado.
+--
+--      Ojo con 4 y 5: la base original trae valores fuera de ese
+--      vocabulario, asi que antes de cada CHECK hay un paso de
+--      normalizacion (4a y 5a) que mapea las variantes obvias y DETIENE la
+--      migracion listando lo que no pudo mapear, en vez de inventar un
+--      valor. Lo mismo con cdt_empresa_id (1a) y con cdt_cv_url, que solo
+--      se borra si esta vacia.
 --   6. El catalogo de 20 etapas no distinguia las 3 columnas del tablero
 --      de seleccion, y las etapas 14-18 (Induccion, Periodo de Prueba,
 --      Evaluacion de Periodo de Prueba, Contratacion Definitiva) quedan
@@ -168,7 +175,40 @@ CREATE INDEX IF NOT EXISTS idx_candidatos_empresa ON public.sgrh_candidatos (cdt
 
 -- ─── 3. Candidatos: documentos gestionados en vez de un varchar suelto ─
 
-ALTER TABLE public.sgrh_candidatos DROP COLUMN IF EXISTS cdt_cv_url;
+-- cdt_cv_url solo se borra si esta VACIA en todas las filas. Si la base
+-- original guardo URLs ahi, son datos reales que este modulo todavia no
+-- sabe leer (apuntan afuera, no al bucket cv-candidatos, asi que no se
+-- pueden convertir en filas de sgrh_candidato_documentos sin bajar y
+-- resubir cada archivo). En ese caso la columna se queda como esta,
+-- deprecada, y se avisa: borrarla es una decision con perdida de datos y
+-- no la toma una migracion de esquema.
+DO $$
+DECLARE
+  v_con_cv int;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'sgrh_candidatos'
+      AND column_name = 'cdt_cv_url'
+  ) THEN
+    -- El SELECT se parsea recien al ejecutarse, y solo se llega aca si la
+    -- columna existe, asi que referenciarla directo es seguro.
+    EXECUTE $q$
+      SELECT count(*) FROM public.sgrh_candidatos
+      WHERE cdt_cv_url IS NOT NULL AND btrim(cdt_cv_url) <> ''
+    $q$ INTO v_con_cv;
+
+    IF v_con_cv = 0 THEN
+      ALTER TABLE public.sgrh_candidatos DROP COLUMN cdt_cv_url;
+    ELSE
+      RAISE NOTICE
+        'SGRH-61: cdt_cv_url conserva % fila(s) con datos y NO se borro. El modulo usa sgrh_candidato_documentos; migra esas URLs (o descartalas) y borra la columna aparte.',
+        v_con_cv;
+    END IF;
+  END IF;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS public.sgrh_candidato_documentos (
   cdo_id           serial PRIMARY KEY,
@@ -233,6 +273,46 @@ ALTER TABLE public.sgrh_postulaciones
   ADD COLUMN IF NOT EXISTS pos_fecha_cierre date,
   ADD COLUMN IF NOT EXISTS pos_puntaje_promedio numeric;
 
+-- 4a. Normalizacion previa al CHECK. El comentario de la tabla siempre
+-- dijo "en_proceso | contratado | descartado", pero la columna nunca tuvo
+-- restriccion y la base original trae variantes (mayusculas, tildes,
+-- espacios, sinonimos). Se normaliza lo que es claramente equivalente; lo
+-- que no, detiene la migracion con la lista a la vista en vez de forzar
+-- un valor inventado.
+UPDATE public.sgrh_postulaciones
+SET pos_estado_final = CASE
+  WHEN translate(lower(btrim(pos_estado_final)), 'áéíóú', 'aeiou')
+       IN ('en_proceso', 'en proceso', 'proceso', 'en curso', 'activo', 'activa', 'abierta', 'pendiente')
+    THEN 'en_proceso'
+  WHEN translate(lower(btrim(pos_estado_final)), 'áéíóú', 'aeiou')
+       IN ('contratado', 'contratada', 'contratacion', 'seleccionado', 'seleccionada')
+    THEN 'contratado'
+  WHEN translate(lower(btrim(pos_estado_final)), 'áéíóú', 'aeiou')
+       IN ('descartado', 'descartada', 'rechazado', 'rechazada', 'no seleccionado', 'no seleccionada')
+    THEN 'descartado'
+  ELSE pos_estado_final
+END
+WHERE pos_estado_final IS NOT NULL
+  AND pos_estado_final NOT IN ('en_proceso', 'contratado', 'descartado');
+
+DO $$
+DECLARE
+  v_restantes text;
+BEGIN
+  SELECT string_agg(DISTINCT coalesce(pos_estado_final, '(null)'), ', ')
+  INTO v_restantes
+  FROM public.sgrh_postulaciones
+  WHERE pos_estado_final IS NULL
+     OR pos_estado_final NOT IN ('en_proceso', 'contratado', 'descartado');
+
+  IF v_restantes IS NOT NULL THEN
+    RAISE EXCEPTION
+      'SGRH-61: sgrh_postulaciones tiene estados que no se pudieron mapear al vocabulario del modulo: %. Decidi a que corresponde cada uno (en_proceso / contratado / descartado), actualizalos y volve a correr la migracion.',
+      v_restantes;
+  END IF;
+END
+$$;
+
 ALTER TABLE public.sgrh_postulaciones
   DROP CONSTRAINT IF EXISTS sgrh_pos_estado_final_check;
 ALTER TABLE public.sgrh_postulaciones
@@ -244,6 +324,44 @@ CREATE INDEX IF NOT EXISTS idx_postulaciones_empresa ON public.sgrh_postulacione
 CREATE INDEX IF NOT EXISTS idx_postulaciones_estado ON public.sgrh_postulaciones (pos_estado_final);
 
 -- ─── 5. Etapas de postulacion: resultado con vocabulario fijo ─────────
+
+-- 5a. Misma normalizacion que 4a, ahora sobre el resultado de cada etapa
+-- (el vocabulario lo documenta comentarios.sql, pero nunca se exigio).
+-- Un texto vacio pasa a NULL: "sin resultado todavia" ya se representa asi.
+UPDATE public.sgrh_postulacion_etapas
+SET pet_resultado = CASE
+  WHEN btrim(pet_resultado) = '' THEN NULL
+  WHEN translate(lower(btrim(pet_resultado)), 'áéíóú', 'aeiou')
+       IN ('aprobado', 'aprobada', 'aprobo', 'paso', 'ok', 'exitoso', 'exitosa')
+    THEN 'aprobado'
+  WHEN translate(lower(btrim(pet_resultado)), 'áéíóú', 'aeiou')
+       IN ('rechazado', 'rechazada', 'reprobado', 'reprobada', 'no paso', 'fallido', 'fallida')
+    THEN 'rechazado'
+  WHEN translate(lower(btrim(pet_resultado)), 'áéíóú', 'aeiou')
+       IN ('pendiente', 'en proceso', 'en_proceso', 'en curso')
+    THEN 'pendiente'
+  ELSE pet_resultado
+END
+WHERE pet_resultado IS NOT NULL
+  AND pet_resultado NOT IN ('aprobado', 'rechazado', 'pendiente');
+
+DO $$
+DECLARE
+  v_restantes text;
+BEGIN
+  SELECT string_agg(DISTINCT pet_resultado, ', ')
+  INTO v_restantes
+  FROM public.sgrh_postulacion_etapas
+  WHERE pet_resultado IS NOT NULL
+    AND pet_resultado NOT IN ('aprobado', 'rechazado', 'pendiente');
+
+  IF v_restantes IS NOT NULL THEN
+    RAISE EXCEPTION
+      'SGRH-61: sgrh_postulacion_etapas tiene resultados que no se pudieron mapear: %. Decidi a que corresponde cada uno (aprobado / rechazado / pendiente), actualizalos y volve a correr la migracion.',
+      v_restantes;
+  END IF;
+END
+$$;
 
 ALTER TABLE public.sgrh_postulacion_etapas
   DROP CONSTRAINT IF EXISTS sgrh_pet_resultado_check;
