@@ -1,11 +1,15 @@
 import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
 import { getScheduledEmployees } from '@/modules/attendance/actions/getScheduledEmployees'
+import { getFormatoHora } from '@/lib/empresa/get-formato-hora'
 import { KioskScreen } from '@/modules/attendance/components/kiosk/KioskScreen'
 
 export default async function KioscoPage() {
   await requireKioskAccess()
 
-  const result = await getScheduledEmployees()
+  // El formato de hora llega por prop: el kiosco no monta el shell del
+  // dashboard, que es donde vive el FormatoHoraProvider. Si falla la lectura
+  // getFormatoHora cae a '24h' — nunca bloquea el kiosco.
+  const [result, formatoHora] = await Promise.all([getScheduledEmployees(), getFormatoHora()])
 
   if (!result.ok) {
     return (
@@ -15,5 +19,5 @@ export default async function KioscoPage() {
     )
   }
 
-  return <KioskScreen employees={result.data} />
+  return <KioskScreen employees={result.data} formatoHora={formatoHora} />
 }

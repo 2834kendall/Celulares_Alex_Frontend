@@ -2,6 +2,7 @@ import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { ACCESO_CONFIGURACION } from '@/lib/permissions/zones'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getSucursalTema } from '@/lib/empresa/get-sucursal-tema'
+import { getFormatoHora } from '@/lib/empresa/get-formato-hora'
 import { resolveShellTheme } from '@/lib/empresa/resolve-shell-theme'
 import { getPuestos } from '@/modules/settings/actions/getPuestos'
 import { getTiposTardia } from '@/modules/settings/actions/getTiposTardia'
@@ -10,8 +11,11 @@ import { SucursalAppearancePanel } from '@/modules/settings/components/SucursalA
 import { PuestosList } from '@/modules/settings/components/PuestosList'
 import { TiposTardiaList } from '@/modules/settings/components/TiposTardiaList'
 import { SettingsTabs } from '@/modules/settings/components/SettingsTabs'
+import { FormatoHoraForm } from '@/modules/settings/components/FormatoHoraForm'
 import { getRubrosSeleccion } from '@/modules/recruitment/actions/getRubrosSeleccion'
+import { getEtapasSeleccionAdmin } from '@/modules/recruitment/actions/getEtapasSeleccionAdmin'
 import { RubrosSeleccionManager } from '@/modules/recruitment/components/RubrosSeleccionManager'
+import { EtapasSeleccionManager } from '@/modules/recruitment/components/EtapasSeleccionManager'
 import { Alert } from '@/components/ui/Alert'
 import type { SgrhJwtClaims } from '@/types/auth'
 
@@ -35,7 +39,15 @@ export default async function SettingsPage() {
   // SucursalAppearanceForm). Sin esto ultimo, cambiar de tarjeta o de pagina
   // dejaba pegado el color de PRUEBA de lo ultimo editado, ignorando lo que
   // decia el selector de arriba.
-  const [tema, theme, puestosResult, tiposTardiaResult, rubrosSeleccionResult] = await Promise.all([
+  const [
+    tema,
+    theme,
+    puestosResult,
+    tiposTardiaResult,
+    rubrosSeleccionResult,
+    etapasSeleccionResult,
+    formatoHora,
+  ] = await Promise.all([
     getSucursalTema(meta.usr_id ?? null),
     resolveShellTheme(meta.usr_id ?? null, permisos),
     getPuestos(),
@@ -43,6 +55,8 @@ export default async function SettingsPage() {
     // Exige CATALOGOS_WRITE (via requirePermission): sin el permiso, llamarla
     // redirigiría la página entera a /unauthorized.
     puedeEditarCatalogos ? getRubrosSeleccion() : Promise.resolve(null),
+    puedeEditarCatalogos ? getEtapasSeleccionAdmin() : Promise.resolve(null),
+    getFormatoHora(),
   ])
 
   const sucursales = theme.sucursales
@@ -57,6 +71,7 @@ export default async function SettingsPage() {
       </div>
 
       <SettingsTabs
+        generalContent={administraEmpresa ? <FormatoHoraForm formatoActual={formatoHora} /> : null}
         aparienciaContent={
           administraEmpresa ? (
             <SucursalAppearancePanel
@@ -98,6 +113,13 @@ export default async function SettingsPage() {
             <RubrosSeleccionManager rubros={rubrosSeleccionResult.data} canWrite />
           ) : (
             <Alert size="md">{rubrosSeleccionResult.error}</Alert>
+          )
+        }
+        etapasContent={
+          etapasSeleccionResult === null ? null : etapasSeleccionResult.ok ? (
+            <EtapasSeleccionManager etapas={etapasSeleccionResult.data} canWrite />
+          ) : (
+            <Alert size="md">{etapasSeleccionResult.error}</Alert>
           )
         }
       />

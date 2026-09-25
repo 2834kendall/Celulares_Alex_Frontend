@@ -2,6 +2,7 @@ import { CalendarCheck2, CalendarX2, Clock } from 'lucide-react'
 import type { JustificationItem } from '@/modules/attendance/lib/pendingJustifications'
 import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
 import { formatMinutes } from '@/modules/attendance/lib/time'
+import { Hora } from '@/components/ui/Hora'
 
 const PILL = 'rounded-full px-2 py-0.5 text-[11px] font-semibold'
 
@@ -38,7 +39,9 @@ export function IncidentRow({ item, showName = false, action }: IncidentRowProps
     title = (
       <>
         {d.kind === 'entrada' ? 'Llego a las ' : 'Volvio del almuerzo a las '}
-        <span className="tabular-nums">{d.time}</span>
+        <span className="tabular-nums">
+          <Hora value={d.time} />
+        </span>
         <span className="font-normal text-slate-500"> · +{formatMinutes(d.diffMinutes)}</span>
       </>
     )

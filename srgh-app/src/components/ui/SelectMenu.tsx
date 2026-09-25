@@ -44,7 +44,7 @@ interface SelectMenuProps {
   /**
    * Reemplaza POR COMPLETO las clases de color/borde/fondo del trigger (no se
    * mezcla con las del tamaño default). Para variantes con paleta propia —
-   * hoy, el selector a.m./p.m. de TimeSelect— donde `cn()` no puede resolver
+   * hoy, el selector a. m./p. m. de TimeSelect— donde `cn()` no puede resolver
    * un conflicto de `bg-white` contra un fondo propio (ver la nota en
    * AppShell sobre por que este proyecto no usa un merge de clases con
    * prioridad).
@@ -85,6 +85,10 @@ export function SelectMenu({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const listboxId = useId()
+  const typeahead = useRef<{ buffer: string; timer: ReturnType<typeof setTimeout> | null }>({
+    buffer: '',
+    timer: null,
+  })
   const s = SIZES[size]
 
   const selected = options.find((o) => o.value === value) ?? null
@@ -147,7 +151,45 @@ export function SelectMenu({
       ?.scrollIntoView({ block: 'nearest' })
   }, [open, highlighted])
 
+  /**
+   * Escribir salta a la primera opcion cuyo texto empiece con lo tecleado,
+   * como en un `<select>` nativo. Sin esto, la lista de minutos de
+   * TimeSelect (60 opciones) solo se recorria con flechas o scroll. Tambien
+   * compara sin el cero inicial, para que "8" encuentre "08".
+   */
+  function onTypeahead(key: string) {
+    const t = typeahead.current
+    if (t.timer) clearTimeout(t.timer)
+    t.buffer += key.toLowerCase()
+    t.timer = setTimeout(() => {
+      t.buffer = ''
+      t.timer = null
+    }, 800)
+
+    const buffer = t.buffer
+    const index = options.findIndex((o) => {
+      const label = o.label.toLowerCase()
+      return label.startsWith(buffer) || label.replace(/^0+(?=\d)/, '').startsWith(buffer)
+    })
+    if (index < 0) return
+    setHighlighted(index)
+    setOpen(true)
+  }
+
+  useEffect(() => {
+    const t = typeahead.current
+    return () => {
+      if (t.timer) clearTimeout(t.timer)
+    }
+  }, [])
+
   function onTriggerKeyDown(e: React.KeyboardEvent) {
+    if (e.key.length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      onTypeahead(e.key)
+      return
+    }
+
     if (!open) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
         e.preventDefault()

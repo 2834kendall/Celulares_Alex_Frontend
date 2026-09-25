@@ -57,6 +57,7 @@ import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
 import { IconButton } from '@/components/ui/IconButton'
 import { DatePopover } from '@/components/ui/DatePickerButton'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useFormatHora } from '@/lib/time/FormatoHoraContext'
 
 type PasteEmployeeInput = PasteWeeklyScheduleInput['employees'][number]
 type PasteDayInput = PasteEmployeeInput['days'][number]
@@ -222,11 +223,19 @@ function assignmentLabel(assignment: DayAssignmentWithAusencia) {
   return assignment.scheduleName ?? 'Sin asignar'
 }
 
-function timeRange(assignment: DayAssignmentWithAusencia) {
+/**
+ * Rango del turno para PINTAR en la celda. Recibe el formateador de la
+ * empresa (12h/24h) en vez de usar stripSeconds: stripSeconds devuelve el
+ * "HH:MM" que exigen los inputs del modal de horas personalizadas (más
+ * abajo, initialStartTime & co.) y eso tiene que seguir en 24h.
+ */
+function timeRange(
+  assignment: DayAssignmentWithAusencia,
+  rango: (inicio: string | null | undefined, fin: string | null | undefined) => string | null
+) {
   const start = assignment.customStartTime ?? assignment.startTime
   const end = assignment.customEndTime ?? assignment.endTime
-  if (!start || !end) return null
-  return `${stripSeconds(start)} - ${stripSeconds(end)}`
+  return rango(start, end)
 }
 
 function AssignmentOptions({ scheduleOptions }: { scheduleOptions: ScheduleRow[] }) {
@@ -337,7 +346,8 @@ function ScheduleCell({
   const isBlocked = Boolean(ausencia && !ausencia.isIntraday)
   const isDisabled = !canWrite || isSaving || isBlocked
   const palette = paletteFor(assignment, colorById)
-  const range = timeRange(assignment)
+  const { rango } = useFormatHora()
+  const range = timeRange(assignment, rango)
 
   const content = isBlocked ? (
     <div
@@ -366,9 +376,10 @@ function ScheduleCell({
           {assignmentLabel(assignment)}
         </p>
         {range && (
-          <p className="whitespace-nowrap text-[11px] leading-[1.3] tabular-nums text-slate-600">
-            {range}
-          </p>
+          // Sin whitespace-nowrap: en 12h el rango casi duplica su largo y
+          // la celda (una de 7 por fila) no lo contenía. En 24h sigue
+          // entrando en una línea. Mismo criterio que MyScheduleView.
+          <p className="text-[11px] leading-[1.3] tabular-nums text-slate-600">{range}</p>
         )}
         {(assignment.customStartTime || ausencia?.isIntraday || isSaving) && (
           <div className="mt-0.5 flex items-center gap-1">

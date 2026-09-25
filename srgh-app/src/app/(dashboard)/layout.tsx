@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { AppShell } from '@/components/layout/AppShell'
 import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { resolveShellTheme } from '@/lib/empresa/resolve-shell-theme'
+import { getFormatoHora } from '@/lib/empresa/get-formato-hora'
 import type { SgrhJwtClaims } from '@/types/auth'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -37,9 +38,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Nombre real de la empresa del tenant (RLS devuelve solo la del JWT) y el
   // tema oficial del shell — sucursal fija propia, salvo que haya una
   // sucursal en preview desde el selector de la barra superior.
-  const [empresaNombre, theme] = await Promise.all([
+  const [empresaNombre, theme, formatoHora] = await Promise.all([
     getEmpresaNombre(),
     resolveShellTheme(meta.usr_id, permisos),
+    getFormatoHora(),
   ])
 
   return (
@@ -53,6 +55,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       colorSidebar={theme.colorSidebar}
       sucursales={theme.sucursales}
       sucursalPreviewId={theme.sucursalPreviewId}
+      formatoHora={formatoHora}
     >
       {children}
     </AppShell>

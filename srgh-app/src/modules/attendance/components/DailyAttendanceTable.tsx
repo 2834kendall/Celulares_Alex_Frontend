@@ -30,6 +30,8 @@ import { formatMinutes, todayInCostaRica } from '@/modules/attendance/lib/time'
 import { META_LABEL, TABLE_HEAD, TABLE_ROW, TABLE_SCROLL, TABLE_TH } from '@/components/ui/styles'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
+import { Hora } from '@/components/ui/Hora'
+import { useFormatHora } from '@/lib/time/FormatoHoraContext'
 
 interface DailyAttendanceTableProps {
   dateISO: string
@@ -120,7 +122,10 @@ function MarkDot({
   tardiness: DailyTardiness | null
 }) {
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
-  const detalle = markDetail(time, diffMinutes, tardiness)
+  const { hora } = useFormatHora()
+  // markDetail usa la hora solo para armar el texto del tooltip, así que
+  // recibe la ya formateada. El `time` crudo no sale de acá.
+  const detalle = markDetail(hora(time) ?? time, diffMinutes, tardiness)
 
   if (!detalle) return null
 
@@ -196,7 +201,9 @@ function MarkCell({
     <div className="group/celda flex items-center gap-1.5 whitespace-nowrap">
       {mark ? (
         <span className="inline-flex items-baseline gap-1.5">
-          <span className="text-[13px] font-semibold tabular-nums text-slate-700">{mark.time}</span>
+          <span className="text-[13px] font-semibold tabular-nums text-slate-700">
+            <Hora value={mark.time} />
+          </span>
           <MarkDot time={mark.time} diffMinutes={mark.diffMinutes} tardiness={tardiness} />
         </span>
       ) : (
@@ -246,7 +253,11 @@ function EmployeeMeta({ row }: { row: DailyAttendanceRow }) {
     <p className="mt-0.5 text-[11px] text-slate-500">
       {row.position}
       {row.position && row.expectedStart && <span className="text-slate-300"> · </span>}
-      {row.expectedStart && <span className="tabular-nums">Entra {row.expectedStart}</span>}
+      {row.expectedStart && (
+        <span className="tabular-nums">
+          Entra <Hora value={row.expectedStart} />
+        </span>
+      )}
     </p>
   )
 }
@@ -345,7 +356,9 @@ function MarkTile({
       </span>
       {mark ? (
         <span className="mt-1 block">
-          <span className="text-sm font-semibold tabular-nums text-slate-800">{mark.time}</span>
+          <span className="text-sm font-semibold tabular-nums text-slate-800">
+            <Hora value={mark.time} />
+          </span>
           {/* En movil la tarjeta ENTERA es el boton de corregir, asi que el
               detalle no puede ser otro boton con su recuadro: se escribe.
               Hay lugar, y asi la tardia deja de ser invisible en el celular
