@@ -6,6 +6,7 @@ import {
   derivePageBackground,
   deriveSidebarTokens,
   lighten,
+  readableTextOn,
   relativeLuminance,
   suggestAccent,
 } from './color'
@@ -261,5 +262,23 @@ describe('suggestAccent', () => {
 
   it('es deterministico: mismo fondo, misma sugerencia', () => {
     expect(suggestAccent('#eef1f4')).toBe(suggestAccent('#eef1f4'))
+  })
+})
+
+describe('readableTextOn', () => {
+  it('texto oscuro sobre los pasteles del picker', () => {
+    expect(readableTextOn('#fde68a')).toBe('#1e293b')
+    expect(readableTextOn('#e2e8f0')).toBe('#1e293b')
+  })
+
+  it('texto blanco sobre un color oscuro elegido a mano', () => {
+    expect(readableTextOn('#1e3a8a')).toBe('#ffffff')
+    expect(readableTextOn('#000000')).toBe('#ffffff')
+  })
+
+  it('el color elegido siempre supera 4.5:1 en los extremos', () => {
+    for (const fondo of ['#ffffff', '#1e3a8a', '#fde68a', '#7c2d12']) {
+      expect(contrastRatio(fondo, readableTextOn(fondo))).toBeGreaterThanOrEqual(4.5)
+    }
   })
 })

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronDown } from 'lucide-react'
 import { useController, type Control, type FieldValues, type Path } from 'react-hook-form'
 import { cn } from '@/lib/utils/cn'
@@ -53,6 +54,42 @@ interface SelectMenuProps {
 }
 
 /**
+ * Ubica el listbox (portal a <body>, `position: fixed`) pegado al trigger.
+ *
+ * Portal porque, dibujado en su lugar, un contenedor con `overflow` lo
+ * recortaba: dentro de un Modal (cuerpo con scroll) la lista de minutos de
+ * TimeSelect quedaba cortada y habia que scrollear el modal para verla.
+ * Medido a mano, mismo criterio que DatePickerButton:
+ * - abre hacia arriba si abajo no entra y arriba hay mas lugar;
+ * - se empuja para no salirse por los costados (un trigger angosto pegado
+ *   al borde derecho, como el selector de sucursal del header, recortaba
+ *   las opciones largas contra el borde de la ventana).
+ */
+function placeList(list: HTMLElement | null, trigger: HTMLElement | null) {
+  if (!list || !trigger) return
+
+  const margen = 8
+  const separacion = 6
+  const caja = trigger.getBoundingClientRect()
+  const anchoVisible = document.documentElement.clientWidth
+  const abajo = window.innerHeight - caja.bottom - margen - separacion
+  const arriba = caja.top - margen - separacion
+
+  list.style.minWidth = `${caja.width}px`
+  list.style.maxHeight = ''
+  const alto = list.offsetHeight
+  const haciaArriba = alto > abajo && arriba > abajo
+  const disponible = Math.max(haciaArriba ? arriba : abajo, 0)
+  if (alto > disponible) list.style.maxHeight = `${disponible}px`
+  const altoFinal = Math.min(alto, disponible)
+
+  const left = Math.max(margen, Math.min(caja.left, anchoVisible - list.offsetWidth - margen))
+  list.style.left = `${left}px`
+  list.style.top = haciaArriba
+    ? `${caja.top - separacion - altoFinal}px`
+    : `${caja.bottom + separacion}px`
+}
+/**
  * Reemplazo del `<select>` nativo con la lista desplegada TAMBIEN estilizada.
  *
  * El campo cerrado de un select nativo ya se veia bien (token SELECT), pero la
@@ -93,27 +130,24 @@ export function SelectMenu({
 
   const selected = options.find((o) => o.value === value) ?? null
 
-  /**
-   * Empuja el listbox para que no se salga de la pantalla — mismo criterio
-   * que DatePickerButton. Necesario porque, a diferencia de un `<select>`
-   * nativo, esto es un elemento normal del documento: sin este ajuste, un
-   * trigger angosto pegado al borde derecho (p. ej. el selector de sucursal
-   * del header) recorta las opciones mas largas contra el borde de la
-   * ventana en vez de desbordar hacia la izquierda.
-   */
   useLayoutEffect(() => {
-    const list = listRef.current
-    if (!open || !list) return
+    if (open) placeList(listRef.current, triggerRef.current)
+  }, [open])
 
-    list.style.left = ''
-    const caja = list.getBoundingClientRect()
-    const margen = 8
-    const anchoVisible = document.documentElement.clientWidth
-    const sobraDerecha = caja.right - (anchoVisible - margen)
-    const faltaIzquierda = margen - caja.left
-
-    if (sobraDerecha > 0) list.style.left = `${-sobraDerecha}px`
-    else if (faltaIzquierda > 0) list.style.left = `${faltaIzquierda}px`
+  // Si la pagina (o el modal) scrollea con la lista abierta, la lista sigue
+  // al trigger en vez de quedar flotando donde estaba.
+  useEffect(() => {
+    if (!open) return
+    function onScrollOrResize(e: Event) {
+      if (e.target instanceof Node && listRef.current?.contains(e.target)) return
+      placeList(listRef.current, triggerRef.current)
+    }
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
+    }
   }, [open])
 
   function openMenu() {
@@ -135,9 +169,10 @@ export function SelectMenu({
   useEffect(() => {
     if (!open) return
     function onMouseDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+      const target = e.target as Node
+      // La lista vive en un portal: no es descendiente del contenedor.
+      if (containerRef.current?.contains(target) || listRef.current?.contains(target)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
@@ -214,7 +249,12 @@ export function SelectMenu({
       e.preventDefault()
       const match = options[highlighted]
       if (match) choose(match.value)
-    } else if (e.key === 'Escape' || e.key === 'Tab') {
+    } else if (e.key === 'Escape') {
+      // preventDefault = "este Escape ya lo usé para cerrar la lista": el
+      // Modal que contiene al select lo respeta y no se cierra también.
+      e.preventDefault()
+      setOpen(false)
+    } else if (e.key === 'Tab') {
       setOpen(false)
     }
   }
@@ -257,41 +297,46 @@ export function SelectMenu({
         <ChevronDown className={cn('shrink-0 text-slate-400', s.chevron)} aria-hidden="true" />
       </button>
 
-      {open && (
-        <ul
-          ref={listRef}
-          id={listboxId}
-          role="listbox"
-          aria-label={ariaLabel}
-          // `w-max` (no `w-full`): el listbox se mide por su opcion mas larga,
-          // no por el ancho del trigger — un trigger angosto ("Sucursal 11")
-          // ya no recorta nombres mas largos ("Sucursal Metrocentro") a lo que
-          // mide el propio boton. `min-w-full` evita que quede MAS angosto
-          // que el trigger.
-          className="absolute left-0 z-20 mt-1.5 max-h-64 w-max min-w-full max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-        >
-          {options.map((o, i) => (
-            <li key={o.value} role="option" aria-selected={o.value === value} data-index={i}>
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => choose(o.value)}
-                onMouseEnter={() => setHighlighted(i)}
-                className={cn(
-                  'flex w-full items-center justify-between gap-2 text-left outline-none transition',
-                  s.option,
-                  i === highlighted && 'bg-brand-50'
-                )}
-              >
-                <span className="truncate font-medium text-slate-800">{o.label}</span>
-                {o.value === value && (
-                  <Check className={cn('shrink-0 text-brand-600', s.check)} aria-hidden="true" />
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open &&
+        createPortal(
+          <ul
+            ref={listRef}
+            id={listboxId}
+            role="listbox"
+            aria-label={ariaLabel}
+            // `w-max` (no `w-full`): el listbox se mide por su opcion mas larga,
+            // no por el ancho del trigger — un trigger angosto ("Sucursal 11")
+            // ya no recorta nombres mas largos ("Sucursal Metrocentro") a lo que
+            // mide el propio boton. El ancho minimo (el del trigger) y la
+            // posicion los pone placeList. z-60: por encima del Modal (z-50).
+            className="animate-fade-in fixed top-0 left-0 z-60 max-h-64 w-max max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+          >
+            {options.map((o, i) => (
+              <li key={o.value} role="option" aria-selected={o.value === value} data-index={i}>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  // Sin esto el click le saca el foco al trigger (y dentro de un
+                  // Modal lo mandaria fuera del panel) antes de elegir.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => choose(o.value)}
+                  onMouseEnter={() => setHighlighted(i)}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 text-left outline-none transition',
+                    s.option,
+                    i === highlighted && 'bg-brand-50'
+                  )}
+                >
+                  <span className="truncate font-medium text-slate-800">{o.label}</span>
+                  {o.value === value && (
+                    <Check className={cn('shrink-0 text-brand-600', s.check)} aria-hidden="true" />
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )}
     </div>
   )
 }
