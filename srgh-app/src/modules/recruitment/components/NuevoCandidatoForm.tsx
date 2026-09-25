@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, UserPlus } from 'lucide-react'
@@ -10,7 +11,8 @@ import type { CatalogoItem } from '@/modules/employees/types'
 import { createCandidateWithPostulacion } from '@/modules/recruitment/actions/createCandidateWithPostulacion'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
-import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { ControlledSelectMenu, parseNumber, parseOptionalNumber } from '@/components/ui/SelectMenu'
 
 interface NuevoCandidatoFormProps {
   tiposIdentificacion: CatalogoItem[]
@@ -36,6 +38,7 @@ export function NuevoCandidatoForm({
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<NuevoCandidatoInput>({
@@ -66,6 +69,7 @@ export function NuevoCandidatoForm({
       return
     }
 
+    toast.success('Candidato registrado.')
     onSuccess?.()
     router.push(`/recruitment/candidates/${result.candidatoId}`)
   }
@@ -127,23 +131,19 @@ export function NuevoCandidatoForm({
           <label className={LABEL} htmlFor="cdt_tipo_identificacion_id">
             Tipo de identificación
           </label>
-          <select
+          <ControlledSelectMenu
+            control={control}
+            name="candidato.cdt_tipo_identificacion_id"
             id="cdt_tipo_identificacion_id"
+            parse={parseNumber}
             disabled={isSubmitting}
-            aria-invalid={!!errors.candidato?.cdt_tipo_identificacion_id}
-            {...register('candidato.cdt_tipo_identificacion_id', { valueAsNumber: true })}
-            className={SELECT}
-            defaultValue=""
-          >
-            <option value="" disabled>
-              Seleccionar…
-            </option>
-            {tiposIdentificacion.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.nombre}
-              </option>
-            ))}
-          </select>
+            invalid={!!errors.candidato?.cdt_tipo_identificacion_id}
+            placeholder="Seleccionar…"
+            options={tiposIdentificacion.map((item) => ({
+              value: String(item.id),
+              label: item.nombre,
+            }))}
+          />
           {errors.candidato?.cdt_tipo_identificacion_id && (
             <p className={FIELD_ERROR}>{errors.candidato.cdt_tipo_identificacion_id.message}</p>
           )}
@@ -219,23 +219,16 @@ export function NuevoCandidatoForm({
             <label className={LABEL} htmlFor="pos_puesto_id">
               Puesto
             </label>
-            <select
+            <ControlledSelectMenu
+              control={control}
+              name="postulacion.pos_puesto_id"
               id="pos_puesto_id"
+              parse={parseNumber}
               disabled={isSubmitting}
-              aria-invalid={!!errors.postulacion?.pos_puesto_id}
-              {...register('postulacion.pos_puesto_id', { valueAsNumber: true })}
-              className={SELECT}
-              defaultValue=""
-            >
-              <option value="" disabled>
-                Seleccionar…
-              </option>
-              {puestos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre}
-                </option>
-              ))}
-            </select>
+              invalid={!!errors.postulacion?.pos_puesto_id}
+              placeholder="Seleccionar…"
+              options={puestos.map((item) => ({ value: String(item.id), label: item.nombre }))}
+            />
             {errors.postulacion?.pos_puesto_id && (
               <p className={FIELD_ERROR}>{errors.postulacion.pos_puesto_id.message}</p>
             )}
@@ -245,20 +238,18 @@ export function NuevoCandidatoForm({
             <label className={LABEL} htmlFor="pos_sucursal_id">
               Sucursal (opcional)
             </label>
-            <select
+            <ControlledSelectMenu
+              control={control}
+              name="postulacion.pos_sucursal_id"
               id="pos_sucursal_id"
+              parse={parseOptionalNumber}
               disabled={isSubmitting}
-              {...register('postulacion.pos_sucursal_id', { valueAsNumber: true })}
-              className={SELECT}
-              defaultValue=""
-            >
-              <option value="">Sin especificar</option>
-              {sucursales.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.nombre}
-                </option>
-              ))}
-            </select>
+              placeholder="Sin especificar"
+              options={[
+                { value: '', label: 'Sin especificar' },
+                ...sucursales.map((item) => ({ value: String(item.id), label: item.nombre })),
+              ]}
+            />
           </div>
         </div>
       </div>

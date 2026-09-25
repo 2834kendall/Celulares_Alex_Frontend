@@ -1,8 +1,12 @@
 'use client'
 
-import { Milestone, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { ChevronDown, ChevronUp, Milestone, Pencil, Plus, Trash2 } from 'lucide-react'
 import { FASES_SELECCION, type EtapaSeleccionRow } from '@/modules/recruitment/types'
 import { deleteEtapaSeleccion } from '@/modules/recruitment/actions/deleteEtapaSeleccion'
+import { moveEtapaSeleccion } from '@/modules/recruitment/actions/moveEtapaSeleccion'
 import { useCrudList } from '@/modules/recruitment/hooks/useCrudList'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
@@ -34,7 +38,26 @@ export function EtapasSeleccionManager({ etapas, canWrite }: EtapasSeleccionMana
     confirmDelete,
   } = useCrudList<EtapaSeleccionRow>(deleteEtapaSeleccion)
 
+  const router = useRouter()
+  const [movingId, setMovingId] = useState<number | null>(null)
+
   const isEditing = editing !== null && editing !== 'new'
+
+  async function mover(etapa: EtapaSeleccionRow, direccion: 'arriba' | 'abajo') {
+    setMovingId(etapa.id)
+    const result = await moveEtapaSeleccion(etapa.id, direccion)
+    setMovingId(null)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    router.refresh()
+  }
+
+  async function handleConfirmDelete() {
+    const result = await confirmDelete()
+    if (result.ok) toast.success('Etapa eliminada.')
+  }
 
   return (
     <div className="@container space-y-4">
@@ -79,20 +102,20 @@ export function EtapasSeleccionManager({ etapas, canWrite }: EtapasSeleccionMana
 
             return (
               <div key={fase.value} className="min-w-0 space-y-2">
-                <h3 className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                <h3 className="text-xs font-semibold text-slate-700">
                   {fase.label}
-                  <span className="ml-1.5 font-medium text-slate-400">({deLaFase.length})</span>
+                  <span className="ml-1.5 font-medium text-slate-500">({deLaFase.length})</span>
                 </h3>
 
                 {deLaFase.length === 0 ? (
-                  <p className="text-[11px] text-slate-400">Sin etapas en esta columna.</p>
+                  <p className="text-[11px] text-slate-500">Sin etapas en esta columna.</p>
                 ) : (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {deLaFase.map((etapa) => (
+                    {deLaFase.map((etapa, index) => (
                       <div
                         key={etapa.id}
                         className={`flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-brand-300 ${
-                          deletingId === etapa.id ? 'opacity-50' : ''
+                          deletingId === etapa.id || movingId === etapa.id ? 'opacity-50' : ''
                         }`}
                       >
                         <span
@@ -105,6 +128,26 @@ export function EtapasSeleccionManager({ etapas, canWrite }: EtapasSeleccionMana
                         </p>
                         {canWrite && (
                           <div className="flex shrink-0 items-center gap-0.5">
+                            {/* Orden dentro de la columna = orden en el selector de
+                                "Avanzar a etapa". Solo se muestra si hay a dónde mover. */}
+                            {deLaFase.length > 1 && (
+                              <>
+                                <IconButton
+                                  onClick={() => mover(etapa, 'arriba')}
+                                  disabled={index === 0 || movingId !== null}
+                                  aria-label={`Subir ${etapa.nombre}`}
+                                >
+                                  <ChevronUp className="h-3.5 w-3.5" />
+                                </IconButton>
+                                <IconButton
+                                  onClick={() => mover(etapa, 'abajo')}
+                                  disabled={index === deLaFase.length - 1 || movingId !== null}
+                                  aria-label={`Bajar ${etapa.nombre}`}
+                                >
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                </IconButton>
+                              </>
+                            )}
                             <IconButton
                               tone="blue"
                               onClick={() => setEditing(etapa)}
@@ -145,7 +188,10 @@ export function EtapasSeleccionManager({ etapas, canWrite }: EtapasSeleccionMana
           <EtapaSeleccionForm
             key={isEditing ? editing.id : 'new'}
             etapa={isEditing ? editing : undefined}
-            onSuccess={() => setEditing(null)}
+            onSuccess={() => {
+              toast.success(isEditing ? 'Etapa actualizada.' : 'Etapa creada.')
+              setEditing(null)
+            }}
           />
         </Modal>
       )}
@@ -155,7 +201,7 @@ export function EtapasSeleccionManager({ etapas, canWrite }: EtapasSeleccionMana
           title="Eliminar etapa"
           message="La etapa dejará de aparecer al avanzar postulaciones. Si ya la recorrió algún candidato se desactivará, para no perder su historial."
           onCancel={cancelDelete}
-          onConfirm={confirmDelete}
+          onConfirm={handleConfirmDelete}
         />
       )}
     </div>

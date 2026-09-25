@@ -38,3 +38,18 @@ export function weightedAverageScore(items: PuntajePonderable[]): number | null 
   const suma = aplicables.reduce((total, item) => total + item.puntaje! * item.peso, 0)
   return Math.round(suma / pesoTotal)
 }
+
+/**
+ * Orden de una columna del tablero: mayor puntaje primero, para comparar
+ * candidatos de un vistazo (lo que pidió RRHH). Los que todavía no tienen
+ * puntaje van al final. `sort` es estable: entre empates se conserva el
+ * orden de llegada (fecha de postulación) con que vienen del servidor.
+ */
+export function sortByScore<T extends { puntajePromedio: number | null }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    if (a.puntajePromedio === b.puntajePromedio) return 0
+    if (a.puntajePromedio === null) return 1
+    if (b.puntajePromedio === null) return -1
+    return b.puntajePromedio - a.puntajePromedio
+  })
+}

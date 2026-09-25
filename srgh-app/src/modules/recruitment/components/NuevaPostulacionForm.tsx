@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, Send } from 'lucide-react'
@@ -10,7 +11,8 @@ import type { CatalogoItem } from '@/modules/employees/types'
 import { createPostulacion } from '@/modules/recruitment/actions/createPostulacion'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
-import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { ControlledSelectMenu, parseNumber, parseOptionalNumber } from '@/components/ui/SelectMenu'
 
 interface NuevaPostulacionFormProps {
   candidatoId: number
@@ -31,6 +33,7 @@ export function NuevaPostulacionForm({
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<PostulacionInput>({
@@ -47,6 +50,7 @@ export function NuevaPostulacionForm({
       return
     }
 
+    toast.success('Postulación creada.')
     onSuccess?.()
     router.refresh()
   }
@@ -63,23 +67,16 @@ export function NuevaPostulacionForm({
         <label className={LABEL} htmlFor="np_pos_puesto_id">
           Puesto
         </label>
-        <select
+        <ControlledSelectMenu
+          control={control}
+          name="pos_puesto_id"
           id="np_pos_puesto_id"
+          parse={parseNumber}
           disabled={isSubmitting}
-          aria-invalid={!!errors.pos_puesto_id}
-          {...register('pos_puesto_id', { valueAsNumber: true })}
-          className={SELECT}
-          defaultValue=""
-        >
-          <option value="" disabled>
-            Seleccionar…
-          </option>
-          {puestos.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nombre}
-            </option>
-          ))}
-        </select>
+          invalid={!!errors.pos_puesto_id}
+          placeholder="Seleccionar…"
+          options={puestos.map((item) => ({ value: String(item.id), label: item.nombre }))}
+        />
         {errors.pos_puesto_id && <p className={FIELD_ERROR}>{errors.pos_puesto_id.message}</p>}
       </div>
 
@@ -87,20 +84,18 @@ export function NuevaPostulacionForm({
         <label className={LABEL} htmlFor="np_pos_sucursal_id">
           Sucursal (opcional)
         </label>
-        <select
+        <ControlledSelectMenu
+          control={control}
+          name="pos_sucursal_id"
           id="np_pos_sucursal_id"
+          parse={parseOptionalNumber}
           disabled={isSubmitting}
-          {...register('pos_sucursal_id', { valueAsNumber: true })}
-          className={SELECT}
-          defaultValue=""
-        >
-          <option value="">Sin especificar</option>
-          {sucursales.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.nombre}
-            </option>
-          ))}
-        </select>
+          placeholder="Sin especificar"
+          options={[
+            { value: '', label: 'Sin especificar' },
+            ...sucursales.map((item) => ({ value: String(item.id), label: item.nombre })),
+          ]}
+        />
       </div>
 
       <div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { averageScore } from '@/modules/evaluations/lib/scoring'
-import { weightedAverageScore } from './scoring'
+import { sortByScore, weightedAverageScore } from './scoring'
 
 describe('weightedAverageScore', () => {
   it('sin criterios aplicables devuelve null', () => {
@@ -62,5 +62,31 @@ describe('weightedAverageScore', () => {
         { puntaje: 1, peso: 0 },
       ])
     ).toBe(9)
+  })
+})
+
+describe('sortByScore', () => {
+  const item = (id: number, puntajePromedio: number | null) => ({ id, puntajePromedio })
+
+  it('mayor puntaje primero y los que no tienen puntaje al final', () => {
+    const ordenados = sortByScore([
+      item(1, null),
+      item(2, 6),
+      item(3, 9),
+      item(4, null),
+      item(5, 7),
+    ])
+    expect(ordenados.map((i) => i.id)).toEqual([3, 5, 2, 1, 4])
+  })
+
+  it('en un empate conserva el orden de llegada', () => {
+    const ordenados = sortByScore([item(1, 8), item(2, 8), item(3, 8)])
+    expect(ordenados.map((i) => i.id)).toEqual([1, 2, 3])
+  })
+
+  it('no modifica el arreglo original', () => {
+    const original = [item(1, 2), item(2, 9)]
+    sortByScore(original)
+    expect(original.map((i) => i.id)).toEqual([1, 2])
   })
 })

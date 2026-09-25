@@ -24,8 +24,10 @@ export function useCrudList<T>(deleteAction: (id: number) => Promise<DeleteResul
     setConfirmingId(null)
   }
 
-  async function confirmDelete() {
-    if (confirmingId === null) return
+  // Devuelve el resultado (como el hook de employees) para que quien llama
+  // pueda confirmar con un toast: antes un borrado exitoso no decía nada.
+  async function confirmDelete(): Promise<DeleteResult> {
+    if (confirmingId === null) return { ok: false, error: 'Nada que eliminar.' }
     const id = confirmingId
     setConfirmingId(null)
     setDeleteError(null)
@@ -33,6 +35,7 @@ export function useCrudList<T>(deleteAction: (id: number) => Promise<DeleteResul
     const result = await deleteAction(id)
     setDeletingId(null)
     if (!result.ok) setDeleteError(result.error)
+    return result
   }
 
   return {

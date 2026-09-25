@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { CheckCircle2, ChevronRight, Loader2, Star, XCircle } from 'lucide-react'
 import type {
   CriterioSeleccionItem,
@@ -11,15 +12,19 @@ import type {
 } from '@/modules/recruitment/types'
 import { ESTADO_POSTULACION_LABELS, RESULTADO_ETAPA_LABELS } from '@/modules/recruitment/lib/format'
 import { weightedAverageScore } from '@/modules/recruitment/lib/scoring'
+import { classifyScore } from '@/modules/evaluations/lib/scoring'
 import { formatDate } from '@/modules/employees/lib/format'
 import { advanceStage } from '@/modules/recruitment/actions/advanceStage'
 import { rejectPostulacion } from '@/modules/recruitment/actions/rejectPostulacion'
 import { savePostulacionScores } from '@/modules/recruitment/actions/savePostulacionScores'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button, BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
-import { INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { SelectMenu } from '@/components/ui/SelectMenu'
+import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { cn } from '@/lib/utils/cn'
+import { ScoreScale, type ScoreValue } from './ScoreScale'
 
 interface PostulacionPanelProps {
   candidatoId: number
@@ -34,6 +39,11 @@ const ESTADO_TONE: Record<string, 'blue' | 'emerald' | 'rose'> = {
   contratado: 'emerald',
   descartado: 'rose',
 }
+
+// Título de sección del panel. En minúscula normal y no en versalitas con
+// tracking: son varias secciones seguidas y en mayúsculas competían con el
+// nombre del puesto.
+const SECTION_TITLE = 'text-xs font-semibold text-slate-700'
 
 export function PostulacionPanel({
   candidatoId,
@@ -59,7 +69,7 @@ export function PostulacionPanel({
         </Badge>
       </div>
 
-      <p className="text-[11px] text-slate-400">
+      <p className="text-[11px] text-slate-500">
         Postuló el {formatDate(postulacion.pos_fecha_postula)}
         {postulacion.pos_fecha_cierre &&
           ` · Cerrada el ${formatDate(postulacion.pos_fecha_cierre)}`}
@@ -68,9 +78,9 @@ export function PostulacionPanel({
       {postulacion.pos_estado_final === 'contratado' && postulacion.pos_empleado_id && (
         <Link
           href={`/employees/${postulacion.pos_empleado_id}`}
-          className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline"
+          className="inline-flex items-center gap-1 rounded text-xs font-semibold text-brand-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand-500/60"
         >
-          Ver ficha del empleado <ChevronRight className="h-3 w-3" />
+          Ver ficha del empleado <ChevronRight className="h-3 w-3" aria-hidden="true" />
         </Link>
       )}
 
@@ -82,13 +92,13 @@ export function PostulacionPanel({
 
       {postulacion.etapas.length > 0 && (
         <div className="space-y-1.5 border-t border-slate-100 pt-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            Historial de etapas
-          </p>
+          <p className={SECTION_TITLE}>Historial de etapas</p>
           <ul className="space-y-1.5">
             {postulacion.etapas.map((etapa) => (
               <li key={etapa.pet_id} className="flex items-start gap-2 text-xs">
-                <span className="mt-0.5 text-slate-400">{formatDate(etapa.pet_fecha)}</span>
+                <span className="mt-0.5 shrink-0 tabular-nums text-slate-500">
+                  {formatDate(etapa.pet_fecha)}
+                </span>
                 <span className="min-w-0 flex-1 text-slate-700">
                   <span className="font-semibold">{etapa.etapaNombre}</span>
                   {etapa.pet_resultado && (
@@ -120,12 +130,16 @@ export function PostulacionPanel({
         <div className="space-y-2 border-t border-slate-100 pt-3">
           <AdvanceStageForm postulacionId={postulacion.pos_id} etapas={etapas} />
           <div className="flex flex-wrap gap-2">
+            {/*
+              Enlace con apariencia de botón, no un <Button> dentro de un
+              <Link>: eso es HTML inválido (dos controles anidados) y el
+              teclado se detenía dos veces en "Contratar".
+            */}
             <Link
               href={`/recruitment/candidates/${candidatoId}/hire?postulacionId=${postulacion.pos_id}`}
+              className={cn(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES.sm)}
             >
-              <Button variant="secondary">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Contratar
-              </Button>
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> Contratar
             </Link>
             <RejectButton postulacionId={postulacion.pos_id} onDone={() => router.refresh()} />
           </div>
@@ -134,6 +148,18 @@ export function PostulacionPanel({
     </div>
   )
 }
+
+type Resultado = 'pendiente' | 'aprobado' | 'rechazado'
+
+// Botones segmentados y no un desplegable: son tres opciones fijas, se ven
+// todas de una vez y se eligen de un toque. El color solo aparece en la
+// elegida, para no pintar de verde y rojo un formulario que todavía no dice
+// nada.
+const RESULTADOS: { value: Resultado; selected: string }[] = [
+  { value: 'pendiente', selected: 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' },
+  { value: 'aprobado', selected: 'bg-emerald-600 text-white shadow-sm' },
+  { value: 'rechazado', selected: 'bg-rose-600 text-white shadow-sm' },
+]
 
 function AdvanceStageForm({
   postulacionId,
@@ -144,7 +170,7 @@ function AdvanceStageForm({
 }) {
   const router = useRouter()
   const [etapaId, setEtapaId] = useState('')
-  const [resultado, setResultado] = useState('pendiente')
+  const [resultado, setResultado] = useState<Resultado>('pendiente')
   const [notas, setNotas] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -158,7 +184,14 @@ function AdvanceStageForm({
       <Alert tone="info">
         <div>
           Todavía no hay etapas definidas, así que no se puede registrar por dónde va el candidato.
-          Se crean en <span className="font-semibold">Configuración → Etapas de selección</span>.
+          Se crean en{' '}
+          <Link
+            href="/settings?tab=etapas"
+            className="font-semibold underline underline-offset-2 hover:no-underline"
+          >
+            Configuración → Etapas de selección
+          </Link>
+          .
         </div>
       </Alert>
     )
@@ -175,7 +208,7 @@ function AdvanceStageForm({
     const result = await advanceStage({
       postulacionId,
       etapaId: Number(etapaId),
-      resultado: resultado as 'aprobado' | 'rechazado' | 'pendiente',
+      resultado,
       notas: notas.trim() || null,
       fecha: new Date().toISOString().slice(0, 10),
     })
@@ -184,68 +217,85 @@ function AdvanceStageForm({
       setError(result.error)
       return
     }
+    const nombre = etapas.find((etapa) => String(etapa.id) === etapaId)?.nombre
+    toast.success(nombre ? `Etapa registrada: ${nombre}.` : 'Etapa registrada.')
+    setEtapaId('')
+    setResultado('pendiente')
     setNotas('')
     router.refresh()
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-2 rounded-lg bg-slate-50 p-2.5" noValidate>
+    <form onSubmit={handleSubmit} className="space-y-2.5 rounded-lg bg-slate-50 p-2.5" noValidate>
       {error && (
         <Alert>
           <div>{error}</div>
         </Alert>
       )}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <div>
           <label className={LABEL} htmlFor={`etapa-${postulacionId}`}>
             Avanzar a etapa
           </label>
-          <select
+          <SelectMenu
             id={`etapa-${postulacionId}`}
             value={etapaId}
-            onChange={(e) => setEtapaId(e.target.value)}
+            onChange={(v) => {
+              setEtapaId(v)
+              setError(null)
+            }}
             disabled={submitting}
-            className={SELECT}
-          >
-            <option value="">Seleccionar…</option>
-            {etapas.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.nombre}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className={LABEL} htmlFor={`resultado-${postulacionId}`}>
-            Resultado
-          </label>
-          <select
-            id={`resultado-${postulacionId}`}
-            value={resultado}
-            onChange={(e) => setResultado(e.target.value)}
-            disabled={submitting}
-            className={SELECT}
-          >
-            <option value="pendiente">Pendiente</option>
-            <option value="aprobado">Aprobado</option>
-            <option value="rechazado">Rechazado</option>
-          </select>
-        </div>
-        <div>
-          <label className={LABEL} htmlFor={`notas-${postulacionId}`}>
-            Notas (opcional)
-          </label>
-          <input
-            id={`notas-${postulacionId}`}
-            value={notas}
-            onChange={(e) => setNotas(e.target.value)}
-            disabled={submitting}
-            className={INPUT}
+            invalid={error === 'Seleccione una etapa.'}
+            options={etapas.map((etapa) => ({ value: String(etapa.id), label: etapa.nombre }))}
           />
         </div>
+        <div>
+          <span className={LABEL} id={`resultado-${postulacionId}`}>
+            Resultado
+          </span>
+          <div
+            role="radiogroup"
+            aria-labelledby={`resultado-${postulacionId}`}
+            className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/60 p-1"
+          >
+            {RESULTADOS.map((opcion) => {
+              const checked = resultado === opcion.value
+              return (
+                <button
+                  key={opcion.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  disabled={submitting}
+                  onClick={() => setResultado(opcion.value)}
+                  className={cn(
+                    'rounded-lg px-1 py-1.5 text-center text-xs leading-tight font-semibold outline-none transition pointer-coarse:min-h-11 sm:px-2 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed',
+                    checked ? opcion.selected : 'text-slate-600 hover:text-slate-900'
+                  )}
+                >
+                  {RESULTADO_ETAPA_LABELS[opcion.value]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+      <div>
+        <label className={LABEL} htmlFor={`notas-${postulacionId}`}>
+          Notas (opcional)
+        </label>
+        <input
+          id={`notas-${postulacionId}`}
+          value={notas}
+          onChange={(e) => setNotas(e.target.value)}
+          disabled={submitting}
+          className={INPUT}
+          placeholder="Ej: buena actitud, pidió horario de tarde"
+        />
       </div>
       <Button type="submit" disabled={submitting}>
-        {submitting ? <Loader2 className={SPINNER} /> : null} Registrar etapa
+        {submitting && <Loader2 className={SPINNER} />}
+        {submitting ? 'Registrando' : 'Registrar etapa'}
       </Button>
     </form>
   )
@@ -277,6 +327,7 @@ function RejectButton({ postulacionId, onDone }: { postulacionId: number; onDone
       setError(result.error)
       return
     }
+    toast.success('Postulación descartada.')
     close()
     onDone()
   }
@@ -284,7 +335,7 @@ function RejectButton({ postulacionId, onDone }: { postulacionId: number; onDone
   return (
     <>
       <Button variant="secondary" onClick={() => setOpen(true)}>
-        <XCircle className="h-3.5 w-3.5 text-rose-600" /> Descartar
+        <XCircle className="h-3.5 w-3.5 text-rose-600" aria-hidden="true" /> Descartar
       </Button>
       {open && (
         <Modal
@@ -308,17 +359,27 @@ function RejectButton({ postulacionId, onDone }: { postulacionId: number; onDone
                 onChange={(e) => setMotivo(e.target.value)}
                 disabled={submitting}
                 className={INPUT}
+                placeholder="Ej: no tiene disponibilidad los fines de semana"
                 autoFocus
               />
             </div>
-            <Button type="submit" variant="danger" disabled={submitting} size="lg" block>
-              {submitting ? <Loader2 className={SPINNER} /> : null} Descartar postulación
-            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="secondary" size="lg" onClick={close} disabled={submitting}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="danger" disabled={submitting} size="lg">
+                {submitting && <Loader2 className={SPINNER} />} Descartar postulación
+              </Button>
+            </div>
           </form>
         </Modal>
       )}
     </>
   )
+}
+
+interface ScoreState extends ScoreValue {
+  observacion: string
 }
 
 function ScoreForm({
@@ -333,36 +394,53 @@ function ScoreForm({
   canWrite: boolean
 }) {
   const router = useRouter()
-  const [scores, setScores] = useState<
-    Record<number, { puntaje: string; noAplica: boolean; observacion: string }>
-  >(() => {
-    const initial: Record<number, { puntaje: string; noAplica: boolean; observacion: string }> = {}
+  const [guardados, setGuardados] = useState<Record<number, ScoreState>>(() => {
+    const initial: Record<number, ScoreState> = {}
     for (const c of criterios) {
       const existing = existentes.find((p) => p.criterioId === c.id)
       initial[c.id] = {
-        puntaje:
-          existing?.puntaje !== null && existing?.puntaje !== undefined
-            ? String(existing.puntaje)
-            : '',
+        puntaje: existing?.puntaje ?? null,
         noAplica: existing?.noAplica ?? false,
         observacion: existing?.observacion ?? '',
       }
     }
     return initial
   })
+  const [scores, setScores] = useState(guardados)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Mismo cálculo que usa el servidor al guardar (savePostulacionScores):
-  // si acá se hiciera un promedio simple, el número mostrado al abrir la
-  // ficha no coincidiría con el que quedó guardado en pos_puntaje_promedio.
-  const [promedio, setPromedio] = useState<number | null>(() =>
-    weightedAverageScore(
-      existentes.map((p) => ({ puntaje: p.noAplica ? null : p.puntaje, peso: p.peso }))
-    )
+
+  // Promedio EN VIVO mientras se califica, con el mismo cálculo ponderado
+  // que usa el servidor al guardar (savePostulacionScores): así el número
+  // que se ve al tocar es exactamente el que va a quedar guardado.
+  const promedio = useMemo(
+    () =>
+      weightedAverageScore(
+        criterios.map((c) => ({
+          puntaje: scores[c.id]?.noAplica ? null : (scores[c.id]?.puntaje ?? null),
+          peso: c.peso,
+        }))
+      ),
+    [criterios, scores]
+  )
+
+  const pendientes = criterios.filter(
+    (c) => !scores[c.id]?.noAplica && scores[c.id]?.puntaje === null
+  ).length
+  const hayCambios = criterios.some(
+    (c) =>
+      scores[c.id]?.puntaje !== guardados[c.id]?.puntaje ||
+      scores[c.id]?.noAplica !== guardados[c.id]?.noAplica
   )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (pendientes > 0) {
+      setError(
+        `Falta${pendientes === 1 ? '' : 'n'} ${pendientes} criterio${pendientes === 1 ? '' : 's'}: elija un puntaje o N/A.`
+      )
+      return
+    }
     setSubmitting(true)
     setError(null)
 
@@ -370,18 +448,11 @@ function ScoreForm({
       const s = scores[c.id]
       return {
         criterioId: c.id,
-        puntaje: s.noAplica || s.puntaje === '' ? null : Number(s.puntaje),
+        puntaje: s.noAplica ? null : s.puntaje,
         noAplica: s.noAplica,
         observacion: s.observacion.trim() || null,
       }
     })
-
-    const sinCompletar = puntajes.find((p) => !p.noAplica && p.puntaje === null)
-    if (sinCompletar) {
-      setSubmitting(false)
-      setError('Complete el puntaje de todos los criterios o marque "No aplica".')
-      return
-    }
 
     const result = await savePostulacionScores({ postulacionId, puntajes })
     setSubmitting(false)
@@ -389,19 +460,22 @@ function ScoreForm({
       setError(result.error)
       return
     }
-    setPromedio(result.promedio)
+    setGuardados(scores)
+    toast.success(
+      result.promedio !== null ? `Puntaje guardado: ${result.promedio}/10.` : 'Puntaje guardado.'
+    )
     router.refresh()
   }
 
+  const clasificacion = promedio !== null ? classifyScore(promedio) : null
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-2.5 border-t border-slate-100 pt-3" noValidate>
+    <form onSubmit={handleSubmit} className="space-y-3 border-t border-slate-100 pt-3" noValidate>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-          Puntaje del candidato
-        </p>
-        {promedio !== null && (
-          <Badge tone="amber">
-            <Star className="h-2.5 w-2.5" /> Promedio: {promedio}
+        <p className={SECTION_TITLE}>Puntaje del candidato</p>
+        {promedio !== null && clasificacion && (
+          <Badge tone={clasificacion.tone}>
+            <Star className="h-2.5 w-2.5" aria-hidden="true" /> Promedio: {promedio}/10
           </Badge>
         )}
       </div>
@@ -412,74 +486,61 @@ function ScoreForm({
         </Alert>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {criterios.map((c) => (
-          <div
-            key={c.id}
-            // En 375px el criterio va arriba y sus controles abajo, en una
-            // fila propia: con el nombre y el input peleando el mismo
-            // renglón, la descripción quedaba recortada a dos palabras.
-            // Desde sm el wrapper de los controles se vuelve `contents` y los
-            // tres elementos entran como celdas de la grilla.
-            className="space-y-1.5 sm:grid sm:grid-cols-[2fr_auto_auto] sm:items-start sm:gap-2 sm:space-y-0"
-          >
+          <div key={c.id} className="space-y-1.5">
             <div className="flex min-w-0 items-start gap-2">
               <span
                 aria-hidden="true"
                 className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
                 style={{ backgroundColor: c.color ?? '#e2e8f0' }}
               />
+              {/*
+                Igual que en Configuración: el nombre del criterio (el del
+                área) es el título, y la descripción es la ayuda de qué se
+                califica. Si la descripción repite el nombre, no se muestra
+                dos veces.
+              */}
               <div className="min-w-0">
-                <p className="truncate text-xs font-semibold text-slate-800">{c.descripcion}</p>
-                <p className="truncate text-[10px] text-slate-400">
-                  {c.areaNombre}
-                  {c.peso !== 1 && ` · pesa ×${c.peso}`}
-                </p>
+                <p className="text-xs font-semibold text-slate-800">{c.areaNombre}</p>
+                {(c.descripcion.trim() !== c.areaNombre.trim() || c.peso !== 1) && (
+                  <p className="text-[11px] text-slate-500">
+                    {c.descripcion.trim() !== c.areaNombre.trim() && c.descripcion}
+                    {c.descripcion.trim() !== c.areaNombre.trim() && c.peso !== 1 && ' · '}
+                    {c.peso !== 1 && `pesa ×${c.peso}`}
+                  </p>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-3 pl-4.5 sm:contents sm:pl-0">
-              <input
-                type="number"
-                min={0}
-                max={10}
-                step={1}
-                disabled={!canWrite || submitting || scores[c.id]?.noAplica}
-                value={scores[c.id]?.puntaje ?? ''}
-                onChange={(e) =>
-                  setScores((prev) => ({
-                    ...prev,
-                    [c.id]: { ...prev[c.id], puntaje: e.target.value },
-                  }))
-                }
-                className={`${INPUT} w-20`}
-                aria-label={`Puntaje de ${c.descripcion}`}
-              />
-              {/* pointer-coarse:min-h-11 sobre el label: el área tocable
-                  útil es la del texto + la casilla, no solo la casilla. */}
-              <label className="flex items-center gap-1.5 text-[11px] text-slate-500 pointer-coarse:min-h-11">
-                <input
-                  type="checkbox"
-                  disabled={!canWrite || submitting}
-                  checked={scores[c.id]?.noAplica ?? false}
-                  onChange={(e) =>
-                    setScores((prev) => ({
-                      ...prev,
-                      [c.id]: { ...prev[c.id], noAplica: e.target.checked, puntaje: '' },
-                    }))
-                  }
-                  className="h-4 w-4"
-                />
-                No aplica
-              </label>
-            </div>
+            <ScoreScale
+              label={c.areaNombre}
+              value={scores[c.id]}
+              disabled={!canWrite || submitting}
+              onChange={(next) => {
+                setScores((prev) => ({ ...prev, [c.id]: { ...prev[c.id], ...next } }))
+                setError(null)
+              }}
+            />
           </div>
         ))}
       </div>
 
       {canWrite && (
-        <Button type="submit" disabled={submitting} size="sm">
-          {submitting ? <Loader2 className={SPINNER} /> : null} Guardar puntaje
-        </Button>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <Button type="submit" disabled={submitting || !hayCambios}>
+            {submitting && <Loader2 className={SPINNER} />}
+            {submitting ? 'Guardando' : 'Guardar puntaje'}
+          </Button>
+          {/* aria-live: quien usa lector de pantalla también se entera de
+              que hay cambios sin guardar o de cuántos faltan. */}
+          <p className="text-[11px] text-slate-500" aria-live="polite">
+            {hayCambios
+              ? pendientes > 0
+                ? `Cambios sin guardar · faltan ${pendientes}`
+                : 'Cambios sin guardar'
+              : null}
+          </p>
+        </div>
       )}
     </form>
   )

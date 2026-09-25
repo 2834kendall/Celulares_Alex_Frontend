@@ -14,7 +14,8 @@ import { createEtapaSeleccion } from '@/modules/recruitment/actions/createEtapaS
 import { updateEtapaSeleccion } from '@/modules/recruitment/actions/updateEtapaSeleccion'
 import { ColorPicker } from '@/components/ui/ColorPicker'
 import { Button } from '@/components/ui/Button'
-import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { cn } from '@/lib/utils/cn'
 import { Alert } from '@/components/ui/Alert'
 
 interface EtapaSeleccionFormProps {
@@ -41,6 +42,7 @@ export function EtapaSeleccionForm({ etapa, onSuccess }: EtapaSeleccionFormProps
   })
 
   const colorValue = useWatch({ control, name: 'color' })
+  const faseValue = useWatch({ control, name: 'fase' })
 
   async function onSubmit(input: EtapaSeleccionInput) {
     setServerError(null)
@@ -82,26 +84,43 @@ export function EtapaSeleccionForm({ etapa, onSuccess }: EtapaSeleccionFormProps
       </div>
 
       <div>
-        <label className={LABEL} htmlFor="etapa_fase">
+        <span className={LABEL} id="etapa_fase_label">
           Columna del tablero
-        </label>
-        <p className="mb-1 text-[11px] text-slate-500">
+        </span>
+        <p className="mb-1.5 text-[11px] text-slate-500" id="etapa_fase_ayuda">
           Dónde aparece el candidato mientras esté en esta etapa.
           {isEditing && ' Cambiarla mueve a todos los que estén parados acá.'}
         </p>
-        <select
-          id="etapa_fase"
-          disabled={isSubmitting}
-          aria-invalid={!!errors.fase}
-          {...register('fase', { valueAsNumber: true })}
-          className={SELECT}
+        {/* Tres columnas fijas: botones segmentados que se ven todos a la
+            vez, en el mismo orden que el tablero. */}
+        <div
+          role="radiogroup"
+          aria-labelledby="etapa_fase_label"
+          aria-describedby="etapa_fase_ayuda"
+          className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1"
         >
-          {FASES_SELECCION.map((fase) => (
-            <option key={fase.value} value={fase.value}>
-              {fase.label}
-            </option>
-          ))}
-        </select>
+          {FASES_SELECCION.map((fase) => {
+            const checked = faseValue === fase.value
+            return (
+              <button
+                key={fase.value}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                disabled={isSubmitting}
+                onClick={() => setValue('fase', fase.value, { shouldValidate: true })}
+                className={cn(
+                  'rounded-lg px-1 py-1.5 text-center text-xs leading-tight font-semibold outline-none transition pointer-coarse:min-h-11 sm:px-2 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed',
+                  checked
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                    : 'text-slate-500 hover:text-slate-900'
+                )}
+              >
+                {fase.label}
+              </button>
+            )
+          })}
+        </div>
         {errors.fase && <p className={FIELD_ERROR}>{errors.fase.message}</p>}
       </div>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { CheckCircle2, ClipboardList, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import type { RubroSeleccionRow } from '@/modules/recruitment/types'
 import { deleteCriterioSeleccion } from '@/modules/recruitment/actions/deleteCriterioSeleccion'
@@ -46,6 +47,11 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
 
   const isEditing = editing !== null && editing !== 'new'
 
+  async function handleConfirmDelete() {
+    const result = await confirmDelete()
+    if (result.ok) toast.success('Criterio eliminado.')
+  }
+
   return (
     <div className="@container space-y-4">
       <div className="min-w-0">
@@ -66,7 +72,7 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Buscar criterio…"
               aria-label="Buscar criterio"
-              className="min-w-0 flex-1 bg-transparent text-xs font-medium text-slate-700 outline-none placeholder:text-slate-400"
+              className="min-w-0 flex-1 bg-transparent text-xs font-medium text-slate-700 outline-none placeholder:text-slate-500"
             />
           </div>
         )}
@@ -99,9 +105,7 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
       )}
 
       <div className="min-w-0 space-y-2.5">
-        <h3 className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-          Criterios activos en el puntaje
-        </h3>
+        <h3 className="text-xs font-semibold text-slate-700">Criterios activos en el puntaje</h3>
 
         {rubros.length === 0 ? (
           <EmptyState
@@ -192,7 +196,10 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
           <RubroSeleccionForm
             key={isEditing ? editing.areaId : 'new'}
             rubro={isEditing ? editing : undefined}
-            onSuccess={() => setEditing(null)}
+            onSuccess={() => {
+              toast.success(isEditing ? 'Criterio actualizado.' : 'Criterio creado.')
+              setEditing(null)
+            }}
           />
         </Modal>
       )}
@@ -202,7 +209,7 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
           title="Eliminar criterio"
           message="El criterio dejará de aparecer en el puntaje. Si ya tiene calificaciones asociadas se desactivará para conservar el historial."
           onCancel={cancelDelete}
-          onConfirm={confirmDelete}
+          onConfirm={handleConfirmDelete}
         />
       )}
     </div>

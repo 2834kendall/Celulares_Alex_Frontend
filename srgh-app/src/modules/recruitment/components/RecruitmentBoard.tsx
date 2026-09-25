@@ -5,6 +5,7 @@ import { Inbox, MessagesSquare, Plus, UserPlus } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { PostulacionBoardItem } from '@/modules/recruitment/actions/getPostulacionesBoard'
 import type { CatalogoItem } from '@/modules/employees/types'
+import { sortByScore } from '@/modules/recruitment/lib/scoring'
 import { PostulacionCard } from './PostulacionCard'
 import { NuevoCandidatoForm } from './NuevoCandidatoForm'
 import { Modal } from '@/components/ui/Modal'
@@ -51,7 +52,9 @@ export function RecruitmentBoard({
     for (const p of postulaciones) {
       grupos[p.etapaFase].push(p)
     }
-    return grupos
+    // Dentro de cada columna, mejor puntaje arriba: es lo que RRHH mira
+    // para decidir a quién llamar primero.
+    return { 1: sortByScore(grupos[1]), 2: sortByScore(grupos[2]), 3: sortByScore(grupos[3]) }
   }, [postulaciones])
 
   function renderColumna(fase: 1 | 2 | 3) {
@@ -74,6 +77,7 @@ export function RecruitmentBoard({
         <p className="min-w-0 text-xs text-slate-500">
           {/* El plural pierde la tilde: postulación → postulaciones. */}
           {postulaciones.length} postulaci{postulaciones.length === 1 ? 'ón' : 'ones'} en proceso
+          {postulaciones.length > 1 && ' · ordenadas por puntaje'}
         </p>
         {canWrite && (
           <Button onClick={() => setShowModal(true)}>
@@ -84,22 +88,40 @@ export function RecruitmentBoard({
 
       {/* Móvil: una columna a la vez */}
       <div className="@lg:hidden">
-        <div className="mb-3 flex gap-1.5 overflow-x-auto rounded-xl bg-slate-100 p-1">
+        <div
+          role="group"
+          aria-label="Fase del tablero"
+          className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1"
+        >
           {FASES.map((fase) => (
             <button
               key={fase.id}
               type="button"
+              aria-pressed={faseMovil === fase.id}
               onClick={() => setFaseMovil(fase.id)}
+              // Grilla de tres tercios + min-h-11 al tacto (44px de alto, antes
+              // ~28px). En un celular angosto "En evaluación" + el contador no
+              // entraban en un tercio y la barra quedaba con scroll lateral:
+              // ahí el contador baja debajo del nombre (flex-col) y desde
+              // @sm vuelve a ir al lado.
               className={cn(
-                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60',
+                'flex min-w-0 flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-lg px-1.5 py-1.5 text-xs font-semibold transition outline-none pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.97] motion-reduce:active:scale-100 @sm:flex-row @sm:gap-1.5 @sm:px-2.5',
                 faseMovil === fase.id
                   ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
                   : 'text-slate-500 hover:text-slate-900'
               )}
             >
-              <fase.icon className="h-3.5 w-3.5" aria-hidden="true" />
+              {/* Sin ícono bajo ~384px: no hay lugar en un tercio del ancho. */}
+              <fase.icon className="hidden h-3.5 w-3.5 @sm:block" aria-hidden="true" />
               {fase.label}
-              <span className="rounded-full bg-slate-200 px-1.5 text-[10px] text-slate-600">
+              <span
+                className={cn(
+                  'rounded-full px-1.5 text-[10px] tabular-nums transition-colors',
+                  faseMovil === fase.id
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'bg-slate-200 text-slate-600'
+                )}
+              >
                 {porFase[fase.id].length}
               </span>
             </button>
@@ -116,7 +138,7 @@ export function RecruitmentBoard({
               <p className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                 <fase.icon className="h-3.5 w-3.5" aria-hidden="true" /> {fase.label}
               </p>
-              <span className="text-[11px] font-semibold text-slate-400">
+              <span className="text-[11px] font-semibold tabular-nums text-slate-500">
                 {porFase[fase.id].length}
               </span>
             </div>

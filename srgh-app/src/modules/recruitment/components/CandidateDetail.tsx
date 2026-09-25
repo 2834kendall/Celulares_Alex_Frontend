@@ -19,6 +19,12 @@ import { CandidateDocumentsSection } from './CandidateDocumentsSection'
 import { PostulacionPanel } from './PostulacionPanel'
 import { NuevaPostulacionForm } from './NuevaPostulacionForm'
 
+// Correo y teléfono se tocan para escribir o llamar: RRHH suele contactar
+// al candidato desde el celular. `inline-flex` + min-h-11 al tacto para que
+// el enlace tenga un blanco de dedo aunque el texto sea chico.
+const CONTACT_LINK =
+  'inline-flex max-w-full items-center truncate rounded font-medium text-brand-700 underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand-500/60 pointer-coarse:min-h-11'
+
 interface CandidateDetailProps {
   candidato: CandidatoDetalle
   etapas: EtapaSeleccionItem[]
@@ -58,13 +64,32 @@ export function CandidateDetail({
                 <dt className={META_LABEL}>
                   <Mail className="mb-0.5 inline h-3 w-3" /> Correo
                 </dt>
-                <dd className="truncate text-sm text-slate-800">{candidato.cdt_email}</dd>
+                <dd className="truncate text-sm text-slate-800">
+                  {candidato.cdt_email ? (
+                    <a href={`mailto:${candidato.cdt_email}`} className={CONTACT_LINK}>
+                      {candidato.cdt_email}
+                    </a>
+                  ) : (
+                    '—'
+                  )}
+                </dd>
               </div>
               <div className="min-w-0">
                 <dt className={META_LABEL}>
                   <Phone className="mb-0.5 inline h-3 w-3" /> Teléfono
                 </dt>
-                <dd className="truncate text-sm text-slate-800">{candidato.cdt_telefono ?? '—'}</dd>
+                <dd className="truncate text-sm text-slate-800">
+                  {candidato.cdt_telefono ? (
+                    <a
+                      href={`tel:${candidato.cdt_telefono.replace(/[^\d+]/g, '')}`}
+                      className={CONTACT_LINK}
+                    >
+                      {candidato.cdt_telefono}
+                    </a>
+                  ) : (
+                    '—'
+                  )}
+                </dd>
               </div>
               <div className="min-w-0">
                 <dt className={META_LABEL}>
