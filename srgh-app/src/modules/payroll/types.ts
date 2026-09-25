@@ -481,9 +481,23 @@ export interface AguinaldoItem {
   empleadoNombre: string
   empleadoCedula: string
   anio: number
-  montoAcumulado: number
+  /**
+   * Aguinaldo del ciclo: salario de las quincenas pagadas (con la licencia de
+   * maternidad al 100 %) ÷ 12. Si ya se pagó, el monto que se pagó.
+   */
+  monto: number
+  /** Parte del salario del ciclo que vino de la licencia de maternidad. */
+  maternidad: number
+  /** Tiene el mes continuo que exige la ley al 30 de noviembre. */
+  elegible: boolean
+  /** Quincenas del ciclo que no se han pagado: no entraron en el monto. */
+  quincenasSinPagar: string[]
   pagado: boolean
   fechaPago: string | null
+  /** Pago con comprobante. Null si se marcó pagado con el botón viejo. */
+  pagoId: number | null
+  /** El contrato ya terminó (salió después de que cerró el ciclo). */
+  fechaSalida: string | null
 }
 
 export interface EmpleadoActivoItem {
@@ -510,6 +524,10 @@ export interface LiquidacionCalculada {
   liqId: number
   /** Promedio de los últimos seis meses ÷ 30 (Art. 30 CT), o el contrato si no hubo con qué. */
   salarioDiario: number
+  /** Promedio de la última cincuentena ÷ 30 (Art. 157 CT): con esto se pagan las vacaciones. */
+  salarioDiarioVacaciones: number
+  /** Días de vacaciones que se liquidaron. */
+  diasVacaciones: number
   /** Días del mes de salida que no se habían pagado por planilla. */
   diasSalarioPendiente: number
   salarioProporcional: number
@@ -541,7 +559,40 @@ export interface LiquidacionListItem {
   /** Lo que se le entregó a la persona: bruto menos cuota obrera. */
   neto: number
   pagado: boolean
+  /** Pago con comprobante. Null si todavía no se pagó. */
+  pagoId: number | null
+  fechaPago: string | null
   createdAt: string
+}
+
+/** Una línea del comprobante de un pago de aguinaldo o liquidación. */
+export interface LineaPagoExtraordinario {
+  concepto: string
+  dias: number | null
+  monto: number
+  /** Dato que explica el cálculo, no un rubro que se suma. */
+  informativo?: boolean
+  /** Rebaja (cuota obrera). */
+  deduccion?: boolean
+}
+
+/** Un pago de aguinaldo o liquidación, para su comprobante. */
+export interface PagoExtraordinario {
+  id: number
+  tipo: 'aguinaldo' | 'liquidacion'
+  empleadoNombre: string
+  empleadoCedula: string
+  anioAguinaldo: number | null
+  liquidacionId: number | null
+  fechaSalida: string | null
+  motivoSalida: string | null
+  montoBruto: number
+  deducciones: number
+  montoNeto: number
+  lineas: LineaPagoExtraordinario[]
+  fechaPago: string
+  codigoVerificacion: string
+  observaciones: string | null
 }
 
 // ─── Incapacidades ────────────────────────────────────────────────────────

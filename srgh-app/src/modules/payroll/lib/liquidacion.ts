@@ -226,8 +226,22 @@ export interface LiquidacionInput {
    * del ciclo.
    */
   sumaSalariosBrutosCicloAguinaldo: number
-  /** Días de vacaciones pendientes de disfrutar (ingresado manualmente). */
+  /**
+   * Días de vacaciones pendientes de disfrutar. El sistema los propone (ver
+   * derechos.ts: proponerVacaciones) y quien liquida los puede corregir.
+   */
   diasVacacionesPendientes: number
+  /**
+   * Salario diario para las vacaciones: promedio de "la última cincuentena"
+   * (Art. 157 CT), no de los seis meses del Art. 30. Si no viene, se usa
+   * salarioDiario (como antes).
+   */
+  salarioDiarioVacaciones?: number
+  /**
+   * false = no tiene el mes continuo que exige el aguinaldo (ver derechos.ts:
+   * cumpleMesMinimoAguinaldo). Si no viene, se paga (como antes).
+   */
+  aguinaldoAplica?: boolean
   /** Meses completos de antigüedad (ver calcularAntiguedad). */
   mesesAntiguedad: number
   /** Días sueltos después del último mes completo (ver calcularAntiguedad). */
@@ -285,10 +299,13 @@ export function calcularLiquidacion(input: LiquidacionInput): LiquidacionResulta
   const diasSobrantes = input.diasSobrantesAntiguedad ?? 0
 
   const salarioProporcional = round2(input.salarioDiario * input.diasTrabajadosMesActual)
-  const aguinaldoProporcional = round2(
-    (input.sumaSalariosBrutosCicloAguinaldo + salarioProporcional) / 12
+  const aguinaldoProporcional =
+    input.aguinaldoAplica === false
+      ? 0
+      : round2((input.sumaSalariosBrutosCicloAguinaldo + salarioProporcional) / 12)
+  const vacacionesPagadas = round2(
+    (input.salarioDiarioVacaciones ?? input.salarioDiario) * input.diasVacacionesPendientes
   )
-  const vacacionesPagadas = round2(input.salarioDiario * input.diasVacacionesPendientes)
 
   const diasPreaviso = input.generaPreaviso
     ? calcularDiasPreaviso(input.mesesAntiguedad, diasSobrantes)
