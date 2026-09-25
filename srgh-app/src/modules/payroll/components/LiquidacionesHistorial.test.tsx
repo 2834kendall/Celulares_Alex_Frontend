@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
+import { pagarLiquidacion } from '@/modules/payroll/actions/pagarLiquidacion'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
+
+const refresh = vi.fn()
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
+vi.mock('@/modules/payroll/actions/pagarLiquidacion', () => ({ pagarLiquidacion: vi.fn() }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+
+const mockPagar = vi.mocked(pagarLiquidacion)
 
 function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem {
   return {
@@ -14,6 +22,8 @@ function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem
     total: 300000,
     neto: 300000,
     pagado: false,
+    pagoId: null,
+    fechaPago: null,
     createdAt: '2026-07-15T10:00:00',
     ...overrides,
   }
@@ -29,6 +39,10 @@ function tabla() {
 }
 
 describe('<LiquidacionesHistorial />', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('muestra un mensaje si todavía no hay liquidaciones', () => {
     render(<LiquidacionesHistorial items={[]} />)
 
@@ -66,5 +80,43 @@ describe('<LiquidacionesHistorial />', () => {
     await userEvent.click(screen.getByLabelText('Página siguiente'))
 
     expect(tabla().getByText('Empleado 9')).toBeInTheDocument()
+  })
+
+  it('sin permiso de escritura no ofrece pagar', () => {
+    render(<LiquidacionesHistorial items={[item()]} />)
+
+    expect(tabla().queryByRole('button', { name: 'Pagar' })).not.toBeInTheDocument()
+  })
+
+  it('Pagar registra el pago de ESA liquidación y refresca la lista', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockPagar.mockResolvedValue({ ok: true, pagoId: 9 })
+    render(<LiquidacionesHistorial items={[item({ liqId: 5 })]} canWrite />)
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+
+    expect(mockPagar).toHaveBeenCalledWith(5)
+    expect(refresh).toHaveBeenCalled()
+  })
+
+  it('si cancela la confirmación no paga', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<LiquidacionesHistorial items={[item()]} canWrite />)
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+
+    expect(mockPagar).not.toHaveBeenCalled()
+  })
+
+  it('una liquidación pagada muestra el enlace a su comprobante', () => {
+    render(<LiquidacionesHistorial items={[item({ pagado: true, pagoId: 12 })]} canWrite />)
+
+    expect(tabla().getByRole('link', { name: /Comprobante/ })).toHaveAttribute(
+      'href',
+      '/comprobante/extraordinario/12'
+    )
+    expect(tabla().queryByRole('button', { name: 'Pagar' })).not.toBeInTheDocument()
   })
 })

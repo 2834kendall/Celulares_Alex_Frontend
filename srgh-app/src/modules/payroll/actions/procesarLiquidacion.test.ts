@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { ProcesarLiquidacionInput } from '@/modules/payroll/types'
 
+vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -55,6 +56,7 @@ function mockSupabase(responses: Record<string, Respuesta | Respuesta[]>) {
 /** Una quincena pagada (o no) de la planilla, con su periodo. */
 function quincena(anio: number, mes: number, quincena: number, bruto: number, pagado = true) {
   return {
+    ndt_historial_laboral_id: 1,
     ndt_salario_bruto: bruto,
     ndt_pagado: pagado,
     sgrh_nomina_periodo: {
@@ -75,15 +77,29 @@ function seisMesesPagados(bruto = 150000) {
   return filas
 }
 
+/** El aguinaldo del ciclo anterior (2025) ya se pagó en diciembre. */
+const PROVISION_2025_PAGADA = {
+  data: [{ pra_historial_laboral_id: 1, pra_aguinaldo_pagado: true }],
+  error: null,
+}
+
 function escenario(over: Record<string, Respuesta | Respuesta[]> = {}) {
   return mockSupabase({
     sgrh_historial_laboral: [{ data: HISTORIAL, error: null }, CERRADO],
     sgrh_cat_motivos_salida: { data: MOTIVO_SIN_DERECHOS, error: null },
     sgrh_nomina_detalle: { data: [], error: null },
+    sgrh_ausencias: { data: [], error: null },
+    sgrh_provisiones_anuales: PROVISION_2025_PAGADA,
+    sgrh_pagos_extraordinarios: { data: [], error: null },
     sgrh_cat_conceptos_nomina: { data: CONCEPTOS_DEDUCCION, error: null },
     sgrh_liquidaciones: INSERTED,
     ...over,
   })
+}
+
+/** Los mensajes de advertencia que no son el aviso de vacaciones corregidas. */
+function otrasAdvertencias(advertencias: string[]) {
+  return advertencias.filter((a) => !a.includes('el sistema proponía'))
 }
 
 function insercion(client: ReturnType<typeof mockSupabase>) {
@@ -97,7 +113,7 @@ describe('procesarLiquidacion (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue({
-      app_metadata: { permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE'] },
+      app_metadata: { permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE', 'AUSENCIAS_READ'] },
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
   })
 
@@ -210,7 +226,7 @@ describe('procesarLiquidacion (server action)', () => {
     expect(result.data.salarioDiario).toBe(10000)
     expect(result.data.preaviso).toBe(300000)
     expect(result.data.cesantia).toBe(1290000)
-    expect(result.data.advertencias).toEqual([])
+    expect(otrasAdvertencias(result.data.advertencias)).toEqual([])
     expect(insercion(client)).toMatchObject({ liq_salario_diario: 10000 })
   })
 
@@ -414,5 +430,270 @@ describe('procesarLiquidacion (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data.advertencias.some((a) => a.includes('ingreso original'))).toBe(true)
+  })
+
+  // ─── Aguinaldo, promedio y vacaciones: reglas del MTSS ─────────────────
+
+  it('sin permiso de leer ausencias no calcula nada (RLS devolvería vacío sin avisar)', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE'] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('AUSENCIAS_READ')
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
+  // La fecha de salida es el último día trabajado: se paga y cuenta. Quien
+  // trabajó del 1 de enero al 31 de diciembre tiene un año exacto.
+  it('la antigüedad incluye el día de salida: 1 ene → 31 dic es un año', async () => {
+    escenario({
+      sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null },
+      sgrh_historial_laboral: [
+        {
+          data: {
+            ...HISTORIAL,
+            lab_fecha_inicio: '2025-01-01',
+            sgrh_empleados: { emp_fecha_ingreso_original: '2025-01-01' },
+          },
+          error: null,
+        },
+        CERRADO,
+      ],
+    })
+
+    const result = await procesarLiquidacion({
+      ...INPUT,
+      motivoSalidaId: 6,
+      fechaSalida: '2025-12-31',
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Antes: 11 meses y 30 días → 15 de preaviso y 14 de cesantía.
+    expect(result.data.diasPreaviso).toBe(30)
+    expect(result.data.diasCesantia).toBe(19.5)
+    expect(result.data.cesantia).toBe(195000)
+  })
+
+  it('una quincena con incapacidad sale del promedio y entra la anterior', async () => {
+    const filas = seisMesesPagados(150000).map((f) =>
+      f.sgrh_nomina_periodo.npe_periodo_mes === 10 && f.sgrh_nomina_periodo.npe_quincena === 1
+        ? { ...f, ndt_salario_bruto: 50000 }
+        : f
+    )
+    escenario({
+      sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null },
+      sgrh_nomina_detalle: { data: [quincena(2025, 7, 1, 150000), ...filas], error: null },
+      sgrh_ausencias: {
+        data: [
+          {
+            aus_historial_laboral_id: 1,
+            aus_fecha_inicio: '2025-10-03',
+            aus_fecha_fin: '2025-10-10',
+            sgrh_cat_tipos_ausencia: {
+              tau_codigo: 'INC_ENF',
+              tau_requiere_documento_ccss: true,
+              tau_descuenta_vacaciones: false,
+            },
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await procesarLiquidacion({ ...INPUT, motivoSalidaId: 6 })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Sin la regla, la quincena de ₡50.000 bajaba el diario a 9.722,22.
+    expect(result.data.salarioDiario).toBe(10000)
+    expect(result.data.cesantia).toBe(1290000)
+    expect(
+      result.data.advertencias.some(
+        (a) => a.includes('incapacidad') && a.includes('Octubre 2025 · 1ª quincena')
+      )
+    ).toBe(true)
+  })
+
+  it('la licencia de maternidad cuenta como salario para el aguinaldo y el promedio', async () => {
+    // Diciembre 2025 entero en licencia: la planilla pagó ₡0 esas quincenas.
+    const filas = seisMesesPagados(150000).map((f) =>
+      f.sgrh_nomina_periodo.npe_periodo_mes === 12 ? { ...f, ndt_salario_bruto: 0 } : f
+    )
+    escenario({
+      sgrh_nomina_detalle: { data: filas, error: null },
+      sgrh_ausencias: {
+        data: [
+          {
+            aus_historial_laboral_id: 1,
+            aus_fecha_inicio: '2025-12-01',
+            aus_fecha_fin: '2025-12-31',
+            sgrh_cat_tipos_ausencia: {
+              tau_codigo: 'INC_MAT',
+              tau_requiere_documento_ccss: true,
+              tau_descuenta_vacaciones: false,
+            },
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Igual que si hubiera trabajado diciembre: (150.000 × 3 + 50.000) ÷ 12.
+    expect(result.data.aguinaldoProporcional).toBe(41666.67)
+    expect(result.data.salarioDiario).toBe(10000)
+  })
+
+  it('con menos de un mes continuo no hay aguinaldo proporcional, y lo dice', async () => {
+    escenario({
+      sgrh_historial_laboral: [
+        {
+          data: {
+            ...HISTORIAL,
+            lab_fecha_inicio: '2026-01-05',
+            sgrh_empleados: { emp_fecha_ingreso_original: '2026-01-05' },
+          },
+          error: null,
+        },
+        CERRADO,
+      ],
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.aguinaldoProporcional).toBe(0)
+    expect(result.data.advertencias.some((a) => a.includes('un mes laborado'))).toBe(true)
+  })
+
+  it('guarda la propuesta de vacaciones: 1 por mes laborado menos los días tomados', async () => {
+    const client = escenario({
+      sgrh_ausencias: {
+        data: [
+          {
+            // Lunes 4 al domingo 10 de agosto de 2025: 6 días hábiles.
+            aus_historial_laboral_id: 1,
+            aus_fecha_inicio: '2025-08-04',
+            aus_fecha_fin: '2025-08-10',
+            sgrh_cat_tipos_ausencia: {
+              tau_codigo: 'VAC',
+              tau_requiere_documento_ccss: false,
+              tau_descuenta_vacaciones: true,
+            },
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // 15 ene 2020 → 20 ene 2026: 72 meses; menos 6 hábiles tomados = 66.
+    expect(insercion(client)).toMatchObject({
+      liq_dias_vacaciones_propuestos: 66,
+      liq_dias_vacaciones_pendientes: 10,
+    })
+    expect(result.data.advertencias.some((a) => a.includes('el sistema proponía 66'))).toBe(true)
+  })
+
+  it('las vacaciones se pagan con el promedio de las últimas 50 semanas (Art. 157)', async () => {
+    // 11 quincenas viejas a ₡100.000 y las 12 más recientes a ₡150.000.
+    const viejas = [quincena(2025, 1, 2, 100000)]
+    for (const mes of [2, 3, 4, 5, 6]) {
+      viejas.push(quincena(2025, mes, 1, 100000), quincena(2025, mes, 2, 100000))
+    }
+    const client = escenario({
+      sgrh_nomina_detalle: {
+        data: [...viejas, ...seisMesesPagados(150000)],
+        error: null,
+      },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.salarioDiario).toBe(10000)
+    // (12 × 150.000 + 11 × 100.000) ÷ 11,5 meses ÷ 30 = 8.405,80
+    expect(result.data.salarioDiarioVacaciones).toBeCloseTo(8405.797, 2)
+    expect(result.data.vacacionesPagadas).toBe(84057.97)
+    expect(insercion(client).liq_salario_diario_vacaciones).toBeCloseTo(8405.797, 2)
+  })
+
+  it('avisa si el aguinaldo del ciclo anterior no consta como pagado, sin sumarlo', async () => {
+    const client = escenario({
+      sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null },
+      sgrh_provisiones_anuales: { data: [], error: null },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const aviso = result.data.advertencias.find((a) => a.includes('ciclo 2025'))
+    expect(aviso).toContain('NO está incluido')
+    // El proporcional sigue siendo solo el del ciclo 2026.
+    expect(result.data.aguinaldoProporcional).toBe(41666.67)
+    expect(insercion(client).liq_observaciones).toContain('ciclo 2025')
+  })
+
+  it('un traslado no parte el aguinaldo: suma las quincenas del contrato anterior', async () => {
+    const delContratoViejo = [quincena(2025, 12, 1, 150000), quincena(2025, 12, 2, 150000)].map(
+      (f) => ({ ...f, ndt_historial_laboral_id: 7 })
+    )
+    escenario({
+      sgrh_historial_laboral: [
+        {
+          data: {
+            ...HISTORIAL,
+            lab_fecha_inicio: '2026-01-01',
+            sgrh_empleados: {
+              emp_fecha_ingreso_original: '2020-01-15',
+              sgrh_historial_laboral: [
+                {
+                  lab_id: 7,
+                  lab_fecha_inicio: '2020-01-15',
+                  lab_fecha_fin: '2025-12-31',
+                  lab_salario_base: 300000,
+                  lab_salario_real: 300000,
+                  sgrh_liquidaciones: [],
+                },
+                {
+                  lab_id: 1,
+                  lab_fecha_inicio: '2026-01-01',
+                  lab_fecha_fin: null,
+                  lab_salario_base: 300000,
+                  lab_salario_real: 300000,
+                  sgrh_liquidaciones: [],
+                },
+              ],
+            },
+          },
+          error: null,
+        },
+        CERRADO,
+      ],
+      sgrh_nomina_detalle: {
+        data: [...delContratoViejo, quincena(2026, 1, 1, 150000)],
+        error: null,
+      },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Dic 2025 (contrato viejo) + ene 2026 Q1 + 5 días pendientes, ÷ 12.
+    expect(result.data.aguinaldoProporcional).toBe(41666.67)
   })
 })

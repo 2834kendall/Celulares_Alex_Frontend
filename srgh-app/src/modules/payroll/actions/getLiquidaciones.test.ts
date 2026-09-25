@@ -53,6 +53,7 @@ describe('getLiquidaciones (server action)', () => {
         liq_total: 1837400,
         liq_neto: 1804910,
         liq_pagado: false,
+        liq_fecha_pago: null,
         liq_created_at: '2026-07-15T10:00:00',
         sgrh_cat_motivos_salida: { mot_nombre: 'Despido sin responsabilidad patronal' },
         sgrh_historial_laboral: {
@@ -80,6 +81,8 @@ describe('getLiquidaciones (server action)', () => {
           total: 1837400,
           neto: 1804910,
           pagado: false,
+          pagoId: null,
+          fechaPago: null,
           createdAt: '2026-07-15T10:00:00',
         },
       ],
@@ -94,6 +97,7 @@ describe('getLiquidaciones (server action)', () => {
         liq_total: 300000,
         liq_neto: null,
         liq_pagado: true,
+        liq_fecha_pago: '2026-07-12',
         liq_created_at: '2026-07-10T08:00:00',
         sgrh_cat_motivos_salida: null,
         sgrh_historial_laboral: null,
@@ -114,9 +118,36 @@ describe('getLiquidaciones (server action)', () => {
           total: 300000,
           neto: 300000,
           pagado: true,
+          pagoId: null,
+          fechaPago: '2026-07-12',
           createdAt: '2026-07-10T08:00:00',
         },
       ],
     })
+  })
+
+  // El pago con comprobante es la fuente de verdad: aunque liq_pagado no se
+  // haya podido marcar, la liquidación se ve pagada y con su comprobante.
+  it('una liquidación con pago registrado sale pagada y con el comprobante', async () => {
+    mockSupabase([
+      {
+        liq_id: 3,
+        liq_fecha_salida: '2026-08-31',
+        liq_total: 500000,
+        liq_neto: 480000,
+        liq_pagado: false,
+        liq_fecha_pago: null,
+        liq_created_at: '2026-08-31T08:00:00',
+        sgrh_cat_motivos_salida: null,
+        sgrh_historial_laboral: null,
+        sgrh_pagos_extraordinarios: [{ pex_id: 40, pex_fecha_pago: '2026-09-02' }],
+      },
+    ])
+
+    const result = await getLiquidaciones()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data[0]).toMatchObject({ pagado: true, pagoId: 40, fechaPago: '2026-09-02' })
   })
 })

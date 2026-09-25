@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -14,8 +14,10 @@ import {
   type MotivoSalidaRow,
   type ProcesarLiquidacionInput,
 } from '@/modules/payroll/types'
-import { formatCRC } from '@/modules/payroll/lib/format'
+import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
 import { procesarLiquidacion } from '@/modules/payroll/actions/procesarLiquidacion'
+import { proponerVacacionesLiquidacion } from '@/modules/payroll/actions/proponerVacacionesLiquidacion'
+import type { VacacionesPropuestas } from '@/modules/payroll/lib/derechos'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 import { Button } from '@/components/ui/Button'
 import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
@@ -51,12 +53,19 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
   const [serverError, setServerError] = useState<string | null>(null)
   const [resultado, setResultado] = useState<LiquidacionCalculada | null>(null)
 
+  const [propuesta, setPropuesta] = useState<
+    (VacacionesPropuestas & { inicioRelacion: string }) | null
+  >(null)
+  const [propuestaError, setPropuestaError] = useState<string | null>(null)
+  const [proponiendo, setProponiendo] = useState(false)
+
   const {
     register,
     control,
     handleSubmit,
     watch,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ProcesarLiquidacionInput>({
     resolver: zodResolver(procesarLiquidacionSchema),
@@ -70,6 +79,45 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
 
   const motivoElegidoId = watch('motivoSalidaId')
   const motivoElegido = motivos.find((m) => m.mot_id === motivoElegidoId)
+  const empleadoElegidoId = watch('historialLaboralId')
+  const fechaSalidaElegida = watch('fechaSalida')
+
+  // Con empleado y fecha elegidos, el sistema propone los días de vacaciones
+  // (1 por mes laborado menos los tomados en Ausencias) y los pone en el
+  // campo. Quien liquida los puede corregir; si cambia el empleado o la
+  // fecha, se vuelve a proponer.
+  useEffect(() => {
+    if (!empleadoElegidoId || !/^\d{4}-\d{2}-\d{2}$/.test(fechaSalidaElegida ?? '')) {
+      setPropuesta(null)
+      setPropuestaError(null)
+      setProponiendo(false)
+      return
+    }
+    let vigente = true
+    setProponiendo(true)
+    proponerVacacionesLiquidacion(empleadoElegidoId, fechaSalidaElegida)
+      .then((r) => {
+        if (!vigente) return
+        setProponiendo(false)
+        if (!r.ok) {
+          setPropuesta(null)
+          setPropuestaError(r.error)
+          return
+        }
+        setPropuestaError(null)
+        setPropuesta(r.data)
+        setValue('diasVacacionesPendientes', r.data.diasPendientes, { shouldValidate: true })
+      })
+      .catch(() => {
+        if (!vigente) return
+        setProponiendo(false)
+        setPropuesta(null)
+        setPropuestaError('No se pudo calcular la propuesta: ingresá los días a mano.')
+      })
+    return () => {
+      vigente = false
+    }
+  }, [empleadoElegidoId, fechaSalidaElegida, setValue])
 
   async function onSubmit(input: ProcesarLiquidacionInput) {
     setServerError(null)
@@ -82,8 +130,9 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
     }
 
     setResultado(result.data)
-    toast.success('Liquidación calculada y guardada.')
+    toast.success('Liquidación calculada y guardada. Pagala desde el historial cuando se entregue.')
     reset()
+    setPropuesta(null)
     router.refresh()
   }
 
@@ -93,7 +142,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
         <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
           No hay empleados activos para liquidar.
         </p>
-        <LiquidacionesHistorial items={historial} />
+        <LiquidacionesHistorial items={historial} canWrite />
       </div>
     )
   }
@@ -190,9 +239,26 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               {...register('diasVacacionesPendientes', { valueAsNumber: true })}
               className={INPUT}
             />
-            <p className="mt-1 text-[11px] text-slate-400">
-              El sistema todavía no lleva el control de vacaciones tomadas: ingresá el saldo a mano.
-            </p>
+            {proponiendo && (
+              <p className="mt-1 text-[11px] text-slate-400">Calculando la propuesta…</p>
+            )}
+            {!proponiendo && propuesta && (
+              <p className="mt-1 text-[11px] text-slate-500">
+                Propuesta del sistema: {propuesta.diasPendientes} día(s) = {propuesta.diasGanados}{' '}
+                ganados (1 por mes laborado desde {formatDate(propuesta.inicioRelacion)}
+                {propuesta.diasIncapacidad > 0 &&
+                  `, sin contar ${propuesta.diasIncapacidad} día(s) de incapacidad`}
+                ) − {propuesta.diasTomados} tomados en Ausencias. Podés corregirlo.
+              </p>
+            )}
+            {!proponiendo && propuestaError && (
+              <p className="mt-1 text-[11px] text-amber-700">{propuestaError}</p>
+            )}
+            {!proponiendo && !propuesta && !propuestaError && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                Elegí empleado y fecha de salida para que el sistema proponga los días.
+              </p>
+            )}
             {errors.diasVacacionesPendientes && (
               <p className="mt-1 text-[11px] text-rose-600">
                 {errors.diasVacacionesPendientes.message}
@@ -237,7 +303,9 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               )}
               <p className="mb-1 text-[11px] text-slate-400">
                 Salario diario {formatCRC(resultado.salarioDiario)} · promedio de los últimos seis
-                meses ÷ 30
+                meses sin incapacidades ÷ 30. Vacaciones a{' '}
+                {formatCRC(resultado.salarioDiarioVacaciones)} por día · promedio de las últimas 50
+                semanas ÷ 30.
               </p>
               <ResultadoLinea
                 label="Salario pendiente"
@@ -251,6 +319,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               <ResultadoLinea
                 label="Vacaciones no disfrutadas"
                 valor={resultado.vacacionesPagadas}
+                dias={resultado.diasVacaciones}
               />
               <ResultadoLinea
                 label="Preaviso"
@@ -288,7 +357,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
         </div>
       </div>
 
-      <LiquidacionesHistorial items={historial} />
+      <LiquidacionesHistorial items={historial} canWrite />
     </div>
   )
 }

@@ -4,17 +4,14 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import {
-  QUINCENAS_PROMEDIO_LIQUIDACION,
-  anioCicloAguinaldo,
-  calcularAntiguedad,
-  calcularLiquidacion,
-  calcularSalarioDiario,
-  diasSalarioPendiente,
-} from '@/modules/payroll/lib/liquidacion'
+import { calcularLiquidacion, diasSalarioPendiente } from '@/modules/payroll/lib/liquidacion'
 import { esConceptoDelTrabajador } from '@/modules/payroll/lib/planilla'
-import { parseFechaLocal } from '@/modules/payroll/lib/fechas'
-import { periodoLabel } from '@/modules/payroll/lib/format'
+import { ERROR_SIN_PERMISO_AUSENCIAS, puedeLeerAusencias } from '@/modules/payroll/lib/derechosData'
+import {
+  avisoAguinaldoAnterior,
+  calcularBasesLiquidacion,
+  cargarHistorialParaLiquidacion,
+} from '@/modules/payroll/lib/liquidacionData'
 import {
   procesarLiquidacionSchema,
   type LiquidacionCalculada,
@@ -24,29 +21,10 @@ import {
 export type ProcesarLiquidacionResult =
   { ok: true; data: LiquidacionCalculada } | { ok: false; error: string }
 
-interface HistorialRow {
-  lab_id: number
-  lab_fecha_inicio: string
-  lab_fecha_fin: string | null
-  lab_salario_base: number | null
-  lab_salario_real: number | null
-  sgrh_empleados: { emp_fecha_ingreso_original: string | null } | null
-}
-
 interface MotivoRow {
   mot_id: number
   mot_genera_cesantia: boolean
   mot_genera_preaviso: boolean
-}
-
-interface DetalleHistoricoRow {
-  ndt_salario_bruto: number
-  ndt_pagado: boolean
-  sgrh_nomina_periodo: {
-    npe_periodo_mes: number
-    npe_periodo_anio: number
-    npe_quincena: number
-  } | null
 }
 
 interface ConceptoDeduccionRow {
@@ -56,49 +34,33 @@ interface ConceptoDeduccionRow {
 }
 
 /**
- * Clave comparable a nivel de quincena (no solo mes) para poder ordenar y
- * filtrar periodos correctamente cuando hay dos quincenas en el mismo mes.
- */
-function claveQuincenal(anio: number, mes: number, quincena: number): number {
-  return (anio * 12 + mes) * 2 + (quincena - 1)
-}
-
-function claveDe(p: DetalleHistoricoRow): number {
-  const periodo = p.sgrh_nomina_periodo!
-  return claveQuincenal(periodo.npe_periodo_anio, periodo.npe_periodo_mes, periodo.npe_quincena)
-}
-
-function etiquetaDe(p: DetalleHistoricoRow): string {
-  const periodo = p.sgrh_nomina_periodo!
-  return periodoLabel(periodo.npe_periodo_mes, periodo.npe_periodo_anio, periodo.npe_quincena)
-}
-
-/**
  * Calcula la liquidación de un empleado y la deja guardada en
  * sgrh_liquidaciones (registro auditable, no se puede procesar dos veces
  * para el mismo contrato). También cierra el expediente laboral
- * (lab_fecha_fin, lab_motivo_salida_id).
+ * (lab_fecha_fin, lab_motivo_salida_id). El PAGO es otro paso
+ * (pagarLiquidacion), con su propio comprobante.
  *
- * De dónde sale cada número:
+ * De dónde sale cada número (las reglas y sus fuentes están en
+ * lib/derechos.ts y lib/liquidacion.ts):
  *
- *  - Salario diario: promedio de las quincenas PAGADAS de los últimos seis
- *    meses (12 quincenas contando la de salida), entre 30. Art. 30 CT. Con
- *    menos de dos quincenas pagadas se usa el salario del contrato y se
- *    avisa.
+ *  - Salario diario (preaviso y cesantía): promedio de las últimas 12
+ *    quincenas PAGADAS sin incapacidad, entre 30 (Art. 30 CT). Una quincena
+ *    con incapacidad se salta y entra la anterior (MTSS DAJ-AE-142-11); una
+ *    de licencia de maternidad cuenta con su salario completo.
+ *  - Vacaciones: promedio de las últimas 23 quincenas (la "última
+ *    cincuentena" del Art. 157 CT), con la misma regla, entre 30.
+ *  - Días de vacaciones: los digita quien liquida; el sistema los propone
+ *    (1 por mes laborado menos los tomados) y guarda la propuesta al lado.
  *  - Salario pendiente: solo los días del mes de salida que no se pagaron
- *    por planilla. Si la primera quincena ya se pagó, se deben los días
- *    16 en adelante, no el mes entero.
- *  - Aguinaldo proporcional: lo pagado por planilla desde el 1° de diciembre
- *    anterior, más el salario pendiente de este finiquito, entre 12. Se
- *    recalcula desde los pagos reales y no desde la provisión acumulada,
- *    para que sea correcto aunque la provisión tenga huecos.
+ *    por planilla.
+ *  - Aguinaldo proporcional: salario del ciclo (1 dic → salida) con la
+ *    licencia de maternidad al 100 %, más el pendiente, entre 12. Cero si no
+ *    llega al mes continuo que exige la ley.
  *  - Deducciones: cuota obrera del catálogo (CCSS) sobre salario pendiente y
  *    vacaciones. Preaviso, cesantía y aguinaldo no cotizan.
  *
- * Solo cuentan las planillas ya pagadas. Una en borrador dentro de la
- * ventana no es un monto real todavía, pero tampoco se ignora en silencio:
- * se devuelve como advertencia para que se pague antes de cerrar el finiquito
- * o se sepa que quedó fuera.
+ * Todo se lee de la RELACIÓN laboral (contratos de un traslado incluidos),
+ * no solo del contrato vigente.
  */
 export async function procesarLiquidacion(
   input: ProcesarLiquidacionInput
@@ -121,6 +83,12 @@ export async function procesarLiquidacion(
         'Para liquidar hace falta también permiso de escritura sobre Historial Laboral: la liquidación cierra el expediente del empleado. Pedile a un administrador que te agregue HISTORIAL_WRITE, o que un usuario con ese permiso procese la salida.',
     }
   }
+  // Mismo razonamiento con las ausencias: sin permiso, RLS devuelve vacío y
+  // la liquidación sale sin incapacidades ni licencia de maternidad, mal y
+  // sin aviso.
+  if (!puedeLeerAusencias(claims)) {
+    return { ok: false, error: ERROR_SIN_PERMISO_AUSENCIAS }
+  }
 
   const parsed = procesarLiquidacionSchema.safeParse(input)
   if (!parsed.success) {
@@ -130,46 +98,13 @@ export async function procesarLiquidacion(
 
   const supabase = await createClient()
 
-  const { data: historial, error: errHistorial } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      `lab_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
-       sgrh_empleados ( emp_fecha_ingreso_original )`
-    )
-    .eq('lab_id', data.historialLaboralId)
-    .maybeSingle<HistorialRow>()
-
-  if (errHistorial) {
-    return { ok: false, error: 'No se pudo cargar el historial laboral del empleado.' }
-  }
-  if (!historial) {
-    return { ok: false, error: 'El empleado no existe o no es visible.' }
-  }
-  if (historial.lab_fecha_fin) {
-    return { ok: false, error: 'Este empleado ya tiene una salida registrada.' }
-  }
-
-  const fechaSalida = parseFechaLocal(data.fechaSalida)
-
-  // La antigüedad para cesantía y preaviso es la RELACIÓN LABORAL con la
-  // empresa, no el contrato vigente. Un traslado de sucursal o un cambio de
-  // puesto cierra un lab_id y abre otro; medir desde lab_fecha_inicio le
-  // borraba a la persona todos los años anteriores al último contrato y le
-  // pagaba una liquidación de meses en vez de años. La fecha real vive en
-  // sgrh_empleados.emp_fecha_ingreso_original.
-  //
-  // Si falta (empleado viejo sin el dato), se cae al inicio del contrato y se
-  // avisa: es lo único que hay, pero puede quedar corto.
-  const ingresoOriginal = historial.sgrh_empleados?.emp_fecha_ingreso_original ?? null
-  const fechaIngreso = parseFechaLocal(ingresoOriginal ?? historial.lab_fecha_inicio)
-  const fechaInicioContrato = parseFechaLocal(historial.lab_fecha_inicio)
-
-  if (fechaSalida.getTime() < fechaInicioContrato.getTime()) {
-    return {
-      ok: false,
-      error: `La fecha de salida es anterior a la de ingreso (${historial.lab_fecha_inicio}).`,
-    }
-  }
+  const historialResult = await cargarHistorialParaLiquidacion(
+    supabase,
+    data.historialLaboralId,
+    data.fechaSalida
+  )
+  if (!historialResult.ok) return historialResult
+  const historial = historialResult.data
 
   const { data: motivo, error: errMotivo } = await supabase
     .from('sgrh_cat_motivos_salida')
@@ -184,17 +119,9 @@ export async function procesarLiquidacion(
     return { ok: false, error: 'El motivo de salida no existe.' }
   }
 
-  const { data: historico, error: errHistorico } = await supabase
-    .from('sgrh_nomina_detalle')
-    .select(
-      'ndt_salario_bruto, ndt_pagado, sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio, npe_quincena )'
-    )
-    .eq('ndt_historial_laboral_id', data.historialLaboralId)
-    .returns<DetalleHistoricoRow[]>()
-
-  if (errHistorico) {
-    return { ok: false, error: 'No se pudo cargar el historial de pagos del empleado.' }
-  }
+  const basesResult = await calcularBasesLiquidacion(supabase, historial, data.fechaSalida)
+  if (!basesResult.ok) return basesResult
+  const bases = basesResult.data
 
   // La cuota obrera sale del catálogo, igual que en la planilla: no se quema
   // el 10,83 % acá. Si el catálogo no tiene ninguna deducción porcentual, la
@@ -213,48 +140,17 @@ export async function procesarLiquidacion(
     .filter(esConceptoDelTrabajador)
     .reduce((acc, c) => acc + (c.con_porcentaje ?? 0), 0)
 
-  const anioSalida = fechaSalida.getFullYear()
-  const mesSalida = fechaSalida.getMonth() + 1
-  const diaSalida = fechaSalida.getDate()
-  // Las quincenas del sistema se parten por día 15 del mes.
-  const quincenaSalida = diaSalida <= 15 ? 1 : 2
-  const claveSalida = claveQuincenal(anioSalida, mesSalida, quincenaSalida)
-
-  const cicloAnio = anioCicloAguinaldo(mesSalida, anioSalida)
-  // Diciembre del año anterior al cierre del ciclo, desde la 1ra quincena.
-  const claveInicioCiclo = claveQuincenal(cicloAnio - 1, 12, 1)
-  // Seis meses hacia atrás contando la quincena de salida.
-  const claveInicioPromedio = claveSalida - (QUINCENAS_PROMEDIO_LIQUIDACION - 1)
-
-  const conPeriodo = (historico ?? []).filter((p) => p.sgrh_nomina_periodo !== null)
-  const hastaSalida = conPeriodo.filter((p) => claveDe(p) <= claveSalida)
-  const pagados = hastaSalida.filter((p) => p.ndt_pagado)
-  const sinPagar = hastaSalida.filter((p) => !p.ndt_pagado)
-
   const advertencias: string[] = []
+  const { salarioDiario, origen: origenSalario } = bases.promedio
 
-  const sumaSalariosBrutosCicloAguinaldo = pagados
-    .filter((p) => claveDe(p) >= claveInicioCiclo)
-    .reduce((acc, p) => acc + p.ndt_salario_bruto, 0)
-
-  const brutosVentanaPromedio = pagados
-    .filter((p) => claveDe(p) >= claveInicioPromedio)
-    .map((p) => p.ndt_salario_bruto)
-
-  // Para el salario del contrato: lo que la planilla paga es lab_salario_base;
-  // lab_salario_real solo cuando el base no está.
-  const salarioContrato =
-    (historial.lab_salario_base ?? 0) > 0
-      ? historial.lab_salario_base!
-      : (historial.lab_salario_real ?? 0)
-
-  const { salarioDiario, origen: origenSalario } = calcularSalarioDiario(
-    brutosVentanaPromedio,
-    salarioContrato
-  )
   if (origenSalario === 'contrato') {
     advertencias.push(
-      `No hay suficientes quincenas pagadas en los últimos seis meses para promediar: el salario diario salió del salario del contrato (₡${salarioContrato.toLocaleString('es-CR')} ÷ 30).`
+      `No hay suficientes quincenas pagadas para promediar: el salario diario salió del salario del contrato (₡${bases.salarioContrato.toLocaleString('es-CR')} ÷ 30).`
+    )
+  }
+  if (bases.promedio.excluidas.length > 0) {
+    advertencias.push(
+      `No entraron en el promedio por tener incapacidad (un subsidio no es salario): ${bases.promedio.excluidas.join(', ')}. En su lugar se tomaron quincenas anteriores.`
     )
   }
   if (salarioDiario <= 0) {
@@ -265,10 +161,8 @@ export async function procesarLiquidacion(
     }
   }
 
-  const clavePrimeraQuincenaMes = claveQuincenal(anioSalida, mesSalida, 1)
-  const primeraQuincenaPagada = pagados.some((p) => claveDe(p) === clavePrimeraQuincenaMes)
-  const quincenaDeSalidaPagada = pagados.some((p) => claveDe(p) === claveSalida)
-
+  const diaSalida = Number(data.fechaSalida.slice(8, 10))
+  const { primeraQuincenaPagada, quincenaDeSalidaPagada } = bases.diasSalarioPendienteBase
   const diasTrabajadosMesActual = diasSalarioPendiente({
     diaSalida,
     primeraQuincenaPagada,
@@ -282,36 +176,55 @@ export async function procesarLiquidacion(
 
   // Lo que está en borrador no entra en ningún promedio ni en el aguinaldo,
   // y nadie tiene por qué adivinarlo mirando el resultado.
-  if (sinPagar.length > 0) {
-    const etiquetas = sinPagar
-      .sort((a, b) => claveDe(a) - claveDe(b))
-      .map(etiquetaDe)
-      .slice(0, 4)
-    const resto = sinPagar.length > 4 ? ` y ${sinPagar.length - 4} más` : ''
+  if (bases.sinPagar.length > 0) {
+    const etiquetas = bases.sinPagar.map((q) => q.etiqueta).slice(0, 4)
+    const resto = bases.sinPagar.length > 4 ? ` y ${bases.sinPagar.length - 4} más` : ''
     advertencias.push(
-      `Hay ${sinPagar.length} quincena(s) sin marcar como pagadas (${etiquetas.join(', ')}${resto}). No entraron en el promedio ni en el aguinaldo: pagalas por planilla antes de cerrar el finiquito, o quedarán fuera.`
+      `Hay ${bases.sinPagar.length} quincena(s) sin marcar como pagadas (${etiquetas.join(', ')}${resto}). No entraron en el promedio ni en el aguinaldo: pagalas por planilla antes de cerrar el finiquito, o quedarán fuera.`
     )
   }
 
-  if (!ingresoOriginal) {
+  if (!bases.aguinaldoAplica) {
+    advertencias.push(
+      'No se paga aguinaldo proporcional: no llega a un mes laborado en forma continua, que es el mínimo que exige la ley (MTSS).'
+    )
+  }
+
+  if (bases.ausenciasSinTipo > 0) {
+    advertencias.push(
+      `${bases.ausenciasSinTipo} ausencia(s) aprobada(s) no tienen un tipo legible: no se pudo saber si son incapacidad o licencia de maternidad. Revisalas en Ausencias.`
+    )
+  }
+
+  if (!bases.ingresoOriginal) {
     advertencias.push(
       'El empleado no tiene fecha de ingreso original registrada, así que la antigüedad se midió desde el inicio de este contrato. Si tuvo contratos anteriores, la cesantía y el preaviso quedan cortos: cargá la fecha en su ficha y volvé a calcular.'
     )
-  } else if (ingresoOriginal !== historial.lab_fecha_inicio) {
+  } else if (bases.ingresoOriginal !== historial.lab_fecha_inicio) {
     advertencias.push(
-      `La antigüedad se midió desde el ingreso a la empresa (${ingresoOriginal}), no desde el inicio de este contrato (${historial.lab_fecha_inicio}).`
+      `La antigüedad se midió desde el ingreso a la empresa (${bases.ingresoOriginal}), no desde el inicio de este contrato (${historial.lab_fecha_inicio}).`
     )
   }
 
-  const antiguedad = calcularAntiguedad(fechaIngreso, fechaSalida)
+  const propuestos = bases.vacaciones.diasPendientes
+  if (data.diasVacacionesPendientes !== propuestos) {
+    advertencias.push(
+      `Se liquidaron ${data.diasVacacionesPendientes} día(s) de vacaciones; el sistema proponía ${propuestos} (${bases.vacaciones.diasGanados} ganados − ${bases.vacaciones.diasTomados} tomados).`
+    )
+  }
+
+  const avisoAnterior = await avisoAguinaldoAnterior(supabase, bases.cicloAnterior)
+  if (avisoAnterior) advertencias.push(avisoAnterior)
 
   const resultado = calcularLiquidacion({
     salarioDiario,
+    salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
     diasTrabajadosMesActual,
-    sumaSalariosBrutosCicloAguinaldo,
+    sumaSalariosBrutosCicloAguinaldo: bases.sumaCicloAguinaldo,
+    aguinaldoAplica: bases.aguinaldoAplica,
     diasVacacionesPendientes: data.diasVacacionesPendientes,
-    mesesAntiguedad: antiguedad.meses,
-    diasSobrantesAntiguedad: antiguedad.diasSobrantes,
+    mesesAntiguedad: bases.antiguedad.meses,
+    diasSobrantesAntiguedad: bases.antiguedad.diasSobrantes,
     generaCesantia: motivo.mot_genera_cesantia,
     generaPreaviso: motivo.mot_genera_preaviso,
     porcentajeDeduccionObrera,
@@ -324,10 +237,12 @@ export async function procesarLiquidacion(
       liq_motivo_salida_id: data.motivoSalidaId,
       liq_fecha_salida: data.fechaSalida,
       liq_salario_diario: salarioDiario,
+      liq_salario_diario_vacaciones: bases.promedioVacaciones.salarioDiario,
       liq_dias_trabajados_mes: diasTrabajadosMesActual,
       liq_salario_proporcional: resultado.salarioProporcional,
       liq_aguinaldo_proporcional: resultado.aguinaldoProporcional,
       liq_dias_vacaciones_pendientes: data.diasVacacionesPendientes,
+      liq_dias_vacaciones_propuestos: propuestos,
       liq_vacaciones_pagadas: resultado.vacacionesPagadas,
       liq_dias_preaviso: resultado.diasPreaviso,
       liq_preaviso: resultado.preaviso,
@@ -389,9 +304,11 @@ export async function procesarLiquidacion(
     data: {
       liqId: inserted.liq_id,
       salarioDiario,
+      salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
       diasSalarioPendiente: diasTrabajadosMesActual,
       salarioProporcional: resultado.salarioProporcional,
       aguinaldoProporcional: resultado.aguinaldoProporcional,
+      diasVacaciones: data.diasVacacionesPendientes,
       vacacionesPagadas: resultado.vacacionesPagadas,
       diasPreaviso: resultado.diasPreaviso,
       preaviso: resultado.preaviso,

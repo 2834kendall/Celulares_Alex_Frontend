@@ -11,7 +11,9 @@ interface LiquidacionRow {
   liq_total: number
   liq_neto: number | null
   liq_pagado: boolean
+  liq_fecha_pago: string | null
   liq_created_at: string
+  sgrh_pagos_extraordinarios: { pex_id: number; pex_fecha_pago: string }[] | null
   sgrh_cat_motivos_salida: { mot_nombre: string } | null
   sgrh_historial_laboral: {
     sgrh_empleados: {
@@ -46,7 +48,9 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       liq_total,
       liq_neto,
       liq_pagado,
+      liq_fecha_pago,
       liq_created_at,
+      sgrh_pagos_extraordinarios ( pex_id, pex_fecha_pago ),
       sgrh_cat_motivos_salida ( mot_nombre ),
       sgrh_historial_laboral (
         sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
@@ -62,6 +66,7 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
 
   const items: LiquidacionListItem[] = (data ?? []).map((row) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados
+    const pago = row.sgrh_pagos_extraordinarios?.[0] ?? null
     const empleadoNombre = empleado
       ? [empleado.emp_nombre, empleado.emp_apellido_1, empleado.emp_apellido_2]
           .filter(Boolean)
@@ -77,7 +82,11 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       total: row.liq_total,
       // Filas de antes de la migración no tienen neto: se muestra el bruto.
       neto: row.liq_neto ?? row.liq_total,
-      pagado: row.liq_pagado,
+      // El pago con comprobante es la fuente de verdad; liq_pagado lo
+      // acompaña (ver pagarLiquidacion).
+      pagado: row.liq_pagado || pago !== null,
+      pagoId: pago?.pex_id ?? null,
+      fechaPago: pago?.pex_fecha_pago ?? row.liq_fecha_pago,
       createdAt: row.liq_created_at,
     }
   })
