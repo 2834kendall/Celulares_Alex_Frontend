@@ -35,9 +35,21 @@ export function PostulacionCard({ postulacion }: PostulacionCardProps) {
 
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1.5 border-t border-slate-100 pt-2">
         {postulacion.etapaNombre ? (
-          <Badge tone="slate" size="xs">
-            {postulacion.etapaNombre}
-          </Badge>
+          // Con color propio se usa como fondo; sin él, la pastilla gris de
+          // siempre. El texto va oscuro fijo porque los presets del picker
+          // son pasteles claros.
+          postulacion.etapaColor ? (
+            <span
+              className="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold text-slate-800 ring-1 ring-inset ring-black/10"
+              style={{ backgroundColor: postulacion.etapaColor }}
+            >
+              {postulacion.etapaNombre}
+            </span>
+          ) : (
+            <Badge tone="slate" size="xs">
+              {postulacion.etapaNombre}
+            </Badge>
+          )
         ) : (
           <span />
         )}

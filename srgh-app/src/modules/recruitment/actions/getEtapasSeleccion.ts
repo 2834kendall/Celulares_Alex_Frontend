@@ -10,16 +10,19 @@ interface EtapaQueryRow {
   eta_nombre: string
   eta_orden: number
   eta_fase: number | null
+  eta_color: string | null
 }
 
 export type GetEtapasSeleccionResult =
   { ok: true; data: EtapaSeleccionItem[] } | { ok: false; error: string }
 
 /**
- * Etapas activas del embudo de selección, con su fase (1/2/3 — ver
- * migración 20260921000000). Las etapas 14-18 (inducción, período de
- * prueba, contratación definitiva) quedaron desactivadas: ese seguimiento
- * vive en Empleados una vez la persona ya es empleada.
+ * Etapas activas del embudo, con su fase (1/2/3 = columna del tablero),
+ * para el selector de "avanzar etapa".
+ *
+ * Puede devolver una lista VACÍA y eso es normal: desde SGRH-61 el seed no
+ * siembra etapas — las crea cada empresa desde Configuración → Etapas de
+ * selección. La UI avisa y manda ahí en vez de mostrar un selector vacío.
  */
 export async function getEtapasSeleccion(): Promise<GetEtapasSeleccionResult> {
   await requirePermission(PERMISOS.RECLUTAMIENTO_READ)
@@ -27,7 +30,7 @@ export async function getEtapasSeleccion(): Promise<GetEtapasSeleccionResult> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_cat_etapas_seleccion')
-    .select('eta_id, eta_nombre, eta_orden, eta_fase')
+    .select('eta_id, eta_nombre, eta_orden, eta_fase, eta_color')
     .eq('eta_activo', true)
     .order('eta_orden', { ascending: true })
     .returns<EtapaQueryRow[]>()
@@ -44,6 +47,7 @@ export async function getEtapasSeleccion(): Promise<GetEtapasSeleccionResult> {
     nombre: row.eta_nombre,
     orden: row.eta_orden,
     fase: (row.eta_fase ?? 2) as 1 | 2 | 3,
+    color: row.eta_color,
   }))
 
   return { ok: true, data: etapas }

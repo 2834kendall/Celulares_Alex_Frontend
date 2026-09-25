@@ -44,6 +44,7 @@ interface PostulacionQueryRow {
     eta_nombre: string
     eta_orden: number
     eta_fase: number | null
+    eta_color: string | null
   } | null
 }
 
@@ -129,7 +130,7 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
       pos_observaciones, pos_puntaje_promedio, pos_empleado_id, pos_etapa_actual_id,
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_nombre ),
-      sgrh_cat_etapas_seleccion ( eta_id, eta_nombre, eta_orden, eta_fase )
+      sgrh_cat_etapas_seleccion ( eta_id, eta_nombre, eta_orden, eta_fase, eta_color )
     `
     )
     .eq('pos_candidato_id', candidatoId)
@@ -219,6 +220,7 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
           nombre: row.sgrh_cat_etapas_seleccion.eta_nombre,
           orden: row.sgrh_cat_etapas_seleccion.eta_orden,
           fase: (row.sgrh_cat_etapas_seleccion.eta_fase ?? 1) as 1 | 2 | 3,
+          color: row.sgrh_cat_etapas_seleccion.eta_color,
         }
       : null
 

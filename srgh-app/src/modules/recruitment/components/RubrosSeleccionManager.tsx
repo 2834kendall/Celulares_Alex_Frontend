@@ -159,7 +159,7 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
                     <button
                       type="button"
                       onClick={() => setEditing(rubro)}
-                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-brand-600 outline-none transition hover:bg-brand-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                      className="flex items-center gap-1 rounded-lg px-2 py-1 pointer-coarse:min-h-11 text-[11px] font-semibold text-brand-600 outline-none transition hover:bg-brand-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
                     >
                       <Pencil className="h-3 w-3" /> Editar
                     </button>
@@ -167,7 +167,7 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
                       type="button"
                       onClick={() => requestDelete(rubro.areaId)}
                       disabled={deletingId === rubro.areaId}
-                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-rose-600 outline-none transition hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
+                      className="flex items-center gap-1 rounded-lg px-2 py-1 pointer-coarse:min-h-11 text-[11px] font-semibold text-rose-600 outline-none transition hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
                     >
                       <Trash2 className="h-3 w-3" /> Eliminar
                     </button>

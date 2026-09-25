@@ -70,8 +70,8 @@ export function RecruitmentBoard({
 
   return (
     <div className="@container min-w-0 space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 text-xs text-slate-500">
           {/* El plural pierde la tilde: postulación → postulaciones. */}
           {postulaciones.length} postulaci{postulaciones.length === 1 ? 'ón' : 'ones'} en proceso
         </p>

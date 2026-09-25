@@ -149,6 +149,21 @@ function AdvanceStageForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Catálogo vacío es el estado inicial normal desde SGRH-61: las etapas ya
+  // no vienen sembradas, las define la empresa. Mostrar un selector vacío
+  // dejaría a RRHH sin saber qué pasó, así que se explica y se manda al
+  // lugar donde se arreglan.
+  if (etapas.length === 0) {
+    return (
+      <Alert tone="info">
+        <div>
+          Todavía no hay etapas definidas, así que no se puede registrar por dónde va el candidato.
+          Se crean en <span className="font-semibold">Configuración → Etapas de selección</span>.
+        </div>
+      </Alert>
+    )
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!etapaId) {
@@ -380,7 +395,7 @@ function ScoreForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2.5 border-t border-slate-100 pt-3" noValidate>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
           Puntaje del candidato
         </p>
@@ -401,7 +416,12 @@ function ScoreForm({
         {criterios.map((c) => (
           <div
             key={c.id}
-            className="grid grid-cols-[1fr_auto] items-start gap-2 sm:grid-cols-[2fr_auto_auto]"
+            // En 375px el criterio va arriba y sus controles abajo, en una
+            // fila propia: con el nombre y el input peleando el mismo
+            // renglón, la descripción quedaba recortada a dos palabras.
+            // Desde sm el wrapper de los controles se vuelve `contents` y los
+            // tres elementos entran como celdas de la grilla.
+            className="space-y-1.5 sm:grid sm:grid-cols-[2fr_auto_auto] sm:items-start sm:gap-2 sm:space-y-0"
           >
             <div className="flex min-w-0 items-start gap-2">
               <span
@@ -417,36 +437,41 @@ function ScoreForm({
                 </p>
               </div>
             </div>
-            <input
-              type="number"
-              min={0}
-              max={10}
-              step={1}
-              disabled={!canWrite || submitting || scores[c.id]?.noAplica}
-              value={scores[c.id]?.puntaje ?? ''}
-              onChange={(e) =>
-                setScores((prev) => ({
-                  ...prev,
-                  [c.id]: { ...prev[c.id], puntaje: e.target.value },
-                }))
-              }
-              className={`${INPUT} w-16 sm:w-20`}
-              aria-label={`Puntaje de ${c.descripcion}`}
-            />
-            <label className="flex items-center gap-1 text-[10px] text-slate-500 sm:col-start-3">
+            <div className="flex items-center gap-3 pl-4.5 sm:contents sm:pl-0">
               <input
-                type="checkbox"
-                disabled={!canWrite || submitting}
-                checked={scores[c.id]?.noAplica ?? false}
+                type="number"
+                min={0}
+                max={10}
+                step={1}
+                disabled={!canWrite || submitting || scores[c.id]?.noAplica}
+                value={scores[c.id]?.puntaje ?? ''}
                 onChange={(e) =>
                   setScores((prev) => ({
                     ...prev,
-                    [c.id]: { ...prev[c.id], noAplica: e.target.checked, puntaje: '' },
+                    [c.id]: { ...prev[c.id], puntaje: e.target.value },
                   }))
                 }
+                className={`${INPUT} w-20`}
+                aria-label={`Puntaje de ${c.descripcion}`}
               />
-              No aplica
-            </label>
+              {/* pointer-coarse:min-h-11 sobre el label: el área tocable
+                  útil es la del texto + la casilla, no solo la casilla. */}
+              <label className="flex items-center gap-1.5 text-[11px] text-slate-500 pointer-coarse:min-h-11">
+                <input
+                  type="checkbox"
+                  disabled={!canWrite || submitting}
+                  checked={scores[c.id]?.noAplica ?? false}
+                  onChange={(e) =>
+                    setScores((prev) => ({
+                      ...prev,
+                      [c.id]: { ...prev[c.id], noAplica: e.target.checked, puntaje: '' },
+                    }))
+                  }
+                  className="h-4 w-4"
+                />
+                No aplica
+              </label>
+            </div>
           </div>
         ))}
       </div>

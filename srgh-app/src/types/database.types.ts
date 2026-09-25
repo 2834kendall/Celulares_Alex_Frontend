@@ -703,6 +703,7 @@ export type Database = {
       sgrh_cat_etapas_seleccion: {
         Row: {
           eta_activo: boolean
+          eta_color: string | null
           eta_fase: number | null
           eta_id: number
           eta_nombre: string
@@ -710,6 +711,7 @@ export type Database = {
         }
         Insert: {
           eta_activo?: boolean
+          eta_color?: string | null
           eta_fase?: number | null
           eta_id?: never
           eta_nombre: string
@@ -717,6 +719,7 @@ export type Database = {
         }
         Update: {
           eta_activo?: boolean
+          eta_color?: string | null
           eta_fase?: number | null
           eta_id?: never
           eta_nombre?: string
@@ -1521,6 +1524,7 @@ export type Database = {
           org_dia_pago_2: number | null
           org_direccion_id: number | null
           org_email_corporativo: string | null
+          org_formato_hora: string
           org_id: number
           org_logo_url: string | null
           org_nombre_fantasia: string | null
@@ -1538,6 +1542,7 @@ export type Database = {
           org_dia_pago_2?: number | null
           org_direccion_id?: number | null
           org_email_corporativo?: string | null
+          org_formato_hora?: string
           org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
@@ -1555,6 +1560,7 @@ export type Database = {
           org_dia_pago_2?: number | null
           org_direccion_id?: number | null
           org_email_corporativo?: string | null
+          org_formato_hora?: string
           org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null

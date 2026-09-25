@@ -276,7 +276,43 @@ export interface EtapaSeleccionItem {
   nombre: string
   orden: number
   fase: 1 | 2 | 3
+  /** Hex o null. Se usa en la tarjeta del tablero. */
+  color: string | null
 }
+
+// ─── Etapa de selección: administración del catálogo ─────────────────────────
+// Las etapas las define cada empresa desde Configuración (SGRH-61): el seed
+// ya no siembra ninguna, porque las 20 que traía eran de un embudo genérico
+// que nadie validó contra el proceso real.
+
+export interface EtapaSeleccionRow extends EtapaSeleccionItem {
+  activo: boolean
+}
+
+/** Las tres columnas del tablero. Toda etapa pertenece a exactamente una. */
+export const FASES_SELECCION = [
+  { value: 1, label: 'Postulados' },
+  { value: 2, label: 'En evaluación' },
+  { value: 3, label: 'Decisión' },
+] as const
+
+export const etapaSeleccionSchema = z.object({
+  nombre: z
+    .string()
+    .trim()
+    .min(3, 'El nombre debe tener al menos 3 caracteres.')
+    .max(80, 'El nombre no puede superar los 80 caracteres.'),
+  // Define en qué columna del tablero cae la postulación al llegar acá.
+  fase: z.union([z.literal(1), z.literal(2), z.literal(3)], {
+    error: 'Elegí a qué columna del tablero pertenece.',
+  }),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'El color debe ser un hex de 6 dígitos.')
+    .nullable(),
+})
+
+export type EtapaSeleccionInput = z.infer<typeof etapaSeleccionSchema>
 
 // ─── View Model — Criterio de puntaje ────────────────────────────────────────
 

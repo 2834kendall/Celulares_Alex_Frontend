@@ -14,6 +14,7 @@ export interface PostulacionBoardItem {
   puntajePromedio: number | null
   etapaFase: 1 | 2 | 3
   etapaNombre: string | null
+  etapaColor: string | null
 }
 
 interface PostulacionQueryRow {
@@ -28,7 +29,11 @@ interface PostulacionQueryRow {
   } | null
   sgrh_cat_puestos: { pue_nombre: string } | null
   sgrh_sucursales: { suc_nombre: string } | null
-  sgrh_cat_etapas_seleccion: { eta_nombre: string; eta_fase: number | null } | null
+  sgrh_cat_etapas_seleccion: {
+    eta_nombre: string
+    eta_fase: number | null
+    eta_color: string | null
+  } | null
 }
 
 export type GetPostulacionesBoardResult =
@@ -54,7 +59,7 @@ export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResu
       sgrh_candidatos ( cdt_nombre, cdt_apellido_1, cdt_apellido_2 ),
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_nombre ),
-      sgrh_cat_etapas_seleccion ( eta_nombre, eta_fase )
+      sgrh_cat_etapas_seleccion ( eta_nombre, eta_fase, eta_color )
     `
     )
     .eq('pos_estado_final', 'en_proceso')
@@ -83,6 +88,7 @@ export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResu
       puntajePromedio: row.pos_puntaje_promedio,
       etapaFase: (row.sgrh_cat_etapas_seleccion?.eta_fase ?? 1) as 1 | 2 | 3,
       etapaNombre: row.sgrh_cat_etapas_seleccion?.eta_nombre ?? null,
+      etapaColor: row.sgrh_cat_etapas_seleccion?.eta_color ?? null,
     }
   })
 

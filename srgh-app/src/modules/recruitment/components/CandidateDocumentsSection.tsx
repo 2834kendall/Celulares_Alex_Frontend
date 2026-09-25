@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
+import { IconButton } from '@/components/ui/IconButton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
 import type { CandidatoDocumento } from '@/modules/recruitment/types'
@@ -115,15 +116,15 @@ export function CandidateDocumentsSection({
                   </p>
                 </div>
                 {canWrite && (
-                  <button
-                    type="button"
+                  <IconButton
+                    tone="rose"
                     onClick={() => requestDelete(doc.cdo_id)}
                     disabled={deletingId === doc.cdo_id}
                     aria-label={`Eliminar ${doc.cdo_nombre}`}
-                    className="shrink-0 rounded-lg p-1.5 text-rose-500 outline-none transition hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500/60 disabled:opacity-50"
+                    className="shrink-0"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </IconButton>
                 )}
               </div>
             ))}
