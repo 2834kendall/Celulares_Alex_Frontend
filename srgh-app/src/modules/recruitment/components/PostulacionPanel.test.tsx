@@ -136,3 +136,60 @@ describe('<PostulacionPanel /> — títulos de los criterios', () => {
     expect(screen.getAllByText('Actitud')).toHaveLength(1)
   })
 })
+
+describe('<PostulacionPanel /> — postulación cerrada', () => {
+  it('descartada y sin puntaje: no muestra la escala ni las acciones', () => {
+    render(
+      <PostulacionPanel
+        candidatoId={3}
+        postulacion={
+          {
+            ...postulacion,
+            pos_estado_final: 'descartado',
+            pos_motivo_descarte: 'No aplica',
+          } as PostulacionDetalle
+        }
+        etapas={[]}
+        criterios={criterios}
+        canWrite
+      />
+    )
+
+    expect(screen.queryByRole('radiogroup', { name: /Puntaje de/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /contratar/i })).not.toBeInTheDocument()
+  })
+
+  it('descartada con puntaje: la escala queda de solo lectura', () => {
+    render(
+      <PostulacionPanel
+        candidatoId={3}
+        postulacion={
+          {
+            ...postulacion,
+            pos_estado_final: 'descartado',
+            puntajes: [
+              {
+                criterioId: 1,
+                criterioDescripcion: 'Experiencia previa en ventas',
+                areaNombre: 'Experiencia',
+                color: null,
+                peso: 2,
+                puntaje: 8,
+                noAplica: false,
+                observacion: null,
+              },
+            ],
+          } as unknown as PostulacionDetalle
+        }
+        etapas={[]}
+        criterios={criterios}
+        canWrite
+      />
+    )
+
+    const escala = screen.getByRole('radiogroup', { name: 'Puntaje de Experiencia' })
+    expect(escala.querySelector('[aria-label="8"]')).toHaveAttribute('aria-checked', 'true')
+    expect(escala.querySelector('[aria-label="8"]')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Guardar puntaje' })).not.toBeInTheDocument()
+  })
+})

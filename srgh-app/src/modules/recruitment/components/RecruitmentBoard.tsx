@@ -45,7 +45,12 @@ export function RecruitmentBoard({
   canWrite,
 }: RecruitmentBoardProps) {
   const [showModal, setShowModal] = useState(false)
-  const [faseMovil, setFaseMovil] = useState<1 | 2 | 3>(1)
+  // En el celular se abre en la primera columna que tenga candidatos: si
+  // todos avanzaron a "En evaluación", abrir en "Postulados" mostraba un
+  // tablero vacío que parecía que no había nadie.
+  const [faseMovil, setFaseMovil] = useState<1 | 2 | 3>(
+    () => ([1, 2, 3] as const).find((fase) => postulaciones.some((p) => p.etapaFase === fase)) ?? 1
+  )
 
   const porFase = useMemo(() => {
     const grupos: Record<1 | 2 | 3, PostulacionBoardItem[]> = { 1: [], 2: [], 3: [] }

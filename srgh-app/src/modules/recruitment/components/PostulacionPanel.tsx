@@ -117,12 +117,17 @@ export function PostulacionPanel({
         </div>
       )}
 
-      {criterios.length > 0 && (
+      {/*
+        Una postulación cerrada (contratada o descartada) ya no se califica:
+        el puntaje queda de solo lectura, y si nunca se calificó ni se
+        muestra — una escala vacía y bloqueada no dice nada.
+      */}
+      {criterios.length > 0 && (enProceso || postulacion.puntajes.length > 0) && (
         <ScoreForm
           postulacionId={postulacion.pos_id}
           criterios={criterios}
           existentes={postulacion.puntajes}
-          canWrite={canWrite}
+          canWrite={canWrite && enProceso}
         />
       )}
 
