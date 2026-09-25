@@ -10,7 +10,6 @@ import { Modal } from '@/components/ui/Modal'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { cn } from '@/lib/utils/cn'
 import type { CandidatoDocumento } from '@/modules/recruitment/types'
@@ -106,7 +105,10 @@ export function CandidateDocumentsSection({
     <div className="min-w-0 space-y-3">
       <DocumentDropzone onSelect={handleSelect} disabled={!canWrite} triggerLabel="Subir documento">
         {documentos.length === 0 ? (
-          <EmptyState icon={FileText} title="Sin documentos todavía." />
+          <p className="rounded-lg border border-dashed border-slate-200 px-3 py-3 text-center text-xs text-slate-500">
+            Sin documentos todavía. Podés subir el CV, la cédula o cartas de referencia (PDF, JPG o
+            PNG), o arrastrarlos acá.
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {documentos.map((doc) => (

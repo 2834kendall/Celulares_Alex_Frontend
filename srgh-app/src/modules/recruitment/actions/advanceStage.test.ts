@@ -25,6 +25,25 @@ function mockClient(...args: Parameters<typeof createSupabaseClientMock>) {
   return client
 }
 
+// Postulación en proceso parada en la fase 1; destino en la fase 2: avance válido.
+function tablas(candidatoId = 1, overrides: Record<string, unknown> = {}) {
+  return {
+    sgrh_postulaciones: {
+      data: {
+        pos_candidato_id: candidatoId,
+        pos_estado_final: 'en_proceso',
+        sgrh_cat_etapas_seleccion: { eta_fase: 1, eta_orden: 1 },
+      },
+      error: null,
+    },
+    sgrh_cat_etapas_seleccion: {
+      data: { eta_fase: 2, eta_orden: 5, eta_activo: true },
+      error: null,
+    },
+    ...overrides,
+  }
+}
+
 const INPUT: AvanzarEtapaInput = {
   postulacionId: 10,
   etapaId: 3,
@@ -47,7 +66,7 @@ describe('advanceStage (server action)', () => {
   })
 
   it('exige RECLUTAMIENTO_WRITE', async () => {
-    mockClient({ sgrh_postulaciones: { data: { pos_candidato_id: 1 }, error: null } })
+    mockClient(tablas())
 
     await advanceStage(INPUT)
 
@@ -55,10 +74,9 @@ describe('advanceStage (server action)', () => {
   })
 
   it('llama a la RPC con los datos parseados y el responsable del JWT', async () => {
-    const client = mockClient(
-      { sgrh_postulaciones: { data: { pos_candidato_id: 1 }, error: null } },
-      { rpcResponses: { registrar_etapa_postulacion: { data: 99, error: null } } }
-    )
+    const client = mockClient(tablas(), {
+      rpcResponses: { registrar_etapa_postulacion: { data: 99, error: null } },
+    })
 
     await advanceStage(INPUT)
 
@@ -76,10 +94,9 @@ describe('advanceStage (server action)', () => {
     mockRequirePermission.mockResolvedValue({ app_metadata: {} } as unknown as Awaited<
       ReturnType<typeof requirePermission>
     >)
-    const client = mockClient(
-      { sgrh_postulaciones: { data: { pos_candidato_id: 1 }, error: null } },
-      { rpcResponses: { registrar_etapa_postulacion: { data: 99, error: null } } }
-    )
+    const client = mockClient(tablas(), {
+      rpcResponses: { registrar_etapa_postulacion: { data: 99, error: null } },
+    })
 
     await advanceStage({ ...INPUT, notas: null })
 
@@ -92,10 +109,9 @@ describe('advanceStage (server action)', () => {
   })
 
   it('traduce el error de permiso (42501)', async () => {
-    mockClient(
-      {},
-      { rpcResponses: { registrar_etapa_postulacion: { data: null, error: { code: '42501' } } } }
-    )
+    mockClient(tablas(), {
+      rpcResponses: { registrar_etapa_postulacion: { data: null, error: { code: '42501' } } },
+    })
 
     const result = await advanceStage(INPUT)
 
@@ -103,15 +119,106 @@ describe('advanceStage (server action)', () => {
   })
 
   it('camino feliz: revalida el tablero y la ficha del candidato', async () => {
-    mockClient(
-      { sgrh_postulaciones: { data: { pos_candidato_id: 77 }, error: null } },
-      { rpcResponses: { registrar_etapa_postulacion: { data: 99, error: null } } }
-    )
+    mockClient(tablas(77), {
+      rpcResponses: { registrar_etapa_postulacion: { data: 99, error: null } },
+    })
 
     const result = await advanceStage(INPUT)
 
     expect(result).toEqual({ ok: true })
     expect(mockRevalidatePath).toHaveBeenCalledWith('/recruitment')
     expect(mockRevalidatePath).toHaveBeenCalledWith('/recruitment/candidates/77')
+  })
+})
+
+describe('advanceStage — solo hacia adelante', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(CLAIMS)
+  })
+
+  it('rechaza volver a una etapa anterior sin llamar a la RPC', async () => {
+    const client = mockClient(
+      tablas(1, {
+        sgrh_cat_etapas_seleccion: {
+          // Destino en la fase 1, la postulación ya está en la fase 2.
+          data: { eta_fase: 1, eta_orden: 1, eta_activo: true },
+          error: null,
+        },
+        sgrh_postulaciones: {
+          data: {
+            pos_candidato_id: 1,
+            pos_estado_final: 'en_proceso',
+            sgrh_cat_etapas_seleccion: { eta_fase: 2, eta_orden: 5 },
+          },
+          error: null,
+        },
+      })
+    )
+
+    const result = await advanceStage(INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Solo se puede avanzar a una etapa posterior a la actual.',
+    })
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('rechaza una postulación ya cerrada', async () => {
+    const client = mockClient(
+      tablas(1, {
+        sgrh_postulaciones: {
+          data: {
+            pos_candidato_id: 1,
+            pos_estado_final: 'descartado',
+            sgrh_cat_etapas_seleccion: null,
+          },
+          error: null,
+        },
+      })
+    )
+
+    const result = await advanceStage(INPUT)
+
+    expect(result).toEqual({ ok: false, error: 'La postulación ya está cerrada.' })
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('rechaza una etapa desactivada', async () => {
+    const client = mockClient(
+      tablas(1, {
+        sgrh_cat_etapas_seleccion: {
+          data: { eta_fase: 3, eta_orden: 9, eta_activo: false },
+          error: null,
+        },
+      })
+    )
+
+    const result = await advanceStage(INPUT)
+
+    expect(result).toEqual({ ok: false, error: 'Esa etapa ya no está disponible.' })
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('sin etapa actual (postulación nueva) acepta cualquier etapa activa', async () => {
+    const client = mockClient(
+      tablas(1, {
+        sgrh_postulaciones: {
+          data: {
+            pos_candidato_id: 1,
+            pos_estado_final: 'en_proceso',
+            sgrh_cat_etapas_seleccion: null,
+          },
+          error: null,
+        },
+      }),
+      { rpcResponses: { registrar_etapa_postulacion: { data: 99, error: null } } }
+    )
+
+    const result = await advanceStage(INPUT)
+
+    expect(result).toEqual({ ok: true })
+    expect(client.rpc).toHaveBeenCalled()
   })
 })

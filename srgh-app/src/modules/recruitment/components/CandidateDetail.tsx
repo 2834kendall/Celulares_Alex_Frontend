@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Mail, Phone, Plus, UserSquare2 } from 'lucide-react'
+import { FileText, IdCard, Mail, Megaphone, Phone, Plus, UserSquare2 } from 'lucide-react'
 import type {
   CandidatoDetalle,
   CriterioSeleccionItem,
@@ -12,18 +12,19 @@ import { fullName } from '@/modules/recruitment/lib/format'
 import { Avatar } from '@/components/ui/Avatar'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { META_LABEL } from '@/components/ui/styles'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { CandidateDocumentsSection } from './CandidateDocumentsSection'
+import { CollapsibleSection } from './CollapsibleSection'
 import { PostulacionPanel } from './PostulacionPanel'
 import { NuevaPostulacionForm } from './NuevaPostulacionForm'
 
 // Correo y teléfono se tocan para escribir o llamar: RRHH suele contactar
-// al candidato desde el celular. `inline-flex` + min-h-11 al tacto para que
-// el enlace tenga un blanco de dedo aunque el texto sea chico.
+// al candidato desde el celular. min-h-11 al tacto para que el enlace tenga
+// un blanco de dedo aunque el texto sea chico.
 const CONTACT_LINK =
-  'inline-flex max-w-full items-center truncate rounded font-medium text-brand-700 underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand-500/60 pointer-coarse:min-h-11'
+  'inline-flex min-w-0 items-center gap-1.5 rounded font-medium text-brand-700 underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand-500/60 pointer-coarse:min-h-11'
+const CONTACT_TEXT = 'inline-flex min-w-0 items-center gap-1.5 text-slate-600'
 
 interface CandidateDetailProps {
   candidato: CandidatoDetalle
@@ -34,6 +35,14 @@ interface CandidateDetailProps {
   canWrite: boolean
 }
 
+/**
+ * Ficha del candidato.
+ *
+ * Compacta a propósito: los datos de contacto van en una sola línea, y las
+ * postulaciones (con sus acciones arriba) quedan a la vista sin scroll. Lo
+ * que se consulta menos —documentos, puntaje, historial— va en secciones
+ * plegables que muestran solo su resumen.
+ */
 export function CandidateDetail({
   candidato,
   etapas,
@@ -44,89 +53,75 @@ export function CandidateDetail({
 }: CandidateDetailProps) {
   const [showNuevaPostulacion, setShowNuevaPostulacion] = useState(false)
   const nombre = fullName(candidato)
+  const docs = candidato.documentos.length
 
   return (
     <div className="min-w-0 space-y-4">
-      <PageHeader
-        backHref="/recruitment"
-        backLabel="Volver al tablero"
-        title={nombre}
-        description="Ficha del candidato: datos, documentos y postulaciones."
-      />
+      <PageHeader backHref="/recruitment" backLabel="Volver al tablero" title={nombre} />
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-        <div className="flex items-start gap-3">
-          <Avatar nombre={nombre} size="lg" />
-          <div className="min-w-0 flex-1 space-y-2">
-            <p className="text-base font-bold text-slate-900">{nombre}</p>
-            <dl className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
-              <div className="min-w-0">
-                <dt className={META_LABEL}>
-                  <Mail className="mb-0.5 inline h-3 w-3" /> Correo
-                </dt>
-                <dd className="truncate text-sm text-slate-800">
-                  {candidato.cdt_email ? (
-                    <a href={`mailto:${candidato.cdt_email}`} className={CONTACT_LINK}>
-                      {candidato.cdt_email}
-                    </a>
-                  ) : (
-                    '—'
-                  )}
-                </dd>
-              </div>
-              <div className="min-w-0">
-                <dt className={META_LABEL}>
-                  <Phone className="mb-0.5 inline h-3 w-3" /> Teléfono
-                </dt>
-                <dd className="truncate text-sm text-slate-800">
-                  {candidato.cdt_telefono ? (
-                    <a
-                      href={`tel:${candidato.cdt_telefono.replace(/[^\d+]/g, '')}`}
-                      className={CONTACT_LINK}
-                    >
-                      {candidato.cdt_telefono}
-                    </a>
-                  ) : (
-                    '—'
-                  )}
-                </dd>
-              </div>
-              <div className="min-w-0">
-                <dt className={META_LABEL}>
-                  <UserSquare2 className="mb-0.5 inline h-3 w-3" /> Identificación
-                </dt>
-                <dd className="truncate text-sm text-slate-800">
-                  {candidato.tipoIdentificacionNombre} {candidato.cdt_numero_identificacion}
-                </dd>
-              </div>
-              {candidato.cdt_fuente_reclutamiento && (
-                <div className="min-w-0">
-                  <dt className={META_LABEL}>Fuente</dt>
-                  <dd className="truncate text-sm text-slate-800">
-                    {candidato.cdt_fuente_reclutamiento}
-                  </dd>
-                </div>
+      <div className="rounded-xl border border-slate-200 bg-white px-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+        <div className="flex items-center gap-3 py-3.5">
+          <Avatar nombre={nombre} size="md" />
+          <div className="min-w-0 flex-1">
+            <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+              {candidato.cdt_telefono && (
+                <li className="min-w-0">
+                  <a
+                    href={`tel:${candidato.cdt_telefono.replace(/[^\d+]/g, '')}`}
+                    className={CONTACT_LINK}
+                  >
+                    <Phone className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    {candidato.cdt_telefono}
+                  </a>
+                </li>
               )}
-            </dl>
+              {candidato.cdt_email && (
+                <li className="min-w-0">
+                  <a href={`mailto:${candidato.cdt_email}`} className={CONTACT_LINK}>
+                    <Mail className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{candidato.cdt_email}</span>
+                  </a>
+                </li>
+              )}
+              {candidato.cdt_numero_identificacion && (
+                <li className={CONTACT_TEXT} title={candidato.tipoIdentificacionNombre}>
+                  <IdCard className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+                  <span className="sr-only">{candidato.tipoIdentificacionNombre}:</span>
+                  {candidato.cdt_numero_identificacion}
+                </li>
+              )}
+              {candidato.cdt_fuente_reclutamiento && (
+                <li className={CONTACT_TEXT}>
+                  <Megaphone className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+                  <span className="sr-only">Fuente:</span>
+                  {candidato.cdt_fuente_reclutamiento}
+                </li>
+              )}
+            </ul>
           </div>
         </div>
-      </div>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-bold text-slate-900">Documentos</h2>
-        <CandidateDocumentsSection
-          candidatoId={candidato.cdt_id}
-          documentos={candidato.documentos}
-          canWrite={canWrite}
-        />
-      </section>
+        <CollapsibleSection
+          title="Documentos"
+          icon={FileText}
+          summary={docs === 0 ? 'Ninguno' : `${docs} ${docs === 1 ? 'archivo' : 'archivos'}`}
+        >
+          <CandidateDocumentsSection
+            candidatoId={candidato.cdt_id}
+            documentos={candidato.documentos}
+            canWrite={canWrite}
+          />
+        </CollapsibleSection>
+      </div>
 
       <section className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold text-slate-900">Postulaciones</h2>
+          <h2 className="text-sm font-bold text-slate-900">
+            {candidato.postulaciones.length === 1 ? 'Postulación' : 'Postulaciones'}
+          </h2>
           {canWrite && (
-            <Button onClick={() => setShowNuevaPostulacion(true)}>
-              <Plus className="h-3.5 w-3.5" /> Nueva postulación
+            <Button variant="secondary" onClick={() => setShowNuevaPostulacion(true)}>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Nueva postulación
             </Button>
           )}
         </div>
