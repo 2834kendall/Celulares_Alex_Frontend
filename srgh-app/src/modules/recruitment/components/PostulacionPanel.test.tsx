@@ -6,7 +6,6 @@ import { PostulacionPanel } from './PostulacionPanel'
 import { savePostulacionScores } from '@/modules/recruitment/actions/savePostulacionScores'
 import { advanceStage } from '@/modules/recruitment/actions/advanceStage'
 import type { CriterioSeleccionItem, PostulacionDetalle } from '@/modules/recruitment/types'
-import { chooseSelectMenuOption } from '@/test/selectMenu'
 
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh, push: vi.fn() }) }))
@@ -73,7 +72,8 @@ describe('<PostulacionPanel />', () => {
     await user.click(experiencia.querySelector('[aria-label="8"]')!)
     await user.click(actitud.querySelector('[aria-label="6"]')!)
 
-    expect(screen.getByText(/Promedio: 7\/10/)).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /Promedio 7 de 10/ })).toBeInTheDocument()
+    expect(screen.getByText('2 de 2 calificados')).toBeInTheDocument()
     expect(screen.getByText('Cambios sin guardar')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Guardar puntaje' })).toBeEnabled()
   })
@@ -105,7 +105,9 @@ describe('<PostulacionPanel />', () => {
     const user = userEvent.setup()
     renderPanel()
 
-    await chooseSelectMenuOption(user, 'Avanzar a etapa', 'Entrevista RRHH')
+    // Un toque abre la ventana con la siguiente etapa ya elegida.
+    await user.click(screen.getByRole('button', { name: /Avanzar a: Entrevista RRHH/ }))
+    expect(screen.getByLabelText('Etapa')).toHaveTextContent('Entrevista RRHH')
     await user.click(screen.getByRole('radio', { name: 'Aprobado' }))
     await user.click(screen.getByRole('button', { name: 'Registrar etapa' }))
 
@@ -191,5 +193,108 @@ describe('<PostulacionPanel /> — postulación cerrada', () => {
     expect(escala.querySelector('[aria-label="8"]')).toHaveAttribute('aria-checked', 'true')
     expect(escala.querySelector('[aria-label="8"]')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Guardar puntaje' })).not.toBeInTheDocument()
+  })
+})
+
+describe('<PostulacionPanel /> — etapas y secciones', () => {
+  const entrevista = { id: 5, nombre: 'Entrevista RRHH', orden: 30, fase: 2 as const, color: null }
+  const prueba = { id: 6, nombre: 'Prueba práctica', orden: 31, fase: 2 as const, color: '#1e3a8a' }
+  const decision = {
+    id: 7,
+    nombre: 'Pendiente de decisión',
+    orden: 1,
+    fase: 3 as const,
+    color: null,
+  }
+
+  function renderEnPrueba() {
+    render(
+      <PostulacionPanel
+        candidatoId={3}
+        postulacion={{ ...postulacion, etapaActual: prueba } as PostulacionDetalle}
+        etapas={[decision, prueba, entrevista]}
+        criterios={criterios}
+        canWrite
+      />
+    )
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('solo ofrece etapas posteriores a la actual', async () => {
+    const user = userEvent.setup()
+    renderEnPrueba()
+
+    await user.click(screen.getByRole('button', { name: /Avanzar a: Pendiente de decisión/ }))
+    await user.click(screen.getByLabelText('Etapa'))
+
+    const opciones = screen.getAllByRole('option').map((o) => o.textContent)
+    expect(opciones).toEqual(['Pendiente de decisión'])
+  })
+
+  it('la barra de pasos marca la etapa actual y nombra la siguiente', () => {
+    renderEnPrueba()
+
+    expect(
+      screen.getByText('Prueba práctica', { selector: 'span.font-semibold' })
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Siguiente: Pendiente de decisión/)).toBeInTheDocument()
+    const pasos = screen.getByRole('list', { name: 'Etapas del proceso' })
+    expect(pasos.querySelector('[aria-current="step"]')).toHaveAttribute('title', 'Prueba práctica')
+  })
+
+  it('en la última etapa no hay "Avanzar" y Contratar pasa a ser la acción principal', () => {
+    render(
+      <PostulacionPanel
+        candidatoId={3}
+        postulacion={{ ...postulacion, etapaActual: decision } as PostulacionDetalle}
+        etapas={[entrevista, prueba, decision]}
+        criterios={criterios}
+        canWrite
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: /Avanzar a:/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Ya pasó por todas las etapas: falta decidir.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /contratar/i }).className).toContain('bg-brand-600')
+  })
+
+  it('Puntaje e Historial arrancan cerrados y se abren con un toque', async () => {
+    const user = userEvent.setup()
+    render(
+      <PostulacionPanel
+        candidatoId={3}
+        postulacion={
+          {
+            ...postulacion,
+            etapas: [
+              {
+                pet_id: 1,
+                pet_etapa_id: 5,
+                pet_fecha: '2026-09-20',
+                pet_resultado: 'aprobado',
+                pet_notas: null,
+                etapaNombre: 'Entrevista RRHH',
+                responsableNombre: null,
+              },
+            ],
+          } as PostulacionDetalle
+        }
+        etapas={[entrevista]}
+        criterios={criterios}
+        canWrite
+      />
+    )
+
+    const puntaje = screen.getByRole('button', { name: /^Puntaje/ })
+    const historial = screen.getByRole('button', { name: /^Historial/ })
+    expect(puntaje).toHaveAttribute('aria-expanded', 'false')
+    expect(historial).toHaveAttribute('aria-expanded', 'false')
+    expect(historial).toHaveTextContent('1 registro')
+
+    await user.click(puntaje)
+    expect(puntaje).toHaveAttribute('aria-expanded', 'true')
   })
 })
