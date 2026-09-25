@@ -13,6 +13,9 @@ import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 
 interface AguinaldoLiquidacionViewProps {
   anio: number
+  anioActual: number
+  cicloCerrado: boolean
+  puedeLeerAusencias: boolean
   aguinaldos: AguinaldoItem[]
   canWrite: boolean
   empleadosActivos: EmpleadoActivoItem[]
@@ -29,6 +32,9 @@ type TabId = (typeof TABS)[number]['id']
 
 export function AguinaldoLiquidacionView({
   anio,
+  anioActual,
+  cicloCerrado,
+  puedeLeerAusencias,
   aguinaldos,
   canWrite,
   empleadosActivos,
@@ -56,7 +62,16 @@ export function AguinaldoLiquidacionView({
         ))}
       </div>
 
-      {tab === 'aguinaldo' && <AguinaldoTab anio={anio} items={aguinaldos} canWrite={canWrite} />}
+      {tab === 'aguinaldo' && (
+        <AguinaldoTab
+          anio={anio}
+          anioActual={anioActual}
+          items={aguinaldos}
+          canWrite={canWrite}
+          cicloCerrado={cicloCerrado}
+          puedeLeerAusencias={puedeLeerAusencias}
+        />
+      )}
       {tab === 'liquidacion' &&
         (canWrite ? (
           <LiquidacionTab
@@ -69,7 +84,7 @@ export function AguinaldoLiquidacionView({
             <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
               No tenés permiso para procesar liquidaciones.
             </p>
-            <LiquidacionesHistorial items={liquidaciones} />
+            <LiquidacionesHistorial items={liquidaciones} canWrite={false} />
           </div>
         ))}
     </div>

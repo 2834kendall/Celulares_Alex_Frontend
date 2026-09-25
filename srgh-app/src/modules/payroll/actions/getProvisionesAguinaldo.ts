@@ -3,113 +3,60 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { puedeLeerAusencias } from '@/modules/payroll/lib/derechosData'
+import { calcularAguinaldosDelCiclo } from '@/modules/payroll/lib/aguinaldoData'
 import type { AguinaldoItem } from '@/modules/payroll/types'
 
-interface HistorialActivoRow {
-  lab_id: number
-  sgrh_empleados: {
-    emp_nombre: string
-    emp_apellido_1: string
-    emp_apellido_2: string | null
-    emp_numero_identificacion: string
-  } | null
-}
-
-interface ProvisionRow {
-  pra_historial_laboral_id: number
-  pra_monto_acumulado_aguinaldo: number
-  pra_aguinaldo_pagado: boolean
-  pra_fecha_pago_aguinaldo: string | null
-}
-
 export type GetProvisionesAguinaldoResult =
-  { ok: true; data: { anio: number; items: AguinaldoItem[] } } | { ok: false; error: string }
+  | {
+      ok: true
+      data: {
+        anio: number
+        items: AguinaldoItem[]
+        /**
+         * false = el usuario no puede leer ausencias: los montos no ven la
+         * licencia de maternidad y no se deja pagar (ver pagarAguinaldo).
+         */
+        puedeLeerAusencias: boolean
+      }
+    }
+  | { ok: false; error: string }
 
 /**
- * Aguinaldo del ciclo que toca pagar este año, para todos los empleados
- * activos. El monto viene de sgrh_provisiones_anuales, que se va acumulando
- * automáticamente cada vez que se marca un pago de nómina como pagado (ver
- * marcarDetallePagado.ts) — si un empleado activo no tiene pagos marcados
- * todavía en el ciclo, aparece con monto ₡0, no desaparece de la lista.
+ * Aguinaldo del ciclo `anioCiclo` (por defecto el del año en curso) para cada
+ * persona a la que se le debe (ver lib/aguinaldoData.ts).
  *
  * El ciclo N va del 1 de diciembre de N−1 al 30 de noviembre de N y se paga
- * en diciembre de N. Por eso el ciclo que se muestra es el del AÑO EN CURSO,
+ * en diciembre de N. Por eso el ciclo por defecto es el del AÑO EN CURSO,
  * todo el año: de enero a noviembre es el que se está acumulando, y en
- * diciembre es el que hay que pagar antes del día 20. Antes se usaba
- * anioCicloAguinaldo(hoy), que en diciembre salta al ciclo siguiente: la
- * pantalla mostraba una sola quincena acumulada justo el mes en que se paga,
- * y el aguinaldo cerrado no aparecía por ningún lado.
- *
- * Las quincenas de diciembre sí acumulan en el ciclo siguiente (eso lo
- * decide anioCicloAguinaldo al marcar cada pago); solo cambia qué ciclo se
- * enseña.
+ * diciembre es el que hay que pagar antes del día 20. Las quincenas de
+ * diciembre ya cuentan para el ciclo siguiente.
  */
 export async function getProvisionesAguinaldo(
   anioCiclo?: number
 ): Promise<GetProvisionesAguinaldoResult> {
-  await requirePermission(PERMISOS.NOMINA_READ)
+  const claims = await requirePermission(PERMISOS.NOMINA_READ)
 
   const supabase = await createClient()
   const anio = anioCiclo ?? new Date().getFullYear()
 
-  const { data: activos, error: errActivos } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      `
-      lab_id,
-      sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
-    `
-    )
-    .is('lab_fecha_fin', null)
-    .returns<HistorialActivoRow[]>()
+  const resultado = await calcularAguinaldosDelCiclo(supabase, anio)
+  if (!resultado.ok) return resultado
 
-  if (errActivos) {
-    return { ok: false, error: 'No se pudieron cargar los empleados activos.' }
-  }
+  const items: AguinaldoItem[] = resultado.data.map((a) => ({
+    historialLaboralId: a.labId,
+    empleadoNombre: a.empleadoNombre,
+    empleadoCedula: a.empleadoCedula,
+    anio,
+    monto: a.montoPagado ?? a.calculo.monto,
+    maternidad: a.calculo.maternidad,
+    elegible: a.calculo.elegible,
+    quincenasSinPagar: a.calculo.sinPagar,
+    pagado: a.pagado,
+    fechaPago: a.fechaPago,
+    pagoId: a.pagoId,
+    fechaSalida: a.fechaSalida,
+  }))
 
-  const idsActivos = (activos ?? []).map((a) => a.lab_id)
-  const provisionesPorId = new Map<number, ProvisionRow>()
-
-  if (idsActivos.length > 0) {
-    const { data: provisiones, error: errProvisiones } = await supabase
-      .from('sgrh_provisiones_anuales')
-      .select(
-        'pra_historial_laboral_id, pra_monto_acumulado_aguinaldo, pra_aguinaldo_pagado, pra_fecha_pago_aguinaldo'
-      )
-      .eq('pra_anio', anio)
-      .in('pra_historial_laboral_id', idsActivos)
-      .returns<ProvisionRow[]>()
-
-    if (errProvisiones) {
-      return { ok: false, error: 'No se pudo cargar la provisión de aguinaldo.' }
-    }
-
-    for (const p of provisiones ?? []) {
-      provisionesPorId.set(p.pra_historial_laboral_id, p)
-    }
-  }
-
-  const items: AguinaldoItem[] = (activos ?? [])
-    .filter((row) => row.sgrh_empleados !== null)
-    .map((row) => {
-      const provision = provisionesPorId.get(row.lab_id)
-      return {
-        historialLaboralId: row.lab_id,
-        empleadoNombre: [
-          row.sgrh_empleados!.emp_nombre,
-          row.sgrh_empleados!.emp_apellido_1,
-          row.sgrh_empleados!.emp_apellido_2,
-        ]
-          .filter(Boolean)
-          .join(' '),
-        empleadoCedula: row.sgrh_empleados!.emp_numero_identificacion,
-        anio,
-        montoAcumulado: provision?.pra_monto_acumulado_aguinaldo ?? 0,
-        pagado: provision?.pra_aguinaldo_pagado ?? false,
-        fechaPago: provision?.pra_fecha_pago_aguinaldo ?? null,
-      }
-    })
-    .sort((a, b) => a.empleadoNombre.localeCompare(b.empleadoNombre))
-
-  return { ok: true, data: { anio, items } }
+  return { ok: true, data: { anio, items, puedeLeerAusencias: puedeLeerAusencias(claims) } }
 }
