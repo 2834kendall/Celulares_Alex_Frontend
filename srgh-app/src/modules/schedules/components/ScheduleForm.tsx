@@ -11,8 +11,9 @@ import { stripSeconds } from '@/modules/schedules/lib/time'
 import { Button } from '@/components/ui/Button'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
+import { ControlledTimeSelect } from '@/components/ui/TimeSelect'
 import { Alert } from '@/components/ui/Alert'
-import { ScheduleColorPicker } from '@/modules/schedules/components/ScheduleColorPicker'
+import { ColorPicker } from '@/components/ui/ColorPicker'
 
 interface ShiftTypeOption {
   tjo_id: number
@@ -153,13 +154,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           <label className={LABEL} htmlFor="hor_hora_entrada">
             Hora de entrada
           </label>
-          <input
-            type="time"
+          <ControlledTimeSelect
+            control={control}
+            name="hor_hora_entrada"
             id="hor_hora_entrada"
+            label="Hora de entrada"
             disabled={isSubmitting}
-            aria-invalid={!!errors.hor_hora_entrada}
-            {...register('hor_hora_entrada')}
-            className={`${INPUT} tabular-nums`}
+            invalid={!!errors.hor_hora_entrada}
           />
           {errors.hor_hora_entrada && (
             <p className={FIELD_ERROR}>{errors.hor_hora_entrada.message}</p>
@@ -170,13 +171,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           <label className={LABEL} htmlFor="hor_hora_salida">
             Hora de salida
           </label>
-          <input
-            type="time"
+          <ControlledTimeSelect
+            control={control}
+            name="hor_hora_salida"
             id="hor_hora_salida"
+            label="Hora de salida"
             disabled={isSubmitting}
-            aria-invalid={!!errors.hor_hora_salida}
-            {...register('hor_hora_salida')}
-            className={`${INPUT} tabular-nums`}
+            invalid={!!errors.hor_hora_salida}
           />
           {errors.hor_hora_salida && (
             <p className={FIELD_ERROR}>{errors.hor_hora_salida.message}</p>
@@ -189,13 +190,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           <label className={LABEL} htmlFor="hor_hora_inicio_almuerzo">
             Inicio de almuerzo
           </label>
-          <input
-            type="time"
+          <ControlledTimeSelect
+            control={control}
+            name="hor_hora_inicio_almuerzo"
             id="hor_hora_inicio_almuerzo"
+            label="Inicio de almuerzo"
             disabled={isSubmitting}
-            aria-invalid={!!errors.hor_hora_inicio_almuerzo}
-            {...register('hor_hora_inicio_almuerzo')}
-            className={`${INPUT} tabular-nums`}
+            invalid={!!errors.hor_hora_inicio_almuerzo}
           />
           {errors.hor_hora_inicio_almuerzo && (
             <p className={FIELD_ERROR}>{errors.hor_hora_inicio_almuerzo.message}</p>
@@ -206,13 +207,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           <label className={LABEL} htmlFor="hor_hora_fin_almuerzo">
             Fin de almuerzo
           </label>
-          <input
-            type="time"
+          <ControlledTimeSelect
+            control={control}
+            name="hor_hora_fin_almuerzo"
             id="hor_hora_fin_almuerzo"
+            label="Fin de almuerzo"
             disabled={isSubmitting}
-            aria-invalid={!!errors.hor_hora_fin_almuerzo}
-            {...register('hor_hora_fin_almuerzo')}
-            className={`${INPUT} tabular-nums`}
+            invalid={!!errors.hor_hora_fin_almuerzo}
           />
           {errors.hor_hora_fin_almuerzo && (
             <p className={FIELD_ERROR}>{errors.hor_hora_fin_almuerzo.message}</p>
@@ -248,13 +249,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
               <label className={LABEL} htmlFor="hor_hora_inicio_break">
                 Inicio de break
               </label>
-              <input
-                type="time"
+              <ControlledTimeSelect
+                control={control}
+                name="hor_hora_inicio_break"
                 id="hor_hora_inicio_break"
+                label="Inicio de break"
                 disabled={isSubmitting}
-                aria-invalid={!!errors.hor_hora_inicio_break}
-                {...register('hor_hora_inicio_break')}
-                className={`${INPUT} tabular-nums`}
+                invalid={!!errors.hor_hora_inicio_break}
               />
               {errors.hor_hora_inicio_break && (
                 <p className={FIELD_ERROR}>{errors.hor_hora_inicio_break.message}</p>
@@ -265,13 +266,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
               <label className={LABEL} htmlFor="hor_hora_fin_break">
                 Fin de break
               </label>
-              <input
-                type="time"
+              <ControlledTimeSelect
+                control={control}
+                name="hor_hora_fin_break"
                 id="hor_hora_fin_break"
+                label="Fin de break"
                 disabled={isSubmitting}
-                aria-invalid={!!errors.hor_hora_fin_break}
-                {...register('hor_hora_fin_break')}
-                className={`${INPUT} tabular-nums`}
+                invalid={!!errors.hor_hora_fin_break}
               />
               {errors.hor_hora_fin_break && (
                 <p className={FIELD_ERROR}>{errors.hor_hora_fin_break.message}</p>
@@ -281,10 +282,13 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
         )}
       </div>
 
-      <ScheduleColorPicker
+      <ColorPicker
         value={colorValue}
         disabled={isSubmitting}
         onChange={(color) => setValue('hor_color', color)}
+        label="Color de la plantilla"
+        description="Se usa en la matriz semanal para distinguir el turno de un vistazo. Sin color propio, se asigna uno automatico."
+        storageKey="sgrh_schedule_custom_colors"
       />
 
       <label

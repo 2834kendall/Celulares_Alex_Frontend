@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import type { ScheduleRow } from '@/modules/schedules/types'
 import { deleteSchedule } from '@/modules/schedules/actions/deleteSchedule'
-import { stripSeconds } from '@/modules/schedules/lib/time'
+import { useFormatHora } from '@/lib/time/FormatoHoraContext'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
@@ -51,6 +51,7 @@ interface SchedulesListProps {
 }
 
 export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesListProps) {
+  const { hora, rango } = useFormatHora()
   const {
     editing,
     setEditing,
@@ -223,18 +224,18 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
                   {[
-                    { label: 'Entrada', valor: stripSeconds(schedule.hor_hora_entrada) },
-                    { label: 'Salida', valor: stripSeconds(schedule.hor_hora_salida) },
+                    { label: 'Entrada', valor: hora(schedule.hor_hora_entrada) ?? '—' },
+                    { label: 'Salida', valor: hora(schedule.hor_hora_salida) ?? '—' },
                     {
                       label: 'Almuerzo',
-                      valor: `${stripSeconds(schedule.hor_hora_inicio_almuerzo)} - ${stripSeconds(schedule.hor_hora_fin_almuerzo)}`,
+                      valor:
+                        rango(schedule.hor_hora_inicio_almuerzo, schedule.hor_hora_fin_almuerzo) ??
+                        '—',
                     },
                     {
                       label: 'Break',
                       valor:
-                        schedule.hor_hora_inicio_break && schedule.hor_hora_fin_break
-                          ? `${stripSeconds(schedule.hor_hora_inicio_break)} - ${stripSeconds(schedule.hor_hora_fin_break)}`
-                          : '—',
+                        rango(schedule.hor_hora_inicio_break, schedule.hor_hora_fin_break) ?? '—',
                     },
                   ].map(({ label, valor }) => (
                     <div key={label} className="min-w-0">
@@ -291,16 +292,14 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
                   >
                     <td className={TABLE_TD_STRONG}>{schedule.hor_nombre}</td>
                     <td className={TABLE_TD}>{shiftTypeName(schedule.hor_tipo_jornada_id)}</td>
-                    <td className={TABLE_TD_NUM}>{stripSeconds(schedule.hor_hora_entrada)}</td>
-                    <td className={TABLE_TD_NUM}>{stripSeconds(schedule.hor_hora_salida)}</td>
+                    <td className={TABLE_TD_NUM}>{hora(schedule.hor_hora_entrada) ?? '—'}</td>
+                    <td className={TABLE_TD_NUM}>{hora(schedule.hor_hora_salida) ?? '—'}</td>
                     <td className={TABLE_TD_NUM}>
-                      {stripSeconds(schedule.hor_hora_inicio_almuerzo)} -{' '}
-                      {stripSeconds(schedule.hor_hora_fin_almuerzo)}
+                      {rango(schedule.hor_hora_inicio_almuerzo, schedule.hor_hora_fin_almuerzo) ??
+                        '—'}
                     </td>
                     <td className={TABLE_TD_NUM}>
-                      {schedule.hor_hora_inicio_break && schedule.hor_hora_fin_break
-                        ? `${stripSeconds(schedule.hor_hora_inicio_break)} - ${stripSeconds(schedule.hor_hora_fin_break)}`
-                        : '—'}
+                      {rango(schedule.hor_hora_inicio_break, schedule.hor_hora_fin_break) ?? '—'}
                     </td>
                     <td className="px-3 py-2">
                       <span

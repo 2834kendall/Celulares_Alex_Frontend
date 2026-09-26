@@ -64,6 +64,23 @@ export function contrastRatio(hexA: string, hexB: string): number {
   return (claro + 0.05) / (oscuro + 0.05)
 }
 
+const TEXTO_OSCURO = '#1e293b' // slate-800
+const TEXTO_CLARO = '#ffffff'
+
+/**
+ * Color de texto legible sobre un fondo elegido por el usuario (pastillas
+ * de etapa, chips con color propio). Compara contrastes en vez de preguntar
+ * "¿es oscuro?" — ver la nota de `relativeLuminance`.
+ *
+ * Existe porque el ColorPicker acepta colores libres: con texto oscuro fijo,
+ * una etapa pintada de azul marino quedaba ilegible en la tarjeta.
+ */
+export function readableTextOn(backgroundHex: string): string {
+  return contrastRatio(backgroundHex, TEXTO_OSCURO) >= contrastRatio(backgroundHex, TEXTO_CLARO)
+    ? TEXTO_OSCURO
+    : TEXTO_CLARO
+}
+
 function hexToHsl(hex: string): [number, number, number] {
   const [r, g, b] = hexToRgb(hex).map((c) => c / 255)
   const max = Math.max(r, g, b)

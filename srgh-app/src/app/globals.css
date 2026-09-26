@@ -197,6 +197,26 @@ h3 {
   .animate-modal-in {
     animation: modal-in 0.18s ease-out;
   }
+
+  /*
+   * "Rebote" del panel cuando se toca el fondo de un modal con datos sin
+   * guardar (ver Modal): dice "acá sigo, cerrame con la X" sin cerrar ni
+   * mostrar un aviso. Un pulso de escala corto, no un temblor lateral, que
+   * se lee como error.
+   */
+  @keyframes modal-nudge {
+    0%,
+    100% {
+      transform: none;
+    }
+    40% {
+      transform: scale(1.015);
+    }
+  }
+
+  .animate-modal-nudge {
+    animation: modal-nudge 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+  }
 }
 
 /* Flotado suave para elementos decorativos (pantalla de login) */
