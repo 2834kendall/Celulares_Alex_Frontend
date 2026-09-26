@@ -55,13 +55,15 @@ export function EmployeeWizardStepNomina({
             options={tiposJornada}
           />
 
+          {/* Llega precargada con el ingreso a la empresa (ver goNext en
+              EmployeeWizard): en un alta nueva siempre coinciden. */}
           <Labeled
-            label="Fecha de inicio *"
+            label="Inicio del contrato *"
             error={getFieldError(errors, 'contratacion.lab_fecha_inicio')}
           >
             <DateInput
               name="contratacion.lab_fecha_inicio"
-              label="Fecha de inicio"
+              label="Inicio del contrato"
               invalid={Boolean(getFieldError(errors, 'contratacion.lab_fecha_inicio'))}
             />
           </Labeled>
