@@ -1,6 +1,7 @@
 import { CalendarClock, Inbox } from 'lucide-react'
 import type { MyAttendanceDay } from '@/modules/attendance/actions/getMyMarks'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Hora } from '@/components/ui/Hora'
 
 interface MyAttendanceHistoryProps {
   data: MyAttendanceDay[]
@@ -15,8 +16,11 @@ function formatDay(dateISO: string) {
 }
 
 function MarkTime({ time }: { time: string | undefined }) {
+  // <Hora> y no useFormatHora(): este archivo es componente de servidor.
   return (
-    <span className={time ? 'tabular-nums text-slate-700' : 'text-slate-300'}>{time ?? '—'}</span>
+    <span className={time ? 'tabular-nums text-slate-700' : 'text-slate-300'}>
+      <Hora value={time} />
+    </span>
   )
 }
 

@@ -31,6 +31,20 @@ export function buildEmployeeDocumentPath(
 }
 
 /**
+ * `<empresaId>/candidatos/<candidatoId>/<uuid>.<ext>` — documento de
+ * candidato (SGRH-61, bucket cv-candidatos). Misma forma que
+ * buildEmployeeDocumentPath, con "candidatos" en vez de "empleados" para
+ * que las dos jerarquías no se puedan confundir a simple vista.
+ */
+export function buildCandidateDocumentPath(
+  empresaId: number,
+  candidatoId: number,
+  extension: string
+): string {
+  return `${empresaId}/candidatos/${candidatoId}/${crypto.randomUUID()}.${extension}`
+}
+
+/**
  * Guard para TODA ruta que llegue del cliente (ver/borrar): además de la
  * policy RLS, el servidor verifica que la ruta pertenezca a la empresa del
  * JWT antes de tocar el proveedor. Doble candado a propósito.

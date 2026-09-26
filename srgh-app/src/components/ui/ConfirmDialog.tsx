@@ -1,8 +1,9 @@
 'use client'
 
-import { useId } from 'react'
+import { useId, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { useDialog } from '@/hooks/useDialog'
 import { Button } from '@/components/ui/Button'
 
 interface ConfirmDialogProps {
@@ -31,6 +32,9 @@ export function ConfirmDialog({
   useBodyScrollLock()
   const titleId = useId()
   const messageId = useId()
+  const panelRef = useRef<HTMLDivElement>(null)
+  // Escape = Cancelar: nunca confirma una accion destructiva por teclado.
+  useDialog(panelRef, onCancel)
 
   return (
     <div
@@ -40,7 +44,11 @@ export function ConfirmDialog({
       aria-labelledby={titleId}
       aria-describedby={messageId}
     >
-      <div className="animate-fade-in w-full max-w-[19rem] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/5">
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="animate-fade-in w-full max-w-[19rem] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/5 outline-none"
+      >
         <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
             <AlertTriangle className="h-4 w-4" aria-hidden="true" />

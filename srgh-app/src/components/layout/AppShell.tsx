@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils/cn'
 import { deriveBrandTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
 import { tituloDeRuta } from '@/lib/permissions/zones'
 import { BRAND } from '@/lib/brand'
+import { FormatoHoraProvider } from '@/lib/time/FormatoHoraContext'
+import { FORMATO_HORA_DEFAULT, type FormatoHora } from '@/lib/time/formatoHora'
 
 interface AppShellProps {
   permisos: string[]
@@ -30,6 +32,8 @@ interface AppShellProps {
   sucursales?: SucursalConApariencia[]
   /** Sucursal actualmente en preview (ver SucursalSwitcher), o null. */
   sucursalPreviewId?: number | null
+  /** Formato de hora de la empresa (Configuración → General). Solo presentación. */
+  formatoHora?: FormatoHora
   children: React.ReactNode
 }
 
@@ -83,6 +87,7 @@ export function AppShell({
   colorSidebar,
   sucursales = [],
   sucursalPreviewId = null,
+  formatoHora = FORMATO_HORA_DEFAULT,
   children,
 }: AppShellProps) {
   const pathname = usePathname()
@@ -240,7 +245,7 @@ export function AppShell({
         />
         {/* key={pathname}: reinicia la animacion de entrada en cada navegacion */}
         <main key={pathname} className="animate-page min-w-0 flex-1 p-4 md:p-6">
-          {children}
+          <FormatoHoraProvider formato={formatoHora}>{children}</FormatoHoraProvider>
         </main>
       </div>
     </div>

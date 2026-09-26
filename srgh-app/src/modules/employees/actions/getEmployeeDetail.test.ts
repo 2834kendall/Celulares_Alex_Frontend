@@ -49,10 +49,27 @@ const HISTORIAL_ROW = {
   lab_id: 5,
   lab_empleado_id: 10,
   lab_salario_base: 500000,
+  lab_fecha_inicio: '2024-02-01',
+  lab_fecha_fin: null,
   sgrh_cat_puestos: { pue_nombre: 'Cajera' },
   sgrh_sucursales: { suc_nombre: 'Central' },
   sgrh_cat_tipos_contrato: { tco_nombre: 'Indefinido' },
   sgrh_cat_tipos_jornada: { tjo_nombre: 'Diurna' },
+  sgrh_cat_motivos_salida: null,
+}
+
+/** Contrato anterior, ya cerrado por renuncia. */
+const HISTORIAL_CERRADO_ROW = {
+  lab_id: 4,
+  lab_empleado_id: 10,
+  lab_salario_base: 400000,
+  lab_fecha_inicio: '2022-03-01',
+  lab_fecha_fin: '2023-06-30',
+  sgrh_cat_puestos: { pue_nombre: 'Bodeguero' },
+  sgrh_sucursales: { suc_nombre: 'Norte' },
+  sgrh_cat_tipos_contrato: { tco_nombre: 'Plazo fijo' },
+  sgrh_cat_tipos_jornada: { tjo_nombre: 'Diurna' },
+  sgrh_cat_motivos_salida: { mot_nombre: 'Renuncia Voluntaria' },
 }
 
 describe('getEmployeeDetail (server action)', () => {
@@ -101,7 +118,7 @@ describe('getEmployeeDetail (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
-        sgrh_historial_laboral: { data: HISTORIAL_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
         sgrh_empleado_datos_pago: {
           data: {
             edp_banco_id: 3,
@@ -145,7 +162,7 @@ describe('getEmployeeDetail (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
-        sgrh_historial_laboral: { data: HISTORIAL_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
         sgrh_empleado_datos_pago: {
           data: {
             edp_banco_id: 3,
@@ -188,7 +205,65 @@ describe('getEmployeeDetail (server action)', () => {
     if (!result.ok) return
 
     expect(result.data.historial_activo).toBeNull()
+    expect(result.data.historial_completo).toEqual([])
     expect(result.data.datos_pago).toBeNull()
+  })
+
+  it('trae el vigente y los cerrados, con el motivo de salida resuelto', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW, HISTORIAL_CERRADO_ROW], error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data.historial_completo).toHaveLength(2)
+    expect(result.data.historial_activo).toMatchObject({ lab_id: 5, motivo_salida_nombre: null })
+    expect(result.data.historial_completo[1]).toMatchObject({
+      lab_id: 4,
+      lab_fecha_fin: '2023-06-30',
+      puesto_nombre: 'Bodeguero',
+      motivo_salida_nombre: 'Renuncia Voluntaria',
+    })
+    // Los objetos crudos de los joins no se exponen.
+    expect(result.data.historial_completo[1]).not.toHaveProperty('sgrh_cat_motivos_salida')
+  })
+
+  it('con solo contratos cerrados no hay vigente pero sí historial', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_CERRADO_ROW], error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data.historial_activo).toBeNull()
+    expect(result.data.historial_completo).toHaveLength(1)
+  })
+
+  it('devuelve error si falla la carga del historial', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo cargar el historial de contratos.' })
   })
 
   it('sin emp_foto_path no llama al proveedor y foto_url es null', async () => {

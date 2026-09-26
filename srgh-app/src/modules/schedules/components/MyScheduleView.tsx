@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Building2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { CARD } from '@/components/ui/styles'
-import { stripSeconds } from '@/modules/schedules/lib/time'
+import { RangoHora } from '@/components/ui/Hora'
 import { formatHoursValue } from '@/modules/schedules/lib/hours'
 import { shiftWeekISO, WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
 import { NEUTRAL_STRIPE, hatchStyle, paletteForSchedule } from '@/modules/schedules/lib/cellPalette'
@@ -83,10 +83,10 @@ function MyScheduleDayCard({ day, dayIndex }: { day: MyDayAssignment; dayIndex: 
     isCustom: day.isCustom,
     manualColor: day.scheduleColor,
   })
-  const range =
-    day.startTime && day.endTime
-      ? `${stripSeconds(day.startTime)} - ${stripSeconds(day.endTime)}`
-      : null
+  // El texto lo pinta <RangoHora> (formato de la empresa). Acá solo se
+  // decide si hay rango que mostrar: este archivo es componente de
+  // servidor y no puede llamar al hook.
+  const hasRange = Boolean(day.startTime && day.endTime)
   const showBranch = !day.isDayOff && palette != null && day.branchName
 
   return (
@@ -119,9 +119,13 @@ function MyScheduleDayCard({ day, dayIndex }: { day: MyDayAssignment; dayIndex: 
               <p className="line-clamp-2 text-[11px] font-bold leading-[1.25] text-slate-800">
                 {day.isCustom ? 'Personalizado' : (day.scheduleName ?? 'Sin asignar')}
               </p>
-              {range && (
-                <p className="whitespace-nowrap text-[11px] leading-[1.3] tabular-nums text-slate-600">
-                  {range}
+              {hasRange && (
+                // Sin whitespace-nowrap: en 12h el rango ("8:00 a. m. -
+                // 5:00 p. m.") casi duplica el largo de "08:00 - 17:00" y en
+                // una tarjeta de día se salía. En 24h sigue entrando en una
+                // línea, así que ahí no cambia nada.
+                <p className="text-[11px] leading-[1.3] tabular-nums text-slate-600">
+                  <RangoHora inicio={day.startTime} fin={day.endTime} />
                 </p>
               )}
             </div>

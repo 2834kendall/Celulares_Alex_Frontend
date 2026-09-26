@@ -129,7 +129,13 @@ export function ManualMarkModal({
 
           <div>
             <label className={LABEL}>Hora real del evento</label>
-            <TimeSelect value={hora} onChange={setHora} />
+            <TimeSelect
+              label="Hora real del evento"
+              value={hora}
+              onChange={setHora}
+              disabled={isSaving}
+              invalid={!!errors.hora}
+            />
             {errors.hora && <p className={FIELD_ERROR}>{errors.hora}</p>}
           </div>
         </div>

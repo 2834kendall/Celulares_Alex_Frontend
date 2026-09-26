@@ -18,13 +18,12 @@ const PASTEL_PRESETS = [
   '#F6CDDA', // rosa
 ]
 
-const STORAGE_KEY = 'sgrh_schedule_custom_colors'
 const MAX_CUSTOM = 16
 
-function loadCustomColors(): string[] {
+function loadCustomColors(storageKey: string): string[] {
   if (typeof window === 'undefined') return []
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(storageKey)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed)
@@ -35,28 +34,52 @@ function loadCustomColors(): string[] {
   }
 }
 
-function saveCustomColors(colors: string[]) {
+function saveCustomColors(storageKey: string, colors: string[]) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(colors))
+    window.localStorage.setItem(storageKey, JSON.stringify(colors))
   } catch {
     // Modo privado o cuota llena: perder la lista guardada no debe romper el formulario.
   }
 }
 
-interface ScheduleColorPickerProps {
+interface ColorPickerProps {
   value: string | null | undefined
   onChange: (value: string | null) => void
   disabled?: boolean
+  /** Etiqueta del campo ("Color de la plantilla", "Color del criterio"…). */
+  label: string
+  /** Bajada que explica para qué sirve el color en ESE contexto. */
+  description?: string
+  /** Texto del swatch vacío. Por defecto "Automatico". */
+  emptyLabel?: string
+  /**
+   * Clave de localStorage donde viven los colores a medida del usuario. Cada
+   * catálogo usa la suya para que las paletas no se pisen entre módulos.
+   */
+  storageKey: string
 }
 
 /**
  * 8 pastel fijos + los que el usuario vaya agregando con la ruedita nativa,
- * persistidos en localStorage para que sigan apareciendo en la proxima
- * plantilla que cree o edite. `null` = sin color propio, la matriz semanal
- * sigue asignando uno automatico por hor_id.
+ * persistidos en localStorage para que sigan apareciendo la próxima vez que
+ * cree o edite. `null` = sin color propio; cada módulo decide qué significa
+ * eso (Horarios asigna uno automático por hor_id).
+ *
+ * Nació como ScheduleColorPicker dentro de `modules/schedules`; se promovió
+ * acá al necesitarlo también el catálogo de criterios de selección
+ * (SGRH-61). Lo único que cambia entre usos son los textos y la clave de
+ * almacenamiento.
  */
-export function ScheduleColorPicker({ value, onChange, disabled }: ScheduleColorPickerProps) {
-  const [customColors, setCustomColors] = useState<string[]>(() => loadCustomColors())
+export function ColorPicker({
+  value,
+  onChange,
+  disabled,
+  label,
+  description,
+  emptyLabel = 'Automatico',
+  storageKey,
+}: ColorPickerProps) {
+  const [customColors, setCustomColors] = useState<string[]>(() => loadCustomColors(storageKey))
 
   // Si el horario editado ya trae un color a medida que no esta en los
   // presets ni en la lista guardada (p.ej. elegido desde otra computadora),
@@ -74,7 +97,7 @@ export function ScheduleColorPicker({ value, onChange, disabled }: ScheduleColor
         customColors.some((color) => color.toLowerCase() === normalized)
       if (!isKnown) {
         const next = [normalized, ...customColors].slice(0, MAX_CUSTOM)
-        saveCustomColors(next)
+        saveCustomColors(storageKey, next)
         setCustomColors(next)
       }
     }
@@ -86,7 +109,7 @@ export function ScheduleColorPicker({ value, onChange, disabled }: ScheduleColor
       normalized,
       ...customColors.filter((color) => color.toLowerCase() !== normalized),
     ].slice(0, MAX_CUSTOM)
-    saveCustomColors(next)
+    saveCustomColors(storageKey, next)
     setCustomColors(next)
     onChange(normalized)
   }
@@ -95,24 +118,21 @@ export function ScheduleColorPicker({ value, onChange, disabled }: ScheduleColor
     event.stopPropagation()
     event.preventDefault()
     const next = customColors.filter((color) => color.toLowerCase() !== hex.toLowerCase())
-    saveCustomColors(next)
+    saveCustomColors(storageKey, next)
     setCustomColors(next)
     if (value?.toLowerCase() === hex.toLowerCase()) onChange(null)
   }
 
   return (
     <div>
-      <label className={LABEL}>Color de la plantilla</label>
-      <p className="mb-2 text-[11px] text-slate-500">
-        Se usa en la matriz semanal para distinguir el turno de un vistazo. Sin color propio, se
-        asigna uno automatico.
-      </p>
+      <label className={LABEL}>{label}</label>
+      {description && <p className="mb-2 text-[11px] text-slate-500">{description}</p>}
 
       <div className="flex flex-wrap items-center gap-2">
         <Swatch
           selected={!value}
           disabled={disabled}
-          label="Automatico"
+          label={emptyLabel}
           onClick={() => onChange(null)}
           dashed
         />

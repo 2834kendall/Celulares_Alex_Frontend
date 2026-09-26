@@ -25,10 +25,13 @@ import { getCurrentCoordinates } from '@/modules/attendance/components/kiosk/geo
 import { getOrCreateDeviceId } from '@/modules/attendance/components/kiosk/deviceId'
 import { useOfflineSync } from '@/modules/attendance/components/kiosk/useOfflineSync'
 import { FaceScan } from '@/modules/attendance/components/kiosk/face/FaceScan'
+import { FORMATO_HORA_DEFAULT, type FormatoHora } from '@/lib/time/formatoHora'
 
 interface KioskScreenProps {
   /** Quienes tienen turno hoy en esta sucursal: solo se usa para saber si hay alguien. */
   employees: ActiveEmployeeOption[]
+  /** Formato de hora de la empresa. El kiosco no monta el shell, así que llega por prop. */
+  formatoHora?: FormatoHora
 }
 
 const SUCCESS_DISPLAY_MS = 3000
@@ -78,12 +81,21 @@ const FAILURES = {
   },
 } satisfies Record<string, Failure>
 
-/** Hora y fecha de Costa Rica, sin depender de la zona horaria de la tablet. */
-function formatClock(date: Date) {
+/**
+ * Hora y fecha de Costa Rica, sin depender de la zona horaria de la tablet.
+ *
+ * `hour12` explícito según la preferencia de la empresa. Antes no se pasaba y
+ * el reloj salía en 12h por accidente — es el default del locale es-CR —
+ * mientras el resto del sistema mostraba 24h. Con el formato explícito, el
+ * reloj y las marcas que registra el kiosco se leen igual; la salida de Intl
+ * coincide carácter por carácter con formatHora() en ambos formatos.
+ */
+function formatClock(date: Date, formato: FormatoHora) {
   const hora = new Intl.DateTimeFormat('es-CR', {
     timeZone: 'America/Costa_Rica',
     hour: 'numeric',
     minute: '2-digit',
+    hour12: formato === '12h',
   }).format(date)
   const fecha = new Intl.DateTimeFormat('es-CR', {
     timeZone: 'America/Costa_Rica',
@@ -138,7 +150,7 @@ function useClock() {
  * telefono horizontal, con 375px de alto, se pueda desplazar en vez de
  * quedar cortado arriba.
  */
-export function KioskScreen({ employees }: KioskScreenProps) {
+export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: KioskScreenProps) {
   const [verified, setVerified] = useState<FaceVerified | null>(null)
   const [verifying, setVerifying] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
@@ -290,7 +302,7 @@ export function KioskScreen({ employees }: KioskScreenProps) {
     setSuccessLabel(`${MARK_LABELS[tipo]} registrada`)
   }
 
-  const clock = now ? formatClock(now) : null
+  const clock = now ? formatClock(now, formatoHora) : null
   const visibleMarks: MarkType[] = allowed ?? [...MARK_TYPES]
 
   /**

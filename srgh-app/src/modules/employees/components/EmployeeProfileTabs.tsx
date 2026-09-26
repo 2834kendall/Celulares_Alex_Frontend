@@ -1,13 +1,18 @@
 'use client'
 
-import { FileText, User } from 'lucide-react'
+import { Briefcase, FileText, User } from 'lucide-react'
 import { Tabs, type TabDefinition } from '@/components/ui/Tabs'
 
-export type ProfileTab = 'perfil' | 'documentos'
+export type ProfileTab = 'perfil' | 'contrato' | 'documentos'
 
 interface EmployeeProfileTabsProps {
   perfilContent: React.ReactNode
-  /** null oculta el tab (rol sin DOCUMENTOS_READ): se renderiza solo el perfil. */
+  /**
+   * Siempre visible: es la misma información que antes vivía en el perfil y
+   * se ve con el mismo EMPLEADOS_READ, así que no restringe nada.
+   */
+  contratoContent: React.ReactNode
+  /** null oculta el tab (rol sin DOCUMENTOS_READ). */
   documentosContent: React.ReactNode | null
 }
 
@@ -18,16 +23,20 @@ interface EmployeeProfileTabsProps {
  * única fuente de verdad — nada de estado duplicado).
  */
 export function resolveProfileTab(tabParam: string | null, hasDocumentos: boolean): ProfileTab {
-  return hasDocumentos && tabParam === 'documentos' ? 'documentos' : 'perfil'
+  if (tabParam === 'contrato') return 'contrato'
+  if (hasDocumentos && tabParam === 'documentos') return 'documentos'
+  return 'perfil'
 }
 
 /** Tabs del detalle de empleado. */
 export function EmployeeProfileTabs({
   perfilContent,
+  contratoContent,
   documentosContent,
 }: EmployeeProfileTabsProps) {
   const tabs: TabDefinition<ProfileTab>[] = [
     { id: 'perfil', label: 'Perfil', icon: User, content: perfilContent },
+    { id: 'contrato', label: 'Contrato', icon: Briefcase, content: contratoContent },
   ]
 
   if (documentosContent !== null) {

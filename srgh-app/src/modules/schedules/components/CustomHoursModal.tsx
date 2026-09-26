@@ -53,6 +53,8 @@ interface OptionalPeriodProps {
   onChangeStart: (value: string) => void
   onChangeEnd: (value: string) => void
   idPrefix: string
+  /** "almuerzo" / "break": nombra los selectores de hora ("Inicio de almuerzo"). */
+  periodName: string
 }
 
 function OptionalPeriod({
@@ -64,6 +66,7 @@ function OptionalPeriod({
   onChangeStart,
   onChangeEnd,
   idPrefix,
+  periodName,
 }: OptionalPeriodProps) {
   return (
     <div className="rounded-xl border border-slate-200 p-3">
@@ -88,12 +91,26 @@ function OptionalPeriod({
       {enabled && (
         <div className="mt-3 space-y-2.5">
           <div>
-            <label className={LABEL}>Inicio</label>
-            <TimeSelect value={start} onChange={onChangeStart} />
+            <label className={LABEL} htmlFor={`${idPrefix}-start`}>
+              Inicio
+            </label>
+            <TimeSelect
+              id={`${idPrefix}-start`}
+              label={`Inicio de ${periodName}`}
+              value={start}
+              onChange={onChangeStart}
+            />
           </div>
           <div>
-            <label className={LABEL}>Fin</label>
-            <TimeSelect value={end} onChange={onChangeEnd} />
+            <label className={LABEL} htmlFor={`${idPrefix}-end`}>
+              Fin
+            </label>
+            <TimeSelect
+              id={`${idPrefix}-end`}
+              label={`Fin de ${periodName}`}
+              value={end}
+              onChange={onChangeEnd}
+            />
           </div>
         </div>
       )}
@@ -188,13 +205,27 @@ export function CustomHoursModal({
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
             <div>
-              <label className={LABEL}>Hora de entrada</label>
-              <TimeSelect value={startTime} onChange={setStartTime} />
+              <label className={LABEL} htmlFor="custom-start">
+                Hora de entrada
+              </label>
+              <TimeSelect
+                id="custom-start"
+                label="Hora de entrada"
+                value={startTime}
+                onChange={setStartTime}
+              />
             </div>
 
             <div>
-              <label className={LABEL}>Hora de salida</label>
-              <TimeSelect value={endTime} onChange={setEndTime} />
+              <label className={LABEL} htmlFor="custom-end">
+                Hora de salida
+              </label>
+              <TimeSelect
+                id="custom-end"
+                label="Hora de salida"
+                value={endTime}
+                onChange={setEndTime}
+              />
             </div>
 
             <div>
@@ -253,6 +284,7 @@ export function CustomHoursModal({
             <OptionalPeriod
               idPrefix="custom-lunch"
               label="Incluye almuerzo"
+              periodName="almuerzo"
               enabled={hasLunch}
               onToggle={setHasLunch}
               start={lunchStart}
@@ -264,6 +296,7 @@ export function CustomHoursModal({
             <OptionalPeriod
               idPrefix="custom-break"
               label="Incluye break"
+              periodName="break"
               enabled={hasBreak}
               onToggle={setHasBreak}
               start={breakStart}

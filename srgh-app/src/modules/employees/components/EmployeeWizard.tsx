@@ -16,6 +16,7 @@ import {
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
 import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
+import { linkPostulacionToEmployee } from '@/modules/recruitment/actions/linkPostulacionToEmployee'
 import { formatCRC, formatDate, fullName } from '@/modules/employees/lib/format'
 import { WizardStepper, type WizardStep } from './WizardStepper'
 import { EmployeeWizardStepPersonal } from './EmployeeWizardStepPersonal'
@@ -130,7 +131,7 @@ function OnboardingSummary({
         />
         <SummaryItem label="Identificación" value={empleado.emp_numero_identificacion} />
         <SummaryItem
-          label="Fecha de ingreso"
+          label="Ingreso a la empresa"
           value={formatDate(empleado.emp_fecha_ingreso_original)}
         />
         <SummaryItem label="Puesto" value={nombreDe(puestos, contratacion.lab_puesto_id)} />
@@ -143,7 +144,10 @@ function OnboardingSummary({
           label="Jornada"
           value={nombreDe(tiposJornada, contratacion.lab_tipo_jornada_id)}
         />
-        <SummaryItem label="Inicio de contrato" value={formatDate(contratacion.lab_fecha_inicio)} />
+        <SummaryItem
+          label="Inicio del contrato"
+          value={formatDate(contratacion.lab_fecha_inicio)}
+        />
         <SummaryItem label="Salario base" value={formatCRC(contratacion.lab_salario_base)} />
         <SummaryItem label="Salario real" value={formatCRC(contratacion.lab_salario_real)} />
         <div className="sm:col-span-2 lg:col-span-4">
@@ -161,6 +165,23 @@ function OnboardingSummary({
   )
 }
 
+/**
+ * Datos que trae precargados el flujo "Contratar" desde una postulación
+ * (SGRH-61) — solo lo que el candidato ya entregó. El resto del wizard se
+ * llena igual que un alta común.
+ */
+export interface EmployeeWizardPrefill {
+  emp_nombre: string
+  emp_apellido_1: string
+  emp_apellido_2: string | null
+  emp_tipo_identificacion_id: number | null
+  emp_numero_identificacion: string
+  emp_telefono: string | null
+  emp_email_personal: string | null
+  lab_puesto_id: number | null
+  lab_sucursal_id: number | null
+}
+
 interface EmployeeWizardProps {
   tiposIdentificacion: CatalogoItem[]
   puestos: CatalogoItem[]
@@ -173,6 +194,15 @@ interface EmployeeWizardProps {
   canManageDocs: boolean
   roles: CatalogoItem[]
   canInviteUser: boolean
+  /** Ver EmployeeWizardPrefill. Ausente en el alta común desde /employees/new. */
+  prefill?: EmployeeWizardPrefill
+  /**
+   * Presente solo cuando el wizard se abrió desde "Contratar" en una
+   * postulación: tras crear el empleado, cierra esa postulación como
+   * contratada y la enlaza (best-effort, no bloquea el alta — mismo
+   * criterio que la foto y los documentos).
+   */
+  postulacionId?: number
 }
 
 export function EmployeeWizard({
@@ -187,6 +217,8 @@ export function EmployeeWizard({
   canManageDocs,
   roles,
   canInviteUser,
+  prefill,
+  postulacionId,
 }: EmployeeWizardProps) {
   const router = useRouter()
   const [step, setStep] = useState(0)
@@ -212,15 +244,16 @@ export function EmployeeWizard({
     mode: 'onTouched',
     defaultValues: {
       empleado: {
-        emp_nombre: '',
-        emp_apellido_1: '',
-        emp_apellido_2: '',
-        emp_numero_identificacion: '',
+        emp_nombre: prefill?.emp_nombre ?? '',
+        emp_apellido_1: prefill?.emp_apellido_1 ?? '',
+        emp_apellido_2: prefill?.emp_apellido_2 ?? '',
+        emp_tipo_identificacion_id: prefill?.emp_tipo_identificacion_id ?? undefined,
+        emp_numero_identificacion: prefill?.emp_numero_identificacion ?? '',
         emp_fecha_ingreso_original: '',
         emp_fecha_nacimiento: '',
         emp_nacionalidad: 'Costarricense',
-        emp_telefono: '',
-        emp_email_personal: '',
+        emp_telefono: prefill?.emp_telefono ?? '',
+        emp_email_personal: prefill?.emp_email_personal ?? '',
         emp_numero_asegurado_ccss: '',
         emp_nombre_contacto_emergencia: '',
         emp_telefono_emergencia: '',
@@ -229,6 +262,8 @@ export function EmployeeWizard({
         dir_senas_exactas: '',
       },
       contratacion: {
+        lab_puesto_id: prefill?.lab_puesto_id ?? undefined,
+        lab_sucursal_id: prefill?.lab_sucursal_id ?? undefined,
         lab_fecha_inicio: '',
       },
       datos_pago: {
@@ -242,6 +277,7 @@ export function EmployeeWizard({
     handleSubmit,
     trigger,
     setValue,
+    getValues,
     formState: { isSubmitting },
   } = methods
 
@@ -254,9 +290,21 @@ export function EmployeeWizard({
 
   async function goNext() {
     const valid = await trigger(STEP_FIELDS[step])
-    if (valid) {
-      setStep((current) => Math.min(current + 1, STEPS.length - 1))
+    if (!valid) return
+
+    // En un alta nueva el contrato arranca el mismo día que la persona entra
+    // a la empresa, así que pedir la fecha dos veces solo servía para que se
+    // confundieran. Se precarga y queda editable, para el caso de alguien que
+    // ya venía trabajando antes.
+    //
+    // Va acá y no en un efecto que observe la fecha de ingreso: un efecto
+    // correría también al volver al paso 1, y pisaría un inicio de contrato
+    // que el usuario ya hubiera ajustado a mano.
+    if (step === 0 && !getValues('contratacion.lab_fecha_inicio')) {
+      setValue('contratacion.lab_fecha_inicio', getValues('empleado.emp_fecha_ingreso_original'))
     }
+
+    setStep((current) => Math.min(current + 1, STEPS.length - 1))
   }
 
   function goBack() {
@@ -336,6 +384,15 @@ export function EmployeeWizard({
       toast.warning(
         `Empleado creado, pero no se pudieron subir: ${documentosFallidos.join(', ')}. Puedes agregarlos desde su perfil.`
       )
+    }
+
+    // Cierre de la postulación (SGRH-61): igual que la foto y los
+    // documentos, nunca bloquea el alta — el empleado ya existe.
+    if (postulacionId) {
+      const linkResult = await linkPostulacionToEmployee(postulacionId, result.empId)
+      if (!linkResult.ok) {
+        toast.warning(`Empleado creado, pero la postulación no se pudo cerrar: ${linkResult.error}`)
+      }
     }
 
     toast.success('Empleado creado correctamente.')

@@ -125,6 +125,9 @@ export function SearchSelect({
       const match = filtered[highlighted]
       if (match) choose(match.value)
     } else if (e.key === 'Escape') {
+      // Solo si había algo que cerrar: así el Modal que lo contiene sabe
+      // que este Escape ya se usó (ver useDialog) y no se cierra también.
+      if (open) e.preventDefault()
       setOpen(false)
       setQuery('')
     }

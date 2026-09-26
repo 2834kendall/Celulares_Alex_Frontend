@@ -213,7 +213,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
                   <th className={TABLE_TH}>Puesto</th>
                   <th className={TABLE_TH}>Sucursal</th>
                   <th className={TABLE_TH}>Tipo de contrato</th>
-                  <th className={TABLE_TH}>Inicio de contrato</th>
+                  <th className={TABLE_TH}>Inicio del contrato</th>
                   <th className={TABLE_TH}>Estado</th>
                 </tr>
               </thead>
