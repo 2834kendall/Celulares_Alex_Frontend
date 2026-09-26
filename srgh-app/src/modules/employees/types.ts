@@ -402,19 +402,25 @@ export type EmpleadoListItem = Pick<
 // ─── View Model — Detalle de empleado ────────────────────────────────────────
 // DTO para la página de perfil /employees/[id].
 
+/** Un contrato (fila de sgrh_historial_laboral) con sus catálogos resueltos. */
+export type ContratoDetalle = HistorialLaboralRow & {
+  puesto_nombre: string
+  sucursal_nombre: string
+  tipo_contrato_nombre: string
+  tipo_jornada_nombre: string
+  // null en el vigente, y en uno cerrado sin motivo registrado.
+  motivo_salida_nombre: string | null
+}
+
 export type EmpleadoDetalle = EmpleadoRow & {
   tipo_identificacion_nombre: string
   // URL firmada (SGRH-67) de emp_foto_path, null sin foto. Avatar cae a
   // iniciales si es null o si el firmado falló.
   foto_url: string | null
-  historial_activo:
-    | (HistorialLaboralRow & {
-        puesto_nombre: string
-        sucursal_nombre: string
-        tipo_contrato_nombre: string
-        tipo_jornada_nombre: string
-      })
-    | null
+  historial_activo: ContratoDetalle | null
+  // Todos los contratos del empleado en la empresa, del más reciente al más
+  // antiguo, vigente incluido. Los cerrados son el historial de contrataciones.
+  historial_completo: ContratoDetalle[]
   // null cuando el empleado no tiene datos de pago registrados O cuando el rol
   // del usuario no alcanza para verlos (la RLS de la tabla oculta las filas).
   //

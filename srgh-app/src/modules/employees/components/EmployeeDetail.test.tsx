@@ -54,7 +54,7 @@ describe('<EmployeeDetail />', () => {
     searchString = ''
   })
 
-  it('muestra la ficha completa con el contrato vigente', () => {
+  it('muestra la ficha completa en el tab Perfil, sin el contrato', () => {
     render(
       <EmployeeDetail
         empleado={EMPLEADO_DETALLE}
@@ -67,13 +67,32 @@ describe('<EmployeeDetail />', () => {
 
     expect(screen.getByRole('heading', { name: 'Ana Mora' })).toBeInTheDocument()
     expect(screen.getByText('Activo')).toBeInTheDocument()
+    expect(screen.getByText('Femenino')).toBeInTheDocument()
+    expect(screen.getByText('ana@mail.com')).toBeInTheDocument()
+    // Datos de pago se quedan en Perfil (RLS propia); el banco por nombre.
+    expect(screen.getByText('BAC Credomatic')).toBeInTheDocument()
+    // El contrato se mudó a su propio tab.
+    expect(screen.queryByRole('heading', { name: 'Contrato vigente' })).not.toBeInTheDocument()
+  })
+
+  it('en el tab Contrato se ve el contrato vigente', () => {
+    searchString = 'tab=contrato'
+    render(
+      <EmployeeDetail
+        empleado={EMPLEADO_DETALLE}
+        tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
+        territorio={TERRITORIO}
+        canWrite
+      />
+    )
+
+    expect(screen.getByRole('heading', { name: 'Contrato vigente' })).toBeInTheDocument()
     expect(screen.getByText('Cajera')).toBeInTheDocument()
     expect(screen.getByText('Central')).toBeInTheDocument()
     expect(screen.getByText('Diurna')).toBeInTheDocument()
-    expect(screen.getByText('Femenino')).toBeInTheDocument()
-    expect(screen.getByText('ana@mail.com')).toBeInTheDocument()
-    // El banco se muestra por nombre (join al catálogo), no por id.
-    expect(screen.getByText('BAC Credomatic')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Datos personales' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Datos de pago' })).not.toBeInTheDocument()
   })
 
   it('muestra la dirección resuelta hasta provincia y su código postal', () => {
@@ -110,9 +129,10 @@ describe('<EmployeeDetail />', () => {
   })
 
   it('muestra aviso cuando no hay contrato vigente', () => {
+    searchString = 'tab=contrato'
     render(
       <EmployeeDetail
-        empleado={{ ...EMPLEADO_DETALLE, historial_activo: null }}
+        empleado={{ ...EMPLEADO_DETALLE, historial_activo: null, historial_completo: [] }}
         tiposIdentificacion={TIPOS_IDENTIFICACION}
         bancos={BANCOS}
         territorio={TERRITORIO}
@@ -160,7 +180,7 @@ describe('<EmployeeDetail />', () => {
     await user.click(screen.getByRole('button', { name: /cancelar/i }))
 
     expect(screen.queryByRole('button', { name: /guardar cambios/i })).not.toBeInTheDocument()
-    expect(screen.getByText('Cajera')).toBeInTheDocument()
+    expect(screen.getByText('Femenino')).toBeInTheDocument()
   })
 
   it('muestra el avatar con iniciales cuando el empleado no tiene foto', () => {
@@ -289,7 +309,7 @@ describe('<EmployeeDetail />', () => {
     }
   })
 
-  it('sin la prop documentos (default null) no hay tabs: la ficha se ve como antes', () => {
+  it('sin la prop documentos (default null) los tabs son Perfil | Contrato', () => {
     render(
       <EmployeeDetail
         empleado={EMPLEADO_DETALLE}
@@ -300,7 +320,9 @@ describe('<EmployeeDetail />', () => {
       />
     )
 
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Perfil/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /Contrato/ })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /Documentos/ })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Datos personales' })).toBeInTheDocument()
   })
 
@@ -341,8 +363,8 @@ describe('<EmployeeDetail />', () => {
 
   // El botón "Editar" gobierna el formulario del perfil: dejarlo visible desde
   // el tab de documentos no tendría a qué aplicar.
-  it('el botón Editar solo aparece en el tab de perfil', () => {
-    searchString = 'tab=documentos'
+  it.each(['documentos', 'contrato'])('el botón Editar no aparece en el tab de %s', (tab) => {
+    searchString = `tab=${tab}`
     render(
       <EmployeeDetail
         empleado={EMPLEADO_DETALLE}

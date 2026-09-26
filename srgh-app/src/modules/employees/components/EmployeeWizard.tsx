@@ -131,7 +131,7 @@ function OnboardingSummary({
         />
         <SummaryItem label="Identificación" value={empleado.emp_numero_identificacion} />
         <SummaryItem
-          label="Fecha de ingreso"
+          label="Ingreso a la empresa"
           value={formatDate(empleado.emp_fecha_ingreso_original)}
         />
         <SummaryItem label="Puesto" value={nombreDe(puestos, contratacion.lab_puesto_id)} />
@@ -144,7 +144,10 @@ function OnboardingSummary({
           label="Jornada"
           value={nombreDe(tiposJornada, contratacion.lab_tipo_jornada_id)}
         />
-        <SummaryItem label="Inicio de contrato" value={formatDate(contratacion.lab_fecha_inicio)} />
+        <SummaryItem
+          label="Inicio del contrato"
+          value={formatDate(contratacion.lab_fecha_inicio)}
+        />
         <SummaryItem label="Salario base" value={formatCRC(contratacion.lab_salario_base)} />
         <SummaryItem label="Salario real" value={formatCRC(contratacion.lab_salario_real)} />
         <div className="sm:col-span-2 lg:col-span-4">
@@ -274,6 +277,7 @@ export function EmployeeWizard({
     handleSubmit,
     trigger,
     setValue,
+    getValues,
     formState: { isSubmitting },
   } = methods
 
@@ -286,9 +290,21 @@ export function EmployeeWizard({
 
   async function goNext() {
     const valid = await trigger(STEP_FIELDS[step])
-    if (valid) {
-      setStep((current) => Math.min(current + 1, STEPS.length - 1))
+    if (!valid) return
+
+    // En un alta nueva el contrato arranca el mismo día que la persona entra
+    // a la empresa, así que pedir la fecha dos veces solo servía para que se
+    // confundieran. Se precarga y queda editable, para el caso de alguien que
+    // ya venía trabajando antes.
+    //
+    // Va acá y no en un efecto que observe la fecha de ingreso: un efecto
+    // correría también al volver al paso 1, y pisaría un inicio de contrato
+    // que el usuario ya hubiera ajustado a mano.
+    if (step === 0 && !getValues('contratacion.lab_fecha_inicio')) {
+      setValue('contratacion.lab_fecha_inicio', getValues('empleado.emp_fecha_ingreso_original'))
     }
+
+    setStep((current) => Math.min(current + 1, STEPS.length - 1))
   }
 
   function goBack() {

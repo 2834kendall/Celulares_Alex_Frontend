@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, Receipt } from 'lucide-react'
@@ -46,8 +46,24 @@ function ResultadoLinea({ label, valor, dias }: { label: string; valor: number; 
  * expediente laboral (fecha de fin + motivo de salida) — por eso no se
  * puede deshacer desde acá ni volver a procesar el mismo contrato dos veces.
  */
+/**
+ * Contrato a preseleccionar desde `?empleado=<lab_id>` (lo manda el tab
+ * Contrato del perfil). Solo se acepta si está en la lista de liquidables: un
+ * id que no aparece —ya liquidado, fuera del alcance de la RLS o una URL
+ * editada a mano— se ignora y el selector queda vacío.
+ */
+function empleadoPreseleccionado(
+  param: string | null,
+  empleados: EmpleadoActivoItem[]
+): number | undefined {
+  const id = Number(param)
+  if (!Number.isInteger(id) || id <= 0) return undefined
+  return empleados.some((e) => e.historialLaboralId === id) ? id : undefined
+}
+
 export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTabProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [serverError, setServerError] = useState<string | null>(null)
   const [resultado, setResultado] = useState<LiquidacionCalculada | null>(null)
 
@@ -61,7 +77,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
   } = useForm<ProcesarLiquidacionInput>({
     resolver: zodResolver(procesarLiquidacionSchema),
     defaultValues: {
-      historialLaboralId: undefined,
+      historialLaboralId: empleadoPreseleccionado(searchParams.get('empleado'), empleados),
       fechaSalida: '',
       motivoSalidaId: undefined,
       diasVacacionesPendientes: 0,
@@ -83,7 +99,14 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
 
     setResultado(result.data)
     toast.success('Liquidación calculada y guardada.')
-    reset()
+    // Sin el historialLaboralId explícito, reset() volvería al preseleccionado
+    // de la URL: el contrato que se acaba de cerrar.
+    reset({
+      historialLaboralId: undefined,
+      fechaSalida: '',
+      motivoSalidaId: undefined,
+      diasVacacionesPendientes: 0,
+    })
     router.refresh()
   }
 

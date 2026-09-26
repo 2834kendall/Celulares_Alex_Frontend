@@ -51,6 +51,24 @@ if [ -z "$FILES" ]; then
   exit 0
 fi
 
+# Un push que arrastra media rama (tipico al mergear dev de vuelta) genera
+# una lista de cientos de rutas, y `vitest related ...$FILES` se pasa del
+# largo maximo de linea de comandos de Windows (8191 caracteres): el hook
+# moria con "La linea de comandos es demasiado larga" y cancelaba el push
+# sin haber corrido un solo test.
+#
+# Pasado cierto tamano la suite completa es ademas la opcion sensata: con
+# tantos archivos tocados, `related` termina arrastrando casi todo igual.
+CANTIDAD=$(printf '%s\n' "$FILES" | wc -l)
+if [ "$CANTIDAD" -gt 60 ]; then
+  echo "[pre-push] $CANTIDAD archivos en el push — suite completa…"
+  pnpm exec vitest run || {
+    echo "[pre-push] tests fallaron — push cancelado."
+    exit 1
+  }
+  exit 0
+fi
+
 echo "[pre-push] tests relacionados…"
 # shellcheck disable=SC2086  # se quiere el split por palabras: es una lista.
 pnpm exec vitest related --run $FILES || {

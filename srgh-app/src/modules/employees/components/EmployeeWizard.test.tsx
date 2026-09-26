@@ -92,20 +92,26 @@ function renderWizard(
  * validacion de "campo requerido" — el valor exacto no lo asertan estos
  * tests, solo que el formulario avance.
  */
-async function elegirFecha(user: UserEvent, label: string) {
+async function elegirFecha(user: UserEvent, label: string, dia = '15') {
   await user.click(screen.getByRole('button', { name: label }))
   const calendario = within(screen.getByRole('dialog', { name: label }))
   // Se busca por el texto del dia y no por el nombre accesible, que trae el
-  // dia de la semana y cambia segun la fecha real de ejecucion. El 15 existe
-  // en todos los meses.
-  const dia15 = calendario.getAllByRole('button').find((b) => b.textContent?.trim() === '15')!
-  await user.click(dia15)
+  // dia de la semana y cambia segun la fecha real de ejecucion. El 15 y el 20
+  // existen en todos los meses.
+  const celda = calendario.getAllByRole('button').find((b) => b.textContent?.trim() === dia)!
+  await user.click(celda)
 
   // Devuelve la fecha elegida para que las aserciones no hardcodeen un mes:
   // el calendario abre en el mes CORRIENTE, asi que el valor cambia segun
   // cuando se corran los tests.
   const hoy = new Date()
-  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-15`
+  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${dia}`
+}
+
+/** '2026-09-15' → '15/09/2026', que es lo que pinta el trigger de DateField. */
+function comoSeVe(iso: string) {
+  const [year, month, day] = iso.split('-')
+  return `${day}/${month}/${year}`
 }
 
 async function fillStepPersonal(user: UserEvent) {
@@ -114,7 +120,7 @@ async function fillStepPersonal(user: UserEvent) {
   await user.type(screen.getByLabelText('Primer apellido *'), 'Mora')
   await chooseSelectMenuOption(user, 'Tipo de identificación *', 'Cédula nacional')
   await user.type(screen.getByLabelText('Número de identificación *'), '1-1111-1111')
-  fechaIngreso = await elegirFecha(user, 'Fecha de ingreso')
+  fechaIngreso = await elegirFecha(user, 'Ingreso a la empresa')
   await fillDireccion(user)
   return fechaIngreso
 }
@@ -132,7 +138,8 @@ async function fillStepNomina(user: UserEvent) {
   await chooseSelectMenuOption(user, 'Sucursal *', 'Central')
   await chooseSelectMenuOption(user, 'Tipo de contrato *', 'Indefinido')
   await chooseSelectMenuOption(user, 'Tipo de jornada *', 'Diurna')
-  await elegirFecha(user, 'Fecha de inicio')
+  // El inicio del contrato NO se digita: llega precargado con el ingreso a la
+  // empresa al avanzar del paso 1 (ver goNext en EmployeeWizard).
   await user.type(screen.getByLabelText('Salario base (₡) *'), '500000')
   await user.type(screen.getByLabelText('Salario real (₡) *'), '550000')
 }
@@ -226,12 +233,52 @@ describe('<EmployeeWizard />', () => {
             lab_sucursal_id: 2,
             lab_salario_base: 500000,
             lab_salario_real: 550000,
+            // Nadie digitó esta fecha en el paso 2: la precarga del ingreso a
+            // la empresa llega intacta hasta la Server Action.
+            lab_fecha_inicio: fechaIngreso,
           }),
           usuario: undefined,
         })
       )
     })
     expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  it('precarga el inicio del contrato con el ingreso a la empresa', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    const fechaIngreso = await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+
+    expect(screen.getByRole('button', { name: 'Inicio del contrato' })).toHaveTextContent(
+      comoSeVe(fechaIngreso)
+    )
+  })
+
+  it('no pisa un inicio de contrato ya ajustado a mano', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+
+    // Se corrige a mano porque este contrato arranca despues del ingreso: el
+    // dia 20 del mes en vez del 15 que quedo precargado.
+    const fechaContrato = await elegirFecha(user, 'Inicio del contrato', '20')
+
+    // Volver al paso 1 y avanzar de nuevo no debe reponer la fecha de ingreso:
+    // la precarga solo aplica cuando el campo esta vacio.
+    await user.click(screen.getByRole('button', { name: /anterior/i }))
+    await screen.findByLabelText('Nombre *')
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+
+    expect(screen.getByRole('button', { name: 'Inicio del contrato' })).toHaveTextContent(
+      comoSeVe(fechaContrato)
+    )
   })
 
   it('no cierra ninguna postulación cuando no viene de "Contratar" (postulacionId ausente)', async () => {
