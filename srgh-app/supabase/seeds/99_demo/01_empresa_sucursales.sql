@@ -69,11 +69,11 @@ ON CONFLICT (org_cedula_juridica) DO NOTHING;
 INSERT INTO public.sgrh_sucursales (
   suc_empresa_id, suc_nombre, suc_telefono, suc_email_sucursal,
   suc_latitud, suc_longitud, suc_radio_geocerca_metros,
-  suc_tolerancia_tardia_minutos, suc_activa, suc_direccion_id
+  suc_activa, suc_direccion_id
 )
 SELECT
   e.org_id, v.nombre, v.telefono, v.email,
-  v.latitud, v.longitud, 20, 5, true,
+  v.latitud, v.longitud, 20, true,
   (SELECT dir_id FROM public.sgrh_direcciones WHERE dir_senas_exactas = v.senas LIMIT 1)
 FROM public.sgrh_empresas e
 CROSS JOIN (VALUES

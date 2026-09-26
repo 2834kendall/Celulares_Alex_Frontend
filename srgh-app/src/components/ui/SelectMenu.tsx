@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Search } from 'lucide-react'
 import { useController, type Control, type FieldValues, type Path } from 'react-hook-form'
 import { normalizeSearchText } from '@/components/ui/SearchSelect'
@@ -49,26 +50,65 @@ interface SelectMenuProps {
   /**
    * Reemplaza POR COMPLETO las clases de color/borde/fondo del trigger (no se
    * mezcla con las del tamaño default). Para variantes con paleta propia —
-   * hoy, el selector a.m./p.m. de TimeSelect— donde `cn()` no puede resolver
+   * hoy, el selector a. m./p. m. de TimeSelect— donde `cn()` no puede resolver
    * un conflicto de `bg-white` contra un fondo propio (ver la nota en
    * AppShell sobre por que este proyecto no usa un merge de clases con
    * prioridad).
    */
   triggerClassName?: string
   /**
-   * Agrega un campo de busqueda arriba de la lista abierta, que filtra las
-   * opciones mientras se escribe. Para catalogos largos donde recorrer el
-   * menu a mano no es viable — hoy, los 84 cantones y los 492 distritos de
-   * la cascada de direccion.
+   * Agrega un campo de busqueda arriba de la lista, que la filtra mientras
+   * se escribe. Para catalogos largos donde hace falta ACOTAR y no solo
+   * saltar — hoy, los 84 cantones y los 492 distritos de la cascada de
+   * direccion, y el catalogo de bancos.
    *
-   * El input se renderiza DENTRO del panel, que va despues del trigger: el
-   * <label> que envuelve al control resuelve su nombre accesible contra el
-   * PRIMER control que contiene, y si el buscador quedara antes, cualquier
-   * `getByLabelText` del campo devolveria el buscador en vez del trigger.
+   * Es la hermana visible del typeahead: los dos resuelven "encontrar una
+   * opcion escribiendo", pero el typeahead no ocupa lugar y sirve para
+   * listas que se recorren (los 60 minutos de TimeSelect), mientras que
+   * esto sirve para listas donde hace falta descartar. Se excluyen: con
+   * `searchable` el foco vive en el input, asi que el typeahead del trigger
+   * nunca llegaria a dispararse.
    */
   searchable?: boolean
 }
 
+/**
+ * Ubica el panel de la lista (portal a <body>, `position: fixed`) pegado al
+ * trigger.
+ *
+ * Portal porque, dibujado en su lugar, un contenedor con `overflow` lo
+ * recortaba: dentro de un Modal (cuerpo con scroll) la lista de minutos de
+ * TimeSelect quedaba cortada y habia que scrollear el modal para verla.
+ * Medido a mano, mismo criterio que DatePickerButton:
+ * - abre hacia arriba si abajo no entra y arriba hay mas lugar;
+ * - se empuja para no salirse por los costados (un trigger angosto pegado
+ *   al borde derecho, como el selector de sucursal del header, recortaba
+ *   las opciones largas contra el borde de la ventana).
+ */
+function placeList(list: HTMLElement | null, trigger: HTMLElement | null) {
+  if (!list || !trigger) return
+
+  const margen = 8
+  const separacion = 6
+  const caja = trigger.getBoundingClientRect()
+  const anchoVisible = document.documentElement.clientWidth
+  const abajo = window.innerHeight - caja.bottom - margen - separacion
+  const arriba = caja.top - margen - separacion
+
+  list.style.minWidth = `${caja.width}px`
+  list.style.maxHeight = ''
+  const alto = list.offsetHeight
+  const haciaArriba = alto > abajo && arriba > abajo
+  const disponible = Math.max(haciaArriba ? arriba : abajo, 0)
+  if (alto > disponible) list.style.maxHeight = `${disponible}px`
+  const altoFinal = Math.min(alto, disponible)
+
+  const left = Math.max(margen, Math.min(caja.left, anchoVisible - list.offsetWidth - margen))
+  list.style.left = `${left}px`
+  list.style.top = haciaArriba
+    ? `${caja.top - separacion - altoFinal}px`
+    : `${caja.bottom + separacion}px`
+}
 /**
  * Reemplazo del `<select>` nativo con la lista desplegada TAMBIEN estilizada.
  *
@@ -102,43 +142,48 @@ export function SelectMenu({
   const [query, setQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  // El panel es la raiz del portal (buscador + lista); listRef es solo el
+  // <ul>, que es lo que scrollea y donde vive la opcion resaltada.
   const panelRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listboxId = useId()
+  const typeahead = useRef<{ buffer: string; timer: ReturnType<typeof setTimeout> | null }>({
+    buffer: '',
+    timer: null,
+  })
   const s = SIZES[size]
 
   const selected = options.find((o) => o.value === value) ?? null
 
-  // Sin busqueda `filtered` es `options` por identidad, asi que el camino por
-  // defecto no paga ningun recorrido extra.
+  // Sin busqueda `filtered` es `options` por identidad: el camino por defecto
+  // no paga ningun recorrido extra.
   const filtered = useMemo(() => {
     const q = normalizeSearchText(query.trim())
     if (!q) return options
     return options.filter((o) => normalizeSearchText(o.label).includes(q))
   }, [options, query])
 
-  /**
-   * Empuja el listbox para que no se salga de la pantalla — mismo criterio
-   * que DatePickerButton. Necesario porque, a diferencia de un `<select>`
-   * nativo, esto es un elemento normal del documento: sin este ajuste, un
-   * trigger angosto pegado al borde derecho (p. ej. el selector de sucursal
-   * del header) recorta las opciones mas largas contra el borde de la
-   * ventana en vez de desbordar hacia la izquierda.
-   */
+  // Tambien cuando cambia lo filtrado: el panel cambia de alto y podria
+  // quedar desalineado o abrirse para el lado equivocado.
   useLayoutEffect(() => {
-    const list = panelRef.current
-    if (!open || !list) return
+    if (open) placeList(panelRef.current, triggerRef.current)
+  }, [open, filtered.length])
 
-    list.style.left = ''
-    const caja = list.getBoundingClientRect()
-    const margen = 8
-    const anchoVisible = document.documentElement.clientWidth
-    const sobraDerecha = caja.right - (anchoVisible - margen)
-    const faltaIzquierda = margen - caja.left
-
-    if (sobraDerecha > 0) list.style.left = `${-sobraDerecha}px`
-    else if (faltaIzquierda > 0) list.style.left = `${faltaIzquierda}px`
+  // Si la pagina (o el modal) scrollea con la lista abierta, la lista sigue
+  // al trigger en vez de quedar flotando donde estaba.
+  useEffect(() => {
+    if (!open) return
+    function onScrollOrResize(e: Event) {
+      if (e.target instanceof Node && panelRef.current?.contains(e.target)) return
+      placeList(panelRef.current, triggerRef.current)
+    }
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
+    }
   }, [open])
 
   function openMenu() {
@@ -154,6 +199,12 @@ export function SelectMenu({
     triggerRef.current?.focus()
   }
 
+  // El foco se va al buscador al abrir: es el unico control del panel con el
+  // que se escribe, y sin esto habria que tabular hasta el.
+  useEffect(() => {
+    if (open && searchable) searchRef.current?.focus()
+  }, [open, searchable])
+
   function choose(optionValue: string) {
     onChange(optionValue)
     close()
@@ -162,20 +213,15 @@ export function SelectMenu({
   useEffect(() => {
     if (!open) return
     function onMouseDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setQuery('')
-      }
+      const target = e.target as Node
+      // El panel vive en un portal: no es descendiente del contenedor.
+      if (containerRef.current?.contains(target) || panelRef.current?.contains(target)) return
+      setOpen(false)
+      setQuery('')
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [open])
-
-  // El foco se va al buscador al abrir: es el unico control del panel con el
-  // que se escribe, y sin esto habria que tabular hasta el.
-  useEffect(() => {
-    if (open && searchable) searchRef.current?.focus()
-  }, [open, searchable])
 
   // La opcion resaltada sigue al teclado tambien fuera de la ventana visible.
   useEffect(() => {
@@ -184,6 +230,38 @@ export function SelectMenu({
       ?.querySelector<HTMLElement>(`[data-index="${highlighted}"]`)
       ?.scrollIntoView({ block: 'nearest' })
   }, [open, highlighted])
+
+  /**
+   * Escribir salta a la primera opcion cuyo texto empiece con lo tecleado,
+   * como en un `<select>` nativo. Sin esto, la lista de minutos de
+   * TimeSelect (60 opciones) solo se recorria con flechas o scroll. Tambien
+   * compara sin el cero inicial, para que "8" encuentre "08".
+   */
+  function onTypeahead(key: string) {
+    const t = typeahead.current
+    if (t.timer) clearTimeout(t.timer)
+    t.buffer += key.toLowerCase()
+    t.timer = setTimeout(() => {
+      t.buffer = ''
+      t.timer = null
+    }, 800)
+
+    const buffer = t.buffer
+    const index = options.findIndex((o) => {
+      const label = o.label.toLowerCase()
+      return label.startsWith(buffer) || label.replace(/^0+(?=\d)/, '').startsWith(buffer)
+    })
+    if (index < 0) return
+    setHighlighted(index)
+    setOpen(true)
+  }
+
+  useEffect(() => {
+    const t = typeahead.current
+    return () => {
+      if (t.timer) clearTimeout(t.timer)
+    }
+  }, [])
 
   /**
    * Navegacion de la lista abierta. La comparten el trigger y el buscador:
@@ -208,9 +286,12 @@ export function SelectMenu({
       const match = filtered[highlighted]
       if (match) choose(match.value)
     } else if (e.key === 'Escape') {
+      // preventDefault = "este Escape ya lo usé para cerrar la lista": el
+      // Modal que contiene al select lo respeta y no se cierra también.
+      e.preventDefault()
       // close() y no setOpen(false): con el buscador abierto el foco esta
-      // dentro del panel, que deja de existir — sin devolverlo al trigger se
-      // perderia en el <body>.
+      // dentro del panel, que deja de existir — sin devolverlo al trigger
+      // se perderia en el <body>.
       close()
     } else if (e.key === 'Tab') {
       setOpen(false)
@@ -219,6 +300,21 @@ export function SelectMenu({
   }
 
   function onTriggerKeyDown(e: React.KeyboardEvent) {
+    // Con buscador el typeahead sobra: apenas se abre, el foco se va al
+    // input y lo que se escriba filtra la lista en vez de saltar dentro.
+    if (
+      !searchable &&
+      e.key.length === 1 &&
+      e.key !== ' ' &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey
+    ) {
+      e.preventDefault()
+      onTypeahead(e.key)
+      return
+    }
+
     if (!open) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
         e.preventDefault()
@@ -277,77 +373,92 @@ export function SelectMenu({
         <ChevronDown className={cn('shrink-0 text-slate-400', s.chevron)} aria-hidden="true" />
       </button>
 
-      {open && (
-        <div
-          ref={panelRef}
-          // `w-max` (no `w-full`): el panel se mide por su opcion mas larga,
-          // no por el ancho del trigger — un trigger angosto ("Sucursal 11")
-          // ya no recorta nombres mas largos ("Sucursal Metrocentro") a lo que
-          // mide el propio boton. `min-w-full` evita que quede MAS angosto
-          // que el trigger.
-          className="absolute left-0 z-20 mt-1.5 w-max min-w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
-        >
-          {searchable && (
-            <div className={cn('flex items-center gap-2 border-b border-slate-100', s.search)}>
-              {/* Mismo tamaño que el chevron: las dos son adornos del campo. */}
-              <Search className={cn('shrink-0 text-slate-400', s.chevron)} aria-hidden="true" />
-              <input
-                ref={searchRef}
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value)
-                  setHighlighted(0)
-                }}
-                onKeyDown={onListKeyDown}
-                aria-label={ariaLabel ? `Buscar en ${ariaLabel}` : 'Buscar'}
-                aria-controls={listboxId}
-                placeholder="Buscar…"
-                className="min-w-0 flex-1 bg-transparent font-medium text-slate-700 outline-none placeholder:font-normal placeholder:text-slate-400"
-              />
-            </div>
-          )}
-
-          {/* El scroll vive en el <ul> y no en el panel, para que la barra de
-              busqueda quede fija mientras se recorre la lista. */}
-          <ul
-            ref={listRef}
-            id={listboxId}
-            role="listbox"
-            aria-label={ariaLabel}
-            className="max-h-64 overflow-y-auto py-1"
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            // `w-max` (no `w-full`): el panel se mide por su opcion mas larga,
+            // no por el ancho del trigger — un trigger angosto ("Sucursal 11")
+            // ya no recorta nombres mas largos ("Sucursal Metrocentro") a lo que
+            // mide el propio boton. El ancho minimo (el del trigger) y la
+            // posicion los pone placeList. z-60: por encima del Modal (z-50).
+            //
+            // `flex-col` + el `overflow` en el <ul>: el alto que limita
+            // placeList es el del panel, y asi el buscador queda fijo arriba
+            // mientras solo scrollea la lista.
+            className="animate-fade-in fixed top-0 left-0 z-60 flex max-h-64 w-max max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
           >
-            {filtered.map((o, i) => (
-              <li key={o.value} role="option" aria-selected={o.value === value} data-index={i}>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onClick={() => choose(o.value)}
-                  onMouseEnter={() => setHighlighted(i)}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-2 text-left outline-none transition',
-                    s.option,
-                    i === highlighted && 'bg-brand-50'
-                  )}
-                >
-                  <span className="truncate font-medium text-slate-800">{o.label}</span>
-                  {o.value === value && (
-                    <Check className={cn('shrink-0 text-brand-600', s.check)} aria-hidden="true" />
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
+            {searchable && (
+              <div
+                className={cn(
+                  'flex shrink-0 items-center gap-2 border-b border-slate-100',
+                  s.search
+                )}
+              >
+                {/* Mismo tamaño que el chevron: las dos son adornos del campo. */}
+                <Search className={cn('shrink-0 text-slate-400', s.chevron)} aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setHighlighted(0)
+                  }}
+                  onKeyDown={onListKeyDown}
+                  aria-label={ariaLabel ? `Buscar en ${ariaLabel}` : 'Buscar'}
+                  aria-controls={listboxId}
+                  placeholder="Buscar…"
+                  className="min-w-0 flex-1 bg-transparent font-medium text-slate-700 outline-none placeholder:font-normal placeholder:text-slate-400"
+                />
+              </div>
+            )}
 
-          {filtered.length === 0 && (
-            <p className={cn('text-center text-slate-500', s.empty)}>
-              Sin resultados para &ldquo;{query.trim()}&rdquo;
-            </p>
-          )}
-        </div>
-      )}
+            <ul
+              ref={listRef}
+              id={listboxId}
+              role="listbox"
+              aria-label={ariaLabel}
+              className="min-h-0 flex-1 overflow-y-auto py-1"
+            >
+              {filtered.map((o, i) => (
+                <li key={o.value} role="option" aria-selected={o.value === value} data-index={i}>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    // Sin esto el click le saca el foco al trigger (y dentro de un
+                    // Modal lo mandaria fuera del panel) antes de elegir.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => choose(o.value)}
+                    onMouseEnter={() => setHighlighted(i)}
+                    className={cn(
+                      'flex w-full items-center justify-between gap-2 text-left outline-none transition',
+                      s.option,
+                      i === highlighted && 'bg-brand-50'
+                    )}
+                  >
+                    <span className="truncate font-medium text-slate-800">{o.label}</span>
+                    {o.value === value && (
+                      <Check
+                        className={cn('shrink-0 text-brand-600', s.check)}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {filtered.length === 0 && (
+              <p className={cn('shrink-0 text-center text-slate-500', s.empty)}>
+                Sin resultados para &ldquo;{query.trim()}&rdquo;
+              </p>
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

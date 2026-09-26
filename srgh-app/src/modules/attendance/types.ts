@@ -46,23 +46,21 @@ export type ManualMarkInput = z.input<typeof manualMarkSchema>
 /**
  * Marca del kiosco: el empleado NO inicia sesion, el dispositivo si (cuenta
  * KIOSCO). Trae solo lo que el kiosco puede saber — a que empleado se marca,
- * el tipo, coordenadas (opcionales, si el navegador las cede) y el PIN de
- * respaldo (opcional, si la camara "fallo" — hoy mockeada por un selector).
+ * el tipo, coordenadas (opcionales, si el navegador las cede) y el ticket
+ * que prueba que Face ID lo reconocio.
+ *
+ * Sin PIN desde SGRH-88: el unico camino es el rostro. Si Face ID falla, la
+ * marca la registra el encargado desde el panel (decision del cliente).
  */
 export const kioskMarkSchema = z.object({
   employeeId: z.number().int().positive(),
   tipo: marcaTipoSchema,
   latitud: z.number().min(-90).max(90).nullable(),
   longitud: z.number().min(-180).max(180).nullable(),
-  pin: z
-    .string()
-    .regex(/^\d{4}$/, 'El PIN debe tener 4 digitos.')
-    .nullable(),
   dispositivoId: z.string().trim().max(100).nullable(),
-  // Ticket HMAC emitido por verifyFace cuando el rostro hizo MATCH. Si viene
-  // y la firma es valida, la marca se guarda como FACIAL; si no, MANUAL.
-  // Opcional para no romper a los llamadores previos (cola offline incluida).
-  ticketFacial: z.string().max(500).nullable().default(null),
+  // Ticket HMAC emitido por verifyFace cuando el rostro hizo MATCH.
+  // Obligatorio: sin rostro verificado no hay marca desde el kiosco.
+  ticketFacial: z.string().min(1).max(500),
   // Hora REAL del evento, no la de su registro en el servidor. Solo la manda
   // la cola offline al sincronizar: la tablet marco sin red y esa hora es la
   // unica verdadera. Una marca en linea la deja en null y el servidor estampa
@@ -112,3 +110,28 @@ export const getMonthlyAttendanceSummarySchema = z.object({
 })
 
 export type GetMonthlyAttendanceSummaryInput = z.input<typeof getMonthlyAttendanceSummarySchema>
+
+/** Minimo del motivo, igual que la justificacion de una correccion manual. */
+const MOTIVO_MINIMO = 10
+
+/**
+ * Marcar (o desmarcar) una tardanza como justificada (SGRH-87). `markId` es la
+ * marca de ENTRADA que llego tarde.
+ *
+ * El mismo esquema cubre poner y quitar: con `justificada: false` el motivo
+ * sobra y se limpia. Cuando se justifica, el motivo es obligatorio — la razon
+ * de existir de esto es dejar por escrito POR QUE no cuenta, y una
+ * justificacion sin motivo no se puede auditar despues.
+ */
+export const justifyTardinessSchema = z
+  .object({
+    markId: z.number().int().positive(),
+    justificada: z.boolean(),
+    motivo: z.string().trim().max(500, 'Maximo 500 caracteres.').nullable().default(null),
+  })
+  .refine((v) => !v.justificada || (v.motivo !== null && v.motivo.length >= MOTIVO_MINIMO), {
+    message: `Escriba un motivo de al menos ${MOTIVO_MINIMO} caracteres.`,
+    path: ['motivo'],
+  })
+
+export type JustifyTardinessInput = z.input<typeof justifyTardinessSchema>

@@ -27,8 +27,7 @@ const USUARIOS: UsuarioListItem[] = [
     empleado_nombre: 'Ana Mora',
     rol_id: 4,
     rol_nombre: 'Empleado',
-    sucursal_id: 2,
-    sucursal_nombre: 'Central',
+    sucursales: [{ id: 2, nombre: 'Central' }],
     estado: 'activo',
     ultimo_acceso: '2026-07-01T10:00:00Z',
   },
@@ -39,8 +38,7 @@ const USUARIOS: UsuarioListItem[] = [
     empleado_nombre: null,
     rol_id: 4,
     rol_nombre: 'Empleado',
-    sucursal_id: null,
-    sucursal_nombre: null,
+    sucursales: [],
     estado: 'pendiente',
     ultimo_acceso: null,
   },
@@ -51,8 +49,7 @@ const USUARIOS: UsuarioListItem[] = [
     empleado_nombre: null,
     rol_id: 5,
     rol_nombre: 'RRHH',
-    sucursal_id: null,
-    sucursal_nombre: null,
+    sucursales: [],
     estado: 'desactivado',
     ultimo_acceso: '2026-06-01T10:00:00Z',
   },
@@ -123,6 +120,14 @@ describe('<UsersList />', () => {
     expect(tabla().getByText('Desactivado')).toBeInTheDocument()
     // El pendiente nunca ha entrado.
     expect(tabla().getByText('Nunca')).toBeInTheDocument()
+  })
+
+  it('muestra las sucursales asignadas, o "Todas" a nivel empresa', () => {
+    renderList()
+
+    expect(tabla().getByText('Central')).toBeInTheDocument()
+    // Los otros dos usuarios operan a nivel empresa (sucursales vacío).
+    expect(tabla().getAllByText('Todas')).toHaveLength(2)
   })
 
   it('filtra por búsqueda y por estado', async () => {

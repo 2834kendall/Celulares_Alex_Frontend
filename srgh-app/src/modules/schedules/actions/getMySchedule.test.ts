@@ -82,8 +82,12 @@ describe('getMySchedule (server action)', () => {
               prg_es_dia_libre: false,
               prg_es_feriado: false,
               prg_observaciones: null,
+              prg_sucursal_id: 100,
+              sgrh_sucursales: { suc_nombre: 'Central' },
               sgrh_cat_horarios: {
+                hor_id: 5,
                 hor_nombre: 'Turno A',
+                hor_color: '#3b82f6',
                 hor_hora_entrada: '08:00:00',
                 hor_hora_salida: '17:00:00',
                 hor_hora_inicio_almuerzo: '12:00:00',
@@ -116,6 +120,8 @@ describe('getMySchedule (server action)', () => {
               prg_es_dia_libre: false,
               prg_es_feriado: true,
               prg_observaciones: 'Feriado pagado doble',
+              prg_sucursal_id: 200,
+              sgrh_sucursales: { suc_nombre: 'Norte' },
               sgrh_cat_horarios: null,
               prg_hora_entrada_custom: '09:00:00',
               prg_hora_salida_custom: '18:00:00',
@@ -142,10 +148,13 @@ describe('getMySchedule (server action)', () => {
     expect(tue).toMatchObject({
       date: '2026-01-06',
       isDayOff: false,
+      scheduleId: 5,
       scheduleName: 'Turno A',
+      scheduleColor: '#3b82f6',
       startTime: '08:00:00',
       endTime: '17:00:00',
       hours: 8,
+      branchName: 'Central',
     })
 
     expect(wed).toMatchObject({ date: '2026-01-07', isDayOff: true, hours: 0 })
@@ -153,10 +162,12 @@ describe('getMySchedule (server action)', () => {
     expect(thu).toMatchObject({
       date: '2026-01-08',
       isHoliday: true,
+      isCustom: true,
       startTime: '09:00:00',
       endTime: '18:00:00',
       hours: 8.5,
       observaciones: 'Feriado pagado doble',
+      branchName: 'Norte',
     })
 
     expect(result.weeklyTotal).toBe(16.5)

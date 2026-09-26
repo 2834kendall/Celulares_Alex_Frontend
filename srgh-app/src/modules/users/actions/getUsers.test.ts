@@ -130,7 +130,7 @@ describe('getUsers (server action)', () => {
       ultimo_acceso: '2026-07-01T10:00:00Z',
       empleado_nombre: 'Ana Mora',
       rol_nombre: 'Empleado',
-      sucursal_nombre: 'Central',
+      sucursales: [{ id: 2, nombre: 'Central' }],
     })
     // Pendiente: solo Auth puede decirlo (nunca ha iniciado sesión).
     expect(porEmail.get('luis@empresa.com')).toMatchObject({
@@ -152,6 +152,41 @@ describe('getUsers (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data[0]).toMatchObject({ estado: 'pendiente', ultimo_acceso: null })
+  })
+
+  it('agrupa varias filas uer del mismo usuario en un solo item con sus sucursales', async () => {
+    const rows = [
+      uerRow({ uer_sucursal_id: 2, sgrh_sucursales: { suc_nombre: 'Central' } }),
+      uerRow({ uer_sucursal_id: 3, sgrh_sucursales: { suc_nombre: 'Escazu' } }),
+    ]
+    mockClients({ data: rows, error: null }, { data: { users: [] }, error: null })
+
+    const result = await getUsers()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0]).toMatchObject({
+      usr_id: 7,
+      sucursales: [
+        { id: 2, nombre: 'Central' },
+        { id: 3, nombre: 'Escazu' },
+      ],
+    })
+  })
+
+  it('un usuario a nivel empresa (uer_sucursal_id null) queda con sucursales vacio', async () => {
+    mockClients(
+      { data: [uerRow({ uer_sucursal_id: null, sgrh_sucursales: null })], error: null },
+      { data: { users: [] }, error: null }
+    )
+
+    const result = await getUsers()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data[0].sucursales).toEqual([])
   })
 
   it('filtra por la empresa del JWT y ordena por email', async () => {

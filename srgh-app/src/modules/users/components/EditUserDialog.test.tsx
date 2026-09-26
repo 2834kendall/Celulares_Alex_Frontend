@@ -21,8 +21,7 @@ const USUARIO: UsuarioListItem = {
   empleado_nombre: 'Ana Mora',
   rol_id: 4,
   rol_nombre: 'Empleado',
-  sucursal_id: 2,
-  sucursal_nombre: 'Central',
+  sucursales: [{ id: 2, nombre: 'Central' }],
   estado: 'activo',
   ultimo_acceso: '2026-07-01T10:00:00Z',
 }
@@ -32,13 +31,16 @@ const ROLES = [
   { id: 5, nombre: 'RRHH' },
 ]
 
-function renderDialog(usuario: UsuarioListItem = USUARIO) {
+function renderDialog(
+  usuario: UsuarioListItem = USUARIO,
+  sucursales: { id: number; nombre: string }[] = [{ id: 2, nombre: 'Central' }]
+) {
   const onClose = vi.fn()
   render(
     <EditUserDialog
       usuario={usuario}
       roles={ROLES}
-      sucursales={[{ id: 2, nombre: 'Central' }]}
+      sucursales={sucursales}
       empleadosSinUsuario={[
         { emp_id: 11, nombre_completo: 'Luis Rojas', email_personal: null, puesto_nombre: null },
       ]}
@@ -58,7 +60,8 @@ describe('<EditUserDialog />', () => {
     renderDialog()
 
     expect(screen.getByLabelText('Rol *')).toHaveTextContent('Empleado')
-    expect(screen.getByLabelText('Sucursal (opcional)')).toHaveTextContent('Central')
+    expect(screen.getByRole('checkbox', { name: 'Central' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Todas las sucursales' })).not.toBeChecked()
     // El empleado vinculado no está en la lista "sin usuario": se antepone.
     expect(screen.getByLabelText('Empleado vinculado (opcional)')).toHaveTextContent('Ana Mora')
 
@@ -84,11 +87,49 @@ describe('<EditUserDialog />', () => {
     await waitFor(() => {
       expect(mockUpdateUserAssignment).toHaveBeenCalledWith(7, {
         rol_id: 5,
-        sucursal_id: 2,
+        sucursal_ids: [2],
         empleado_id: null,
       })
     })
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('permite agregar otra sucursal a la selección', async () => {
+    mockUpdateUserAssignment.mockResolvedValue({ ok: true })
+    const user = userEvent.setup()
+    renderDialog(undefined, [
+      { id: 2, nombre: 'Central' },
+      { id: 3, nombre: 'Escazu' },
+    ])
+
+    await user.click(screen.getByRole('checkbox', { name: 'Escazu' }))
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+
+    await waitFor(() => {
+      expect(mockUpdateUserAssignment).toHaveBeenCalledWith(7, {
+        rol_id: 4,
+        sucursal_ids: [2, 3],
+        empleado_id: 10,
+      })
+    })
+  })
+
+  it('vaciar todas las sucursales marca "Todas las sucursales"', async () => {
+    mockUpdateUserAssignment.mockResolvedValue({ ok: true })
+    const user = userEvent.setup()
+    renderDialog()
+
+    await user.click(screen.getByRole('checkbox', { name: 'Central' }))
+    expect(screen.getByRole('checkbox', { name: 'Todas las sucursales' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }))
+
+    await waitFor(() => {
+      expect(mockUpdateUserAssignment).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ sucursal_ids: [] })
+      )
+    })
   })
 
   it('muestra el error del servidor sin cerrar', async () => {

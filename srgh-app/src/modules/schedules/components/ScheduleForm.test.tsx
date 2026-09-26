@@ -97,12 +97,13 @@ describe('<ScheduleForm />', () => {
   it('el break adicional esta oculto por defecto y aparece al activar el switch', async () => {
     render(<ScheduleForm shiftTypes={shiftTypes} />)
 
-    expect(screen.queryByLabelText('Inicio de break')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Inicio de break: hora')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByText('Incluye break adicional al almuerzo'))
 
-    expect(screen.getByLabelText('Inicio de break')).toBeInTheDocument()
-    expect(screen.getByLabelText('Inicio de break')).toHaveValue('10:00')
+    expect(screen.getByLabelText('Inicio de break: hora')).toBeInTheDocument()
+    expect(screen.getByLabelText('Inicio de break: hora')).toHaveTextContent('10')
+    expect(screen.getByLabelText('Inicio de break: minutos')).toHaveTextContent('00')
   })
 
   it('el switch de break parte activo cuando el horario existente ya tiene uno', () => {
@@ -119,6 +120,7 @@ describe('<ScheduleForm />', () => {
       />
     )
 
-    expect(screen.getByLabelText('Inicio de break')).toHaveValue('10:00')
+    expect(screen.getByLabelText('Inicio de break: hora')).toHaveTextContent('10')
+    expect(screen.getByLabelText('Inicio de break: minutos')).toHaveTextContent('00')
   })
 })

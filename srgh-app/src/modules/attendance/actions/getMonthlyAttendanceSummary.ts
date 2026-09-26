@@ -3,7 +3,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { classifyDay } from '@/modules/attendance/lib/infractions'
+import {
+  classifyDay,
+  countsTowardWarning,
+  lunchCountsTowardWarning,
+  lunchTardinessOfDay,
+  tardinessOfDay,
+  type TardinessBadge,
+} from '@/modules/attendance/lib/infractions'
 import { gatherMonthlyAttendanceDays } from '@/modules/attendance/lib/monthlySummary'
 import { diffMinutes, monthBoundsInCostaRica } from '@/modules/attendance/lib/time'
 import {
@@ -11,11 +18,32 @@ import {
   type GetMonthlyAttendanceSummaryInput,
 } from '@/modules/attendance/types'
 
+/** Que marca llego tarde: la entrada o el regreso del almuerzo (SGRH-88). */
+export type TardinessKind = 'entrada' | 'almuerzo'
+
 export interface TardyDay {
   date: string
-  /** "HH:mm" real de la entrada. */
-  entradaTime: string
+  kind: TardinessKind
+  /** "HH:mm" real de la marca que llego tarde. */
+  time: string
   diffMinutes: number
+  /** Tipo del catalogo de la empresa en que cae el atraso. */
+  tipo: TardinessBadge
+  /**
+   * Si suma al conteo del mes. false cuando esta justificada o cuando el
+   * tipo esta configurado para no contar: el dia se muestra igual.
+   */
+  countsTowardWarning: boolean
+  /**
+   * mar_id de la marca que llego tarde. Lo necesita el modal para saber que
+   * tardanza esta justificando; null solo en el caso teorico de un dia
+   * clasificado como tardio sin marca detras, que la clasificacion no produce.
+   */
+  markId: number | null
+  /** El encargado ya la justifico: se muestra, pero no suma al conteo. */
+  isJustified: boolean
+  /** Motivo escrito al justificarla. */
+  justification: string | null
 }
 
 export interface MonthlyEmployeeSummary {
@@ -24,9 +52,27 @@ export interface MonthlyEmployeeSummary {
   fullName: string
   tardias: number
   ausencias: number
-  /** Ordenados cronologicamente — el detalle que summarizeMonth solo cuenta. */
+  /**
+   * Ordenados cronologicamente — el detalle que summarizeMonth solo cuenta.
+   * Incluye las que no suman (justificadas, o de un tipo que no cuenta):
+   * siguen viendose en el reporte aunque no entren en `tardias`, para no
+   * perder la trazabilidad del atraso.
+   */
   tardyDays: TardyDay[]
+  /** Dias de turno sin marca y sin ausencia registrada: no justificados. */
   absentDays: string[]
+  /**
+   * Dias de turno sin marca cubiertos por una ausencia aprobada (permiso,
+   * incapacidad, vacaciones...). No suman, pero se muestran para que el
+   * encargado vea que ya estan resueltos y con que tipo.
+   */
+  justifiedAbsences: JustifiedAbsenceDay[]
+}
+
+export interface JustifiedAbsenceDay {
+  date: string
+  /** Nombre del tipo de ausencia, ej. "Cita Médica". */
+  tipoNombre: string
 }
 
 export type GetMonthlyAttendanceSummaryResult =
@@ -75,35 +121,82 @@ export async function getMonthlyAttendanceSummary(
   const data: MonthlyEmployeeSummary[] = gathered.data.map((employee) => {
     const tardyDays: TardyDay[] = []
     const absentDays: string[] = []
+    const justifiedAbsences: JustifiedAbsenceDay[] = []
 
     for (const day of employee.days) {
-      const status = classifyDay(day)
+      const status = classifyDay(day, gathered.tipos)
 
-      if (status === 'tardio') {
-        // classifyDay solo devuelve 'tardio' cuando entradaTime y expectedStart
-        // son ambos no-nulos (si entradaTime faltara, el resultado seria
-        // 'ausente' antes de llegar aca) — las aserciones son seguras.
+      if (status === 'tardio' || status === 'tardio_justificado') {
+        // Las dos ramas solo se alcanzan con entradaTime y expectedStart
+        // no-nulos (sin entrada el resultado seria 'ausente' antes de llegar
+        // aca) — las aserciones son seguras.
+        const atraso = diffMinutes(day.entradaTime!, day.expectedStart!)
+
+        // tardinessOfDay nunca devuelve null aca: si el atraso no llegara
+        // al primer tipo, el dia habria salido 'a_tiempo'.
+        const tipo = tardinessOfDay(day, gathered.tipos)!
+
         tardyDays.push({
           date: day.date,
-          entradaTime: day.entradaTime!,
-          diffMinutes: diffMinutes(day.entradaTime!, day.expectedStart!),
+          kind: 'entrada',
+          time: day.entradaTime!,
+          diffMinutes: atraso,
+          tipo: { nombre: tipo.nombre, color: tipo.color },
+          countsTowardWarning: countsTowardWarning(day, gathered.tipos),
+          markId: day.entradaMarkId,
+          isJustified: status === 'tardio_justificado',
+          justification: day.tardiaJustificacion,
         })
       } else if (status === 'ausente') {
         absentDays.push(day.date)
+      } else if (
+        day.ausenciaTipo &&
+        !day.entradaTime &&
+        !day.isDayOff &&
+        !day.isHoliday &&
+        day.expectedStart
+      ) {
+        // Habria sido ausencia, pero la cubre una ausencia aprobada.
+        justifiedAbsences.push({ date: day.date, tipoNombre: day.ausenciaTipo })
+      }
+
+      // El regreso del almuerzo es independiente de la entrada: se puede
+      // llegar a tiempo y volver tarde, o las dos cosas el mismo dia.
+      const tipoAlmuerzo = lunchTardinessOfDay(day, gathered.tipos)
+      if (tipoAlmuerzo) {
+        tardyDays.push({
+          date: day.date,
+          kind: 'almuerzo',
+          time: day.finAlmuerzoTime!,
+          diffMinutes: diffMinutes(day.finAlmuerzoTime!, day.expectedLunchEnd!),
+          tipo: { nombre: tipoAlmuerzo.nombre, color: tipoAlmuerzo.color },
+          countsTowardWarning: lunchCountsTowardWarning(day, gathered.tipos),
+          markId: day.finAlmuerzoMarkId,
+          isJustified: day.isJustifiedLunchTardiness ?? false,
+          justification: day.lunchJustificacion,
+        })
       }
     }
 
-    tardyDays.sort((a, b) => a.date.localeCompare(b.date))
+    // Por fecha, y dentro del dia la entrada antes que el almuerzo.
+    tardyDays.sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) || (a.kind === b.kind ? 0 : a.kind === 'entrada' ? -1 : 1)
+    )
     absentDays.sort((a, b) => a.localeCompare(b))
+    justifiedAbsences.sort((a, b) => a.date.localeCompare(b.date))
 
     return {
       employeeId: employee.employeeId,
       employmentHistoryId: employee.employmentHistoryId,
       fullName: employee.fullName,
-      tardias: tardyDays.length,
+      // Solo las que suman: es el numero que dispara la advertencia del
+      // mes, y el que el encargado necesita ver como "deuda" real.
+      tardias: tardyDays.filter((d) => d.countsTowardWarning).length,
       ausencias: absentDays.length,
       tardyDays,
       absentDays,
+      justifiedAbsences,
     }
   })
 

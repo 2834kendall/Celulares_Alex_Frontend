@@ -74,4 +74,29 @@ describe('<AttendanceTabs />', () => {
 
     expect(push).toHaveBeenCalledWith('/attendance?date=2026-07-20&tab=resumen')
   })
+
+  it('sin contenido de justificar no muestra esa pestaña', () => {
+    renderTabs()
+
+    expect(screen.queryByRole('tab', { name: /Por justificar/ })).not.toBeInTheDocument()
+  })
+
+  it('muestra la pestaña Por justificar con los pendientes', () => {
+    searchString = 'tab=justificar'
+    render(
+      <AttendanceTabs
+        diarioContent={<div>Contenido diario</div>}
+        resumenContent={<div>Contenido resumen</div>}
+        justificarContent={<div>Contenido justificar</div>}
+        pendingCount={4}
+      />
+    )
+
+    // El nombre accesible junta el texto corto (celular) y el largo.
+    expect(screen.getByRole('tab', { name: /Por justificar \(4\)/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(screen.getByText('Contenido justificar')).toBeInTheDocument()
+  })
 })

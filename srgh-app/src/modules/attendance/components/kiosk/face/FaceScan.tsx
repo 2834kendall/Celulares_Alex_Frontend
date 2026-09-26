@@ -397,7 +397,10 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
-      <div className="relative w-full overflow-hidden rounded-3xl border border-white/10 bg-black/40">
+      {/* El alto se limita al del viewport: en un telefono acostado (375px de
+          alto) el video 4:3 a todo el ancho dejaba los botones fuera de
+          pantalla. */}
+      <div className="relative mx-auto w-full max-w-[calc(60dvh*4/3)] overflow-hidden rounded-3xl bg-slate-900 ring-1 ring-blue-100">
         {/* El video se espeja como un espejo real: menos desconcertante. */}
         <video
           ref={videoRef}
@@ -406,7 +409,7 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
           className="aspect-[4/3] w-full -scale-x-100 object-cover"
         />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-3/4 w-1/2 rounded-[50%] border-2 border-dashed border-white/40" />
+          <div className="h-3/4 w-1/2 rounded-[50%] border-2 border-dashed border-white/60" />
         </div>
 
         {DEBUG && debug && (
@@ -441,8 +444,8 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
           </div>
         )}
       </div>
-      <p className="flex items-center gap-2 text-center text-sm text-slate-300" aria-live="polite">
-        <ScanFace className="h-4 w-4 shrink-0" />
+      <p className="flex items-center gap-2 text-center text-sm text-slate-600" aria-live="polite">
+        <ScanFace className="h-4 w-4 shrink-0 text-blue-600" />
         {hint ?? STATUS_TEXT[status]}
       </p>
     </div>

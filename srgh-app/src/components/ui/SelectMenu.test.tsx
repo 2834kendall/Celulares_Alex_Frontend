@@ -13,8 +13,7 @@ const DISTRITOS = [
 /**
  * Replica como lo montan los formularios del proyecto: un <label> SIN
  * `htmlFor` que envuelve al control (ver Labeled en EmployeeFields). Es lo
- * que hace que `getByLabelText` resuelva al trigger, y lo que el buscador no
- * debe romper — de ahi que viva dentro del panel, despues del <button>.
+ * que hace que `getByLabelText` resuelva al trigger.
  */
 function renderSelect(props: Partial<React.ComponentProps<typeof SelectMenu>> = {}) {
   const onChange = props.onChange ?? vi.fn()
@@ -27,8 +26,8 @@ function renderSelect(props: Partial<React.ComponentProps<typeof SelectMenu>> = 
   return { onChange }
 }
 
-describe('<SelectMenu />', () => {
-  it('sin searchable no renderiza el buscador', async () => {
+describe('<SelectMenu /> — typeahead (sin searchable)', () => {
+  it('no renderiza el buscador', async () => {
     const user = userEvent.setup()
     renderSelect()
 
@@ -38,13 +37,23 @@ describe('<SelectMenu />', () => {
     expect(screen.getAllByRole('option')).toHaveLength(4)
   })
 
-  it('el trigger conserva su nombre accesible con el buscador abierto', async () => {
+  it('escribir salta a la primera opción que empieza así', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderSelect()
+
+    screen.getByLabelText('Distrito *').focus()
+    await user.keyboard('me')
+    await user.keyboard('{Enter}')
+
+    expect(onChange).toHaveBeenCalledWith('4')
+  })
+})
+
+describe('<SelectMenu /> — searchable', () => {
+  it('el trigger conserva su nombre accesible con el panel abierto', async () => {
     const user = userEvent.setup()
     renderSelect({ searchable: true })
 
-    // Regresion: si el <input> de busqueda quedara ANTES del trigger en orden
-    // de documento, el <label> envolvente lo tomaria a el como su control y
-    // este query devolveria el buscador.
     const trigger = screen.getByLabelText('Distrito *')
     await user.click(trigger)
 
@@ -52,7 +61,7 @@ describe('<SelectMenu />', () => {
     expect(trigger.tagName).toBe('BUTTON')
   })
 
-  it('filtra las opciones al escribir, ignorando tildes y mayusculas', async () => {
+  it('filtra las opciones al escribir, ignorando tildes y mayúsculas', async () => {
     const user = userEvent.setup()
     renderSelect({ searchable: true })
 
@@ -74,13 +83,13 @@ describe('<SelectMenu />', () => {
     expect(screen.getByText(/Sin resultados para/)).toBeInTheDocument()
   })
 
-  it('Enter elige el resaltado del set FILTRADO, no del original', async () => {
+  // El typeahead saltaría dentro de la lista COMPLETA; con buscador hay que
+  // moverse dentro de lo filtrado, o Enter elegiría cualquier otra cosa.
+  it('Enter elige el resaltado del set filtrado, no del original', async () => {
     const user = userEvent.setup()
     const { onChange } = renderSelect({ searchable: true })
 
     await user.click(screen.getByLabelText('Distrito *'))
-    // 'San Antonio' es el tercero de la lista completa; filtrando por
-    // 'antonio' queda primero, que es donde arranca el resaltado.
     await user.type(screen.getByPlaceholderText('Buscar…'), 'antonio')
     await user.keyboard('{Enter}')
 
@@ -99,7 +108,18 @@ describe('<SelectMenu />', () => {
     expect(onChange).toHaveBeenCalledWith('3')
   })
 
-  it('Escape cierra, devuelve el foco al trigger y descarta la busqueda', async () => {
+  it('la barra de búsqueda acepta espacios en vez de elegir la opción', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderSelect({ searchable: true })
+
+    await user.click(screen.getByLabelText('Distrito *'))
+    await user.type(screen.getByPlaceholderText('Buscar…'), 'san r')
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('option', { name: 'San Rafael' })).toBeInTheDocument()
+  })
+
+  it('Escape cierra, devuelve el foco al trigger y descarta la búsqueda', async () => {
     const user = userEvent.setup()
     renderSelect({ searchable: true })
 
@@ -116,7 +136,7 @@ describe('<SelectMenu />', () => {
     expect(screen.getAllByRole('option')).toHaveLength(4)
   })
 
-  it('elegir una opcion filtrada limpia la busqueda para la proxima apertura', async () => {
+  it('elegir una opción filtrada limpia la búsqueda para la próxima apertura', async () => {
     const user = userEvent.setup()
     const { onChange } = renderSelect({ searchable: true })
 

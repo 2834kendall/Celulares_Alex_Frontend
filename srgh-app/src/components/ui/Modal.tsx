@@ -1,8 +1,9 @@
 'use client'
 
-import { useId } from 'react'
+import { useId, useRef } from 'react'
 import { X } from 'lucide-react'
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { useDialog } from '@/hooks/useDialog'
 import { IconButton } from '@/components/ui/IconButton'
 
 interface ModalProps {
@@ -19,10 +20,34 @@ interface ModalProps {
  * `users/UserModal`; las tres eran identicas salvo el `id` del titulo. Ese id
  * ahora sale de `useId()`, que es lo que permite tener dos modales montados a
  * la vez sin que se pisen las relaciones ARIA.
+ *
+ * Teclado y foco (Escape, Tab atrapado, foco de vuelta al cerrar) viven en
+ * `useDialog`, compartido con ConfirmDialog.
  */
 export function Modal({ title, subtitle, onClose, children }: ModalProps) {
   useBodyScrollLock()
   const titleId = useId()
+  const panelRef = useRef<HTMLDivElement>(null)
+  useDialog(panelRef, onClose)
+
+  // Tocar el fondo cierra el modal, salvo que ya se haya escrito algo: con
+  // un formulario de diez campos, un toque de más al costado (en el celular
+  // pasa seguido) borraba todo lo cargado. Con datos, el fondo solo hace que
+  // el panel "rebote" para indicar que se cierra con la X o con Escape.
+  const touchedRef = useRef(false)
+  function onBackdropClick() {
+    if (!touchedRef.current) {
+      onClose()
+      return
+    }
+    // Imperativo y no con estado: cambiar la `key` del panel para reiniciar
+    // la animacion lo remontaria y borraria justo lo que se quiere cuidar.
+    const panel = panelRef.current
+    if (!panel) return
+    panel.classList.remove('animate-modal-in', 'animate-modal-nudge')
+    void panel.offsetWidth // fuerza el reflow para que la animacion reinicie
+    panel.classList.add('animate-modal-nudge')
+  }
 
   return (
     <div
@@ -30,7 +55,7 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      onClick={onClose}
+      onClick={onBackdropClick}
     >
       {/*
         El fondo se funde (`animate-fade-in` en el contenedor) y el panel
@@ -38,8 +63,13 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
         el modal "apareciera" de golpe, sin sensacion de que sale del clic.
       */}
       <div
-        className="animate-modal-in w-full max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5"
+        ref={panelRef}
+        tabIndex={-1}
+        className="animate-modal-in w-full max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 outline-none"
         onClick={(e) => e.stopPropagation()}
+        onInput={() => {
+          touchedRef.current = true
+        }}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div className="min-w-0">

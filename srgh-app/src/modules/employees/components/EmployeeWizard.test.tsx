@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { EmployeeWizard } from './EmployeeWizard'
+import { EmployeeWizard, type EmployeeWizardPrefill } from './EmployeeWizard'
 import { TERRITORIO } from './testFixtures'
 import { toast } from 'sonner'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
 import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
+import { linkPostulacionToEmployee } from '@/modules/recruitment/actions/linkPostulacionToEmployee'
 import { chooseSelectMenuOption } from '@/test/selectMenu'
 
 const push = vi.fn()
@@ -27,6 +28,10 @@ vi.mock('@/modules/employees/actions/addEmployeeDocument', () => ({
   addEmployeeDocument: vi.fn(),
 }))
 
+vi.mock('@/modules/recruitment/actions/linkPostulacionToEmployee', () => ({
+  linkPostulacionToEmployee: vi.fn(),
+}))
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))
@@ -34,6 +39,7 @@ vi.mock('sonner', () => ({
 const mockCreateEmployee = vi.mocked(createEmployee)
 const mockSetEmployeePhoto = vi.mocked(setEmployeePhoto)
 const mockAddEmployeeDocument = vi.mocked(addEmployeeDocument)
+const mockLinkPostulacionToEmployee = vi.mocked(linkPostulacionToEmployee)
 const mockToastWarning = vi.mocked(toast.warning)
 
 function jpegFile(name = 'foto.jpg'): File {
@@ -62,9 +68,18 @@ const CATALOGOS = {
 // del entorno, así que el valor esperado se calcula, no se hardcodea.
 const MILES_FORMAT = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 0 })
 
-function renderWizard(canInviteUser = true, canManageDocs = true) {
+function renderWizard(
+  canInviteUser = true,
+  canManageDocs = true,
+  extraProps: { prefill?: EmployeeWizardPrefill; postulacionId?: number } = {}
+) {
   return render(
-    <EmployeeWizard {...CATALOGOS} canInviteUser={canInviteUser} canManageDocs={canManageDocs} />
+    <EmployeeWizard
+      {...CATALOGOS}
+      canInviteUser={canInviteUser}
+      canManageDocs={canManageDocs}
+      {...extraProps}
+    />
   )
 }
 
@@ -145,6 +160,7 @@ async function goToStepUsuario(user: UserEvent) {
 describe('<EmployeeWizard />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockLinkPostulacionToEmployee.mockResolvedValue({ ok: true })
   })
 
   it('arranca en el paso 1 con el stepper visible', () => {
@@ -263,6 +279,80 @@ describe('<EmployeeWizard />', () => {
     expect(screen.getByRole('button', { name: 'Inicio del contrato' })).toHaveTextContent(
       comoSeVe(fechaContrato)
     )
+  })
+
+  it('no cierra ninguna postulación cuando no viene de "Contratar" (postulacionId ausente)', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/employees/10'))
+    expect(mockLinkPostulacionToEmployee).not.toHaveBeenCalled()
+  })
+
+  it('con postulacionId (flujo "Contratar"), cierra la postulación tras crear el empleado', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    const user = userEvent.setup()
+    renderWizard(true, true, {
+      postulacionId: 77,
+      prefill: {
+        emp_nombre: '',
+        emp_apellido_1: '',
+        emp_apellido_2: null,
+        emp_tipo_identificacion_id: null,
+        emp_numero_identificacion: '',
+        emp_telefono: '81234567',
+        emp_email_personal: 'ana@example.com',
+        lab_puesto_id: null,
+        lab_sucursal_id: null,
+      },
+    })
+
+    // El prefill solo siembra contacto/identificación; fillStepPersonal
+    // sigue completando el resto del paso 1 igual que en el alta común.
+    expect(screen.getByLabelText('Teléfono')).toHaveValue('81234567')
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(mockLinkPostulacionToEmployee).toHaveBeenCalledWith(77, 10)
+    })
+    expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  it('si cerrar la postulación falla, igual navega y avisa con un toast (no bloquea el alta)', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    mockLinkPostulacionToEmployee.mockResolvedValue({
+      ok: false,
+      error: 'La postulación ya no está en proceso.',
+    })
+    const user = userEvent.setup()
+    renderWizard(true, true, { postulacionId: 77 })
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(mockToastWarning).toHaveBeenCalledWith(
+        expect.stringContaining('la postulación no se pudo cerrar')
+      )
+    })
+    expect(push).toHaveBeenCalledWith('/employees/10')
   })
 
   it('exige elegir banco, antepone el CR solo y valida el checksum del IBAN', async () => {

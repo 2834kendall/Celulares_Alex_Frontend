@@ -358,6 +358,64 @@ export type Database = {
           },
         ]
       }
+      sgrh_candidato_documentos: {
+        Row: {
+          cdo_candidato_id: number
+          cdo_creado_por: number | null
+          cdo_created_at: string
+          cdo_empresa_id: number
+          cdo_id: number
+          cdo_mime: string
+          cdo_nombre: string
+          cdo_path: string
+          cdo_tipo: string
+        }
+        Insert: {
+          cdo_candidato_id: number
+          cdo_creado_por?: number | null
+          cdo_created_at?: string
+          cdo_empresa_id: number
+          cdo_id?: number
+          cdo_mime: string
+          cdo_nombre: string
+          cdo_path: string
+          cdo_tipo: string
+        }
+        Update: {
+          cdo_candidato_id?: number
+          cdo_creado_por?: number | null
+          cdo_created_at?: string
+          cdo_empresa_id?: number
+          cdo_id?: number
+          cdo_mime?: string
+          cdo_nombre?: string
+          cdo_path?: string
+          cdo_tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_candidato_documentos_cdo_candidato_id_fkey"
+            columns: ["cdo_candidato_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_candidatos"
+            referencedColumns: ["cdt_id"]
+          },
+          {
+            foreignKeyName: "sgrh_candidato_documentos_cdo_creado_por_fkey"
+            columns: ["cdo_creado_por"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+          {
+            foreignKeyName: "sgrh_candidato_documentos_cdo_empresa_id_fkey"
+            columns: ["cdo_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       sgrh_candidatos: {
         Row: {
           cdt_apellido_1: string
@@ -365,6 +423,7 @@ export type Database = {
           cdt_created_at: string
           cdt_cv_url: string | null
           cdt_email: string
+          cdt_empresa_id: number
           cdt_fuente_reclutamiento: string | null
           cdt_id: number
           cdt_nombre: string
@@ -378,6 +437,7 @@ export type Database = {
           cdt_created_at?: string
           cdt_cv_url?: string | null
           cdt_email: string
+          cdt_empresa_id: number
           cdt_fuente_reclutamiento?: string | null
           cdt_id?: never
           cdt_nombre: string
@@ -391,6 +451,7 @@ export type Database = {
           cdt_created_at?: string
           cdt_cv_url?: string | null
           cdt_email?: string
+          cdt_empresa_id?: number
           cdt_fuente_reclutamiento?: string | null
           cdt_id?: never
           cdt_nombre?: string
@@ -399,6 +460,13 @@ export type Database = {
           cdt_tipo_identificacion_id?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "sgrh_candidatos_cdt_empresa_id_fkey"
+            columns: ["cdt_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
           {
             foreignKeyName: "sgrh_rec_cdt_tipo_identificacion_id_fkey"
             columns: ["cdt_tipo_identificacion_id"]
@@ -425,6 +493,33 @@ export type Database = {
           are_activo?: boolean
           are_id?: never
           are_nombre?: string
+          are_tipo_aplicacion?: string
+        }
+        Relationships: []
+      }
+      sgrh_cat_areas_seleccion: {
+        Row: {
+          are_activo: boolean
+          are_color: string | null
+          are_id: number
+          are_nombre: string
+          are_peso: number
+          are_tipo_aplicacion: string
+        }
+        Insert: {
+          are_activo?: boolean
+          are_color?: string | null
+          are_id?: never
+          are_nombre: string
+          are_peso?: number
+          are_tipo_aplicacion?: string
+        }
+        Update: {
+          are_activo?: boolean
+          are_color?: string | null
+          are_id?: never
+          are_nombre?: string
+          are_peso?: number
           are_tipo_aplicacion?: string
         }
         Relationships: []
@@ -547,6 +642,35 @@ export type Database = {
           },
         ]
       }
+      sgrh_cat_criterios_seleccion: {
+        Row: {
+          cri_activo: boolean
+          cri_area_id: number
+          cri_descripcion: string
+          cri_id: number
+        }
+        Insert: {
+          cri_activo?: boolean
+          cri_area_id: number
+          cri_descripcion: string
+          cri_id?: never
+        }
+        Update: {
+          cri_activo?: boolean
+          cri_area_id?: number
+          cri_descripcion?: string
+          cri_id?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_cat_criterios_seleccion_cri_area_id_fkey"
+            columns: ["cri_area_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_areas_seleccion"
+            referencedColumns: ["are_id"]
+          },
+        ]
+      }
       sgrh_cat_distritos: {
         Row: {
           dis_canton_id: number
@@ -579,18 +703,24 @@ export type Database = {
       sgrh_cat_etapas_seleccion: {
         Row: {
           eta_activo: boolean
+          eta_color: string | null
+          eta_fase: number | null
           eta_id: number
           eta_nombre: string
           eta_orden: number
         }
         Insert: {
           eta_activo?: boolean
+          eta_color?: string | null
+          eta_fase?: number | null
           eta_id?: never
           eta_nombre: string
           eta_orden: number
         }
         Update: {
           eta_activo?: boolean
+          eta_color?: string | null
+          eta_fase?: number | null
           eta_id?: never
           eta_nombre?: string
           eta_orden?: number
@@ -635,6 +765,7 @@ export type Database = {
       sgrh_cat_horarios: {
         Row: {
           hor_activo: boolean
+          hor_color: string | null
           hor_duracion_almuerzo_min: number
           hor_duracion_break_min: number
           hor_empresa_id: number
@@ -650,6 +781,7 @@ export type Database = {
         }
         Insert: {
           hor_activo?: boolean
+          hor_color?: string | null
           hor_duracion_almuerzo_min?: number
           hor_duracion_break_min?: number
           hor_empresa_id: number
@@ -665,6 +797,7 @@ export type Database = {
         }
         Update: {
           hor_activo?: boolean
+          hor_color?: string | null
           hor_duracion_almuerzo_min?: number
           hor_duracion_break_min?: number
           hor_empresa_id?: number
@@ -1001,6 +1134,44 @@ export type Database = {
           tjo_recargo_porcentaje?: number
         }
         Relationships: []
+      }
+      sgrh_cat_tipos_tardia: {
+        Row: {
+          tta_color: string | null
+          tta_created_at: string
+          tta_cuenta_advertencia: boolean
+          tta_desde_minutos: number
+          tta_empresa_id: number
+          tta_id: number
+          tta_nombre: string
+        }
+        Insert: {
+          tta_color?: string | null
+          tta_created_at?: string
+          tta_cuenta_advertencia?: boolean
+          tta_desde_minutos: number
+          tta_empresa_id: number
+          tta_id?: never
+          tta_nombre: string
+        }
+        Update: {
+          tta_color?: string | null
+          tta_created_at?: string
+          tta_cuenta_advertencia?: boolean
+          tta_desde_minutos?: number
+          tta_empresa_id?: number
+          tta_id?: never
+          tta_nombre?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_cat_tta_empresa_id_fkey"
+            columns: ["tta_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+        ]
       }
       sgrh_comisiones_calculadas: {
         Row: {
@@ -1353,6 +1524,7 @@ export type Database = {
           org_dia_pago_2: number | null
           org_direccion_id: number | null
           org_email_corporativo: string | null
+          org_formato_hora: string
           org_id: number
           org_logo_url: string | null
           org_nombre_fantasia: string | null
@@ -1370,6 +1542,7 @@ export type Database = {
           org_dia_pago_2?: number | null
           org_direccion_id?: number | null
           org_email_corporativo?: string | null
+          org_formato_hora?: string
           org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
@@ -1387,6 +1560,7 @@ export type Database = {
           org_dia_pago_2?: number | null
           org_direccion_id?: number | null
           org_email_corporativo?: string | null
+          org_formato_hora?: string
           org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
@@ -1633,6 +1807,7 @@ export type Database = {
           liq_aguinaldo_proporcional: number
           liq_cesantia: number
           liq_created_at: string
+          liq_deducciones_obreras: number
           liq_dias_cesantia: number
           liq_dias_preaviso: number
           liq_dias_trabajados_mes: number
@@ -1642,6 +1817,7 @@ export type Database = {
           liq_historial_laboral_id: number
           liq_id: number
           liq_motivo_salida_id: number
+          liq_neto: number
           liq_observaciones: string | null
           liq_pagado: boolean
           liq_preaviso: number
@@ -1654,6 +1830,7 @@ export type Database = {
           liq_aguinaldo_proporcional?: number
           liq_cesantia?: number
           liq_created_at?: string
+          liq_deducciones_obreras?: number
           liq_dias_cesantia?: number
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
@@ -1663,6 +1840,7 @@ export type Database = {
           liq_historial_laboral_id: number
           liq_id?: never
           liq_motivo_salida_id: number
+          liq_neto?: number
           liq_observaciones?: string | null
           liq_pagado?: boolean
           liq_preaviso?: number
@@ -1675,6 +1853,7 @@ export type Database = {
           liq_aguinaldo_proporcional?: number
           liq_cesantia?: number
           liq_created_at?: string
+          liq_deducciones_obreras?: number
           liq_dias_cesantia?: number
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
@@ -1684,6 +1863,7 @@ export type Database = {
           liq_historial_laboral_id?: number
           liq_id?: never
           liq_motivo_salida_id?: number
+          liq_neto?: number
           liq_observaciones?: string | null
           liq_pagado?: boolean
           liq_preaviso?: number
@@ -1723,6 +1903,10 @@ export type Database = {
           mar_observacion: string | null
           mar_registrado_por_id: number | null
           mar_sucursal_id: number
+          mar_tardia_justificacion: string | null
+          mar_tardia_justificada: boolean
+          mar_tardia_justificada_at: string | null
+          mar_tardia_justificada_por_id: number | null
           mar_tipo: string
         }
         Insert: {
@@ -1738,6 +1922,10 @@ export type Database = {
           mar_observacion?: string | null
           mar_registrado_por_id?: number | null
           mar_sucursal_id: number
+          mar_tardia_justificacion?: string | null
+          mar_tardia_justificada?: boolean
+          mar_tardia_justificada_at?: string | null
+          mar_tardia_justificada_por_id?: number | null
           mar_tipo: string
         }
         Update: {
@@ -1753,6 +1941,10 @@ export type Database = {
           mar_observacion?: string | null
           mar_registrado_por_id?: number | null
           mar_sucursal_id?: number
+          mar_tardia_justificacion?: string | null
+          mar_tardia_justificada?: boolean
+          mar_tardia_justificada_at?: string | null
+          mar_tardia_justificada_por_id?: number | null
           mar_tipo?: string
         }
         Relationships: [
@@ -1777,6 +1969,13 @@ export type Database = {
             referencedRelation: "sgrh_sucursales"
             referencedColumns: ["suc_id"]
           },
+          {
+            foreignKeyName: "sgrh_asi_mar_tardia_justificada_por_id_fkey"
+            columns: ["mar_tardia_justificada_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
         ]
       }
       sgrh_nomina_detalle: {
@@ -1788,8 +1987,13 @@ export type Database = {
           ndt_fecha_pago: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
+          ndt_horas_ajustadas_en: string | null
+          ndt_horas_ajustadas_por_id: number | null
+          ndt_horas_asistencia: number | null
           ndt_horas_extra_al_50: number
           ndt_horas_extra_al_75: number
+          ndt_horas_extra_asistencia: number | null
+          ndt_horas_leidas_en: string | null
           ndt_horas_ordinarias_diurnas: number
           ndt_horas_ordinarias_mixtas: number
           ndt_horas_ordinarias_nocturnas: number
@@ -1810,8 +2014,13 @@ export type Database = {
           ndt_fecha_pago?: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
+          ndt_horas_ajustadas_en?: string | null
+          ndt_horas_ajustadas_por_id?: number | null
+          ndt_horas_asistencia?: number | null
           ndt_horas_extra_al_50?: number
           ndt_horas_extra_al_75?: number
+          ndt_horas_extra_asistencia?: number | null
+          ndt_horas_leidas_en?: string | null
           ndt_horas_ordinarias_diurnas?: number
           ndt_horas_ordinarias_mixtas?: number
           ndt_horas_ordinarias_nocturnas?: number
@@ -1832,8 +2041,13 @@ export type Database = {
           ndt_fecha_pago?: string | null
           ndt_fecha_registro?: string
           ndt_historial_laboral_id?: number
+          ndt_horas_ajustadas_en?: string | null
+          ndt_horas_ajustadas_por_id?: number | null
+          ndt_horas_asistencia?: number | null
           ndt_horas_extra_al_50?: number
           ndt_horas_extra_al_75?: number
+          ndt_horas_extra_asistencia?: number | null
+          ndt_horas_leidas_en?: string | null
           ndt_horas_ordinarias_diurnas?: number
           ndt_horas_ordinarias_mixtas?: number
           ndt_horas_ordinarias_nocturnas?: number
@@ -1853,6 +2067,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "sgrh_historial_laboral"
             referencedColumns: ["lab_id"]
+          },
+          {
+            foreignKeyName: "sgrh_nom_det_horas_ajustadas_por_id_fkey"
+            columns: ["ndt_horas_ajustadas_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
           },
           {
             foreignKeyName: "sgrh_nom_det_nomina_periodo_id_fkey"
@@ -2212,41 +2433,112 @@ export type Database = {
           },
         ]
       }
+      sgrh_postulacion_puntajes: {
+        Row: {
+          psc_criterio_id: number
+          psc_id: number
+          psc_no_aplica: boolean
+          psc_observacion: string | null
+          psc_postulacion_id: number
+          psc_puntaje: number | null
+        }
+        Insert: {
+          psc_criterio_id: number
+          psc_id?: never
+          psc_no_aplica?: boolean
+          psc_observacion?: string | null
+          psc_postulacion_id: number
+          psc_puntaje?: number | null
+        }
+        Update: {
+          psc_criterio_id?: number
+          psc_id?: never
+          psc_no_aplica?: boolean
+          psc_observacion?: string | null
+          psc_postulacion_id?: number
+          psc_puntaje?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_postulacion_puntajes_psc_criterio_id_fkey"
+            columns: ["psc_criterio_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_criterios_seleccion"
+            referencedColumns: ["cri_id"]
+          },
+          {
+            foreignKeyName: "sgrh_postulacion_puntajes_psc_postulacion_id_fkey"
+            columns: ["psc_postulacion_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_postulaciones"
+            referencedColumns: ["pos_id"]
+          },
+        ]
+      }
       sgrh_postulaciones: {
         Row: {
           pos_candidato_id: number
           pos_created_at: string
+          pos_empleado_id: number | null
           pos_empresa_id: number
           pos_estado_final: string
+          pos_etapa_actual_id: number | null
+          pos_fecha_cierre: string | null
           pos_fecha_postula: string
           pos_id: number
+          pos_motivo_descarte: string | null
           pos_observaciones: string | null
           pos_puesto_id: number
+          pos_puntaje_promedio: number | null
           pos_sucursal_id: number | null
         }
         Insert: {
           pos_candidato_id: number
           pos_created_at?: string
+          pos_empleado_id?: number | null
           pos_empresa_id: number
           pos_estado_final?: string
+          pos_etapa_actual_id?: number | null
+          pos_fecha_cierre?: string | null
           pos_fecha_postula?: string
           pos_id?: never
+          pos_motivo_descarte?: string | null
           pos_observaciones?: string | null
           pos_puesto_id: number
+          pos_puntaje_promedio?: number | null
           pos_sucursal_id?: number | null
         }
         Update: {
           pos_candidato_id?: number
           pos_created_at?: string
+          pos_empleado_id?: number | null
           pos_empresa_id?: number
           pos_estado_final?: string
+          pos_etapa_actual_id?: number | null
+          pos_fecha_cierre?: string | null
           pos_fecha_postula?: string
           pos_id?: never
+          pos_motivo_descarte?: string | null
           pos_observaciones?: string | null
           pos_puesto_id?: number
+          pos_puntaje_promedio?: number | null
           pos_sucursal_id?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "sgrh_postulaciones_pos_empleado_id_fkey"
+            columns: ["pos_empleado_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empleados"
+            referencedColumns: ["emp_id"]
+          },
+          {
+            foreignKeyName: "sgrh_postulaciones_pos_etapa_actual_id_fkey"
+            columns: ["pos_etapa_actual_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_etapas_seleccion"
+            referencedColumns: ["eta_id"]
+          },
           {
             foreignKeyName: "sgrh_rec_pos_candidato_id_fkey"
             columns: ["pos_candidato_id"]
@@ -2478,7 +2770,6 @@ export type Database = {
           suc_nombre: string
           suc_radio_geocerca_metros: number
           suc_telefono: string | null
-          suc_tolerancia_tardia_minutos: number
         }
         Insert: {
           suc_activa?: boolean
@@ -2495,7 +2786,6 @@ export type Database = {
           suc_nombre: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
-          suc_tolerancia_tardia_minutos?: number
         }
         Update: {
           suc_activa?: boolean
@@ -2512,7 +2802,6 @@ export type Database = {
           suc_nombre?: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
-          suc_tolerancia_tardia_minutos?: number
         }
         Relationships: [
           {
@@ -2649,8 +2938,19 @@ export type Database = {
       get_emp_id: { Args: never; Returns: number }
       get_empresa_id: { Args: never; Returns: number }
       get_rol: { Args: never; Returns: string }
-      get_sucursal_id: { Args: never; Returns: number }
+      get_sucursal_ids: { Args: never; Returns: number[] }
       get_usr_id: { Args: never; Returns: number }
+      registrar_etapa_postulacion: {
+        Args: {
+          p_etapa_id: number
+          p_fecha: string
+          p_notas?: string
+          p_postulacion_id: number
+          p_responsable_id?: number
+          p_resultado: string
+        }
+        Returns: number
+      }
       sucursal_visible: { Args: { p_sucursal_id: number }; Returns: boolean }
       tiene_permiso: { Args: { p_codigo: string }; Returns: boolean }
     }
@@ -2671,12 +2971,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2700,11 +3000,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2725,11 +3025,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2750,11 +3050,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2767,11 +3067,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

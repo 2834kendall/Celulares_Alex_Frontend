@@ -29,12 +29,15 @@ export async function resendInvitation(usrId: number): Promise<ResendInvitationR
 
   const admin = createAdminClient()
 
-  // La fila uer de la empresa del JWT es también el guard cross-tenant.
+  // La fila uer de la empresa del JWT es también el guard cross-tenant. Solo
+  // interesa que EXISTA alguna (un usuario multi-sucursal tiene varias): con
+  // el limit(1) alcanza y se evita el error de maybeSingle() con >1 fila.
   const { data: asignacion, error: uerReadError } = await admin
     .from('sgrh_usuarios_empresa_rol')
     .select('uer_id')
     .eq('uer_usuario_id', usrId)
     .eq('uer_empresa_id', empresaId)
+    .limit(1)
     .maybeSingle()
 
   if (uerReadError || !asignacion) {

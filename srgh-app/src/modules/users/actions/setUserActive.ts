@@ -31,15 +31,17 @@ export async function setUserActive(usrId: number, active: boolean): Promise<Set
 
   const admin = createAdminClient()
 
-  // La fila uer de la empresa del JWT es también el guard cross-tenant.
-  const { data: asignacion, error: uerReadError } = await admin
+  // La fila uer de la empresa del JWT es también el guard cross-tenant. Un
+  // usuario a cargo de varias sucursales tiene varias filas — se activan o
+  // desactivan TODAS juntas, nunca solo una: el acceso es del usuario, no
+  // de una sucursal en particular.
+  const { data: asignaciones, error: uerReadError } = await admin
     .from('sgrh_usuarios_empresa_rol')
     .select('uer_id')
     .eq('uer_usuario_id', usrId)
     .eq('uer_empresa_id', empresaId)
-    .maybeSingle()
 
-  if (uerReadError || !asignacion) {
+  if (uerReadError || !asignaciones || asignaciones.length === 0) {
     return { ok: false, error: 'Usuario no encontrado.' }
   }
 
@@ -77,7 +79,10 @@ export async function setUserActive(usrId: number, active: boolean): Promise<Set
   const { error: uerUpdateError } = await admin
     .from('sgrh_usuarios_empresa_rol')
     .update({ uer_activo: active })
-    .eq('uer_id', asignacion.uer_id)
+    .in(
+      'uer_id',
+      asignaciones.map((fila) => fila.uer_id)
+    )
 
   if (uerUpdateError) {
     return { ok: false, error: 'No se pudo actualizar el estado del usuario.' }

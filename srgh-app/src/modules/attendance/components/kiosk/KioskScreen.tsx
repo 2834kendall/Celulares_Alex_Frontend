@@ -1,380 +1,535 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, KeyRound, ScanFace, ShieldX, WifiOff } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react'
+import {
+  AlertTriangle,
+  CalendarOff,
+  CheckCircle2,
+  Coffee,
+  Loader2,
+  LogIn,
+  LogOut,
+  RotateCcw,
+  ScanFace,
+  UserX,
+  UtensilsCrossed,
+  WifiOff,
+} from 'lucide-react'
 import { toast } from 'sonner'
-import { SearchSelect, type SearchSelectOption } from '@/components/ui/SearchSelect'
 import type { ActiveEmployeeOption } from '@/modules/attendance/actions/getActiveEmployees'
 import { verifyFace } from '@/modules/attendance/actions/verifyFace'
-import type { MarkType } from '@/modules/attendance/lib/marks'
+import { getKioskMarkOptions } from '@/modules/attendance/actions/getKioskMarkOptions'
+import { MARK_LABELS, MARK_TYPES, type MarkType } from '@/modules/attendance/lib/marks'
 import type { EncryptedVector } from '@/modules/attendance/lib/face/faceCrypto'
 import { getCurrentCoordinates } from '@/modules/attendance/components/kiosk/geolocation'
 import { getOrCreateDeviceId } from '@/modules/attendance/components/kiosk/deviceId'
 import { useOfflineSync } from '@/modules/attendance/components/kiosk/useOfflineSync'
-import { PinPad } from '@/modules/attendance/components/kiosk/PinPad'
 import { FaceScan } from '@/modules/attendance/components/kiosk/face/FaceScan'
+import { FORMATO_HORA_DEFAULT, type FormatoHora } from '@/lib/time/formatoHora'
 
 interface KioskScreenProps {
+  /** Quienes tienen turno hoy en esta sucursal: solo se usa para saber si hay alguien. */
   employees: ActiveEmployeeOption[]
+  /** Formato de hora de la empresa. El kiosco no monta el shell, así que llega por prop. */
+  formatoHora?: FormatoHora
 }
 
-const MARK_BUTTONS: { tipo: MarkType; label: string }[] = [
-  { tipo: 'entrada', label: 'Entrada' },
-  { tipo: 'inicio_almuerzo', label: 'Inicio de almuerzo' },
-  { tipo: 'fin_almuerzo', label: 'Fin de almuerzo' },
-  { tipo: 'salida', label: 'Salida' },
-]
-
 const SUCCESS_DISPLAY_MS = 3000
-const DENIED_DISPLAY_MS = 4000
+const FAILURE_DISPLAY_MS = 8000
 
-/** Identidad confirmada por verifyFace: nombre + ticket para marcar FACIAL. */
+type IconComponent = ComponentType<{ className?: string }>
+
+const MARK_ICONS: Record<MarkType, IconComponent> = {
+  entrada: LogIn,
+  inicio_receso: Coffee,
+  fin_receso: Coffee,
+  inicio_almuerzo: UtensilsCrossed,
+  fin_almuerzo: UtensilsCrossed,
+  salida: LogOut,
+}
+
+/** Identidad confirmada por verifyFace: nombre + ticket que prueba el rostro. */
 interface FaceVerified {
   employeeId: number
   fullName: string
   ticket: string
 }
 
-/**
- * Motivo del rechazo, para poder decir algo util en vez de un error generico.
- * 'foto' lo decide el cliente y ni siquiera llega al servidor; 'no_reconocido'
- * viene de verifyFace tras comparar contra los enrolados.
- */
-type Rejection = 'no_reconocido' | 'foto'
+/** Por que no se pudo marcar, dicho para quien esta frente a la tablet. */
+interface Failure {
+  titulo: string
+  detalle: string
+}
 
-const REJECTION_TEXT: Record<Rejection, { titulo: string; detalle: string }> = {
-  no_reconocido: {
-    titulo: 'Rostro no reconocido',
+const AVISA_AL_ENCARGADO =
+  'Si trabajas aqui, avisa al encargado para que registre tu marca desde el panel.'
+
+const FAILURES = {
+  noReconocido: {
+    titulo: 'No te reconocimos',
+    detalle: `No encontramos coincidencia con el personal de esta sucursal. ${AVISA_AL_ENCARGADO}`,
+  },
+  dudoso: {
+    titulo: 'No pudimos confirmar tu identidad',
     detalle:
-      'No se encontro coincidencia con el personal de esta sucursal. El intento quedo registrado.',
+      'Mira de frente a la camara, con buena luz y sin nada que tape tu cara, e intenta de nuevo.',
   },
   foto: {
     titulo: 'Necesitamos a la persona',
     detalle:
-      'La camara esta viendo una imagen, no a una persona. Marca mirando directo a la camara, o usa tu PIN.',
+      'La camara esta viendo una imagen, no a una persona. Marca mirando directo a la camara.',
   },
+} satisfies Record<string, Failure>
+
+/**
+ * Hora y fecha de Costa Rica, sin depender de la zona horaria de la tablet.
+ *
+ * `hour12` explícito según la preferencia de la empresa. Antes no se pasaba y
+ * el reloj salía en 12h por accidente — es el default del locale es-CR —
+ * mientras el resto del sistema mostraba 24h. Con el formato explícito, el
+ * reloj y las marcas que registra el kiosco se leen igual; la salida de Intl
+ * coincide carácter por carácter con formatHora() en ambos formatos.
+ */
+function formatClock(date: Date, formato: FormatoHora) {
+  const hora = new Intl.DateTimeFormat('es-CR', {
+    timeZone: 'America/Costa_Rica',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: formato === '12h',
+  }).format(date)
+  const fecha = new Intl.DateTimeFormat('es-CR', {
+    timeZone: 'America/Costa_Rica',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(date)
+  return { hora, fecha: fecha.charAt(0).toUpperCase() + fecha.slice(1) }
+}
+
+/**
+ * Reloj que se actualiza solo. Arranca en null y se llena en el cliente: el
+ * servidor no conoce la hora del momento en que la pantalla se ve, y pintar la
+ * suya generaria un desfase de hidratacion.
+ */
+function useClock() {
+  const [now, setNow] = useState<Date | null>(null)
+
+  useEffect(() => {
+    const tick = () => setNow(new Date())
+    // setTimeout(0) y no tick() directo: mismo motivo que en useOfflineSync,
+    // el linter marca un setState sincronico dentro del cuerpo del efecto.
+    const first = setTimeout(tick, 0)
+    const interval = setInterval(tick, 15_000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(interval)
+    }
+  }, [])
+
+  return now
 }
 
 /**
  * Kiosco compartido de sucursal: los empleados NO inician sesion, solo la
  * cuenta KIOSCO tiene sesion (permanente en la tablet).
  *
- * Identificacion en cascada:
- * 1. FACIAL (primario, solo online y con llave configurada): FaceScan confirma
- *    que hay una persona real —no una foto ni una pantalla— con la prueba de
- *    vida por analisis de material (ver antispoof.ts), el vector viaja cifrado con
- *    esa prueba, y verifyFace responde MATCH / REQUIRE_PIN / DENIED. Si el
- *    clasificador detecta una reproduccion, se rechaza sin consultar al
- *    servidor.
- * 2. MANUAL con PIN: si la camara fallo, el resultado fue REQUIRE_PIN o el
- *    dispositivo esta offline (la camara se deshabilita de inmediato sin
- *    red), el empleado elige su nombre e ingresa su PIN.
- * El modo legado sin llave facial configurada conserva el selector simple.
+ * Solo Face ID (SGRH-88, decision del cliente). No hay PIN ni selector de
+ * nombre: si el rostro no se reconoce, o la tablet no tiene internet (la
+ * verificacion necesita al servidor, los vectores nunca bajan al dispositivo),
+ * no se puede marcar aca — el kiosco pide avisar al encargado, que registra la
+ * marca manual desde el panel diario con su justificacion. Asi nadie puede
+ * marcar por otro.
+ *
+ * Despues de reconocer a la persona, solo muestra las marcas que le
+ * corresponden segun lo que ya marco hoy (ver allowedNextMarks).
+ *
+ * Diseño: superficie blanca con acento azul fijo, independiente del color de
+ * la sucursal — es una pantalla de uso rapido para todo el personal, y el azul
+ * se lee igual en cualquier tienda. Responsive de telefono a tablet acostada:
+ * el contenido se centra con `my-auto` (no `justify-center`) para que en un
+ * telefono horizontal, con 375px de alto, se pueda desplazar en vez de
+ * quedar cortado arriba.
  */
-export function KioskScreen({ employees }: KioskScreenProps) {
-  const [employeeId, setEmployeeId] = useState('')
-  const [pin, setPin] = useState<string | null>(null)
-  const [showPinPad, setShowPinPad] = useState(false)
-  const [submittingTipo, setSubmittingTipo] = useState<MarkType | null>(null)
-  const [successLabel, setSuccessLabel] = useState<string | null>(null)
+export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: KioskScreenProps) {
   const [verified, setVerified] = useState<FaceVerified | null>(null)
-  const [manualMode, setManualMode] = useState(false)
-  const [rejection, setRejection] = useState<Rejection | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  const [failure, setFailure] = useState<Failure | null>(null)
+  const [successLabel, setSuccessLabel] = useState<string | null>(null)
+  const [submittingTipo, setSubmittingTipo] = useState<MarkType | null>(null)
+  // Marcas que corresponden ahora a la persona reconocida. null mientras no
+  // se sabe (si fallo la red al preguntar): en ese caso se muestran todas y
+  // el servidor valida la secuencia.
+  const [allowed, setAllowed] = useState<MarkType[] | null>(null)
+  const [optionsError, setOptionsError] = useState<string | null>(null)
+  const [loadingOptions, setLoadingOptions] = useState(false)
+  // Numero de la ultima consulta: si la persona cambia antes de que vuelva la
+  // respuesta anterior, esa respuesta vieja se descarta.
+  const optionsRequest = useRef(0)
 
-  const { isOnline, pendingCount, submitMark } = useOfflineSync()
+  const { isOnline, pendingCount, discardedCount, submitMark } = useOfflineSync()
+  const now = useClock()
 
   const faceConfigured = Boolean(process.env.NEXT_PUBLIC_FACE_VECTOR_KEY)
-  // Sin internet la camara queda deshabilitada DE INMEDIATO: la verificacion
-  // facial necesita al servidor (los vectores enrolados nunca bajan al
-  // dispositivo), asi que offline el unico respaldo de identidad es el PIN.
-  const faceActive = faceConfigured && isOnline && !manualMode && !verified && !rejection
 
-  const options: SearchSelectOption[] = employees.map((e) => ({
-    value: String(e.employeeId),
-    label: e.fullName,
-  }))
+  const reset = useCallback(() => {
+    optionsRequest.current += 1
+    setVerified(null)
+    setVerifying(false)
+    setFailure(null)
+    setSuccessLabel(null)
+    setSubmittingTipo(null)
+    setAllowed(null)
+    setOptionsError(null)
+    setLoadingOptions(false)
+  }, [])
 
-  const selectedEmployee = employees.find((e) => String(e.employeeId) === employeeId) ?? null
+  const fetchOptions = useCallback(async (targetId: number) => {
+    const request = ++optionsRequest.current
+    setLoadingOptions(true)
+    setOptionsError(null)
 
-  // En modo manual el PIN es obligatorio siempre que exista biometria real
-  // (online cayo desde la camara) u offline (no hay otra verificacion). El
-  // modo legado (sin llave configurada, online) conserva el PIN opcional.
-  const pinRequired = !isOnline || (faceConfigured && manualMode)
-  const readyToMark = pin !== null || !pinRequired
-  const pinPadOpen = showPinPad || (pinRequired && selectedEmployee !== null && pin === null)
+    try {
+      const result = await getKioskMarkOptions(targetId)
+      if (request !== optionsRequest.current) return
+
+      if (result.ok) {
+        setAllowed(result.allowed)
+      } else {
+        setAllowed([])
+        setOptionsError(result.error)
+      }
+    } catch {
+      if (request === optionsRequest.current) setAllowed(null)
+    } finally {
+      if (request === optionsRequest.current) setLoadingOptions(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (!successLabel) return
-    const timeout = setTimeout(() => {
-      setSuccessLabel(null)
-      setEmployeeId('')
-      setPin(null)
-      setShowPinPad(false)
-      setSubmittingTipo(null)
-      setVerified(null)
-      setManualMode(false)
-    }, SUCCESS_DISPLAY_MS)
+    const timeout = setTimeout(reset, SUCCESS_DISPLAY_MS)
     return () => clearTimeout(timeout)
-  }, [successLabel])
+  }, [successLabel, reset])
 
   useEffect(() => {
-    if (!rejection) return
-    const timeout = setTimeout(() => setRejection(null), DENIED_DISPLAY_MS)
+    if (!failure) return
+    const timeout = setTimeout(reset, FAILURE_DISPLAY_MS)
     return () => clearTimeout(timeout)
-  }, [rejection])
+  }, [failure, reset])
 
-  const handleFaceEmbedding = useCallback(async (payload: EncryptedVector) => {
-    const result = await verifyFace({
-      vector: payload,
-      dispositivoId: getOrCreateDeviceId() || null,
-    })
+  const handleFaceEmbedding = useCallback(
+    async (payload: EncryptedVector) => {
+      setVerifying(true)
 
-    if (!result.ok) {
-      toast.error(result.error)
-      setManualMode(true)
-      return
-    }
+      try {
+        const result = await verifyFace({
+          vector: payload,
+          dispositivoId: getOrCreateDeviceId() || null,
+        })
 
-    if (result.status === 'MATCH') {
-      setVerified({
-        employeeId: result.employeeId,
-        fullName: result.fullName,
-        ticket: result.ticket,
-      })
-      return
-    }
+        if (!result.ok) {
+          setFailure({
+            titulo: 'No pudimos verificarte',
+            detalle: `${result.error} ${AVISA_AL_ENCARGADO}`,
+          })
+          return
+        }
 
-    if (result.status === 'DENIED') {
-      setRejection('no_reconocido')
-      return
-    }
+        if (result.status === 'MATCH') {
+          setVerified({
+            employeeId: result.employeeId,
+            fullName: result.fullName,
+            ticket: result.ticket,
+          })
+          void fetchOptions(result.employeeId)
+          return
+        }
 
-    // REQUIRE_PIN: zona de incertidumbre — verificacion fallida "suave".
-    toast.message('No pudimos confirmar tu identidad. Selecciona tu nombre e ingresa tu PIN.')
-    setManualMode(true)
-  }, [])
+        // REQUIRE_PIN conserva su nombre en verifyFace, pero ya no hay PIN:
+        // es la zona de duda, se ofrece reintentar.
+        setFailure(result.status === 'DENIED' ? FAILURES.noReconocido : FAILURES.dudoso)
+      } finally {
+        setVerifying(false)
+      }
+    },
+    [fetchOptions]
+  )
 
   const handleFaceUnavailable = useCallback((reason: string) => {
-    toast.message(reason)
-    setManualMode(true)
+    setFailure({
+      titulo: 'La camara no esta disponible',
+      detalle: `${reason} ${AVISA_AL_ENCARGADO}`,
+    })
   }, [])
 
-  // Superficie plana en vez de rostro: se rechaza en el cliente, sin gastar una
-  // consulta al servidor. Despues del aviso el kiosco cae al PIN, que sigue
-  // siendo un camino legitimo — quien de verdad trabaja ahi tiene su PIN.
+  // Superficie plana en vez de rostro: se rechaza en el cliente, sin gastar
+  // una consulta al servidor.
   const handleFaceSpoof = useCallback(() => {
-    setRejection('foto')
-    setManualMode(true)
+    setFailure(FAILURES.foto)
   }, [])
 
   async function handleMark(tipo: MarkType) {
-    const target =
-      verified ??
-      (selectedEmployee
-        ? { employeeId: selectedEmployee.employeeId, fullName: selectedEmployee.fullName }
-        : null)
-    if (!target || submittingTipo) return
-    if (!verified && !readyToMark) return
+    if (!verified || submittingTipo) return
 
     setSubmittingTipo(tipo)
-
     const coords = await getCurrentCoordinates()
 
     const outcome = await submitMark({
-      employeeId: target.employeeId,
+      employeeId: verified.employeeId,
       tipo,
       latitud: coords?.latitud ?? null,
       longitud: coords?.longitud ?? null,
-      pin: verified ? null : pin,
       dispositivoId: getOrCreateDeviceId() || null,
-      ticketFacial: verified?.ticket ?? null,
+      ticketFacial: verified.ticket,
     })
 
     setSubmittingTipo(null)
 
     if (outcome.queued) {
-      toast.success('Marca guardada localmente. Se enviará al servidor cuando regrese el internet.')
-      const label = MARK_BUTTONS.find((m) => m.tipo === tipo)?.label ?? tipo
-      setSuccessLabel(`${label} registrada`)
+      toast.success('Marca guardada. Se enviara al servidor cuando regrese el internet.')
+      setSuccessLabel(`${MARK_LABELS[tipo]} registrada`)
       return
     }
 
     if (!outcome.result.ok) {
       toast.error(outcome.result.error)
+      // Lo mas probable es que la jornada cambio en el medio: se vuelve a
+      // preguntar para no dejar botones viejos.
+      void fetchOptions(verified.employeeId)
       return
     }
 
-    const label = MARK_BUTTONS.find((m) => m.tipo === tipo)?.label ?? tipo
-    setSuccessLabel(`${label} registrada`)
+    setSuccessLabel(`${MARK_LABELS[tipo]} registrada`)
   }
 
-  const activeFullName = verified?.fullName ?? selectedEmployee?.fullName ?? null
+  const clock = now ? formatClock(now, formatoHora) : null
+  const visibleMarks: MarkType[] = allowed ?? [...MARK_TYPES]
 
-  if (successLabel) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-        <CheckCircle2 className="h-24 w-24 text-emerald-600" />
-        <p className="text-3xl font-bold">{successLabel}</p>
-        {activeFullName && <p className="text-lg text-slate-600">{activeFullName}</p>}
-      </div>
-    )
-  }
+  /**
+   * El contenido de la tarjeta segun el momento. Se LLAMA (`renderBody()`),
+   * no se monta como `<Componente />`: un componente definido dentro del
+   * render seria uno nuevo en cada render, y React desmontaria y volveria a
+   * montar la camara cada vez.
+   */
+  function renderBody() {
+    if (employees.length === 0) {
+      return (
+        <StatusPanel
+          icon={CalendarOff}
+          tone="slate"
+          titulo="Hoy no hay turnos en esta sucursal"
+          detalle="Si deberias estar trabajando, avisa al encargado para que revise la programacion."
+        />
+      )
+    }
 
-  if (rejection) {
+    if (successLabel) {
+      return (
+        <StatusPanel
+          icon={CheckCircle2}
+          tone="emerald"
+          titulo={successLabel}
+          detalle={verified?.fullName ?? ''}
+        />
+      )
+    }
+
+    if (failure) {
+      return (
+        <StatusPanel icon={UserX} tone="rose" titulo={failure.titulo} detalle={failure.detalle}>
+          <PrimaryButton onClick={reset} icon={RotateCcw}>
+            Intentar de nuevo
+          </PrimaryButton>
+        </StatusPanel>
+      )
+    }
+
+    // Sin red no hay Face ID, pero si la persona ya fue reconocida (se corto
+    // la red despues) igual puede marcar: la marca se encola con su ticket.
+    if (!isOnline && !verified) {
+      const pendientes =
+        pendingCount > 0
+          ? ` Hay ${pendingCount} marca${pendingCount === 1 ? '' : 's'} esperando para enviarse.`
+          : ''
+      return (
+        <StatusPanel
+          icon={WifiOff}
+          tone="amber"
+          titulo="Sin conexion"
+          detalle={`El reconocimiento facial necesita internet. ${AVISA_AL_ENCARGADO}${pendientes}`}
+        />
+      )
+    }
+
+    if (!faceConfigured) {
+      return (
+        <StatusPanel
+          icon={AlertTriangle}
+          tone="amber"
+          titulo="Face ID no esta configurado"
+          detalle="Este kiosco no puede marcar asistencia hasta que se configure el reconocimiento facial. Avisa al encargado."
+        />
+      )
+    }
+
+    if (verified) {
+      return (
+        <div className="flex flex-col items-center gap-5 text-center">
+          <div>
+            <p className="text-sm font-medium text-slate-500">Hola,</p>
+            <p className="break-words text-2xl font-bold text-blue-900 sm:text-3xl">
+              {verified.fullName}
+            </p>
+          </div>
+
+          {loadingOptions ? (
+            <p className="flex items-center gap-2 text-base text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Revisando tus marcas de hoy…
+            </p>
+          ) : optionsError ? (
+            <p className="max-w-sm text-base font-medium text-amber-800">{optionsError}</p>
+          ) : visibleMarks.length === 0 ? (
+            <p className="text-lg font-medium text-slate-600">Ya registraste tu salida de hoy.</p>
+          ) : (
+            // Una sola opcion (lo normal: "Entrada", o el cierre de un
+            // periodo abierto) ocupa todo el ancho. Varias van en una columna
+            // en telefono y de a dos desde 640px.
+            <div
+              className={`grid w-full gap-3 ${visibleMarks.length === 1 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}`}
+            >
+              {visibleMarks.map((tipo) => {
+                const Icon = MARK_ICONS[tipo]
+                return (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => handleMark(tipo)}
+                    disabled={submittingTipo !== null}
+                    className="flex min-h-16 items-center justify-center gap-3 rounded-2xl bg-blue-600 px-4 text-lg font-semibold text-white shadow-md shadow-blue-600/20 outline-none transition hover:bg-blue-700 focus-visible:ring-4 focus-visible:ring-blue-300 active:scale-[0.98] disabled:opacity-60 motion-reduce:active:scale-100 sm:min-h-24 sm:text-xl"
+                  >
+                    {submittingTipo === tipo ? (
+                      <Loader2 className="h-6 w-6 shrink-0 animate-spin" />
+                    ) : (
+                      <Icon className="h-6 w-6 shrink-0" />
+                    )}
+                    {submittingTipo === tipo ? 'Marcando…' : MARK_LABELS[tipo]}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={reset}
+            disabled={submittingTipo !== null}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl px-4 text-sm font-medium text-slate-500 outline-none transition hover:bg-blue-50 hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-blue-300 disabled:opacity-50"
+          >
+            <ScanFace className="h-4 w-4" /> No soy yo
+          </button>
+        </div>
+      )
+    }
+
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-        <ShieldX className="h-24 w-24 text-red-600" />
-        <p className="text-3xl font-bold">{REJECTION_TEXT[rejection].titulo}</p>
-        <p className="max-w-sm text-base text-slate-600">{REJECTION_TEXT[rejection].detalle}</p>
+      <div className="flex flex-col items-center gap-4 text-center">
+        <div>
+          <p className="text-xl font-bold text-slate-900 sm:text-2xl">Mira a la camara</p>
+          <p className="mt-1 text-sm text-slate-500 sm:text-base">
+            {verifying ? 'Verificando tu rostro…' : 'Te reconocemos en un momento.'}
+          </p>
+        </div>
+        <FaceScan
+          onEmbedding={handleFaceEmbedding}
+          onUnavailable={handleFaceUnavailable}
+          onSpoof={handleFaceSpoof}
+        />
       </div>
     )
   }
 
   return (
-    // El ancho sube con la pantalla: en la tablet del kiosco `max-w-sm` dejaba
-    // todo el flujo dentro de 384px, con los botones de marca apretados en el
-    // centro de una pantalla mayormente vacia.
-    <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-8 sm:max-w-md lg:max-w-xl">
-      {!isOnline && (
-        <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">
-          <WifiOff className="h-4 w-4" />
-          Sin conexion — las marcas se guardan en este dispositivo
-          {pendingCount > 0 && ` (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})`}
+    <div className="my-auto flex w-full max-w-md flex-col items-center gap-5 sm:max-w-lg sm:gap-6 lg:max-w-xl">
+      {/* Reloj grande: es lo primero que se mira al marcar. */}
+      <header className="text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+          Control de asistencia
+        </p>
+        <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-5xl">
+          {clock?.hora ?? ' '}
+        </p>
+        <p className="mt-1 text-sm text-slate-500 sm:text-base">{clock?.fecha ?? ' '}</p>
+      </header>
+
+      {discardedCount > 0 && (
+        <div className="flex max-w-full items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-center text-sm font-semibold text-rose-800">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="min-w-0">
+            {discardedCount} marca{discardedCount === 1 ? '' : 's'} sin registrar — avisa al
+            encargado
+          </span>
         </div>
       )}
 
-      <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight">Control de asistencia</h1>
-        <p className="mt-2 text-base text-slate-600">
-          {faceActive ? 'Mira a la camara para marcar' : 'Selecciona tu nombre para marcar'}
-        </p>
-      </div>
-
-      {faceActive ? (
-        <>
-          <FaceScan
-            onEmbedding={handleFaceEmbedding}
-            onUnavailable={handleFaceUnavailable}
-            onSpoof={handleFaceSpoof}
-          />
-          <button
-            type="button"
-            onClick={() => setManualMode(true)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-base font-medium text-slate-600 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-600/40"
-          >
-            <KeyRound className="h-4 w-4" /> ¿Falló la cámara? Usar PIN
-          </button>
-        </>
-      ) : (
-        <>
-          {!verified && (
-            <div className="w-full">
-              <SearchSelect
-                options={options}
-                value={employeeId}
-                onChange={(value) => {
-                  setEmployeeId(value)
-                  setPin(null)
-                }}
-                ariaLabel="Selecciona tu nombre"
-                className="w-full"
-                size="lg"
-              />
-            </div>
-          )}
-
-          {faceConfigured && manualMode && isOnline && (
-            <button
-              type="button"
-              onClick={() => {
-                setManualMode(false)
-                setEmployeeId('')
-                setPin(null)
-                setShowPinPad(false)
-              }}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-base font-medium text-slate-600 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-600/40"
-            >
-              <ScanFace className="h-4 w-4" /> Volver a la cámara
-            </button>
-          )}
-        </>
-      )}
-
-      {(verified || selectedEmployee) && (
-        <>
-          {verified && (
-            <div className="flex flex-col items-center gap-1">
-              <p className="text-center text-2xl font-semibold text-emerald-700">
-                {verified.fullName}
-              </p>
-              <button
-                type="button"
-                onClick={() => setVerified(null)}
-                disabled={submittingTipo !== null}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-500 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-600/40 disabled:opacity-50"
-              >
-                <ScanFace className="h-3.5 w-3.5" /> No soy yo / Cancelar
-              </button>
-            </div>
-          )}
-
-          {!verified && !readyToMark ? (
-            <p className="text-base font-medium text-amber-800">
-              {isOnline
-                ? 'Ingresa tu PIN para continuar.'
-                : 'Sin conexion: ingresa tu PIN para continuar.'}
-            </p>
-          ) : (
-            <>
-              <div className="grid w-full grid-cols-2 gap-3">
-                {MARK_BUTTONS.map((m) => (
-                  <button
-                    key={m.tipo}
-                    type="button"
-                    onClick={() => handleMark(m.tipo)}
-                    disabled={submittingTipo !== null}
-                    className="flex min-h-28 items-center justify-center rounded-2xl bg-brand-600 px-3 text-center text-lg font-bold text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600/40 focus-visible:ring-offset-2 active:scale-95 disabled:opacity-50 motion-reduce:active:scale-100"
-                  >
-                    {submittingTipo === m.tipo ? 'Marcando…' : m.label}
-                  </button>
-                ))}
-              </div>
-
-              {!verified && !faceConfigured && isOnline && (
-                <button
-                  type="button"
-                  onClick={() => setShowPinPad(true)}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-base font-medium text-slate-600 outline-none transition hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-600/40"
-                >
-                  <KeyRound className="h-4 w-4" /> ¿Falló la cámara?
-                </button>
-              )}
-
-              {!verified && pin && (
-                <p className="text-sm font-medium text-emerald-700">
-                  PIN listo — se usara en tu proxima marca.
-                </p>
-              )}
-            </>
-          )}
-        </>
-      )}
-
-      {pinPadOpen && (
-        <PinPad
-          employeeName={activeFullName}
-          onConfirm={(value) => {
-            setPin(value)
-            setShowPinPad(false)
-          }}
-          onCancel={() => {
-            setShowPinPad(false)
-            // Sin PIN no se puede seguir en modo manual obligatorio: cancelar
-            // vuelve al buscador en vez de dejar el teclado "atascado".
-            if (pinRequired) setEmployeeId('')
-          }}
-        />
-      )}
+      <section className="w-full rounded-3xl bg-white p-5 shadow-xl shadow-blue-900/5 ring-1 ring-blue-100 sm:p-7">
+        {renderBody()}
+      </section>
     </div>
+  )
+}
+
+const TONES = {
+  emerald: 'bg-emerald-50 text-emerald-600',
+  rose: 'bg-rose-50 text-rose-600',
+  amber: 'bg-amber-50 text-amber-600',
+  slate: 'bg-slate-100 text-slate-400',
+} as const
+
+function StatusPanel({
+  icon: Icon,
+  tone,
+  titulo,
+  detalle,
+  children,
+}: {
+  icon: IconComponent
+  tone: keyof typeof TONES
+  titulo: string
+  detalle: string
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-center gap-4 py-2 text-center" role="status">
+      <span
+        className={`flex h-20 w-20 items-center justify-center rounded-full sm:h-24 sm:w-24 ${TONES[tone]}`}
+      >
+        <Icon className="h-10 w-10 sm:h-12 sm:w-12" />
+      </span>
+      <div>
+        <p className="text-2xl font-bold text-slate-900 sm:text-3xl">{titulo}</p>
+        {detalle && <p className="mx-auto mt-2 max-w-sm text-base text-slate-600">{detalle}</p>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function PrimaryButton({
+  onClick,
+  icon: Icon,
+  children,
+}: {
+  onClick: () => void
+  icon: IconComponent
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-blue-600 px-6 text-base font-semibold text-white shadow-md shadow-blue-600/20 outline-none transition hover:bg-blue-700 focus-visible:ring-4 focus-visible:ring-blue-300"
+    >
+      <Icon className="h-5 w-5" /> {children}
+    </button>
   )
 }

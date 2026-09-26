@@ -4,13 +4,15 @@ export interface SgrhJwtClaims {
   rol: string
   empresa_id: number
   /**
-   * Sucursal a la que está adscrito el usuario, o null si opera a nivel
-   * empresa (ADMIN). El null es semántico: significa "sin restricción de
-   * sucursal", y así lo interpretan las policies vía public.sucursal_visible().
+   * Sucursales a las que está adscrito el usuario, o null si opera a nivel
+   * empresa (ADMIN, o cualquier fila activa sin sucursal asignada). El null
+   * es semántico: significa "sin restricción de sucursal", y así lo
+   * interpretan las policies vía public.sucursal_visible().
    *
-   * Viene del hook custom_access_token_hook, que lo lee de
-   * sgrh_usuarios_empresa_rol.uer_sucursal_id.
+   * Viene del hook custom_access_token_hook, que agrega TODAS las filas
+   * activas de sgrh_usuarios_empresa_rol.uer_sucursal_id del usuario en su
+   * empresa (un gerente puede estar a cargo de más de una sucursal).
    */
-  sucursal_id: number | null
+  sucursal_ids: number[] | null
   permisos: string[]
 }

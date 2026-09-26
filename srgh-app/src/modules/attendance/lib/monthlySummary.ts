@@ -1,5 +1,11 @@
 import type { createClient } from '@/lib/supabase/server'
-import type { DayForInfraction } from '@/modules/attendance/lib/infractions'
+import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
+import {
+  classifyTardiness,
+  type DayForInfraction,
+  type TardinessType,
+} from '@/modules/attendance/lib/infractions'
+import { loadTardinessTypes } from '@/modules/attendance/lib/tardinessTypes'
 import {
   dateOfDay,
   diffMinutes,
@@ -11,8 +17,6 @@ import {
 import { marcaTipoSchema } from '@/modules/attendance/types'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
-
-const DEFAULT_TOLERANCIA_MINUTOS = 2
 
 interface EmployeeJoin {
   emp_nombre: string
@@ -27,38 +31,72 @@ interface HistorialRow {
   sgrh_empleados: EmployeeJoin | null
 }
 
-interface SucursalToleranciaRow {
-  suc_id: number
-  suc_tolerancia_tardia_minutos: number
-}
-
 interface AssignmentJoin {
   hor_hora_entrada: string
+  hor_hora_fin_almuerzo: string | null
 }
 
 interface AssignmentRow {
   prg_historial_laboral_id: number
+  prg_sucursal_id: number
   prg_fecha: string
   prg_es_dia_libre: boolean
   prg_es_feriado: boolean
   prg_hora_entrada_custom: string | null
+  prg_hora_salida_custom: string | null
+  prg_hora_fin_almuerzo_custom: string | null
   sgrh_cat_horarios: AssignmentJoin | null
 }
 
 interface MarkDbRow {
+  mar_id: number
   mar_historial_laboral_id: number
   mar_tipo: string
   mar_fecha_hora: string
+  mar_tardia_justificada: boolean | null
+  mar_tardia_justificacion: string | null
+}
+
+/**
+ * La marca valida de un dia (la entrada, o el regreso del almuerzo), con lo
+ * que hace falta para justificarla.
+ */
+interface MarcaDelDia {
+  markId: number
+  /** "HH:mm" */
+  time: string
+  justificada: boolean
+  justificacion: string | null
 }
 
 interface AusenciaRow {
   aus_historial_laboral_id: number
   aus_fecha_inicio: string
   aus_fecha_fin: string
+  sgrh_cat_tipos_ausencia: { tau_nombre: string; tau_es_intradia: boolean } | null
 }
 
-/** Un DayForInfraction con su fecha — el calculo puro (classifyDay) no la necesita, pero reportarla si. */
-export type DayForInfractionWithDate = DayForInfraction & { date: string }
+/**
+ * Un DayForInfraction con lo que el calculo puro (classifyDay) no necesita
+ * pero el reporte si: la fecha, y de que marca de entrada salio — sin el
+ * mar_id, el modal no sabria que tardanza esta justificando.
+ */
+export type DayForInfractionWithDate = DayForInfraction & {
+  date: string
+  /** mar_id de la entrada, null si no marco ese dia. */
+  entradaMarkId: number | null
+  /** Motivo escrito al justificar, null si no esta justificada. */
+  tardiaJustificacion: string | null
+  /** mar_id del fin del almuerzo, null si no lo marco (SGRH-88). */
+  finAlmuerzoMarkId: number | null
+  /** Motivo de la justificacion de la tardanza al volver del almuerzo. */
+  lunchJustificacion: string | null
+  /**
+   * Tipo de la ausencia aprobada que cubre el dia (ej. "Cita Médica"), null
+   * si no hay. Es lo que el reporte muestra como "justificada".
+   */
+  ausenciaTipo: string | null
+}
 
 export interface EmployeeMonthDays {
   employeeId: number
@@ -68,21 +106,36 @@ export interface EmployeeMonthDays {
 }
 
 export type GatherMonthlyAttendanceResult =
-  { ok: true; data: EmployeeMonthDays[] } | { ok: false; error: string }
+  | {
+      ok: true
+      data: EmployeeMonthDays[]
+      /** Catalogo de la empresa: los llamadores lo necesitan para clasificar. */
+      tipos: TardinessType[]
+    }
+  | { ok: false; error: string }
 
 /**
- * Reune, por cada colaborador activo de la empresa (y sucursal fija del
- * gerente, si tiene una) de un rango de fechas, sus dias programados con la
- * hora de entrada real (si marco) — la materia prima para clasificar
- * tardias/ausencias (classifyDay/summarizeMonth en lib/infractions.ts).
+ * Reune, por cada colaborador que trabajo en el rango dentro de las
+ * sucursales que ve el usuario, sus dias programados con la hora de entrada
+ * real (si marco) — la materia prima para clasificar tardias/ausencias
+ * (classifyDay/summarizeMonth en lib/infractions.ts).
  *
- * Resuelve la sucursal del usuario (via uer_sucursal_id, que no viaja en el
- * JWT) puertas adentro para que el llamador solo pase el usuarioId, no una
- * consulta previa repetida en cada action que lo necesite.
+ * El alcance sale de prg_sucursal_id (la sucursal DEL DIA) y no de
+ * lab_sucursal_id (la del contrato): desde SGRH-84 el gerente puede trasladar
+ * a alguien un dia puntual, y con el filtro viejo ese dia se contaba en la
+ * sucursal de origen aunque se hubiera trabajado en otra. Ver lib/workingDay.ts.
+ *
+ * A partir de que minuto hay tardanza lo define el catalogo de tipos de la
+ * empresa (sgrh_cat_tipos_tardia), que se devuelve junto con los dias para
+ * que el llamador clasifique con las mismas reglas con que se filtro.
+ *
+ * Resuelve el alcance de sucursales del usuario (via uer_sucursal_id, que no
+ * viaja en el JWT) puertas adentro para que el llamador solo pase el
+ * usuarioId, no una consulta previa repetida en cada action que lo necesite.
  *
  * Compartido entre checkMonthlyInfractions (dispara la advertencia del mes en
  * curso) y getMonthlyAttendanceSummary (reporte navegable por mes): ambos
- * necesitan exactamente la misma reunion de tolerancia+programacion+marcas,
+ * necesitan exactamente la misma reunion de catalogo+programacion+marcas,
  * solo difieren en que hacen con el resultado.
  */
 export async function gatherMonthlyAttendanceDays(
@@ -92,79 +145,130 @@ export async function gatherMonthlyAttendanceDays(
   start: string,
   end: string
 ): Promise<GatherMonthlyAttendanceResult> {
-  let sucursalId: number | null = null
-  if (usuarioId) {
-    const { data: asignacion } = await supabase
-      .from('sgrh_usuarios_empresa_rol')
-      .select('uer_sucursal_id')
-      .eq('uer_usuario_id', usuarioId)
-      .eq('uer_activo', true)
-      .maybeSingle<{ uer_sucursal_id: number | null }>()
-    sucursalId = asignacion?.uer_sucursal_id ?? null
+  const sucursalScope = usuarioId ? await getUsuarioSucursalScope(supabase, usuarioId) : null
+
+  const tiposResult = await loadTardinessTypes(supabase, empresaId)
+
+  if (!tiposResult.ok) {
+    return { ok: false, error: tiposResult.error }
   }
 
-  let historialQuery = supabase
-    .from('sgrh_historial_laboral')
+  const tipos = tiposResult.data
+
+  let assignmentsQuery = supabase
+    .from('sgrh_programacion_semanal')
     .select(
       `
-      lab_id,
-      lab_empleado_id,
-      lab_sucursal_id,
-      sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
+      prg_historial_laboral_id,
+      prg_sucursal_id,
+      prg_fecha,
+      prg_es_dia_libre,
+      prg_es_feriado,
+      prg_hora_entrada_custom,
+      prg_hora_salida_custom,
+      prg_hora_fin_almuerzo_custom,
+      sgrh_cat_horarios ( hor_hora_entrada, hor_hora_fin_almuerzo )
     `
     )
+    .gte('prg_fecha', start)
+    .lte('prg_fecha', end)
+
+  if (sucursalScope !== null) {
+    assignmentsQuery = assignmentsQuery.in('prg_sucursal_id', sucursalScope)
+  }
+
+  const { data: assignments, error: errAssignments } =
+    await assignmentsQuery.returns<AssignmentRow[]>()
+
+  if (errAssignments) {
+    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
+  }
+
+  const conDiasAca = Array.from(new Set((assignments ?? []).map((a) => a.prg_historial_laboral_id)))
+
+  // Plantilla de la sucursal, tenga o no dias programados en el rango.
+  //
+  // Sin esto el reporte solo listaba a quien alguien hubiera planificado, y
+  // el gerente no podia distinguir "no tiene tardias" de "no aparece, ¿por
+  // que?" — con la plantilla real a la vista, un mes sin programar se lee
+  // como lo que es. Mismo criterio que el panel diario.
+  let rosterQuery = supabase
+    .from('sgrh_historial_laboral')
+    .select('lab_id')
     .eq('lab_empresa_id', empresaId)
     .is('lab_fecha_fin', null)
 
-  if (sucursalId !== null) {
-    historialQuery = historialQuery.eq('lab_sucursal_id', sucursalId)
+  if (sucursalScope !== null) {
+    rosterQuery = rosterQuery.in('lab_sucursal_id', sucursalScope)
   }
 
-  const { data: historial, error: errHistorial } = await historialQuery.returns<HistorialRow[]>()
+  const { data: roster, error: errRoster } = await rosterQuery.returns<{ lab_id: number }[]>()
 
-  if (errHistorial) {
+  if (errRoster) {
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
   }
 
-  if (historial.length === 0) {
-    return { ok: true, data: [] }
+  const rosterIds = (roster ?? []).map((r) => r.lab_id)
+
+  // Quien tiene programacion en el rango pero TODA en otras sucursales no
+  // entra: sus tardias se cuentan en el reporte de la tienda donde trabajo,
+  // y sumarlo aca con cero seria contarlo dos veces en dos paneles.
+  const { data: enOtras, error: errOtras } = rosterIds.length
+    ? await supabase
+        .from('sgrh_programacion_semanal')
+        .select('prg_historial_laboral_id')
+        .gte('prg_fecha', start)
+        .lte('prg_fecha', end)
+        .in('prg_historial_laboral_id', rosterIds)
+        .returns<{ prg_historial_laboral_id: number }[]>()
+    : { data: [], error: null }
+
+  if (errOtras) {
+    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
   }
 
-  const historyIds = historial.map((h) => h.lab_id)
-  const sucursalIds = Array.from(new Set(historial.map((h) => h.lab_sucursal_id)))
+  const conAlgunaProgramacion = new Set((enOtras ?? []).map((p) => p.prg_historial_laboral_id))
 
+  const historyIds = Array.from(
+    new Set([...conDiasAca, ...rosterIds.filter((id) => !conAlgunaProgramacion.has(id))])
+  )
+
+  if (historyIds.length === 0) {
+    return { ok: true, data: [], tipos }
+  }
+
+  // El cruce contra el historial acota por empresa y descarta contratos ya
+  // cerrados: la programacion queda como historico y sobrevive a la salida
+  // del colaborador — sin este filtro se le seguirian contando ausencias a un
+  // ex-empleado, y checkMonthlyInfractions le mandaria advertencias.
   const [
-    { data: tolerancias, error: errTolerancias },
-    { data: assignments, error: errAssignments },
+    { data: historial, error: errHistorial },
     { data: marks, error: errMarks },
     { data: ausencias, error: errAusencias },
   ] = await Promise.all([
     supabase
-      .from('sgrh_sucursales')
-      .select('suc_id, suc_tolerancia_tardia_minutos')
-      .in('suc_id', sucursalIds)
-      .returns<SucursalToleranciaRow[]>(),
-    supabase
-      .from('sgrh_programacion_semanal')
+      .from('sgrh_historial_laboral')
       .select(
         `
-        prg_historial_laboral_id,
-        prg_fecha,
-        prg_es_dia_libre,
-        prg_es_feriado,
-        prg_hora_entrada_custom,
-        sgrh_cat_horarios ( hor_hora_entrada )
+        lab_id,
+        lab_empleado_id,
+        lab_sucursal_id,
+        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
       `
       )
-      .in('prg_historial_laboral_id', historyIds)
-      .gte('prg_fecha', start)
-      .lte('prg_fecha', end)
-      .returns<AssignmentRow[]>(),
+      .in('lab_id', historyIds)
+      .eq('lab_empresa_id', empresaId)
+      .is('lab_fecha_fin', null)
+      .returns<HistorialRow[]>(),
     supabase
       .from('sgrh_marcas_asistencia')
-      .select('mar_historial_laboral_id, mar_tipo, mar_fecha_hora')
+      .select(
+        'mar_id, mar_historial_laboral_id, mar_tipo, mar_fecha_hora, mar_tardia_justificada, mar_tardia_justificacion'
+      )
       .in('mar_historial_laboral_id', historyIds)
-      .eq('mar_tipo', 'entrada')
+      // La entrada y el regreso del almuerzo: las dos marcas que pueden
+      // llegar tarde (SGRH-88).
+      .in('mar_tipo', ['entrada', 'fin_almuerzo'])
       .gte('mar_fecha_hora', `${start} 00:00:00`)
       .lte('mar_fecha_hora', `${end} 23:59:59`)
       .returns<MarkDbRow[]>(),
@@ -174,7 +278,9 @@ export async function gatherMonthlyAttendanceDays(
     // fin>=inicio_rango en vez de meter ambas fechas dentro del mes.
     supabase
       .from('sgrh_ausencias')
-      .select('aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin')
+      .select(
+        'aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin, sgrh_cat_tipos_ausencia ( tau_nombre, tau_es_intradia )'
+      )
       .in('aus_historial_laboral_id', historyIds)
       .eq('aus_estado', 'aprobada')
       .lte('aus_fecha_inicio', end)
@@ -182,13 +288,17 @@ export async function gatherMonthlyAttendanceDays(
       .returns<AusenciaRow[]>(),
   ])
 
-  if (errTolerancias || errAssignments || errMarks || errAusencias) {
+  if (errHistorial) {
+    return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
+  }
+
+  if (errMarks || errAusencias) {
     return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
   }
 
-  const toleranciaBySucursal = new Map(
-    (tolerancias ?? []).map((t) => [t.suc_id, t.suc_tolerancia_tardia_minutos])
-  )
+  if (historial.length === 0) {
+    return { ok: true, data: [], tipos }
+  }
 
   // Dias futuros (ej. un horario ya asignado para mañana) todavia no
   // pudieron marcarse — no cuentan como tardia ni ausencia hasta que
@@ -196,8 +306,8 @@ export async function gatherMonthlyAttendanceDays(
   // resto del mes se veia como "ausente" apenas se le asignaba horario.
   const today = todayInCostaRica()
   // Hora actual de Costa Rica: el DIA de hoy entra al calculo, pero un turno
-  // de hoy que todavia no llego a su hora+tolerancia tampoco es ausencia
-  // todavia — recien se sabe al cerrarse esa ventana.
+  // de hoy que todavia no llego al minuto del primer tipo de tardia tampoco
+  // es ausencia todavia — recien se sabe al cerrarse esa ventana.
   const nowTime = timeOfDay(nowInCostaRica())
 
   const assignmentsByHist = new Map<number, AssignmentRow[]>()
@@ -215,57 +325,95 @@ export async function gatherMonthlyAttendanceDays(
   // Ojo: leer esta tabla exige el permiso AUSENCIAS_READ. Si el rol que abre
   // el panel no lo tiene, RLS no devuelve error — devuelve cero filas, y
   // todo vuelve a contarse como ausencia sin ninguna señal visible.
-  const justifiedDays = new Set<string>()
+  const justifiedDays = new Map<string, string>()
   for (const a of ausencias ?? []) {
+    // Lactancia y demas intradia se miden en horas dentro de un dia
+    // trabajado: no cubren el dia. Antes una lactancia de meses dejaba todos
+    // esos dias fuera del calculo, tardias incluidas.
+    if (a.sgrh_cat_tipos_ausencia?.tau_es_intradia) continue
+
     const from = a.aus_fecha_inicio > start ? a.aus_fecha_inicio : start
     const to = a.aus_fecha_fin < end ? a.aus_fecha_fin : end
 
     for (let d = from; d <= to; d = shiftISODate(d, 1)) {
-      justifiedDays.add(`${a.aus_historial_laboral_id}|${d}`)
+      justifiedDays.set(
+        `${a.aus_historial_laboral_id}|${d}`,
+        a.sgrh_cat_tipos_ausencia?.tau_nombre ?? 'Ausencia justificada'
+      )
     }
   }
 
-  // Primera marca de entrada valida por (historial, fecha) — mismo criterio
-  // de "primera cronologica gana" que groupIntoDayJourney, aplicado por dia.
-  const entradaByHistAndDate = new Map<string, string>()
+  // Primera marca valida por (historial, fecha) de cada tipo — mismo
+  // criterio de "primera cronologica gana" que groupIntoDayJourney.
+  const entradaByHistAndDate = new Map<string, MarcaDelDia>()
+  const finAlmuerzoByHistAndDate = new Map<string, MarcaDelDia>()
   for (const m of marks ?? []) {
     const parsedTipo = marcaTipoSchema.safeParse(m.mar_tipo)
-    if (!parsedTipo.success || parsedTipo.data !== 'entrada') continue
+    if (!parsedTipo.success) continue
+
+    const destino =
+      parsedTipo.data === 'entrada'
+        ? entradaByHistAndDate
+        : parsedTipo.data === 'fin_almuerzo'
+          ? finAlmuerzoByHistAndDate
+          : null
+    if (!destino) continue
 
     const date = dateOfDay(m.mar_fecha_hora)
     const key = `${m.mar_historial_laboral_id}|${date}`
     const time = timeOfDay(m.mar_fecha_hora)
-    const existing = entradaByHistAndDate.get(key)
-    if (!existing || time < existing) {
-      entradaByHistAndDate.set(key, time)
+    const existing = destino.get(key)
+    if (!existing || time < existing.time) {
+      destino.set(key, {
+        markId: m.mar_id,
+        time,
+        justificada: m.mar_tardia_justificada ?? false,
+        justificacion: m.mar_tardia_justificacion,
+      })
     }
   }
 
   const data: EmployeeMonthDays[] = historial.map((h) => {
-    const tolerancia = toleranciaBySucursal.get(h.lab_sucursal_id) ?? DEFAULT_TOLERANCIA_MINUTOS
     const myAssignments = assignmentsByHist.get(h.lab_id) ?? []
     const employee = h.sgrh_empleados
 
     const days: DayForInfractionWithDate[] = myAssignments
       .map((a) => {
         const expectedRaw = a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
+        const entrada = entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
+        const finAlmuerzo = finAlmuerzoByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
+        // Mismo criterio que lib/workingDay.ts: horario personalizado del dia
+        // si trae entrada y salida propias, y si no el de la plantilla.
+        const isCustom = Boolean(a.prg_hora_entrada_custom && a.prg_hora_salida_custom)
+        const lunchEndRaw = isCustom
+          ? a.prg_hora_fin_almuerzo_custom
+          : a.sgrh_cat_horarios?.hor_hora_fin_almuerzo
+        const ausenciaTipo = justifiedDays.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         return {
           date: a.prg_fecha,
-          isJustifiedAbsence: justifiedDays.has(`${h.lab_id}|${a.prg_fecha}`),
+          isJustifiedAbsence: ausenciaTipo !== null,
+          ausenciaTipo,
           isDayOff: a.prg_es_dia_libre,
           isHoliday: a.prg_es_feriado,
           expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,
-          entradaTime: entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null,
-          toleranciaMinutos: tolerancia,
+          entradaTime: entrada?.time ?? null,
+          entradaMarkId: entrada?.markId ?? null,
+          isJustifiedTardiness: entrada?.justificada ?? false,
+          tardiaJustificacion: entrada?.justificacion ?? null,
+          expectedLunchEnd: lunchEndRaw ? timeOfDay(lunchEndRaw) : null,
+          finAlmuerzoTime: finAlmuerzo?.time ?? null,
+          finAlmuerzoMarkId: finAlmuerzo?.markId ?? null,
+          isJustifiedLunchTardiness: finAlmuerzo?.justificada ?? false,
+          lunchJustificacion: finAlmuerzo?.justificacion ?? null,
         }
       })
       .filter((day) => {
         // Solo se filtra el dia de HOY, sin marca todavia, con horario real
         // (dia libre/feriado/sin programacion ya son 'no_aplica', no hace
-        // falta tocarlos aca). Si la hora esperada + tolerancia ya paso,
-        // se deja pasar — recien ahi es una ausencia/tardanza real.
+        // falta tocarlos aca). Si ya llego el minuto en que habria sido
+        // tardanza, se deja pasar — recien ahi es una ausencia real.
         if (day.date !== today || day.entradaTime || !day.expectedStart) return true
-        return diffMinutes(nowTime, day.expectedStart) > day.toleranciaMinutos
+        return classifyTardiness(diffMinutes(nowTime, day.expectedStart), tipos) !== null
       })
 
     return {
@@ -278,5 +426,5 @@ export async function gatherMonthlyAttendanceDays(
     }
   })
 
-  return { ok: true, data }
+  return { ok: true, data, tipos }
 }

@@ -77,14 +77,14 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
 
   if (savedName) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-        <CheckCircle2 className="h-20 w-20 text-emerald-400" />
+      <div className="my-auto flex flex-col items-center gap-4 rounded-3xl bg-white p-8 text-center shadow-xl shadow-blue-900/5 ring-1 ring-blue-100">
+        <CheckCircle2 className="h-20 w-20 text-emerald-600" />
         <p className="text-2xl font-bold">Rostro registrado</p>
-        <p className="text-slate-300">{savedName}</p>
+        <p className="text-slate-600">{savedName}</p>
         <button
           type="button"
           onClick={() => setSavedName(null)}
-          className="mt-2 rounded-full bg-brand-600 px-6 py-2.5 text-sm font-bold text-white outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-white/60"
+          className="mt-2 min-h-11 rounded-full bg-blue-600 px-6 py-2.5 text-sm font-bold text-white outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-300"
         >
           Enrolar a otra persona
         </button>
@@ -93,10 +93,10 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
   }
 
   return (
-    <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-8">
+    <div className="my-auto flex w-full max-w-sm flex-col items-center gap-8 rounded-3xl bg-white p-6 shadow-xl shadow-blue-900/5 ring-1 ring-blue-100 sm:max-w-md sm:p-8">
       <div className="text-center">
         <h1 className="text-2xl font-bold">Enrolamiento facial</h1>
-        <p className="mt-1 text-sm text-slate-300">Selecciona al colaborador y captura su rostro</p>
+        <p className="mt-1 text-sm text-slate-600">Selecciona al colaborador y captura su rostro</p>
       </div>
 
       <div className="w-full">
@@ -115,7 +115,7 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
       {selectedEmployee && !scanning && (
         <div className="flex flex-col items-center gap-3">
           {enrolled.has(selectedEmployee.employeeId) && (
-            <p className="flex items-center gap-2 text-xs text-emerald-400">
+            <p className="flex items-center gap-2 text-xs text-emerald-600">
               <BadgeCheck className="h-4 w-4" />
               Ya tiene un rostro registrado — capturar de nuevo lo reemplaza.
             </p>
@@ -123,7 +123,7 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
           <button
             type="button"
             onClick={() => setScanning(true)}
-            className="flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3 text-base font-bold text-white shadow-lg outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-white/60 active:scale-95"
+            className="flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-base font-bold text-white shadow-lg outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-300 active:scale-95"
           >
             <UserPlus className="h-5 w-5" /> Capturar rostro
           </button>
@@ -140,7 +140,7 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
           <button
             type="button"
             onClick={() => setScanning(false)}
-            className="text-sm text-slate-300 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
+            className="inline-flex min-h-11 items-center text-sm text-slate-600 outline-none transition hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-blue-300"
           >
             Cancelar
           </button>
