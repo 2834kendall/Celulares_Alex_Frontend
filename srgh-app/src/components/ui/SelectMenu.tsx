@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, Search } from 'lucide-react'
 import { useController, type Control, type FieldValues, type Path } from 'react-hook-form'
+import { normalizeSearchText } from '@/components/ui/SearchSelect'
 import { cn } from '@/lib/utils/cn'
 
 export interface SelectMenuOption {
@@ -19,6 +20,8 @@ const SIZES: Record<SelectMenuSize, Record<string, string>> = {
     option: 'px-3 py-2 text-xs',
     check: 'h-3.5 w-3.5',
     chevron: 'h-3.5 w-3.5',
+    search: 'px-3 py-2 text-xs',
+    empty: 'px-3 py-4 text-xs',
   },
   /** Campo de formulario (par de INPUT/SELECT). */
   md: {
@@ -26,6 +29,8 @@ const SIZES: Record<SelectMenuSize, Record<string, string>> = {
     option: 'px-3 py-2 text-sm pointer-coarse:min-h-11',
     check: 'h-4 w-4',
     chevron: 'h-4 w-4',
+    search: 'px-3 py-2 text-sm',
+    empty: 'px-3 py-4 text-sm',
   },
 }
 
@@ -50,6 +55,18 @@ interface SelectMenuProps {
    * prioridad).
    */
   triggerClassName?: string
+  /**
+   * Agrega un campo de busqueda arriba de la lista abierta, que filtra las
+   * opciones mientras se escribe. Para catalogos largos donde recorrer el
+   * menu a mano no es viable — hoy, los 84 cantones y los 492 distritos de
+   * la cascada de direccion.
+   *
+   * El input se renderiza DENTRO del panel, que va despues del trigger: el
+   * <label> que envuelve al control resuelve su nombre accesible contra el
+   * PRIMER control que contiene, y si el buscador quedara antes, cualquier
+   * `getByLabelText` del campo devolveria el buscador en vez del trigger.
+   */
+  searchable?: boolean
 }
 
 /**
@@ -78,16 +95,28 @@ export function SelectMenu({
   size = 'md',
   className,
   triggerClassName,
+  searchable = false,
 }: SelectMenuProps) {
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
+  const [query, setQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const listboxId = useId()
   const s = SIZES[size]
 
   const selected = options.find((o) => o.value === value) ?? null
+
+  // Sin busqueda `filtered` es `options` por identidad, asi que el camino por
+  // defecto no paga ningun recorrido extra.
+  const filtered = useMemo(() => {
+    const q = normalizeSearchText(query.trim())
+    if (!q) return options
+    return options.filter((o) => normalizeSearchText(o.label).includes(q))
+  }, [options, query])
 
   /**
    * Empuja el listbox para que no se salga de la pantalla — mismo criterio
@@ -98,7 +127,7 @@ export function SelectMenu({
    * ventana en vez de desbordar hacia la izquierda.
    */
   useLayoutEffect(() => {
-    const list = listRef.current
+    const list = panelRef.current
     if (!open || !list) return
 
     list.style.left = ''
@@ -115,11 +144,13 @@ export function SelectMenu({
   function openMenu() {
     const index = options.findIndex((o) => o.value === value)
     setHighlighted(index >= 0 ? index : 0)
+    setQuery('')
     setOpen(true)
   }
 
   function close() {
     setOpen(false)
+    setQuery('')
     triggerRef.current?.focus()
   }
 
@@ -133,11 +164,18 @@ export function SelectMenu({
     function onMouseDown(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false)
+        setQuery('')
       }
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [open])
+
+  // El foco se va al buscador al abrir: es el unico control del panel con el
+  // que se escribe, y sin esto habria que tabular hasta el.
+  useEffect(() => {
+    if (open && searchable) searchRef.current?.focus()
+  }, [open, searchable])
 
   // La opcion resaltada sigue al teclado tambien fuera de la ventana visible.
   useEffect(() => {
@@ -146,6 +184,39 @@ export function SelectMenu({
       ?.querySelector<HTMLElement>(`[data-index="${highlighted}"]`)
       ?.scrollIntoView({ block: 'nearest' })
   }, [open, highlighted])
+
+  /**
+   * Navegacion de la lista abierta. La comparten el trigger y el buscador:
+   * el foco esta en uno o en otro segun `searchable`, pero las teclas hacen
+   * lo mismo y siempre sobre el set FILTRADO.
+   */
+  function onListKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlighted((h) => Math.min(h + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlighted((h) => Math.max(h - 1, 0))
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      setHighlighted(0)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      setHighlighted(filtered.length - 1)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const match = filtered[highlighted]
+      if (match) choose(match.value)
+    } else if (e.key === 'Escape') {
+      // close() y no setOpen(false): con el buscador abierto el foco esta
+      // dentro del panel, que deja de existir — sin devolverlo al trigger se
+      // perderia en el <body>.
+      close()
+    } else if (e.key === 'Tab') {
+      setOpen(false)
+      setQuery('')
+    }
+  }
 
   function onTriggerKeyDown(e: React.KeyboardEvent) {
     if (!open) {
@@ -156,25 +227,16 @@ export function SelectMenu({
       return
     }
 
-    if (e.key === 'ArrowDown') {
+    // El espacio elige desde el trigger, pero dentro del buscador es un
+    // caracter mas de la consulta, asi que no viaja al handler compartido.
+    if (e.key === ' ') {
       e.preventDefault()
-      setHighlighted((h) => Math.min(h + 1, options.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setHighlighted((h) => Math.max(h - 1, 0))
-    } else if (e.key === 'Home') {
-      e.preventDefault()
-      setHighlighted(0)
-    } else if (e.key === 'End') {
-      e.preventDefault()
-      setHighlighted(options.length - 1)
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      const match = options[highlighted]
+      const match = filtered[highlighted]
       if (match) choose(match.value)
-    } else if (e.key === 'Escape' || e.key === 'Tab') {
-      setOpen(false)
+      return
     }
+
+    onListKeyDown(e)
   }
 
   return (
@@ -216,39 +278,75 @@ export function SelectMenu({
       </button>
 
       {open && (
-        <ul
-          ref={listRef}
-          id={listboxId}
-          role="listbox"
-          aria-label={ariaLabel}
-          // `w-max` (no `w-full`): el listbox se mide por su opcion mas larga,
+        <div
+          ref={panelRef}
+          // `w-max` (no `w-full`): el panel se mide por su opcion mas larga,
           // no por el ancho del trigger — un trigger angosto ("Sucursal 11")
           // ya no recorta nombres mas largos ("Sucursal Metrocentro") a lo que
           // mide el propio boton. `min-w-full` evita que quede MAS angosto
           // que el trigger.
-          className="absolute left-0 z-20 mt-1.5 max-h-64 w-max min-w-full max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+          className="absolute left-0 z-20 mt-1.5 w-max min-w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
         >
-          {options.map((o, i) => (
-            <li key={o.value} role="option" aria-selected={o.value === value} data-index={i}>
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => choose(o.value)}
-                onMouseEnter={() => setHighlighted(i)}
-                className={cn(
-                  'flex w-full items-center justify-between gap-2 text-left outline-none transition',
-                  s.option,
-                  i === highlighted && 'bg-brand-50'
-                )}
-              >
-                <span className="truncate font-medium text-slate-800">{o.label}</span>
-                {o.value === value && (
-                  <Check className={cn('shrink-0 text-brand-600', s.check)} aria-hidden="true" />
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
+          {searchable && (
+            <div className={cn('flex items-center gap-2 border-b border-slate-100', s.search)}>
+              {/* Mismo tamaño que el chevron: las dos son adornos del campo. */}
+              <Search className={cn('shrink-0 text-slate-400', s.chevron)} aria-hidden="true" />
+              <input
+                ref={searchRef}
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setHighlighted(0)
+                }}
+                onKeyDown={onListKeyDown}
+                aria-label={ariaLabel ? `Buscar en ${ariaLabel}` : 'Buscar'}
+                aria-controls={listboxId}
+                placeholder="Buscar…"
+                className="min-w-0 flex-1 bg-transparent font-medium text-slate-700 outline-none placeholder:font-normal placeholder:text-slate-400"
+              />
+            </div>
+          )}
+
+          {/* El scroll vive en el <ul> y no en el panel, para que la barra de
+              busqueda quede fija mientras se recorre la lista. */}
+          <ul
+            ref={listRef}
+            id={listboxId}
+            role="listbox"
+            aria-label={ariaLabel}
+            className="max-h-64 overflow-y-auto py-1"
+          >
+            {filtered.map((o, i) => (
+              <li key={o.value} role="option" aria-selected={o.value === value} data-index={i}>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => choose(o.value)}
+                  onMouseEnter={() => setHighlighted(i)}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 text-left outline-none transition',
+                    s.option,
+                    i === highlighted && 'bg-brand-50'
+                  )}
+                >
+                  <span className="truncate font-medium text-slate-800">{o.label}</span>
+                  {o.value === value && (
+                    <Check className={cn('shrink-0 text-brand-600', s.check)} aria-hidden="true" />
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {filtered.length === 0 && (
+            <p className={cn('text-center text-slate-500', s.empty)}>
+              Sin resultados para &ldquo;{query.trim()}&rdquo;
+            </p>
+          )}
+        </div>
       )}
     </div>
   )
