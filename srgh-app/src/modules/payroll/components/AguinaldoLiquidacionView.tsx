@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { FileX2, Gift } from 'lucide-react'
+import { Tabs, type TabDefinition } from '@/components/ui/Tabs'
 import type {
   AguinaldoItem,
   EmpleadoActivoItem,
@@ -20,13 +21,13 @@ interface AguinaldoLiquidacionViewProps {
   liquidaciones: LiquidacionListItem[]
 }
 
-const TABS = [
-  { id: 'aguinaldo', label: 'Aguinaldo' },
-  { id: 'liquidacion', label: 'Liquidación' },
-] as const
+type TabId = 'aguinaldo' | 'liquidacion'
 
-type TabId = (typeof TABS)[number]['id']
-
+/**
+ * Usa el Tabs compartido (sincronizado con `?tab=`) en vez de un estado
+ * local: es lo que permite enlazar directo a `?tab=liquidacion` — lo hace el
+ * tab Contrato del perfil del empleado.
+ */
 export function AguinaldoLiquidacionView({
   anio,
   aguinaldos,
@@ -35,43 +36,29 @@ export function AguinaldoLiquidacionView({
   motivos,
   liquidaciones,
 }: AguinaldoLiquidacionViewProps) {
-  const [tab, setTab] = useState<TabId>('aguinaldo')
+  const tabs: TabDefinition<TabId>[] = [
+    {
+      id: 'aguinaldo',
+      label: 'Aguinaldo',
+      icon: Gift,
+      content: <AguinaldoTab anio={anio} items={aguinaldos} canWrite={canWrite} />,
+    },
+    {
+      id: 'liquidacion',
+      label: 'Liquidación',
+      icon: FileX2,
+      content: canWrite ? (
+        <LiquidacionTab empleados={empleadosActivos} motivos={motivos} historial={liquidaciones} />
+      ) : (
+        <div className="space-y-4">
+          <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
+            No tenés permiso para procesar liquidaciones.
+          </p>
+          <LiquidacionesHistorial items={liquidaciones} />
+        </div>
+      ),
+    },
+  ]
 
-  return (
-    <div className="space-y-3">
-      <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`rounded-lg px-3 py-1.5 transition ${
-              tab === t.id
-                ? 'bg-white text-brand-700 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'aguinaldo' && <AguinaldoTab anio={anio} items={aguinaldos} canWrite={canWrite} />}
-      {tab === 'liquidacion' &&
-        (canWrite ? (
-          <LiquidacionTab
-            empleados={empleadosActivos}
-            motivos={motivos}
-            historial={liquidaciones}
-          />
-        ) : (
-          <div className="space-y-4">
-            <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-              No tenés permiso para procesar liquidaciones.
-            </p>
-            <LiquidacionesHistorial items={liquidaciones} />
-          </div>
-        ))}
-    </div>
-  )
+  return <Tabs idPrefix="aguinaldo-liquidacion" ariaLabel="Aguinaldo y liquidación" tabs={tabs} />
 }
