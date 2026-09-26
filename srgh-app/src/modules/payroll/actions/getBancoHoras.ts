@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularMontoSugeridoBancoHoras } from '@/modules/payroll/lib/bancoHoras'
+import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from '@/modules/payroll/lib/bancoHoras'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import type { BancoHorasItem, EstadoBancoHoras } from '@/modules/payroll/types'
 
@@ -45,6 +45,16 @@ export type GetBancoHorasResult =
 export async function getBancoHoras(): Promise<GetBancoHorasResult> {
   await requirePermission(PERMISOS.NOMINA_READ)
   const supabase = await createClient()
+
+  // El multiplicador de la hora extra sale del catálogo (HORAS_EXTRA), que es
+  // donde el encargado lo edita. Si esa fila no está, se cae a tiempo y medio.
+  const { data: conceptoHorasExtra } = await supabase
+    .from('sgrh_cat_conceptos_nomina')
+    .select('con_porcentaje')
+    .eq('con_codigo', 'HORAS_EXTRA')
+    .maybeSingle<{ con_porcentaje: number | null }>()
+
+  const factor = factorHorasExtra(conceptoHorasExtra?.con_porcentaje)
 
   const { data, error } = await supabase
     .from('sgrh_banco_horas_movimientos')
@@ -94,7 +104,12 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
       periodoOrigenLabel,
       horas: row.bhm_horas,
       salarioPorHora: row.bhm_salario_por_hora,
-      montoSugerido: calcularMontoSugeridoBancoHoras(row.bhm_horas, row.bhm_salario_por_hora),
+      montoSugerido: calcularMontoSugeridoBancoHoras(
+        row.bhm_horas,
+        row.bhm_salario_por_hora,
+        factor
+      ),
+      factorSugerido: factor,
       estado: row.bhm_estado as EstadoBancoHoras,
       montoPagado: row.bhm_monto_pagado,
       fechaResolucion: row.bhm_fecha_resolucion,

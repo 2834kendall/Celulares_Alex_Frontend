@@ -99,12 +99,43 @@ describe('registrarIncapacidad (server action)', () => {
     mockSupabase({
       sgrh_historial_laboral: HISTORIAL,
       sgrh_cat_tipos_ausencia: TIPO_AUSENCIA,
-      sgrh_ausencias: { data: null, error: { message: 'boom' } },
+      sgrh_ausencias: [
+        { data: [], error: null },
+        { data: null, error: { message: 'boom' } },
+      ],
     })
 
     const result = await registrarIncapacidad({ ...INPUT, numeroBoletaCcss: null })
 
     expect(result).toEqual({ ok: false, error: 'No se pudo guardar la incapacidad.' })
+  })
+
+  // Una incapacidad encima de unas vacaciones pagaba los mismos días dos veces.
+  it('rechaza si ya hay una ausencia en esas fechas y no inserta', async () => {
+    const client = mockSupabase({
+      sgrh_historial_laboral: HISTORIAL,
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA,
+      sgrh_ausencias: { data: [{ aus_id: 55 }], error: null },
+    })
+
+    const result = await registrarIncapacidad({ ...INPUT, numeroBoletaCcss: null })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toContain('se traslapa')
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_nomina_detalle')
+  })
+
+  it('rechaza si no se puede validar el traslape', async () => {
+    mockSupabase({
+      sgrh_historial_laboral: HISTORIAL,
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA,
+      sgrh_ausencias: { data: null, error: { message: 'boom' } },
+    })
+
+    const result = await registrarIncapacidad({ ...INPUT, numeroBoletaCcss: null })
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo validar el traslape de fechas.' })
   })
 
   it('avisa si la incapacidad se guardó pero no se pudieron leer los periodos', async () => {
@@ -153,6 +184,7 @@ describe('registrarIncapacidad (server action)', () => {
         { periodoId: 101, periodoLabel: expect.any(String), diasEmpleador: 2, diasCcss: 0 },
       ],
       diasSinPeriodo: 0,
+      periodosPagadosOmitidos: [],
     })
     expect(client.from).toHaveBeenCalledWith('sgrh_ausencias')
   })

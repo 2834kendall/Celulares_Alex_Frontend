@@ -1812,6 +1812,7 @@ export type Database = {
           liq_dias_preaviso: number
           liq_dias_trabajados_mes: number
           liq_dias_vacaciones_pendientes: number
+          liq_dias_vacaciones_propuestos: number | null
           liq_fecha_pago: string | null
           liq_fecha_salida: string
           liq_historial_laboral_id: number
@@ -1822,6 +1823,7 @@ export type Database = {
           liq_pagado: boolean
           liq_preaviso: number
           liq_salario_diario: number
+          liq_salario_diario_vacaciones: number | null
           liq_salario_proporcional: number
           liq_total: number
           liq_vacaciones_pagadas: number
@@ -1835,6 +1837,7 @@ export type Database = {
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
           liq_dias_vacaciones_pendientes?: number
+          liq_dias_vacaciones_propuestos?: number | null
           liq_fecha_pago?: string | null
           liq_fecha_salida: string
           liq_historial_laboral_id: number
@@ -1845,6 +1848,7 @@ export type Database = {
           liq_pagado?: boolean
           liq_preaviso?: number
           liq_salario_diario: number
+          liq_salario_diario_vacaciones?: number | null
           liq_salario_proporcional?: number
           liq_total?: number
           liq_vacaciones_pagadas?: number
@@ -1858,6 +1862,7 @@ export type Database = {
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
           liq_dias_vacaciones_pendientes?: number
+          liq_dias_vacaciones_propuestos?: number | null
           liq_fecha_pago?: string | null
           liq_fecha_salida?: string
           liq_historial_laboral_id?: number
@@ -1868,6 +1873,7 @@ export type Database = {
           liq_pagado?: boolean
           liq_preaviso?: number
           liq_salario_diario?: number
+          liq_salario_diario_vacaciones?: number | null
           liq_salario_proporcional?: number
           liq_total?: number
           liq_vacaciones_pagadas?: number
@@ -2061,6 +2067,13 @@ export type Database = {
           ndt_total_deducciones_obreras?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "sgrh_nom_det_horas_ajustadas_por_id_fkey"
+            columns: ["ndt_horas_ajustadas_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
           {
             foreignKeyName: "sgrh_nom_det_historial_laboral_id_fkey"
             columns: ["ndt_historial_laboral_id"]
@@ -2375,6 +2388,75 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "sgrh_usuarios"
             referencedColumns: ["usr_id"]
+          },
+        ]
+      }
+      sgrh_pagos_extraordinarios: {
+        Row: {
+          pex_anio_aguinaldo: number | null
+          pex_codigo_verificacion: string
+          pex_created_at: string
+          pex_deducciones: number
+          pex_fecha_pago: string
+          pex_historial_laboral_id: number
+          pex_id: number
+          pex_lineas: Json
+          pex_liquidacion_id: number | null
+          pex_metodo_pago: string | null
+          pex_monto_bruto: number
+          pex_monto_neto: number
+          pex_observaciones: string | null
+          pex_referencia_bancaria: string | null
+          pex_tipo: string
+        }
+        Insert: {
+          pex_anio_aguinaldo?: number | null
+          pex_codigo_verificacion: string
+          pex_created_at?: string
+          pex_deducciones?: number
+          pex_fecha_pago: string
+          pex_historial_laboral_id: number
+          pex_id?: never
+          pex_lineas?: Json
+          pex_liquidacion_id?: number | null
+          pex_metodo_pago?: string | null
+          pex_monto_bruto: number
+          pex_monto_neto: number
+          pex_observaciones?: string | null
+          pex_referencia_bancaria?: string | null
+          pex_tipo: string
+        }
+        Update: {
+          pex_anio_aguinaldo?: number | null
+          pex_codigo_verificacion?: string
+          pex_created_at?: string
+          pex_deducciones?: number
+          pex_fecha_pago?: string
+          pex_historial_laboral_id?: number
+          pex_id?: never
+          pex_lineas?: Json
+          pex_liquidacion_id?: number | null
+          pex_metodo_pago?: string | null
+          pex_monto_bruto?: number
+          pex_monto_neto?: number
+          pex_observaciones?: string | null
+          pex_referencia_bancaria?: string | null
+          pex_tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_pagos_extraordinarios_pex_historial_laboral_id_fkey"
+            columns: ["pex_historial_laboral_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_historial_laboral"
+            referencedColumns: ["lab_id"]
+          },
+          {
+            foreignKeyName: "sgrh_pagos_extraordinarios_pex_liquidacion_id_fkey"
+            columns: ["pex_liquidacion_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_liquidaciones"
+            referencedColumns: ["liq_id"]
           },
         ]
       }

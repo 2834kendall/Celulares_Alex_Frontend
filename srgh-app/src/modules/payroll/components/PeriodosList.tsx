@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, FileClock } from 'lucide-react'
+import { AlertTriangle, CalendarDays, FileClock, Loader2, Trash2 } from 'lucide-react'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 import {
   ESTADO_LABELS,
   estadoBadgeTone,
   estadoLabel,
+  estadoVisible,
   formatDate,
   periodoLabel,
 } from '@/modules/payroll/lib/format'
@@ -16,14 +17,27 @@ import { Pagination } from '@/components/ui/Pagination'
 import { META_LABEL, TABLE_DESKTOP_WRAP, TABLE_TD, TABLE_TH } from '@/components/ui/styles'
 import { SelectMenu } from '@/components/ui/SelectMenu'
 import { Badge } from '@/components/ui/Badge'
-import { cn } from '@/lib/utils/cn'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { Alert } from '@/components/ui/Alert'
+import { SPINNER } from '@/components/ui/styles'
+import { useCrudList } from '@/modules/payroll/hooks/useCrudList'
+import { deletePeriodo } from '@/modules/payroll/actions/deletePeriodo'
 
 interface PeriodosListProps {
   periodos: PeriodoListItem[]
+  canWrite?: boolean
 }
 
-export function PeriodosList({ periodos }: PeriodosListProps) {
+export function PeriodosList({ periodos, canWrite = false }: PeriodosListProps) {
   const router = useRouter()
+  const { deletingId, confirmingId, deleteError, requestDelete, cancelDelete, confirmDelete } =
+    useCrudList<PeriodoListItem>(async (id) => {
+      const result = await deletePeriodo(id)
+      if (result.ok) router.refresh()
+      return result
+    })
+
+  const periodoAEliminar = periodos.find((p) => p.id === confirmingId)
   const [estado, setEstado] = useState('todos')
   const [anio, setAnio] = useState('todos')
 
@@ -36,7 +50,7 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
     () =>
       periodos.filter(
         (p) =>
-          (estado === 'todos' || p.estado === estado) &&
+          (estado === 'todos' || estadoVisible(p.estado, p.atrasado) === estado) &&
           (anio === 'todos' || p.anio === Number(anio))
       ),
     [periodos, estado, anio]
@@ -48,7 +62,10 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
   )
 
   const total = periodos.length
-  const borradores = periodos.filter((p) => p.estado === 'borrador').length
+  // Un periodo atrasado sigue siendo 'borrador' en la base; se cuenta aparte
+  // porque es el que necesita atencion: ya vencio y alguien no cobro.
+  const atrasados = periodos.filter((p) => p.atrasado).length
+  const borradores = periodos.filter((p) => p.estado === 'borrador').length - atrasados
 
   const stats = [
     {
@@ -65,11 +82,18 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
       value: borradores,
       tone: 'bg-amber-50 text-amber-600',
     },
+    {
+      key: 'atrasados',
+      icon: AlertTriangle,
+      label: 'Atrasados',
+      value: atrasados,
+      tone: 'bg-rose-50 text-rose-600',
+    },
   ]
 
   return (
     <div className="@container space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         {stats.map(({ key, icon: Icon, label, value, tone }) => (
           <div
             key={key}
@@ -100,7 +124,10 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
           className="min-w-0 flex-1 basis-40"
           options={[
             { value: 'todos', label: 'Todos los estados' },
-            ...Object.entries(ESTADO_LABELS).map(([value, label]) => ({ value, label })),
+            ...Object.entries(ESTADO_LABELS).map(([value, label]) => ({
+              value,
+              label,
+            })),
           ]}
         />
         <SelectMenu
@@ -148,7 +175,9 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-500">{p.sucursalNombre}</p>
                     </div>
-                    <Badge tone={estadoBadgeTone(p.estado)}>{estadoLabel(p.estado)}</Badge>
+                    <Badge tone={estadoBadgeTone(estadoVisible(p.estado, p.atrasado))}>
+                      {estadoLabel(estadoVisible(p.estado, p.atrasado))}
+                    </Badge>
                   </div>
 
                   <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
@@ -158,7 +187,10 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
                         valor: `${formatDate(p.fechaInicio)} — ${formatDate(p.fechaFin)}`,
                       },
                       { label: 'Empleados', valor: String(p.totalEmpleados) },
-                      { label: 'Fecha de pago', valor: formatDate(p.fechaPago) },
+                      {
+                        label: 'Fecha de pago',
+                        valor: formatDate(p.fechaPago),
+                      },
                     ].map(({ label, valor }) => (
                       <div key={label} className="min-w-0">
                         <dt className={META_LABEL}>{label}</dt>
@@ -183,6 +215,7 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
                   <th className={TABLE_TH}>Empleados</th>
                   <th className={TABLE_TH}>Estado</th>
                   <th className={TABLE_TH}>Fecha de pago</th>
+                  {canWrite && <th className={TABLE_TH}>Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -201,9 +234,35 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
                     </td>
                     <td className={TABLE_TD}>{p.totalEmpleados}</td>
                     <td className="px-3 py-2">
-                      <Badge tone={estadoBadgeTone(p.estado)}>{estadoLabel(p.estado)}</Badge>
+                      <Badge tone={estadoBadgeTone(estadoVisible(p.estado, p.atrasado))}>
+                        {estadoLabel(estadoVisible(p.estado, p.atrasado))}
+                      </Badge>
                     </td>
                     <td className={TABLE_TD}>{formatDate(p.fechaPago)}</td>
+                    {canWrite && (
+                      <td className="px-3 py-2">
+                        {/*
+                          stopPropagation: la fila entera navega al detalle, y
+                          sin esto pedir el borrado tambien abriria el periodo.
+                        */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            requestDelete(p.id)
+                          }}
+                          disabled={deletingId === p.id}
+                          aria-label={`Eliminar ${periodoLabel(p.mes, p.anio, p.quincena)}`}
+                          className="rounded-lg p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500 disabled:opacity-50"
+                        >
+                          {deletingId === p.id ? (
+                            <Loader2 className={SPINNER} />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -216,6 +275,21 @@ export function PeriodosList({ periodos }: PeriodosListProps) {
             onNext={goToNextPage}
           />
         </div>
+      )}
+
+      {deleteError && <Alert>{deleteError}</Alert>}
+
+      {confirmingId !== null && (
+        <ConfirmDialog
+          title="Eliminar periodo"
+          message={
+            periodoAEliminar
+              ? `Se eliminará ${periodoLabel(periodoAEliminar.mes, periodoAEliminar.anio, periodoAEliminar.quincena)} con su planilla completa (${periodoAEliminar.totalEmpleados} empleado(s)). Las horas de banco que se hayan pagado en este periodo vuelven a quedar pendientes. Si algún pago ya está marcado, primero hay que desmarcarlo.`
+              : 'Se eliminará el periodo con su planilla completa.'
+          }
+          onCancel={cancelDelete}
+          onConfirm={confirmDelete}
+        />
       )}
     </div>
   )

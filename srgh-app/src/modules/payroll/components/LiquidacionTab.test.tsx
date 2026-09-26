@@ -15,6 +15,16 @@ vi.mock('@/modules/payroll/actions/procesarLiquidacion', () => ({
   procesarLiquidacion: vi.fn(),
 }))
 
+// La propuesta de vacaciones y el pago son server actions: acá solo importa
+// la preselección por URL.
+vi.mock('@/modules/payroll/actions/proponerVacacionesLiquidacion', () => ({
+  proponerVacacionesLiquidacion: vi.fn(() => Promise.resolve({ ok: false, error: 'sin datos' })),
+}))
+
+vi.mock('@/modules/payroll/actions/pagarLiquidacion', () => ({
+  pagarLiquidacion: vi.fn(),
+}))
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))

@@ -1,7 +1,13 @@
 'use client'
 
+import { useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { FileText, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
+import { pagarLiquidacion } from '@/modules/payroll/actions/pagarLiquidacion'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import {
@@ -17,14 +23,74 @@ import { Badge } from '@/components/ui/Badge'
 
 interface LiquidacionesHistorialProps {
   items: LiquidacionListItem[]
+  /** Muestra el botón Pagar (NOMINA_WRITE). */
+  canWrite?: boolean
 }
 
-/** Historial paginado de liquidaciones ya generadas, más recientes primero. */
-export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
+function AccionLiquidacion({
+  item,
+  canWrite,
+  pagando,
+  onPagar,
+}: {
+  item: LiquidacionListItem
+  canWrite: boolean
+  pagando: boolean
+  onPagar: (item: LiquidacionListItem) => void
+}) {
+  if (item.pagoId) {
+    return (
+      <Link
+        href={`/comprobante/extraordinario/${item.pagoId}`}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:text-brand-900"
+      >
+        <FileText className="h-3 w-3" /> Comprobante
+      </Link>
+    )
+  }
+  if (!canWrite || item.pagado) return null
+  return (
+    <button
+      type="button"
+      onClick={() => onPagar(item)}
+      disabled={pagando}
+      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
+    >
+      {pagando ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Pagar'}
+    </button>
+  )
+}
+
+/**
+ * Historial paginado de liquidaciones ya generadas, más recientes primero.
+ * Pagar registra el pago con su propio comprobante: no depende de ningún
+ * periodo de planilla, porque la persona ya no trabaja.
+ */
+export function LiquidacionesHistorial({ items, canWrite = false }: LiquidacionesHistorialProps) {
+  const router = useRouter()
+  const [pagandoId, setPagandoId] = useState<number | null>(null)
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     items,
     8
   )
+
+  async function handlePagar(item: LiquidacionListItem) {
+    const ok = window.confirm(
+      `¿Pagar la liquidación de ${item.empleadoNombre} por ${formatCRC(item.neto)} netos? Queda registrada con su comprobante y no se puede deshacer desde acá.`
+    )
+    if (!ok) return
+
+    setPagandoId(item.liqId)
+    const result = await pagarLiquidacion(item.liqId)
+    setPagandoId(null)
+
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(`Liquidación de ${item.empleadoNombre} pagada. El comprobante quedó en la lista.`)
+    router.refresh()
+  }
 
   return (
     <div className="@container">
@@ -61,9 +127,11 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
                 </div>
 
                 <div className="flex items-baseline justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2">
-                  <span className={META_LABEL}>Total</span>
+                  <span className={META_LABEL}>
+                    {item.pagado ? 'Neto entregado' : 'Neto a entregar'}
+                  </span>
                   <span className="text-base font-bold tabular-nums text-slate-900">
-                    {formatCRC(item.total)}
+                    {formatCRC(item.neto)}
                   </span>
                 </div>
 
@@ -78,6 +146,15 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
                     </div>
                   ))}
                 </dl>
+
+                <div className="flex justify-end">
+                  <AccionLiquidacion
+                    item={item}
+                    canWrite={canWrite}
+                    pagando={pagandoId === item.liqId}
+                    onPagar={handlePagar}
+                  />
+                </div>
               </li>
             ))}
           </ul>
@@ -90,8 +167,9 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
                   <th className={TABLE_TH}>Cédula</th>
                   <th className={TABLE_TH}>Fecha de salida</th>
                   <th className={TABLE_TH}>Motivo</th>
-                  <th className={TABLE_TH_RIGHT}>Total</th>
+                  <th className={TABLE_TH_RIGHT}>Neto</th>
                   <th className={TABLE_TH}>Estado</th>
+                  <th className={TABLE_TH} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -101,13 +179,24 @@ export function LiquidacionesHistorial({ items }: LiquidacionesHistorialProps) {
                     <td className={TABLE_TD}>{item.empleadoCedula}</td>
                     <td className={TABLE_TD}>{formatDate(item.fechaSalida)}</td>
                     <td className={TABLE_TD}>{item.motivoNombre}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800">
-                      {formatCRC(item.total)}
+                    <td
+                      className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800"
+                      title={`Bruto ${formatCRC(item.total)}`}
+                    >
+                      {formatCRC(item.neto)}
                     </td>
                     <td className="px-3 py-2">
                       <Badge tone={item.pagado ? 'emerald' : 'amber'} size="xs">
                         {item.pagado ? 'Pagada' : 'Pendiente de pago'}
                       </Badge>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <AccionLiquidacion
+                        item={item}
+                        canWrite={canWrite}
+                        pagando={pagandoId === item.liqId}
+                        onPagar={handlePagar}
+                      />
                     </td>
                   </tr>
                 ))}

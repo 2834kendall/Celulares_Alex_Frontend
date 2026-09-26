@@ -6,6 +6,21 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
+import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
+import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
+import {
+  MENSAJE_PROBLEMA,
+  lecturaUtilizable,
+  type TotalesPeriodo,
+} from '@/modules/payroll/lib/horasPeriodo'
+import {
+  cumplimientoQuincena,
+  evaluarBaseGuardado,
+  type QuincenaRef,
+} from '@/modules/payroll/lib/prellenadoAsistencia'
+import { CODIGO_AJUSTE, CODIGO_SALARIO_BASE } from '@/modules/payroll/lib/planilla'
+import { formatCRC, formatDate, formatHoras } from '@/modules/payroll/lib/format'
+import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 
 interface DetalleActualRow {
   ndt_id: number
@@ -13,7 +28,17 @@ interface DetalleActualRow {
   ndt_pagado: boolean
   ndt_historial_laboral_id: number
   ndt_salario_bruto: number
-  sgrh_nomina_periodo: { npe_periodo_mes: number; npe_periodo_anio: number } | null
+  ndt_horas_ordinarias_diurnas: number
+  ndt_horas_extra_al_50: number
+  ndt_horas_asistencia: number | null
+  ndt_horas_extra_asistencia: number | null
+  sgrh_nomina_periodo: {
+    npe_periodo_mes: number
+    npe_periodo_anio: number
+    npe_quincena: number
+    npe_fecha_inicio_periodo: string | null
+    npe_fecha_fin_periodo: string | null
+  } | null
 }
 
 export type MarcarDetallePagadoResult = { ok: true } | { ok: false; error: string }
@@ -67,6 +92,58 @@ async function acumularProvisionAguinaldo(
       pra_anio: anio,
       pra_monto_acumulado_aguinaldo: delta,
     })
+  }
+}
+
+const INTENTOS_CODIGO_COMPROBANTE = 3
+
+/**
+ * Crea (o retira) el comprobante de pago del empleado en
+ * sgrh_comprobantes_pago.
+ *
+ * La tabla existía desde el baseline —con índice único, RLS y una columna
+ * para que el empleado confirme el recibo— pero nadie la escribía: el
+ * comprobante se armaba al vuelo desde el detalle y no quedaba ninguna
+ * evidencia de que el pago se hizo. Ahora marcar el pago deja esa fila, con
+ * un código de verificación que va impreso en el comprobante.
+ *
+ * Al DESMARCAR se borra la fila: el pago no ocurrió, y dejar vivo un código
+ * de verificación de un pago inexistente es peor que no tenerlo. El periodo
+ * sigue en borrador en ese momento, así que todavía no es historia.
+ *
+ * Es "mejor esfuerzo", igual que la provisión de aguinaldo: si falla, no
+ * bloquea el marcado que ya se guardó.
+ */
+async function sincronizarComprobante(
+  supabase: SupabaseServerClient,
+  ndtId: number,
+  pagado: boolean
+): Promise<void> {
+  if (!pagado) {
+    await supabase.from('sgrh_comprobantes_pago').delete().eq('com_nomina_detalle_id', ndtId)
+    return
+  }
+
+  const { data: existente } = await supabase
+    .from('sgrh_comprobantes_pago')
+    .select('com_id')
+    .eq('com_nomina_detalle_id', ndtId)
+    .maybeSingle<{ com_id: number }>()
+
+  // Ya tiene comprobante (se desmarcó y se volvió a marcar sin que la
+  // eliminación llegara a correr): no se emite otro código para el mismo pago.
+  if (existente) return
+
+  for (let intento = 0; intento < INTENTOS_CODIGO_COMPROBANTE; intento += 1) {
+    const { error } = await supabase.from('sgrh_comprobantes_pago').insert({
+      com_nomina_detalle_id: ndtId,
+      com_codigo_verificacion: generarCodigoVerificacion(),
+    })
+
+    if (!error) return
+    // 23505 = choque con el índice único del código. Cualquier otro error no
+    // se arregla reintentando.
+    if (error.code !== '23505') return
   }
 }
 
@@ -125,6 +202,89 @@ async function sincronizarEstadoPeriodo(
  * proporcional de aguinaldo de este período en la provisión anual del
  * empleado.
  */
+interface LineaIngresoBaseRow {
+  ing_monto: number
+  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+}
+
+interface ContratoBaseRow {
+  lab_salario_base: number | null
+  lab_salario_real: number | null
+  sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
+}
+
+/**
+ * Lee el BASE guardado y el contrato, y dice si ese BASE quedó viejo (ver
+ * evaluarBaseGuardado). Si no se puede leer, NO se da por bueno: se devuelve
+ * el error y el pago espera. Pagar sin poder verificar es justamente lo que
+ * esto evita.
+ */
+async function verificarBaseGuardado(
+  supabase: SupabaseServerClient,
+  params: {
+    ndtId: number
+    historialLaboralId: number
+    guardadas: { horas: number; horasExtra: number }
+    lectura: TotalesPeriodo
+    quincena: QuincenaRef
+  }
+): Promise<
+  | {
+      ok: true
+      desactualizado: boolean
+      guardado: number
+      esperado: number | null
+      ajusteGuardado: number
+      ajusteEsperado: number | null
+    }
+  | { ok: false; error: string }
+> {
+  const [{ data: lineas, error: errLineas }, { data: contrato, error: errContrato }] =
+    await Promise.all([
+      supabase
+        .from('sgrh_nomina_linea_ingreso')
+        .select('ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .eq('ing_nomina_detalle_id', params.ndtId)
+        .returns<LineaIngresoBaseRow[]>(),
+      supabase
+        .from('sgrh_historial_laboral')
+        .select(
+          'lab_salario_base, lab_salario_real, sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )'
+        )
+        .eq('lab_id', params.historialLaboralId)
+        .maybeSingle<ContratoBaseRow>(),
+    ])
+
+  if (errLineas || errContrato || !contrato) {
+    return {
+      ok: false,
+      error:
+        'No se pudo verificar el salario base de esta fila contra la asistencia, así que no marqué el pago. Intentá de nuevo.',
+    }
+  }
+
+  const sumar = (codigo: string) =>
+    (lineas ?? [])
+      .filter((l) => l.sgrh_cat_conceptos_nomina?.con_codigo === codigo)
+      .reduce((acc, l) => acc + l.ing_monto, 0)
+  const guardado = sumar(CODIGO_SALARIO_BASE)
+  const ajusteGuardado = sumar(CODIGO_AJUSTE)
+
+  const { desactualizado, esperado, ajusteEsperado } = evaluarBaseGuardado({
+    baseGuardado: guardado,
+    ajusteGuardado,
+    contrato: {
+      salarioBaseMensual: contrato.lab_salario_base ?? 0,
+      salarioRealMensual: contrato.lab_salario_real ?? null,
+      horasSemanales: contrato.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
+    },
+    guardadas: params.guardadas,
+    lectura: params.lectura,
+    quincena: params.quincena,
+  })
+  return { ok: true, desactualizado, guardado, esperado, ajusteGuardado, ajusteEsperado }
+}
+
 export async function marcarDetallePagado(
   ndtId: number,
   pagado: boolean
@@ -145,7 +305,14 @@ export async function marcarDetallePagado(
       ndt_pagado,
       ndt_historial_laboral_id,
       ndt_salario_bruto,
-      sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio )
+      ndt_horas_ordinarias_diurnas,
+      ndt_horas_extra_al_50,
+      ndt_horas_asistencia,
+      ndt_horas_extra_asistencia,
+      sgrh_nomina_periodo (
+        npe_periodo_mes, npe_periodo_anio, npe_quincena,
+        npe_fecha_inicio_periodo, npe_fecha_fin_periodo
+      )
     `
     )
     .eq('ndt_id', ndtId)
@@ -156,6 +323,127 @@ export async function marcarDetallePagado(
   }
   if (!detalle) {
     return { ok: false, error: 'El detalle no existe o no es visible.' }
+  }
+
+  // Antes de dar por pagado a alguien, sus marcas del periodo tienen que
+  // estar completas. Un dia con entrada y sin salida no suma horas, asi que
+  // el monto calculado esta corto: pagarlo es pagarle de menos a la persona
+  // por un fallo del kiosco o un olvido, y una vez marcado el periodo se cierra
+  // y el error queda enterrado.
+  //
+  // Solo se revisa al MARCAR. Desmarcar siempre se puede: es la salida cuando
+  // algo quedo mal.
+  const periodo = detalle.sgrh_nomina_periodo
+  let totales: TotalesPeriodo | undefined
+  if (pagado && periodo?.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo) {
+    const horas = await getHorasDelPeriodo(supabase, {
+      historialLaboralIds: [detalle.ndt_historial_laboral_id],
+      fechaInicio: periodo.npe_fecha_inicio_periodo,
+      fechaFin: periodo.npe_fecha_fin_periodo,
+    })
+
+    totales = horas.ok ? horas.data.get(detalle.ndt_historial_laboral_id) : undefined
+    // Solo los que de verdad dejan las horas cortas. Un día con marcas pero
+    // sin horario programado se avisa en la pantalla del periodo, pero no
+    // traba el pago (ver PROBLEMAS_QUE_BLOQUEAN en lib/horasPeriodo.ts).
+    const problemas = totales?.diasQueBloquean ?? []
+
+    if (problemas.length > 0) {
+      const detalleDias = problemas
+        .slice(0, 3)
+        .map((d) => `${formatDate(d.fecha)} (${MENSAJE_PROBLEMA[d.problema]})`)
+        .join(' · ')
+      const resto = problemas.length > 3 ? ` y ${problemas.length - 3} día(s) más` : ''
+
+      return {
+        ok: false,
+        error: `Este empleado tiene marcas de asistencia incompletas en el periodo, así que las horas calculadas están cortas: ${detalleDias}${resto}. Corregí las marcas en Asistencia antes de marcar el pago.`,
+      }
+    }
+
+    // Segundo bloqueo: alguien corrigió una marca DESPUÉS de armada la
+    // planilla. La fila guarda una foto de lo que decía la asistencia en ese
+    // momento (ver lib/horasOrigen.ts); si hoy dice otra cosa, el monto
+    // calculado ya no corresponde.
+    //
+    // Solo se bloquea cuando las horas venían de la asistencia. Si alguien las
+    // había corregido a mano a propósito, la diferencia es deliberada y no hay
+    // nada que avisar: esa decisión ya se tomó.
+    const foto = {
+      horas: detalle.ndt_horas_asistencia,
+      horasExtra: detalle.ndt_horas_extra_asistencia,
+    }
+    const guardadas = {
+      horas: detalle.ndt_horas_ordinarias_diurnas,
+      horasExtra: detalle.ndt_horas_extra_al_50 ?? 0,
+    }
+
+    // lecturaUtilizable: sin horas programadas la lectura son ceros que no
+    // dicen nada, y compararse contra ellos bloqueaba TODOS los pagos con un
+    // "hoy las marcas dicen 0 h" que era falso.
+    if (lecturaUtilizable(totales) && origenHoras(guardadas, foto) === 'asistencia') {
+      const ahora = { horas: totales!.horasOrdinarias, horasExtra: totales!.horasExtra }
+
+      if (marcasCambiaron(foto, ahora)) {
+        return {
+          ok: false,
+          // El "cómo destrabarlo" tiene que nombrar lo que de verdad
+          // funciona. Volver a subir el MISMO archivo no sirve: trae las horas
+          // viejas, y el sistema lo detecta y no lo toma como corrección. Lo
+          // que recalcula todo es descargar la plantilla otra vez, porque se
+          // genera prorrateando el salario sobre las horas que dicen las
+          // marcas hoy.
+          error: `Las marcas de este empleado cambiaron después de armar la planilla: se calculó con ${formatHoras(foto.horas ?? 0)} h (${formatHoras(foto.horasExtra ?? 0)} h extra) y hoy las marcas dicen ${formatHoras(ahora.horas)} h (${formatHoras(ahora.horasExtra)} h extra). Descargá de nuevo la plantilla del periodo y subila —viene con las horas y los montos ya recalculados— o corregí sus horas a mano en el detalle. Después marcá el pago.`,
+        }
+      }
+    }
+
+    // Tercer bloqueo: el BASE quedó viejo sin que cambien las horas. Pasa
+    // cuando unas vacaciones, un feriado o una incapacidad se aprueban DESPUÉS
+    // de armar la fila: las horas trabajadas son las mismas, así que el
+    // bloqueo anterior no salta, pero el salario que corresponde es otro. Solo
+    // se mira un BASE que puso el sistema; uno corregido a mano se respeta.
+    if (lecturaUtilizable(totales)) {
+      const verificacion = await verificarBaseGuardado(supabase, {
+        ndtId,
+        historialLaboralId: detalle.ndt_historial_laboral_id,
+        guardadas,
+        lectura: totales!,
+        quincena: {
+          anio: periodo!.npe_periodo_anio,
+          mes: periodo!.npe_periodo_mes,
+          quincena: periodo!.npe_quincena,
+        },
+      })
+      if (!verificacion.ok) return { ok: false, error: verificacion.error }
+      if (verificacion.desactualizado) {
+        return {
+          ok: false,
+          error: `El salario de esta fila ya no corresponde: se guardó ${formatCRC(verificacion.guardado)} de base y ${formatCRC(verificacion.ajusteGuardado)} de ajuste, y con la regla de hoy le toca ${formatCRC(verificacion.esperado!)} de base y ${formatCRC(verificacion.ajusteEsperado!)} de ajuste. Usá "Recalcular desde asistencia" en el periodo y después marcá el pago.`,
+        }
+      }
+    }
+  }
+
+  // Una fila en ₡0 no es un pago: es una fila que quedó a medias. Dejarla
+  // marcar emitía un comprobante con monto cero, acumulaba ₡0 de aguinaldo y
+  // podía cerrar el periodo entero — y nadie se entera hasta que el empleado
+  // reclama. Solo se bloquea al MARCAR; desmarcar siempre se puede.
+  // La excepción: una quincena entera de incapacidad o de permiso sin goce
+  // SÍ va en ₡0 de salario (la incapacidad se paga como subsidio aparte). Sin
+  // poder marcarla, el periodo no se podía cerrar nunca.
+  //
+  // Y otra: tenía horario y no vino ningún día (sin marcas, cuenta 0 h). El
+  // cumplimiento es 0 y el ₡0 es el monto correcto, no una fila a medias.
+  const ceroJustificado =
+    totales?.periodoCubiertoPorAusencias === true ||
+    (lecturaUtilizable(totales) && cumplimientoQuincena(totales!, null).ratio === 0)
+  if (pagado && !(detalle.ndt_salario_bruto > 0) && !ceroJustificado) {
+    return {
+      ok: false,
+      error:
+        'Esta fila está en ₡0, así que no hay nada que pagar. Suele ser que al empleado le falta el salario en su contrato, o que la fila se armó antes de tener las horas: revisá el detalle y volvé a calcularlo antes de marcar el pago.',
+    }
   }
 
   const { error: errUpdate } = await supabase
@@ -172,6 +460,10 @@ export async function marcarDetallePagado(
 
   // Solo mover la provisión si el estado realmente cambió, para no duplicar
   // el acumulado si esto se llama dos veces con el mismo valor.
+  if (detalle.ndt_pagado !== pagado) {
+    await sincronizarComprobante(supabase, ndtId, pagado)
+  }
+
   if (detalle.ndt_pagado !== pagado && detalle.sgrh_nomina_periodo) {
     await acumularProvisionAguinaldo(
       supabase,

@@ -9,12 +9,14 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 interface HistorialActivoRow {
   lab_id: number
   lab_salario_base: number
+  lab_salario_real: number | null
   sgrh_empleados: {
     emp_numero_identificacion: string
     emp_nombre: string
     emp_apellido_1: string
     emp_apellido_2: string | null
   } | null
+  sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
 }
 
 export interface EmpleadoActivo {
@@ -22,6 +24,14 @@ export interface EmpleadoActivo {
   cedula: string
   nombre: string
   salarioBaseMensual: number
+  /** lab_salario_real: el objetivo de la quincena es la mitad (ver prellenadoAsistencia). */
+  salarioRealMensual: number | null
+  /**
+   * Horas semanales de la jornada pactada en el contrato. Es el divisor del
+   * valor de la hora (ver lib/jornada.ts): null cuando el contrato no la tiene
+   * definida, y ahí se cae a la jornada ordinaria diurna.
+   */
+  horasSemanales: number | null
 }
 
 export type GetEmpleadosActivosResult =
@@ -42,7 +52,9 @@ export async function getEmpleadosActivos(
       `
       lab_id,
       lab_salario_base,
-      sgrh_empleados ( emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_apellido_2 )
+      lab_salario_real,
+      sgrh_empleados ( emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_apellido_2 ),
+      sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )
     `
     )
     .eq('lab_sucursal_id', sucursalId)
@@ -66,6 +78,8 @@ export async function getEmpleadosActivos(
         .filter(Boolean)
         .join(' '),
       salarioBaseMensual: row.lab_salario_base,
+      salarioRealMensual: row.lab_salario_real ?? null,
+      horasSemanales: row.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
     }))
 
   return { ok: true, data: empleados }
@@ -86,7 +100,9 @@ export async function getTodosEmpleadosActivos(
       `
       lab_id,
       lab_salario_base,
-      sgrh_empleados ( emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_apellido_2 )
+      lab_salario_real,
+      sgrh_empleados ( emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_apellido_2 ),
+      sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )
     `
     )
     .is('lab_fecha_fin', null)
@@ -109,6 +125,8 @@ export async function getTodosEmpleadosActivos(
         .filter(Boolean)
         .join(' '),
       salarioBaseMensual: row.lab_salario_base,
+      salarioRealMensual: row.lab_salario_real ?? null,
+      horasSemanales: row.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
     }))
 
   return { ok: true, data: empleados }

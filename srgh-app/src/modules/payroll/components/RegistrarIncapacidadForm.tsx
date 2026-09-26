@@ -60,9 +60,21 @@ export function RegistrarIncapacidadForm({
       return
     }
 
+    if (result.periodosPagadosOmitidos.length > 0) {
+      const pagados = result.periodosPagadosOmitidos
+        .map((p) => `${p.periodoLabel}: ${p.diasEmpleador}d patrono / ${p.diasCcss}d CCSS`)
+        .join(' · ')
+      toast.warning(
+        `Estos periodos ya estaban pagados y no se modificaron; pagá la diferencia aparte. ${pagados}`,
+        { duration: 15000 }
+      )
+    }
+
     if (result.periodosActualizados.length === 0) {
       toast.warning(
-        'La incapacidad se guardó, pero ninguno de sus días cae en un periodo de nómina existente todavía.'
+        result.periodosPagadosOmitidos.length > 0
+          ? 'La incapacidad se guardó, pero ningún periodo sin pagar se actualizó.'
+          : 'La incapacidad se guardó, pero ninguno de sus días cae en un periodo de nómina existente todavía.'
       )
     } else {
       const resumen = result.periodosActualizados

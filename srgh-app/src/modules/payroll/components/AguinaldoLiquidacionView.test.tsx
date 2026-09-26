@@ -24,6 +24,9 @@ function renderView(canWrite = true) {
   render(
     <AguinaldoLiquidacionView
       anio={2026}
+      anioActual={2026}
+      cicloCerrado={false}
+      puedeLeerAusencias
       aguinaldos={[]}
       canWrite={canWrite}
       empleadosActivos={[]}

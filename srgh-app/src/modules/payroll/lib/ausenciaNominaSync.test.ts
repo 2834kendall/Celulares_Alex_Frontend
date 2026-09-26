@@ -21,12 +21,19 @@ const PERIODO_2 = {
   npe_fecha_fin_periodo: '2026-07-31',
 }
 
+/** La ausencia recién guardada: una incapacidad certificada por la CCSS. */
+const INCAPACIDAD = {
+  data: [{ aus_id: 1, sgrh_cat_tipos_ausencia: { tau_requiere_documento_ccss: true } }],
+  error: null,
+}
+
 function client(
   responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
 ) {
-  return createSupabaseClientMock(responses) as unknown as Parameters<
-    typeof sincronizarAusenciaEnNomina
-  >[0]
+  return createSupabaseClientMock({
+    sgrh_ausencias: INCAPACIDAD,
+    ...responses,
+  }) as unknown as Parameters<typeof sincronizarAusenciaEnNomina>[0]
 }
 
 describe('sincronizarAusenciaEnNomina', () => {
@@ -67,6 +74,7 @@ describe('sincronizarAusenciaEnNomina', () => {
 
   it('reparte los días entre dos periodos del mismo mes respetando el tope mensual del patrono', async () => {
     const client_ = createSupabaseClientMock({
+      sgrh_ausencias: INCAPACIDAD,
       sgrh_nomina_detalle: [
         {
           data: [
@@ -110,6 +118,7 @@ describe('sincronizarAusenciaEnNomina', () => {
 
   it('con tope 0 (ej. riesgo del trabajo), todos los días quedan a cargo de la CCSS', async () => {
     const client_ = createSupabaseClientMock({
+      sgrh_ausencias: INCAPACIDAD,
       sgrh_nomina_detalle: [
         {
           data: [
@@ -147,6 +156,7 @@ describe('sincronizarAusenciaEnNomina', () => {
 
   it('devuelve error si falla al guardar alguna actualización', async () => {
     const client_ = createSupabaseClientMock({
+      sgrh_ausencias: INCAPACIDAD,
       sgrh_nomina_detalle: [
         {
           data: [
@@ -177,5 +187,132 @@ describe('sincronizarAusenciaEnNomina', () => {
       ok: false,
       error: 'No se pudieron actualizar todos los periodos de nómina. Revisalo manualmente.',
     })
+  })
+  // Este camino es para subsidios (incapacidades CCSS/INS). Se llamaba para
+  // cualquier ausencia de día completo: unas vacaciones quedaban anotadas como
+  // "días de incapacidad CCSS" y un permiso con goce se pagaba al 50 %.
+  it('no toca nada si la ausencia no es un subsidio (vacaciones, permisos)', async () => {
+    const client_ = createSupabaseClientMock({
+      sgrh_ausencias: {
+        data: [{ aus_id: 1, sgrh_cat_tipos_ausencia: { tau_requiere_documento_ccss: false } }],
+        error: null,
+      },
+      sgrh_nomina_detalle: { data: [], error: null },
+    })
+
+    const result = await sincronizarAusenciaEnNomina(
+      client_ as unknown as Parameters<typeof sincronizarAusenciaEnNomina>[0],
+      { ...BASE, topeMensualEmpleador: 0 }
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      periodosActualizados: [],
+      diasSinPeriodo: 0,
+      noAplica: true,
+    })
+    expect(client_.from).not.toHaveBeenCalledWith('sgrh_nomina_detalle')
+  })
+
+  // Un comprobante ya entregado no cambia de monto en silencio.
+  it('no reescribe una fila ya pagada y la reporta', async () => {
+    const client_ = createSupabaseClientMock({
+      sgrh_ausencias: INCAPACIDAD,
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 1,
+              ndt_pagado: true,
+              ndt_dias_incapacidad_empleador: 0,
+              ndt_dias_incapacidad_ccss: 0,
+              sgrh_nomina_periodo: PERIODO_1,
+            },
+            {
+              ndt_id: 2,
+              ndt_pagado: false,
+              ndt_dias_incapacidad_empleador: 0,
+              ndt_dias_incapacidad_ccss: 0,
+              sgrh_nomina_periodo: PERIODO_2,
+            },
+          ],
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+    })
+
+    const result = await sincronizarAusenciaEnNomina(
+      client_ as unknown as Parameters<typeof sincronizarAusenciaEnNomina>[0],
+      { ...BASE, topeMensualEmpleador: 3 }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.periodosActualizados.map((p) => p.periodoId)).toEqual([102])
+    // P1 pagado: le faltaron 2 días del patrono (14 y 15 de julio). Cuentan
+    // para el tope de 3 del mes, así que P2 lleva 1 del patrono y 2 CCSS.
+    expect(result.periodosPagadosOmitidos).toEqual([
+      { periodoId: 101, periodoLabel: expect.any(String), diasEmpleador: 2, diasCcss: 0 },
+    ])
+    expect(result.periodosActualizados[0]).toMatchObject({ diasEmpleador: 1, diasCcss: 2 })
+  })
+
+  it('no escribe nada si no puede leer el tipo de la ausencia', async () => {
+    const client_ = createSupabaseClientMock({
+      sgrh_ausencias: { data: null, error: { message: 'boom' } },
+      sgrh_nomina_detalle: { data: [], error: null },
+    })
+
+    const result = await sincronizarAusenciaEnNomina(
+      client_ as unknown as Parameters<typeof sincronizarAusenciaEnNomina>[0],
+      { ...BASE, topeMensualEmpleador: 3 }
+    )
+
+    expect(result.ok).toBe(false)
+    expect(client_.from).not.toHaveBeenCalledWith('sgrh_nomina_detalle')
+  })
+
+  it('no escribe nada si no encuentra la ausencia aprobada', async () => {
+    const client_ = createSupabaseClientMock({
+      sgrh_ausencias: { data: [], error: null },
+      sgrh_nomina_detalle: { data: [], error: null },
+    })
+
+    const result = await sincronizarAusenciaEnNomina(
+      client_ as unknown as Parameters<typeof sincronizarAusenciaEnNomina>[0],
+      { ...BASE, topeMensualEmpleador: 3 }
+    )
+
+    expect(result.ok).toBe(false)
+    expect(client_.from).not.toHaveBeenCalledWith('sgrh_nomina_detalle')
+  })
+
+  it('con esSubsidio no consulta el tipo y reparte', async () => {
+    const client_ = createSupabaseClientMock({
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 1,
+              ndt_pagado: false,
+              ndt_dias_incapacidad_empleador: 0,
+              ndt_dias_incapacidad_ccss: 0,
+              sgrh_nomina_periodo: PERIODO_1,
+            },
+          ],
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+    })
+
+    const result = await sincronizarAusenciaEnNomina(
+      client_ as unknown as Parameters<typeof sincronizarAusenciaEnNomina>[0],
+      { ...BASE, topeMensualEmpleador: 3, esSubsidio: true }
+    )
+
+    expect(result.ok).toBe(true)
+    expect(client_.from).not.toHaveBeenCalledWith('sgrh_ausencias')
   })
 })

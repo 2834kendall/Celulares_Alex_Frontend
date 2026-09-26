@@ -52,9 +52,23 @@ VALUES
   (16, 'DED006', 'Ausencia sin Goce de Salario',       'deduccion', false, false, 'ausencia_sin_goce', true, 'monto_manual_deduccion', NULL),
 
   -- ── Cargas patronales ───────────────────────────────────────────────────
-  -- Todavía no hay motor de cálculo: el código las excluye de la edición
-  -- manual por con_tipo, no por con_tipo_calculo.
-  (17, 'PAT001', 'CCSS Patronal (SEM+IVM)',   'patronal', false, false, 'ccss_patronal',       true,  'monto_manual_ingreso', NULL),
+  -- Lo que paga la EMPRESA encima del salario. No se le rebaja a nadie y no
+  -- cambia el salario neto: sirve para saber cuánto cuesta la planilla de
+  -- verdad y para cuadrar contra la factura de la CCSS.
+  --
+  -- Solo la de la CCSS se calcula: 'porcentaje_patronal_bruto' con 14,83%
+  -- (SEM 9,25% + IVM 5,58%), sobre la misma base que la cuota obrera. Los
+  -- porcentajes los cambia la ley, por eso viven en el catálogo y no en el
+  -- código — se editan desde Nómina → Conceptos sin tocar nada más.
+  -- Verificar el vigente antes de darlo por bueno.
+  --
+  -- Las otras tres quedan en su tipo manual a propósito: así no calculan
+  -- nada. El día que el cliente las necesite, se les cambia el tipo a
+  -- "% del bruto — lo paga la empresa" y se les escribe su porcentaje desde
+  -- esa misma pantalla. El resto de la cuota patronal —FODESAF, IMAS, INA,
+  -- Banco Popular, FCL— va en PAT003 y PAT004, y la póliza del INS (PAT002)
+  -- tiene tarifa propia según la actividad de la empresa.
+  (17, 'PAT001', 'CCSS Patronal (SEM+IVM)',   'patronal', false, false, 'ccss_patronal',       true,  'porcentaje_patronal_bruto', 14.830),
   (18, 'PAT002', 'INS Riesgos del Trabajo',   'patronal', false, false, 'ins_rt',              false, 'monto_manual_ingreso', NULL),
   (19, 'PAT003', 'Banco Popular Patronal',    'patronal', false, false, 'bp_patronal',         true,  'monto_manual_ingreso', NULL),
   (20, 'PAT004', 'FODESAF / IMAS / INA',      'patronal', false, false, 'cargas_sociales_ley', true,  'monto_manual_ingreso', NULL)

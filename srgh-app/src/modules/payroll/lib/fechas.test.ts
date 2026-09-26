@@ -1,5 +1,39 @@
 import { describe, expect, it } from 'vitest'
-import { hoyLocal, parseFechaLocal } from './fechas'
+import { hoyLocal, parseFechaLocal, rangoQuincena, ultimoDiaDelMes } from './fechas'
+
+describe('rangoQuincena', () => {
+  it('la primera quincena va del 1 al 15', () => {
+    expect(rangoQuincena(7, 2026, 1)).toEqual({ inicio: '2026-07-01', fin: '2026-07-15' })
+  })
+
+  it('la segunda va del 16 al ultimo dia del mes', () => {
+    expect(rangoQuincena(7, 2026, 2)).toEqual({ inicio: '2026-07-16', fin: '2026-07-31' })
+    expect(rangoQuincena(4, 2026, 2)).toEqual({ inicio: '2026-04-16', fin: '2026-04-30' })
+  })
+
+  // Febrero es el caso que un "del 16 al 30" quemado en codigo rompe.
+  it('acierta en febrero, tambien en anio bisiesto', () => {
+    expect(rangoQuincena(2, 2026, 2)?.fin).toBe('2026-02-28')
+    expect(rangoQuincena(2, 2028, 2)?.fin).toBe('2028-02-29')
+  })
+
+  it('devuelve null si el mes o la quincena no son validos', () => {
+    expect(rangoQuincena(13, 2026, 1)).toBeNull()
+    expect(rangoQuincena(0, 2026, 1)).toBeNull()
+    expect(rangoQuincena(7, 2026, 3)).toBeNull()
+    expect(rangoQuincena(7.5, 2026, 1)).toBeNull()
+  })
+})
+
+describe('ultimoDiaDelMes', () => {
+  it('devuelve los dias que tiene cada mes', () => {
+    expect(ultimoDiaDelMes(1, 2026)).toBe(31)
+    expect(ultimoDiaDelMes(2, 2026)).toBe(28)
+    expect(ultimoDiaDelMes(2, 2028)).toBe(29)
+    expect(ultimoDiaDelMes(4, 2026)).toBe(30)
+    expect(ultimoDiaDelMes(12, 2026)).toBe(31)
+  })
+})
 
 describe('parseFechaLocal', () => {
   it('parsea sin corrimiento de zona horaria', () => {

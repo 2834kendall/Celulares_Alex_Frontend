@@ -4,9 +4,13 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+// El cruce con las marcas de asistencia se mockea entero: acá se prueba el
+// armado del detalle, no el cálculo de horas (que tiene sus propios tests).
+vi.mock('@/modules/payroll/lib/horasPeriodoData', () => ({ getHorasDelPeriodo: vi.fn() }))
 // fieldCrypto importa 'server-only', que revienta fuera de Next.js (ver
 // planillaExcel.test.ts). El descifrado real vive en fieldCrypto.core.test.ts.
 vi.mock('server-only', () => ({}))
@@ -14,6 +18,7 @@ vi.mock('@/lib/crypto/fieldCrypto', () => ({ decryptField: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
+const mockGetHorasDelPeriodo = vi.mocked(getHorasDelPeriodo)
 const mockDecryptField = vi.mocked(decryptField)
 
 const CLAIMS = { app_metadata: { empresa_id: 1 } } as unknown as Awaited<
@@ -65,7 +70,12 @@ const TIPO_AUSENCIA_ROW = { data: { tau_porcentaje_pago_empleador: 50 }, error: 
 
 function mockTables(responses: Record<string, { data: unknown; error: unknown }>) {
   mockCreateClient.mockResolvedValue(
-    createSupabaseClientMock(responses) as unknown as Awaited<ReturnType<typeof createClient>>
+    createSupabaseClientMock({
+      // La acción consulta esta tabla en todos los casos; los tests que no la
+      // declaran no deberían tener que enumerarla.
+      sgrh_comprobantes_pago: { data: [], error: null },
+      ...responses,
+    }) as unknown as Awaited<ReturnType<typeof createClient>>
   )
 }
 
@@ -73,6 +83,7 @@ describe('getPeriodoDetail (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue(CLAIMS)
+    mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map() })
     // Por defecto la cuenta se descifra bien y devuelve lo guardado.
     mockDecryptField.mockImplementation(async (stored) => ({ ok: true, value: stored }))
   })
@@ -162,6 +173,10 @@ describe('getPeriodoDetail (server action)', () => {
         ],
         error: null,
       },
+      sgrh_comprobantes_pago: {
+        data: [{ com_nomina_detalle_id: 21, com_codigo_verificacion: 'ABCD-EFGH-JKMN' }],
+        error: null,
+      },
     })
 
     const result = await getPeriodoDetail(7)
@@ -176,16 +191,34 @@ describe('getPeriodoDetail (server action)', () => {
           empleadoNombre: 'Ana Mora',
           empleadoCedula: '1-1111-1111',
           salarioBruto: 500000,
+          totalNoSalarial: 0,
           totalDeducciones: 52500,
           deduccionPorcentual: 52500,
           deduccionManual: 10000,
           cargasPatronales: 133000,
           salarioNeto: 447500,
+          totalAPagar: 447500,
           pagado: false,
           fechaPago: null,
+          codigoVerificacion: 'ABCD-EFGH-JKMN',
+          diasPorRevisar: [],
           montosPorConcepto: { BASE: 450000, COMISION: 50000, CCSS_OBRERA: 52500, PRESTAMO: 10000 },
           horasTrabajadas: 88,
+          horasExtra: 0,
           salarioPorHora: 2500,
+          // DETALLE_ROW no trae foto de asistencia (las cinco columnas en
+          // null), que es el caso de una fila anterior a esta función.
+          horasOrigen: 'sin_referencia',
+          horasAsistencia: null,
+          horasExtraAsistencia: null,
+          horasLeidasEn: null,
+          horasAjustadasEn: null,
+          marcasCambiaron: false,
+          horasAsistenciaAhora: null,
+          baseDesactualizado: false,
+          baseEsperado: null,
+          ajusteEsperado: null,
+          dias: [],
           incapacidad: null,
           numeroCuenta: 'CR05015202001026284066',
           bancoNombre: 'Banco Nacional',
@@ -274,6 +307,113 @@ describe('getPeriodoDetail (server action)', () => {
         porcentajePagoEmpleador: 50,
         monto: 25000,
       })
+      // Y el total a pagar la incluye. Antes el comprobante la sumaba por su
+      // cuenta y la pantalla del periodo no, así que los dos papeles del mismo
+      // pago mostraban cifras distintas.
+      expect(result.data.detalles[0].totalAPagar).toBe(472500) // 447500 + 25000
+    }
+  })
+
+  // El catálogo marca los viáticos con con_afecta_salario_bruto = false: se
+  // pagan pero no son salario, así que van después de las deducciones y no
+  // cuentan para el aguinaldo.
+  it('separa del bruto los ingresos que no son salario', async () => {
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: {
+        data: [
+          {
+            ing_nomina_detalle_id: 21,
+            ing_monto: 500000,
+            sgrh_cat_conceptos_nomina: { con_codigo: 'BASE', con_afecta_salario_bruto: true },
+          },
+          {
+            ing_nomina_detalle_id: 21,
+            ing_monto: 40000,
+            sgrh_cat_conceptos_nomina: { con_codigo: 'ING010', con_afecta_salario_bruto: false },
+          },
+        ],
+        error: null,
+      },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.detalles[0].totalNoSalarial).toBe(40000)
+      // El bruto guardado no los incluye; el neto sí.
+      expect(result.data.detalles[0].salarioBruto).toBe(500000)
+      expect(result.data.detalles[0].totalAPagar).toBe(447500)
+    }
+  })
+  // El aviso de la pantalla sale de acá; quien realmente bloquea el pago es
+  // marcarDetallePagado, que lo vuelve a consultar.
+  it('reporta los días con marcas incompletas del empleado', async () => {
+    mockGetHorasDelPeriodo.mockResolvedValue({
+      ok: true,
+      data: new Map([
+        [
+          9,
+          {
+            horasEsperadas: 88,
+            horasOrdinarias: 80,
+            horasExtra: 0,
+            diasConProblema: [{ fecha: '2026-07-08', problema: 'sin_salida' as const }],
+            diasQueBloquean: [{ fecha: '2026-07-08', problema: 'sin_salida' as const }],
+            horasAcreditadas: 0,
+            diasAcreditadosSinHorario: 0,
+            diasJustificados: 0,
+            periodoCubiertoPorAusencias: false,
+            horasProgramadasTotales: 88,
+            diasJustificadosSinHorario: 0,
+            diasSinProgramar: 0,
+            dias: [],
+          },
+        ],
+      ]),
+    })
+
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.detalles[0].diasPorRevisar).toEqual([
+        { fecha: '2026-07-08', problema: 'sin_salida' },
+      ])
+    }
+  })
+
+  it('si la lectura de marcas falla, la planilla se muestra igual', async () => {
+    mockGetHorasDelPeriodo.mockResolvedValue({ ok: false, error: 'boom' })
+
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.detalles[0].diasPorRevisar).toEqual([])
     }
   })
 })

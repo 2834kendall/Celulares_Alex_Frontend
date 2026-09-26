@@ -5,13 +5,36 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { crearPeriodoSchema, type CrearPeriodoInput } from '@/modules/payroll/types'
+import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
 
-export type CreatePeriodoResult = { ok: true; periodoId: number } | { ok: false; error: string }
+export type CreatePeriodoResult =
+  | {
+      ok: true
+      periodoId: number
+      /** Empleados que quedaron cargados solos con sus horas de asistencia. */
+      empleadosCargados: number
+      /** De esos, cuántos no tenían horario y salieron con la jornada supuesta. */
+      sinAsistencia: number
+      /** Por qué no se pudieron cargar, si es que no se pudo. El periodo existe igual. */
+      avisoCarga: string | null
+    }
+  | { ok: false; error: string }
 
 /**
- * Crea un periodo de planilla en estado 'borrador'.
- * El empresa_id sale del JWT (nunca del formulario) y RLS lo re-verifica
- * en el WITH CHECK del insert junto con el permiso NOMINA_WRITE.
+ * Crea un periodo de planilla en estado 'borrador' y lo llena con los
+ * empleados activos de la sucursal, con sus horas de asistencia.
+ *
+ * El empresa_id sale del JWT (nunca del formulario) y RLS lo re-verifica en el
+ * WITH CHECK del insert junto con el permiso NOMINA_WRITE.
+ *
+ * La carga va acá y no en un botón aparte porque un periodo vacío no le sirve
+ * a nadie: antes había que saber que el paso siguiente era bajar la plantilla
+ * de Excel y volver a subirla, y quien no lo sabía se quedaba mirando una
+ * planilla en blanco con la asistencia ya registrada del otro lado.
+ *
+ * Si la carga falla, el periodo NO se deshace: crearlo salió bien y borrarlo
+ * por un fallo posterior sería peor. Se devuelve el aviso para mostrarlo, y
+ * los empleados se pueden cargar después con el botón de la pantalla.
  */
 export async function createPeriodo(input: CrearPeriodoInput): Promise<CreatePeriodoResult> {
   const parsed = crearPeriodoSchema.safeParse(input)
@@ -50,6 +73,16 @@ export async function createPeriodo(input: CrearPeriodoInput): Promise<CreatePer
     return { ok: false, error: 'No se pudo crear el periodo de nómina.' }
   }
 
+  const carga = await cargarEmpleadosDesdeAsistencia(data.npe_id)
+
   revalidatePath('/payroll')
-  return { ok: true, periodoId: data.npe_id }
+  revalidatePath(`/payroll/${data.npe_id}`)
+
+  return {
+    ok: true,
+    periodoId: data.npe_id,
+    empleadosCargados: carga.ok ? carga.agregados : 0,
+    sinAsistencia: carga.ok ? carga.sinAsistencia : 0,
+    avisoCarga: carga.ok ? null : carga.error,
+  }
 }
