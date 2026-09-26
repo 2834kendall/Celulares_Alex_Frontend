@@ -16,6 +16,7 @@ function renderTabs(documentosContent: React.ReactNode | null = <div>Contenido d
   return render(
     <EmployeeProfileTabs
       perfilContent={<div>Contenido perfil</div>}
+      contratoContent={<div>Contenido contrato</div>}
       documentosContent={documentosContent}
     />
   )
@@ -35,6 +36,13 @@ describe('resolveProfileTab', () => {
   // debe dejar la ficha en un estado donde el botón Editar quede oculto.
   it('ignora ?tab=documentos si el rol no puede ver documentos', () => {
     expect(resolveProfileTab('documentos', false)).toBe('perfil')
+  })
+
+  // Contrato no depende de ningún permiso extra: existe para todo el que ve
+  // el perfil.
+  it('devuelve contrato con o sin documentos', () => {
+    expect(resolveProfileTab('contrato', true)).toBe('contrato')
+    expect(resolveProfileTab('contrato', false)).toBe('contrato')
   })
 })
 
@@ -83,10 +91,19 @@ describe('<EmployeeProfileTabs />', () => {
     expect(push).toHaveBeenCalledWith('/employees/10')
   })
 
-  it('sin permiso de documentos (contenido null) no renderiza tabs', () => {
+  it('muestra el contenido del contrato cuando ?tab=contrato', () => {
+    searchString = 'tab=contrato'
+    renderTabs()
+
+    expect(screen.getByText('Contenido contrato')).toBeInTheDocument()
+    expect(screen.queryByText('Contenido perfil')).not.toBeInTheDocument()
+  })
+
+  it('sin permiso de documentos (contenido null) oculta solo ese tab', () => {
     renderTabs(null)
 
     expect(screen.getByText('Contenido perfil')).toBeInTheDocument()
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Contrato/ })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /Documentos/ })).not.toBeInTheDocument()
   })
 })

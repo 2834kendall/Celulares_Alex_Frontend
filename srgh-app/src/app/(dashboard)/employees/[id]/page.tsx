@@ -29,6 +29,9 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
   const canWrite = permisos.includes(PERMISOS.EMPLEADOS_WRITE)
   const canReadDocs = permisos.includes(PERMISOS.DOCUMENTOS_READ)
   const canWriteDocs = permisos.includes(PERMISOS.DOCUMENTOS_WRITE)
+  // Mismo criterio que PayrollHeader: sin NOMINA_WRITE la pantalla de
+  // liquidación no deja procesar, así que el enlace no se ofrece.
+  const canLiquidar = permisos.includes(PERMISOS.NOMINA_WRITE)
 
   const [
     detailResult,
@@ -84,6 +87,7 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
       tiposDocumento={tiposDocumento}
       canWriteDocs={canWriteDocs}
       documentosError={documentosError}
+      canLiquidar={canLiquidar}
     />
   )
 }

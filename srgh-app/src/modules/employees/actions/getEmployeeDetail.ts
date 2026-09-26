@@ -7,7 +7,7 @@ import { getStorageProvider } from '@/lib/storage'
 import { TTL_FOTO } from '@/lib/storage/containers'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { Database } from '@/types/database.types'
-import type { EmpleadoDetalle } from '@/modules/employees/types'
+import type { ContratoDetalle, EmpleadoDetalle } from '@/modules/employees/types'
 
 type EmpleadoRow = Database['public']['Tables']['sgrh_empleados']['Row']
 type HistorialRow = Database['public']['Tables']['sgrh_historial_laboral']['Row']
@@ -35,12 +35,34 @@ type HistorialQueryRow = HistorialRow & {
   sgrh_sucursales: { suc_nombre: string } | null
   sgrh_cat_tipos_contrato: { tco_nombre: string } | null
   sgrh_cat_tipos_jornada: { tjo_nombre: string } | null
+  sgrh_cat_motivos_salida: { mot_nombre: string } | null
 }
 
 export type GetEmployeeDetailResult =
   { ok: true; data: EmpleadoDetalle } | { ok: false; error: string; notFound?: boolean }
 
-/** Ficha completa del empleado + su contrato vigente (si existe). */
+/** Aplana los catálogos embebidos de una fila de historial. */
+function toContrato(row: HistorialQueryRow): ContratoDetalle {
+  const {
+    sgrh_cat_puestos,
+    sgrh_sucursales,
+    sgrh_cat_tipos_contrato,
+    sgrh_cat_tipos_jornada,
+    sgrh_cat_motivos_salida,
+    ...base
+  } = row
+
+  return {
+    ...base,
+    puesto_nombre: sgrh_cat_puestos?.pue_nombre ?? '—',
+    sucursal_nombre: sgrh_sucursales?.suc_nombre ?? '—',
+    tipo_contrato_nombre: sgrh_cat_tipos_contrato?.tco_nombre ?? '—',
+    tipo_jornada_nombre: sgrh_cat_tipos_jornada?.tjo_nombre ?? '—',
+    motivo_salida_nombre: sgrh_cat_motivos_salida?.mot_nombre ?? null,
+  }
+}
+
+/** Ficha completa del empleado + todos sus contratos (vigente y cerrados). */
 export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetailResult> {
   if (!Number.isInteger(empId) || empId <= 0) {
     return { ok: false, error: 'Empleado no encontrado.', notFound: true }
@@ -81,6 +103,9 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     return { ok: false, error: 'Empleado no encontrado.', notFound: true }
   }
 
+  // Todos los contratos, no solo el vigente: los cerrados son el historial de
+  // contrataciones del tab Contrato. La RLS (historial_select) no filtra por
+  // lab_fecha_fin, así que el EMPLEADOS_READ de arriba ya alcanza para verlos.
   const { data: historial, error: errHistorial } = await supabase
     .from('sgrh_historial_laboral')
     .select(
@@ -89,16 +114,17 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_nombre ),
       sgrh_cat_tipos_contrato ( tco_nombre ),
-      sgrh_cat_tipos_jornada ( tjo_nombre )
+      sgrh_cat_tipos_jornada ( tjo_nombre ),
+      sgrh_cat_motivos_salida ( mot_nombre )
     `
     )
     .eq('lab_empleado_id', empId)
     .eq('lab_empresa_id', empresaId)
-    .is('lab_fecha_fin', null)
-    .maybeSingle<HistorialQueryRow>()
+    .order('lab_fecha_inicio', { ascending: false })
+    .returns<HistorialQueryRow[]>()
 
   if (errHistorial) {
-    return { ok: false, error: 'No se pudo cargar el contrato vigente.' }
+    return { ok: false, error: 'No se pudo cargar el historial de contratos.' }
   }
 
   // La RLS de esta tabla decide el acceso: si el rol no tiene NOMINA_READ ni
@@ -146,24 +172,11 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
       }
     : null
 
-  let historialActivo: EmpleadoDetalle['historial_activo'] = null
-  if (historial) {
-    const {
-      sgrh_cat_puestos,
-      sgrh_sucursales,
-      sgrh_cat_tipos_contrato,
-      sgrh_cat_tipos_jornada,
-      ...historialBase
-    } = historial
-
-    historialActivo = {
-      ...historialBase,
-      puesto_nombre: sgrh_cat_puestos?.pue_nombre ?? '—',
-      sucursal_nombre: sgrh_sucursales?.suc_nombre ?? '—',
-      tipo_contrato_nombre: sgrh_cat_tipos_contrato?.tco_nombre ?? '—',
-      tipo_jornada_nombre: sgrh_cat_tipos_jornada?.tjo_nombre ?? '—',
-    }
-  }
+  const historialCompleto = (historial ?? []).map(toContrato)
+  // El vigente se deriva del mismo resultado en vez de pedirlo aparte. find()
+  // y no un .maybeSingle(): si por un bug quedaran dos contratos abiertos, la
+  // ficha se sigue mostrando (con el más reciente) en vez de romperse.
+  const historialActivo = historialCompleto.find((c) => c.lab_fecha_fin === null) ?? null
 
   // El número se guarda cifrado (AES-256-GCM), así que se descifra acá, en el
   // servidor. Los tres estados de decryptField NO se aplanan: cuenta_ilegible
@@ -189,6 +202,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     tipo_identificacion_nombre: sgrh_cat_tipos_identificacion?.tid_nombre ?? '—',
     foto_url: fotoUrl,
     historial_activo: historialActivo,
+    historial_completo: historialCompleto,
     direccion,
     datos_pago: datosPagoDto,
   }
