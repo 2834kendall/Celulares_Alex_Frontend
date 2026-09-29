@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type { createClient } from '@/lib/supabase/server'
 import { DEFAULT_TARDINESS_TYPES, type TardinessType } from '@/modules/attendance/lib/infractions'
 
@@ -27,8 +28,13 @@ export type LoadTardinessTypesResult =
  * decirlo es peor que no mostrar el reporte. Si la consulta anda pero la
  * empresa no tiene tipos (no deberia pasar, ver DEFAULT_TARDINESS_TYPES), ahi
  * si se usan los de por defecto.
+ *
+ * `cache`: el panel de asistencia lo pide desde el reporte diario y desde el
+ * mensual en el mismo request. Como createClient devuelve el mismo cliente en
+ * todo el request, (cliente, empresa) coincide y se consulta una sola vez.
+ * Solo dura el request: un cambio en Configuracion se ve en la carga siguiente.
  */
-export async function loadTardinessTypes(
+export const loadTardinessTypes = cache(async function loadTardinessTypes(
   supabase: SupabaseServerClient,
   empresaId: number
 ): Promise<LoadTardinessTypesResult> {
@@ -57,4 +63,4 @@ export async function loadTardinessTypes(
       color: t.tta_color,
     })),
   }
-}
+})

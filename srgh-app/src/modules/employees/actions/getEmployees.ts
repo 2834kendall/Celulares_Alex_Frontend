@@ -48,10 +48,14 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
 
   const supabase = await createClient()
 
-  const { data: empleados, error: errEmpleados } = await supabase
-    .from('sgrh_empleados')
-    .select(
-      `
+  // Independientes: el historial filtra por empresa, no por los empleados
+  // leídos. En paralelo ahorran un viaje (~200 ms desde CR).
+  const [{ data: empleados, error: errEmpleados }, { data: historiales, error: errHistorial }] =
+    await Promise.all([
+      supabase
+        .from('sgrh_empleados')
+        .select(
+          `
       emp_id,
       emp_nombre,
       emp_apellido_1,
@@ -64,18 +68,13 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
       emp_nacionalidad,
       emp_foto_path
     `
-    )
-    .order('emp_apellido_1', { ascending: true })
-    .returns<EmpleadoQueryRow[]>()
-
-  if (errEmpleados) {
-    return { ok: false, error: 'No se pudieron cargar los empleados.' }
-  }
-
-  const { data: historiales, error: errHistorial } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      `
+        )
+        .order('emp_apellido_1', { ascending: true })
+        .returns<EmpleadoQueryRow[]>(),
+      supabase
+        .from('sgrh_historial_laboral')
+        .select(
+          `
       lab_empleado_id,
       lab_fecha_inicio,
       lab_salario_base,
@@ -83,10 +82,15 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
       sgrh_sucursales ( suc_nombre ),
       sgrh_cat_tipos_contrato ( tco_nombre )
     `
-    )
-    .eq('lab_empresa_id', empresaId)
-    .is('lab_fecha_fin', null)
-    .returns<HistorialActivoRow[]>()
+        )
+        .eq('lab_empresa_id', empresaId)
+        .is('lab_fecha_fin', null)
+        .returns<HistorialActivoRow[]>(),
+    ])
+
+  if (errEmpleados) {
+    return { ok: false, error: 'No se pudieron cargar los empleados.' }
+  }
 
   if (errHistorial) {
     return { ok: false, error: 'No se pudieron cargar los contratos vigentes.' }

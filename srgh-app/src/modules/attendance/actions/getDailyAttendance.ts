@@ -175,15 +175,15 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
   // activas), que ven las marcas de toda la empresa — igual que
   // get-sucursal-actual.ts. Un gerente a cargo de varias sucursales ve las
   // marcas de todas las suyas en una sola pantalla.
-  const sucursalIds = meta.usr_id ? await getUsuarioSucursalScope(supabase, meta.usr_id) : null
-
-  // Dia libre y feriado se traen tambien: el panel los muestra como tales.
-  // Filtrar por "se trabaja" es cosa del kiosco, no de esta vista.
-  const assignments = await getDayAssignments(supabase, dateISO, sucursalIds)
-
-  if (!assignments.ok) {
-    return { ok: false, error: assignments.error }
-  }
+  //
+  // El catalogo de tipos de tardia no depende de nada: se pide junto con el
+  // alcance y se revisa mas abajo, en el mismo punto de siempre. Cada viaje a
+  // Supabase cuesta ~200 ms desde CR, asi que todo lo que no depende de un
+  // resultado anterior va en la misma tanda.
+  const [sucursalIds, tiposResult] = await Promise.all([
+    meta.usr_id ? getUsuarioSucursalScope(supabase, meta.usr_id) : Promise.resolve(null),
+    loadTardinessTypes(supabase, meta.empresa_id),
+  ])
 
   let marksQuery = supabase
     .from('sgrh_marcas_asistencia')
@@ -195,12 +195,6 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
   if (sucursalIds !== null) {
     marksQuery = marksQuery.in('mar_sucursal_id', sucursalIds)
-  }
-
-  const { data: marks, error: errMarks } = await marksQuery.returns<MarkDbRow[]>()
-
-  if (errMarks) {
-    return { ok: false, error: 'No se pudieron cargar las marcas del dia.' }
   }
 
   // Plantilla de la sucursal: los contratos activos, tengan turno hoy o no.
@@ -220,7 +214,23 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     rosterQuery = rosterQuery.in('lab_sucursal_id', sucursalIds)
   }
 
-  const { data: roster, error: errRoster } = await rosterQuery.returns<{ lab_id: number }[]>()
+  // Programacion, marcas y plantilla solo dependen del alcance.
+  const [assignments, { data: marks, error: errMarks }, { data: roster, error: errRoster }] =
+    await Promise.all([
+      // Dia libre y feriado se traen tambien: el panel los muestra como tales.
+      // Filtrar por "se trabaja" es cosa del kiosco, no de esta vista.
+      getDayAssignments(supabase, dateISO, sucursalIds),
+      marksQuery.returns<MarkDbRow[]>(),
+      rosterQuery.returns<{ lab_id: number }[]>(),
+    ])
+
+  if (!assignments.ok) {
+    return { ok: false, error: assignments.error }
+  }
+
+  if (errMarks) {
+    return { ok: false, error: 'No se pudieron cargar las marcas del dia.' }
+  }
 
   if (errRoster) {
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
@@ -336,31 +346,33 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     })
   }
 
-  // Catalogo de tipos de tardia de la empresa: define desde que minuto hay
-  // tardanza y de que tipo es cada una.
-  const tiposResult = await loadTardinessTypes(supabase, meta.empresa_id)
-
+  // Catalogo de tipos de tardia de la empresa (pedido al inicio): define
+  // desde que minuto hay tardanza y de que tipo es cada una.
   if (!tiposResult.ok) {
     return { ok: false, error: tiposResult.error }
   }
 
   const tipos = tiposResult.data
 
-  // Ausencias aprobadas que cubren el dia. Leerlas exige AUSENCIAS_READ,
-  // que tienen todos los roles que ven este panel; sin el, RLS devuelve cero
-  // filas y el panel se ve como antes. Un error tampoco tumba el panel: es un
-  // dato de contexto, las marcas siguen siendo lo principal.
-  const { data: ausencias } = await supabase
-    .from('sgrh_ausencias')
-    .select('aus_historial_laboral_id, sgrh_cat_tipos_ausencia ( tau_nombre, tau_es_intradia )')
-    .in(
-      'aus_historial_laboral_id',
-      employmentHistory.map((h) => h.lab_id)
-    )
-    .eq('aus_estado', 'aprobada')
-    .lte('aus_fecha_inicio', dateISO)
-    .gte('aus_fecha_fin', dateISO)
-    .returns<AusenciaDelDiaRow[]>()
+  const [{ data: ausencias }, fotoUrls] = await Promise.all([
+    // Ausencias aprobadas que cubren el dia. Leerlas exige AUSENCIAS_READ,
+    // que tienen todos los roles que ven este panel; sin el, RLS devuelve cero
+    // filas y el panel se ve como antes. Un error tampoco tumba el panel: es un
+    // dato de contexto, las marcas siguen siendo lo principal.
+    supabase
+      .from('sgrh_ausencias')
+      .select('aus_historial_laboral_id, sgrh_cat_tipos_ausencia ( tau_nombre, tau_es_intradia )')
+      .in(
+        'aus_historial_laboral_id',
+        employmentHistory.map((h) => h.lab_id)
+      )
+      .eq('aus_estado', 'aprobada')
+      .lte('aus_fecha_inicio', dateISO)
+      .gte('aus_fecha_fin', dateISO)
+      .returns<AusenciaDelDiaRow[]>(),
+    // Una sola firma para toda la jornada (ver signEmployeePhotos).
+    signEmployeePhotos(employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)),
+  ])
 
   const ausenciaByHistoryId = new Map<number, string>()
   for (const a of ausencias ?? []) {
@@ -370,11 +382,6 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       ausenciaByHistoryId.set(a.aus_historial_laboral_id, a.sgrh_cat_tipos_ausencia.tau_nombre)
     }
   }
-
-  // Una sola firma para toda la jornada (ver signEmployeePhotos).
-  const fotoUrls = await signEmployeePhotos(
-    employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)
-  )
 
   const data: DailyAttendanceRow[] = employmentHistory.map((h) => {
     const employee = h.sgrh_empleados
