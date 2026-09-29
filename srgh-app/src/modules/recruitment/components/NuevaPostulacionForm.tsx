@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -28,7 +27,6 @@ export function NuevaPostulacionForm({
   sucursales,
   onSuccess,
 }: NuevaPostulacionFormProps) {
-  const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
 
   const {
@@ -52,7 +50,6 @@ export function NuevaPostulacionForm({
 
     toast.success('Postulación creada.')
     onSuccess?.()
-    router.refresh()
   }
 
   return (

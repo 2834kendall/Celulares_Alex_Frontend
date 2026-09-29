@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { FileText, Loader2, Trash2 } from 'lucide-react'
 import { DocumentDropzone } from '@/components/ui/DocumentDropzone'
@@ -33,7 +32,6 @@ export function CandidateDocumentsSection({
   documentos,
   canWrite,
 }: CandidateDocumentsSectionProps) {
-  const router = useRouter()
   const { deletingId, confirmingId, deleteError, requestDelete, cancelDelete, confirmDelete } =
     useCrudList<CandidatoDocumento>((docId) => deleteCandidateDocument(docId))
 
@@ -76,7 +74,6 @@ export function CandidateDocumentsSection({
 
     toast.success(`Documento guardado: ${nombre.trim()}.`)
     setPendingFile(null)
-    router.refresh()
   }
 
   // `location.assign` y no `window.open`: la URL firmada llega DESPUÉS de un
@@ -98,7 +95,6 @@ export function CandidateDocumentsSection({
     const result = await confirmDelete()
     if (!result.ok) return
     toast.success('Documento eliminado.')
-    router.refresh()
   }
 
   return (

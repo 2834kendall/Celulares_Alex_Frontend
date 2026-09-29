@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -24,7 +23,6 @@ interface EmployeePhotoModalProps {
  * memoria (preview) hasta confirmar con "Guardar" — nada se sube al elegir.
  */
 export function EmployeePhotoModal({ empId, currentUrl, onClose }: EmployeePhotoModalProps) {
-  const router = useRouter()
   const [foto, setFoto] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
@@ -48,7 +46,6 @@ export function EmployeePhotoModal({ empId, currentUrl, onClose }: EmployeePhoto
       return
     }
     toast.success('Foto actualizada.')
-    router.refresh()
     onClose()
   }
 
@@ -63,7 +60,6 @@ export function EmployeePhotoModal({ empId, currentUrl, onClose }: EmployeePhoto
       return
     }
     toast.success('Foto eliminada.')
-    router.refresh()
     onClose()
   }
 

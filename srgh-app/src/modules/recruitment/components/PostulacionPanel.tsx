@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   ArrowRight,
@@ -66,7 +65,6 @@ export function PostulacionPanel({
   criterios,
   canWrite,
 }: PostulacionPanelProps) {
-  const router = useRouter()
   const enProceso = postulacion.pos_estado_final === 'en_proceso'
   // Solo hacia adelante: las etapas anteriores a la actual no se ofrecen (y
   // el servidor también lo rechaza, ver advanceStage).
@@ -160,10 +158,7 @@ export function PostulacionPanel({
                     />{' '}
                     Contratar
                   </Link>
-                  <RejectButton
-                    postulacionId={postulacion.pos_id}
-                    onDone={() => router.refresh()}
-                  />
+                  <RejectButton postulacionId={postulacion.pos_id} />
                 </div>
               </div>
             ))}
@@ -240,7 +235,6 @@ function AdvanceStageButton({
   postulacionId: number
   siguientes: EtapaSeleccionItem[]
 }) {
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [etapaId, setEtapaId] = useState(String(siguientes[0].id))
   const [resultado, setResultado] = useState<Resultado>('pendiente')
@@ -276,7 +270,6 @@ function AdvanceStageButton({
     const nombre = siguientes.find((etapa) => String(etapa.id) === etapaId)?.nombre
     toast.success(nombre ? `Etapa registrada: ${nombre}.` : 'Etapa registrada.')
     setOpen(false)
-    router.refresh()
   }
 
   return (
@@ -377,7 +370,7 @@ function AdvanceStageButton({
   )
 }
 
-function RejectButton({ postulacionId, onDone }: { postulacionId: number; onDone: () => void }) {
+function RejectButton({ postulacionId }: { postulacionId: number }) {
   const [open, setOpen] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -405,7 +398,6 @@ function RejectButton({ postulacionId, onDone }: { postulacionId: number; onDone
     }
     toast.success('Postulación descartada.')
     close()
-    onDone()
   }
 
   return (
@@ -474,7 +466,6 @@ function ScoreForm({
   existentes: PostulacionDetalle['puntajes']
   canWrite: boolean
 }) {
-  const router = useRouter()
   const [guardados, setGuardados] = useState<Record<number, ScoreState>>(() => {
     const initial: Record<number, ScoreState> = {}
     for (const c of criterios) {
@@ -547,7 +538,6 @@ function ScoreForm({
     toast.success(
       result.promedio !== null ? `Puntaje guardado: ${result.promedio}/10.` : 'Puntaje guardado.'
     )
-    router.refresh()
   }
 
   return (
