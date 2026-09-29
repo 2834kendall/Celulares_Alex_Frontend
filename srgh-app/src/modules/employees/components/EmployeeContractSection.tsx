@@ -1,8 +1,8 @@
-import Link from 'next/link'
-import { Briefcase, FileX2 } from 'lucide-react'
+import { Briefcase, CalendarClock, FileX2 } from 'lucide-react'
 import type { ContratoDetalle } from '@/modules/employees/types'
+import { summarizeContracts } from '@/modules/employees/lib/contracts'
 import { formatCRC, formatDate } from '@/modules/employees/lib/format'
-import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 import {
   TABLE_HEAD,
   TABLE_ROW,
@@ -11,58 +11,66 @@ import {
   TABLE_TD_STRONG,
   TABLE_TH,
 } from '@/components/ui/styles'
-import { cn } from '@/lib/utils/cn'
 import { InfoItem, SectionCard } from './ProfileSection'
 
 interface EmployeeContractSectionProps {
   /** Todos los contratos del empleado, del más reciente al más antiguo. */
   contratos: ContratoDetalle[]
-  /** NOMINA_WRITE: sin él, el enlace a liquidación llevaría a un muro. */
-  canLiquidar: boolean
+  /**
+   * Puede ver las liquidaciones (NOMINA_WRITE o HISTORIAL_WRITE). Sin eso la
+   * RLS las oculta y todo contrato cerrado parecería "pendiente de liquidar".
+   */
+  veLiquidaciones: boolean
+  /** Los botones (EmployeeContractActions), a la derecha del título de la tarjeta. */
+  acciones?: React.ReactNode
 }
 
 /**
- * Enlace a la pantalla de liquidación con el tab y el empleado ya elegidos.
- *
- * Terminar un contrato NO se hace acá: procesarLiquidacion es el único camino
- * que cierra un contrato, y rechaza cualquiera que ya tenga fecha de fin. Un
- * cierre propio desde este módulo dejaría al empleado sin poder liquidarse.
+ * Tab "Contrato" del perfil: el vigente y el historial de contrataciones.
+ * Esta vista solo muestra; los botones y sus formularios llegan armados por
+ * `acciones` (EmployeeContractActions).
  */
-export function liquidacionHref(labId: number) {
-  return `/payroll/aguinaldo-liquidacion?tab=liquidacion&empleado=${labId}`
-}
-
-/** Tab "Contrato" del perfil: el vigente y el historial de contrataciones. Solo lectura. */
-export function EmployeeContractSection({ contratos, canLiquidar }: EmployeeContractSectionProps) {
-  const vigente = contratos.find((c) => c.lab_fecha_fin === null) ?? null
-  const cerrados = contratos.filter((c) => c.lab_fecha_fin !== null)
+export function EmployeeContractSection({
+  contratos,
+  veLiquidaciones,
+  acciones,
+}: EmployeeContractSectionProps) {
+  const { vigente, cerrados, ultimo, programada, pendienteDeLiquidar } =
+    summarizeContracts(contratos)
 
   return (
     <div className="space-y-4">
-      <SectionCard
-        title="Contrato vigente"
-        action={
-          vigente && canLiquidar ? (
-            <Link
-              href={liquidacionHref(vigente.lab_id)}
-              className={cn(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES.sm)}
-            >
-              <FileX2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Terminar contrato
-            </Link>
-          ) : null
-        }
-      >
+      <SectionCard title="Contrato vigente" action={acciones}>
         {vigente ? (
-          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <InfoItem label="Puesto" value={vigente.puesto_nombre} />
-            <InfoItem label="Sucursal" value={vigente.sucursal_nombre} />
-            <InfoItem label="Tipo de contrato" value={vigente.tipo_contrato_nombre} />
-            <InfoItem label="Jornada" value={vigente.tipo_jornada_nombre} />
-            <InfoItem label="Inicio del contrato" value={formatDate(vigente.lab_fecha_inicio)} />
-            <InfoItem label="Salario base" value={formatCRC(vigente.lab_salario_base)} />
-            <InfoItem label="Salario real" value={formatCRC(vigente.lab_salario_real)} />
-          </dl>
+          <div className="space-y-3">
+            {programada && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <p>
+                  Último día: {formatDate(programada)}. Se cierra automáticamente al día siguiente
+                  {vigente.motivo_salida_nombre ? ` (${vigente.motivo_salida_nombre})` : ''}.
+                </p>
+              </div>
+            )}
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <InfoItem label="Puesto" value={vigente.puesto_nombre} />
+              <InfoItem label="Sucursal" value={vigente.sucursal_nombre} />
+              <InfoItem label="Tipo de contrato" value={vigente.tipo_contrato_nombre} />
+              <InfoItem label="Jornada" value={vigente.tipo_jornada_nombre} />
+              <InfoItem label="Inicio del contrato" value={formatDate(vigente.lab_fecha_inicio)} />
+              <InfoItem label="Salario base" value={formatCRC(vigente.lab_salario_base)} />
+              <InfoItem label="Salario real" value={formatCRC(vigente.lab_salario_real)} />
+            </dl>
+          </div>
+        ) : pendienteDeLiquidar && ultimo && veLiquidaciones ? (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <FileX2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p>
+              Terminado el {formatDate(ultimo.lab_fecha_fin)}
+              {ultimo.motivo_salida_nombre ? ` (${ultimo.motivo_salida_nombre})` : ''} · pendiente
+              de liquidar.
+            </p>
+          </div>
         ) : (
           <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
             <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
@@ -76,7 +84,7 @@ export function EmployeeContractSection({ contratos, canLiquidar }: EmployeeCont
       {cerrados.length > 0 && (
         <SectionCard title="Historial de contrataciones">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[36rem] text-xs">
+            <table className="w-full min-w-[40rem] text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
                   <th className={TABLE_TH}>Puesto</th>
@@ -93,7 +101,16 @@ export function EmployeeContractSection({ contratos, canLiquidar }: EmployeeCont
                     <td className={TABLE_TD}>{c.sucursal_nombre}</td>
                     <td className={TABLE_TD_NUM}>{formatDate(c.lab_fecha_inicio)}</td>
                     <td className={TABLE_TD_NUM}>{formatDate(c.lab_fecha_fin)}</td>
-                    <td className={TABLE_TD}>{c.motivo_salida_nombre ?? '—'}</td>
+                    <td className={TABLE_TD}>
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        {c.motivo_salida_nombre ?? '—'}
+                        {veLiquidaciones && !c.liquidado && (
+                          <Badge tone="amber" size="xs">
+                            Pendiente de liquidar
+                          </Badge>
+                        )}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

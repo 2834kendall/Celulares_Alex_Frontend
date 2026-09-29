@@ -9,6 +9,7 @@ import type {
   CatalogoItem,
   DocumentoEmpleado,
   EmpleadoDetalle,
+  MotivoSalidaItem,
   TerritorioCatalogo,
 } from '@/modules/employees/types'
 import {
@@ -24,6 +25,8 @@ import { EmployeeForm } from './EmployeeForm'
 import { EmployeePhotoModal } from './EmployeePhotoModal'
 import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
 import { EmployeeContractSection } from './EmployeeContractSection'
+import { EmployeeContractActions } from './EmployeeContractActions'
+import type { ContractCatalogs } from './ContractFields'
 import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
 import { InfoItem, SectionCard } from './ProfileSection'
 import { Badge } from '@/components/ui/Badge'
@@ -46,6 +49,11 @@ interface EmployeeDetailProps {
   documentosError?: string | null
   /** NOMINA_WRITE: muestra el enlace a liquidación en el tab Contrato. */
   canLiquidar?: boolean
+  /** HISTORIAL_WRITE: crear, editar, terminar y revertir contratos. */
+  canEditContrato?: boolean
+  /** Catálogos del formulario de contrato; solo llegan con canEditContrato. */
+  catalogosContrato?: ContractCatalogs
+  motivosSalida?: MotivoSalidaItem[]
 }
 
 export function EmployeeDetail({
@@ -59,6 +67,9 @@ export function EmployeeDetail({
   canWriteDocs = false,
   documentosError = null,
   canLiquidar = false,
+  canEditContrato = false,
+  catalogosContrato,
+  motivosSalida,
 }: EmployeeDetailProps) {
   const [editing, setEditing] = useState(false)
   const [editingPhoto, setEditingPhoto] = useState(false)
@@ -217,7 +228,20 @@ export function EmployeeDetail({
   // propósito: tienen RLS propia (NOMINA_READ / EMPLEADOS_WRITE) y moverlos
   // mezclaría dos criterios de visibilidad en la misma pestaña.
   const contratoContent = (
-    <EmployeeContractSection contratos={empleado.historial_completo} canLiquidar={canLiquidar} />
+    <EmployeeContractSection
+      contratos={empleado.historial_completo}
+      veLiquidaciones={canLiquidar || canEditContrato}
+      acciones={
+        <EmployeeContractActions
+          empId={empleado.emp_id}
+          contratos={empleado.historial_completo}
+          canLiquidar={canLiquidar}
+          canEditContrato={canEditContrato}
+          catalogos={catalogosContrato}
+          motivos={motivosSalida}
+        />
+      }
+    />
   )
 
   // Los documentos viven en su propio tab: CRUD independiente del modo edición

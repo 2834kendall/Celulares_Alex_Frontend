@@ -44,6 +44,15 @@ vi.mock('@/modules/employees/actions/getEmployeeDocumentDownloadUrl', () => ({
   getEmployeeDocumentDownloadUrl: vi.fn(),
 }))
 
+// El tab Contrato (SGRH-90) importa las acciones de contrato: mockeadas por la
+// misma razón.
+vi.mock('@/modules/employees/actions/createContract', () => ({ createContract: vi.fn() }))
+vi.mock('@/modules/employees/actions/updateContract', () => ({ updateContract: vi.fn() }))
+vi.mock('@/modules/employees/actions/terminateContract', () => ({ terminateContract: vi.fn() }))
+vi.mock('@/modules/employees/actions/revertContractTermination', () => ({
+  revertContractTermination: vi.fn(),
+}))
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))
