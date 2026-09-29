@@ -29,8 +29,7 @@ function renderView(canWrite = true) {
       puedeLeerAusencias
       aguinaldos={[]}
       canWrite={canWrite}
-      empleadosActivos={[]}
-      motivos={[]}
+      contratosPorLiquidar={[]}
       liquidaciones={[]}
     />
   )
@@ -49,7 +48,7 @@ describe('<AguinaldoLiquidacionView />', () => {
     expect(screen.getByRole('tab', { name: /Aguinaldo/ })).toHaveAttribute('aria-selected', 'true')
   })
 
-  // Es lo que permite el enlace "Terminar contrato" del perfil del empleado.
+  // Es lo que permite el enlace "Liquidar" del perfil del empleado.
   it('con ?tab=liquidacion abre directo en Liquidación', () => {
     searchString = 'tab=liquidacion'
     renderView()

@@ -15,20 +15,17 @@ export type ProponerVacacionesResult =
   | { ok: false; error: string }
 
 /**
- * Días de vacaciones que el sistema propone liquidar para una salida, para
- * prellenar el formulario. No escribe nada. Usa exactamente las mismas bases
- * que procesarLiquidacion (lib/liquidacionData.ts), así lo que se propone es
- * lo que después queda guardado como propuesta.
+ * Días de vacaciones que el sistema propone liquidar para un contrato ya
+ * terminado, para prellenar el formulario. No escribe nada. Usa exactamente
+ * las mismas bases que procesarLiquidacion (lib/liquidacionData.ts), así lo
+ * que se propone es lo que después queda guardado como propuesta. La fecha de
+ * salida es la que registró RRHH al terminar el contrato.
  */
 export async function proponerVacacionesLiquidacion(
-  historialLaboralId: number,
-  fechaSalida: string
+  historialLaboralId: number
 ): Promise<ProponerVacacionesResult> {
   if (!Number.isInteger(historialLaboralId) || historialLaboralId <= 0) {
-    return { ok: false, error: 'Empleado inválido.' }
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaSalida)) {
-    return { ok: false, error: 'Fecha inválida.' }
+    return { ok: false, error: 'Contrato inválido.' }
   }
 
   const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
@@ -37,10 +34,14 @@ export async function proponerVacacionesLiquidacion(
   }
 
   const supabase = await createClient()
-  const historial = await cargarHistorialParaLiquidacion(supabase, historialLaboralId, fechaSalida)
+  const historial = await cargarHistorialParaLiquidacion(supabase, historialLaboralId)
   if (!historial.ok) return historial
 
-  const bases = await calcularBasesLiquidacion(supabase, historial.data, fechaSalida)
+  const bases = await calcularBasesLiquidacion(
+    supabase,
+    historial.data,
+    historial.data.lab_fecha_fin
+  )
   if (!bases.ok) return bases
 
   return {
