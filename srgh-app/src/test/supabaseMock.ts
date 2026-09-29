@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 
-type QueryResult = { data: unknown; error: unknown }
+// count: lo que devuelve PostgREST con select(..., { count: 'exact', head: true }).
+type QueryResult = { data: unknown; error: unknown; count?: number | null }
 
 /**
  * Thenable query-builder stub: every chain method (select/insert/eq/order/...)

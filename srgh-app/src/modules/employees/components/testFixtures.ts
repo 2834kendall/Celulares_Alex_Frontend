@@ -50,6 +50,7 @@ export const HISTORIAL_ACTIVO: NonNullable<EmpleadoDetalle['historial_activo']> 
   lab_tipo_jornada_id: 1,
   lab_fecha_inicio: '2024-02-01',
   lab_fecha_fin: null,
+  lab_fecha_fin_programada: null,
   lab_salario_base: 500000,
   lab_salario_real: 550000,
   lab_motivo_salida_id: null,
@@ -61,6 +62,8 @@ export const HISTORIAL_ACTIVO: NonNullable<EmpleadoDetalle['historial_activo']> 
   tipo_contrato_nombre: 'Indefinido',
   tipo_jornada_nombre: 'Diurna',
   motivo_salida_nombre: null,
+  liquidado: false,
+  en_planilla: false,
 }
 
 /** Un contrato anterior, ya cerrado, del mismo empleado. */
@@ -76,6 +79,9 @@ export const HISTORIAL_CERRADO: ContratoDetalle = {
   puesto_nombre: 'Bodeguero',
   sucursal_nombre: 'Norte',
   motivo_salida_nombre: 'Renuncia Voluntaria',
+  // Un contrato anterior a otro vigente ya pasó por liquidación: crear el
+  // nuevo lo exige (ver crear_contrato).
+  liquidado: true,
 }
 
 export const EMPLEADO_DETALLE: EmpleadoDetalle = {

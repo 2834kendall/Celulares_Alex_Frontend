@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  getMotivosSalida,
   getPuestos,
   getSucursales,
   getTerritorio,
@@ -164,6 +165,48 @@ describe('getCatalogs (server actions)', () => {
     })
 
     const result = await getTerritorio()
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo cargar el catálogo.' })
+  })
+
+  it('getMotivosSalida trae si genera cesantía, preaviso y la nota legal', async () => {
+    mockClient({
+      sgrh_cat_motivos_salida: {
+        data: [
+          {
+            mot_id: 1,
+            mot_nombre: 'Renuncia Voluntaria',
+            mot_genera_cesantia: false,
+            mot_genera_preaviso: false,
+            mot_nota_legal: null,
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await getMotivosSalida()
+
+    expect(result).toEqual({
+      ok: true,
+      data: [
+        {
+          id: 1,
+          nombre: 'Renuncia Voluntaria',
+          generaCesantia: false,
+          generaPreaviso: false,
+          notaLegal: null,
+        },
+      ],
+    })
+    // No NOMINA_READ: quien termina contratos no necesariamente lo tiene.
+    expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.EMPLEADOS_READ)
+  })
+
+  it('getMotivosSalida devuelve error generico si supabase falla', async () => {
+    mockClient({ sgrh_cat_motivos_salida: { data: null, error: { message: 'boom' } } })
+
+    const result = await getMotivosSalida()
 
     expect(result).toEqual({ ok: false, error: 'No se pudo cargar el catálogo.' })
   })

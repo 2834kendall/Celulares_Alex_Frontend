@@ -36,6 +36,10 @@ type HistorialQueryRow = HistorialRow & {
   sgrh_cat_tipos_contrato: { tco_nombre: string } | null
   sgrh_cat_tipos_jornada: { tjo_nombre: string } | null
   sgrh_cat_motivos_salida: { mot_nombre: string } | null
+  // liq_historial_laboral_id es UNIQUE, así que PostgREST puede devolverlo
+  // como objeto o como arreglo según detecte la relación (igual que en
+  // payroll/lib/derechosData.ts).
+  sgrh_liquidaciones: { liq_id: number } | { liq_id: number }[] | null
 }
 
 export type GetEmployeeDetailResult =
@@ -49,6 +53,7 @@ function toContrato(row: HistorialQueryRow): ContratoDetalle {
     sgrh_cat_tipos_contrato,
     sgrh_cat_tipos_jornada,
     sgrh_cat_motivos_salida,
+    sgrh_liquidaciones,
     ...base
   } = row
 
@@ -59,6 +64,10 @@ function toContrato(row: HistorialQueryRow): ContratoDetalle {
     tipo_contrato_nombre: sgrh_cat_tipos_contrato?.tco_nombre ?? '—',
     tipo_jornada_nombre: sgrh_cat_tipos_jornada?.tjo_nombre ?? '—',
     motivo_salida_nombre: sgrh_cat_motivos_salida?.mot_nombre ?? null,
+    liquidado: Array.isArray(sgrh_liquidaciones)
+      ? sgrh_liquidaciones.length > 0
+      : Boolean(sgrh_liquidaciones),
+    en_planilla: false,
   }
 }
 
@@ -115,7 +124,8 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
       sgrh_sucursales ( suc_nombre ),
       sgrh_cat_tipos_contrato ( tco_nombre ),
       sgrh_cat_tipos_jornada ( tjo_nombre ),
-      sgrh_cat_motivos_salida ( mot_nombre )
+      sgrh_cat_motivos_salida ( mot_nombre ),
+      sgrh_liquidaciones ( liq_id )
     `
     )
     .eq('lab_empleado_id', empId)
@@ -177,6 +187,19 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
   // y no un .maybeSingle(): si por un bug quedaran dos contratos abiertos, la
   // ficha se sigue mostrando (con el más reciente) en vez de romperse.
   const historialActivo = historialCompleto.find((c) => c.lab_fecha_fin === null) ?? null
+
+  // La ventana de edición: el vigente se puede corregir mientras no aparezca
+  // en ninguna planilla (la RPC editar_contrato lo vuelve a verificar). Si la
+  // consulta falla, se asume que sí aparece: esconder un botón es el error
+  // seguro, mostrar uno que la RPC va a rechazar no.
+  if (historialActivo) {
+    const { count, error: errPlanilla } = await supabase
+      .from('sgrh_nomina_detalle')
+      .select('ndt_id', { count: 'exact', head: true })
+      .eq('ndt_historial_laboral_id', historialActivo.lab_id)
+
+    historialActivo.en_planilla = Boolean(errPlanilla) || (count ?? 0) > 0
+  }
 
   // El número se guarda cifrado (AES-256-GCM), así que se descifra acá, en el
   // servidor. Los tres estados de decryptField NO se aplanan: cuenta_ilegible

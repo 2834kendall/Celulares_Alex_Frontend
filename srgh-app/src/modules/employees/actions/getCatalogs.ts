@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import type { CatalogoItem, TerritorioCatalogo } from '@/modules/employees/types'
+import type { CatalogoItem, MotivoSalidaItem, TerritorioCatalogo } from '@/modules/employees/types'
 
 export type GetCatalogoResult = { ok: true; data: CatalogoItem[] } | { ok: false; error: string }
 
@@ -80,6 +80,39 @@ export async function getTiposJornada(): Promise<GetCatalogoResult> {
   }
 
   return { ok: true, data: data.map((t) => ({ id: t.tjo_id, nombre: t.tjo_nombre })) }
+}
+
+export type GetMotivosSalidaResult =
+  { ok: true; data: MotivoSalidaItem[] } | { ok: false; error: string }
+
+/**
+ * Catálogo global de motivos de salida, para terminar un contrato. El de
+ * payroll (getMotivosSalida) exige NOMINA_READ, que quien administra
+ * contratos no necesariamente tiene.
+ */
+export async function getMotivosSalida(): Promise<GetMotivosSalidaResult> {
+  await requirePermission(PERMISOS.EMPLEADOS_READ)
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('sgrh_cat_motivos_salida')
+    .select('mot_id, mot_nombre, mot_genera_cesantia, mot_genera_preaviso, mot_nota_legal')
+    .order('mot_nombre', { ascending: true })
+
+  if (error) {
+    return { ok: false, error: CATALOG_ERROR }
+  }
+
+  return {
+    ok: true,
+    data: data.map((m) => ({
+      id: m.mot_id,
+      nombre: m.mot_nombre,
+      generaCesantia: m.mot_genera_cesantia,
+      generaPreaviso: m.mot_genera_preaviso,
+      notaLegal: m.mot_nota_legal,
+    })),
+  }
 }
 
 /** Catálogo global de tipos de identificación activos. */
