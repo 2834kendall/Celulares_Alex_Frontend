@@ -116,10 +116,16 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
   const weekDates = getWeekDates(weekStartISO)
   const supabase = await createClient()
 
-  const { data: employmentHistory, error: errHistory } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      `
+  // Colaboradores y sucursales no dependen entre si: van en paralelo (cada
+  // viaje a Supabase cuesta ~200 ms desde CR).
+  const [
+    { data: employmentHistory, error: errHistory },
+    { data: sucursalesRows, error: errSucursales },
+  ] = await Promise.all([
+    supabase
+      .from('sgrh_historial_laboral')
+      .select(
+        `
       lab_id,
       lab_empleado_id,
       lab_sucursal_id,
@@ -127,23 +133,23 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_id, suc_nombre )
     `
-    )
-    .eq('lab_empresa_id', empresaId)
-    .is('lab_fecha_fin', null)
-    .returns<EmploymentHistoryRow[]>()
+      )
+      .eq('lab_empresa_id', empresaId)
+      .is('lab_fecha_fin', null)
+      .returns<EmploymentHistoryRow[]>(),
+    // Catalogo completo de sucursales de la empresa (no solo las de casa de los empleados).
+    supabase
+      .from('sgrh_sucursales')
+      .select('suc_id, suc_nombre')
+      .eq('suc_empresa_id', empresaId)
+      .eq('suc_activa', true)
+      .order('suc_nombre', { ascending: true })
+      .returns<BranchJoin[]>(),
+  ])
 
   if (errHistory) {
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
   }
-
-  // Catalogo completo de sucursales de la empresa (no solo las de casa de los empleados).
-  const { data: sucursalesRows, error: errSucursales } = await supabase
-    .from('sgrh_sucursales')
-    .select('suc_id, suc_nombre')
-    .eq('suc_empresa_id', empresaId)
-    .eq('suc_activa', true)
-    .order('suc_nombre', { ascending: true })
-    .returns<BranchJoin[]>()
 
   if (errSucursales) {
     return { ok: false, error: 'No se pudieron cargar las sucursales.' }
@@ -156,11 +162,14 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
 
   const employmentHistoryIds = employmentHistory.map((h) => h.lab_id)
 
-  const { data: assignments, error: errAssignments } = employmentHistoryIds.length
-    ? await supabase
-        .from('sgrh_programacion_semanal')
-        .select(
-          `
+  // La programacion y las fotos dependen de los colaboradores, no entre si.
+  // Una sola firma para toda la matriz (ver signEmployeePhotos).
+  const [{ data: assignments, error: errAssignments }, fotoUrls] = await Promise.all([
+    employmentHistoryIds.length
+      ? supabase
+          .from('sgrh_programacion_semanal')
+          .select(
+            `
           prg_id,
           prg_historial_laboral_id,
           prg_fecha,
@@ -177,12 +186,14 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
             prg_hora_fin_break_custom
 
         `
-        )
-        .in('prg_historial_laboral_id', employmentHistoryIds)
-        .gte('prg_fecha', weekDates[0])
-        .lte('prg_fecha', weekDates[6])
-        .returns<AssignmentRow[]>()
-    : { data: [] as AssignmentRow[], error: null }
+          )
+          .in('prg_historial_laboral_id', employmentHistoryIds)
+          .gte('prg_fecha', weekDates[0])
+          .lte('prg_fecha', weekDates[6])
+          .returns<AssignmentRow[]>()
+      : Promise.resolve({ data: [] as AssignmentRow[], error: null }),
+    signEmployeePhotos(employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)),
+  ])
 
   if (errAssignments) {
     return { ok: false, error: 'No se pudo cargar la programacion semanal.' }
@@ -193,11 +204,6 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
   for (const a of assignments ?? []) {
     assignmentByCell.set(`${a.prg_historial_laboral_id}|${a.prg_fecha}`, a)
   }
-
-  // Una sola firma para toda la matriz (ver signEmployeePhotos).
-  const fotoUrls = await signEmployeePhotos(
-    employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)
-  )
 
   const data: EmployeeWeekRow[] = employmentHistory.map((h) => {
     const employee = h.sgrh_empleados
