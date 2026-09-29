@@ -11,10 +11,14 @@ vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 
+/** Terminado desde el perfil: último día el 31 de diciembre de 2025. */
 const HISTORIAL = {
   lab_id: 1,
+  lab_empleado_id: 10,
   lab_fecha_inicio: '2025-01-01',
-  lab_fecha_fin: null,
+  lab_fecha_fin: '2025-12-31',
+  lab_motivo_salida_id: 5,
+  sgrh_liquidaciones: null,
   lab_salario_base: 300000,
   lab_salario_real: 300000,
   sgrh_empleados: { emp_fecha_ingreso_original: '2025-01-01' },
@@ -28,10 +32,10 @@ function tipo(codigo: string, ccss: boolean, vacaciones: boolean) {
   }
 }
 
-function mockSupabase(ausencias: unknown[]) {
+function mockSupabase(ausencias: unknown[], historial: unknown = HISTORIAL) {
   mockCreateClient.mockResolvedValue(
     createSupabaseClientMock({
-      sgrh_historial_laboral: { data: HISTORIAL, error: null },
+      sgrh_historial_laboral: { data: historial, error: null },
       sgrh_nomina_detalle: { data: [], error: null },
       sgrh_ausencias: { data: ausencias, error: null },
     }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -71,7 +75,7 @@ describe('proponerVacacionesLiquidacion (server action)', () => {
       },
     ])
 
-    const result = await proponerVacacionesLiquidacion(1, '2025-12-31')
+    const result = await proponerVacacionesLiquidacion(1)
 
     expect(result).toEqual({
       ok: true,
@@ -91,14 +95,27 @@ describe('proponerVacacionesLiquidacion (server action)', () => {
       app_metadata: { permisos: ['NOMINA_WRITE'] },
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
 
-    const result = await proponerVacacionesLiquidacion(1, '2025-12-31')
+    const result = await proponerVacacionesLiquidacion(1)
 
     expect(result.ok).toBe(false)
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 
-  it('rechaza datos inválidos', async () => {
-    expect((await proponerVacacionesLiquidacion(0, '2025-12-31')).ok).toBe(false)
-    expect((await proponerVacacionesLiquidacion(1, '31/12/2025')).ok).toBe(false)
+  it('rechaza un id inválido', async () => {
+    expect((await proponerVacacionesLiquidacion(0)).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
+  // La fecha de salida sale del contrato terminado: sin terminación no hay
+  // con qué calcular.
+  it('rechaza un contrato todavía vigente', async () => {
+    mockSupabase([], { ...HISTORIAL, lab_fecha_fin: null })
+
+    const result = await proponerVacacionesLiquidacion(1)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Este contrato sigue vigente: primero terminalo desde el perfil del empleado.',
+    })
   })
 })

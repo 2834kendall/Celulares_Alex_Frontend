@@ -58,6 +58,9 @@ const HISTORIAL_ROW = {
   sgrh_cat_motivos_salida: null,
 }
 
+/** El vigente todavía no aparece en ninguna planilla: la ventana de edición está abierta. */
+const SIN_PLANILLA = { data: null, error: null, count: 0 }
+
 /** Contrato anterior, ya cerrado por renuncia. */
 const HISTORIAL_CERRADO_ROW = {
   lab_id: 4,
@@ -119,6 +122,7 @@ describe('getEmployeeDetail (server action)', () => {
       createSupabaseClientMock({
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
         sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
+        sgrh_nomina_detalle: SIN_PLANILLA,
         sgrh_empleado_datos_pago: {
           data: {
             edp_banco_id: 3,
@@ -163,6 +167,7 @@ describe('getEmployeeDetail (server action)', () => {
       createSupabaseClientMock({
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
         sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
+        sgrh_nomina_detalle: SIN_PLANILLA,
         sgrh_empleado_datos_pago: {
           data: {
             edp_banco_id: 3,
@@ -214,6 +219,7 @@ describe('getEmployeeDetail (server action)', () => {
       createSupabaseClientMock({
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
         sgrh_historial_laboral: { data: [HISTORIAL_ROW, HISTORIAL_CERRADO_ROW], error: null },
+        sgrh_nomina_detalle: SIN_PLANILLA,
         sgrh_empleado_datos_pago: { data: null, error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
@@ -233,6 +239,57 @@ describe('getEmployeeDetail (server action)', () => {
     })
     // Los objetos crudos de los joins no se exponen.
     expect(result.data.historial_completo[1]).not.toHaveProperty('sgrh_cat_motivos_salida')
+  })
+
+  // SGRH-90: la ventana de edición del contrato vigente.
+  it.each([
+    ['sin planilla, se puede editar', SIN_PLANILLA, false],
+    ['con planilla, ya no', { data: null, error: null, count: 3 }, true],
+    // Si la consulta falla se asume que sí: esconder el botón es el error
+    // seguro; mostrar uno que la RPC va a rechazar, no.
+    ['si la consulta falla, se asume que sí', { data: null, error: { message: 'boom' } }, true],
+  ])('en_planilla del vigente: %s', async (_caso, planilla, esperado) => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
+        sgrh_nomina_detalle: planilla,
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.historial_activo?.en_planilla).toBe(esperado)
+  })
+
+  // PostgREST puede devolver la liquidación embebida como objeto o como
+  // arreglo (liq_historial_laboral_id es UNIQUE).
+  it.each([
+    ['sin liquidación', null, false],
+    ['arreglo vacío', [], false],
+    ['objeto', { liq_id: 9 }, true],
+    ['arreglo', [{ liq_id: 9 }], true],
+  ])('liquidado de un contrato cerrado: %s', async (_caso, liquidaciones, esperado) => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: {
+          data: [{ ...HISTORIAL_CERRADO_ROW, sgrh_liquidaciones: liquidaciones }],
+          error: null,
+        },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.historial_completo[0].liquidado).toBe(esperado)
+    expect(result.data.historial_completo[0]).not.toHaveProperty('sgrh_liquidaciones')
   })
 
   it('con solo contratos cerrados no hay vigente pero sí historial', async () => {

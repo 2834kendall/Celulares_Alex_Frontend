@@ -33,3 +33,26 @@ export function mapEmployeeUniqueError(error: PostgresError | null | undefined):
 
   return 'Ya existe un empleado con alguno de los datos que deben ser únicos (identificación, correo personal o nº de asegurado CCSS).'
 }
+
+/**
+ * Errores de las RPC de contratos (crear_contrato, editar_contrato,
+ * terminar_contrato, revertir_terminacion). Sus RAISE EXCEPTION ya vienen
+ * escritos para la UI, así que se muestran tal cual. El 23505 no: lo levanta
+ * el índice ux_historial_un_contrato_vigente cuando dos personas guardan a la
+ * vez, y su mensaje nombra el índice.
+ */
+export function mapContractError(
+  error: PostgresError | null | undefined,
+  generico: string
+): string {
+  switch (error?.code) {
+    case UNIQUE_VIOLATION:
+      return 'Este empleado ya tiene un contrato vigente.'
+    case '23514':
+    case '23503':
+    case '42501':
+      return error.message || generico
+    default:
+      return generico
+  }
+}

@@ -50,7 +50,7 @@ export function EmployeeWizardStepPersonal({
         <p className="text-xs text-slate-500">
           Información personal del colaborador y contactos de emergencia.
         </p>
-        <PersonalDataFields basePath="empleado." tiposIdentificacion={tiposIdentificacion} />
+        <PersonalDataFields basePath="empleado." tiposIdentificacion={tiposIdentificacion} alta />
       </section>
 
       <section className="space-y-3">

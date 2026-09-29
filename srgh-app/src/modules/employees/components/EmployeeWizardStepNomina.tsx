@@ -1,15 +1,8 @@
 'use client'
 
-import { useFormContext } from 'react-hook-form'
 import type { CatalogoItem } from '@/modules/employees/types'
-import {
-  BankingFields,
-  CatalogSelect,
-  CurrencyInput,
-  DateInput,
-  getFieldError,
-  Labeled,
-} from './EmployeeFields'
+import { BankingFields } from './EmployeeFields'
+import { ContractFields } from './ContractFields'
 
 interface EmployeeWizardStepNominaProps {
   puestos: CatalogoItem[]
@@ -27,67 +20,21 @@ export function EmployeeWizardStepNomina({
   tiposJornada,
   bancos,
 }: EmployeeWizardStepNominaProps) {
-  const {
-    formState: { errors },
-  } = useFormContext()
-
   return (
     <div className="@container space-y-4">
       <section className="space-y-3">
         <p className="text-xs text-slate-500">
           Condiciones de la contratación. Estos datos crean el contrato vigente del colaborador.
         </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <CatalogSelect name="contratacion.lab_puesto_id" label="Puesto *" options={puestos} />
-          <CatalogSelect
-            name="contratacion.lab_sucursal_id"
-            label="Sucursal *"
-            options={sucursales}
-          />
-          <CatalogSelect
-            name="contratacion.lab_tipo_contrato_id"
-            label="Tipo de contrato *"
-            options={tiposContrato}
-          />
-          <CatalogSelect
-            name="contratacion.lab_tipo_jornada_id"
-            label="Tipo de jornada *"
-            options={tiposJornada}
-          />
-
-          {/* Llega precargada con el ingreso a la empresa (ver goNext en
-              EmployeeWizard): en un alta nueva siempre coinciden. */}
-          <Labeled
-            label="Inicio del contrato *"
-            error={getFieldError(errors, 'contratacion.lab_fecha_inicio')}
-          >
-            <DateInput
-              name="contratacion.lab_fecha_inicio"
-              label="Inicio del contrato"
-              invalid={Boolean(getFieldError(errors, 'contratacion.lab_fecha_inicio'))}
-            />
-          </Labeled>
-
-          <Labeled
-            label="Salario base (₡) *"
-            error={getFieldError(errors, 'contratacion.lab_salario_base')}
-          >
-            <CurrencyInput
-              name="contratacion.lab_salario_base"
-              invalid={Boolean(getFieldError(errors, 'contratacion.lab_salario_base'))}
-            />
-          </Labeled>
-
-          <Labeled
-            label="Salario real (₡) *"
-            error={getFieldError(errors, 'contratacion.lab_salario_real')}
-          >
-            <CurrencyInput
-              name="contratacion.lab_salario_real"
-              invalid={Boolean(getFieldError(errors, 'contratacion.lab_salario_real'))}
-            />
-          </Labeled>
-        </div>
+        {/* El inicio del contrato llega precargado con el ingreso a la empresa
+            (ver goNext en EmployeeWizard): en un alta nueva siempre coinciden. */}
+        <ContractFields
+          basePath="contratacion."
+          puestos={puestos}
+          sucursales={sucursales}
+          tiposContrato={tiposContrato}
+          tiposJornada={tiposJornada}
+        />
       </section>
 
       <section className="space-y-3">

@@ -1,8 +1,7 @@
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getProvisionesAguinaldo } from '@/modules/payroll/actions/getProvisionesAguinaldo'
-import { getMotivosSalida } from '@/modules/payroll/actions/getMotivosSalida'
-import { getEmpleadosActivosParaLiquidacion } from '@/modules/payroll/actions/getEmpleadosActivosParaLiquidacion'
+import { getContratosPorLiquidar } from '@/modules/payroll/actions/getContratosPorLiquidar'
 import { getLiquidaciones } from '@/modules/payroll/actions/getLiquidaciones'
 import { AguinaldoLiquidacionView } from '@/modules/payroll/components/AguinaldoLiquidacionView'
 import { Alert } from '@/components/ui/Alert'
@@ -28,25 +27,19 @@ export default async function AguinaldoLiquidacionPage({
   const { anio: anioParam } = await searchParams
   const anio = Number(anioParam) === anioActual - 1 ? anioActual - 1 : anioActual
 
-  const [aguinaldosResult, motivosResult, empleadosResult, liquidacionesResult] = await Promise.all(
-    [
-      getProvisionesAguinaldo(anio),
-      getMotivosSalida(),
-      canWrite
-        ? getEmpleadosActivosParaLiquidacion()
-        : Promise.resolve({ ok: true as const, data: [] }),
-      getLiquidaciones(),
-    ]
-  )
+  const [aguinaldosResult, contratosResult, liquidacionesResult] = await Promise.all([
+    getProvisionesAguinaldo(anio),
+    // Contratos que RRHH ya terminó desde el perfil del empleado y falta
+    // liquidar (SGRH-90). La fecha y el motivo vienen con cada uno.
+    canWrite ? getContratosPorLiquidar() : Promise.resolve({ ok: true as const, data: [] }),
+    getLiquidaciones(),
+  ])
 
   if (!aguinaldosResult.ok) {
     return <Alert size="md">{aguinaldosResult.error}</Alert>
   }
-  if (!motivosResult.ok) {
-    return <Alert size="md">{motivosResult.error}</Alert>
-  }
-  if (!empleadosResult.ok) {
-    return <Alert size="md">{empleadosResult.error}</Alert>
+  if (!contratosResult.ok) {
+    return <Alert size="md">{contratosResult.error}</Alert>
   }
   if (!liquidacionesResult.ok) {
     return <Alert size="md">{liquidacionesResult.error}</Alert>
@@ -68,8 +61,7 @@ export default async function AguinaldoLiquidacionPage({
         puedeLeerAusencias={aguinaldosResult.data.puedeLeerAusencias}
         aguinaldos={aguinaldosResult.data.items}
         canWrite={canWrite}
-        empleadosActivos={empleadosResult.data}
-        motivos={motivosResult.data}
+        contratosPorLiquidar={contratosResult.data}
         liquidaciones={liquidacionesResult.data}
       />
     </div>

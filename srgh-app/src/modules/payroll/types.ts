@@ -474,8 +474,6 @@ export type EditarDetalleInput = z.infer<typeof editarDetalleSchema>
 // acumula automáticamente (ver marcarDetallePagado) y solo se "cobra" una
 // vez al año; la liquidación es un evento único por salida de empleado.
 
-export type MotivoSalidaRow = Database['public']['Tables']['sgrh_cat_motivos_salida']['Row']
-
 export interface AguinaldoItem {
   historialLaboralId: number
   empleadoNombre: string
@@ -500,18 +498,29 @@ export interface AguinaldoItem {
   fechaSalida: string | null
 }
 
-export interface EmpleadoActivoItem {
+/**
+ * Contrato ya terminado desde el perfil del empleado (SGRH-90) que todavía
+ * no se liquidó. La fecha y el motivo los registró RRHH al terminarlo: la
+ * liquidación los muestra pero no los cambia.
+ */
+export interface ContratoPorLiquidarItem {
   historialLaboralId: number
   nombre: string
   cedula: string
+  /** Último día trabajado (lab_fecha_fin). */
+  fechaSalida: string
+  motivo: {
+    nombre: string
+    generaCesantia: boolean
+    generaPreaviso: boolean
+    notaLegal: string | null
+  } | null
 }
 
+// La fecha de salida y el motivo ya no se capturan acá: salen del contrato,
+// que RRHH terminó desde el perfil (SGRH-90).
 export const procesarLiquidacionSchema = z.object({
-  historialLaboralId: z.number({ error: 'Elegí un empleado' }).int().positive(),
-  fechaSalida: z
-    .string({ error: 'La fecha de salida es obligatoria' })
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
-  motivoSalidaId: z.number({ error: 'Elegí un motivo de salida' }).int().positive(),
+  historialLaboralId: z.number({ error: 'Elegí un contrato' }).int().positive(),
   diasVacacionesPendientes: z
     .number({ error: 'Los días de vacaciones son obligatorios' })
     .min(0, 'No puede ser negativo')

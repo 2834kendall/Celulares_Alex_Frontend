@@ -18,6 +18,7 @@ import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
 import { linkPostulacionToEmployee } from '@/modules/recruitment/actions/linkPostulacionToEmployee'
 import { formatCRC, formatDate, fullName } from '@/modules/employees/lib/format'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 import { WizardStepper, type WizardStep } from './WizardStepper'
 import { EmployeeWizardStepPersonal } from './EmployeeWizardStepPersonal'
 import { EmployeeWizardStepNomina } from './EmployeeWizardStepNomina'
@@ -249,7 +250,11 @@ export function EmployeeWizard({
         emp_apellido_2: prefill?.emp_apellido_2 ?? '',
         emp_tipo_identificacion_id: prefill?.emp_tipo_identificacion_id ?? undefined,
         emp_numero_identificacion: prefill?.emp_numero_identificacion ?? '',
-        emp_fecha_ingreso_original: '',
+        // Hoy por defecto: casi siempre se registra a alguien que entra ese
+        // día. En hora de Costa Rica (no la del servidor, que suele ir en UTC)
+        // para que el servidor y el navegador calculen la misma fecha. El
+        // inicio del contrato la hereda al pasar de paso (ver goNext).
+        emp_fecha_ingreso_original: todayInCostaRica(),
         emp_fecha_nacimiento: '',
         emp_nacionalidad: 'Costarricense',
         emp_telefono: prefill?.emp_telefono ?? '',
