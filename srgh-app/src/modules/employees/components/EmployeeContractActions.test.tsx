@@ -161,7 +161,7 @@ describe('<EmployeeContractActions /> — botones por estado y permiso', () => {
     await user.click(screen.getByRole('button', { name: 'Revertir' }))
 
     await waitFor(() => expect(mockRevertir).toHaveBeenCalledWith(5))
-    expect(refresh).toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalled()
   })
 })
 

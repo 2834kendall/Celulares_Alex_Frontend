@@ -115,7 +115,7 @@ describe('<PostulacionPanel />', () => {
       expect.objectContaining({ postulacionId: 9, etapaId: 5, resultado: 'aprobado' })
     )
     expect(toast.success).toHaveBeenCalledWith('Etapa registrada: Entrevista RRHH.')
-    expect(refresh).toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('"Contratar" es un único enlace, no un botón dentro de un enlace', () => {

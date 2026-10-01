@@ -10,21 +10,30 @@ import {
   getTiposIdentificacion,
   getRoles,
 } from './getCatalogs'
+import { unstable_cache } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+// Sin Data Cache en tests: cada llamada ejecuta la consulta.
+vi.mock('next/cache', () => ({
+  unstable_cache: vi.fn((fn: () => Promise<unknown>) => fn),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
+const mockCreateAdminClient = vi.mocked(createAdminClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 
+/** Los catálogos por empresa usan el cliente de sesión; los globales, el admin. */
 function mockClient(responses: Record<string, { data: unknown; error: unknown }>) {
-  mockCreateClient.mockResolvedValue(
-    createSupabaseClientMock(responses) as unknown as Awaited<ReturnType<typeof createClient>>
-  )
+  const client = createSupabaseClientMock(responses)
+  mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
+  mockCreateAdminClient.mockReturnValue(client as unknown as ReturnType<typeof createAdminClient>)
 }
 
 describe('getCatalogs (server actions)', () => {
@@ -209,5 +218,35 @@ describe('getCatalogs (server actions)', () => {
     const result = await getMotivosSalida()
 
     expect(result).toEqual({ ok: false, error: 'No se pudo cargar el catálogo.' })
+  })
+})
+
+describe('caché de catálogos globales', () => {
+  // Se registran al importar el módulo, antes de cualquier clearAllMocks.
+  const registros = vi.mocked(unstable_cache).mock.calls.map(([, keyParts, options]) => ({
+    key: keyParts?.[1],
+    options,
+  }))
+
+  it('cachea solo los globales, con el tag catalogos', () => {
+    expect(registros.map((r) => r.key).sort()).toEqual([
+      'bancos',
+      'motivos_salida',
+      'territorio',
+      'tipos_contrato',
+      'tipos_documento',
+      'tipos_identificacion',
+    ])
+    for (const r of registros) {
+      expect(r.options?.tags).toEqual(['catalogos'])
+    }
+  })
+
+  it('el guard corre antes del caché: sin permiso no se lee nada', async () => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockRejectedValue(new Error('NEXT_REDIRECT:/unauthorized'))
+
+    await expect(getTerritorio()).rejects.toThrow('NEXT_REDIRECT:/unauthorized')
+    expect(mockCreateAdminClient).not.toHaveBeenCalled()
   })
 })

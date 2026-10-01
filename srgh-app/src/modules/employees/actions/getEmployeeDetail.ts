@@ -86,10 +86,19 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
 
   const supabase = await createClient()
 
-  const { data: empleado, error: errEmpleado } = await supabase
-    .from('sgrh_empleados')
-    .select(
-      `
+  // Las tres lecturas son independientes (todas filtran por empId), así que
+  // van en paralelo: cada viaje a Supabase cuesta ~200 ms desde CR, y en
+  // serie la ficha tardaba el triple. El orden de los chequeos de error de
+  // abajo es el de antes.
+  const [
+    { data: empleado, error: errEmpleado },
+    { data: historial, error: errHistorial },
+    { data: datosPago, error: errPago },
+  ] = await Promise.all([
+    supabase
+      .from('sgrh_empleados')
+      .select(
+        `
       *,
       sgrh_cat_tipos_identificacion ( tid_nombre ),
       sgrh_direcciones (
@@ -100,9 +109,42 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
         )
       )
     `
-    )
-    .eq('emp_id', empId)
-    .maybeSingle<EmpleadoQueryRow>()
+      )
+      .eq('emp_id', empId)
+      .maybeSingle<EmpleadoQueryRow>(),
+    // Todos los contratos, no solo el vigente: los cerrados son el historial de
+    // contrataciones del tab Contrato. La RLS (historial_select) no filtra por
+    // lab_fecha_fin, así que el EMPLEADOS_READ de arriba ya alcanza para verlos.
+    supabase
+      .from('sgrh_historial_laboral')
+      .select(
+        `
+      *,
+      sgrh_cat_puestos ( pue_nombre ),
+      sgrh_sucursales ( suc_nombre ),
+      sgrh_cat_tipos_contrato ( tco_nombre ),
+      sgrh_cat_tipos_jornada ( tjo_nombre ),
+      sgrh_cat_motivos_salida ( mot_nombre ),
+      sgrh_liquidaciones ( liq_id )
+    `
+      )
+      .eq('lab_empleado_id', empId)
+      .eq('lab_empresa_id', empresaId)
+      .order('lab_fecha_inicio', { ascending: false })
+      .returns<HistorialQueryRow[]>(),
+    // La RLS de esta tabla decide el acceso: si el rol no tiene NOMINA_READ ni
+    // EMPLEADOS_WRITE (y no es el propio empleado), simplemente no hay fila.
+    supabase
+      .from('sgrh_empleado_datos_pago')
+      .select('edp_banco_id, edp_tipo_cuenta, edp_numero_cuenta, sgrh_cat_bancos ( ban_nombre )')
+      .eq('edp_empleado_id', empId)
+      .maybeSingle<{
+        edp_banco_id: number | null
+        edp_tipo_cuenta: string | null
+        edp_numero_cuenta: string | null
+        sgrh_cat_bancos: { ban_nombre: string } | null
+      }>(),
+  ])
 
   if (errEmpleado) {
     return { ok: false, error: 'No se pudo cargar el empleado.' }
@@ -112,58 +154,46 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     return { ok: false, error: 'Empleado no encontrado.', notFound: true }
   }
 
-  // Todos los contratos, no solo el vigente: los cerrados son el historial de
-  // contrataciones del tab Contrato. La RLS (historial_select) no filtra por
-  // lab_fecha_fin, así que el EMPLEADOS_READ de arriba ya alcanza para verlos.
-  const { data: historial, error: errHistorial } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      `
-      *,
-      sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre ),
-      sgrh_cat_tipos_contrato ( tco_nombre ),
-      sgrh_cat_tipos_jornada ( tjo_nombre ),
-      sgrh_cat_motivos_salida ( mot_nombre ),
-      sgrh_liquidaciones ( liq_id )
-    `
-    )
-    .eq('lab_empleado_id', empId)
-    .eq('lab_empresa_id', empresaId)
-    .order('lab_fecha_inicio', { ascending: false })
-    .returns<HistorialQueryRow[]>()
-
   if (errHistorial) {
     return { ok: false, error: 'No se pudo cargar el historial de contratos.' }
   }
-
-  // La RLS de esta tabla decide el acceso: si el rol no tiene NOMINA_READ ni
-  // EMPLEADOS_WRITE (y no es el propio empleado), simplemente no hay fila.
-  const { data: datosPago, error: errPago } = await supabase
-    .from('sgrh_empleado_datos_pago')
-    .select('edp_banco_id, edp_tipo_cuenta, edp_numero_cuenta, sgrh_cat_bancos ( ban_nombre )')
-    .eq('edp_empleado_id', empId)
-    .maybeSingle<{
-      edp_banco_id: number | null
-      edp_tipo_cuenta: string | null
-      edp_numero_cuenta: string | null
-      sgrh_cat_bancos: { ban_nombre: string } | null
-    }>()
 
   if (errPago) {
     return { ok: false, error: 'No se pudieron cargar los datos de pago.' }
   }
 
-  // Una sola foto: getSignedUrl (no el batch). Si falla o no hay path, la
-  // ficha igual se muestra — Avatar cae a iniciales.
-  let fotoUrl: string | null = null
-  if (empleado.emp_foto_path) {
-    const signed = await getStorageProvider().getSignedUrl(
-      'FOTOS_EMPLEADO',
-      empleado.emp_foto_path,
-      TTL_FOTO
-    )
-    fotoUrl = signed.ok ? signed.data : null
+  const historialCompleto = (historial ?? []).map(toContrato)
+  // El vigente se deriva del mismo resultado en vez de pedirlo aparte. find()
+  // y no un .maybeSingle(): si por un bug quedaran dos contratos abiertos, la
+  // ficha se sigue mostrando (con el más reciente) en vez de romperse.
+  const historialActivo = historialCompleto.find((c) => c.lab_fecha_fin === null) ?? null
+
+  // Segunda tanda, también en paralelo: dependen de lo leído arriba pero no
+  // entre sí.
+  const [fotoUrl, enPlanilla, cuenta] = await Promise.all([
+    // Una sola foto: getSignedUrl (no el batch). Si falla o no hay path, la
+    // ficha igual se muestra — Avatar cae a iniciales.
+    empleado.emp_foto_path
+      ? getStorageProvider()
+          .getSignedUrl('FOTOS_EMPLEADO', empleado.emp_foto_path, TTL_FOTO)
+          .then((signed) => (signed.ok ? signed.data : null))
+      : Promise.resolve(null),
+    // La ventana de edición: el vigente se puede corregir mientras no aparezca
+    // en ninguna planilla (la RPC editar_contrato lo vuelve a verificar). Si la
+    // consulta falla, se asume que sí aparece: esconder un botón es el error
+    // seguro, mostrar uno que la RPC va a rechazar no.
+    historialActivo
+      ? supabase
+          .from('sgrh_nomina_detalle')
+          .select('ndt_id', { count: 'exact', head: true })
+          .eq('ndt_historial_laboral_id', historialActivo.lab_id)
+          .then(({ count, error }) => Boolean(error) || (count ?? 0) > 0)
+      : Promise.resolve(false),
+    datosPago ? decryptField(datosPago.edp_numero_cuenta) : Promise.resolve(null),
+  ])
+
+  if (historialActivo) {
+    historialActivo.en_planilla = enPlanilla
   }
 
   const { sgrh_cat_tipos_identificacion, sgrh_direcciones, ...empleadoBase } = empleado
@@ -182,25 +212,6 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
       }
     : null
 
-  const historialCompleto = (historial ?? []).map(toContrato)
-  // El vigente se deriva del mismo resultado en vez de pedirlo aparte. find()
-  // y no un .maybeSingle(): si por un bug quedaran dos contratos abiertos, la
-  // ficha se sigue mostrando (con el más reciente) en vez de romperse.
-  const historialActivo = historialCompleto.find((c) => c.lab_fecha_fin === null) ?? null
-
-  // La ventana de edición: el vigente se puede corregir mientras no aparezca
-  // en ninguna planilla (la RPC editar_contrato lo vuelve a verificar). Si la
-  // consulta falla, se asume que sí aparece: esconder un botón es el error
-  // seguro, mostrar uno que la RPC va a rechazar no.
-  if (historialActivo) {
-    const { count, error: errPlanilla } = await supabase
-      .from('sgrh_nomina_detalle')
-      .select('ndt_id', { count: 'exact', head: true })
-      .eq('ndt_historial_laboral_id', historialActivo.lab_id)
-
-    historialActivo.en_planilla = Boolean(errPlanilla) || (count ?? 0) > 0
-  }
-
   // El número se guarda cifrado (AES-256-GCM), así que se descifra acá, en el
   // servidor. Los tres estados de decryptField NO se aplanan: cuenta_ilegible
   // distingue "no hay cuenta" de "hay una y no se pudo leer". Sin esa distinción
@@ -208,9 +219,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
   // sobrescribiría el ciphertext con null, borrando el dato para siempre.
   let datosPagoDto: EmpleadoDetalle['datos_pago'] = null
 
-  if (datosPago) {
-    const cuenta = await decryptField(datosPago.edp_numero_cuenta)
-
+  if (datosPago && cuenta) {
     datosPagoDto = {
       edp_banco_id: datosPago.edp_banco_id,
       edp_tipo_cuenta: datosPago.edp_tipo_cuenta,

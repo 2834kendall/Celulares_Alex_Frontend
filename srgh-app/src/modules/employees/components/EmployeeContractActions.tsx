@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { FilePlus2, FileX2, Pencil, Undo2 } from 'lucide-react'
 import type {
@@ -71,7 +70,6 @@ export function EmployeeContractActions({
   catalogos,
   motivos = [],
 }: EmployeeContractActionsProps) {
-  const router = useRouter()
   const [dialogo, setDialogo] = useState<Dialogo>(null)
   const [dialogoError, setDialogoError] = useState<string | null>(null)
   const [revertirPendiente, setRevertirPendiente] = useState(false)
@@ -95,7 +93,6 @@ export function EmployeeContractActions({
     if (!result.ok) return setDialogoError(result.error)
     toast.success('Contrato registrado.')
     cerrarDialogo()
-    router.refresh()
   }
 
   async function onEditar(values: EditarContratoInput) {
@@ -104,7 +101,6 @@ export function EmployeeContractActions({
     if (!result.ok) return setDialogoError(result.error)
     toast.success('Contrato actualizado.')
     cerrarDialogo()
-    router.refresh()
   }
 
   async function onTerminar(values: TerminarContratoInput) {
@@ -117,7 +113,6 @@ export function EmployeeContractActions({
         : 'Contrato terminado. Queda pendiente de liquidar.'
     )
     cerrarDialogo()
-    router.refresh()
   }
 
   async function onRevertir() {
@@ -131,7 +126,6 @@ export function EmployeeContractActions({
       return
     }
     toast.success('Terminación revertida: el contrato vuelve a estar vigente.')
-    router.refresh()
   }
 
   const botonRevertir = canEditContrato && revertible && (

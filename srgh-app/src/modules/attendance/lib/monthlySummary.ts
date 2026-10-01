@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type { createClient } from '@/lib/supabase/server'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import {
@@ -137,17 +138,26 @@ export type GatherMonthlyAttendanceResult =
  * curso) y getMonthlyAttendanceSummary (reporte navegable por mes): ambos
  * necesitan exactamente la misma reunion de catalogo+programacion+marcas,
  * solo difieren en que hacen con el resultado.
+ *
+ * `cache`: el panel de asistencia llama a las dos acciones en el mismo
+ * request, y con el mes en curso (el caso por defecto) piden exactamente el
+ * mismo rango. Todos los argumentos son primitivos o el cliente del request
+ * (createClient esta memoizado), asi que la segunda llamada reutiliza el
+ * resultado de la primera en vez de repetir las ~7 consultas. Los llamadores
+ * solo LEEN el resultado: no mutarlo, lo comparten.
  */
-export async function gatherMonthlyAttendanceDays(
+export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAttendanceDays(
   supabase: SupabaseServerClient,
   empresaId: number,
   usuarioId: number | undefined,
   start: string,
   end: string
 ): Promise<GatherMonthlyAttendanceResult> {
-  const sucursalScope = usuarioId ? await getUsuarioSucursalScope(supabase, usuarioId) : null
-
-  const tiposResult = await loadTardinessTypes(supabase, empresaId)
+  // Alcance y catalogo no dependen uno del otro.
+  const [sucursalScope, tiposResult] = await Promise.all([
+    usuarioId ? getUsuarioSucursalScope(supabase, usuarioId) : Promise.resolve(null),
+    loadTardinessTypes(supabase, empresaId),
+  ])
 
   if (!tiposResult.ok) {
     return { ok: false, error: tiposResult.error }
@@ -177,15 +187,6 @@ export async function gatherMonthlyAttendanceDays(
     assignmentsQuery = assignmentsQuery.in('prg_sucursal_id', sucursalScope)
   }
 
-  const { data: assignments, error: errAssignments } =
-    await assignmentsQuery.returns<AssignmentRow[]>()
-
-  if (errAssignments) {
-    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
-  }
-
-  const conDiasAca = Array.from(new Set((assignments ?? []).map((a) => a.prg_historial_laboral_id)))
-
   // Plantilla de la sucursal, tenga o no dias programados en el rango.
   //
   // Sin esto el reporte solo listaba a quien alguien hubiera planificado, y
@@ -202,7 +203,18 @@ export async function gatherMonthlyAttendanceDays(
     rosterQuery = rosterQuery.in('lab_sucursal_id', sucursalScope)
   }
 
-  const { data: roster, error: errRoster } = await rosterQuery.returns<{ lab_id: number }[]>()
+  // Programacion y plantilla solo dependen del alcance: van juntas.
+  const [{ data: assignments, error: errAssignments }, { data: roster, error: errRoster }] =
+    await Promise.all([
+      assignmentsQuery.returns<AssignmentRow[]>(),
+      rosterQuery.returns<{ lab_id: number }[]>(),
+    ])
+
+  if (errAssignments) {
+    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
+  }
+
+  const conDiasAca = Array.from(new Set((assignments ?? []).map((a) => a.prg_historial_laboral_id)))
 
   if (errRoster) {
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
@@ -427,4 +439,4 @@ export async function gatherMonthlyAttendanceDays(
   })
 
   return { ok: true, data, tipos }
-}
+})

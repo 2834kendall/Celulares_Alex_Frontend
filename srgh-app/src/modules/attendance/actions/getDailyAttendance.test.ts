@@ -110,6 +110,10 @@ describe('getDailyAttendance (server action)', () => {
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
         sgrh_programacion_semanal: { data: null, error: { message: 'boom' } },
+        // Se piden en la misma tanda que la programacion.
+        sgrh_cat_tipos_tardia: { data: [], error: null },
+        sgrh_marcas_asistencia: { data: [], error: null },
+        sgrh_historial_laboral: { data: [], error: null },
       })
     )
 

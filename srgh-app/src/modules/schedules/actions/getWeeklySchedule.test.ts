@@ -46,6 +46,7 @@ describe('getWeeklySchedule (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
+        sgrh_sucursales: { data: [], error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 

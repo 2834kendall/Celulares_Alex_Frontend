@@ -172,7 +172,7 @@ describe('<PendingJustifications />', () => {
         observaciones: 'Aviso por telefono',
       })
     )
-    expect(refresh).toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('navega de mes manteniendo la pestaña', async () => {

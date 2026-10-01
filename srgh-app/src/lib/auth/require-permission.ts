@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Permiso } from '@/lib/permissions/catalog'
@@ -7,8 +8,12 @@ import type { SgrhJwtClaims } from '@/types/auth'
  * Guards server-side por permiso. Se llaman al inicio de cada page.tsx protegida.
  * Leen los permisos del JWT via getClaims() — el hook de Supabase los inyecta
  * en el token, NO en el registro del usuario (getUser() no los trae).
+ *
+ * `cache`: una página con N acciones de catálogo verifica el JWT una sola vez
+ * por request. Solo se memoiza la lectura de la sesión; la decisión de cada
+ * guard se evalúa en cada llamada.
  */
-async function getSessionPermisos() {
+const getSessionPermisos = cache(async () => {
   const supabase = await createClient()
   const { data, error } = await supabase.auth.getClaims()
 
@@ -20,7 +25,7 @@ async function getSessionPermisos() {
   const permisos = Array.isArray(meta.permisos) ? meta.permisos : []
 
   return { claims: data.claims, permisos }
-}
+})
 
 /** Exige UN permiso especifico. */
 export async function requirePermission(requiredPermission: Permiso) {

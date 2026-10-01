@@ -1,7 +1,6 @@
 'use client'
 
 import { type FormEvent, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Modal } from '@/components/ui/Modal'
@@ -45,7 +44,6 @@ export function JustifyAbsenceModal({
   dateISO,
   onClose,
 }: JustifyAbsenceModalProps) {
-  const router = useRouter()
   const [tipos, setTipos] = useState<AusenciaTypeRow[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tipoId, setTipoId] = useState('')
@@ -96,7 +94,6 @@ export function JustifyAbsenceModal({
     }
 
     toast.success('Ausencia justificada.')
-    router.refresh()
     onClose()
   }
 

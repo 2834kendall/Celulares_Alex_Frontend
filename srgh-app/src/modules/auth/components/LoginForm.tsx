@@ -62,8 +62,11 @@ export function LoginForm() {
         return
       }
 
+      // Sin router.refresh(): la action escribe las cookies de sesión, y eso
+      // ya hace que Next vacíe la caché del router del cliente, así que el
+      // replace pide el destino fresco. Sumarle refresh() renderizaba el
+      // dashboard dos veces seguidas en cada login.
       router.replace(result.destination)
-      router.refresh()
     } catch {
       setServerError(
         'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.'

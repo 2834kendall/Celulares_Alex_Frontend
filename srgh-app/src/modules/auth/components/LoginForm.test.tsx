@@ -69,7 +69,8 @@ describe('<LoginForm />', () => {
     await waitFor(() => {
       expect(mockLogin).toHaveBeenCalledWith({ email: 'user@mail.com', password: 'secreto' })
       expect(replace).toHaveBeenCalledWith('/dashboard')
-      expect(refresh).toHaveBeenCalled()
+      // Un solo render del destino: las cookies nuevas ya invalidan la caché.
+      expect(refresh).not.toHaveBeenCalled()
     })
   })
 

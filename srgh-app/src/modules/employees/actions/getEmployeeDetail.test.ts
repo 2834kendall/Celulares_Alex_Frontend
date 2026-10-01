@@ -96,6 +96,7 @@ describe('getEmployeeDetail (server action)', () => {
       createSupabaseClientMock({
         sgrh_empleados: { data: null, error: null },
         sgrh_historial_laboral: { data: null, error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
@@ -109,6 +110,7 @@ describe('getEmployeeDetail (server action)', () => {
       createSupabaseClientMock({
         sgrh_empleados: { data: null, error: { message: 'boom' } },
         sgrh_historial_laboral: { data: null, error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
@@ -315,6 +317,7 @@ describe('getEmployeeDetail (server action)', () => {
       createSupabaseClientMock({
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
         sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
+        sgrh_empleado_datos_pago: { data: null, error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
