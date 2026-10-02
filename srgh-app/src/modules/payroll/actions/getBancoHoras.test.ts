@@ -176,3 +176,31 @@ describe('getBancoHoras (server action)', () => {
     })
   })
 })
+
+describe('getBancoHoras — más de mil movimientos', () => {
+  it('lee por páginas: los pendientes más viejos no se pierden', async () => {
+    mockRequirePermission.mockResolvedValue(
+      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
+    )
+    const nuevos = Array.from({ length: 1000 }, (_, i) =>
+      movimientoPendiente({ bhm_id: 2000 - i, bhm_estado: 'pagado' })
+    )
+    const viejo = movimientoPendiente({ bhm_id: 3, bhm_created_at: '2025-01-01T10:00:00' })
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_cat_conceptos_nomina: { data: { con_porcentaje: 150 }, error: null },
+        sgrh_banco_horas_movimientos: [
+          { data: nuevos, error: null },
+          { data: [viejo], error: null },
+        ],
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getBancoHoras()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.historial).toHaveLength(1000)
+    expect(result.data.pendientes.map((p) => p.id)).toEqual([3])
+  })
+})

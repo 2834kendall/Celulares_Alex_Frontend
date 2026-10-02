@@ -110,18 +110,11 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     }
   }
 
-  // Sumar el monto al detalle destino y recalcular la fila entera. Lo
-  // comparte con revertirBancoHoras, que hace lo mismo con signo contrario.
-  const { error: errAplicar } = await aplicarHorasExtraEnDetalle(
-    supabase,
-    detalleDestino,
-    parsed.data.monto
-  )
-  if (errAplicar) {
-    return { ok: false, error: errAplicar }
-  }
-
-  const { error: errResolver } = await supabase
+  // Primero se RESERVA el movimiento: pasa a 'pagado' solo si sigue
+  // 'pendiente'. Antes se sumaba el monto a la planilla y recién después se
+  // marcaba, sin volver a mirar el estado: dos personas pagando el mismo
+  // movimiento a la vez sumaban las horas extra dos veces.
+  const { data: reservado, error: errResolver } = await supabase
     .from('sgrh_banco_horas_movimientos')
     .update({
       bhm_estado: 'pagado',
@@ -136,12 +129,55 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
       bhm_fecha_resolucion: ahoraLocal(),
     })
     .eq('bhm_id', parsed.data.bhmId)
+    .eq('bhm_estado', 'pendiente')
+    .select('bhm_id')
+    .returns<{ bhm_id: number }[]>()
   if (errResolver) {
+    return { ok: false, error: 'No se pudo marcar el movimiento como pagado. No se pagó nada.' }
+  }
+  if (!reservado || reservado.length === 0) {
+    return { ok: false, error: 'Este movimiento ya fue resuelto (pagado o compensado).' }
+  }
+
+  // Sumar el monto al detalle destino y recalcular la fila entera. Lo
+  // comparte con revertirBancoHoras, que hace lo mismo con signo contrario.
+  const { error: errAplicar, aMedias } = await aplicarHorasExtraEnDetalle(
+    supabase,
+    detalleDestino,
+    parsed.data.monto
+  )
+  if (errAplicar && aMedias) {
+    // Los montos de la fila ya se escribieron y las líneas no: el movimiento
+    // queda pagado apuntando a esa fila. Devolverlo a pendiente dejaba que un
+    // reintento sumara el monto otra vez sobre lo que ya había entrado.
     return {
       ok: false,
-      error:
-        'Se pagó el monto en la planilla, pero no se pudo marcar el movimiento como pagado. Avisá para revisarlo a mano.',
+      error: `${errAplicar} El pago quedó a medias en la planilla de ${periodoLabel(
+        detalleDestino.sgrh_nomina_periodo!.npe_periodo_mes,
+        detalleDestino.sgrh_nomina_periodo!.npe_periodo_anio,
+        detalleDestino.sgrh_nomina_periodo!.npe_quincena
+      )}: el movimiento se dejó como pagado para que no se sume dos veces. Revisá ese detalle antes de seguir.`,
     }
+  }
+  if (errAplicar) {
+    // No llegó a la planilla: el movimiento vuelve a quedar pendiente.
+    const { error: errDeshacer } = await supabase
+      .from('sgrh_banco_horas_movimientos')
+      .update({
+        bhm_estado: 'pendiente',
+        bhm_monto_pagado: null,
+        bhm_nomina_detalle_pago_id: null,
+        bhm_resuelto_por_id: null,
+        bhm_fecha_resolucion: null,
+      })
+      .eq('bhm_id', parsed.data.bhmId)
+    if (errDeshacer) {
+      return {
+        ok: false,
+        error: `${errAplicar} Además el movimiento quedó marcado como pagado sin estarlo: avisá para revisarlo a mano.`,
+      }
+    }
+    return { ok: false, error: errAplicar }
   }
 
   const label = periodoLabel(

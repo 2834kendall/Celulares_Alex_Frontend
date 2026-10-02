@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from '@/modules/payroll/lib/bancoHoras'
 import { periodoLabel } from '@/modules/payroll/lib/format'
+import { leerPaginado } from '@/modules/payroll/lib/paginado'
 import type { BancoHorasItem, EstadoBancoHoras } from '@/modules/payroll/types'
 
 interface MovimientoRow {
@@ -56,10 +57,13 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
 
   const factor = factorHorasExtra(conceptoHorasExtra?.con_porcentaje)
 
-  const { data, error } = await supabase
-    .from('sgrh_banco_horas_movimientos')
-    .select(
-      `
+  // Por páginas: con más de mil movimientos, PostgREST devolvía los mil más
+  // nuevos y los pendientes más viejos desaparecían de la lista sin aviso.
+  const { data, error } = await leerPaginado<MovimientoRow>((desde, hasta) =>
+    supabase
+      .from('sgrh_banco_horas_movimientos')
+      .select(
+        `
       bhm_id,
       bhm_historial_laboral_id,
       bhm_horas,
@@ -75,9 +79,12 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
         sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio, npe_quincena )
       )
     `
-    )
-    .order('bhm_created_at', { ascending: false })
-    .returns<MovimientoRow[]>()
+      )
+      .order('bhm_created_at', { ascending: false })
+      .order('bhm_id', { ascending: false })
+      .range(desde, hasta)
+      .returns<MovimientoRow[]>()
+  )
 
   if (error) {
     return { ok: false, error: 'No se pudo cargar el banco de horas.' }

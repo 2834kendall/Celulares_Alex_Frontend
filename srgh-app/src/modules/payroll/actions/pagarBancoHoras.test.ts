@@ -15,6 +15,8 @@ const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 
 const OK = { data: null, error: null }
+/** La reserva del movimiento (UPDATE … WHERE pendiente) devuelve la fila que tomó. */
+const RESERVADO = { data: [{ bhm_id: 1 }], error: null }
 
 const MOVIMIENTO_PENDIENTE = { bhm_id: 1, bhm_historial_laboral_id: 5, bhm_estado: 'pendiente' }
 
@@ -123,9 +125,9 @@ describe('pagarBancoHoras (server action)', () => {
     }
   })
 
-  it('avisa si el concepto HORAS_EXTRA no existe en el catálogo', async () => {
-    mockSupabase({
-      sgrh_banco_horas_movimientos: { data: MOVIMIENTO_PENDIENTE, error: null },
+  it('avisa si el concepto HORAS_EXTRA no existe en el catálogo, y deja el movimiento pendiente', async () => {
+    const client = mockSupabase({
+      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, RESERVADO, OK],
       sgrh_nomina_detalle: { data: [DETALLE_BORRADOR], error: null },
       sgrh_cat_conceptos_nomina: [
         { data: CONCEPTOS_ACTIVOS, error: null },
@@ -139,11 +141,73 @@ describe('pagarBancoHoras (server action)', () => {
     if (!result.ok) {
       expect(result.error).toContain('HORAS_EXTRA')
     }
+    // Se reservó y, como no llegó a la planilla, se devolvió a pendiente.
+    const updates = client.from.mock.results
+      .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_banco_horas_movimientos')
+      .flatMap((r) => (r.value as { update: { mock: { calls: unknown[][] } } }).update.mock.calls)
+      .map((c) => c[0] as { bhm_estado: string })
+    expect(updates.map((u) => u.bhm_estado)).toEqual(['pagado', 'pendiente'])
+  })
+
+  // Si falla después de escribir los montos de la fila, parte del pago ya
+  // está en la planilla: devolver el movimiento a pendiente permitía pagarlo
+  // otra vez encima.
+  it('si el pago queda a medias en la planilla, el movimiento no vuelve a pendiente', async () => {
+    const client = mockSupabase({
+      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, RESERVADO, OK],
+      sgrh_nomina_detalle: [{ data: [DETALLE_BORRADOR], error: null }, OK],
+      sgrh_cat_conceptos_nomina: [
+        { data: CONCEPTOS_ACTIVOS, error: null },
+        { data: HORAS_EXTRA_CONCEPTO, error: null },
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [{ ing_monto: 100000, sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' } }],
+          error: null,
+        },
+        { data: [], error: null },
+        { data: null, error: { message: 'boom' } },
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [OK, OK],
+    })
+
+    const result = await pagarBancoHoras({ bhmId: 1, monto: 30000 })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('quedó a medias')
+    const estados = client.from.mock.results
+      .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_banco_horas_movimientos')
+      .flatMap((r) => (r.value as { update: { mock: { calls: unknown[][] } } }).update.mock.calls)
+      .map((c) => (c[0] as { bhm_estado: string }).bhm_estado)
+    expect(estados).toEqual(['pagado'])
+  })
+
+  // Dos personas pagando el mismo movimiento a la vez: la segunda ya no lo
+  // encuentra pendiente al reservarlo y no suma nada a la planilla.
+  it('si otro lo pagó entre la lectura y el pago, no suma el monto otra vez', async () => {
+    const client = mockSupabase({
+      sgrh_banco_horas_movimientos: [
+        { data: MOVIMIENTO_PENDIENTE, error: null },
+        { data: [], error: null },
+      ],
+      sgrh_nomina_detalle: { data: [DETALLE_BORRADOR], error: null },
+    })
+
+    const result = await pagarBancoHoras({ bhmId: 1, monto: 30000 })
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Este movimiento ya fue resuelto (pagado o compensado).',
+    })
+    const tablas = client.from.mock.calls.map((c) => c[0])
+    expect(tablas).not.toContain('sgrh_nomina_linea_ingreso')
+    expect(tablas).not.toContain('sgrh_cat_conceptos_nomina')
   })
 
   it('paga el monto: lo suma como ingreso al periodo en borrador y marca el movimiento como pagado', async () => {
     mockSupabase({
-      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, OK],
+      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, RESERVADO],
       sgrh_nomina_detalle: [{ data: [DETALLE_BORRADOR], error: null }, OK],
       sgrh_cat_conceptos_nomina: [
         { data: CONCEPTOS_ACTIVOS, error: null },
@@ -168,7 +232,7 @@ describe('pagarBancoHoras (server action)', () => {
 
   it('acumula el monto si el periodo destino ya tenía un pago previo de banco de horas', async () => {
     mockSupabase({
-      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, OK],
+      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, RESERVADO],
       sgrh_nomina_detalle: [{ data: [DETALLE_BORRADOR], error: null }, OK],
       sgrh_cat_conceptos_nomina: [
         { data: CONCEPTOS_ACTIVOS, error: null },
@@ -200,7 +264,7 @@ describe('pagarBancoHoras (server action)', () => {
   // embargo, o la renta) de esa quincena y el empleado cobraba de mas.
   it('conserva las deducciones manuales del periodo destino al pagar el banco de horas', async () => {
     const client = mockSupabase({
-      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, OK],
+      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, RESERVADO],
       sgrh_nomina_detalle: [{ data: [DETALLE_BORRADOR], error: null }, OK],
       sgrh_cat_conceptos_nomina: [
         { data: [...CONCEPTOS_ACTIVOS, PRESTAMO_CONCEPTO], error: null },

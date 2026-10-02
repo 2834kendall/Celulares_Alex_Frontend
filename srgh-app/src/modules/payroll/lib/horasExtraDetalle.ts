@@ -54,7 +54,15 @@ export async function aplicarHorasExtraEnDetalle(
   supabase: SupabaseServerClient,
   detalle: DetalleRow,
   delta: number
-): Promise<{ error: string | null }> {
+): Promise<{
+  error: string | null
+  /**
+   * true = el error llegó DESPUÉS de escribir los montos de la fila: la
+   * planilla pudo quedar con el monto a medias. Quien llama no puede tratarlo
+   * como "no pasó nada".
+   */
+  aMedias?: boolean
+}> {
   const [{ data: conceptosActivos, error: errConceptos }, { data: horasExtraConcepto }] =
     await Promise.all([
       supabase
@@ -142,5 +150,11 @@ export async function aplicarHorasExtraEnDetalle(
     return { error: 'No se pudieron actualizar los montos del periodo.' }
   }
 
-  return reemplazarLineasDetalle(supabase, detalle.ndt_id, lineas, lineasPatronales)
+  const { error: errLineas } = await reemplazarLineasDetalle(
+    supabase,
+    detalle.ndt_id,
+    lineas,
+    lineasPatronales
+  )
+  return errLineas ? { error: errLineas, aMedias: true } : { error: null }
 }
