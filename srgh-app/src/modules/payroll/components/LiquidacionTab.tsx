@@ -15,6 +15,7 @@ import {
   type ProcesarLiquidacionInput,
 } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
+import { MOTIVO_MUTUO_ACUERDO } from '@/modules/payroll/lib/liquidacion'
 import { procesarLiquidacion } from '@/modules/payroll/actions/procesarLiquidacion'
 import { proponerVacacionesLiquidacion } from '@/modules/payroll/actions/proponerVacacionesLiquidacion'
 import type { VacacionesPropuestas } from '@/modules/payroll/lib/derechos'
@@ -82,6 +83,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
     watch,
     reset,
     setValue,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<ProcesarLiquidacionInput>({
     resolver: zodResolver(procesarLiquidacionSchema),
@@ -90,11 +92,13 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
       fechaSalida: '',
       motivoSalidaId: undefined,
       diasVacacionesPendientes: 0,
+      cesantiaPactada: null,
     },
   })
 
   const motivoElegidoId = watch('motivoSalidaId')
   const motivoElegido = motivos.find((m) => m.mot_id === motivoElegidoId)
+  const esMutuoAcuerdo = motivoElegido?.mot_codigo === MOTIVO_MUTUO_ACUERDO
   const empleadoElegidoId = watch('historialLaboralId')
   const fechaSalidaElegida = watch('fechaSalida')
 
@@ -138,7 +142,16 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
   async function onSubmit(input: ProcesarLiquidacionInput) {
     setServerError(null)
     setResultado(null)
-    const result = await procesarLiquidacion(input)
+    if (esMutuoAcuerdo && !input.cesantiaPactada) {
+      setError('cesantiaPactada', { message: 'Indicá si se pactó pagar cesantía.' })
+      return
+    }
+    // Fuera del mutuo acuerdo la cesantía la dice el catálogo: una respuesta
+    // que quedó marcada de antes de cambiar el motivo no viaja.
+    const result = await procesarLiquidacion({
+      ...input,
+      cesantiaPactada: esMutuoAcuerdo ? input.cesantiaPactada : null,
+    })
 
     if (!result.ok) {
       setServerError(result.error)
@@ -154,6 +167,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
       fechaSalida: '',
       motivoSalidaId: undefined,
       diasVacacionesPendientes: 0,
+      cesantiaPactada: null,
     })
     setPropuesta(null)
     router.refresh()
@@ -242,12 +256,49 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             )}
             {motivoElegido && (
               <p className="mt-1 text-[11px] text-slate-400">
-                {motivoElegido.mot_genera_cesantia ? 'Genera cesantía. ' : 'No genera cesantía. '}
+                {esMutuoAcuerdo
+                  ? 'Cesantía solo si se pactó (indicalo abajo). '
+                  : motivoElegido.mot_genera_cesantia
+                    ? 'Genera cesantía. '
+                    : 'No genera cesantía. '}
                 {motivoElegido.mot_genera_preaviso ? 'Genera preaviso.' : 'No genera preaviso.'}
                 {motivoElegido.mot_nota_legal && ` ${motivoElegido.mot_nota_legal}`}
               </p>
             )}
           </div>
+
+          {esMutuoAcuerdo && (
+            <fieldset>
+              <legend className={LABEL}>¿Se pactó pagar cesantía?</legend>
+              <div className="flex gap-4 text-xs text-slate-700">
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    value="si"
+                    disabled={isSubmitting}
+                    {...register('cesantiaPactada')}
+                  />
+                  Sí, se paga cesantía
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    value="no"
+                    disabled={isSubmitting}
+                    {...register('cesantiaPactada')}
+                  />
+                  No se paga
+                </label>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                En mutuo acuerdo la ley no obliga a pagarla (Art. 86 CT); se paga si las partes lo
+                pactaron.
+              </p>
+              {errors.cesantiaPactada && (
+                <p className="mt-1 text-[11px] text-rose-600">{errors.cesantiaPactada.message}</p>
+              )}
+            </fieldset>
+          )}
 
           <div>
             <label className={LABEL} htmlFor="diasVacacionesPendientes">

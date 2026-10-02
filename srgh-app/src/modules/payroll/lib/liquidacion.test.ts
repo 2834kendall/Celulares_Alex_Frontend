@@ -3,6 +3,7 @@ import {
   DIAS_CESANTIA_POR_ANIO,
   aniosReconocidosCesantia,
   anioCicloAguinaldo,
+  quincenaPagadaEnLiquidacion,
   calcularAguinaldo,
   calcularAntiguedad,
   calcularDiasCesantia,
@@ -372,3 +373,58 @@ describe('calcularLiquidacion', () => {
 function round(n: number): number {
   return Math.round(n * 100) / 100
 }
+
+describe('quincenaPagadaEnLiquidacion', () => {
+  const liq = (fechaSalida: string, diasSalarioPendiente: number) => ({
+    fechaSalida,
+    diasSalarioPendiente,
+  })
+
+  it('salida el 20: las dos quincenas del mes van en la liquidación', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 20), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(true)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2026, mes: 1, quincena: 2 })
+    ).toBe(true)
+  })
+
+  it('salida el 20 con la 1ª ya pagada al liquidar (5 días): la 1ª no, aunque la desmarquen', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(false)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2026, mes: 1, quincena: 2 })
+    ).toBe(true)
+  })
+
+  it('salida el 31: el día 31 no suma (tope 30), igual que diasSalarioPendiente', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-31', 30), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(true)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-31', 15), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(false)
+  })
+
+  it('salida el 10: solo la 1ª; la 2ª del mes no se trabajó', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-10', 10), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(true)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-10', 10), { anio: 2026, mes: 1, quincena: 2 })
+    ).toBe(false)
+  })
+
+  it('otro mes o sin salario pendiente: no', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2025, mes: 12, quincena: 2 })
+    ).toBe(false)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2025, mes: 1, quincena: 2 })
+    ).toBe(false)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 0), { anio: 2026, mes: 1, quincena: 2 })
+    ).toBe(false)
+  })
+})

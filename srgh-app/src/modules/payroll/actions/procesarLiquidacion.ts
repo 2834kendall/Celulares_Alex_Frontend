@@ -4,9 +4,18 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularLiquidacion, diasSalarioPendiente } from '@/modules/payroll/lib/liquidacion'
+import {
+  MOTIVO_MUTUO_ACUERDO,
+  calcularLiquidacion,
+  diasSalarioPendiente,
+} from '@/modules/payroll/lib/liquidacion'
 import { esConceptoDelTrabajador } from '@/modules/payroll/lib/planilla'
-import { ERROR_SIN_PERMISO_AUSENCIAS, puedeLeerAusencias } from '@/modules/payroll/lib/derechosData'
+import {
+  ERROR_SIN_PERMISO_AUSENCIAS,
+  puedeLeerAusencias,
+  sucursalesVisibles,
+} from '@/modules/payroll/lib/derechosData'
+import { claveQuincenal } from '@/modules/payroll/lib/derechos'
 import {
   avisoAguinaldoAnterior,
   calcularBasesLiquidacion,
@@ -23,6 +32,7 @@ export type ProcesarLiquidacionResult =
 
 interface MotivoRow {
   mot_id: number
+  mot_codigo: string
   mot_genera_cesantia: boolean
   mot_genera_preaviso: boolean
 }
@@ -108,7 +118,7 @@ export async function procesarLiquidacion(
 
   const { data: motivo, error: errMotivo } = await supabase
     .from('sgrh_cat_motivos_salida')
-    .select('mot_id, mot_genera_cesantia, mot_genera_preaviso')
+    .select('mot_id, mot_codigo, mot_genera_cesantia, mot_genera_preaviso')
     .eq('mot_id', data.motivoSalidaId)
     .maybeSingle<MotivoRow>()
 
@@ -119,7 +129,24 @@ export async function procesarLiquidacion(
     return { ok: false, error: 'El motivo de salida no existe.' }
   }
 
-  const basesResult = await calcularBasesLiquidacion(supabase, historial, data.fechaSalida)
+  // Mutuo acuerdo: la ley no obliga a pagar cesantía (Art. 86 CT), pero se
+  // puede pactar. Lo dice quien liquida, siempre: no se supone ninguna de
+  // las dos cosas.
+  const esMutuoAcuerdo = motivo.mot_codigo === MOTIVO_MUTUO_ACUERDO
+  if (esMutuoAcuerdo && !data.cesantiaPactada) {
+    return {
+      ok: false,
+      error: 'En una salida por mutuo acuerdo indicá si se pactó pagar cesantía.',
+    }
+  }
+  const generaCesantia = esMutuoAcuerdo ? data.cesantiaPactada === 'si' : motivo.mot_genera_cesantia
+
+  const basesResult = await calcularBasesLiquidacion(
+    supabase,
+    historial,
+    data.fechaSalida,
+    sucursalesVisibles(claims)
+  )
   if (!basesResult.ok) return basesResult
   const bases = basesResult.data
 
@@ -174,13 +201,41 @@ export async function procesarLiquidacion(
     )
   }
 
+  // Las quincenas del mes de salida que siguen sin pagar son justamente las
+  // que paga el salario pendiente (ver diasSalarioPendiente). Mandarlas a
+  // pagar por planilla era pagar esos días dos veces; marcarDetallePagado ya
+  // no lo permite.
+  const clavePrimeraDelMes = claveQuincenal(
+    Number(data.fechaSalida.slice(0, 4)),
+    Number(data.fechaSalida.slice(5, 7)),
+    1
+  )
+  // Mismas quincenas que paga diasSalarioPendiente (y que después frena
+  // quincenaPagadaEnLiquidacion): la de salida y, si el pendiente arrancó el
+  // día 1, también la primera del mes.
+  const clavesEnLiquidacion = new Set<number>()
+  if (diasTrabajadosMesActual > 0) {
+    clavesEnLiquidacion.add(bases.claveSalida)
+    if (diaSalida > 15 && diasTrabajadosMesActual > Math.min(diaSalida, 30) - 15) {
+      clavesEnLiquidacion.add(clavePrimeraDelMes)
+    }
+  }
+  const enLaLiquidacion = bases.sinPagar.filter((q) => clavesEnLiquidacion.has(q.clave))
+  const porPlanilla = bases.sinPagar.filter((q) => !enLaLiquidacion.includes(q))
+
+  if (enLaLiquidacion.length > 0) {
+    advertencias.push(
+      `${enLaLiquidacion.map((q) => q.etiqueta).join(' y ')}: sin pagar por planilla; esos días van en esta liquidación como salario pendiente (${diasTrabajadosMesActual} día(s)). No se pagan también por planilla.`
+    )
+  }
+
   // Lo que está en borrador no entra en ningún promedio ni en el aguinaldo,
   // y nadie tiene por qué adivinarlo mirando el resultado.
-  if (bases.sinPagar.length > 0) {
-    const etiquetas = bases.sinPagar.map((q) => q.etiqueta).slice(0, 4)
-    const resto = bases.sinPagar.length > 4 ? ` y ${bases.sinPagar.length - 4} más` : ''
+  if (porPlanilla.length > 0) {
+    const etiquetas = porPlanilla.map((q) => q.etiqueta).slice(0, 4)
+    const resto = porPlanilla.length > 4 ? ` y ${porPlanilla.length - 4} más` : ''
     advertencias.push(
-      `Hay ${bases.sinPagar.length} quincena(s) sin marcar como pagadas (${etiquetas.join(', ')}${resto}). No entraron en el promedio ni en el aguinaldo: pagalas por planilla antes de cerrar el finiquito, o quedarán fuera.`
+      `Hay ${porPlanilla.length} quincena(s) sin marcar como pagadas (${etiquetas.join(', ')}${resto}). No entraron en el promedio ni en el aguinaldo: pagalas por planilla antes de cerrar el finiquito, o quedarán fuera.`
     )
   }
 
@@ -213,6 +268,14 @@ export async function procesarLiquidacion(
     )
   }
 
+  if (esMutuoAcuerdo) {
+    advertencias.push(
+      data.cesantiaPactada === 'si'
+        ? 'Mutuo acuerdo: se pagó cesantía porque quien liquidó indicó que se pactó (la ley no la exige, Art. 86 CT).'
+        : 'Mutuo acuerdo: no se pagó cesantía; quien liquidó indicó que no se pactó (Art. 86 CT: termina sin responsabilidad para las partes).'
+    )
+  }
+
   const avisoAnterior = await avisoAguinaldoAnterior(supabase, bases.cicloAnterior)
   if (avisoAnterior) advertencias.push(avisoAnterior)
 
@@ -225,7 +288,7 @@ export async function procesarLiquidacion(
     diasVacacionesPendientes: data.diasVacacionesPendientes,
     mesesAntiguedad: bases.antiguedad.meses,
     diasSobrantesAntiguedad: bases.antiguedad.diasSobrantes,
-    generaCesantia: motivo.mot_genera_cesantia,
+    generaCesantia,
     generaPreaviso: motivo.mot_genera_preaviso,
     porcentajeDeduccionObrera,
   })

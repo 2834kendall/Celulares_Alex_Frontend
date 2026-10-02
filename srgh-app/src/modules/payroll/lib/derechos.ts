@@ -316,6 +316,8 @@ export interface ContratoDelEmpleado {
   salarioMensual: number
   /** Ya tiene una liquidación guardada: esa relación laboral terminó ahí. */
   liquidado: boolean
+  /** lab_sucursal_id. Ver contratosFueraDeAlcance. */
+  sucursalId?: number | null
 }
 
 /**

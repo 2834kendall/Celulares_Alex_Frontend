@@ -54,6 +54,21 @@ function notasDe(item: AguinaldoItem): string[] {
   if (!item.pagado && item.quincenasSinPagar.length > 0) {
     notas.push(`Sin pagar (no entran): ${item.quincenasSinPagar.join(', ')}.`)
   }
+  if (item.pagado && !item.pagoId) {
+    notas.push(
+      'Marcado pagado con el botón anterior, sin comprobante: el monto mostrado es el calculado, no uno registrado.'
+    )
+  }
+  if (!item.pagado && item.ausenciasSinTipo > 0) {
+    notas.push(
+      `${item.ausenciasSinTipo} ausencia(s) sin tipo legible: revisalas en Ausencias antes de pagar.`
+    )
+  }
+  if (!item.pagado && item.sucursalesOcultas) {
+    notas.push(
+      'Trabajó en una sucursal que tu usuario no ve: el monto sale de menos. Lo tiene que pagar alguien con acceso a esa sucursal.'
+    )
+  }
   return notas
 }
 
@@ -119,7 +134,9 @@ export function AguinaldoTab({
       !item.pagado &&
       item.elegible &&
       item.monto > 0 &&
-      item.quincenasSinPagar.length === 0
+      item.quincenasSinPagar.length === 0 &&
+      item.ausenciasSinTipo === 0 &&
+      !item.sucursalesOcultas
     )
   }
 

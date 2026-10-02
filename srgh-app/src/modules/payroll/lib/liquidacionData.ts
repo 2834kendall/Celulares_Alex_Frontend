@@ -33,15 +33,17 @@ import {
   type VacacionesPropuestas,
 } from './derechos'
 import {
+  ERROR_SUCURSAL_NO_VISIBLE,
   SELECT_CONTRATO,
   aContrato,
   cargarAusencias,
+  contratosFueraDeAlcance,
   cargarQuincenas,
   juntarAusencias,
   juntarQuincenas,
   type ContratoRow,
 } from './derechosData'
-import { anioCicloAguinaldo } from './liquidacion'
+import { anioCicloAguinaldo, quincenaPagadaEnLiquidacion } from './liquidacion'
 import { parseFechaLocal } from './fechas'
 import { formatCRC } from './format'
 
@@ -49,6 +51,7 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 export interface HistorialLiquidacionRow {
   lab_id: number
+  lab_sucursal_id?: number | null
   lab_fecha_inicio: string
   lab_fecha_fin: string | null
   lab_salario_base: number | null
@@ -60,7 +63,7 @@ export interface HistorialLiquidacionRow {
   } | null
 }
 
-export const SELECT_HISTORIAL_LIQUIDACION = `lab_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
+export const SELECT_HISTORIAL_LIQUIDACION = `lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
    sgrh_empleados ( emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) )`
 
 export type CargarHistorialResult =
@@ -135,7 +138,9 @@ export type BasesLiquidacionResult =
 export async function calcularBasesLiquidacion(
   supabase: SupabaseServerClient,
   historial: HistorialLiquidacionRow,
-  fechaSalida: string
+  fechaSalida: string,
+  /** sucursalesVisibles(claims): con qué sucursales puede leer el usuario. */
+  visibles: number[] | null
 ): Promise<BasesLiquidacionResult> {
   const ingresoOriginal = historial.sgrh_empleados?.emp_fecha_ingreso_original ?? null
   const fechaIngreso = ingresoOriginal ?? historial.lab_fecha_inicio
@@ -146,6 +151,7 @@ export async function calcularBasesLiquidacion(
     contratos.push(
       aContrato({
         lab_id: historial.lab_id,
+        lab_sucursal_id: historial.lab_sucursal_id,
         lab_fecha_inicio: historial.lab_fecha_inicio,
         lab_fecha_fin: historial.lab_fecha_fin,
         lab_salario_base: historial.lab_salario_base,
@@ -155,6 +161,9 @@ export async function calcularBasesLiquidacion(
     )
   }
   const relacion = contratosDeLaRelacion(historial.lab_id, contratos)
+  if (contratosFueraDeAlcance(relacion, visibles)) {
+    return { ok: false, error: ERROR_SUCURSAL_NO_VISIBLE }
+  }
   const labIds = relacion.map((c) => c.labId)
   const inicioRelacion = inicioDeLaRelacion(ingresoOriginal, historial.lab_id, contratos)
 
@@ -293,4 +302,100 @@ export async function avisoAguinaldoAnterior(
   if (pagado) return null
 
   return `El aguinaldo del ciclo ${cicloAnterior.anio} (${formatCRC(cicloAnterior.monto)}) no consta como pagado y NO está incluido en esta liquidación. Si no se le ha pagado, pagalo desde la pestaña Aguinaldo; si se pagó fuera del sistema, ignorá este aviso.`
+}
+
+/** Liquidación que ya pagó una quincena como salario pendiente. */
+export interface LiquidacionQueCubre {
+  liqId: number
+  fechaSalida: string
+  diasSalarioPendiente: number
+}
+
+interface LiquidacionCubreRow {
+  liq_id: number
+  liq_historial_laboral_id: number
+  liq_fecha_salida: string
+  liq_dias_trabajados_mes: number
+  sgrh_historial_laboral?: { lab_empleado_id: number } | null
+}
+
+const SELECT_LIQUIDACION_CUBRE =
+  'liq_id, liq_historial_laboral_id, liq_fecha_salida, liq_dias_trabajados_mes, sgrh_historial_laboral!inner ( lab_empleado_id )'
+
+/**
+ * Para cada contrato, la liquidación que ya le pagó `quincena` como salario
+ * pendiente (ver quincenaPagadaEnLiquidacion). Lo usan marcarDetallePagado,
+ * para no pagarla otra vez por planilla, y uploadPlanilla, para dejar sacar
+ * esa fila de un periodo vencido.
+ *
+ * Se busca por el contrato y también por el EMPLEADO: si hubo un traslado en
+ * el mes de salida, la quincena impaga del contrato anterior la pagó la
+ * liquidación del nuevo (el salario pendiente se calcula con toda la
+ * relación). Un contrato que empezó después de la salida (reingreso) no
+ * cuenta.
+ */
+export async function liquidacionesQueCubren(
+  supabase: SupabaseServerClient,
+  labIds: number[],
+  quincena: { anio: number; mes: number; quincena: number }
+): Promise<{ ok: true; data: Map<number, LiquidacionQueCubre> } | { ok: false }> {
+  const cubre = new Map<number, LiquidacionQueCubre>()
+  if (labIds.length === 0) return { ok: true, data: cubre }
+
+  const { data: contratos, error: errContratos } = await supabase
+    .from('sgrh_historial_laboral')
+    .select('lab_id, lab_empleado_id, lab_fecha_inicio')
+    .in('lab_id', labIds)
+    .returns<{ lab_id: number; lab_empleado_id: number; lab_fecha_inicio: string }[]>()
+  if (errContratos) return { ok: false }
+  const filas = Array.isArray(contratos) ? contratos : []
+  const empleados = [...new Set(filas.map((c) => c.lab_empleado_id))]
+
+  const [directas, delEmpleado] = await Promise.all([
+    supabase
+      .from('sgrh_liquidaciones')
+      .select(SELECT_LIQUIDACION_CUBRE)
+      .in('liq_historial_laboral_id', labIds)
+      .returns<LiquidacionCubreRow[]>(),
+    empleados.length > 0
+      ? supabase
+          .from('sgrh_liquidaciones')
+          .select(SELECT_LIQUIDACION_CUBRE)
+          .in('sgrh_historial_laboral.lab_empleado_id', empleados)
+          .returns<LiquidacionCubreRow[]>()
+      : Promise.resolve({ data: [] as LiquidacionCubreRow[], error: null }),
+  ])
+  if (directas.error || delEmpleado.error) return { ok: false }
+
+  const liquidaciones = [
+    ...(Array.isArray(directas.data) ? directas.data : []),
+    ...(Array.isArray(delEmpleado.data) ? delEmpleado.data : []),
+  ].filter((l) =>
+    quincenaPagadaEnLiquidacion(
+      { fechaSalida: l.liq_fecha_salida, diasSalarioPendiente: l.liq_dias_trabajados_mes },
+      quincena
+    )
+  )
+
+  const aCubre = (l: LiquidacionCubreRow): LiquidacionQueCubre => ({
+    liqId: l.liq_id,
+    fechaSalida: l.liq_fecha_salida,
+    diasSalarioPendiente: l.liq_dias_trabajados_mes,
+  })
+  for (const labId of labIds) {
+    const propia = liquidaciones.find((l) => l.liq_historial_laboral_id === labId)
+    if (propia) {
+      cubre.set(labId, aCubre(propia))
+      continue
+    }
+    const contrato = filas.find((c) => c.lab_id === labId)
+    if (!contrato) continue
+    const deLaRelacion = liquidaciones.find(
+      (l) =>
+        l.sgrh_historial_laboral?.lab_empleado_id === contrato.lab_empleado_id &&
+        contrato.lab_fecha_inicio <= l.liq_fecha_salida
+    )
+    if (deLaRelacion) cubre.set(labId, aCubre(deLaRelacion))
+  }
+  return { ok: true, data: cubre }
 }

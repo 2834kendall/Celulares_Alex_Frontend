@@ -80,7 +80,7 @@ VALUES
   (1,  'REN001', 'Renuncia Voluntaria',                     false, false, 'Art. 28 Código de Trabajo. No genera preaviso ni cesantía a cargo del patrono.'),
   (2,  'DES001', 'Despido con Responsabilidad Patronal',     true,  true,  'Art. 28 y 29 Código de Trabajo. Genera preaviso y cesantía.'),
   (3,  'DES002', 'Despido sin Responsabilidad Patronal',     false, false, 'Art. 81 Código de Trabajo. Causa justa, no genera preaviso ni cesantía.'),
-  (4,  'MUT001', 'Mutuo Acuerdo entre las Partes',           false, true,  'Se pacta condición de salida entre empleado y patrono.'),
+  (4,  'MUT001', 'Mutuo Acuerdo entre las Partes',           false, true,  'Art. 86 Código de Trabajo: termina sin responsabilidad para las partes. No genera preaviso; la cesantía se paga solo si se pactó, y se indica al liquidar.'),
   (5,  'FIN001', 'Fin de Contrato a Plazo Fijo',             false, false, 'Art. 31 Código de Trabajo. Vencimiento natural del plazo pactado.'),
   (6,  'FIN002', 'Fin de Obra Determinada',                  false, false, 'Art. 26 Código de Trabajo.'),
   (7,  'PEN001', 'Pensión por Vejez',                        false, true,  'Art. 85 Código de Trabajo. Genera cesantía; no genera preaviso (MTSS DAJ-AE-69-10: al acogerse a la pensión no se concede ni se exige preaviso).'),

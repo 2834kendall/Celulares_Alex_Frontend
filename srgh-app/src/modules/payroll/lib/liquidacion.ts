@@ -17,6 +17,16 @@
 import { round2 } from '@/modules/payroll/lib/numeros'
 
 /**
+ * Código del motivo "Mutuo Acuerdo entre las Partes" en
+ * sgrh_cat_motivos_salida. El Art. 86 CT lo pone entre las causas que
+ * terminan el contrato sin responsabilidad para ninguna de las partes: no
+ * hay preaviso ni cesantía que la ley obligue a pagar, pero las partes pueden
+ * pactarla. Por eso la cesantía de este motivo no sale del catálogo: la
+ * indica quien liquida (ProcesarLiquidacionInput.cesantiaPactada).
+ */
+export const MOTIVO_MUTUO_ACUERDO = 'MUT001'
+
+/**
  * Tabla del Art. 29 CT: días de salario por año laborado según la antigüedad
  * total. El índice 0 es "AÑO 1", el 12 es "AÑO 13 y siguientes".
  *
@@ -213,6 +223,31 @@ export function diasSalarioPendiente(input: {
   const dia = Math.min(Math.max(input.diaSalida, 0), 30)
   if (dia <= 15) return dia
   return input.primeraQuincenaPagada ? dia - 15 : dia
+}
+
+/**
+ * ¿Esta quincena ya se pagó dentro de una liquidación, como salario
+ * pendiente? Se deduce de los días guardados (ver diasSalarioPendiente):
+ *
+ *  - salida del 1 al 15: la 1ª quincena del mes;
+ *  - salida del 16 en adelante: la 2ª, y la 1ª solo si tampoco estaba pagada
+ *    al liquidar (el pendiente arrancó el día 1: días > día de salida − 15).
+ *
+ * Una 1ª quincena que ya estaba pagada no cuenta aunque después la
+ * desmarquen: si no, no se podía volver a marcar y esos días quedaban sin
+ * pagar por ningún lado.
+ */
+export function quincenaPagadaEnLiquidacion(
+  liquidacion: { fechaSalida: string; diasSalarioPendiente: number },
+  quincena: { anio: number; mes: number; quincena: number }
+): boolean {
+  const dias = liquidacion.diasSalarioPendiente
+  if (!(dias > 0)) return false
+  const [anio, mes, diaSalida] = liquidacion.fechaSalida.split('-').map(Number)
+  if (quincena.anio !== anio || quincena.mes !== mes) return false
+  if (diaSalida <= 15) return quincena.quincena === 1
+  if (quincena.quincena === 2) return true
+  return dias > Math.min(diaSalida, 30) - 15
 }
 
 export interface LiquidacionInput {

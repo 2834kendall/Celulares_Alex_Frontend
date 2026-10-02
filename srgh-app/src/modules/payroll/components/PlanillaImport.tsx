@@ -92,6 +92,11 @@ export function PlanillaImport({ periodoId, estado }: PlanillaImportProps) {
           partes.length > 0 ? ` (${partes.join(', ')})` : ''
         }.`
       )
+      if (result.pagadasSinTocar.length > 0) {
+        toast.warning(
+          `No se cambiaron ${result.pagadasSinTocar.length} fila(s) ya pagadas (${result.pagadasSinTocar.join(', ')}): el archivo traía otros datos. Para corregirlas, desmarcá el pago primero.`
+        )
+      }
       router.refresh()
     })
   }

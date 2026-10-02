@@ -38,6 +38,7 @@ import {
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
+import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos KB
 
@@ -135,6 +136,11 @@ export type UploadPlanillaResult =
       actualizados: number
       sinCambios: number
       eliminados: number
+      /**
+       * Empleados cuya fila ya estaba PAGADA y el archivo traía otra cosa: no
+       * se tocaron. Para corregirlas hay que desmarcar el pago primero.
+       */
+      pagadasSinTocar: string[]
     }
   | { ok: false; error: string }
 
@@ -460,6 +466,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     totales: ReturnType<typeof calcularPlanillaPorConceptos>
   }[] = []
   let sinCambios = 0
+  const pagadasSinTocar: string[] = []
 
   const labIdsEnExcel = new Set<number>()
   for (const row of rows) {
@@ -520,6 +527,12 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
     if (mismoInput && mismoResultado && (tieneFoto || previo.pagado)) {
       sinCambios += 1
+    } else if (previo.pagado) {
+      // Antes se reescribía igual: una plantilla bajada después de pagar
+      // (con las marcas de hoy, o con otras horas) le cambiaba el monto a una
+      // fila con comprobante emitido y aguinaldo ya acumulado con el bruto
+      // viejo. Se deja como está y se avisa.
+      pagadasSinTocar.push(porCedula.get(row.cedula)!.nombre)
     } else {
       filasActualizar.push({ row, ndtId, totales })
     }
@@ -542,7 +555,31 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // sacar a alguien de un periodo en el que ya cobró, o al que se le debe, es
   // una decisión que tiene que ser deliberada.
   const vencido = periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo)
-  const protegidos = salieronDelExcel.filter((d: DetalleExistenteRow) => d.ndt_pagado || vencido)
+
+  // Excepción a la deuda: una fila impaga cuyo salario ya se pagó en una
+  // liquidación (salario pendiente del mes de salida). No se le debe nada
+  // por planilla y marcarDetallePagado no la deja pagar: sacarla del periodo
+  // es la única forma de cerrarlo.
+  const labsImpagos = salieronDelExcel
+    .filter((d: DetalleExistenteRow) => !d.ndt_pagado)
+    .map((d: DetalleExistenteRow) => d.ndt_historial_laboral_id)
+  let saldadasEnLiquidacion = new Set<number>()
+  if (vencido && labsImpagos.length > 0) {
+    const cubiertas = await liquidacionesQueCubren(supabase, labsImpagos, {
+      anio: periodo.npe_periodo_anio,
+      mes: periodo.npe_periodo_mes,
+      quincena: periodo.npe_quincena,
+    })
+    if (!cubiertas.ok) {
+      return { ok: false, error: 'No se pudo verificar las liquidaciones de los empleados.' }
+    }
+    saldadasEnLiquidacion = new Set(cubiertas.data.keys())
+  }
+
+  const protegidos = salieronDelExcel.filter(
+    (d: DetalleExistenteRow) =>
+      d.ndt_pagado || (vencido && !saldadasEnLiquidacion.has(d.ndt_historial_laboral_id))
+  )
 
   if (protegidos.length > 0) {
     const nombrePorLab = new Map(empleadosResult.data.map((e) => [e.labId, e.nombre]))
@@ -745,5 +782,6 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     actualizados: filasActualizar.length,
     sinCambios,
     eliminados: ndtIdsEliminar.length,
+    pagadasSinTocar,
   }
 }

@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 
+vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -63,6 +64,8 @@ function mockSupabase(
       data: { lab_salario_base: 0, sgrh_cat_tipos_jornada: null },
       error: null,
     },
+    // Sin liquidación: el contrato sigue activo.
+    sgrh_liquidaciones: { data: null, error: null },
     ...responses,
   })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
@@ -475,6 +478,174 @@ describe('marcarDetallePagado (server action)', () => {
     const result = await marcarDetallePagado(1, false)
 
     expect(result).toEqual({ ok: true })
+  })
+
+  describe('empleado ya liquidado', () => {
+    const DETALLE_NO_PAGADO = { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null }
+
+    it('no deja pagar por planilla una quincena que ya va como salario pendiente', async () => {
+      // Salió el 10 de junio: la 1ª de junio (este detalle) va en la liquidación.
+      const client = mockSupabase({
+        sgrh_nomina_detalle: DETALLE_NO_PAGADO,
+        sgrh_liquidaciones: {
+          data: [
+            {
+              liq_id: 31,
+              liq_historial_laboral_id: 77,
+              liq_fecha_salida: '2026-06-10',
+              liq_dias_trabajados_mes: 10,
+            },
+          ],
+          error: null,
+        },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error).toContain('liquidación n.° 31')
+      expect(client.from.mock.calls.filter((c) => c[0] === 'sgrh_nomina_detalle')).toHaveLength(1)
+    })
+
+    it('sí deja pagar una quincena anterior al mes de salida', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: [
+          DETALLE_NO_PAGADO,
+          OK,
+          { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-20' }], error: null },
+        ],
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+        sgrh_liquidaciones: {
+          data: [
+            {
+              liq_id: 31,
+              liq_historial_laboral_id: 77,
+              liq_fecha_salida: '2026-07-10',
+              liq_dias_trabajados_mes: 10,
+            },
+          ],
+          error: null,
+        },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true })
+    })
+
+    it('si la liquidación no incluyó salario pendiente, la quincena se paga por planilla', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: [
+          DETALLE_NO_PAGADO,
+          OK,
+          { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-20' }], error: null },
+        ],
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+        sgrh_liquidaciones: {
+          data: [
+            {
+              liq_id: 31,
+              liq_historial_laboral_id: 77,
+              liq_fecha_salida: '2026-06-10',
+              liq_dias_trabajados_mes: 0,
+            },
+          ],
+          error: null,
+        },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true })
+    })
+
+    // Traslado en el mes de salida: esta fila es del contrato anterior (77) y
+    // la liquidación quedó en el nuevo (78), con el salario pendiente de toda
+    // la relación.
+    it('también la frena si la liquidación es de otro contrato del mismo empleado', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: DETALLE_NO_PAGADO,
+        sgrh_historial_laboral: {
+          data: [{ lab_id: 77, lab_empleado_id: 3, lab_fecha_inicio: '2020-01-01' }],
+          error: null,
+        },
+        sgrh_liquidaciones: [
+          { data: [], error: null },
+          {
+            data: [
+              {
+                liq_id: 32,
+                liq_historial_laboral_id: 78,
+                liq_fecha_salida: '2026-06-10',
+                liq_dias_trabajados_mes: 10,
+                sgrh_historial_laboral: { lab_empleado_id: 3 },
+              },
+            ],
+            error: null,
+          },
+        ],
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('liquidación n.° 32')
+    })
+
+    it('un reingreso después de la salida no queda frenado', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: [
+          DETALLE_NO_PAGADO,
+          OK,
+          { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-20' }], error: null },
+        ],
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+        sgrh_historial_laboral: [
+          {
+            data: [{ lab_id: 77, lab_empleado_id: 3, lab_fecha_inicio: '2026-06-12' }],
+            error: null,
+          },
+          { data: { lab_salario_base: 0, sgrh_cat_tipos_jornada: null }, error: null },
+        ],
+        sgrh_liquidaciones: [
+          { data: [], error: null },
+          {
+            data: [
+              {
+                liq_id: 32,
+                liq_historial_laboral_id: 78,
+                liq_fecha_salida: '2026-06-10',
+                liq_dias_trabajados_mes: 10,
+                sgrh_historial_laboral: { lab_empleado_id: 3 },
+              },
+            ],
+            error: null,
+          },
+        ],
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true })
+    })
+
+    it('si no puede verificarlo, no marca el pago', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: DETALLE_NO_PAGADO,
+        sgrh_liquidaciones: { data: null, error: { message: 'boom' } },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'No se pudo verificar si el empleado ya fue liquidado.',
+      })
+    })
   })
 
   it('si no se pueden leer las marcas no bloquea el pago', async () => {

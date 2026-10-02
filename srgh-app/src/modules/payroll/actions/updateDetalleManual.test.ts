@@ -139,6 +139,29 @@ describe('updateDetalleManual (server action)', () => {
     })
   })
 
+  it('rechaza editar una fila que ya tiene el pago marcado', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: {
+        data: {
+          ndt_id: 1,
+          ndt_nomina_periodo_id: 9,
+          ndt_historial_laboral_id: 5,
+          ndt_pagado: true,
+          sgrh_nomina_periodo: { npe_estado: 'borrador' },
+        },
+        error: null,
+      },
+    })
+
+    const result = await updateDetalleManual(1, INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Esta fila ya tiene el pago marcado. Para corregirla, desmarcá el pago primero.',
+    })
+    expect(client.from.mock.calls.map((c) => c[0])).not.toContain('sgrh_cat_conceptos_nomina')
+  })
+
   it('avisa si no hay conceptos activos en el catálogo', async () => {
     mockSupabase({
       sgrh_nomina_detalle: {

@@ -492,6 +492,10 @@ export interface AguinaldoItem {
   elegible: boolean
   /** Quincenas del ciclo que no se han pagado: no entraron en el monto. */
   quincenasSinPagar: string[]
+  /** Ausencias aprobadas cuyo tipo no se pudo leer: no se sabe si son maternidad. */
+  ausenciasSinTipo: number
+  /** Trabajó en una sucursal que el usuario no ve: el monto sale de menos. */
+  sucursalesOcultas: boolean
   pagado: boolean
   fechaPago: string | null
   /** Pago con comprobante. Null si se marcó pagado con el botón viejo. */
@@ -516,6 +520,12 @@ export const procesarLiquidacionSchema = z.object({
     .number({ error: 'Los días de vacaciones son obligatorios' })
     .min(0, 'No puede ser negativo')
     .max(365, 'Revisá los días de vacaciones'),
+  /**
+   * Solo en mutuo acuerdo (MOTIVO_MUTUO_ACUERDO): si las partes pactaron
+   * pagar cesantía. Lo decide quien liquida; en los demás motivos manda el
+   * catálogo y esto se ignora.
+   */
+  cesantiaPactada: z.enum(['si', 'no']).nullish(),
 })
 
 export type ProcesarLiquidacionInput = z.infer<typeof procesarLiquidacionSchema>

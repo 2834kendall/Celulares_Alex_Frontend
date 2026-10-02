@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { puedeLeerAusencias } from '@/modules/payroll/lib/derechosData'
+import { puedeLeerAusencias, sucursalesVisibles } from '@/modules/payroll/lib/derechosData'
 import { calcularAguinaldosDelCiclo } from '@/modules/payroll/lib/aguinaldoData'
 import type { AguinaldoItem } from '@/modules/payroll/types'
 
@@ -40,7 +40,7 @@ export async function getProvisionesAguinaldo(
   const supabase = await createClient()
   const anio = anioCiclo ?? new Date().getFullYear()
 
-  const resultado = await calcularAguinaldosDelCiclo(supabase, anio)
+  const resultado = await calcularAguinaldosDelCiclo(supabase, anio, sucursalesVisibles(claims))
   if (!resultado.ok) return resultado
 
   const items: AguinaldoItem[] = resultado.data.map((a) => ({
@@ -52,6 +52,8 @@ export async function getProvisionesAguinaldo(
     maternidad: a.calculo.maternidad,
     elegible: a.calculo.elegible,
     quincenasSinPagar: a.calculo.sinPagar,
+    ausenciasSinTipo: a.ausenciasSinTipo,
+    sucursalesOcultas: a.sucursalesOcultas,
     pagado: a.pagado,
     fechaPago: a.fechaPago,
     pagoId: a.pagoId,

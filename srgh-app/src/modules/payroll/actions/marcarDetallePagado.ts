@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
+import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
@@ -325,6 +326,28 @@ export async function marcarDetallePagado(
     return { ok: false, error: 'El detalle no existe o no es visible.' }
   }
 
+  // Un empleado liquidado ya cobró en el finiquito los días del mes de salida
+  // que no estaban pagados por planilla (salario pendiente). Marcar pagada
+  // una de esas quincenas los pagaba dos veces. Desmarcar sí se puede.
+  const periodo = detalle.sgrh_nomina_periodo
+  if (pagado && periodo) {
+    const cubiertas = await liquidacionesQueCubren(supabase, [detalle.ndt_historial_laboral_id], {
+      anio: periodo.npe_periodo_anio,
+      mes: periodo.npe_periodo_mes,
+      quincena: periodo.npe_quincena,
+    })
+    if (!cubiertas.ok) {
+      return { ok: false, error: 'No se pudo verificar si el empleado ya fue liquidado.' }
+    }
+    const liq = cubiertas.data.get(detalle.ndt_historial_laboral_id)
+    if (liq) {
+      return {
+        ok: false,
+        error: `Este salario ya va en la liquidación n.° ${liq.liqId} (${liq.diasSalarioPendiente} día(s) de salario pendiente hasta la salida del ${formatDate(liq.fechaSalida)}). Pagarlo también por planilla sería pagarlo dos veces: esta fila se deja sin pagar.`,
+      }
+    }
+  }
+
   // Antes de dar por pagado a alguien, sus marcas del periodo tienen que
   // estar completas. Un dia con entrada y sin salida no suma horas, asi que
   // el monto calculado esta corto: pagarlo es pagarle de menos a la persona
@@ -333,7 +356,6 @@ export async function marcarDetallePagado(
   //
   // Solo se revisa al MARCAR. Desmarcar siempre se puede: es la salida cuando
   // algo quedo mal.
-  const periodo = detalle.sgrh_nomina_periodo
   let totales: TotalesPeriodo | undefined
   if (pagado && periodo?.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo) {
     const horas = await getHorasDelPeriodo(supabase, {

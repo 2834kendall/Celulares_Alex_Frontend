@@ -22,6 +22,8 @@ function item(over: Partial<AguinaldoItem> = {}): AguinaldoItem {
     maternidad: 0,
     elegible: true,
     quincenasSinPagar: [],
+    ausenciasSinTipo: 0,
+    sucursalesOcultas: false,
     pagado: false,
     fechaPago: null,
     pagoId: null,
@@ -102,6 +104,30 @@ describe('<AguinaldoTab />', () => {
       '/comprobante/extraordinario/30'
     )
     expect(tabla().getByText('Pagado')).toBeInTheDocument()
+  })
+
+  // El servidor rechaza estos dos casos: el botón no puede ofrecer un pago
+  // que después falla.
+  it('con ausencias sin tipo legible no deja pagar y lo dice', () => {
+    renderTab([item({ ausenciasSinTipo: 2 })])
+
+    expect(tabla().queryByRole('button', { name: 'Pagar' })).not.toBeInTheDocument()
+    expect(tabla().getByText(/2 ausencia\(s\) sin tipo legible/)).toBeInTheDocument()
+  })
+
+  it('con contratos en una sucursal que el usuario no ve no deja pagar y lo dice', () => {
+    renderTab([item({ sucursalesOcultas: true })])
+
+    expect(tabla().queryByRole('button', { name: 'Pagar' })).not.toBeInTheDocument()
+    expect(tabla().getByText(/sucursal que tu usuario no ve/)).toBeInTheDocument()
+  })
+
+  it('pagado con el botón viejo: aclara que el monto no es uno registrado', () => {
+    renderTab([item({ pagado: true, pagoId: null, fechaPago: '2025-12-10' })])
+
+    expect(
+      tabla().getByText(/sin comprobante: el monto mostrado es el calculado/)
+    ).toBeInTheDocument()
   })
 
   it('dice cuánto viene de la licencia de maternidad', () => {

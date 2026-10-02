@@ -550,7 +550,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   function AccionesDetalle({ detalle: d }: { detalle: DetalleNominaItem }) {
     return (
       <>
-        {puedeEditar && (
+        {puedeEditar && !d.pagado && (
           <IconButton
             onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
             aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
@@ -959,7 +959,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   </div>
                 )}
 
-                {puedeEditar && editandoId === d.id && (
+                {puedeEditar && !d.pagado && editandoId === d.id && (
                   <div className="rounded-xl bg-slate-50/60 p-3">
                     <div className="mb-3 flex items-center gap-2">
                       <Pencil className="h-3.5 w-3.5 text-brand-600" />
@@ -1114,7 +1114,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                         </td>
                       </tr>
                     )}
-                    {puedeEditar && editandoId === d.id && (
+                    {puedeEditar && !d.pagado && editandoId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
                         <td colSpan={10} className="px-4 py-4">
                           <div className="mb-3 flex items-center gap-2">

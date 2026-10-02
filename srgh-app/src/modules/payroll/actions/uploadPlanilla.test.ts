@@ -256,6 +256,7 @@ describe('uploadPlanilla (server action)', () => {
       actualizados: 0,
       sinCambios: 1,
       eliminados: 0,
+      pagadasSinTocar: [],
     })
   })
 
@@ -301,6 +302,7 @@ describe('uploadPlanilla (server action)', () => {
       actualizados: 0,
       sinCambios: 0,
       eliminados: 0,
+      pagadasSinTocar: [],
     })
   })
 
@@ -571,7 +573,82 @@ describe('uploadPlanilla (server action)', () => {
       actualizados: 1,
       sinCambios: 0,
       eliminados: 0,
+      pagadasSinTocar: [],
     })
+  })
+
+  // Una fila pagada tiene comprobante y aguinaldo acumulado con su bruto: un
+  // archivo con otros datos no la reescribe, y se avisa con el nombre.
+  it('una fila ya pagada con otros datos en el archivo no se toca y se nombra', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 20,
+              ndt_historial_laboral_id: 70,
+              ndt_pagado: true,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 20,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('CHG', { BASE: 300000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          labId: 70,
+          cedula: 'CHG',
+          nombre: 'Cambio Pagado',
+          salarioBaseMensual: 600000,
+          salarioRealMensual: null,
+          horasSemanales: 48,
+        },
+      ],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toEqual({
+      ok: true,
+      empleados: 1,
+      nuevos: 0,
+      actualizados: 0,
+      sinCambios: 0,
+      eliminados: 0,
+      pagadasSinTocar: ['Cambio Pagado'],
+    })
+    expect(argumentos(client, 'sgrh_nomina_detalle', 'update')).toEqual([])
   })
 
   it('un cambio solo en horas trabajadas o salario por hora también cuenta como actualización', async () => {
@@ -644,6 +721,7 @@ describe('uploadPlanilla (server action)', () => {
       actualizados: 1,
       sinCambios: 0,
       eliminados: 0,
+      pagadasSinTocar: [],
     })
   })
 
@@ -722,6 +800,7 @@ describe('uploadPlanilla (server action)', () => {
       actualizados: 0,
       sinCambios: 1,
       eliminados: 1,
+      pagadasSinTocar: [],
     })
   })
 
@@ -778,6 +857,7 @@ describe('uploadPlanilla (server action)', () => {
       actualizados: 0,
       sinCambios: 0,
       eliminados: 0,
+      pagadasSinTocar: [],
     })
   })
   // Regresion: la comparacion de "sin cambios" solo miraba los campos del
@@ -1048,6 +1128,7 @@ describe('uploadPlanilla (server action)', () => {
       actualizados: 1,
       sinCambios: 0,
       eliminados: 0,
+      pagadasSinTocar: [],
     })
   })
   // Regresion: la subida borraba cualquier detalle que no viniera en el
@@ -1111,6 +1192,105 @@ describe('uploadPlanilla (server action)', () => {
       expect(result.error).toContain('Beto Solís')
       expect(result.error).toContain('ya tienen el pago marcado')
     }
+  })
+
+  describe('fila impaga de un periodo vencido de alguien ya liquidado', () => {
+    const PERIODO_VENCIDO = {
+      ...PERIODO_BORRADOR,
+      npe_fecha_inicio_periodo: '2026-08-01',
+      npe_fecha_fin_periodo: '2026-08-15',
+    }
+    const FILA_BETO = {
+      ndt_id: 20,
+      ndt_historial_laboral_id: 66,
+      ndt_pagado: false,
+      ndt_horas_ordinarias_diurnas: 88,
+      ndt_horas_extra_al_50: 0,
+      ndt_salario_por_hora: 0,
+      ndt_salario_bruto: 100000,
+      ndt_total_deducciones_obreras: 10830,
+      ndt_salario_neto: 89170,
+    }
+
+    // Ana sigue igual (sin cambios); Beto ya no está en el Excel ni entre los
+    // activos: se liquidó.
+    function escenarioBeto(liquidaciones: { data: unknown; error: unknown }) {
+      const client = mockSupabase({
+        sgrh_nomina_periodo: { data: PERIODO_VENCIDO, error: null },
+        sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+        sgrh_nomina_detalle: [
+          {
+            data: [{ ...FILA_BETO, ndt_id: 10, ndt_historial_laboral_id: 55 }, FILA_BETO],
+            error: null,
+          },
+          OK,
+        ],
+        sgrh_nomina_linea_ingreso: [
+          {
+            data: [
+              {
+                ing_nomina_detalle_id: 10,
+                ing_monto: 100000,
+                sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+              },
+            ],
+            error: null,
+          },
+          OK,
+        ],
+        sgrh_nomina_linea_patronal: { data: null, error: null },
+        sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
+        sgrh_liquidaciones: liquidaciones,
+        sgrh_historial_laboral: {
+          data: [{ lab_id: 66, lab_empleado_id: 6, lab_fecha_inicio: '2020-01-01' }],
+          error: null,
+        },
+      })
+      mockParsePlanillaWorkbook.mockResolvedValue({
+        rows: [fila('KEEP', { BASE: 100000 })],
+        errors: [],
+      })
+      mockGetEmpleadosActivos.mockResolvedValue({
+        ok: true,
+        data: [
+          {
+            labId: 55,
+            cedula: 'KEEP',
+            nombre: 'Ana',
+            salarioBaseMensual: 200000,
+            salarioRealMensual: null,
+            horasSemanales: 48,
+          },
+        ],
+      })
+      return client
+    }
+
+    it('se puede sacar: su salario ya se pagó como salario pendiente', async () => {
+      escenarioBeto({
+        data: [
+          {
+            liq_historial_laboral_id: 66,
+            liq_fecha_salida: '2026-08-10',
+            liq_dias_trabajados_mes: 10,
+          },
+        ],
+        error: null,
+      })
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result).toMatchObject({ ok: true, eliminados: 1 })
+    })
+
+    it('sin liquidación que la cubra sigue protegida como deuda', async () => {
+      escenarioBeto({ data: [], error: null })
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('periodo que ya venció')
+    })
   })
 
   // Regresion que costaba plata: al liquidar el banco de horas se le mete al

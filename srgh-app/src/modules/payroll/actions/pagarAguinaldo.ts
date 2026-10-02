@@ -6,7 +6,12 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { formatDate } from '@/modules/payroll/lib/format'
-import { ERROR_SIN_PERMISO_AUSENCIAS, puedeLeerAusencias } from '@/modules/payroll/lib/derechosData'
+import {
+  ERROR_SIN_PERMISO_AUSENCIAS,
+  ERROR_SUCURSAL_NO_VISIBLE,
+  puedeLeerAusencias,
+  sucursalesVisibles,
+} from '@/modules/payroll/lib/derechosData'
 import {
   aperturaPagoAguinaldo,
   calcularAguinaldosDelCiclo,
@@ -56,7 +61,12 @@ export async function pagarAguinaldo(
   }
 
   const supabase = await createClient()
-  const resultado = await calcularAguinaldosDelCiclo(supabase, anio, historialLaboralId)
+  const resultado = await calcularAguinaldosDelCiclo(
+    supabase,
+    anio,
+    sucursalesVisibles(claims),
+    historialLaboralId
+  )
   if (!resultado.ok) return resultado
 
   const aguinaldo = resultado.data.find((a) => a.labId === historialLaboralId)
@@ -69,6 +79,9 @@ export async function pagarAguinaldo(
   }
   if (aguinaldo.pagado) {
     return { ok: false, error: 'Este aguinaldo ya estaba pagado.' }
+  }
+  if (aguinaldo.sucursalesOcultas) {
+    return { ok: false, error: ERROR_SUCURSAL_NO_VISIBLE }
   }
   if (aguinaldo.calculo.sinPagar.length > 0) {
     return {

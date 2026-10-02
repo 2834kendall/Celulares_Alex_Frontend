@@ -17,6 +17,7 @@ import type { createClient } from '@/lib/supabase/server'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { rangoQuincena } from '@/modules/payroll/lib/fechas'
 import { periodoLabel } from '@/modules/payroll/lib/format'
+import { leerPaginado } from '@/modules/payroll/lib/paginado'
 import {
   CODIGO_LICENCIA_MATERNIDAD,
   claveQuincenal,
@@ -26,27 +27,6 @@ import {
 } from '@/modules/payroll/lib/derechos'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
-
-/**
- * Supabase corta cada respuesta en max_rows (1000, supabase/config.toml) SIN
- * avisar: la consulta "funciona" y devuelve las primeras mil filas. Con la
- * planilla de todos los empleados eso se pasa en un par de años, y lo que
- * quedaba afuera eran quincenas pagadas que nunca llegaban al aguinaldo. Se
- * lee por páginas, ordenado por la llave, hasta que una página venga corta.
- */
-const PAGINA = 1000
-
-async function leerPaginado<T>(
-  consulta: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: unknown }>
-): Promise<{ data: T[]; error: unknown }> {
-  const filas: T[] = []
-  for (let desde = 0; ; desde += PAGINA) {
-    const { data, error } = await consulta(desde, desde + PAGINA - 1)
-    if (error) return { data: [], error }
-    filas.push(...(data ?? []))
-    if (!data || data.length < PAGINA) return { data: filas, error: null }
-  }
-}
 
 /** Mensaje único para cuando el usuario no puede leer ausencias. */
 export const ERROR_SIN_PERMISO_AUSENCIAS =
@@ -63,6 +43,7 @@ export function puedeLeerAusencias(claims: { app_metadata?: unknown }): boolean 
 /** Fila de sgrh_historial_laboral tal como se pide para armar la relación. */
 export interface ContratoRow {
   lab_id: number
+  lab_sucursal_id?: number | null
   lab_fecha_inicio: string
   lab_fecha_fin: string | null
   lab_salario_base: number | null
@@ -72,7 +53,7 @@ export interface ContratoRow {
 
 /** Columnas para pedir los contratos de un empleado con su liquidación (si tiene). */
 export const SELECT_CONTRATO =
-  'lab_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real, sgrh_liquidaciones ( liq_id )'
+  'lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real, sgrh_liquidaciones ( liq_id )'
 
 export function aContrato(row: ContratoRow): ContratoDelEmpleado {
   const liq = row.sgrh_liquidaciones
@@ -84,8 +65,44 @@ export function aContrato(row: ContratoRow): ContratoDelEmpleado {
     fechaFin: row.lab_fecha_fin,
     salarioMensual: real > 0 ? real : Number(row.lab_salario_base ?? 0),
     liquidado,
+    sucursalId: row.lab_sucursal_id ?? null,
   }
 }
+
+/**
+ * Sucursales que ve el usuario (claim sucursal_ids del JWT). null = toda la
+ * empresa (ADMIN o usuario sin sucursal asignada), igual que
+ * sucursal_visible() en la base.
+ */
+export function sucursalesVisibles(claims: { app_metadata?: unknown }): number[] | null {
+  const ids = ((claims.app_metadata ?? {}) as { sucursal_ids?: unknown }).sucursal_ids
+  if (!Array.isArray(ids)) return null
+  return ids.filter((id): id is number => typeof id === 'number')
+}
+
+/**
+ * ¿Algún contrato de la relación es de una sucursal que el usuario no ve?
+ *
+ * La planilla de un contrato vive en los periodos de SU sucursal, y RLS le
+ * esconde a un usuario de sucursal esos periodos y las ausencias de ese
+ * contrato, sin dar error. Con un traslado de otra sucursal, el aguinaldo o
+ * la liquidación saldrían solo con la parte visible: de menos, y el monto
+ * quedaría congelado al pagar. En ese caso no se calcula: lo tiene que hacer
+ * alguien que vea todas las sucursales de la relación.
+ */
+export function contratosFueraDeAlcance(
+  relacion: readonly ContratoDelEmpleado[],
+  visibles: readonly number[] | null
+): boolean {
+  if (visibles === null) return false
+  return relacion.some(
+    (c) => c.sucursalId !== null && c.sucursalId !== undefined && !visibles.includes(c.sucursalId)
+  )
+}
+
+/** Mensaje para cuando la relación tiene contratos en sucursales que el usuario no ve. */
+export const ERROR_SUCURSAL_NO_VISIBLE =
+  'Este empleado trabajó en una sucursal que tu usuario no ve (por ejemplo, antes de un traslado): su planilla y sus ausencias de allá no se pueden leer, y el monto saldría de menos. Pedile a alguien con acceso a todas sus sucursales que lo calcule.'
 
 interface DetalleRow {
   ndt_historial_laboral_id: number
