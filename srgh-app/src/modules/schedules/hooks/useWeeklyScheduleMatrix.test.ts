@@ -262,6 +262,43 @@ describe('useWeeklyScheduleMatrix', () => {
       )
     })
 
+    it('conserva la sucursal del dia al cambiarle el horario (turno cubierto en otra sucursal)', async () => {
+      mockAssignDaySchedule.mockResolvedValue({ ok: true })
+      const row = makeRow({
+        branchId: 100,
+        days: [makeAssignment({ assignmentId: 7, scheduleId: 4, branchId: 200 })],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '5')
+      )
+
+      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+        expect.objectContaining({ assignmentId: 7, scheduleId: 5, branchId: 200 })
+      )
+    })
+
+    it('un dia sin asignar manda la sucursal que trae la celda (la de casa)', async () => {
+      mockAssignDaySchedule.mockResolvedValue({ ok: true })
+      const row = makeRow({ branchId: 100, days: [makeAssignment({ branchId: 100 })] })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '4')
+      )
+
+      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+        expect.objectContaining({ assignmentId: null, branchId: 100 })
+      )
+    })
+
     it('guarda savingCell mientras la peticion esta pendiente', async () => {
       let resolveAssign!: (value: { ok: true }) => void
       mockAssignDaySchedule.mockReturnValue(

@@ -3022,6 +3022,10 @@ export type Database = {
       get_rol: { Args: never; Returns: string }
       get_sucursal_ids: { Args: never; Returns: number[] }
       get_usr_id: { Args: never; Returns: number }
+      nomina_asistencia_periodo: {
+        Args: { p_desde: string; p_hasta: string; p_lab_ids: number[] }
+        Returns: Json
+      }
       registrar_etapa_postulacion: {
         Args: {
           p_etapa_id: number

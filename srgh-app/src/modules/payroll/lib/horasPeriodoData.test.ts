@@ -44,11 +44,24 @@ function marca(fecha: string, tipo: string, hora: string) {
   }
 }
 
+/**
+ * La programación y las marcas llegan juntas por la RPC
+ * nomina_asistencia_periodo; los tests las siguen describiendo por tabla y
+ * acá se arma la respuesta de la RPC con las dos.
+ */
 function supabase(r: Respuestas) {
-  return createSupabaseClientMock({
-    sgrh_cat_feriados: { data: [], error: null },
-    ...r,
-  }) as unknown as Awaited<ReturnType<typeof createClient>>
+  const { sgrh_programacion_semanal: prg, sgrh_marcas_asistencia: mar, ...tablas } = r
+  const error = prg?.error ?? mar?.error ?? null
+  return createSupabaseClientMock(
+    { sgrh_cat_feriados: { data: [], error: null }, ...tablas },
+    {
+      rpcResponses: {
+        nomina_asistencia_periodo: error
+          ? { data: null, error }
+          : { data: { programacion: prg?.data ?? [], marcas: mar?.data ?? [] }, error: null },
+      },
+    }
+  ) as unknown as Awaited<ReturnType<typeof createClient>>
 }
 
 const PARAMS = { historialLaboralIds: [5], fechaInicio: '2026-07-06', fechaFin: '2026-07-07' }
@@ -380,7 +393,7 @@ describe('getHorasDelPeriodo', () => {
     expect(totales.diasQueBloquean).toEqual([])
   })
 
-  it('avisa si falla la consulta de marcas', async () => {
+  it('avisa si falla la consulta de horario y marcas', async () => {
     const result = await getHorasDelPeriodo(
       supabase({
         sgrh_programacion_semanal: { data: [], error: null },
@@ -392,8 +405,59 @@ describe('getHorasDelPeriodo', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudieron cargar las marcas de asistencia.',
+      error: 'No se pudieron cargar el horario y las marcas del periodo.',
     })
+  })
+
+  it('una respuesta sin las dos listas es un error, no "no trabajó"', async () => {
+    const cliente = createSupabaseClientMock(
+      { sgrh_ausencias: { data: [], error: null }, sgrh_cat_feriados: { data: [], error: null } },
+      { rpcResponses: { nomina_asistencia_periodo: { data: { marcas: [] }, error: null } } }
+    ) as unknown as Awaited<ReturnType<typeof createClient>>
+
+    const result = await getHorasDelPeriodo(cliente, PARAMS)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'No se pudieron cargar el horario y las marcas del periodo.',
+    })
+  })
+
+  // Cubrir turnos en otra sucursal mueve el DÍA de sucursal, no el contrato.
+  // Leer las tablas con la sesión del usuario dejaba que RLS escondiera ese
+  // día a quien solo ve su sucursal; la RPC autoriza por el contrato.
+  it('lee horario y marcas por la RPC de nómina, no de las tablas', async () => {
+    const cliente = supabase({
+      sgrh_programacion_semanal: {
+        data: [programado('2026-07-06'), programado('2026-07-07')],
+        error: null,
+      },
+      sgrh_marcas_asistencia: {
+        data: [
+          marca('2026-07-06', 'entrada', '08:00:00'),
+          marca('2026-07-06', 'salida', '17:00:00'),
+          // El 07 lo trabajó en otra sucursal: la marca llega igual.
+          marca('2026-07-07', 'entrada', '08:00:00'),
+          marca('2026-07-07', 'salida', '17:00:00'),
+        ],
+        error: null,
+      },
+      sgrh_ausencias: { data: [], error: null },
+    })
+
+    const result = await getHorasDelPeriodo(cliente, PARAMS)
+
+    expect(cliente.rpc).toHaveBeenCalledWith('nomina_asistencia_periodo', {
+      p_lab_ids: [5],
+      p_desde: '2026-07-06',
+      p_hasta: '2026-07-07',
+    })
+    const tablas = (cliente.from as unknown as { mock: { calls: string[][] } }).mock.calls.map(
+      (c) => c[0]
+    )
+    expect(tablas).not.toContain('sgrh_marcas_asistencia')
+    expect(tablas).not.toContain('sgrh_programacion_semanal')
+    expect(result.ok && result.data.get(5)!.horasOrdinarias).toBe(16)
   })
 
   // Nadie llena prg_es_feriado al programar: el feriado se lee del catálogo.
