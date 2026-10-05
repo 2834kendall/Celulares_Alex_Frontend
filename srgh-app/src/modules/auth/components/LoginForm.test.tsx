@@ -30,14 +30,28 @@ describe('<LoginForm />', () => {
     vi.clearAllMocks()
   })
 
-  it('renderiza identidad del sistema y tarjetas de caracteristicas', () => {
+  it('renderiza la identidad del sistema', () => {
     render(<LoginForm />)
 
     expect(screen.getByRole('heading', { level: 1, name: 'SGRH' })).toBeInTheDocument()
     expect(screen.getByText('Bienvenido de nuevo')).toBeInTheDocument()
-    expect(screen.getByText('Expedientes')).toBeInTheDocument()
-    expect(screen.getByText('Asistencia')).toBeInTheDocument()
-    expect(screen.getByText('Planillas')).toBeInTheDocument()
+  })
+
+  it('las figuras no miran la contrasena oculta y se asoman cuando se muestra', async () => {
+    const { container } = render(<LoginForm />)
+    const user = userEvent.setup()
+    const scene = container.querySelector('.login-scene')
+
+    expect(scene).toHaveAttribute('data-mood', 'idle')
+
+    await user.click(screen.getByLabelText('Contrasena'))
+    expect(scene).toHaveAttribute('data-mood', 'hiding')
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar contrasena' }))
+    expect(scene).toHaveAttribute('data-mood', 'peeking')
+
+    await user.click(screen.getByRole('button', { name: 'Ocultar contrasena' }))
+    expect(scene).toHaveAttribute('data-mood', 'idle')
   })
 
   it('ofrece la salida a recuperar la contrasena', () => {
