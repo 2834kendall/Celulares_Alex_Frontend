@@ -8,9 +8,9 @@ import {
   tipoTardiaSchema,
   type TipoTardiaInput,
   type TipoTardiaRow,
-} from '@/modules/settings/types'
-import { createTipoTardia } from '@/modules/settings/actions/createTipoTardia'
-import { updateTipoTardia } from '@/modules/settings/actions/updateTipoTardia'
+} from '@/modules/attendance/types'
+import { createTipoTardia } from '@/modules/attendance/actions/createTipoTardia'
+import { updateTipoTardia } from '@/modules/attendance/actions/updateTipoTardia'
 import { Button } from '@/components/ui/Button'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
@@ -74,7 +74,7 @@ export function TipoTardiaForm({ tipo, onSuccess }: TipoTardiaFormProps) {
       return
     }
 
-    // revalidatePath('/settings') en el server action ya refresca la ruta.
+    // revalidatePath('/settings', 'layout') en el server action ya refresca la ruta.
     onSuccess?.()
   }
 

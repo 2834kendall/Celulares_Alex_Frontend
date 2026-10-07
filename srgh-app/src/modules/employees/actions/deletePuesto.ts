@@ -21,6 +21,6 @@ export async function deletePuesto(id: number): Promise<DeletePuestoResult> {
     }
   }
 
-  revalidatePath('/settings')
+  revalidatePath('/settings', 'layout')
   return { ok: true }
 }

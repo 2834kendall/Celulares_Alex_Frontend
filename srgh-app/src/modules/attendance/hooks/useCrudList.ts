@@ -5,7 +5,7 @@ import { useState } from 'react'
 type DeleteResult = { ok: true } | { ok: false; error: string }
 
 /**
- * Estado compartido de las listas CRUD del modulo (puestos): panel de
+ * Estado compartido de las listas CRUD del modulo (tipos de tardia): panel de
  * edicion inline, confirmacion de borrado y su error.
  * Duplicado a proposito de modules/schedules/hooks/useCrudList — cada modulo
  * de negocio es independiente (ver SGRH_Frontend_Architecture.md, seccion 1).

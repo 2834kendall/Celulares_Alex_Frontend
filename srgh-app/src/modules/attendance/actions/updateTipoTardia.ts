@@ -4,8 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { tipoTardiaSchema, type TipoTardiaInput } from '@/modules/settings/types'
-import { tipoTardiaDbError } from '@/modules/settings/lib/tipoTardiaErrors'
+import { tipoTardiaSchema, type TipoTardiaInput } from '@/modules/attendance/types'
+import { tipoTardiaDbError } from '@/modules/attendance/lib/tipoTardiaErrors'
 
 export type UpdateTipoTardiaResult = { ok: true } | { ok: false; error: string }
 
@@ -45,7 +45,7 @@ export async function updateTipoTardia(
     }
   }
 
-  revalidatePath('/settings')
+  revalidatePath('/settings', 'layout')
   revalidatePath('/attendance')
   return { ok: true }
 }

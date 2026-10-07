@@ -1,9 +1,9 @@
 'use client'
 
 import { Briefcase, Pencil, Plus, Trash2, X } from 'lucide-react'
-import type { Puesto } from '@/modules/settings/actions/getPuestos'
-import { deletePuesto } from '@/modules/settings/actions/deletePuesto'
-import { useCrudList } from '@/modules/settings/hooks/useCrudList'
+import type { Puesto } from '@/modules/employees/actions/listPuestos'
+import { deletePuesto } from '@/modules/employees/actions/deletePuesto'
+import { useCrudList } from '@/modules/employees/hooks/useCrudList'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'

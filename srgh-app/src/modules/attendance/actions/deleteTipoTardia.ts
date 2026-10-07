@@ -44,7 +44,7 @@ export async function deleteTipoTardia(id: number): Promise<DeleteTipoTardiaResu
     return { ok: false, error: 'No se pudo eliminar el tipo de tardia.' }
   }
 
-  revalidatePath('/settings')
+  revalidatePath('/settings', 'layout')
   revalidatePath('/attendance')
   return { ok: true }
 }

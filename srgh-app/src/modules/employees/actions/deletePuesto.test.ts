@@ -46,6 +46,6 @@ describe('deletePuesto (server action)', () => {
     const result = await deletePuesto(1)
 
     expect(result).toEqual({ ok: true })
-    expect(revalidatePath).toHaveBeenCalledWith('/settings')
+    expect(revalidatePath).toHaveBeenCalledWith('/settings', 'layout')
   })
 })

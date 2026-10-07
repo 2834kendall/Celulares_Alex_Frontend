@@ -8,7 +8,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
-import type { TipoTardiaInput } from '@/modules/settings/types'
+import type { TipoTardiaInput } from '@/modules/attendance/types'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -84,7 +84,7 @@ describe('createTipoTardia', () => {
       tta_cuenta_advertencia: true,
       tta_color: '#F59E0B',
     })
-    expect(revalidatePath).toHaveBeenCalledWith('/settings')
+    expect(revalidatePath).toHaveBeenCalledWith('/settings', 'layout')
     expect(revalidatePath).toHaveBeenCalledWith('/attendance')
   })
 

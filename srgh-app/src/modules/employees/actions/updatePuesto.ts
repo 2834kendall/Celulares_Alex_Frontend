@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { parseOptionalSalary, puestoSchema, type PuestoInput } from '@/modules/settings/types'
+import { parseOptionalSalary, puestoSchema, type PuestoInput } from '@/modules/employees/types'
 
 export type UpdatePuestoResult = { ok: true } | { ok: false; error: string }
 
@@ -32,6 +32,6 @@ export async function updatePuesto(id: number, input: PuestoInput): Promise<Upda
     return { ok: false, error: 'No se pudo actualizar el puesto.' }
   }
 
-  revalidatePath('/settings')
+  revalidatePath('/settings', 'layout')
   return { ok: true }
 }

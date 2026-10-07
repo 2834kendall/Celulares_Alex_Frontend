@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getPuestos } from './getPuestos'
+import { listPuestos } from './listPuestos'
 import { createClient } from '@/lib/supabase/server'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 
@@ -7,7 +7,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 
-describe('getPuestos (server action)', () => {
+describe('listPuestos (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -19,7 +19,7 @@ describe('getPuestos (server action)', () => {
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
-    const result = await getPuestos()
+    const result = await listPuestos()
 
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los puestos.' })
   })
@@ -41,7 +41,7 @@ describe('getPuestos (server action)', () => {
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
-    const result = await getPuestos()
+    const result = await listPuestos()
 
     expect(result).toEqual({ ok: true, data: puestos })
   })

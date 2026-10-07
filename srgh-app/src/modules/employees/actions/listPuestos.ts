@@ -1,18 +1,18 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import type { PuestoRow } from '@/modules/settings/types'
+import type { PuestoRow } from '@/modules/employees/types'
 
 export type Puesto = PuestoRow
 
-export type GetPuestosResult = { ok: true; data: Puesto[] } | { ok: false; error: string }
+export type ListPuestosResult = { ok: true; data: Puesto[] } | { ok: false; error: string }
 
 /**
  * Catalogo de puestos de la empresa. No requiere CATALOGOS_WRITE: es legible
  * por cualquier autenticado de la empresa (policy "puestos_select"), igual
  * que lo consumen los formularios de empleados para el selector de puesto.
  */
-export async function getPuestos(): Promise<GetPuestosResult> {
+export async function listPuestos(): Promise<ListPuestosResult> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_cat_puestos')

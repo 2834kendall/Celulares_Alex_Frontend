@@ -4,9 +4,9 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Briefcase, Loader2 } from 'lucide-react'
-import { puestoSchema, type PuestoInput, type PuestoRow } from '@/modules/settings/types'
-import { createPuesto } from '@/modules/settings/actions/createPuesto'
-import { updatePuesto } from '@/modules/settings/actions/updatePuesto'
+import { puestoSchema, type PuestoInput, type PuestoRow } from '@/modules/employees/types'
+import { createPuesto } from '@/modules/employees/actions/createPuesto'
+import { updatePuesto } from '@/modules/employees/actions/updatePuesto'
 import { Button } from '@/components/ui/Button'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
@@ -52,7 +52,7 @@ export function PuestoForm({ puesto, onSuccess }: PuestoFormProps) {
       return
     }
 
-    // revalidatePath('/settings') en el server action ya refresca la ruta.
+    // revalidatePath('/settings', 'layout') en el server action ya refresca la ruta.
     onSuccess?.()
   }
 

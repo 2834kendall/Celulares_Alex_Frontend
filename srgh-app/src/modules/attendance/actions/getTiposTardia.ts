@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import type { TipoTardiaRow } from '@/modules/settings/types'
+import type { TipoTardiaRow } from '@/modules/attendance/types'
 
 export type TipoTardia = TipoTardiaRow
 

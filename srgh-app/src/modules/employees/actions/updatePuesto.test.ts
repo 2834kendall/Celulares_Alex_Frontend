@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
-import type { PuestoInput } from '@/modules/settings/types'
+import type { PuestoInput } from '@/modules/employees/types'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -57,6 +57,6 @@ describe('updatePuesto (server action)', () => {
     const result = await updatePuesto(1, validInput)
 
     expect(result).toEqual({ ok: true })
-    expect(revalidatePath).toHaveBeenCalledWith('/settings')
+    expect(revalidatePath).toHaveBeenCalledWith('/settings', 'layout')
   })
 })
