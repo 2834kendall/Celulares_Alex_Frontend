@@ -10,14 +10,9 @@ import { updateSucursalApariencia } from '@/modules/settings/actions/updateSucur
 import { setSucursalPreview } from '@/modules/settings/actions/setSucursalPreview'
 import { suggestAccent } from '@/lib/utils/color'
 import { previewShellColors } from '@/modules/settings/lib/previewShell'
+import { DEFAULT_ACCENT, DEFAULT_SIDEBAR } from '@/modules/settings/lib/shellDefaults'
 
 const HEX_RE = /^#[0-9a-f]{6}$/i
-
-// Coinciden con los defaults declarados en globals.css — son el punto de
-// partida del picker cuando la sucursal todavia no personalizo nada, y a
-// donde vuelve "Restablecer".
-const DEFAULT_ACCENT = '#0891b2'
-const DEFAULT_SIDEBAR = '#eef1f4'
 
 const ACCENT_PRESETS = ['#0891b2', '#1e40af', '#166534', '#9f1239', '#5b21b6', '#334155']
 const SIDEBAR_PRESETS = ['#eef1f4', '#42454a', '#1b2a41', '#f1efe8', '#15181d', '#ececef']

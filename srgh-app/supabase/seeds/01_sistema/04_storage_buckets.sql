@@ -60,3 +60,20 @@ ON CONFLICT (id) DO UPDATE SET
   public             = EXCLUDED.public,
   file_size_limit    = EXCLUDED.file_size_limit,
   allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+-- SGRH-92: logo de la empresa (Configuración → Empresa → Datos). Imágenes
+-- chicas, sin SVG (puede llevar script embebido). Policies en
+-- migrations/20261006120000_perfil_empresa.sql. Espejo de LOGO_EMPRESA en
+-- lib/storage/containers.ts.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'logos-empresa',
+  'logos-empresa',
+  false,
+  2 * 1024 * 1024,
+  ARRAY['image/jpeg', 'image/png', 'image/webp']
+)
+ON CONFLICT (id) DO UPDATE SET
+  public             = EXCLUDED.public,
+  file_size_limit    = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;

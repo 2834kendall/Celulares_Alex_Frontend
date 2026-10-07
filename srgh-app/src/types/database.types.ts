@@ -3010,6 +3010,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      actualizar_perfil_empresa: {
+        Args: { p_datos: Json; p_direccion: Json }
+        Returns: undefined
+      }
       crear_contrato: {
         Args: { p_contrato: Json; p_empleado_id: number }
         Returns: number

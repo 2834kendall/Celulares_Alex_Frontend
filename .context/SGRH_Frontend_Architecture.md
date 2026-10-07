@@ -274,6 +274,18 @@ Ejemplo: agregar "exportar a Excel" dentro de `payroll`.
 
 La regla general: **un permiso nuevo siempre nace en Supabase, nunca en el frontend.** El catálogo del frontend refleja la base de datos, no al revés.
 
+**Un catálogo configurable** (puestos, tipos de tardía, etapas de selección…) vive en el módulo **dueño del dato**: sus acciones, componentes y schema van en `modules/<dominio>/`, no en `modules/settings`. Configuración solo lo muestra:
+
+```
+☐ Código del catálogo → src/modules/<dominio>/{actions,components,types.ts}
+☐ Ajuste nuevo en Configuración → una hoja en modules/settings/lib/sections.ts
+   (dentro de su módulo, con keywords para el buscador) y su page.tsx en
+   app/(dashboard)/settings/<módulo>/<id> (con requireSettingsSection). El menú
+   del modo configuración y el buscador Ctrl+K lo toman solos.
+☐ Las acciones revalidan revalidatePath('/settings', 'layout'): '/settings' a secas
+   no cubre las subpáginas
+```
+
 ---
 
 ## 9. Carga de Datos y Gestión de Estado

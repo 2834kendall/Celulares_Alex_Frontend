@@ -11,7 +11,8 @@
 //   lógico → bucket vive en containers.ts.
 
 /** Contenedores lógicos. El mapeo a buckets reales vive en containers.ts. */
-export type StorageContainer = 'FOTOS_EMPLEADO' | 'DOCUMENTOS_EMPLEADO' | 'CV_CANDIDATO'
+export type StorageContainer =
+  'FOTOS_EMPLEADO' | 'DOCUMENTOS_EMPLEADO' | 'CV_CANDIDATO' | 'LOGO_EMPRESA'
 
 /**
  * Códigos de error del port. lib/ habla en códigos; los mensajes en español

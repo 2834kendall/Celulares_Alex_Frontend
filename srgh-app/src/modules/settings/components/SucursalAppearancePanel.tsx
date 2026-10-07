@@ -9,9 +9,7 @@ import { cn } from '@/lib/utils/cn'
 import { CARD } from '@/components/ui/styles'
 import { SucursalAppearanceForm } from '@/modules/settings/components/SucursalAppearanceForm'
 import type { SucursalConApariencia } from '@/lib/empresa/list-sucursales'
-
-const DEFAULT_ACCENT = '#0891b2'
-const DEFAULT_SIDEBAR = '#eef1f4'
+import { DEFAULT_ACCENT, DEFAULT_SIDEBAR } from '@/modules/settings/lib/shellDefaults'
 
 interface SucursalAppearancePanelProps {
   sucursales: SucursalConApariencia[]

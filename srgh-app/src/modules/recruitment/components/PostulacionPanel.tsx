@@ -119,10 +119,10 @@ export function PostulacionPanel({
                 <div>
                   Todavía no hay etapas definidas. Se crean en{' '}
                   <Link
-                    href="/settings?tab=etapas"
+                    href="/settings/recruitment/stages"
                     className="font-semibold underline underline-offset-2 hover:no-underline"
                   >
-                    Configuración → Etapas de selección
+                    Configuración → Reclutamiento
                   </Link>
                   .
                 </div>
