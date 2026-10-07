@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { createClient } from '@/lib/supabase/server'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
-import { getFilasGuardadas } from './planillaData'
+import { getEmpleadosActivos, getFilasGuardadas } from './planillaData'
 
 vi.mock('server-only', () => ({}))
 
@@ -90,5 +90,82 @@ describe('getFilasGuardadas', () => {
       ok: false,
       error: 'No se pudo leer la planilla guardada del periodo.',
     })
+  })
+})
+
+describe('getEmpleadosActivos con el periodo', () => {
+  const contrato = (labId: number, cedula: string, nombre: string) => ({
+    lab_id: labId,
+    lab_salario_base: 400000,
+    lab_salario_real: 430000,
+    sgrh_empleados: {
+      emp_numero_identificacion: cedula,
+      emp_nombre: nombre,
+      emp_apellido_1: 'Prueba',
+      emp_apellido_2: null,
+    },
+    sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: 48 },
+  })
+  const ANA = contrato(1, '1-1111-1111', 'Ana')
+  const ELENA_TERMINADA = contrato(5, '5-5555-5555', 'Elena')
+
+  // Elena terminó y no se ha liquidado: tiene fila en el periodo. Sin ella,
+  // el Excel de ese periodo no se podía subir.
+  it('suma los contratos terminados que tienen fila en el periodo', async () => {
+    const supabase = createSupabaseClientMock({
+      sgrh_historial_laboral: [
+        { data: [ANA], error: null },
+        { data: [ELENA_TERMINADA], error: null },
+      ],
+      sgrh_nomina_detalle: {
+        data: [{ ndt_historial_laboral_id: 1 }, { ndt_historial_laboral_id: 5 }],
+        error: null,
+      },
+    })
+
+    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, 7)
+
+    expect(r.ok && r.data.map((e) => [e.labId, e.cedula])).toEqual([
+      [1, '1-1111-1111'],
+      [5, '5-5555-5555'],
+    ])
+    const extra = supabase.from.mock.results[2].value as { in: { mock: { calls: unknown[][] } } }
+    expect(extra.in.mock.calls[0]).toEqual(['lab_id', [5]])
+  })
+
+  it('si la cédula ya tiene un contrato vigente (reingreso), gana el vigente', async () => {
+    const supabase = createSupabaseClientMock({
+      sgrh_historial_laboral: [
+        { data: [ANA], error: null },
+        { data: [{ ...contrato(9, '1-1111-1111', 'Ana'), lab_salario_real: 300000 }], error: null },
+      ],
+      sgrh_nomina_detalle: { data: [{ ndt_historial_laboral_id: 9 }], error: null },
+    })
+
+    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, 7)
+
+    expect(r.ok && r.data.map((e) => e.labId)).toEqual([1])
+  })
+
+  it('sin periodo, solo los vigentes (como al cargar empleados)', async () => {
+    const supabase = createSupabaseClientMock({
+      sgrh_historial_laboral: { data: [ANA], error: null },
+    })
+
+    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3)
+
+    expect(r.ok && r.data.map((e) => e.labId)).toEqual([1])
+    expect(supabase.from.mock.calls.map((c) => c[0])).toEqual(['sgrh_historial_laboral'])
+  })
+
+  it('si no puede leer las filas del periodo, falla en vez de dejar a alguien afuera', async () => {
+    const supabase = createSupabaseClientMock({
+      sgrh_historial_laboral: { data: [ANA], error: null },
+      sgrh_nomina_detalle: { data: null, error: { message: 'boom' } },
+    })
+
+    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, 7)
+
+    expect(r.ok).toBe(false)
   })
 })

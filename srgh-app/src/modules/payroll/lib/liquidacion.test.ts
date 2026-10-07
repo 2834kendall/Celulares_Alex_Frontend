@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  diaComercialDeSalida,
   DIAS_CESANTIA_POR_ANIO,
   aniosReconocidosCesantia,
   anioCicloAguinaldo,
@@ -374,7 +375,67 @@ function round(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+describe('diaComercialDeSalida (mes de 30 días, como la planilla)', () => {
+  it.each([
+    ['2026-02-28', 30], // último día de febrero
+    ['2028-02-29', 30], // bisiesto
+    ['2028-02-28', 28], // en bisiesto el 28 no es fin de mes
+    ['2026-02-27', 27],
+    ['2026-01-31', 30],
+    ['2026-01-30', 30],
+    ['2026-04-30', 30],
+    ['2026-04-29', 29],
+    ['2026-03-15', 15],
+  ])('%s → %d', (fecha, esperado) => {
+    expect(diaComercialDeSalida(fecha)).toBe(esperado)
+  })
+
+  // Salida el 28 de febrero con la 1ª quincena pagada: 15 días, lo mismo que
+  // paga la planilla por la 2ª quincena. Antes eran 13.
+  it('salida a fin de febrero con la 1ª pagada: 15 días de salario pendiente', () => {
+    expect(
+      diasSalarioPendiente({
+        diaSalida: diaComercialDeSalida('2026-02-28'),
+        primeraQuincenaPagada: true,
+        quincenaDeSalidaPagada: false,
+      })
+    ).toBe(15)
+    expect(
+      diasSalarioPendiente({
+        diaSalida: diaComercialDeSalida('2026-02-28'),
+        primeraQuincenaPagada: false,
+        quincenaDeSalidaPagada: false,
+      })
+    ).toBe(30)
+  })
+})
+
 describe('quincenaPagadaEnLiquidacion', () => {
+  describe('salida a fin de febrero', () => {
+    const Q1 = { anio: 2026, mes: 2, quincena: 1 }
+    const Q2 = { anio: 2026, mes: 2, quincena: 2 }
+    const feb = (dias: number) => ({ fechaSalida: '2026-02-28', diasSalarioPendiente: dias })
+
+    it('con la 1ª pagada (15 días) solo cubre la 2ª', () => {
+      expect([
+        quincenaPagadaEnLiquidacion(feb(15), Q1),
+        quincenaPagadaEnLiquidacion(feb(15), Q2),
+      ]).toEqual([false, true])
+    })
+
+    it('una liquidación guardada con la regla anterior (13 días) se lee igual', () => {
+      expect([
+        quincenaPagadaEnLiquidacion(feb(13), Q1),
+        quincenaPagadaEnLiquidacion(feb(13), Q2),
+      ]).toEqual([false, true])
+    })
+
+    it('con las dos sin pagar (30 días, o 28 de antes) cubre las dos', () => {
+      expect(quincenaPagadaEnLiquidacion(feb(30), Q1)).toBe(true)
+      expect(quincenaPagadaEnLiquidacion(feb(28), Q1)).toBe(true)
+    })
+  })
+
   const liq = (fechaSalida: string, diasSalarioPendiente: number) => ({
     fechaSalida,
     diasSalarioPendiente,

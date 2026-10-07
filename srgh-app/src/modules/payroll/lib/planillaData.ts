@@ -38,26 +38,34 @@ export interface EmpleadoActivo {
 export type GetEmpleadosActivosResult =
   { ok: true; data: EmpleadoActivo[] } | { ok: false; error: string }
 
-/**
- * Contratos vigentes (sin fecha de fin) de una sucursal, con la cédula y el
- * nombre del empleado. Nota de permisos: RLS de sgrh_historial_laboral exige
- * EMPLEADOS_READ o HISTORIAL_READ además del NOMINA_WRITE de la pantalla.
- */
-export async function getEmpleadosActivos(
-  supabase: SupabaseServerClient,
-  sucursalId: number
-): Promise<GetEmpleadosActivosResult> {
-  const { data, error } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      `
+const SELECT_CONTRATO_PLANILLA = `
       lab_id,
       lab_salario_base,
       lab_salario_real,
       sgrh_empleados ( emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_apellido_2 ),
       sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )
     `
-    )
+
+/**
+ * Contratos vigentes (sin fecha de fin) de una sucursal, con la cédula y el
+ * nombre del empleado. Nota de permisos: RLS de sgrh_historial_laboral exige
+ * EMPLEADOS_READ o HISTORIAL_READ además del NOMINA_WRITE de la pantalla.
+ *
+ * Con `periodoId` (plantilla y subida del Excel) suma también los contratos
+ * YA TERMINADOS que tienen fila en ese periodo. Sin ellos, alguien terminado
+ * y todavía sin liquidar trababa el Excel de un periodo vencido: si se lo
+ * dejaba fuera, su fila impaga estaba protegida ("volvé a incluirlo"); si se
+ * lo incluía, "cédula sin contrato activo". Si la cédula ya está en un
+ * contrato vigente (un reingreso), gana el vigente.
+ */
+export async function getEmpleadosActivos(
+  supabase: SupabaseServerClient,
+  sucursalId: number,
+  periodoId?: number
+): Promise<GetEmpleadosActivosResult> {
+  const { data, error } = await supabase
+    .from('sgrh_historial_laboral')
+    .select(SELECT_CONTRATO_PLANILLA)
     .eq('lab_sucursal_id', sucursalId)
     .is('lab_fecha_fin', null)
     .returns<HistorialActivoRow[]>()
@@ -66,7 +74,48 @@ export async function getEmpleadosActivos(
     return { ok: false, error: 'No se pudieron cargar los empleados activos de la sucursal.' }
   }
 
-  const empleados: EmpleadoActivo[] = (data ?? [])
+  const filas = Array.isArray(data) ? [...data] : []
+
+  if (periodoId !== undefined) {
+    const vigentes = new Set(filas.map((r) => r.lab_id))
+    const { data: enPeriodo, error: errPeriodo } = await supabase
+      .from('sgrh_nomina_detalle')
+      .select('ndt_historial_laboral_id')
+      .eq('ndt_nomina_periodo_id', periodoId)
+      .returns<{ ndt_historial_laboral_id: number }[]>()
+    if (errPeriodo) {
+      return { ok: false, error: 'No se pudieron cargar los empleados de la planilla del periodo.' }
+    }
+    const terminados = [
+      ...new Set(
+        (Array.isArray(enPeriodo) ? enPeriodo : [])
+          .map((f) => f.ndt_historial_laboral_id)
+          .filter((id) => !vigentes.has(id))
+      ),
+    ]
+    if (terminados.length > 0) {
+      const { data: extra, error: errExtra } = await supabase
+        .from('sgrh_historial_laboral')
+        .select(SELECT_CONTRATO_PLANILLA)
+        .in('lab_id', terminados)
+        .returns<HistorialActivoRow[]>()
+      if (errExtra) {
+        return {
+          ok: false,
+          error: 'No se pudieron cargar los empleados de la planilla del periodo.',
+        }
+      }
+      const cedulas = new Set(filas.map((r) => r.sgrh_empleados?.emp_numero_identificacion))
+      for (const r of Array.isArray(extra) ? extra : []) {
+        const cedula = r.sgrh_empleados?.emp_numero_identificacion
+        if (!cedula || cedulas.has(cedula)) continue
+        cedulas.add(cedula)
+        filas.push(r)
+      }
+    }
+  }
+
+  const empleados: EmpleadoActivo[] = filas
     .filter((row) => row.sgrh_empleados !== null)
     .map((row) => ({
       labId: row.lab_id,

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
+  diaComercialDeSalida,
   MOTIVO_MUTUO_ACUERDO,
   calcularLiquidacion,
   diasSalarioPendiente,
@@ -171,11 +172,12 @@ export async function procesarLiquidacion(
     return {
       ok: false,
       error:
-        'No hay salario con qué calcular: el empleado no tiene quincenas pagadas y su contrato no tiene salario base.',
+        'No hay salario con qué calcular: el empleado no tiene quincenas pagadas y su contrato no tiene salario.',
     }
   }
 
-  const diaSalida = Number(fechaSalida.slice(8, 10))
+  // Mes comercial: el último día del mes cuenta como 30 (ver diaComercialDeSalida).
+  const diaSalida = diaComercialDeSalida(fechaSalida)
   const { primeraQuincenaPagada, quincenaDeSalidaPagada } = bases.diasSalarioPendienteBase
   const diasTrabajadosMesActual = diasSalarioPendiente({
     diaSalida,
@@ -203,7 +205,7 @@ export async function procesarLiquidacion(
   const clavesEnLiquidacion = new Set<number>()
   if (diasTrabajadosMesActual > 0) {
     clavesEnLiquidacion.add(bases.claveSalida)
-    if (diaSalida > 15 && diasTrabajadosMesActual > Math.min(diaSalida, 30) - 15) {
+    if (diaSalida > 15 && diasTrabajadosMesActual > diaSalida - 15) {
       clavesEnLiquidacion.add(clavePrimeraDelMes)
     }
   }

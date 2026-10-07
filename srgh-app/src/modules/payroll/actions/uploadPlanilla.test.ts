@@ -809,6 +809,8 @@ describe('uploadPlanilla (server action)', () => {
       eliminados: 1,
       pagadasSinTocar: [],
     })
+    // Con el periodo: así entra también quien terminó y todavía tiene fila acá.
+    expect(mockGetEmpleadosActivos).toHaveBeenCalledWith(expect.anything(), 2, 1)
   })
 
   it('no saca del Excel a quien tiene horas extra ya pagadas desde el banco de horas', async () => {

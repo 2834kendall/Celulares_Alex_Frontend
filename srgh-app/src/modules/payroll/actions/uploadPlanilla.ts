@@ -249,7 +249,9 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   }
 
   // 4. Resolver cédulas contra los contratos activos de la sucursal
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id)
+  // Incluye a quien ya tiene fila en el periodo aunque su contrato haya
+  // terminado después (ver getEmpleadosActivos).
+  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, periodoId)
   if (!empleadosResult.ok) {
     return { ok: false, error: empleadosResult.error }
   }

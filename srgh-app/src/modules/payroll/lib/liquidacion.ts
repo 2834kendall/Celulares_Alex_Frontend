@@ -15,6 +15,7 @@
  */
 
 import { round2 } from '@/modules/payroll/lib/numeros'
+import { ultimoDiaDelMes } from '@/modules/payroll/lib/fechas'
 
 /**
  * Código del motivo "Mutuo Acuerdo entre las Partes" en
@@ -204,6 +205,21 @@ export function calcularSalarioDiario(
 }
 
 /**
+ * Día de salida en mes comercial de 30 días, que es como paga la planilla
+ * (cada quincena vale medio salario, tenga el mes 28 o 31 días).
+ *
+ *  - El último día del mes cuenta como 30: salir el 28 de febrero es salir a
+ *    fin de mes. Antes contaba 28, y con la 1ª quincena pagada salían 13 días
+ *    de salario pendiente cuando la planilla paga 15 por esa quincena.
+ *  - El 31 también cuenta como 30 (ya era así).
+ */
+export function diaComercialDeSalida(fechaSalida: string): number {
+  const [anio, mes, dia] = fechaSalida.split('-').map(Number)
+  if (dia >= ultimoDiaDelMes(mes, anio)) return 30
+  return Math.min(dia, 30)
+}
+
+/**
  * Días del mes de salida que todavía no se le han pagado.
  *
  * La liquidación paga el salario que falta, no el mes entero: si la persona
@@ -243,11 +259,15 @@ export function quincenaPagadaEnLiquidacion(
 ): boolean {
   const dias = liquidacion.diasSalarioPendiente
   if (!(dias > 0)) return false
-  const [anio, mes, diaSalida] = liquidacion.fechaSalida.split('-').map(Number)
+  const [anio, mes] = liquidacion.fechaSalida.split('-').map(Number)
   if (quincena.anio !== anio || quincena.mes !== mes) return false
+  // Mismo día comercial con que se calcularon los días (diaComercialDeSalida).
+  // Una liquidación guardada con la regla anterior también calza: salida el
+  // 28 de febrero con la 1ª pagada guardó 13 días, y 13 > 15 es falso igual.
+  const diaSalida = diaComercialDeSalida(liquidacion.fechaSalida)
   if (diaSalida <= 15) return quincena.quincena === 1
   if (quincena.quincena === 2) return true
-  return dias > Math.min(diaSalida, 30) - 15
+  return dias > diaSalida - 15
 }
 
 export interface LiquidacionInput {

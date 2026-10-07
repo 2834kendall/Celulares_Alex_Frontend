@@ -59,3 +59,16 @@ export function calcularMontoIncapacidad(
 ): number {
   return round2(diasEmpleador * salarioDiario * (porcentajePagoEmpleador / 100))
 }
+
+/**
+ * Monto de incapacidad de una fila de planilla, con el salario y el porcentaje
+ * de hoy: salario BASE mensual ÷ 30 por día. Es la cuenta que muestra una fila
+ * sin pagar; al marcar el pago se congela en ndt_monto_incapacidad.
+ */
+export function montoIncapacidadEnVivo(
+  diasEmpleador: number,
+  salarioBaseMensual: number,
+  porcentajePagoEmpleador: number
+): number {
+  return calcularMontoIncapacidad(diasEmpleador, salarioBaseMensual / 30, porcentajePagoEmpleador)
+}

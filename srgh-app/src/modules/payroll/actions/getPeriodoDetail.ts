@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
+import { montoIncapacidadEnVivo } from '@/modules/payroll/lib/incapacidad'
 import { round2 } from '@/modules/payroll/lib/numeros'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
@@ -42,6 +42,8 @@ interface DetalleRow {
   ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
   ndt_dias_incapacidad_empleador: number
+  ndt_monto_incapacidad?: number | null
+  ndt_porcentaje_incapacidad?: number | null
   ndt_dias_incapacidad_ccss: number
   ndt_horas_asistencia: number | null
   ndt_horas_extra_asistencia: number | null
@@ -148,6 +150,8 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_horas_extra_al_50,
       ndt_salario_por_hora,
       ndt_dias_incapacidad_empleador,
+      ndt_monto_incapacidad,
+      ndt_porcentaje_incapacidad,
       ndt_dias_incapacidad_ccss,
       ndt_horas_asistencia,
       ndt_horas_extra_asistencia,
@@ -380,18 +384,29 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
     const deducciones = deduccionesPorNdt.get(row.ndt_id) ?? { porcentual: 0, manual: 0 }
 
     let incapacidad: IncapacidadItem | null = null
-    if (
-      (row.ndt_dias_incapacidad_empleador > 0 || row.ndt_dias_incapacidad_ccss > 0) &&
-      tipoAusencia
-    ) {
-      const salarioDiario = (row.sgrh_historial_laboral?.lab_salario_base ?? 0) / 30
+    const tieneIncapacidad =
+      row.ndt_dias_incapacidad_empleador > 0 || row.ndt_dias_incapacidad_ccss > 0
+    const congelado = row.ndt_monto_incapacidad
+    if (tieneIncapacidad && congelado !== null && congelado !== undefined) {
+      // Fila pagada: el monto se guardó al marcar el pago (ver
+      // marcarDetallePagado) y el comprobante no cambia aunque después cambie
+      // el salario o el porcentaje del catálogo.
+      incapacidad = {
+        diasEmpleador: row.ndt_dias_incapacidad_empleador,
+        diasCcss: row.ndt_dias_incapacidad_ccss,
+        porcentajePagoEmpleador:
+          row.ndt_porcentaje_incapacidad ?? tipoAusencia?.tau_porcentaje_pago_empleador ?? 0,
+        monto: Number(congelado),
+      }
+    } else if (tieneIncapacidad && tipoAusencia) {
+      // Sin pagar (o pagada antes de que se guardara el monto): en vivo.
       incapacidad = {
         diasEmpleador: row.ndt_dias_incapacidad_empleador,
         diasCcss: row.ndt_dias_incapacidad_ccss,
         porcentajePagoEmpleador: tipoAusencia.tau_porcentaje_pago_empleador,
-        monto: calcularMontoIncapacidad(
+        monto: montoIncapacidadEnVivo(
           row.ndt_dias_incapacidad_empleador,
-          salarioDiario,
+          row.sgrh_historial_laboral?.lab_salario_base ?? 0,
           tipoAusencia.tau_porcentaje_pago_empleador
         ),
       }

@@ -398,6 +398,43 @@ describe('getPeriodoDetail (server action)', () => {
     }
   })
 
+  it('una fila pagada usa el monto de incapacidad guardado, aunque el salario haya cambiado', async () => {
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: {
+        data: [
+          {
+            ...DETALLE_ROW,
+            ndt_pagado: true,
+            ndt_dias_incapacidad_empleador: 3,
+            ndt_dias_incapacidad_ccss: 2,
+            // Se pagó con base 400.000 (20.000); hoy el contrato dice 500.000.
+            ndt_monto_incapacidad: 20000,
+            ndt_porcentaje_incapacidad: 50,
+          },
+        ],
+        error: null,
+      },
+      // Y aunque el catálogo hoy no se pueda leer.
+      sgrh_cat_tipos_ausencia: { data: null, error: { message: 'boom' } },
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.detalles[0].incapacidad).toEqual({
+      diasEmpleador: 3,
+      diasCcss: 2,
+      porcentajePagoEmpleador: 50,
+      monto: 20000,
+    })
+    expect(result.data.detalles[0].totalAPagar).toBe(467500) // 447500 + 20000
+  })
+
   // El catálogo marca los viáticos con con_afecta_salario_bruto = false: se
   // pagan pero no son salario, así que van después de las deducciones y no
   // cuentan para el aguinaldo.

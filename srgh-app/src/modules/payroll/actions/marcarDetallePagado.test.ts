@@ -66,6 +66,8 @@ function mockSupabase(
     },
     // Sin liquidación: el contrato sigue activo.
     sgrh_liquidaciones: { data: null, error: null },
+    // Aguinaldo del ciclo sin pagar: desmarcar está permitido.
+    sgrh_pagos_extraordinarios: { data: [], error: null },
     ...responses,
   })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
@@ -136,6 +138,8 @@ describe('marcarDetallePagado (server action)', () => {
         { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
       ],
       sgrh_provisiones_anuales: [
+        // 1.ª: ¿el aguinaldo del ciclo ya se pagó (botón viejo)? No.
+        { data: [], error: null },
         { data: { pra_id: 5, pra_monto_acumulado_aguinaldo: 300000 }, error: null },
         OK,
       ],
@@ -145,6 +149,215 @@ describe('marcarDetallePagado (server action)', () => {
     const result = await marcarDetallePagado(1, false)
 
     expect(result).toEqual({ ok: true })
+  })
+
+  describe('desmarcar una quincena ya usada en otro pago', () => {
+    const CONTRATOS = [
+      { data: { lab_empleado_id: 500 }, error: null },
+      { data: [{ lab_id: 77 }, { lab_id: 76 }], error: null },
+    ]
+    const PAGADA = { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null }
+
+    /** ¿Se escribió la fila (el UPDATE de ndt_pagado)? */
+    function seActualizoLaFila(client: ReturnType<typeof mockSupabase>) {
+      return client.from.mock.results
+        .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_detalle')
+        .some(
+          (r) =>
+            (r.value as { update: { mock: { calls: unknown[] } } }).update.mock.calls.length > 0
+        )
+    }
+
+    it('no deja desmarcar si el aguinaldo del ciclo ya se pagó', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: PAGADA,
+        sgrh_historial_laboral: CONTRATOS,
+        sgrh_pagos_extraordinarios: { data: [{ pex_id: 3 }], error: null },
+        sgrh_provisiones_anuales: { data: [], error: null },
+        sgrh_liquidaciones: { data: [], error: null },
+      })
+
+      const result = await marcarDetallePagado(1, false)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok)
+        expect(result.error).toContain('el aguinaldo 2026 de este empleado ya se pagó')
+      expect(seActualizoLaFila(client)).toBe(false)
+      // Busca en todos los contratos del empleado (un traslado paga el aguinaldo en el último).
+      const pagos = client.from.mock.results[
+        client.from.mock.calls.findIndex((c) => c[0] === 'sgrh_pagos_extraordinarios')
+      ].value as { in: { mock: { calls: unknown[][] } }; eq: { mock: { calls: unknown[][] } } }
+      expect(pagos.in.mock.calls[0]).toEqual(['pex_historial_laboral_id', [77, 76]])
+      expect(pagos.eq.mock.calls).toContainEqual(['pex_anio_aguinaldo', 2026])
+    })
+
+    it('tampoco si el aguinaldo se marcó pagado con el botón viejo', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: PAGADA,
+        sgrh_historial_laboral: CONTRATOS,
+        sgrh_provisiones_anuales: { data: [{ pra_id: 9 }], error: null },
+        sgrh_liquidaciones: { data: [], error: null },
+      })
+
+      const result = await marcarDetallePagado(1, false)
+
+      expect(result.ok).toBe(false)
+    })
+
+    it('no deja desmarcar si una liquidación posterior usó la quincena', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: PAGADA,
+        sgrh_historial_laboral: CONTRATOS,
+        sgrh_provisiones_anuales: { data: [], error: null },
+        sgrh_liquidaciones: { data: [{ liq_id: 12 }], error: null },
+      })
+
+      const result = await marcarDetallePagado(1, false)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('liquidación n.° 12')
+      expect(seActualizoLaFila(client)).toBe(false)
+      const liq = client.from.mock.results[
+        client.from.mock.calls.findIndex((c) => c[0] === 'sgrh_liquidaciones')
+      ].value as { gte: { mock: { calls: unknown[][] } } }
+      // Solo cuentan las salidas desde el inicio de esta quincena.
+      expect(liq.gte.mock.calls).toContainEqual(['liq_fecha_salida', '2026-06-01'])
+    })
+
+    it('una quincena de diciembre es del aguinaldo del año siguiente', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: {
+          data: {
+            ...DETALLE_BASE,
+            ndt_pagado: true,
+            sgrh_nomina_periodo: {
+              ...DETALLE_BASE.sgrh_nomina_periodo,
+              npe_periodo_mes: 12,
+              npe_fecha_inicio_periodo: '2026-12-01',
+              npe_fecha_fin_periodo: '2026-12-15',
+            },
+          },
+          error: null,
+        },
+        sgrh_historial_laboral: CONTRATOS,
+        sgrh_pagos_extraordinarios: { data: [{ pex_id: 3 }], error: null },
+        sgrh_provisiones_anuales: { data: [], error: null },
+        sgrh_liquidaciones: { data: [], error: null },
+      })
+
+      const result = await marcarDetallePagado(1, false)
+
+      expect(result.ok === false && result.error).toContain('aguinaldo 2027')
+      const pagos = client.from.mock.results[
+        client.from.mock.calls.findIndex((c) => c[0] === 'sgrh_pagos_extraordinarios')
+      ].value as { eq: { mock: { calls: unknown[][] } } }
+      expect(pagos.eq.mock.calls).toContainEqual(['pex_anio_aguinaldo', 2027])
+    })
+
+    it('si no puede verificarlo, no desmarca', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: PAGADA,
+        sgrh_historial_laboral: CONTRATOS,
+        sgrh_pagos_extraordinarios: { data: null, error: { message: 'boom' } },
+        sgrh_provisiones_anuales: { data: [], error: null },
+      })
+
+      const result = await marcarDetallePagado(1, false)
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'No se pudo verificar si esta quincena ya se usó en otro pago.',
+      })
+      expect(seActualizoLaFila(client)).toBe(false)
+    })
+
+    it('marcar pagada una fila que ya lo está no la vuelve a escribir (no cambia la fecha)', async () => {
+      const client = mockSupabase({ sgrh_nomina_detalle: PAGADA })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true })
+      expect(seActualizoLaFila(client)).toBe(false)
+    })
+  })
+
+  describe('incapacidad congelada con el pago', () => {
+    /** Lo que se mandó en el UPDATE de la fila. */
+    function updateDeLaFila(client: ReturnType<typeof mockSupabase>) {
+      return client.from.mock.results
+        .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_detalle')
+        .flatMap((r) => (r.value as { update: { mock: { calls: unknown[][] } } }).update.mock.calls)
+        .map((c) => c[0] as Record<string, unknown>)[0]
+    }
+
+    it('al marcar el pago guarda el monto y el porcentaje de la incapacidad', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: [
+          {
+            data: { ...DETALLE_BASE, ndt_pagado: false, ndt_dias_incapacidad_empleador: 3 },
+            error: null,
+          },
+          OK,
+          { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
+        ],
+        sgrh_historial_laboral: {
+          data: { lab_salario_base: 400000, sgrh_cat_tipos_jornada: null },
+          error: null,
+        },
+        sgrh_cat_tipos_ausencia: { data: { tau_porcentaje_pago_empleador: 50 }, error: null },
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true })
+      // 3 días × 400.000 / 30 × 50 % = 20.000
+      expect(updateDeLaFila(client)).toMatchObject({
+        ndt_pagado: true,
+        ndt_monto_incapacidad: 20000,
+        ndt_porcentaje_incapacidad: 50,
+      })
+    })
+
+    it('si no puede leer el porcentaje, no marca el pago', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: {
+          data: { ...DETALLE_BASE, ndt_pagado: false, ndt_dias_incapacidad_empleador: 3 },
+          error: null,
+        },
+        sgrh_cat_tipos_ausencia: { data: null, error: { message: 'boom' } },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(false)
+      expect(updateDeLaFila(client)).toBeUndefined()
+    })
+
+    it('al desmarcar lo borra: vuelve a calcularse en vivo', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: [
+          {
+            data: { ...DETALLE_BASE, ndt_pagado: true, ndt_dias_incapacidad_empleador: 3 },
+            error: null,
+          },
+          OK,
+          { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
+        ],
+        sgrh_provisiones_anuales: { data: [], error: null },
+        sgrh_nomina_periodo: OK,
+      })
+
+      const result = await marcarDetallePagado(1, false)
+
+      expect(result).toEqual({ ok: true })
+      expect(updateDeLaFila(client)).toMatchObject({
+        ndt_pagado: false,
+        ndt_monto_incapacidad: null,
+        ndt_porcentaje_incapacidad: null,
+      })
+    })
   })
 
   it('no toca la provisión si el estado no cambia (llamada redundante)', async () => {
@@ -330,6 +543,8 @@ describe('marcarDetallePagado (server action)', () => {
         { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
       ],
       sgrh_provisiones_anuales: [
+        // 1.ª: ¿el aguinaldo del ciclo ya se pagó (botón viejo)? No.
+        { data: [], error: null },
         { data: { pra_id: 3, pra_monto_acumulado_aguinaldo: 50000 }, error: null },
         OK,
       ],
@@ -535,6 +750,8 @@ describe('marcarDetallePagado (server action)', () => {
         { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
       ],
       sgrh_provisiones_anuales: [
+        // 1.ª: ¿el aguinaldo del ciclo ya se pagó (botón viejo)? No.
+        { data: [], error: null },
         { data: { pra_id: 3, pra_monto_acumulado_aguinaldo: 50000 }, error: null },
         OK,
       ],

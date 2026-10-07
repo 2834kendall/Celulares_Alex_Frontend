@@ -7,7 +7,8 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 import { sincronizarEstadoPeriodo } from '@/modules/payroll/lib/estadoPeriodoData'
-import { hoyLocal } from '@/modules/payroll/lib/fechas'
+import { hoyLocal, rangoQuincena } from '@/modules/payroll/lib/fechas'
+import { montoIncapacidadEnVivo } from '@/modules/payroll/lib/incapacidad'
 import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import {
@@ -34,6 +35,7 @@ interface DetalleActualRow {
   ndt_horas_extra_al_50: number
   ndt_horas_asistencia: number | null
   ndt_horas_extra_asistencia: number | null
+  ndt_dias_incapacidad_empleador?: number | null
   sgrh_nomina_periodo: {
     npe_periodo_mes: number
     npe_periodo_anio: number
@@ -243,6 +245,123 @@ async function verificarBaseGuardado(
   return { ok: true, desactualizado, guardado, esperado, ajusteGuardado, ajusteEsperado }
 }
 
+/**
+ * ¿Esta quincena ya se usó para pagar algo fuera de la planilla? Si es así,
+ * no se puede desmarcar: devuelve el motivo para mostrarlo.
+ *
+ *  - El aguinaldo de su ciclo ya se pagó (comprobante, o el botón viejo de
+ *    la provisión): se calculó con el bruto de esta quincena.
+ *  - El empleado ya se liquidó y salió después de que empezara esta
+ *    quincena: la liquidación promedió salarios, sumó el aguinaldo
+ *    proporcional y descontó lo pagado por planilla con estas quincenas.
+ *
+ * Se mira a todos los contratos del empleado. Uno de una relación anterior
+ * (antes de un reingreso) no estorba: su aguinaldo y su liquidación son de
+ * fechas anteriores a esta quincena.
+ */
+async function motivoParaNoDesmarcar(
+  supabase: SupabaseServerClient,
+  labId: number,
+  periodo: NonNullable<DetalleActualRow['sgrh_nomina_periodo']>
+): Promise<{ ok: true; motivo: string | null } | { ok: false }> {
+  const { data: contrato, error: errContrato } = await supabase
+    .from('sgrh_historial_laboral')
+    .select('lab_empleado_id')
+    .eq('lab_id', labId)
+    .maybeSingle<{ lab_empleado_id: number }>()
+  if (errContrato || !contrato) return { ok: false }
+
+  const { data: contratos, error: errContratos } = await supabase
+    .from('sgrh_historial_laboral')
+    .select('lab_id')
+    .eq('lab_empleado_id', contrato.lab_empleado_id)
+    .returns<{ lab_id: number }[]>()
+  if (errContratos) return { ok: false }
+  const labIds = [
+    ...new Set([labId, ...(Array.isArray(contratos) ? contratos : []).map((c) => c.lab_id)]),
+  ]
+
+  const ciclo = anioCicloAguinaldo(periodo.npe_periodo_mes, periodo.npe_periodo_anio)
+  const inicio =
+    periodo.npe_fecha_inicio_periodo ??
+    rangoQuincena(periodo.npe_periodo_mes, periodo.npe_periodo_anio, periodo.npe_quincena)
+      ?.inicio ??
+    `${periodo.npe_periodo_anio}-01-01`
+
+  const [pagos, provisiones, liquidaciones] = await Promise.all([
+    supabase
+      .from('sgrh_pagos_extraordinarios')
+      .select('pex_id')
+      .eq('pex_tipo', 'aguinaldo')
+      .eq('pex_anio_aguinaldo', ciclo)
+      .in('pex_historial_laboral_id', labIds)
+      .returns<{ pex_id: number }[]>(),
+    supabase
+      .from('sgrh_provisiones_anuales')
+      .select('pra_id')
+      .eq('pra_anio', ciclo)
+      .eq('pra_aguinaldo_pagado', true)
+      .in('pra_historial_laboral_id', labIds)
+      .returns<{ pra_id: number }[]>(),
+    supabase
+      .from('sgrh_liquidaciones')
+      .select('liq_id')
+      .in('liq_historial_laboral_id', labIds)
+      .gte('liq_fecha_salida', inicio)
+      .returns<{ liq_id: number }[]>(),
+  ])
+  if (pagos.error || provisiones.error || liquidaciones.error) return { ok: false }
+
+  const hay = (r: { data: unknown[] | null }) => Array.isArray(r.data) && r.data.length > 0
+  if (hay(liquidaciones)) {
+    return {
+      ok: true,
+      motivo: `No se puede desmarcar: esta quincena ya se usó en la liquidación n.° ${liquidaciones.data![0].liq_id} del empleado (promedio de salarios y aguinaldo proporcional). Desmarcarla dejaría esa liquidación con montos que ya no coinciden con la planilla.`,
+    }
+  }
+  if (hay(pagos) || hay(provisiones)) {
+    return {
+      ok: true,
+      motivo: `No se puede desmarcar: el aguinaldo ${ciclo} de este empleado ya se pagó, y se calculó con esta quincena. Desmarcarla dejaría ese aguinaldo con un monto que ya no coincide con la planilla.`,
+    }
+  }
+  return { ok: true, motivo: null }
+}
+
+/**
+ * Monto y porcentaje de la incapacidad para congelarlos al marcar el pago,
+ * con la misma cuenta que muestra la planilla (montoIncapacidadEnVivo). null
+ * si no se pudo leer el contrato o el catálogo.
+ */
+async function incapacidadAlPagar(
+  supabase: SupabaseServerClient,
+  labId: number,
+  diasEmpleador: number
+): Promise<{ ndt_monto_incapacidad: number; ndt_porcentaje_incapacidad: number } | null> {
+  const [contrato, tipo] = await Promise.all([
+    supabase
+      .from('sgrh_historial_laboral')
+      .select('lab_salario_base')
+      .eq('lab_id', labId)
+      .maybeSingle<{ lab_salario_base: number | null }>(),
+    supabase
+      .from('sgrh_cat_tipos_ausencia')
+      .select('tau_porcentaje_pago_empleador')
+      .eq('tau_codigo', 'INC_ENF')
+      .maybeSingle<{ tau_porcentaje_pago_empleador: number }>(),
+  ])
+  if (contrato.error || tipo.error || !contrato.data || !tipo.data) return null
+  const porcentaje = Number(tipo.data.tau_porcentaje_pago_empleador)
+  return {
+    ndt_monto_incapacidad: montoIncapacidadEnVivo(
+      diasEmpleador,
+      Number(contrato.data.lab_salario_base ?? 0),
+      porcentaje
+    ),
+    ndt_porcentaje_incapacidad: porcentaje,
+  }
+}
+
 export async function marcarDetallePagado(
   ndtId: number,
   pagado: boolean
@@ -267,6 +386,7 @@ export async function marcarDetallePagado(
       ndt_horas_extra_al_50,
       ndt_horas_asistencia,
       ndt_horas_extra_asistencia,
+      ndt_dias_incapacidad_empleador,
       sgrh_nomina_periodo (
         npe_periodo_mes, npe_periodo_anio, npe_quincena,
         npe_fecha_inicio_periodo, npe_fecha_fin_periodo
@@ -283,10 +403,31 @@ export async function marcarDetallePagado(
     return { ok: false, error: 'El detalle no existe o no es visible.' }
   }
 
+  // Ya está como se pide: no hay nada que hacer. Antes se volvía a escribir
+  // la fila, y "marcar pagado" sobre una ya pagada le cambiaba la fecha de
+  // pago a la de hoy.
+  if (detalle.ndt_pagado === pagado) {
+    return { ok: true }
+  }
+
+  const periodo = detalle.sgrh_nomina_periodo
+
+  // Desmarcar una quincena que ya se usó para pagar algo fuera de la planilla
+  // dejaba ese pago con un monto que ya no corresponde: el aguinaldo pagado
+  // (o la liquidación) seguía con el bruto viejo y como "pagado".
+  if (!pagado && periodo) {
+    const bloqueo = await motivoParaNoDesmarcar(supabase, detalle.ndt_historial_laboral_id, periodo)
+    if (!bloqueo.ok) {
+      return { ok: false, error: 'No se pudo verificar si esta quincena ya se usó en otro pago.' }
+    }
+    if (bloqueo.motivo) {
+      return { ok: false, error: bloqueo.motivo }
+    }
+  }
+
   // Un empleado liquidado ya cobró en el finiquito los días del mes de salida
   // que no estaban pagados por planilla (salario pendiente). Marcar pagada
-  // una de esas quincenas los pagaba dos veces. Desmarcar sí se puede.
-  const periodo = detalle.sgrh_nomina_periodo
+  // una de esas quincenas los pagaba dos veces.
   if (pagado && periodo) {
     const cubiertas = await liquidacionesQueCubren(supabase, [detalle.ndt_historial_laboral_id], {
       anio: periodo.npe_periodo_anio,
@@ -425,11 +566,38 @@ export async function marcarDetallePagado(
     }
   }
 
+  // La incapacidad que paga el patrono se congela con el pago: el comprobante
+  // ya emitido no puede cambiar si después cambia el salario o el porcentaje
+  // del catálogo. Al desmarcar vuelve a calcularse en vivo.
+  let incapacidad: {
+    ndt_monto_incapacidad: number | null
+    ndt_porcentaje_incapacidad: number | null
+  } = {
+    ndt_monto_incapacidad: null,
+    ndt_porcentaje_incapacidad: null,
+  }
+  if (pagado && Number(detalle.ndt_dias_incapacidad_empleador ?? 0) > 0) {
+    const congelada = await incapacidadAlPagar(
+      supabase,
+      detalle.ndt_historial_laboral_id,
+      Number(detalle.ndt_dias_incapacidad_empleador)
+    )
+    if (!congelada) {
+      return {
+        ok: false,
+        error:
+          'No se pudo calcular el monto de la incapacidad para guardarlo con el pago. Volvé a intentarlo.',
+      }
+    }
+    incapacidad = congelada
+  }
+
   const { error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
     .update({
       ndt_pagado: pagado,
       ndt_fecha_pago: pagado ? hoyLocal() : null,
+      ...incapacidad,
     })
     .eq('ndt_id', ndtId)
 

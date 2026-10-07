@@ -211,12 +211,16 @@ export async function calcularBasesLiquidacion(
   const claveSalida = claveDeFecha(fechaSalida)
   const [anioSalida, mesSalida] = fechaSalida.split('-').map(Number)
 
-  // Para el salario del contrato: lo que la planilla paga es lab_salario_base;
-  // lab_salario_real solo cuando el base no está.
+  // Salario del contrato, cuando no hay quincenas pagadas para promediar: el
+  // REAL, que es lo que paga la planilla (BASE + AJUSTE llegan a real ÷ 2 por
+  // quincena) y lo que usan el aguinaldo y las vacaciones (ver
+  // salarioMensualContrato en derechos.ts). Antes se tomaba el base, y a quien
+  // salía con menos de dos quincenas pagadas se le liquidaba de menos. El
+  // base solo cuando el real no está.
   const salarioContrato =
-    (historial.lab_salario_base ?? 0) > 0
-      ? historial.lab_salario_base!
-      : (historial.lab_salario_real ?? 0)
+    (historial.lab_salario_real ?? 0) > 0
+      ? historial.lab_salario_real!
+      : (historial.lab_salario_base ?? 0)
 
   const promedio = promedioDiarioSinSubsidios(
     quincenas,

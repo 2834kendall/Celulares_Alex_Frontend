@@ -220,6 +220,25 @@ describe('procesarLiquidacion (server action)', () => {
 
   // Sin quincenas pagadas no hay promedio: se usa el contrato (₡300.000 ÷ 30
   // = ₡10.000) y se avisa. Sale el 20 sin nada pagado ese mes: 20 días.
+  // La planilla paga real ÷ 2 por quincena (BASE + AJUSTE): sin quincenas
+  // para promediar, el diario sale del REAL. Con el base (₡300.000) salía
+  // ₡10.000 en vez de ₡11.000 y se liquidaba de menos.
+  it('sin quincenas pagadas usa el salario real del contrato, no el base', async () => {
+    escenario({
+      sgrh_historial_laboral: {
+        data: { ...HISTORIAL, lab_salario_base: 300000, lab_salario_real: 330000 },
+        error: null,
+      },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.salarioDiario).toBe(11000)
+    expect(result.data.salarioProporcional).toBe(220000) // 20 días
+  })
+
   it('con un motivo que NO genera cesantía ni preaviso, los guarda en 0', async () => {
     escenario()
 
@@ -448,6 +467,32 @@ describe('procesarLiquidacion (server action)', () => {
     const aviso = result.data.advertencias.find((a) => a.includes('van en esta liquidación'))
     expect(aviso).toContain('Enero 2026 · 2ª quincena')
     expect(insercion(client).liq_observaciones).toContain('No se pagan también por planilla')
+  })
+
+  // Mes comercial: salir el 28 de febrero es salir a fin de mes. Con la 1ª
+  // quincena pagada se deben 15 días (lo que paga la planilla por la 2ª), no 13.
+  it('salida el 28 de febrero con la 1ª pagada: 15 días de salario pendiente', async () => {
+    const filas = [quincena(2025, 8, 2, 150000)]
+    for (const mes of [9, 10, 11, 12]) {
+      filas.push(quincena(2025, mes, 1, 150000), quincena(2025, mes, 2, 150000))
+    }
+    filas.push(quincena(2026, 1, 1, 150000), quincena(2026, 1, 2, 150000))
+    filas.push(quincena(2026, 2, 1, 150000), quincena(2026, 2, 2, 150000, false))
+    escenario({
+      sgrh_historial_laboral: { data: { ...HISTORIAL, lab_fecha_fin: '2026-02-28' }, error: null },
+      sgrh_nomina_detalle: { data: filas, error: null },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.diasSalarioPendiente).toBe(15)
+    // 300.000 / 30 × 15
+    expect(result.data.salarioProporcional).toBe(150000)
+    const aviso = result.data.advertencias.find((a) => a.includes('van en esta liquidación'))
+    expect(aviso).toContain('Febrero 2026 · 2ª quincena')
+    expect(aviso).not.toContain('1ª quincena')
   })
 
   it('con las dos quincenas del mes sin pagar, las dos van en la liquidación', async () => {

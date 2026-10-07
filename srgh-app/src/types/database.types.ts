@@ -1993,6 +1993,8 @@ export type Database = {
           ndt_dias_ausencia_sin_goce: number
           ndt_dias_incapacidad_ccss: number
           ndt_dias_incapacidad_empleador: number
+          ndt_monto_incapacidad: number | null
+          ndt_porcentaje_incapacidad: number | null
           ndt_fecha_pago: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
@@ -2020,6 +2022,8 @@ export type Database = {
           ndt_dias_ausencia_sin_goce?: number
           ndt_dias_incapacidad_ccss?: number
           ndt_dias_incapacidad_empleador?: number
+          ndt_monto_incapacidad?: number | null
+          ndt_porcentaje_incapacidad?: number | null
           ndt_fecha_pago?: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
@@ -2047,6 +2051,8 @@ export type Database = {
           ndt_dias_ausencia_sin_goce?: number
           ndt_dias_incapacidad_ccss?: number
           ndt_dias_incapacidad_empleador?: number
+          ndt_monto_incapacidad?: number | null
+          ndt_porcentaje_incapacidad?: number | null
           ndt_fecha_pago?: string | null
           ndt_fecha_registro?: string
           ndt_historial_laboral_id?: number
