@@ -1,19 +1,11 @@
 'use client'
 
-import type { CSSProperties, PointerEvent, ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import Link from 'next/link'
 import { ArrowUpRight, type LucideIcon } from 'lucide-react'
 import { CARD } from '@/components/ui/styles'
 import { cn } from '@/lib/utils/cn'
-
-/* The glow follows the pointer: its position goes to CSS variables on the
-   card itself (see `.dash-glow`), with no state and no re-render. */
-function trackPointer(event: PointerEvent<HTMLElement>) {
-  const card = event.currentTarget
-  const box = card.getBoundingClientRect()
-  card.style.setProperty('--mx', `${event.clientX - box.left}px`)
-  card.style.setProperty('--my', `${event.clientY - box.top}px`)
-}
+import { GlowSpot, trackGlow } from '@/modules/dashboard/components/Glow'
 
 /**
  * Frame of a dashboard panel: icon, title and the way into the module it
@@ -41,7 +33,7 @@ export function WidgetCard({
 }) {
   return (
     <section
-      onPointerMove={trackPointer}
+      onPointerMove={trackGlow}
       className={cn(
         CARD,
         '@container dash-enter dash-widget dash-glow relative flex min-w-0 flex-col overflow-hidden p-4 @md:p-5',
@@ -49,6 +41,7 @@ export function WidgetCard({
       )}
       style={{ '--i': step } as CSSProperties}
     >
+      <GlowSpot />
       <header className="relative flex items-center gap-2">
         <span className="dash-widget-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 transition-colors duration-300">
           <Icon className="h-4 w-4" aria-hidden="true" />

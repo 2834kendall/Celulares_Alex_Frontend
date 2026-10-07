@@ -1364,23 +1364,6 @@ h3 {
 
 /* Acceso rapido: un resplandor que sigue al puntero (`--mx`/`--my` los
    escribe QuickLinks sobre la propia tarjeta). */
-.dash-tile::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    9rem circle at var(--mx, 50%) var(--my, 50%),
-    var(--color-brand-100),
-    transparent 70%
-  );
-  opacity: 0;
-  transition: opacity 0.25s ease-out;
-}
-
-.dash-tile:hover::before {
-  opacity: 1;
-}
-
 /* --- Pastel (ver BirthdayCake) --- */
 
 .dash-candle,
@@ -1500,7 +1483,7 @@ h3 {
   }
 
   .dash-pulse {
-    animation: dash-pulse 1.6s ease-out infinite;
+    animation: dash-pulse 1.6s ease-out 3;
   }
 
   @keyframes dash-pop {
@@ -1662,18 +1645,25 @@ h3 {
     animation: dash-swap 0.28s cubic-bezier(0.2, 0.8, 0.3, 1);
   }
 
+  /*
+   * Las viñetas de los paneles (reloj, monedas, lupa, medalla, equipo) solo se
+   * animan con el puntero sobre su panel. Animadas siempre, cada una repintaba
+   * su SVG 60 veces por segundo aunque nadie la mirara, y entre todas eran una
+   * parte medible del costo de la pantalla en reposo.
+   */
+
   /* Rayos del sol y agujas del reloj: giran sobre (0,0), que su grupo padre
      ya ubico en el centro con un translate. */
   .dash-rays {
     animation: dash-spin 28s linear infinite;
   }
 
-  .dash-spot-minute {
-    animation: dash-spin 6s linear infinite;
+  .dash-widget:hover .dash-spot-minute {
+    animation: dash-spin 1.4s linear infinite;
   }
 
-  .dash-spot-hour {
-    animation: dash-spin 72s linear infinite;
+  .dash-widget:hover .dash-spot-hour {
+    animation: dash-spin 16.8s linear infinite;
   }
 
   @keyframes dash-twinkle {
@@ -1781,13 +1771,13 @@ h3 {
     }
   }
 
-  .dash-spot-coin {
-    animation: dash-coin 4.5s ease-in infinite backwards;
+  .dash-widget:hover .dash-spot-coin {
+    animation: dash-coin 1.6s ease-in infinite backwards;
     animation-delay: 0.5s;
   }
 
-  .dash-spot-coin-late {
-    animation-delay: 1.1s;
+  .dash-widget:hover .dash-spot-coin-late {
+    animation-delay: 0.7s;
   }
 
   /* Lupa que recorre la fila de postulantes. */
@@ -1806,8 +1796,8 @@ h3 {
     }
   }
 
-  .dash-spot-lens {
-    animation: dash-scan 5s ease-in-out infinite;
+  .dash-widget:hover .dash-spot-lens:not([data-held='true']) {
+    animation: dash-scan 2s ease-in-out infinite;
   }
 
   /* Aviso de atrasados: un toque cada tanto para que no pase de largo. */
@@ -1834,21 +1824,28 @@ h3 {
 
 /* Mismo resplandor que los accesos rapidos, para cualquier tarjeta que
    escriba `--mx`/`--my` sobre si misma. */
-.dash-glow::before {
-  content: '';
+/*
+ * Resplandor que sigue al puntero sobre una tarjeta (ver Glow.tsx). Es un
+ * circulo con el degradado ya pintado, que solo se MUEVE con `transform`:
+ * lo desplaza el compositor, sin recalcular estilos ni repintar la tarjeta.
+ * Los margenes negativos lo centran sobre el punto adonde se lo lleva.
+ */
+.dash-glow-spot {
   position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    14rem circle at var(--mx, 50%) var(--my, 0%),
-    var(--color-brand-50),
-    transparent 70%
-  );
+  top: 0;
+  left: 0;
+  width: 28rem;
+  height: 28rem;
+  margin: -14rem 0 0 -14rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--color-brand-50) 0%, transparent 68%);
   opacity: 0;
   transition: opacity 0.3s ease-out;
   pointer-events: none;
+  will-change: transform;
 }
 
-.dash-glow:hover::before {
+.dash-glow:hover > .dash-glow-spot {
   opacity: 1;
 }
 
@@ -1955,8 +1952,8 @@ h3 {
     }
   }
 
-  .dash-spot-medal {
-    animation: dash-swing 3.2s ease-in-out infinite;
+  .dash-widget:hover .dash-spot-medal {
+    animation: dash-swing 1.1s ease-in-out infinite;
   }
 
   @keyframes dash-bob {
@@ -1965,29 +1962,8 @@ h3 {
     }
   }
 
-  .dash-spot-person {
-    animation: dash-bob 2.4s ease-in-out infinite;
-  }
-
-  .dash-widget:hover .dash-spot-medal {
-    animation-duration: 1.1s;
-  }
-
   .dash-widget:hover .dash-spot-person {
-    animation-duration: 0.9s;
-  }
-
-  /* Con el puntero sobre el panel, su viñeta se anima mas rapido. */
-  .dash-widget:hover .dash-spot-minute {
-    animation-duration: 1.4s;
-  }
-
-  .dash-widget:hover .dash-spot-coin {
-    animation-duration: 1.6s;
-  }
-
-  .dash-widget:hover .dash-spot-lens:not([data-held='true']) {
-    animation-duration: 2s;
+    animation: dash-bob 0.9s ease-in-out infinite;
   }
 
   @keyframes dash-toss {

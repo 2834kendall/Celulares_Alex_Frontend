@@ -1,19 +1,11 @@
 'use client'
 
-import type { CSSProperties, PointerEvent } from 'react'
+import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { ArrowUpRight, LayoutDashboard } from 'lucide-react'
 import { NAV_ICONS } from '@/components/layout/NavLinks'
 import { zonasVisibles } from '@/lib/permissions/zones'
-
-/* The glow follows the pointer: its position goes to CSS variables on the
-   tile itself (see `.dash-tile`), with no state and no re-render. */
-function trackPointer(event: PointerEvent<HTMLAnchorElement>) {
-  const tile = event.currentTarget
-  const box = tile.getBoundingClientRect()
-  tile.style.setProperty('--mx', `${event.clientX - box.left}px`)
-  tile.style.setProperty('--my', `${event.clientY - box.top}px`)
-}
+import { GlowSpot, trackGlow } from '@/modules/dashboard/components/Glow'
 
 /**
  * Shortcuts to the zones this session can open — the same list the sidebar
@@ -35,10 +27,11 @@ export function QuickLinks({ permisos }: { permisos: string[] }) {
           <Link
             key={key}
             href={href}
-            onPointerMove={trackPointer}
-            className="dash-enter dash-tile group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3.5 transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-[0_10px_24px_-14px_rgba(15,23,42,0.35)] active:translate-y-0 active:scale-[0.98]"
+            onPointerMove={trackGlow}
+            className="dash-enter dash-glow group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3.5 transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-[0_10px_24px_-14px_rgba(15,23,42,0.35)] active:translate-y-0 active:scale-[0.98]"
             style={{ '--i': index + 3 } as CSSProperties}
           >
+            <GlowSpot />
             <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 transition duration-300 group-hover:-rotate-6 group-hover:scale-110 group-hover:bg-brand-600 group-hover:text-white">
               <Icon className="h-5 w-5" aria-hidden="true" />
             </span>

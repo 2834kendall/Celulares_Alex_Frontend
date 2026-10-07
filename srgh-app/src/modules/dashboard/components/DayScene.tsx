@@ -48,7 +48,9 @@ export function DayScene({ period }: { period: DayPeriod }) {
     <svg
       ref={sceneRef}
       viewBox={`${VIEW_BOX.x} ${VIEW_BOX.y} ${VIEW_BOX.width} ${VIEW_BOX.height}`}
-      className="login-scene dash-day absolute inset-0 h-full w-full"
+      /* overflow-visible: a poked character jumps above the box of the scene
+         (the sun sits right at its top edge). The banner has room above it. */
+      className="login-scene dash-day absolute inset-0 h-full w-full overflow-visible"
       data-mood="idle"
       data-period={period}
       aria-hidden="true"

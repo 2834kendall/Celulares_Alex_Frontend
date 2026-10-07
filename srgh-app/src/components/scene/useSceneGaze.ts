@@ -27,11 +27,20 @@ type ViewBox = { x: number; y: number; width: number; height: number }
 const FULL_LOOK_DISTANCE = 160
 /* Without pointer movement for this long, the characters start looking around. */
 const POINTER_IDLE_MS = 2500
+/* With nothing to react to for this long, the scene goes to rest: see below. */
+const REST_AFTER_MS = 10_000
 const POKE_MS = 650
 const POKE_ATTENTION_MS = 1100
 /* How long a measured position of the scene is trusted without a scroll or
    resize saying it moved. */
 const BOX_MAX_AGE_MS = 400
+/* The gaze is updated at most this often (~30 per second). Eyes are small
+   and the spring already smooths them: twice as often costs twice the style
+   and paint work and cannot be told apart. */
+const MIN_FRAME_MS = 30
+/* How far the face slides inside the body, in SVG units, at full gaze. */
+const FACE_SHIFT_X = 8
+const FACE_SHIFT_Y = 6
 /* Rough width of a typed character, to follow the text as it grows. */
 const TYPED_CHAR_PX = 7.5
 
@@ -53,11 +62,23 @@ export function fieldPoint(id: string, followText: boolean): Point | null {
 }
 
 /**
- * Gaze simulation for an illustrated scene. Every frame each
- * `[data-character]` inside the SVG gets something to look at and a spring
- * carries its gaze there. The result goes straight to `--look-x`/`--look-y`
- * on the node: the stylesheet turns them into pupil, face and body movement
- * (see the `login-` rules in globals.css), and React never re-renders for it.
+ * Gaze simulation for an illustrated scene. Each `[data-character]` inside
+ * the SVG gets something to look at and a spring carries its gaze there; the
+ * result moves the pupils, the face and the lean of the body. React never
+ * re-renders for it.
+ *
+ * It is written to be cheap, because it runs for as long as the scene is on
+ * screen, and SVG is painted on the main thread:
+ *  - the three parts that move get their `transform` written directly. An
+ *    inherited CSS variable on the character would do the same, but every
+ *    change of it recomputes the style of the whole character subtree;
+ *  - a write is skipped when the rounded value did not change, so a settled
+ *    gaze costs nothing;
+ *  - updates are capped at ~30 per second;
+ *  - the loop stops while the scene is off screen, and when there has been
+ *    nothing to react to for a while (it "rests"). `data-live` on the SVG
+ *    tells the stylesheet to pause the scene's CSS animations in both cases.
+ *    Any pointer movement, or a new target, wakes it up.
  *
  * `viewBox` and `actors` must be module constants (one actor per
  * `[data-character]`, in DOM order). `resolveTarget` may change every render.
@@ -69,9 +90,13 @@ export function useSceneGaze(
   resolveTarget: (index: number) => GazeTarget
 ) {
   const resolveRef = useRef(resolveTarget)
+  const wakeRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     resolveRef.current = resolveTarget
+    /* A render usually means the scene has something new to react to (a mood
+       changed): a resting scene must notice. */
+    wakeRef.current?.()
   })
 
   useEffect(() => {
@@ -82,6 +107,15 @@ export function useSceneGaze(
     const bodies = elements.map((element, index) => ({
       element,
       ...actors[index],
+      /* The parts the gaze moves, and how far each one goes (both come from
+         the markup: see Character and Eye in SceneParts). */
+      lean: element.querySelector<SVGGElement>('.login-lean'),
+      leanDeg: parseFloat(getComputedStyle(element).getPropertyValue('--lean')) || 0,
+      face: element.querySelector<SVGGElement>('.login-face'),
+      pupils: Array.from(element.querySelectorAll<SVGGElement>('.login-pupil')).map((node) => ({
+        node,
+        travel: parseFloat(getComputedStyle(node).getPropertyValue('--eye-travel')) || 4,
+      })),
       x: 0,
       y: 0,
       vx: 0,
@@ -89,9 +123,8 @@ export function useSceneGaze(
       wanderX: 0,
       wanderY: 0,
       nextWanderAt: 0,
-      /* Last values written to the node, to skip writes that change nothing. */
-      writtenX: '',
-      writtenY: '',
+      /* Last rounded gaze written, to skip writes that change nothing. */
+      written: '',
     }))
 
     const pointer = { x: 0, y: 0, movedAt: -Infinity }
@@ -99,6 +132,9 @@ export function useSceneGaze(
     const pokeTimeouts = new Map<SVGGElement, ReturnType<typeof setTimeout>>()
     let frame = 0
     let lastTime = performance.now()
+    let lastBusyAt = lastTime
+    let visible = true
+    let resting = false
 
     /*
      * Where the scene is on screen. Measuring it forces layout, so it is kept
@@ -114,7 +150,8 @@ export function useSceneGaze(
 
     const step = (now: number) => {
       frame = requestAnimationFrame(step)
-      const dt = Math.min(0.032, (now - lastTime) / 1000)
+      if (now - lastTime < MIN_FRAME_MS) return
+      const dt = Math.min(0.05, (now - lastTime) / 1000)
       lastTime = now
 
       if (!box || now - boxAt > BOX_MAX_AGE_MS) {
@@ -135,6 +172,7 @@ export function useSceneGaze(
 
       const pointerIsActive = now - pointer.movedAt < POINTER_IDLE_MS
       const someonePoked = now - poke.at < POKE_ATTENTION_MS
+      let busy = pointerIsActive || someonePoked
 
       bodies.forEach((body, index) => {
         const center = toClient(body.anchor)
@@ -152,6 +190,7 @@ export function useSceneGaze(
         }
 
         const target = resolveRef.current(index)
+        if (target) busy = true
 
         if (someonePoked && index !== poke.index) {
           lookAt(toClient(bodies[poke.index].anchor))
@@ -193,47 +232,62 @@ export function useSceneGaze(
         body.x += body.vx * dt
         body.y += body.vy * dt
 
-        /* A settled gaze rounds to the same text frame after frame: writing
-           it again would still invalidate the style of the whole character
-           and repaint it for nothing. */
-        const nextX = body.x.toFixed(3)
-        const nextY = body.y.toFixed(3)
-        if (nextX !== body.writtenX) {
-          body.element.style.setProperty('--look-x', nextX)
-          body.writtenX = nextX
+        const key = `${body.x.toFixed(2)},${body.y.toFixed(2)}`
+        if (key === body.written) return
+        body.written = key
+
+        if (body.lean) {
+          body.lean.style.transform = `skewX(${(body.x * body.leanDeg).toFixed(2)}deg)`
         }
-        if (nextY !== body.writtenY) {
-          body.element.style.setProperty('--look-y', nextY)
-          body.writtenY = nextY
+        if (body.face) {
+          body.face.style.transform = `translate(${(body.x * FACE_SHIFT_X).toFixed(1)}px, ${(body.y * FACE_SHIFT_Y).toFixed(1)}px)`
+        }
+        for (const pupil of body.pupils) {
+          pupil.node.style.transform = `translate(${(body.x * pupil.travel).toFixed(1)}px, ${(body.y * pupil.travel).toFixed(1)}px)`
         }
       })
+
+      if (busy) lastBusyAt = now
+      else if (now - lastBusyAt > REST_AFTER_MS) setResting(true)
     }
 
-    /*
-     * A scene nobody can see does no work: the loop stops, and `data-live`
-     * tells the stylesheet to pause its CSS animations too (SVG animations
-     * are painted on the main thread, so off screen they are pure cost).
-     * Without IntersectionObserver (jsdom in tests) it simply stays live.
-     */
-    const setLive = (live: boolean) => {
+    /* The loop runs, and the scene's CSS animations play, only while it is on
+       screen and awake. */
+    const apply = () => {
+      const live = visible && !resting
       cancelAnimationFrame(frame)
       scene.dataset.live = String(live)
       if (!live) return
       lastTime = performance.now()
+      lastBusyAt = lastTime
       forgetBox()
       frame = requestAnimationFrame(step)
     }
 
+    const setResting = (next: boolean) => {
+      if (resting === next) return
+      resting = next
+      apply()
+    }
+
+    wakeRef.current = () => setResting(false)
+
+    /* Without IntersectionObserver (jsdom in tests) the scene counts as
+       visible and the loop simply starts. */
     const observer =
       typeof IntersectionObserver === 'undefined'
         ? null
-        : new IntersectionObserver(([entry]) => setLive(entry.isIntersecting))
+        : new IntersectionObserver(([entry]) => {
+            visible = entry.isIntersecting
+            apply()
+          })
     observer?.observe(scene)
 
     const handlePointerMove = (event: PointerEvent) => {
       pointer.x = event.clientX
       pointer.y = event.clientY
       pointer.movedAt = performance.now()
+      setResting(false)
     }
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -243,6 +297,7 @@ export function useSceneGaze(
       const element = elements[index]
       poke.index = index
       poke.at = performance.now()
+      setResting(false)
 
       clearTimeout(pokeTimeouts.get(element))
       element.dataset.poked = ''
@@ -253,13 +308,14 @@ export function useSceneGaze(
     }
 
     /* With an observer the loop starts from its first report instead. */
-    if (!observer) frame = requestAnimationFrame(step)
+    if (!observer) apply()
     window.addEventListener('pointermove', handlePointerMove, { passive: true })
     /* Capture: scrolling any ancestor moves the scene, not only the window. */
     window.addEventListener('scroll', forgetBox, { passive: true, capture: true })
     window.addEventListener('resize', forgetBox, { passive: true })
     scene.addEventListener('pointerdown', handlePointerDown)
     return () => {
+      wakeRef.current = null
       cancelAnimationFrame(frame)
       observer?.disconnect()
       window.removeEventListener('scroll', forgetBox, { capture: true })
