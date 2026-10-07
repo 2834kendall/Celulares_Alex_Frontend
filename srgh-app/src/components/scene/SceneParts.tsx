@@ -1,9 +1,15 @@
 import type { CSSProperties, ReactNode } from 'react'
 
 /**
- * Building blocks shared by the illustrated scenes of the auth screens
- * (LoginScene, RecoveryScene). They only draw: expressions and gestures are
- * the `login-` rules in globals.css, and the gaze comes from useSceneGaze.
+ * Building blocks for the illustrated scenes of the app: an eye, a mouth and
+ * the frame of a character. Any module composes its own figures from them
+ * (the login shapes, the recovery envelope, the dashboard sun and cake) by
+ * drawing a body and placing a face on it.
+ *
+ * They only draw. Expressions and gestures are CSS, and the gaze comes from
+ * useSceneGaze. The class names keep the `login-` prefix of the first screen
+ * that used them: for any scene to get them, its <svg> needs the
+ * `login-scene` class and, for moods, a `data-mood` attribute.
  */
 
 export const SCENE_INK = '#131c36'

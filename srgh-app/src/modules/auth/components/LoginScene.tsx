@@ -1,13 +1,13 @@
 'use client'
 
 import { useRef } from 'react'
-import { Character, Eye, Mouth, SCENE_INK } from '@/modules/auth/components/SceneParts'
+import { Character, Eye, Mouth, SCENE_INK } from '@/components/scene/SceneParts'
 import {
   fieldPoint,
   useSceneGaze,
   type GazeActor,
   type GazeTarget,
-} from '@/modules/auth/components/useSceneGaze'
+} from '@/components/scene/useSceneGaze'
 
 /**
  * What the shapes are reacting to. Driven by the form (see LoginForm).

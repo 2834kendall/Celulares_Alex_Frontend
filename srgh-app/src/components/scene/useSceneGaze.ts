@@ -29,6 +29,9 @@ const FULL_LOOK_DISTANCE = 160
 const POINTER_IDLE_MS = 2500
 const POKE_MS = 650
 const POKE_ATTENTION_MS = 1100
+/* How long a measured position of the scene is trusted without a scroll or
+   resize saying it moved. */
+const BOX_MAX_AGE_MS = 400
 /* Rough width of a typed character, to follow the text as it grows. */
 const TYPED_CHAR_PX = 7.5
 
@@ -86,6 +89,9 @@ export function useSceneGaze(
       wanderX: 0,
       wanderY: 0,
       nextWanderAt: 0,
+      /* Last values written to the node, to skip writes that change nothing. */
+      writtenX: '',
+      writtenY: '',
     }))
 
     const pointer = { x: 0, y: 0, movedAt: -Infinity }
@@ -94,12 +100,27 @@ export function useSceneGaze(
     let frame = 0
     let lastTime = performance.now()
 
+    /*
+     * Where the scene is on screen. Measuring it forces layout, so it is kept
+     * between frames and only measured again when it may have moved: on
+     * scroll or resize, and every BOX_MAX_AGE_MS regardless — the page can
+     * shift under the scene (a panel above growing) without either event.
+     */
+    let box: DOMRect | null = null
+    let boxAt = 0
+    const forgetBox = () => {
+      box = null
+    }
+
     const step = (now: number) => {
       frame = requestAnimationFrame(step)
       const dt = Math.min(0.032, (now - lastTime) / 1000)
       lastTime = now
 
-      const box = scene.getBoundingClientRect()
+      if (!box || now - boxAt > BOX_MAX_AGE_MS) {
+        box = scene.getBoundingClientRect()
+        boxAt = now
+      }
       if (box.width === 0 || box.height === 0) return
 
       /* The SVG letterboxes inside its box, so the drawing can be smaller
@@ -172,10 +193,42 @@ export function useSceneGaze(
         body.x += body.vx * dt
         body.y += body.vy * dt
 
-        body.element.style.setProperty('--look-x', body.x.toFixed(3))
-        body.element.style.setProperty('--look-y', body.y.toFixed(3))
+        /* A settled gaze rounds to the same text frame after frame: writing
+           it again would still invalidate the style of the whole character
+           and repaint it for nothing. */
+        const nextX = body.x.toFixed(3)
+        const nextY = body.y.toFixed(3)
+        if (nextX !== body.writtenX) {
+          body.element.style.setProperty('--look-x', nextX)
+          body.writtenX = nextX
+        }
+        if (nextY !== body.writtenY) {
+          body.element.style.setProperty('--look-y', nextY)
+          body.writtenY = nextY
+        }
       })
     }
+
+    /*
+     * A scene nobody can see does no work: the loop stops, and `data-live`
+     * tells the stylesheet to pause its CSS animations too (SVG animations
+     * are painted on the main thread, so off screen they are pure cost).
+     * Without IntersectionObserver (jsdom in tests) it simply stays live.
+     */
+    const setLive = (live: boolean) => {
+      cancelAnimationFrame(frame)
+      scene.dataset.live = String(live)
+      if (!live) return
+      lastTime = performance.now()
+      forgetBox()
+      frame = requestAnimationFrame(step)
+    }
+
+    const observer =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver(([entry]) => setLive(entry.isIntersecting))
+    observer?.observe(scene)
 
     const handlePointerMove = (event: PointerEvent) => {
       pointer.x = event.clientX
@@ -199,11 +252,18 @@ export function useSceneGaze(
       )
     }
 
-    frame = requestAnimationFrame(step)
+    /* With an observer the loop starts from its first report instead. */
+    if (!observer) frame = requestAnimationFrame(step)
     window.addEventListener('pointermove', handlePointerMove, { passive: true })
+    /* Capture: scrolling any ancestor moves the scene, not only the window. */
+    window.addEventListener('scroll', forgetBox, { passive: true, capture: true })
+    window.addEventListener('resize', forgetBox, { passive: true })
     scene.addEventListener('pointerdown', handlePointerDown)
     return () => {
       cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener('scroll', forgetBox, { capture: true })
+      window.removeEventListener('resize', forgetBox)
       window.removeEventListener('pointermove', handlePointerMove)
       scene.removeEventListener('pointerdown', handlePointerDown)
       pokeTimeouts.forEach((timeout) => clearTimeout(timeout))
