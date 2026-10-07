@@ -50,7 +50,8 @@ export function navItemClass(active: boolean, { indent, emphasis }: NavItemOptio
   const color = active
     ? 'bg-brand-700 text-white'
     : `${emphasis ? 'text-[var(--sidebar-text-strong)]' : 'text-[var(--sidebar-text)]'} hover:bg-black/5 hover:text-[var(--sidebar-text-strong)]`
-  return `flex items-center gap-3 rounded-lg ${padding} py-2 text-sm font-medium transition ${color}`
+  // `nav-item`: gancho del efecto dock de los íconos (ver globals.css).
+  return `nav-item flex items-center gap-3 rounded-lg ${padding} py-2 text-sm font-medium transition ${color}`
 }
 
 interface NavLinksProps {
@@ -79,9 +80,11 @@ export function NavLinks({ permisos, onNavigate }: NavLinksProps) {
             href={href}
             onClick={onNavigate}
             aria-current={active ? 'page' : undefined}
+            // Elige el gesto propio del ícono al pasar el puntero (globals.css).
+            data-icon={key}
             className={navItemClass(active)}
           >
-            <Icon className="h-4 w-4 shrink-0" />
+            <Icon className="nav-icon h-4 w-4 shrink-0" aria-hidden="true" />
             {label}
           </Link>
         )
