@@ -427,6 +427,64 @@ describe('parsePlanillaRow', () => {
     }
   })
 
+  describe('números escritos como texto', () => {
+    const base = (valor: string) => {
+      const r = parsePlanillaRow(5, '1-1111-1111', 88, 0, 2500, columnas({ BASE: valor }))
+      return r.ok === true ? r.row.montos.BASE : r.ok === false ? r.error.mensaje : 'vacía'
+    }
+
+    it.each([
+      ['215000', 215000],
+      ['₡215 000', 215000],
+      // Formato de Costa Rica: antes "215.000" se leía como 215.
+      ['215.000', 215000],
+      ['₡215.000', 215000],
+      ['1.234.567', 1234567],
+      // Antes "1.234,56" se leía como 1,23456.
+      ['1.234,56', 1234.56],
+      ['1234,56', 1234.56],
+      // Formato de Excel en inglés, como antes.
+      ['215,000', 215000],
+      ['1,234.56', 1234.56],
+      ['8.5', 8.5],
+    ])('"%s" → %d', (texto, esperado) => {
+      expect(base(texto)).toBe(esperado)
+    })
+
+    it.each(['1.234.56', '12.34.567', '1,234,56', 'abc', '1.234,567'])(
+      '"%s" no calza con ningún formato y se rechaza',
+      (texto) => {
+        expect(base(texto)).toBe('El campo "BASE" no es un número válido.')
+      }
+    )
+  })
+
+  describe('topes (los mismos del formulario manual)', () => {
+    it('rechaza más de 999 horas trabajadas o extra', () => {
+      const horas = parsePlanillaRow(5, '1', 1000, 0, 2500, columnas({ BASE: 1 }))
+      const extra = parsePlanillaRow(5, '1', 88, 5000, 2500, columnas({ BASE: 1 }))
+      expect(horas.ok === false && horas.error.mensaje).toContain('demasiado alto')
+      expect(extra.ok === false && extra.error.mensaje).toContain('demasiado alto')
+    })
+
+    it('rechaza un monto de más de ₡99.999.999', () => {
+      const r = parsePlanillaRow(5, '1', 88, 0, 2500, columnas({ COMISION: 100_000_000 }))
+      expect(r.ok === false && r.error.mensaje).toBe(
+        'El campo "COMISION" es demasiado alto (máximo ₡99.999.999).'
+      )
+    })
+
+    it('rechaza un salario por hora absurdo', () => {
+      const r = parsePlanillaRow(5, '1', 88, 0, 100_000_000, columnas({ BASE: 1 }))
+      expect(r.ok === false && r.error.mensaje).toContain('demasiado alto')
+    })
+
+    it('acepta los valores justo en el tope', () => {
+      const r = parsePlanillaRow(5, '1', 999, 999, 2500, columnas({ BASE: 99_999_999 }))
+      expect(r.ok).toBe(true)
+    })
+  })
+
   it('ignora filas totalmente vacías', () => {
     const result = parsePlanillaRow(
       9,

@@ -7,6 +7,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { aplicarHorasExtraEnDetalle } from '@/modules/payroll/lib/horasExtraDetalle'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import { ahoraLocal } from '@/modules/payroll/lib/fechas'
+import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 import {
   pagarBancoHorasSchema,
   type PagarBancoHorasInput,
@@ -21,6 +22,7 @@ interface MovimientoRow {
 
 interface DetalleBorradorRow {
   ndt_id: number
+  ndt_pagado: boolean
   ndt_horas_ordinarias_diurnas: number
   ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
@@ -77,6 +79,7 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     .select(
       `
       ndt_id,
+      ndt_pagado,
       ndt_horas_ordinarias_diurnas,
       ndt_horas_extra_al_50,
       ndt_salario_por_hora,
@@ -93,20 +96,45 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     return { ok: false, error: 'No se pudo cargar la planilla del empleado.' }
   }
 
-  const enBorrador = (detalles ?? [])
-    .filter((d) => d.sgrh_nomina_periodo?.npe_estado === 'borrador')
+  // Solo una fila que todavía se va a pagar por planilla. Un periodo sigue en
+  // 'borrador' mientras le falte alguien, así que puede tener filas ya
+  // pagadas: sumarle las horas a una de esas cambiaba un comprobante emitido
+  // por plata que nunca se transfería. Lo mismo con una fila cuyo salario ya
+  // va en una liquidación: no se puede marcar pagada, y el monto se perdía.
+  const abiertas = (detalles ?? [])
+    .filter((d) => d.sgrh_nomina_periodo?.npe_estado === 'borrador' && !d.ndt_pagado)
     .sort((a, b) =>
       (b.sgrh_nomina_periodo?.npe_fecha_inicio_periodo ?? '').localeCompare(
         a.sgrh_nomina_periodo?.npe_fecha_inicio_periodo ?? ''
       )
     )
-  const detalleDestino = enBorrador[0]
+
+  let detalleDestino: DetalleBorradorRow | undefined
+  for (const candidato of abiertas) {
+    const periodo = candidato.sgrh_nomina_periodo!
+    const cubiertas = await liquidacionesQueCubren(
+      supabase,
+      [movimiento.bhm_historial_laboral_id],
+      {
+        anio: periodo.npe_periodo_anio,
+        mes: periodo.npe_periodo_mes,
+        quincena: periodo.npe_quincena,
+      }
+    )
+    if (!cubiertas.ok) {
+      return { ok: false, error: 'No se pudo verificar si el empleado ya fue liquidado.' }
+    }
+    if (!cubiertas.data.has(movimiento.bhm_historial_laboral_id)) {
+      detalleDestino = candidato
+      break
+    }
+  }
 
   if (!detalleDestino) {
     return {
       ok: false,
       error:
-        'Este empleado no tiene ningún periodo en borrador ahora mismo. Creá o abrí un periodo antes de pagarle estas horas.',
+        'Este empleado no tiene ninguna quincena sin pagar en un periodo abierto. Creá o abrí un periodo donde todavía no se le haya pagado antes de pagarle estas horas.',
     }
   }
 

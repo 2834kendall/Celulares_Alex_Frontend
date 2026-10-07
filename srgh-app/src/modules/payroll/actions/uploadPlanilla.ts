@@ -29,7 +29,7 @@ import {
   type FotoAsistencia,
   type LecturaAsistencia,
 } from '@/modules/payroll/lib/horasOrigen'
-import { ahoraLocal } from '@/modules/payroll/lib/fechas'
+import { ahoraLocal, hoyLocal } from '@/modules/payroll/lib/fechas'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import {
   baseParaHorasEditadas,
@@ -39,6 +39,10 @@ import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
+import {
+  filasConHorasDeBancoResueltas,
+  limpiarDependenciasDetalle,
+} from '@/modules/payroll/lib/dependenciasDetalle'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos KB
 
@@ -603,23 +607,41 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const ndtIdsEliminar = salieronDelExcel.map((d: DetalleExistenteRow) => d.ndt_id)
 
   // 7. Eliminar lo que salió de la planilla
+  //
+  // Antes se borraban las líneas y después la fila. La fila de alguien con
+  // horas extra tiene su movimiento en el banco de horas apuntándola, así que
+  // el borrado de la fila fallaba por la llave foránea DESPUÉS de haber
+  // borrado las líneas: quedaba con su total y sin ninguna línea. Ahora se
+  // revisa primero y se suelta todo en el mismo orden que deletePeriodo.
   if (ndtIdsEliminar.length > 0) {
-    const tablasLineas = [
-      { tabla: 'sgrh_nomina_linea_ingreso', columna: 'ing_nomina_detalle_id' },
-      { tabla: 'sgrh_nomina_linea_deduccion', columna: 'ded_nomina_detalle_id' },
-      { tabla: 'sgrh_nomina_linea_patronal', columna: 'pat_nomina_detalle_id' },
-    ] as const
+    const resueltas = await filasConHorasDeBancoResueltas(supabase, ndtIdsEliminar)
+    if (!resueltas.ok) {
+      return {
+        ok: false,
+        error: 'No se pudo revisar el banco de horas de los empleados que salieron de la planilla.',
+      }
+    }
+    if (resueltas.ndtIds.length > 0) {
+      const nombrePorLab = new Map(empleadosResult.data.map((e) => [e.labId, e.nombre]))
+      const nombres = salieronDelExcel
+        .filter((d: DetalleExistenteRow) => resueltas.ndtIds.includes(d.ndt_id))
+        .map(
+          (d: DetalleExistenteRow) =>
+            nombrePorLab.get(d.ndt_historial_laboral_id) ?? `contrato ${d.ndt_historial_laboral_id}`
+        )
+        .slice(0, 5)
+        .join(', ')
+      return {
+        ok: false,
+        error: `No se puede quitar de la planilla a ${nombres}: sus horas extra de esta quincena ya se pagaron o compensaron desde el banco de horas. Volvé a incluirlos en el archivo, o revertí ese movimiento primero.`,
+      }
+    }
 
-    for (const { tabla, columna } of tablasLineas) {
-      const { error: errDelLineas } = await supabase
-        .from(tabla)
-        .delete()
-        .in(columna, ndtIdsEliminar)
-      if (errDelLineas) {
-        return {
-          ok: false,
-          error: 'No se pudieron eliminar los empleados que salieron de la planilla.',
-        }
+    const errorDependencias = await limpiarDependenciasDetalle(supabase, ndtIdsEliminar)
+    if (errorDependencias) {
+      return {
+        ok: false,
+        error: 'No se pudieron eliminar los empleados que salieron de la planilla.',
       }
     }
 
@@ -688,7 +710,8 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
   // 9. Insertar los empleados nuevos
   if (filasNuevas.length > 0) {
-    const hoy = new Date().toISOString().slice(0, 10)
+    // Fecha de Costa Rica: toISOString daba el día siguiente desde las 18:00.
+    const hoy = hoyLocal()
     const totalesPorFila = new Map(
       filasNuevas.map((row) => [
         row.cedula,

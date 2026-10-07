@@ -85,7 +85,14 @@ function buildFormData(periodoId = 1): FormData {
 function mockSupabase(
   responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
 ) {
-  const client = createSupabaseClientMock(responses)
+  const client = createSupabaseClientMock({
+    // Lo que cuelga de una fila que sale del Excel (banco de horas,
+    // comisiones, comprobantes): por defecto, nada.
+    sgrh_banco_horas_movimientos: { data: [], error: null },
+    sgrh_comisiones_calculadas: { data: [], error: null },
+    sgrh_comprobantes_pago: { data: [], error: null },
+    ...responses,
+  })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -802,6 +809,179 @@ describe('uploadPlanilla (server action)', () => {
       eliminados: 1,
       pagadasSinTocar: [],
     })
+  })
+
+  it('no saca del Excel a quien tiene horas extra ya pagadas desde el banco de horas', async () => {
+    const client = mockSupabase({
+      sgrh_banco_horas_movimientos: {
+        data: [{ bhm_nomina_detalle_id: 20, bhm_estado: 'pagado' }],
+        error: null,
+      },
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 10,
+              ndt_historial_laboral_id: 55,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+            },
+            {
+              ndt_id: 20,
+              ndt_historial_laboral_id: 66,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 10,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          salarioRealMensual: null,
+          horasSemanales: 48,
+        },
+      ],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('ya se pagaron o compensaron')
+    // No se borró nada: ni líneas ni la fila.
+    const borrados = client.from.mock.results.filter(
+      (r) =>
+        ((r.value as { delete: { mock: { calls: unknown[] } } }).delete.mock.calls.length ?? 0) > 0
+    )
+    expect(borrados).toEqual([])
+  })
+
+  it('al sacar del Excel a quien tiene horas extra pendientes, borra el movimiento antes que la fila', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 10,
+              ndt_historial_laboral_id: 55,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+            },
+            {
+              ndt_id: 20,
+              ndt_historial_laboral_id: 66,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 10,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('KEEP', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          labId: 55,
+          cedula: 'KEEP',
+          nombre: 'Ana',
+          salarioBaseMensual: 200000,
+          salarioRealMensual: null,
+          horasSemanales: 48,
+        },
+      ],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toMatchObject({ ok: true, eliminados: 1 })
+    // Orden de los borrados: movimiento del banco, líneas, y la fila al final.
+    const orden = client.from.mock.results
+      .map((r, i) => ({
+        tabla: client.from.mock.calls[i][0] as string,
+        b: r.value as { delete: { mock: { calls: unknown[]; invocationCallOrder: number[] } } },
+      }))
+      .filter((x) => x.b.delete.mock.calls.length > 0)
+      .sort(
+        (x, y) => x.b.delete.mock.invocationCallOrder[0] - y.b.delete.mock.invocationCallOrder[0]
+      )
+      .map((x) => x.tabla)
+    expect(orden[0]).toBe('sgrh_banco_horas_movimientos')
+    expect(orden.at(-1)).toBe('sgrh_nomina_detalle')
+    expect(orden).toEqual(
+      expect.arrayContaining([
+        'sgrh_nomina_linea_ingreso',
+        'sgrh_nomina_linea_deduccion',
+        'sgrh_nomina_linea_patronal',
+      ])
+    )
   })
 
   it('aplica conceptos del catálogo que no son los fijos históricos (ej. una deducción manual nueva)', async () => {

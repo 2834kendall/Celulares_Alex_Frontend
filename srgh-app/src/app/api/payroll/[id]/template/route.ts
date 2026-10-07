@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { buildPlanillaTemplate } from '@/modules/payroll/lib/planillaExcel'
-import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
+import { getEmpleadosActivos, getFilasGuardadas } from '@/modules/payroll/lib/planillaData'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import type { ConceptoPlanillaColumna } from '@/modules/payroll/lib/planilla'
@@ -115,13 +115,22 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const horasPorLab = horasResult?.ok ? horasResult.data : null
 
+  // Lo que ya está guardado en el periodo: comisiones, préstamos y BASE
+  // corregidos a mano vuelven en la plantilla en vez de venir en 0.
+  const guardadas = await getFilasGuardadas(supabase, periodoId)
+  if (!guardadas.ok) {
+    return NextResponse.json({ error: guardadas.error }, { status: 500 })
+  }
+
   const empleados = empleadosResult.data.map((empleado) => {
     const totales = horasPorLab?.get(empleado.labId)
-    if (!totales) return empleado
-
+    const guardado = guardadas.data.get(empleado.labId)
     return {
       ...empleado,
-      horas: { lectura: totales, diasPorRevisar: totales.diasQueBloquean.length },
+      ...(guardado ? { guardado } : {}),
+      ...(totales
+        ? { horas: { lectura: totales, diasPorRevisar: totales.diasQueBloquean.length } }
+        : {}),
     }
   })
 

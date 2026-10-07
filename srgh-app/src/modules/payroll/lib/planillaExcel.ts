@@ -22,10 +22,14 @@ import {
   type RawCell,
 } from './planilla'
 import {
+  basesDelSistema,
+  esBaseDelSistema,
   prellenarDesdeAsistencia,
+  type ContratoPago,
   type HorasDeAsistencia,
   type QuincenaRef,
 } from './prellenadoAsistencia'
+import { lecturaUtilizable } from './horasPeriodo'
 
 const SHEET_NAME = 'Planilla'
 
@@ -77,6 +81,54 @@ export interface EmpleadoPlantilla {
     /** Días programados con marcas incompletas; hay que corregirlos antes de pagar. */
     diasPorRevisar: number
   }
+  /**
+   * La fila que el empleado YA tiene en este periodo, si tiene. Sin esto la
+   * plantilla traía en 0 todo monto manual que no fuera BASE o AJUSTE: bajarla
+   * y subirla (lo que pide el aviso de "las marcas cambiaron") borraba
+   * comisiones, préstamos y el BASE corregido a mano de todas las filas.
+   */
+  guardado?: FilaGuardadaPlantilla
+}
+
+/** Lo guardado en la fila del periodo, en la forma que usa la plantilla. */
+export interface FilaGuardadaPlantilla {
+  pagado: boolean
+  horas: number
+  horasExtra: number
+  salarioPorHora: number
+  /** Monto por código de concepto manual (BASE, AJUSTE, COMISION, PRESTAMO…). */
+  montos: Record<string, number>
+}
+
+/**
+ * BASE que va en la plantilla para una fila sin pagar.
+ *
+ * El que prellenó el sistema se rehace con las marcas de hoy (para eso se
+ * vuelve a bajar la plantilla). Uno corregido a mano se respeta, con el mismo
+ * criterio que la subida (baseParaHorasEditadas): si no coincide con ninguna
+ * regla del sistema, es una decisión de alguien. Sin marcas utilizables no
+ * hay con qué recalcular, así que queda lo guardado.
+ */
+function baseDeLaPlantilla(
+  prellenado: number,
+  guardado: FilaGuardadaPlantilla | undefined,
+  contrato: ContratoPago,
+  lectura: HorasDeAsistencia | null,
+  quincena: QuincenaRef
+): number {
+  const base = guardado?.montos[CODIGO_SALARIO_BASE] ?? 0
+  if (!guardado || !(base > 0)) return prellenado
+  if (!lecturaUtilizable(lectura)) return base
+  const candidatos = [
+    prellenado,
+    ...basesDelSistema(
+      contrato,
+      { horas: guardado.horas, horasExtra: guardado.horasExtra },
+      lectura,
+      quincena
+    ),
+  ]
+  return esBaseDelSistema(base, candidatos) ? prellenado : base
 }
 
 export interface PlantillaInfo {
@@ -199,28 +251,38 @@ export async function buildPlanillaTemplate(
     //
     // Es un prellenado, no una imposición: el encargado revisa el archivo antes
     // de subirlo.
-    const prellenado = prellenarDesdeAsistencia(
-      {
-        salarioBaseMensual: emp.salarioBaseMensual,
-        salarioRealMensual: emp.salarioRealMensual ?? null,
-        horasSemanales: emp.horasSemanales ?? null,
-      },
-      emp.horas?.lectura ?? null,
-      info.quincena
-    )
+    const contrato: ContratoPago = {
+      salarioBaseMensual: emp.salarioBaseMensual,
+      salarioRealMensual: emp.salarioRealMensual ?? null,
+      horasSemanales: emp.horasSemanales ?? null,
+    }
+    const lecturaEmp = emp.horas?.lectura ?? null
+    const prellenado = prellenarDesdeAsistencia(contrato, lecturaEmp, info.quincena)
+    const guardado = emp.guardado
 
-    row.getCell(colHoras).value = prellenado.horas
-    row.getCell(colHorasExtra).value = prellenado.horasExtra
-    row.getCell(colSalarioHora).value = prellenado.salarioPorHora
+    // Una fila ya pagada va tal cual se pagó: la subida no la cambia (tiene
+    // comprobante emitido), y traerla recalculada solo generaba el aviso de
+    // "pagadas sin tocar" en cada subida.
+    const pagada = guardado?.pagado === true ? guardado : null
+    const montoGuardado = (codigo: string) => guardado?.montos[codigo] ?? 0
+
+    row.getCell(colHoras).value = pagada ? pagada.horas : prellenado.horas
+    row.getCell(colHorasExtra).value = pagada ? pagada.horasExtra : prellenado.horasExtra
+    row.getCell(colSalarioHora).value = pagada ? pagada.salarioPorHora : prellenado.salarioPorHora
     row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
+
+    const base = pagada
+      ? montoGuardado(CODIGO_SALARIO_BASE)
+      : baseDeLaPlantilla(prellenado.base, guardado, contrato, lecturaEmp, info.quincena)
+    const ajuste = pagada ? montoGuardado(CODIGO_AJUSTE) : prellenado.ajuste
 
     ingresoManual.forEach((c, i) => {
       row.getCell(colIngresoInicio + i).value =
         c.con_codigo === CODIGO_SALARIO_BASE
-          ? prellenado.base
+          ? base
           : c.con_codigo === CODIGO_AJUSTE
-            ? prellenado.ajuste
-            : 0
+            ? ajuste
+            : montoGuardado(c.con_codigo)
       if (c.con_codigo === CODIGO_AJUSTE) {
         row.getCell(colIngresoInicio + i).fill = {
           type: 'pattern',
@@ -229,8 +291,8 @@ export async function buildPlanillaTemplate(
         }
       }
     })
-    deduccionManual.forEach((_, i) => {
-      row.getCell(colDeduccionManualInicio + i).value = 0
+    deduccionManual.forEach((c, i) => {
+      row.getCell(colDeduccionManualInicio + i).value = montoGuardado(c.con_codigo)
     })
 
     const letraHorasExtra = columnLetter(colHorasExtra)

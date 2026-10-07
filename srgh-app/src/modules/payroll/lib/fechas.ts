@@ -8,16 +8,41 @@
  * mes siguiente, en otro periodo de planilla.
  */
 
-/** 'YYYY-MM-DD' del dia de hoy en horario local. */
-export function hoyLocal(): string {
-  const hoy = new Date()
-  const mes = String(hoy.getMonth() + 1).padStart(2, '0')
-  const dia = String(hoy.getDate()).padStart(2, '0')
-  return `${hoy.getFullYear()}-${mes}-${dia}`
+const ZONA_COSTA_RICA = 'America/Costa_Rica'
+
+/**
+ * Fecha y hora de pared de Costa Rica para un instante.
+ *
+ * Con Intl y la zona explícita, no con getDate()/getHours() del proceso: el
+ * servidor corre en la zona que tenga el hosting (normalmente UTC), y con la
+ * hora del proceso un pago marcado el 31 a las 19:00 de Costa Rica quedaba
+ * con fecha del 1. Asistencia ya lo hacía así (attendance/lib/time.ts).
+ */
+function partesEnCostaRica(instante: Date) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ZONA_COSTA_RICA,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instante)
+  const parte = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? '00'
+  return {
+    fecha: `${parte('year')}-${parte('month')}-${parte('day')}`,
+    hora: `${parte('hour')}:${parte('minute')}:${parte('second')}`,
+  }
+}
+
+/** 'YYYY-MM-DD' del dia de hoy en Costa Rica. */
+export function hoyLocal(instante: Date = new Date()): string {
+  return partesEnCostaRica(instante).fecha
 }
 
 /**
- * 'YYYY-MM-DD HH:mm:ss' de este momento, en horario local.
+ * 'YYYY-MM-DD HH:mm:ss' de este momento, en hora de Costa Rica.
  *
  * Es el formato que espera un `timestamp without time zone` de Postgres, que
  * guarda la hora tal cual se la manda sin convertir nada. Mandarle un
@@ -25,13 +50,9 @@ export function hoyLocal(): string {
  * (UTC-6) todo quedaria seis horas adelantado, y una planilla leida a las
  * 19:00 del 31 diria que se leyo a la 01:00 del 1.
  */
-export function ahoraLocal(): string {
-  const ahora = new Date()
-  const dos = (n: number) => String(n).padStart(2, '0')
-  return (
-    `${ahora.getFullYear()}-${dos(ahora.getMonth() + 1)}-${dos(ahora.getDate())} ` +
-    `${dos(ahora.getHours())}:${dos(ahora.getMinutes())}:${dos(ahora.getSeconds())}`
-  )
+export function ahoraLocal(instante: Date = new Date()): string {
+  const { fecha, hora } = partesEnCostaRica(instante)
+  return `${fecha} ${hora}`
 }
 
 /**

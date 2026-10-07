@@ -68,7 +68,11 @@ function mockEscenarioReversible(
 ) {
   return mockSupabase({
     sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PAGADO, error: null }, OK],
-    sgrh_nomina_detalle: [{ data: DETALLE_BORRADOR, error: null }, OK],
+    // 2.ª: el UPDATE de montos (solo si sigue sin pagar) devuelve la fila.
+    sgrh_nomina_detalle: [
+      { data: DETALLE_BORRADOR, error: null },
+      { data: [{ ndt_id: 50 }], error: null },
+    ],
     sgrh_cat_conceptos_nomina: [
       { data: CONCEPTOS_ACTIVOS, error: null },
       { data: HORAS_EXTRA_CONCEPTO, error: null },

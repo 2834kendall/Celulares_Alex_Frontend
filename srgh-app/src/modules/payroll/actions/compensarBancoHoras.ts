@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { ahoraLocal } from '@/modules/payroll/lib/fechas'
 import type { CompensarBancoHorasResult } from '@/modules/payroll/types'
 
 interface MovimientoRow {
@@ -23,7 +24,8 @@ export async function compensarBancoHoras(bhmId: number): Promise<CompensarBanco
     return { ok: false, error: 'Movimiento inválido.' }
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
+  const usuarioId = (claims.app_metadata as { usr_id?: number })?.usr_id ?? null
   const supabase = await createClient()
 
   const { data: movimiento, error: errMovimiento } = await supabase
@@ -42,16 +44,28 @@ export async function compensarBancoHoras(bhmId: number): Promise<CompensarBanco
     return { ok: false, error: 'Este movimiento ya fue resuelto (pagado o compensado).' }
   }
 
-  const { error } = await supabase
+  // Solo si sigue pendiente, igual que pagarBancoHoras: si otra persona lo
+  // pagaba al mismo tiempo, la plata ya estaba en la planilla y el
+  // movimiento quedaba como 'compensado', así que revertir no la sacaba.
+  const { data: resueltos, error } = await supabase
     .from('sgrh_banco_horas_movimientos')
     .update({
       bhm_estado: 'compensado',
-      bhm_fecha_resolucion: new Date().toISOString(),
+      bhm_resuelto_por_id: usuarioId,
+      // ahoraLocal y no toISOString: la columna es `timestamp without time
+      // zone` y toISOString la dejaba seis horas adelantada.
+      bhm_fecha_resolucion: ahoraLocal(),
     })
     .eq('bhm_id', bhmId)
+    .eq('bhm_estado', 'pendiente')
+    .select('bhm_id')
+    .returns<{ bhm_id: number }[]>()
 
   if (error) {
     return { ok: false, error: 'No se pudo registrar la compensación.' }
+  }
+  if (!resueltos || resueltos.length === 0) {
+    return { ok: false, error: 'Este movimiento ya fue resuelto (pagado o compensado).' }
   }
 
   revalidatePath('/payroll/banco-horas')

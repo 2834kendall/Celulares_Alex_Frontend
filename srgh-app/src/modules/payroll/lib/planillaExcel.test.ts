@@ -111,6 +111,76 @@ const INFO = {
   quincena: { anio: 2026, mes: 8, quincena: 1 },
 }
 
+describe('buildPlanillaTemplate con la fila ya guardada en el periodo', () => {
+  /** Valores de la fila de Ana: horas, extra, valor hora, BASE, COMISION, PRESTAMO. */
+  async function filaAna(emp: Parameters<typeof buildPlanillaTemplate>[1][number]) {
+    const buffer = await buildPlanillaTemplate(INFO, [emp], CONCEPTOS)
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const fila = wb.getWorksheet('Planilla')!.getRow(5)
+    return [3, 4, 5, 6, 7, 8].map((c) => fila.getCell(c).value)
+  }
+  const ANA = EMPLEADOS[0]
+  const GUARDADO = {
+    pagado: false,
+    horas: 96,
+    horasExtra: 0,
+    salarioPorHora: 2500,
+    montos: { BASE: 300000, COMISION: 50000, PRESTAMO: 20000, CCSS_OBRERA: 37905 },
+  }
+
+  // Antes venían en 0: bajar la plantilla y subirla borraba comisiones y
+  // préstamos de todas las filas.
+  it('trae las comisiones y deducciones manuales que ya tenía la fila', async () => {
+    expect(await filaAna({ ...ANA, guardado: GUARDADO })).toEqual([
+      96, 0, 2500, 300000, 50000, 20000,
+    ])
+  })
+
+  it('un BASE del sistema se rehace con las marcas de hoy', async () => {
+    // Se guardó con 96 h (300.000); hoy las marcas dicen 72 de 96 → 225.000.
+    expect(
+      await filaAna({
+        ...ANA,
+        horas: { lectura: lectura(72, 96), diasPorRevisar: 0 },
+        guardado: GUARDADO,
+      })
+    ).toEqual([72, 0, 2500, 225000, 50000, 20000])
+  })
+
+  it('un BASE corregido a mano se respeta', async () => {
+    expect(
+      await filaAna({
+        ...ANA,
+        horas: { lectura: lectura(72, 96), diasPorRevisar: 0 },
+        guardado: { ...GUARDADO, horas: 72, montos: { ...GUARDADO.montos, BASE: 280000 } },
+      })
+    ).toEqual([72, 0, 2500, 280000, 50000, 20000])
+  })
+
+  it('sin marcas utilizables queda el BASE guardado', async () => {
+    const { horas: _sinMarcas, ...sinHoras } = ANA
+    void _sinMarcas
+    const [, , , base] = await filaAna({ ...sinHoras, guardado: GUARDADO })
+    expect(base).toBe(300000)
+  })
+
+  it('una fila ya pagada va tal cual se pagó', async () => {
+    expect(
+      await filaAna({
+        ...ANA,
+        guardado: {
+          pagado: true,
+          horas: 80,
+          horasExtra: 2,
+          salarioPorHora: 2400,
+          montos: { BASE: 250000, COMISION: 10000 },
+        },
+      })
+    ).toEqual([80, 2, 2400, 250000, 10000, 0])
+  })
+})
+
 describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
   it('arma una columna por cada concepto de tipo "monto manual" y las prellena', async () => {
     const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)

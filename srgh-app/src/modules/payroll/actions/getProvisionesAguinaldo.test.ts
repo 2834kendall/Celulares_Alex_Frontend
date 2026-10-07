@@ -95,6 +95,26 @@ describe('getProvisionesAguinaldo (server action)', () => {
     conPermisos(['NOMINA_READ', 'AUSENCIAS_READ'])
   })
 
+  // 00:30 UTC del 1 de enero = 18:30 del 31 de diciembre en Costa Rica: el
+  // ciclo por defecto sigue siendo el del año que termina. Con el año del
+  // servidor (UTC) ya saltaba al siguiente.
+  it('sin año, toma el de Costa Rica, no el del servidor', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2027-01-01T00:30:00Z'))
+    try {
+      mockSupabase({
+        sgrh_historial_laboral: { data: [], error: null },
+        sgrh_nomina_detalle: { data: [], error: null },
+      })
+
+      const result = await getProvisionesAguinaldo()
+
+      expect(result.ok && result.data.anio).toBe(2026)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('calcula el aguinaldo desde las quincenas pagadas: ciclo completo = un salario', async () => {
     mockSupabase({
       sgrh_historial_laboral: { data: [candidato(1, 'Ana', '2020-01-15')], error: null },

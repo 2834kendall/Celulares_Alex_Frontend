@@ -221,7 +221,6 @@ export function prellenarDesdeAsistencia(
  * Montos de BASE que el SISTEMA pudo haber escrito para unas horas guardadas,
  * con cada regla que existió:
  *
- *  - la quincena entera (supuesto cuando la asistencia no servía);
  *  - las horas contra 96 h de jornada, sin acreditar feriados ni ausencias
  *    (la regla que rebajaba vacaciones);
  *  - las horas contra 96 h de jornada, acreditándolos;
@@ -230,6 +229,15 @@ export function prellenarDesdeAsistencia(
  *
  * Sirve para distinguir un BASE que puso el sistema —y que se puede rehacer—
  * de uno que corrigió una persona, que no se pisa.
+ *
+ * La quincena entera por sí sola NO está en la lista, aunque hubo una regla
+ * vieja que la ponía cuando la asistencia no servía: es también el monto que
+ * más se escribe a mano (pagarle la quincena completa a alguien a quien le
+ * faltan horas). Con ella en la lista, ese monto escrito a mano se cambiaba
+ * en silencio por el proporcional al guardar el detalle, al subir el Excel o
+ * al recalcular. evaluarBaseGuardado ya la excluía por la misma razón. Cuando
+ * las horas sí dan la quincena completa, las reglas de abajo la devuelven
+ * igual.
  */
 export function basesDelSistema(
   contrato: ContratoPago,
@@ -239,7 +247,7 @@ export function basesDelSistema(
 ): number[] {
   const mitad = contrato.salarioBaseMensual / 2
   const jornada = horasJornadaQuincena(contrato.horasSemanales)
-  const bases = [round2(mitad), round2((mitad * Math.min(guardadas.horas, jornada)) / jornada)]
+  const bases = [round2((mitad * Math.min(guardadas.horas, jornada)) / jornada)]
 
   if (lectura) {
     // La regla de 96 h acreditaba un día sin horario como jornada ÷ 2 ÷ 7.

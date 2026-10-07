@@ -468,10 +468,42 @@ export interface PlanillaRowInput {
 export type ParseRowResult =
   { ok: true; row: PlanillaRowInput } | { ok: false; error: PlanillaRowError } | { ok: 'empty' }
 
+/** Topes del Excel: los mismos que el formulario manual (editarDetalleSchema). */
+const HORAS_MAX = 999
+const MONTO_MAX = 99_999_999
+
+/**
+ * Un número escrito como TEXTO en una celda (las celdas numéricas llegan como
+ * number y no pasan por acá). Acepta el formato de Costa Rica y el de Excel en
+ * inglés:
+ *
+ *  - "215000", "8.5", "1234,56"            → sin miles; 1 o 2 decimales
+ *  - "215.000", "1.234,56"                  → punto de miles, coma decimal
+ *  - "215,000", "1,234.56"                  → coma de miles, punto decimal
+ *
+ * Antes se borraban las comas y se leía el resto: "215.000" era 215 y
+ * "1.234,56" era 1,23456, y ese monto se guardaba como si alguien lo hubiera
+ * escrito así. Lo que no calza con ningún formato se rechaza.
+ */
+function textoANumero(texto: string): number | null {
+  const t = texto.replace(/[₡\s]/g, '')
+  if (/^-?\d+$/.test(t)) return Number(t)
+  if (/^-?\d+[.,]\d{1,2}$/.test(t)) return Number(t.replace(',', '.'))
+  // El mismo separador en todos los miles (\2): "1.234,567" no es un número.
+  const miles = /^(-?\d{1,3}([.,])\d{3}(?:\2\d{3})*)(?:([.,])(\d{1,2}))?$/.exec(t)
+  if (miles) {
+    const [, entero, separadorMiles, separadorDecimal, decimales] = miles
+    if (separadorDecimal && separadorDecimal === separadorMiles) return null
+    const sinMiles = entero.split(separadorMiles).join('')
+    return Number(decimales ? `${sinMiles}.${decimales}` : sinMiles)
+  }
+  return null
+}
+
 function toNumber(value: RawCell): number | null {
   if (value === null || value === undefined || value === '') return 0
-  const n = typeof value === 'number' ? value : Number(String(value).replace(/[₡,\s]/g, ''))
-  return Number.isFinite(n) ? n : null
+  const n = typeof value === 'number' ? value : textoANumero(String(value))
+  return n !== null && Number.isFinite(n) ? n : null
 }
 
 /**
@@ -519,6 +551,15 @@ export function parsePlanillaRow(
       error: { fila, mensaje: 'El campo "horas trabajadas" no puede ser negativo.' },
     }
   }
+  if (horas > HORAS_MAX) {
+    return {
+      ok: false,
+      error: {
+        fila,
+        mensaje: `El campo "horas trabajadas" es demasiado alto (máximo ${HORAS_MAX}).`,
+      },
+    }
+  }
 
   const extra = toNumber(horasExtra)
   if (extra === null) {
@@ -533,6 +574,12 @@ export function parsePlanillaRow(
       error: { fila, mensaje: 'El campo "horas extra" no puede ser negativo.' },
     }
   }
+  if (extra > HORAS_MAX) {
+    return {
+      ok: false,
+      error: { fila, mensaje: `El campo "horas extra" es demasiado alto (máximo ${HORAS_MAX}).` },
+    }
+  }
 
   const salario = toNumber(salarioPorHora)
   if (salario === null) {
@@ -545,6 +592,12 @@ export function parsePlanillaRow(
     return {
       ok: false,
       error: { fila, mensaje: 'El campo "salario por hora" no puede ser negativo.' },
+    }
+  }
+  if (salario > MONTO_MAX) {
+    return {
+      ok: false,
+      error: { fila, mensaje: 'El campo "salario por hora" es demasiado alto.' },
     }
   }
 
@@ -563,6 +616,12 @@ export function parsePlanillaRow(
       return {
         ok: false,
         error: { fila, mensaje: `El campo "${etiqueta}" no puede ser negativo.` },
+      }
+    }
+    if (Math.abs(n) > MONTO_MAX) {
+      return {
+        ok: false,
+        error: { fila, mensaje: `El campo "${etiqueta}" es demasiado alto (máximo ₡99.999.999).` },
       }
     }
     montos[codigo] = n

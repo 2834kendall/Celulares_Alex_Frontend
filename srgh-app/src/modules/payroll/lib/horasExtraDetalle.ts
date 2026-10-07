@@ -136,7 +136,9 @@ export async function aplicarHorasExtraEnDetalle(
     salarioPorHora: detalle.ndt_salario_por_hora,
   })
 
-  const { error: errUpdate } = await supabase
+  // Solo si la fila sigue sin pagar: alguien pudo marcarla pagada mientras
+  // tanto, y una fila pagada tiene comprobante emitido y aguinaldo acumulado.
+  const { data: actualizadas, error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
     .update({
       ndt_salario_bruto: salarioBruto,
@@ -145,9 +147,18 @@ export async function aplicarHorasExtraEnDetalle(
       ndt_total_cargas_patronales: totalCargasPatronales,
     })
     .eq('ndt_id', detalle.ndt_id)
+    .eq('ndt_pagado', false)
+    .select('ndt_id')
+    .returns<{ ndt_id: number }[]>()
 
   if (errUpdate) {
     return { error: 'No se pudieron actualizar los montos del periodo.' }
+  }
+  if (!actualizadas || actualizadas.length === 0) {
+    return {
+      error:
+        'Esa quincena ya está marcada como pagada, así que no se le pueden cambiar los montos. No se tocó nada.',
+    }
   }
 
   const { error: errLineas } = await reemplazarLineasDetalle(

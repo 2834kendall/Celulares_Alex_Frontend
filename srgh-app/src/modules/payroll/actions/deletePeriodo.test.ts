@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 
+vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({
@@ -181,6 +182,32 @@ describe('deletePeriodo (server action)', () => {
     })
     // Y además se borran los movimientos generados por este mismo periodo.
     expect(banco.some((b) => seLlamo(b, 'delete'))).toBe(true)
+  })
+
+  // Horas extra que nacieron en este periodo y ya se pagaron en otra quincena
+  // (o se compensaron): borrar el periodo borraba ese movimiento, y el pago
+  // hecho en la otra planilla quedaba sin registro ni forma de revertirlo.
+  it('no borra el periodo si sus horas de banco ya se pagaron o compensaron', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_periodo: [PERIODO, OK],
+      sgrh_nomina_detalle: [{ data: [{ ndt_id: 1, ndt_pagado: false }], error: null }, OK],
+      sgrh_banco_horas_movimientos: {
+        data: [{ bhm_nomina_detalle_id: 1, bhm_estado: 'pagado' }],
+        error: null,
+      },
+    })
+
+    const result = await deletePeriodo(9)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('ya se pagaron o compensaron')
+    for (const tabla of [
+      'sgrh_nomina_detalle',
+      'sgrh_nomina_periodo',
+      'sgrh_banco_horas_movimientos',
+    ]) {
+      expect(alguienLlamo(client, tabla, 'delete')).toBe(false)
+    }
   })
 
   it('suelta las comisiones en vez de borrarlas', async () => {

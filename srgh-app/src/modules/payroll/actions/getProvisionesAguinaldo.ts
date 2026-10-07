@@ -6,6 +6,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { puedeLeerAusencias, sucursalesVisibles } from '@/modules/payroll/lib/derechosData'
 import { calcularAguinaldosDelCiclo } from '@/modules/payroll/lib/aguinaldoData'
 import type { AguinaldoItem } from '@/modules/payroll/types'
+import { hoyLocal } from '@/modules/payroll/lib/fechas'
 
 export type GetProvisionesAguinaldoResult =
   | {
@@ -38,7 +39,9 @@ export async function getProvisionesAguinaldo(
   const claims = await requirePermission(PERMISOS.NOMINA_READ)
 
   const supabase = await createClient()
-  const anio = anioCiclo ?? new Date().getFullYear()
+  // Año de Costa Rica: desde las 18:00 del 31 de diciembre, el del servidor
+  // (UTC) ya es el siguiente y mostraba el ciclo equivocado.
+  const anio = anioCiclo ?? Number(hoyLocal().slice(0, 4))
 
   const resultado = await calcularAguinaldosDelCiclo(supabase, anio, sucursalesVisibles(claims))
   if (!resultado.ok) return resultado

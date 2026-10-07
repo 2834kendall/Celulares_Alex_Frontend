@@ -4,10 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import {
+  filasConHorasDeBancoResueltas,
+  limpiarDependenciasDetalle,
+} from '@/modules/payroll/lib/dependenciasDetalle'
 
 export type DeletePeriodoResult = { ok: true } | { ok: false; error: string }
-
-type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 interface DetalleRow {
   ndt_id: number
@@ -77,7 +79,18 @@ export async function deletePeriodo(periodoId: number): Promise<DeletePeriodoRes
   const ndtIds = filas.map((d) => d.ndt_id)
 
   if (ndtIds.length > 0) {
-    const errorDependencias = await limpiarDependencias(supabase, ndtIds)
+    const resueltas = await filasConHorasDeBancoResueltas(supabase, ndtIds)
+    if (!resueltas.ok) {
+      return { ok: false, error: 'No se pudo revisar el banco de horas del periodo.' }
+    }
+    if (resueltas.ndtIds.length > 0) {
+      return {
+        ok: false,
+        error: `No se puede eliminar el periodo: ${resueltas.ndtIds.length} empleado(s) tienen horas extra de esta quincena que ya se pagaron o compensaron desde el banco de horas. Borrar el periodo borraría ese registro. Revertí esos movimientos primero.`,
+      }
+    }
+
+    const errorDependencias = await limpiarDependenciasDetalle(supabase, ndtIds)
     if (errorDependencias) {
       return { ok: false, error: errorDependencias }
     }
@@ -108,83 +121,4 @@ export async function deletePeriodo(periodoId: number): Promise<DeletePeriodoRes
   revalidatePath(`/payroll/${periodoId}`)
   revalidatePath('/payroll/banco-horas')
   return { ok: true }
-}
-
-/**
- * Suelta todo lo que referencia a estos detalles, en el orden que exigen las
- * llaves foráneas. Devuelve el mensaje de error, o null si todo salió.
- */
-async function limpiarDependencias(
-  supabase: SupabaseServerClient,
-  ndtIds: number[]
-): Promise<string | null> {
-  // 1. Horas de banco que se PAGARON en este periodo pero nacieron en otro.
-  //    Esas no se borran: el movimiento sigue existiendo, lo que deja de ser
-  //    cierto es que se pagó. Vuelven a 'pendiente' para que el encargado las
-  //    resuelva de nuevo; si se borraran, esas horas extra desaparecerían sin
-  //    que nadie las haya pagado ni compensado.
-  const { error: errRevertir } = await supabase
-    .from('sgrh_banco_horas_movimientos')
-    .update({
-      bhm_estado: 'pendiente',
-      bhm_monto_pagado: null,
-      bhm_nomina_detalle_pago_id: null,
-      bhm_resuelto_por_id: null,
-      bhm_fecha_resolucion: null,
-    })
-    .in('bhm_nomina_detalle_pago_id', ndtIds)
-
-  if (errRevertir) {
-    return 'No se pudieron devolver a pendientes las horas de banco pagadas en este periodo.'
-  }
-
-  // 2. Movimientos GENERADOS por este periodo: sin el detalle que los originó
-  //    no tienen de dónde colgar (bhm_nomina_detalle_id es NOT NULL).
-  const { error: errBanco } = await supabase
-    .from('sgrh_banco_horas_movimientos')
-    .delete()
-    .in('bhm_nomina_detalle_id', ndtIds)
-
-  if (errBanco) {
-    return 'No se pudo limpiar el banco de horas del periodo.'
-  }
-
-  // 3. Comisiones: la comisión sigue existiendo aunque la planilla donde se
-  //    iba a pagar desaparezca, así que solo se suelta el vínculo.
-  const { error: errComisiones } = await supabase
-    .from('sgrh_comisiones_calculadas')
-    .update({ cal_nomina_detalle_id: null })
-    .in('cal_nomina_detalle_id', ndtIds)
-
-  if (errComisiones) {
-    return 'No se pudieron desvincular las comisiones del periodo.'
-  }
-
-  // 4. Comprobantes. Un detalle impago no debería tener uno (se emite al marcar
-  //    el pago y se retira al desmarcarlo), pero si alguno quedó suelto por un
-  //    fallo a mitad de camino, esto lo limpia en vez de tumbar el borrado.
-  const { error: errComprobantes } = await supabase
-    .from('sgrh_comprobantes_pago')
-    .delete()
-    .in('com_nomina_detalle_id', ndtIds)
-
-  if (errComprobantes) {
-    return 'No se pudieron eliminar los comprobantes del periodo.'
-  }
-
-  // 5. Las tres tablas de líneas.
-  const tablasLineas = [
-    { tabla: 'sgrh_nomina_linea_ingreso', columna: 'ing_nomina_detalle_id' },
-    { tabla: 'sgrh_nomina_linea_deduccion', columna: 'ded_nomina_detalle_id' },
-    { tabla: 'sgrh_nomina_linea_patronal', columna: 'pat_nomina_detalle_id' },
-  ] as const
-
-  for (const { tabla, columna } of tablasLineas) {
-    const { error } = await supabase.from(tabla).delete().in(columna, ndtIds)
-    if (error) {
-      return 'No se pudieron eliminar las líneas de la planilla.'
-    }
-  }
-
-  return null
 }

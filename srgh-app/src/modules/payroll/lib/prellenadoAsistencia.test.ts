@@ -321,6 +321,37 @@ describe('baseParaHorasEditadas', () => {
     expect(r).toEqual({ base: 212345, conservado: true })
   })
 
+  // RRHH decide pagarle la quincena completa a alguien que cumplió 72 de 96 h
+  // y escribe 200.000. Antes la quincena entera contaba como "del sistema" y
+  // se cambiaba en silencio por el proporcional (150.000).
+  it('la quincena completa escrita a mano se respeta aunque falten horas', () => {
+    const r = baseParaHorasEditadas({
+      baseIngresado: 200000,
+      contrato: CONTRATO,
+      lectura: lectura(72, 96),
+      horasPrevias: { horas: 72, horasExtra: 0 },
+      horasNuevas: { horas: 72, horasExtra: 0 },
+      quincena: Q1_AGOSTO,
+    })
+
+    expect(r).toEqual({ base: 200000, conservado: true })
+  })
+
+  // La otra cara: si la quincena completa la puso el sistema porque las horas
+  // daban 96, al bajarle las horas sí sigue a las nuevas.
+  it('la quincena completa del sistema (96 h) sigue a las horas nuevas', () => {
+    const r = baseParaHorasEditadas({
+      baseIngresado: 200000,
+      contrato: CONTRATO,
+      lectura: lectura(72, 96),
+      horasPrevias: { horas: 96, horasExtra: 0 },
+      horasNuevas: { horas: 72, horasExtra: 0 },
+      quincena: Q1_AGOSTO,
+    })
+
+    expect(r).toEqual({ base: 150000, conservado: false })
+  })
+
   it('sin lectura no hay con qué recalcular: queda lo que llegó', () => {
     const r = baseParaHorasEditadas({
       baseIngresado: 200000,
