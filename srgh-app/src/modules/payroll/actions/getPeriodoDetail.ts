@@ -14,6 +14,7 @@ import { evaluarBaseGuardado } from '@/modules/payroll/lib/prellenadoAsistencia'
 import { CODIGO_AJUSTE, CODIGO_SALARIO_BASE } from '@/modules/payroll/lib/planilla'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
+import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 
 interface PeriodoRow {
   npe_id: number
@@ -304,6 +305,28 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
     }
   }
 
+  // Filas impagas cuyo salario ya va en una liquidación (salario pendiente
+  // del mes de salida): no se pagan por planilla. Informativo: si la lectura
+  // falla se muestran como pendientes, igual que antes.
+  const liquidacionPorLab = new Map<number, number>()
+  const labsImpagos = (detalles ?? [])
+    .filter((d: DetalleRow) => !d.ndt_pagado)
+    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
+  if (labsImpagos.length > 0) {
+    try {
+      const cubiertas = await liquidacionesQueCubren(supabase, labsImpagos, {
+        anio: periodo.npe_periodo_anio,
+        mes: periodo.npe_periodo_mes,
+        quincena: periodo.npe_quincena,
+      })
+      if (cubiertas.ok) {
+        for (const [labId, liq] of cubiertas.data) liquidacionPorLab.set(labId, liq.liqId)
+      }
+    } catch (err) {
+      console.error('getPeriodoDetail: no se pudieron leer las liquidaciones', err)
+    }
+  }
+
   // Cuenta IBAN + banco para la transferencia (sgrh_empleado_datos_pago). Es
   // informativo: si el empleado no cargó sus datos de pago o la consulta
   // falla, simplemente no se muestra — no bloquea el resto de la pantalla.
@@ -427,6 +450,9 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       salarioNeto: row.ndt_salario_neto,
       pagado: row.ndt_pagado,
       fechaPago: row.ndt_fecha_pago,
+      liquidacionQueLaPaga: row.ndt_pagado
+        ? null
+        : (liquidacionPorLab.get(row.ndt_historial_laboral_id) ?? null),
       codigoVerificacion: codigoPorNdt.get(row.ndt_id) ?? null,
       diasPorRevisar: revisarPorLab.get(row.ndt_historial_laboral_id) ?? [],
       montosPorConcepto: montosPorNdt.get(row.ndt_id) ?? {},

@@ -5,15 +5,22 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { ProcesarLiquidacionInput } from '@/modules/payroll/types'
+import { sincronizarPeriodosDeLaSalida } from '@/modules/payroll/lib/estadoPeriodoData'
 
 vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+// El recálculo del estado del periodo tiene sus propios tests
+// (estadoPeriodoData.test.ts); acá solo importa cuándo se llama.
+vi.mock('@/modules/payroll/lib/estadoPeriodoData', () => ({
+  sincronizarPeriodosDeLaSalida: vi.fn(),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
+const mockSincronizar = vi.mocked(sincronizarPeriodosDeLaSalida)
 
 /**
  * Ingresó el 15 de enero de 2020 con ₡300.000 al mes. RRHH ya terminó el
@@ -480,6 +487,64 @@ describe('procesarLiquidacion (server action)', () => {
     expect(result.data.advertencias.some((a) => a.includes('ya está marcada como pagada'))).toBe(
       true
     )
+  })
+
+  describe('periodo de la quincena de salida', () => {
+    const CON_SALIDA_IMPAGA = {
+      sgrh_nomina_detalle: {
+        data: [...seisMesesPagados(150000), quincena(2026, 1, 2, 150000, false)],
+        error: null,
+      },
+    }
+
+    it('después de guardar, recalcula el periodo de la salida (puede quedar pagado)', async () => {
+      const client = escenario(CON_SALIDA_IMPAGA)
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      expect(mockSincronizar).toHaveBeenCalledTimes(1)
+      expect(mockSincronizar).toHaveBeenCalledWith(client, [1], '2026-01-20')
+      expect(mockRevalidatePath).toHaveBeenCalledWith('/payroll')
+      // Primero se guarda la liquidación, después se recalcula.
+      expect(client.rpc.mock.invocationCallOrder[0]).toBeLessThan(
+        mockSincronizar.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('sin salario pendiente no hay fila que cubrir: no toca periodos', async () => {
+      escenario({
+        sgrh_nomina_detalle: {
+          data: [...seisMesesPagados(150000), quincena(2026, 1, 2, 150000, true)],
+          error: null,
+        },
+      })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      expect(mockSincronizar).not.toHaveBeenCalled()
+    })
+
+    it('si la liquidación no se guardó, no toca periodos', async () => {
+      escenario(CON_SALIDA_IMPAGA, { data: null, error: { code: 'XX000', message: 'boom' } })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(false)
+      expect(mockSincronizar).not.toHaveBeenCalled()
+    })
+
+    it('si el recálculo falla, la liquidación ya guardada se informa como guardada', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      escenario(CON_SALIDA_IMPAGA)
+      mockSincronizar.mockRejectedValueOnce(new Error('red caída'))
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      expect(mockRevalidatePath).toHaveBeenCalledWith('/payroll/aguinaldo-liquidacion')
+    })
   })
 
   it('guarda deducciones y neto en la liquidación', async () => {

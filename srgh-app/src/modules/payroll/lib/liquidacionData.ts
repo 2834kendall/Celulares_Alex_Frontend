@@ -123,6 +123,8 @@ export async function cargarHistorialParaLiquidacion(
 }
 
 export interface BasesLiquidacion {
+  /** Contratos de la relación laboral (ver contratosDeLaRelacion). */
+  labIds: number[]
   /** Fecha desde la que se mide la antigüedad (cesantía y preaviso). */
   fechaIngreso: string
   ingresoOriginal: string | null
@@ -279,6 +281,7 @@ export async function calcularBasesLiquidacion(
         diasTomados,
       }),
       cicloAnterior: { anio: cicloAnio - 1, monto: anterior.monto, labIds },
+      labIds,
       sinPagar: quincenas
         .filter((q) => !q.pagado && q.clave <= claveSalida)
         .sort((a, b) => a.clave - b.clave),

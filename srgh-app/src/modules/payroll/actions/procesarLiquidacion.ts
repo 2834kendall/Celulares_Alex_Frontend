@@ -16,6 +16,7 @@ import {
   sucursalesVisibles,
 } from '@/modules/payroll/lib/derechosData'
 import { claveQuincenal } from '@/modules/payroll/lib/derechos'
+import { sincronizarPeriodosDeLaSalida } from '@/modules/payroll/lib/estadoPeriodoData'
 import {
   avisoAguinaldoAnterior,
   calcularBasesLiquidacion,
@@ -324,6 +325,18 @@ export async function procesarLiquidacion(
     return {
       ok: false,
       error: 'No se pudo guardar la liquidación. Intentá de nuevo o avisá a soporte.',
+    }
+  }
+
+  // La fila impaga de la quincena de salida ya la paga esta liquidación: su
+  // periodo puede cerrarse si todos los demás estaban pagados. Si el
+  // salario pendiente es 0 no hay ninguna que cubrir.
+  if (diasTrabajadosMesActual > 0) {
+    try {
+      await sincronizarPeriodosDeLaSalida(supabase, bases.labIds, fechaSalida)
+      revalidatePath('/payroll')
+    } catch (err) {
+      console.error('procesarLiquidacion: no se pudo recalcular el periodo de la salida', err)
     }
   }
 

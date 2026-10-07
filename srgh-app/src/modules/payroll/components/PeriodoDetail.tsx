@@ -377,19 +377,25 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     router.refresh()
   }
 
+  // Filas cuyo salario ya va en una liquidación (salario pendiente del mes
+  // de salida): no se pagan por esta planilla, así que no suman a los
+  // totales ni generan avisos de "corregí antes de pagar".
+  const enLiquidacion = periodo.detalles.filter((d) => d.liquidacionQueLaPaga !== null)
+  const filasDelPago = periodo.detalles.filter((d) => d.liquidacionQueLaPaga === null)
+
   // Los totales se calculan sobre todos los detalles del periodo, no solo
   // sobre la página visible — son un resumen del periodo completo.
-  const totalBruto = periodo.detalles.reduce((sum, d) => sum + d.salarioBruto, 0)
+  const totalBruto = filasDelPago.reduce((sum, d) => sum + d.salarioBruto, 0)
   // Empleados a los que no se les puede marcar el pago todavía: sus marcas del
   // periodo están incompletas, así que las horas calculadas están cortas.
-  const conMarcasIncompletas = periodo.detalles.filter((d) =>
+  const conMarcasIncompletas = filasDelPago.filter((d) =>
     d.diasPorRevisar.some((r) => PROBLEMAS_QUE_BLOQUEAN.has(r.problema as ProblemaDia))
   )
   // Días que solo se avisan: la persona marcó pero ese día no tenía horario
   // programado, así que esas horas no entraron. No traba el pago — trabarlo
   // obligaría a inventarle un horario a un día pasado, y eso cambiaría el
   // valor de la hora de toda la quincena.
-  const conDiasSinHorario = periodo.detalles
+  const conDiasSinHorario = filasDelPago
     .map((d) => ({
       detalle: d,
       dias: d.diasPorRevisar.filter((r) => !PROBLEMAS_QUE_BLOQUEAN.has(r.problema as ProblemaDia)),
@@ -398,33 +404,30 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   // Alguien corrigió una marca DESPUÉS de armada la planilla, así que el monto
   // guardado ya no corresponde. Solo cuenta cuando las horas venían de la
   // asistencia: si estaban corregidas a mano, la diferencia es deliberada.
-  const conMarcasDesactualizadas = periodo.detalles.filter(
+  const conMarcasDesactualizadas = filasDelPago.filter(
     (d) => d.marcasCambiaron && d.horasOrigen === 'asistencia'
   )
   // Filas con horas y sin plata. Nadie decide pagarle ₡0 a alguien que trabajó:
   // es una fila que quedó a medias (nació sin salario base, o se armó antes de
   // que la asistencia entrara al cálculo). Se avisa arriba porque en la tabla,
   // entre nueve columnas de montos, un 0 no salta a la vista.
-  const conFilasEnCero = periodo.detalles.filter(filaEnCero)
+  const conFilasEnCero = filasDelPago.filter(filaEnCero)
   // El salario base guardado salió de una regla vieja (antes, vacaciones y
   // feriados rebajaban el base). El pago está bloqueado hasta recalcular.
-  const conBaseDesactualizado = periodo.detalles.filter(
+  const conBaseDesactualizado = filasDelPago.filter(
     (d) => d.baseDesactualizado && !d.pagado && !filaEnCero(d)
   )
-  const totalDeduccionPorcentual = periodo.detalles.reduce(
-    (sum, d) => sum + d.deduccionPorcentual,
-    0
-  )
-  const totalDeduccionManual = periodo.detalles.reduce((sum, d) => sum + d.deduccionManual, 0)
-  const totalNeto = periodo.detalles.reduce((sum, d) => sum + d.salarioNeto, 0)
-  const totalHoras = periodo.detalles.reduce((sum, d) => sum + d.horasTrabajadas, 0)
-  const totalHorasExtra = periodo.detalles.reduce((sum, d) => sum + d.horasExtra, 0)
-  const totalIncapacidad = periodo.detalles.reduce((sum, d) => sum + (d.incapacidad?.monto ?? 0), 0)
-  const totalNoSalarial = periodo.detalles.reduce((sum, d) => sum + d.totalNoSalarial, 0)
-  const totalCargasPatronales = periodo.detalles.reduce((sum, d) => sum + d.cargasPatronales, 0)
+  const totalDeduccionPorcentual = filasDelPago.reduce((sum, d) => sum + d.deduccionPorcentual, 0)
+  const totalDeduccionManual = filasDelPago.reduce((sum, d) => sum + d.deduccionManual, 0)
+  const totalNeto = filasDelPago.reduce((sum, d) => sum + d.salarioNeto, 0)
+  const totalHoras = filasDelPago.reduce((sum, d) => sum + d.horasTrabajadas, 0)
+  const totalHorasExtra = filasDelPago.reduce((sum, d) => sum + d.horasExtra, 0)
+  const totalIncapacidad = filasDelPago.reduce((sum, d) => sum + (d.incapacidad?.monto ?? 0), 0)
+  const totalNoSalarial = filasDelPago.reduce((sum, d) => sum + d.totalNoSalarial, 0)
+  const totalCargasPatronales = filasDelPago.reduce((sum, d) => sum + d.cargasPatronales, 0)
   // Lo que de verdad sale del banco por este periodo. Es el mismo número que
   // imprime el comprobante de cada empleado.
-  const totalAPagar = periodo.detalles.reduce((sum, d) => sum + d.totalAPagar, 0)
+  const totalAPagar = filasDelPago.reduce((sum, d) => sum + d.totalAPagar, 0)
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     periodo.detalles,
@@ -467,7 +470,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     // (ej. vacaciones que rebajaban el base), aunque las horas no cambien.
     const baseViejo = d.baseDesactualizado && d.baseEsperado !== null
     const boton =
-      puedeEditar && !d.pagado && (nuevas || baseViejo) ? (
+      puedeEditar && !d.pagado && d.liquidacionQueLaPaga === null && (nuevas || baseViejo) ? (
         <button
           type="button"
           onClick={() => handleRefrescarHoras(d, false)}
@@ -508,6 +511,9 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
 
   /** Toggle de pago + acceso al comprobante. Lo rinden tarjetas y tabla. */
   function EstadoPago({ detalle: d }: { detalle: DetalleNominaItem }) {
+    if (d.liquidacionQueLaPaga !== null) {
+      return <Badge tone="blue">En liquidación n.° {d.liquidacionQueLaPaga}</Badge>
+    }
     return (
       <div className="flex items-center gap-1.5">
         {canWrite ? (
@@ -550,7 +556,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   function AccionesDetalle({ detalle: d }: { detalle: DetalleNominaItem }) {
     return (
       <>
-        {puedeEditar && !d.pagado && (
+        {puedeEditar && !d.pagado && d.liquidacionQueLaPaga === null && (
           <IconButton
             onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
             aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
@@ -640,6 +646,19 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           </p>
         )}
       </div>
+
+      {enLiquidacion.length > 0 && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+          <p className="text-sm font-semibold text-blue-900">
+            {enLiquidacion.length} fila(s) se pagan en una liquidación
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-blue-800">
+            {enLiquidacion.map((d) => d.empleadoNombre).join(', ')}: su salario de esta quincena va
+            en la liquidación como salario pendiente. No se pagan por esta planilla, no suman a los
+            totales y no impiden cerrar el periodo.
+          </p>
+        </div>
+      )}
 
       {conMarcasIncompletas.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">

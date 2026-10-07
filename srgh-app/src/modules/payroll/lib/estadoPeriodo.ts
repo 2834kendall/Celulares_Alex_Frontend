@@ -3,7 +3,7 @@ import { hoyLocal } from '@/modules/payroll/lib/fechas'
 /**
  * Un periodo de planilla solo tiene dos estados guardados: 'borrador' y
  * 'pagado', y la aplicación los recalcula sola (ver sincronizarEstadoPeriodo
- * en marcarDetallePagado.ts). No existe ningún estado que diga "esto ya
+ * en estadoPeriodoData.ts). No existe ningún estado que diga "esto ya
  * vencío y todavía se le debe a alguien": un periodo impago se quedaba en
  * 'borrador' indefinidamente, indistinguible de uno que apenas se abrió.
  *

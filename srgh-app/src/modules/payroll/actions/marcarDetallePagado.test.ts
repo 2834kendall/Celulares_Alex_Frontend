@@ -183,8 +183,12 @@ describe('marcarDetallePagado (server action)', () => {
     const result = await marcarDetallePagado(1, true)
 
     expect(result).toEqual({ ok: true })
+    // La primera llamada a la tabla lee el mes y la quincena del periodo; la
+    // que importa es la que actualiza el estado.
     const llamadaPeriodo = client.from.mock.results.find(
-      (r, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_periodo'
+      (r, i) =>
+        client.from.mock.calls[i][0] === 'sgrh_nomina_periodo' &&
+        (r.value as { update: { mock: { calls: unknown[] } } }).update.mock.calls.length > 0
     )
     expect(llamadaPeriodo?.value.update).toHaveBeenCalledWith({
       npe_estado: 'pagado',
@@ -213,14 +217,76 @@ describe('marcarDetallePagado (server action)', () => {
     const result = await marcarDetallePagado(1, true)
 
     expect(result).toEqual({ ok: true })
+    // La primera llamada a la tabla lee el mes y la quincena del periodo; la
+    // que importa es la que actualiza el estado.
     const llamadaPeriodo = client.from.mock.results.find(
-      (r, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_periodo'
+      (r, i) =>
+        client.from.mock.calls[i][0] === 'sgrh_nomina_periodo' &&
+        (r.value as { update: { mock: { calls: unknown[] } } }).update.mock.calls.length > 0
     )
     expect(llamadaPeriodo?.value.update).toHaveBeenCalledWith({
       npe_estado: 'borrador',
       npe_fecha_pago: null,
     })
   })
+  // La fila impaga de alguien ya liquidado no se puede pagar por planilla
+  // (va en la liquidación): no puede dejar el periodo abierto para siempre.
+  it('una fila impaga que ya paga una liquidación no impide cerrar el periodo', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+        OK,
+        {
+          data: [
+            { ndt_historial_laboral_id: 77, ndt_pagado: true, ndt_fecha_pago: '2026-06-20' },
+            { ndt_historial_laboral_id: 88, ndt_pagado: false, ndt_fecha_pago: null },
+          ],
+          error: null,
+        },
+      ],
+      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: [
+        { data: { npe_periodo_anio: 2026, npe_periodo_mes: 6, npe_quincena: 1 }, error: null },
+        OK,
+      ],
+      sgrh_historial_laboral: [
+        // marcarDetallePagado: ¿este contrato (77) ya fue liquidado? No.
+        { data: [{ lab_id: 77, lab_empleado_id: 1, lab_fecha_inicio: '2020-01-01' }], error: null },
+        // Lo mismo para el 88 al recalcular el periodo, y la verificación del BASE.
+        { data: [{ lab_id: 88, lab_empleado_id: 2, lab_fecha_inicio: '2020-01-01' }], error: null },
+      ],
+      sgrh_liquidaciones: [
+        { data: [], error: null },
+        { data: [], error: null },
+        {
+          data: [
+            {
+              liq_id: 40,
+              liq_historial_laboral_id: 88,
+              liq_fecha_salida: '2026-06-10',
+              liq_dias_trabajados_mes: 10,
+              sgrh_historial_laboral: { lab_empleado_id: 2 },
+            },
+          ],
+          error: null,
+        },
+      ],
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result).toEqual({ ok: true })
+    const llamadaPeriodo = client.from.mock.results.find(
+      (r, i) =>
+        client.from.mock.calls[i][0] === 'sgrh_nomina_periodo' &&
+        (r.value as { update: { mock: { calls: unknown[] } } }).update.mock.calls.length > 0
+    )
+    expect(llamadaPeriodo?.value.update).toHaveBeenCalledWith({
+      npe_estado: 'pagado',
+      npe_fecha_pago: '2026-06-20',
+    })
+  })
+
   // sgrh_comprobantes_pago existia desde el baseline —con indice unico, RLS y
   // columna de confirmacion del empleado— pero ningun archivo la escribia: no
   // quedaba evidencia de que el pago se hizo.

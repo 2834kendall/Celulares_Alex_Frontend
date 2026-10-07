@@ -74,6 +74,9 @@ function mockTables(responses: Record<string, { data: unknown; error: unknown }>
       // La acción consulta esta tabla en todos los casos; los tests que no la
       // declaran no deberían tener que enumerarla.
       sgrh_comprobantes_pago: { data: [], error: null },
+      // ¿Alguna fila impaga ya va en una liquidación? Por defecto no.
+      sgrh_historial_laboral: { data: [], error: null },
+      sgrh_liquidaciones: { data: [], error: null },
       ...responses,
     }) as unknown as Awaited<ReturnType<typeof createClient>>
   )
@@ -220,12 +223,93 @@ describe('getPeriodoDetail (server action)', () => {
           ajusteEsperado: null,
           dias: [],
           incapacidad: null,
+          liquidacionQueLaPaga: null,
           numeroCuenta: 'CR05015202001026284066',
           bancoNombre: 'Banco Nacional',
           cuentaIlegible: false,
         },
       ])
     }
+  })
+
+  describe('filas que ya paga una liquidación', () => {
+    const BASE_TABLAS = {
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    }
+    const CONTRATO = { lab_id: 9, lab_empleado_id: 501, lab_fecha_inicio: '2025-01-01' }
+    // Salida el 10 de julio con 10 días pendientes: paga la 1.ª quincena de julio.
+    const LIQ_JULIO = {
+      liq_id: 77,
+      liq_historial_laboral_id: 9,
+      liq_fecha_salida: '2026-07-10',
+      liq_dias_trabajados_mes: 10,
+      sgrh_historial_laboral: { lab_empleado_id: 501 },
+    }
+
+    it('marca la fila impaga con la liquidación que la paga', async () => {
+      mockTables({
+        ...BASE_TABLAS,
+        sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+        sgrh_historial_laboral: { data: [CONTRATO], error: null },
+        sgrh_liquidaciones: { data: [LIQ_JULIO], error: null },
+      })
+
+      const result = await getPeriodoDetail(7)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.detalles[0].liquidacionQueLaPaga).toBe(77)
+    })
+
+    it('una liquidación de otra quincena no marca la fila', async () => {
+      mockTables({
+        ...BASE_TABLAS,
+        sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+        sgrh_historial_laboral: { data: [CONTRATO], error: null },
+        sgrh_liquidaciones: {
+          data: [{ ...LIQ_JULIO, liq_fecha_salida: '2026-06-10' }],
+          error: null,
+        },
+      })
+
+      const result = await getPeriodoDetail(7)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.detalles[0].liquidacionQueLaPaga).toBeNull()
+    })
+
+    it('una fila ya pagada por planilla nunca se marca', async () => {
+      mockTables({
+        ...BASE_TABLAS,
+        sgrh_nomina_detalle: {
+          data: [{ ...DETALLE_ROW, ndt_pagado: true, ndt_fecha_pago: '2026-07-15' }],
+          error: null,
+        },
+        sgrh_historial_laboral: { data: [CONTRATO], error: null },
+        sgrh_liquidaciones: { data: [LIQ_JULIO], error: null },
+      })
+
+      const result = await getPeriodoDetail(7)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.detalles[0].liquidacionQueLaPaga).toBeNull()
+    })
+
+    it('si no se pueden leer las liquidaciones, la planilla se muestra igual', async () => {
+      mockTables({
+        ...BASE_TABLAS,
+        sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+        sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
+      })
+
+      const result = await getPeriodoDetail(7)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.detalles[0].liquidacionQueLaPaga).toBeNull()
+    })
   })
 
   it('marca cuentaIlegible cuando la cuenta no se pudo descifrar', async () => {
