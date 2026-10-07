@@ -260,11 +260,20 @@ export function IbanInput({ name, invalid, disabled, mode = 'iban' }: IbanInputP
 
 interface PersonalDataFieldsProps extends FieldGroupProps {
   tiposIdentificacion: CatalogoItem[]
+  /**
+   * true en el alta (wizard): fecha de nacimiento y género son obligatorios.
+   * En la edición siguen siendo opcionales, porque hay fichas anteriores sin
+   * esos datos y exigirlos bloquearía cualquier otro cambio sobre ellas.
+   * Tiene que coincidir con el schema: crearEmpleadoSchema los exige y
+   * editarEmpleadoSchema no.
+   */
+  alta?: boolean
 }
 
 export function PersonalDataFields({
   basePath = '',
   tiposIdentificacion,
+  alta = false,
 }: PersonalDataFieldsProps) {
   const {
     register,
@@ -336,7 +345,10 @@ export function PersonalDataFields({
         />
       </Labeled>
 
-      <Labeled label="Fecha de nacimiento" error={err('emp_fecha_nacimiento')}>
+      <Labeled
+        label={alta ? 'Fecha de nacimiento *' : 'Fecha de nacimiento'}
+        error={err('emp_fecha_nacimiento')}
+      >
         <DateInput
           name={`${basePath}emp_fecha_nacimiento`}
           label="Fecha de nacimiento"
@@ -344,14 +356,15 @@ export function PersonalDataFields({
         />
       </Labeled>
 
-      <Labeled label="Género" error={err('emp_genero')}>
+      <Labeled label={alta ? 'Género *' : 'Género'} error={err('emp_genero')}>
         <ControlledSelectMenu
           control={control}
           name={`${basePath}emp_genero`}
           invalid={Boolean(err('emp_genero'))}
-          placeholder="Sin especificar"
+          placeholder={alta ? 'Seleccionar…' : 'Sin especificar'}
           options={[
-            { value: '', label: 'Sin especificar' },
+            // En el alta no hay "sin especificar": es obligatorio.
+            ...(alta ? [] : [{ value: '', label: 'Sin especificar' }]),
             ...Object.entries(GENERO_LABELS).map(([value, label]) => ({ value, label })),
           ]}
         />

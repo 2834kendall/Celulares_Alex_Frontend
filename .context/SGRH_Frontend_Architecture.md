@@ -16,7 +16,7 @@
 6. [Manejo de errores y estados de carga](#6-manejo-de-errores-y-estados-de-carga)
 7. [Cómo agregar un módulo nuevo](#7-cómo-agregar-un-módulo-nuevo)
 8. [Cómo agregar una funcionalidad a un módulo existente](#8-cómo-agregar-una-funcionalidad-a-un-módulo-existente)
-9. [Carga de Datos y Gestión de Estado (RSC vs. TanStack Query)](#9-carga-de-datos-y-gestión-de-estado-rsc-vs-tanstack-query)
+9. [Carga de Datos y Gestión de Estado](#9-carga-de-datos-y-gestión-de-estado)
 10. [Validación de Formularios y Datos (Zod + React Hook Form)](#10-validación-de-formularios-y-datos-zod--react-hook-form)
 11. [Calidad de Código y Git Hooks (Prettier, ESLint, Husky, Commitlint)](#11-calidad-de-código-y-git-hooks-prettier-eslint-husky-commitlint)
 12. [Decisiones consolidadas](#12-decisiones-consolidadas)
@@ -230,12 +230,10 @@ Crea la estructura modular bajo la ruta `src/modules/<nombre_modulo>/`:
 * **`components/`:** Todo el árbol de componentes (tanto de servidor como cliente) específicos de este dominio.
 * **`hooks/`:** Hooks de React que compartan lógica interna exclusiva del módulo.
 
-### Paso 4: Toma de Decisión - Estrategia de Carga de Datos
-Antes de construir los componentes, decide la arquitectura de carga de datos basándote en la necesidad del módulo:
-* **¿Es una vista mayormente de lectura, listado simple, reporte o pantalla de cara al SEO?**
-  👉 **Decisión:** Usar **React Server Components (RSC)**. Se consulta la API de Supabase directo en el servidor. Menos JavaScript enviado al navegador, carga inicial más rápida y mejor indexación.
-* **¿Es un panel/dashboard altamente interactivo con filtros instantáneos en cliente, pestañas dinámicas o formularios de creación/edición frecuente?**
-  👉 **Decisión:** Usar **TanStack Query** (React Query) en componentes cliente. Facilita las consultas asíncronas con caché compartida y permite mutaciones con actualizaciones optimistas.
+### Paso 4: Estrategia de Carga de Datos
+Todos los módulos siguen el mismo patrón (ver sección 9):
+* **Lectura:** la página (Server Component) llama a las acciones de carga del módulo en el servidor, en paralelo con `Promise.all`, y pasa los datos a los componentes.
+* **Escritura:** los componentes cliente llaman a una Server Action que valida, escribe y termina con `revalidatePath(...)`. Next devuelve la página actualizada en esa misma respuesta.
 
 ### Paso 5: Creación del Routing y Guardias de Servidor
 Crea la ruta correspondiente en la carpeta `src/app/(dashboard)/<nombre_modulo>/page.tsx`. Esta página debe ser una capa delgada encargada de:
@@ -243,9 +241,7 @@ Crea la ruta correspondiente en la carpeta `src/app/(dashboard)/<nombre_modulo>/
    ```typescript
    await requirePermission(Permiso.TRAINING_VER)
    ```
-2. **Carga y Ensamblado:**
-   - Si elegiste **RSC**: Llama a la Server Action de carga en el servidor y pasa los datos al componente de presentación del módulo.
-   - Si elegiste **TanStack Query**: Renderiza el componente contenedor cliente del módulo (el cual cargará los datos en el navegador).
+2. **Carga y Ensamblado:** Llama a las acciones de carga en el servidor (en `Promise.all` si son varias) y pasa los datos al componente de presentación del módulo.
 
 ### Paso 6: Integración con la Interfaz General (Navegación)
 1. Agrega el nuevo enlace de navegación en el Sidebar principal.
@@ -280,22 +276,22 @@ La regla general: **un permiso nuevo siempre nace en Supabase, nunca en el front
 
 ---
 
-## 9. Carga de Datos y Gestión de Estado (RSC vs. TanStack Query)
+## 9. Carga de Datos y Gestión de Estado
 
-En SGRH, la carga de datos y la gestión de estados se manejan de manera híbrida para aprovechar la velocidad del servidor y la interactividad del cliente:
+SGRH lee en el servidor y escribe con Server Actions. No hay librería de estado del lado del cliente: TanStack Query se instaló al inicio, nunca se usó y se quitó.
 
-### React Server Components (RSC)
-* **Cuándo usar:** Carga inicial de páginas, lectura de datos generales, vistas de reporte estáticas y pantallas donde el SEO o el tiempo de primer pintado sean críticos.
-* **Cómo funciona:** La consulta a la base de datos se realiza directamente en el servidor utilizando el cliente de servidor de Supabase (`lib/supabase/server.ts`). Los componentes se renderizan a HTML en el servidor y se envían listos al cliente.
-* **Ejemplo:** Tablas iniciales, páginas de detalles de lectura y layouts estructurales.
+### Lectura: React Server Components
+* La página llama a las acciones de carga del módulo, que consultan Supabase con el cliente de sesión (`lib/supabase/server.ts`, RLS activa).
+* **Lo que cuesta es la cantidad de viajes encadenados, no las filas.** Supabase está en us-east-1: desde Costa Rica cada consulta tarda ~200 ms. Las lecturas independientes van siempre en `Promise.all`, tanto en la página como dentro de cada acción. Solo se encadena lo que de verdad depende de un resultado anterior (por ejemplo, los ids de las postulaciones).
+* `createClient` y la lectura de la sesión (`requirePermission`) están memoizados por request con `React.cache`: una página con diez guards verifica el JWT una sola vez.
+* Los catálogos **globales** (territorio, bancos, tipos de contrato, etc.) se leen del Data Cache de Next (`unstable_cache`, ver `modules/employees/actions/getCatalogs.ts`). El guard de permiso queda siempre fuera del caché.
 
-### TanStack Query (React Query)
-* **Cuándo usar:** Vistas altamente interactivas del lado del cliente (`'use client'`), dashboards que requieran refresco constante en tiempo real, paginaciones avanzadas del cliente e interacciones que modifiquen datos (mutaciones).
-* **Beneficios clave:**
-  - **Actualizaciones optimistas:** Muestran el cambio en la interfaz inmediatamente en el cliente mientras la mutación se procesa y confirma en Supabase.
-  - **Caché inteligente:** Comparte consultas entre componentes cliente de manera eficiente, evitando peticiones duplicadas y redundantes al backend.
-  - **Revalidación al foco:** Sincroniza los datos automáticamente cuando el usuario vuelve a enfocar la pestaña del navegador.
-* **Qué NO hacer:** No utilizarlo en Server Components ni para gestionar suscripciones de eventos en tiempo real nativos de Supabase (como `onAuthStateChange` o canales en tiempo real), los cuales deben manejarse con las APIs reactivas nativas de Supabase.
+### Escritura: Server Actions + `revalidatePath`
+* El componente cliente llama a la acción. La acción valida, escribe y termina con `revalidatePath(...)`.
+* **No agregar `router.refresh()` después de una acción que revalida.** Cuando una acción llamó a `revalidatePath`, Next ya devuelve la página actual re-renderizada en la misma respuesta; `router.refresh()` dispara un segundo render completo, con todas las consultas de la página otra vez. Solo hace falta cuando la acción no revalida nada (ej. `enrollFace`) o al definir contraseña. Una acción que escribe cookies (el login) también invalida la caché del router por sí sola.
+
+### Diagnóstico
+Con `SGRH_DEBUG_TIMING=1` en `.env.local`, cada consulta del servidor a Supabase se loguea en la terminal con su duración (`lib/supabase/timedFetch.ts`). Sirve para ver cuántas consultas hace una página y cuáles van en serie.
 
 ---
 
@@ -357,7 +353,7 @@ Los Git hooks automatizan tareas clave de forma local antes de registrar cambios
 | 6   | Proxy sin lógica de roles                                                | Mezclar lógica de autorización en el Proxy complica el mantenimiento y rendimiento               |
 | 7   | Tipos generados vía Supabase CLI, nunca a mano                           | Evita desincronización entre schema real y tipos de TypeScript                                           |
 | 8   | `error.tsx`/`loading.tsx` jerárquicos, no uno por página desde el inicio | Menor costo de mantenimiento; se especializa solo donde la criticidad lo justifica                       |
-| 9   | Carga de datos híbrida (RSC para lectura, TanStack Query para cliente/mutaciones) | Optimiza el rendimiento de la carga inicial (RSC) y ofrece una UX fluida mediante caché y estados optimistas (TanStack Query) |
+| 9   | Lectura en RSC, escritura con Server Actions + `revalidatePath` (sin librería de estado cliente) | Un solo patrón en todos los módulos; la acción devuelve la página actualizada en la misma respuesta, sin segundo render |
 | 10  | Validación centralizada y tipada en `types.ts` (Zod + React Hook Form) | Asegura validación idéntica en cliente y servidor, infiere tipos automáticamente y previene desalineación con Supabase |
 | 11  | Calidad automática local (ESLint, Prettier, Husky, Commitlint) | Evita código mal formateado o con lints en stage, y asegura trazabilidad con Jira de forma obligatoria |
 

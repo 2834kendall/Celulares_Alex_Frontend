@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type { createClient } from '@/lib/supabase/server'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -18,8 +19,13 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
  * gerente/RRHH viendo asistencia es "ve toda la empresa"; para un kiosco
  * (un dispositivo físico de UNA sola sucursal) es una configuración
  * inválida y debe tratarse como error, nunca como "toda la empresa".
+ *
+ * `cache`: el panel de asistencia lo resolvía tres veces por carga (diario,
+ * mensual y chequeo de infracciones, en paralelo). Como createClient devuelve
+ * el mismo cliente en todo el request, (cliente, usuario) coincide y se
+ * consulta una sola vez. Solo dura el request, nunca se reutiliza entre dos.
  */
-export async function getUsuarioSucursalScope(
+export const getUsuarioSucursalScope = cache(async function getUsuarioSucursalScope(
   supabase: SupabaseServerClient,
   usrId: number
 ): Promise<number[] | null> {
@@ -35,4 +41,4 @@ export async function getUsuarioSucursalScope(
   if (filas.some((fila) => fila.uer_sucursal_id === null)) return null
 
   return filas.map((fila) => fila.uer_sucursal_id as number)
-}
+})

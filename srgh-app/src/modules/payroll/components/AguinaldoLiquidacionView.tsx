@@ -4,9 +4,8 @@ import { FileX2, Gift } from 'lucide-react'
 import { Tabs, type TabDefinition } from '@/components/ui/Tabs'
 import type {
   AguinaldoItem,
-  EmpleadoActivoItem,
+  ContratoPorLiquidarItem,
   LiquidacionListItem,
-  MotivoSalidaRow,
 } from '@/modules/payroll/types'
 import { AguinaldoTab } from './AguinaldoTab'
 import { LiquidacionTab } from './LiquidacionTab'
@@ -19,8 +18,7 @@ interface AguinaldoLiquidacionViewProps {
   puedeLeerAusencias: boolean
   aguinaldos: AguinaldoItem[]
   canWrite: boolean
-  empleadosActivos: EmpleadoActivoItem[]
-  motivos: MotivoSalidaRow[]
+  contratosPorLiquidar: ContratoPorLiquidarItem[]
   liquidaciones: LiquidacionListItem[]
 }
 
@@ -38,8 +36,7 @@ export function AguinaldoLiquidacionView({
   puedeLeerAusencias,
   aguinaldos,
   canWrite,
-  empleadosActivos,
-  motivos,
+  contratosPorLiquidar,
   liquidaciones,
 }: AguinaldoLiquidacionViewProps) {
   const tabs: TabDefinition<TabId>[] = [
@@ -63,7 +60,7 @@ export function AguinaldoLiquidacionView({
       label: 'Liquidación',
       icon: FileX2,
       content: canWrite ? (
-        <LiquidacionTab empleados={empleadosActivos} motivos={motivos} historial={liquidaciones} />
+        <LiquidacionTab contratos={contratosPorLiquidar} historial={liquidaciones} />
       ) : (
         <div className="space-y-4">
           <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">

@@ -9,6 +9,7 @@ import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
 import { linkPostulacionToEmployee } from '@/modules/recruitment/actions/linkPostulacionToEmployee'
 import { chooseSelectMenuOption } from '@/test/selectMenu'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 const push = vi.fn()
 
@@ -121,6 +122,9 @@ async function fillStepPersonal(user: UserEvent) {
   await chooseSelectMenuOption(user, 'Tipo de identificación *', 'Cédula nacional')
   await user.type(screen.getByLabelText('Número de identificación *'), '1-1111-1111')
   fechaIngreso = await elegirFecha(user, 'Ingreso a la empresa')
+  // Obligatorios en el alta (no en la edición).
+  await elegirFecha(user, 'Fecha de nacimiento')
+  await chooseSelectMenuOption(user, 'Género *', 'Femenino')
   await fillDireccion(user)
   return fechaIngreso
 }
@@ -638,5 +642,24 @@ describe('<EmployeeWizard />', () => {
       expect(mockToastWarning).toHaveBeenCalledWith(expect.stringContaining('cedula'))
     })
     expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  // Casi siempre se registra a alguien que entra ese día: se ahorra un paso.
+  it('el ingreso a la empresa arranca en hoy', () => {
+    renderWizard()
+
+    expect(screen.getByRole('button', { name: 'Ingreso a la empresa' })).toHaveTextContent(
+      comoSeVe(todayInCostaRica())
+    )
+  })
+
+  it('exige fecha de nacimiento y género para avanzar', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    expect(await screen.findByText('La fecha de nacimiento es obligatoria')).toBeInTheDocument()
+    expect(screen.getByText('El género es obligatorio')).toBeInTheDocument()
   })
 })

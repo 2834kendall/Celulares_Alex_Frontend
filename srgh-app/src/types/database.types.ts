@@ -1704,6 +1704,7 @@ export type Database = {
           lab_empleado_id: number
           lab_empresa_id: number
           lab_fecha_fin: string | null
+          lab_fecha_fin_programada: string | null
           lab_fecha_inicio: string
           lab_id: number
           lab_motivo_salida_id: number | null
@@ -1721,6 +1722,7 @@ export type Database = {
           lab_empleado_id: number
           lab_empresa_id: number
           lab_fecha_fin?: string | null
+          lab_fecha_fin_programada?: string | null
           lab_fecha_inicio: string
           lab_id?: never
           lab_motivo_salida_id?: number | null
@@ -1738,6 +1740,7 @@ export type Database = {
           lab_empleado_id?: number
           lab_empresa_id?: number
           lab_fecha_fin?: string | null
+          lab_fecha_fin_programada?: string | null
           lab_fecha_inicio?: string
           lab_id?: never
           lab_motivo_salida_id?: number | null
@@ -3007,6 +3010,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      crear_contrato: {
+        Args: { p_contrato: Json; p_empleado_id: number }
+        Returns: number
+      }
       crear_empleado_completo: {
         Args: {
           p_contratacion: Json
@@ -3017,6 +3024,10 @@ export type Database = {
         Returns: number
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      editar_contrato: {
+        Args: { p_contrato: Json; p_lab_id: number }
+        Returns: undefined
+      }
       get_emp_id: { Args: never; Returns: number }
       get_empresa_id: { Args: never; Returns: number }
       get_rol: { Args: never; Returns: string }
@@ -3037,7 +3048,22 @@ export type Database = {
         }
         Returns: number
       }
+      registrar_liquidacion: {
+        Args: { p_lab_id: number; p_liquidacion: Json }
+        Returns: number
+      }
+      revertir_terminacion: { Args: { p_lab_id: number }; Returns: undefined }
       sucursal_visible: { Args: { p_sucursal_id: number }; Returns: boolean }
+      terminar_contrato: {
+        Args: {
+          p_fecha_fin: string
+          p_lab_id: number
+          p_motivo_id: number
+          p_observaciones?: string
+          p_recontratable: boolean
+        }
+        Returns: boolean
+      }
       tiene_permiso: { Args: { p_codigo: string }; Returns: boolean }
     }
     Enums: {

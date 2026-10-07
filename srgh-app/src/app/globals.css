@@ -70,6 +70,33 @@
 }
 
 /*
+ * Variantes de layout de las pantallas publicas de auth (ver AuthShell). Son
+ * propias porque el ancho solo no alcanza para decidir: un telefono acostado
+ * mide menos de `md` de ancho y aun asi necesita las dos columnas, porque lo
+ * que le falta es ALTO.
+ *
+ *  - `auth-wide`: escena y tarjeta lado a lado. Desde 1024px, o en cualquier
+ *    pantalla apaisada con ancho suficiente para las dos columnas. Una
+ *    tablet en vertical (768px) queda apilada: le sobra alto y, partida en
+ *    dos, la tarjeta quedaba de 257px.
+ *  - `auth-short`: poca altura (telefono acostado, telefono chico con el
+ *    teclado o las barras del navegador). Compacta paddings y tipografia.
+ *
+ * `auth-short` se declara despues a proposito: cuando ambas aplican, gana.
+ */
+@custom-variant auth-wide {
+  @media (min-width: 64rem), (orientation: landscape) and (min-width: 35rem) {
+    @slot;
+  }
+}
+
+@custom-variant auth-short {
+  @media (max-height: 37.5rem) {
+    @slot;
+  }
+}
+
+/*
  * Sin bloque de prefers-color-scheme: dark a proposito. Este era boilerplate
  * de create-next-app que nadie retiro — la app entera es un solo tema claro
  * (cero clases `dark:` en todo el codigo) y ese bloque volvia el fondo casi
@@ -219,25 +246,845 @@ h3 {
   }
 }
 
-/* Flotado suave para elementos decorativos (pantalla de login) */
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0);
+/* ===== Pantalla de login ===== */
+
+/*
+ * El login usa la identidad del SISTEMA, no la de una sucursal (todavia no se
+ * sabe quien entra), asi que fija su propio azul neutro. Se hace pisando la
+ * escala `brand` dentro de `.login-screen` —el mismo mecanismo con el que
+ * AppShell aplica el color de la sucursal— para que inputs, focus rings y
+ * botones compartidos queden en azul sin tocar ninguno de ellos.
+ */
+.login-screen {
+  --login-ink: #131c36;
+  --color-brand-50: #f1f5fd;
+  --color-brand-100: #e1e9fa;
+  --color-brand-200: #c5d4f5;
+  --color-brand-300: #9db6ee;
+  --color-brand-400: #7092e3;
+  --color-brand-500: #4a70d6;
+  --color-brand-600: #3457c4;
+  --color-brand-700: #2a46a3;
+  --color-brand-800: #243a82;
+}
+
+/*
+ * Escena ilustrada (ver LoginScene): figuras con ojos que reaccionan al
+ * formulario segun `data-mood`.
+ *
+ * HACIA DONDE miran (`--look-x` / `--look-y`, de -1 a 1) lo simula el
+ * componente con un resorte por figura y lo escribe en cada nodo; aca solo se
+ * traduce a pupilas, cara e inclinacion del cuerpo. Por eso esas tres reglas
+ * NO llevan `transition`: suavizar algo que ya viene suavizado lo vuelve
+ * gomoso y le quita el rebote.
+ *
+ * Las EXPRESIONES (ojos cerrados, cejas, boca) si son estados de CSS,
+ * y van fuera del media query de movimiento: con animaciones desactivadas la
+ * escena sigue reaccionando.
+ */
+.login-character {
+  cursor: pointer;
+}
+
+.login-lean {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: skewX(calc(var(--look-x, 0) * var(--lean, -5deg)));
+}
+
+.login-face {
+  transform: translate(calc(var(--look-x, 0) * 8px), calc(var(--look-y, 0) * 6px));
+}
+
+.login-pupil {
+  transform: translate(
+    calc(var(--look-x, 0) * var(--eye-travel, 4px)),
+    calc(var(--look-y, 0) * var(--eye-travel, 4px))
+  );
+}
+
+/*
+ * Agrandar ojo y pupila. Van en envoltorios propios y SIN `transform-box`: su
+ * origen por defecto (0,0) ya es el centro del ojo, porque el grupo padre lo
+ * ubica con un translate. Se usa `transform: scale()` y no la propiedad
+ * suelta `scale`: esta ultima ignora `transform-box: fill-box` en SVG, toma
+ * el origen del lienzo y manda el ojo lejos de la cara.
+ */
+.login-eye-size,
+.login-pupil-size {
+  transition: transform 0.25s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.login-eye-open,
+.login-eye-blink,
+.login-brow,
+.login-mouth-curve,
+.login-mouth-o {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.login-eye-open {
+  transition:
+    transform 0.14s ease-in,
+    opacity 0.14s ease-in;
+}
+
+.login-eye-lid {
+  opacity: 0;
+  transition: opacity 0.14s ease-in;
+}
+
+.login-brow {
+  transition: transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.login-mouth-curve {
+  transition:
+    transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1),
+    opacity 0.15s ease-out;
+}
+
+.login-mouth-o {
+  opacity: 0;
+  transform: scale(0.3);
+  transition:
+    opacity 0.15s ease-out,
+    transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+/* Contrasena oculta y en foco: no miran. Ojos cerrados, labios apretados.
+   (Los mismos ojos cerrados sirven de cara feliz: al tocarlas, o el sobre
+   cuando sale con el correo.) */
+.login-scene[data-mood='hiding'] .login-eye-open,
+.login-scene[data-mood='sent'] .login-eye-open,
+.login-scene[data-mood='success'] .login-eye-open,
+.login-character[data-poked] .login-eye-open {
+  opacity: 0;
+  transform: scaleY(0.05);
+}
+
+.login-scene[data-mood='hiding'] .login-eye-lid,
+.login-scene[data-mood='sent'] .login-eye-lid,
+.login-scene[data-mood='success'] .login-eye-lid,
+.login-character[data-poked] .login-eye-lid {
+  opacity: 1;
+}
+
+/*
+ * Sobre de "recuperar contrasena" (ver RecoveryScene). Las dos solapas
+ * giran sobre el borde superior del sobre: su grupo padre las ubica ahi con
+ * un translate, asi que el origen por defecto (0,0) ya es la bisagra.
+ * Al enfocar el correo la solapa de adelante se pliega, la de atras se abre
+ * y asoma la carta; al enviar se cierra todo de nuevo.
+ */
+.mail-flap-closed {
+  transition: transform 0.2s ease-in 0.18s;
+}
+
+.mail-flap-open {
+  transform: scaleY(0);
+  transition: transform 0.2s ease-in;
+}
+
+.mail-letter {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.mail-scene[data-mood='watching'] .mail-flap-closed {
+  transform: scaleY(0);
+  transition: transform 0.18s ease-in;
+}
+
+.mail-scene[data-mood='watching'] .mail-flap-open {
+  transform: none;
+  transition: transform 0.28s cubic-bezier(0.3, 1.5, 0.5, 1) 0.16s;
+}
+
+.mail-scene[data-mood='watching'] .mail-letter {
+  transform: translateY(-58px);
+  transition: transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1) 0.26s;
+}
+
+/* Los renglones de la carta se "escriben" cuando asoma. `pathLength=100` en
+   el SVG deja los tres con la misma medida de trazo. */
+.mail-line {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 0.2s ease-in;
+}
+
+.mail-scene[data-mood='watching'] .mail-line {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.5s ease-out 0.6s;
+}
+
+.mail-scene[data-mood='watching'] .mail-line-2 {
+  transition-delay: 0.85s;
+}
+
+.mail-scene[data-mood='watching'] .mail-line-3 {
+  transition-delay: 1.1s;
+}
+
+.mail-shadow {
+  fill: var(--login-ink);
+  opacity: 0.08;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 0.3s ease-out;
+}
+
+.mail-flight {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 0.3s ease-out;
+}
+
+/* Enviado: el sobre se va y queda el check. Sin animaciones, un fundido. */
+.mail-scene[data-mood='sent'] .mail-flight,
+.mail-scene[data-mood='sent'] .mail-shadow {
+  opacity: 0;
+}
+
+.mail-done {
+  opacity: 0;
+  transform: scale(0.3);
+  transition:
+    opacity 0.2s ease-out,
+    transform 0.45s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.mail-scene[data-mood='sent'] .mail-done {
+  opacity: 1;
+  transform: none;
+  transition-delay: 1.65s;
+}
+
+/*
+ * Avioncito de papel en que se convierte el sobre. Su recorrido es
+ * `offset-path` (en unidades del SVG, desde el centro del sobre); la estela
+ * usa el mismo trazo. Fuera del bloque de movimiento queda invisible: con
+ * animaciones desactivadas el sobre simplemente se funde y aparece el check.
+ */
+.mail-plane {
+  opacity: 0;
+  offset-path: path(
+    'M0 0 C50 30 110 10 140 -40 C165 -85 105 -110 100 -70 C95 -30 210 -110 330 -230'
+  );
+  offset-rotate: auto;
+}
+
+.mail-trail {
+  opacity: 0;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+/* El check se dibuja despues de que aparece el circulo. */
+.mail-done-check {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+.mail-scene[data-mood='sent'] .mail-done-check {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.4s ease-out 1.95s;
+}
+
+/* Insignia que encabeza la tarjeta (llave / correo enviado). */
+.auth-badge {
+  transition: transform 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.auth-badge:hover {
+  transform: rotate(-8deg) scale(1.06);
+}
+
+.login-scene[data-mood='hiding'] .login-mouth-curve {
+  transform: scaleY(0.15);
+}
+
+/*
+ * Mientras se escribe: atentas. Ojos apenas mas abiertos y cejas arriba, con
+ * transicion suave de ida y de vuelta (`data-typing` se apaga solo al dejar
+ * de teclear, ver useTypingSignal). Antes rebotaban con cada tecla y a
+ * velocidad normal de escritura eso se leia como vibracion. Va antes de las
+ * reglas de `peeking` a proposito: con la contrasena visible gana aquella.
+ */
+.login-scene[data-typing='true'] .login-eye-size {
+  transform: scale(1.07);
+}
+
+.login-scene[data-typing='true'] .login-brow {
+  transform: translateY(-3px);
+}
+
+/* Contrasena visible: se asoman a mirarla, con los ojos como platos. */
+.login-scene[data-mood='peeking'] .login-eye-size {
+  transform: scale(1.12);
+}
+
+.login-scene[data-mood='peeking'] .login-pupil-size {
+  transform: scale(1.2);
+}
+
+.login-scene[data-mood='peeking'] .login-brow,
+.login-character:hover .login-brow {
+  transform: translateY(-4px);
+}
+
+.login-scene[data-mood='peeking'] .login-mouth-curve {
+  opacity: 0;
+}
+
+.login-scene[data-mood='peeking'] .login-mouth-o {
+  opacity: 1;
+  transform: none;
+}
+
+/* Acceso concedido: sonrisa grande y cejas arriba (los ojos cerrados de
+   contento salen de la regla de arriba). */
+.login-scene[data-mood='success'] .login-mouth-curve {
+  transform: scale(1.5, 1.7);
+}
+
+.login-scene[data-mood='success'] .login-brow {
+  transform: translateY(-4px);
+}
+
+/* Error: cejas de preocupacion y boca hacia abajo. */
+.login-scene[data-mood='error'] .login-brow {
+  transform: rotate(calc(var(--brow-side, 1) * 16deg));
+}
+
+.login-scene[data-mood='error'] .login-mouth-curve {
+  transform: scaleY(-1);
+}
+
+.login-character:hover .login-eye-size {
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Entrada: suben desde abajo. En el login la escena esta recortada en la
+     linea del piso, asi que se ven asomar por detras de el. */
+  @keyframes login-rise {
+    from {
+      opacity: 0;
+      transform: translateY(55%);
+    }
+    35% {
+      opacity: 1;
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
-  50% {
-    transform: translateY(-10px);
+
+  .login-rise {
+    transform-box: fill-box;
+    animation: login-rise 0.75s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
+    animation-delay: calc(var(--char-delay, 0s) + 0.1s);
   }
-}
 
-.animate-float {
-  animation: float 5s ease-in-out infinite;
-}
+  /* Sobre: flota, y su sombra se encoge cuando sube. */
+  @keyframes login-idle-float {
+    0%,
+    100% {
+      transform: none;
+    }
+    50% {
+      transform: translateY(-9px) rotate(-1.5deg);
+    }
+  }
 
-.animate-float-delay-1 {
-  animation: float 5s ease-in-out 0.8s infinite;
-}
+  .login-idle-float {
+    animation: login-idle-float 4.4s ease-in-out infinite;
+  }
 
-.animate-float-delay-2 {
-  animation: float 5s ease-in-out 1.6s infinite;
+  @keyframes mail-shadow {
+    50% {
+      transform: scaleX(0.84);
+    }
+  }
+
+  .mail-shadow {
+    animation: mail-shadow 4.4s ease-in-out infinite;
+  }
+
+  @keyframes mail-speck {
+    50% {
+      transform: translate(6px, -10px);
+    }
+  }
+
+  .mail-speck {
+    animation: mail-speck 6s ease-in-out infinite;
+  }
+
+  .mail-speck-late {
+    animation-duration: 8.5s;
+    animation-direction: reverse;
+  }
+
+  /*
+   * Enviado, en tres tiempos:
+   *  1. el sobre se pliega sobre si mismo (`mail-fold`);
+   *  2. en su lugar aparece el avioncito de papel (`mail-plane-pop`);
+   *  3. el avioncito recorre `offset-path` —baja un poco, hace una pirueta y
+   *     sale por arriba a la derecha— dejando una estela (`mail-trail`, que
+   *     dibuja el MISMO recorrido: si se cambia uno hay que cambiar el otro).
+   */
+  @keyframes mail-fold {
+    0% {
+      opacity: 1;
+      transform: none;
+    }
+    35% {
+      opacity: 1;
+      transform: scale(1.06, 0.9);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.22) rotate(-14deg);
+    }
+  }
+
+  .mail-scene[data-mood='sent'] .mail-flight {
+    opacity: 1;
+    transition: none;
+    animation: mail-fold 0.32s cubic-bezier(0.5, 0, 0.7, 0.4) forwards;
+  }
+
+  @keyframes mail-plane-show {
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes mail-plane-fly {
+    0% {
+      opacity: 1;
+      offset-distance: 0%;
+    }
+    82% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      offset-distance: 100%;
+    }
+  }
+
+  .mail-scene[data-mood='sent'] .mail-plane {
+    animation:
+      mail-plane-show 0.1s linear 0.22s forwards,
+      mail-plane-fly 1.2s cubic-bezier(0.45, 0, 0.4, 1) 0.55s forwards;
+  }
+
+  @keyframes mail-plane-pop {
+    0% {
+      transform: scale(0.2) rotate(-28deg);
+    }
+    60% {
+      transform: scale(1.18) rotate(5deg);
+    }
+    100% {
+      transform: none;
+    }
+  }
+
+  .mail-scene[data-mood='sent'] .mail-plane-body {
+    animation: mail-plane-pop 0.32s cubic-bezier(0.3, 1.4, 0.5, 1) 0.22s backwards;
+  }
+
+  @keyframes mail-trail {
+    0% {
+      opacity: 0.9;
+      stroke-dashoffset: 100;
+    }
+    70% {
+      opacity: 0.9;
+    }
+    100% {
+      opacity: 0;
+      stroke-dashoffset: 0;
+    }
+  }
+
+  .mail-scene[data-mood='sent'] .mail-trail {
+    animation: mail-trail 1.2s cubic-bezier(0.45, 0, 0.4, 1) 0.55s forwards;
+  }
+
+  @keyframes mail-ring {
+    0% {
+      opacity: 0.9;
+      transform: scale(0.9);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.7);
+    }
+  }
+
+  .mail-scene[data-mood='sent'] .mail-done-ring {
+    animation: mail-ring 1.6s ease-out 2.1s infinite backwards;
+  }
+
+  /* Enviado: las companeras festejan con dos saltitos cuando el avioncito
+     ya se fue (el sobre tambien recibe la regla, pero para entonces no se ve). */
+  .mail-scene[data-mood='sent'] .login-pop {
+    animation: login-hop 0.5s ease-in-out 2;
+    animation-delay: calc(1.5s + var(--char-delay, 0s));
+  }
+
+  /*
+   * Copia congelada de la pantalla de login sobre la que corre la salida
+   * (ver playLoginSuccess). Son nodos nuevos, asi que sin esto volverian a
+   * reproducir todas las animaciones de ENTRADA.
+   */
+  .auth-snapshot .login-rise,
+  .auth-snapshot .login-enter,
+  .auth-snapshot .login-card,
+  .auth-snapshot .login-pop-in {
+    animation: none;
+  }
+
+  /* La insignia de la tarjeta se mece una vez al entrar. */
+  @keyframes auth-badge {
+    0% {
+      opacity: 0;
+      transform: scale(0.4) rotate(-30deg);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(1.1) rotate(10deg);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .auth-badge {
+    animation: auth-badge 0.6s cubic-bezier(0.3, 1.3, 0.5, 1) 0.2s backwards;
+  }
+
+  .login-pop,
+  .login-idle {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+  }
+
+  /*
+   * Reposo: cada figura respira y, de vez en cuando, hace un gesto propio.
+   * Duraciones distintas y sin multiplos comunes a proposito, para que nunca
+   * se muevan en coro.
+   */
+  @keyframes login-idle-stretch {
+    0%,
+    100% {
+      transform: none;
+    }
+    25%,
+    55% {
+      transform: scaleY(1.012);
+    }
+    74% {
+      transform: scale(1.03, 0.965);
+    }
+    82% {
+      transform: scale(0.975, 1.055);
+    }
+    90% {
+      transform: scale(1.012, 0.99);
+    }
+  }
+
+  @keyframes login-idle-sway {
+    0%,
+    100% {
+      transform: none;
+    }
+    20% {
+      transform: rotate(1.6deg) scaleY(1.01);
+    }
+    45% {
+      transform: rotate(-1.2deg);
+    }
+    70% {
+      transform: rotate(1deg) scaleY(1.015);
+    }
+  }
+
+  @keyframes login-idle-hop {
+    0%,
+    62%,
+    100% {
+      transform: none;
+    }
+    30% {
+      transform: scaleY(1.015);
+    }
+    70% {
+      transform: scale(1.04, 0.95);
+    }
+    79% {
+      transform: translateY(-11px) scale(0.975, 1.035);
+    }
+    88% {
+      transform: scale(1.03, 0.965);
+    }
+    94% {
+      transform: scale(0.995, 1.01);
+    }
+  }
+
+  @keyframes login-idle-wobble {
+    0%,
+    100% {
+      transform: none;
+    }
+    22% {
+      transform: scale(1.025, 0.965);
+    }
+    44% {
+      transform: scale(0.985, 1.03);
+    }
+    66% {
+      transform: scale(1.012, 0.985);
+    }
+  }
+
+  .login-idle-stretch {
+    animation: login-idle-stretch 9.5s ease-in-out infinite;
+  }
+
+  .login-idle-sway {
+    animation: login-idle-sway 7.3s ease-in-out 0.6s infinite;
+  }
+
+  .login-idle-hop {
+    animation: login-idle-hop 8.1s ease-in-out 2.4s infinite;
+  }
+
+  .login-idle-wobble {
+    animation: login-idle-wobble 5.3s ease-in-out 1.1s infinite;
+  }
+
+  /* Parpadeo doble de vez en cuando, como uno de verdad. */
+  @keyframes login-blink {
+    0%,
+    43%,
+    49%,
+    90%,
+    93.5%,
+    97%,
+    100% {
+      transform: none;
+    }
+    46%,
+    91.5%,
+    95% {
+      transform: scaleY(0.08);
+    }
+  }
+
+  .login-eye-blink {
+    animation: login-blink calc(var(--blink, 5s) * 2) infinite;
+  }
+
+  /* Validando acceso: saltan en ola mientras responde el servidor. */
+  @keyframes login-hop {
+    0%,
+    100% {
+      transform: scale(1.03, 0.96);
+    }
+    45% {
+      transform: translateY(-16px) scale(0.98, 1.03);
+    }
+  }
+
+  .login-scene[data-mood='loading'] .login-pop {
+    animation: login-hop 0.62s ease-in-out infinite;
+    animation-delay: var(--char-delay, 0s);
+  }
+
+  /*
+   * Acceso concedido: festejan y se zambullen detras del piso. Un solo
+   * keyframe con peso: se agachan para tomar impulso, se estiran al subir,
+   * cuelgan un instante arriba, aterrizan aplastandose, rebotan y recien
+   * ahi se hunden. El 130% final es del alto de la figura entera (incluida
+   * la parte enterrada), asi que quedan del todo bajo la linea. Lo que sigue
+   * (la ola que cubre la pantalla) es de playLoginSuccess.
+   */
+  @keyframes login-cheer {
+    0% {
+      transform: none;
+      animation-timing-function: cubic-bezier(0.3, 0, 0.6, 1);
+    }
+    13% {
+      transform: scale(1.09, 0.85);
+      animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+    }
+    34% {
+      transform: translateY(-50px) scale(0.93, 1.1);
+      animation-timing-function: ease-in-out;
+    }
+    44% {
+      transform: translateY(-56px) scale(1, 1);
+      animation-timing-function: cubic-bezier(0.6, 0, 0.9, 0.5);
+    }
+    60% {
+      transform: translateY(0) scale(1.1, 0.86);
+      animation-timing-function: ease-out;
+    }
+    70% {
+      transform: translateY(-7px) scale(0.97, 1.04);
+      animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.4);
+    }
+    100% {
+      transform: translateY(130%) scale(0.97, 1.04);
+    }
+  }
+
+  .login-scene[data-mood='success'] .login-pop {
+    animation: login-cheer 1s linear forwards;
+    animation-delay: calc(var(--char-delay, 0s) * 0.5);
+  }
+
+  /* Error: niegan de lado a lado. */
+  @keyframes login-shake {
+    0%,
+    100% {
+      transform: none;
+    }
+    20%,
+    60% {
+      transform: translateX(-7px) rotate(-1.5deg);
+    }
+    40%,
+    80% {
+      transform: translateX(7px) rotate(1.5deg);
+    }
+  }
+
+  .login-scene[data-mood='error'] .login-pop {
+    animation: login-shake 0.5s ease-in-out;
+    animation-delay: calc(var(--char-delay, 0s) * 0.3);
+  }
+
+  /* Al tocar una figura: se aplasta, salta y aterriza con rebote. */
+  @keyframes login-poke {
+    0%,
+    100% {
+      transform: none;
+    }
+    18% {
+      transform: scale(1.07, 0.9);
+    }
+    45% {
+      transform: translateY(-28px) scale(0.96, 1.07);
+    }
+    72% {
+      transform: scale(1.05, 0.94);
+    }
+    86% {
+      transform: scale(0.99, 1.02);
+    }
+  }
+
+  .login-scene .login-character[data-poked] .login-pop {
+    animation: login-poke 0.62s cubic-bezier(0.3, 0.7, 0.4, 1);
+  }
+
+  /* Entrada escalonada del formulario. */
+  @keyframes login-enter {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .login-enter {
+    animation: login-enter 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 70ms + 150ms);
+  }
+
+  @keyframes login-card {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .login-card {
+    animation: login-card 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+  }
+
+  @keyframes login-alert {
+    0% {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    40% {
+      opacity: 1;
+      transform: translateX(-5px);
+    }
+    60% {
+      transform: translateX(4px);
+    }
+    80% {
+      transform: translateX(-2px);
+    }
+    100% {
+      transform: none;
+    }
+  }
+
+  .login-alert {
+    animation: login-alert 0.4s ease-out;
+  }
+
+  /* Aparicion de detalles pequenos (check de correo valido, avisos). */
+  @keyframes login-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .login-pop-in {
+    animation: login-pop-in 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+  }
+
+  /* Manchas de color del fondo del panel de acceso: derivan muy despacio. */
+  @keyframes login-blob {
+    50% {
+      transform: translate(18px, -14px) scale(1.06);
+    }
+  }
+
+  .login-blob {
+    animation: login-blob 14s ease-in-out infinite;
+  }
+
+  .login-blob-late {
+    animation-duration: 19s;
+    animation-direction: reverse;
+  }
 }

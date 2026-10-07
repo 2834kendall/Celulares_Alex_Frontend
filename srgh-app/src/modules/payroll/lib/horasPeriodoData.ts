@@ -195,7 +195,7 @@ export async function getHorasDelPeriodo(
     // del usuario, RLS las filtraba por la sucursal del día y quien solo ve
     // su sucursal perdía esas horas sin ningún error. La función autoriza por
     // la sucursal del CONTRATO; ver la migración
-    // 20260927120000_asistencia_nomina_otras_sucursales.sql.
+    // 20261002120000_asistencia_nomina_otras_sucursales.sql.
     supabase.rpc('nomina_asistencia_periodo', {
       p_lab_ids: historialLaboralIds,
       p_desde: fechaInicio,
@@ -233,7 +233,7 @@ export async function getHorasDelPeriodo(
   const leida = asistenciaDelPeriodo(asistencia)
   if (errAsistencia || !leida) {
     // Si la función no existe (PGRST202), falta aplicar la migración
-    // 20260927120000_asistencia_nomina_otras_sucursales.sql.
+    // 20261002120000_asistencia_nomina_otras_sucursales.sql.
     console.error(
       'getHorasDelPeriodo: nomina_asistencia_periodo falló',
       errAsistencia ?? asistencia

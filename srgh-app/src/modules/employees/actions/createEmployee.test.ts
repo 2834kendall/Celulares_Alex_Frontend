@@ -41,6 +41,8 @@ const VALID_INPUT: OnboardingEmpleadoInput = {
     emp_tipo_identificacion_id: 1,
     emp_numero_identificacion: '1-1111-1111',
     emp_fecha_ingreso_original: '2024-01-01',
+    emp_fecha_nacimiento: '1990-05-10',
+    emp_genero: 'F',
     emp_nacionalidad: 'Costarricense',
   },
   direccion: {

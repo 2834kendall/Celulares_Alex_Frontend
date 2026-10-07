@@ -93,49 +93,56 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
 
   const supabase = await createClient()
 
-  const { data: candidato, error: errCandidato } = await supabase
-    .from('sgrh_candidatos')
-    .select(
-      `
+  // Las tres lecturas dependen solo de candidatoId: van en paralelo (cada
+  // viaje a Supabase cuesta ~200 ms desde CR). El orden de los chequeos de
+  // error de abajo es el de antes.
+  const [
+    { data: candidato, error: errCandidato },
+    { data: documentos, error: errDocumentos },
+    { data: postulaciones, error: errPostulaciones },
+  ] = await Promise.all([
+    supabase
+      .from('sgrh_candidatos')
+      .select(
+        `
       cdt_id, cdt_nombre, cdt_apellido_1, cdt_apellido_2, cdt_email, cdt_telefono,
       cdt_numero_identificacion, cdt_tipo_identificacion_id, cdt_fuente_reclutamiento,
       cdt_empresa_id, cdt_created_at,
       sgrh_cat_tipos_identificacion ( tid_nombre )
     `
-    )
-    .eq('cdt_id', candidatoId)
-    .maybeSingle()
-    .returns<CandidatoQueryRow>()
-
-  if (errCandidato || !candidato) {
-    return { ok: false, error: 'Candidato no encontrado.', notFound: true }
-  }
-
-  const { data: documentos, error: errDocumentos } = await supabase
-    .from('sgrh_candidato_documentos')
-    .select('cdo_id, cdo_candidato_id, cdo_tipo, cdo_nombre, cdo_mime, cdo_created_at')
-    .eq('cdo_candidato_id', candidatoId)
-    .order('cdo_created_at', { ascending: false })
-    .returns<CandidatoDocumento[]>()
-
-  if (errDocumentos) {
-    return { ok: false, error: 'No se pudieron cargar los documentos del candidato.' }
-  }
-
-  const { data: postulaciones, error: errPostulaciones } = await supabase
-    .from('sgrh_postulaciones')
-    .select(
-      `
+      )
+      .eq('cdt_id', candidatoId)
+      .maybeSingle()
+      .returns<CandidatoQueryRow>(),
+    supabase
+      .from('sgrh_candidato_documentos')
+      .select('cdo_id, cdo_candidato_id, cdo_tipo, cdo_nombre, cdo_mime, cdo_created_at')
+      .eq('cdo_candidato_id', candidatoId)
+      .order('cdo_created_at', { ascending: false })
+      .returns<CandidatoDocumento[]>(),
+    supabase
+      .from('sgrh_postulaciones')
+      .select(
+        `
       pos_id, pos_estado_final, pos_fecha_postula, pos_fecha_cierre, pos_motivo_descarte,
       pos_observaciones, pos_puntaje_promedio, pos_empleado_id, pos_etapa_actual_id,
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_nombre ),
       sgrh_cat_etapas_seleccion ( eta_id, eta_nombre, eta_orden, eta_fase, eta_color )
     `
-    )
-    .eq('pos_candidato_id', candidatoId)
-    .order('pos_fecha_postula', { ascending: false })
-    .returns<PostulacionQueryRow[]>()
+      )
+      .eq('pos_candidato_id', candidatoId)
+      .order('pos_fecha_postula', { ascending: false })
+      .returns<PostulacionQueryRow[]>(),
+  ])
+
+  if (errCandidato || !candidato) {
+    return { ok: false, error: 'Candidato no encontrado.', notFound: true }
+  }
+
+  if (errDocumentos) {
+    return { ok: false, error: 'No se pudieron cargar los documentos del candidato.' }
+  }
 
   if (errPostulaciones) {
     return { ok: false, error: 'No se pudieron cargar las postulaciones.' }
@@ -147,18 +154,32 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
   let puntajesPorPostulacion = new Map<number, PuntajeCriterioItem[]>()
 
   if (posIds.length > 0) {
-    const { data: etapasHistorial, error: errEtapas } = await supabase
-      .from('sgrh_postulacion_etapas')
-      .select(
-        `
+    // Etapas y puntajes dependen de los ids de postulación, no entre sí.
+    const [{ data: etapasHistorial, error: errEtapas }, { data: puntajes, error: errPuntajes }] =
+      await Promise.all([
+        supabase
+          .from('sgrh_postulacion_etapas')
+          .select(
+            `
         pet_id, pet_postulacion_id, pet_etapa_id, pet_fecha, pet_resultado, pet_notas,
         sgrh_cat_etapas_seleccion ( eta_nombre ),
         sgrh_usuarios ( usr_email )
       `
-      )
-      .in('pet_postulacion_id', posIds)
-      .order('pet_fecha', { ascending: true })
-      .returns<EtapaHistorialQueryRow[]>()
+          )
+          .in('pet_postulacion_id', posIds)
+          .order('pet_fecha', { ascending: true })
+          .returns<EtapaHistorialQueryRow[]>(),
+        supabase
+          .from('sgrh_postulacion_puntajes')
+          .select(
+            `
+        psc_postulacion_id, psc_criterio_id, psc_puntaje, psc_no_aplica, psc_observacion,
+        sgrh_cat_criterios_seleccion ( cri_descripcion, sgrh_cat_areas_seleccion ( are_nombre, are_color, are_peso ) )
+      `
+          )
+          .in('psc_postulacion_id', posIds)
+          .returns<PuntajeQueryRow[]>(),
+      ])
 
     if (errEtapas) {
       return { ok: false, error: 'No se pudo cargar el historial de etapas.' }
@@ -179,17 +200,6 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
       lista.push(item)
       etapasPorPostulacion.set(row.pet_postulacion_id, lista)
     }
-
-    const { data: puntajes, error: errPuntajes } = await supabase
-      .from('sgrh_postulacion_puntajes')
-      .select(
-        `
-        psc_postulacion_id, psc_criterio_id, psc_puntaje, psc_no_aplica, psc_observacion,
-        sgrh_cat_criterios_seleccion ( cri_descripcion, sgrh_cat_areas_seleccion ( are_nombre, are_color, are_peso ) )
-      `
-      )
-      .in('psc_postulacion_id', posIds)
-      .returns<PuntajeQueryRow[]>()
 
     if (errPuntajes) {
       return { ok: false, error: 'No se pudo cargar el puntaje.' }

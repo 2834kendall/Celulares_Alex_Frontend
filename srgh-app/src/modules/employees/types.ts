@@ -73,16 +73,15 @@ export const crearEmpleadoSchema = z.object({
     .string({ error: 'La fecha de ingreso es obligatoria' })
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
 
-  emp_fecha_nacimiento: emptyToNull(
-    z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
-      .nullable()
-      .optional()
-  ),
+  // Obligatorios en el alta; en la edición no (ver editarEmpleadoSchema). La
+  // columna sigue siendo nullable: la obligatoriedad vive solo acá.
+  emp_fecha_nacimiento: z
+    .string({ error: 'La fecha de nacimiento es obligatoria' })
+    .min(1, 'La fecha de nacimiento es obligatoria')
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
 
   // Valores alineados al CHECK de la DB: emp_genero IN ('M','F','O').
-  emp_genero: emptyToNull(z.enum(['M', 'F', 'O']).nullable().optional()),
+  emp_genero: z.enum(['M', 'F', 'O'], { error: 'El género es obligatorio' }),
 
   emp_nacionalidad: z.preprocess(
     (value) => (value === '' ? undefined : value),
@@ -124,10 +123,21 @@ export type CrearEmpleadoInput = z.infer<typeof crearEmpleadoSchema>
 
 // ─── Schema de edición de empleado ───────────────────────────────────────────
 // Todos los campos son opcionales porque la edición puede ser parcial.
+//
+// Fecha de nacimiento y género vuelven a su forma opcional (vacío → null): son
+// obligatorios en el alta, pero hay fichas anteriores sin ellos, y exigirlos
+// acá bloquearía cualquier otro cambio sobre esas fichas hasta completarlos.
 
-export const editarEmpleadoSchema = crearEmpleadoSchema.partial() satisfies z.ZodType<
-  Omit<EmpleadoUpdate, 'emp_id' | 'emp_created_at' | 'emp_rostro_hash'>
->
+export const editarEmpleadoSchema = crearEmpleadoSchema.partial().extend({
+  emp_fecha_nacimiento: emptyToNull(
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
+      .nullable()
+      .optional()
+  ),
+  emp_genero: emptyToNull(z.enum(['M', 'F', 'O']).nullable().optional()),
+}) satisfies z.ZodType<Omit<EmpleadoUpdate, 'emp_id' | 'emp_created_at' | 'emp_rostro_hash'>>
 
 export type EditarEmpleadoInput = z.infer<typeof editarEmpleadoSchema>
 
@@ -310,6 +320,38 @@ export const crearHistorialLaboralSchema = z.object({
 
 export type CrearHistorialLaboralInput = z.infer<typeof crearHistorialLaboralSchema>
 
+// ─── Schemas del CRUD de contratos (SGRH-90) ─────────────────────────────────
+// La lógica vive en las RPC (crear_contrato, editar_contrato,
+// terminar_contrato): estos schemas solo filtran input basura antes de ir a
+// la base.
+
+// La sucursal no se edita: cambiarla en sitio reescribiría la historia (un
+// traslado es un contrato nuevo). La RPC tampoco la toca aunque llegue.
+export const editarContratoSchema = crearHistorialLaboralSchema.omit({ lab_sucursal_id: true })
+
+export type EditarContratoInput = z.infer<typeof editarContratoSchema>
+
+export const terminarContratoSchema = z.object({
+  // Último día trabajado. Puede ser futura (preaviso): la RPC la deja
+  // programada y la persona sigue vigente hasta ese día.
+  lab_fecha_fin: z
+    .string({ error: 'El último día de trabajo es obligatorio' })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
+
+  lab_motivo_salida_id: z
+    .number({ error: 'El motivo de salida es obligatorio' })
+    .int()
+    .positive('Seleccione un motivo de salida válido'),
+
+  lab_recontratable: z.boolean(),
+
+  lab_observaciones_salida: emptyToNull(
+    z.string().max(300, 'Máximo 300 caracteres').nullable().optional()
+  ),
+})
+
+export type TerminarContratoInput = z.infer<typeof terminarContratoSchema>
+
 // ─── Schema de creación de usuario del sistema (paso 3 del onboarding) ───────
 // El alta real la hace supabase.auth.admin.inviteUserByEmail; aquí solo se
 // validan los datos que el administrador captura en el wizard.
@@ -334,14 +376,27 @@ export type CrearUsuarioEmpleadoInput = z.infer<typeof crearUsuarioEmpleadoSchem
 // Combina empleado + contratación (+ usuario opcional) en un único formulario
 // de alta. El paso de usuario solo aplica si el administrador lo activa.
 
-export const onboardingEmpleadoSchema = z.object({
-  empleado: crearEmpleadoSchema,
-  direccion: direccionSchema,
-  contratacion: crearHistorialLaboralSchema,
-  datos_pago: datosPagoSchema.optional(),
-  usuario: crearUsuarioEmpleadoSchema.optional(),
-  confirmar_cuenta_duplicada: confirmarCuentaDuplicada,
-})
+export const onboardingEmpleadoSchema = z
+  .object({
+    empleado: crearEmpleadoSchema,
+    direccion: direccionSchema,
+    contratacion: crearHistorialLaboralSchema,
+    datos_pago: datosPagoSchema.optional(),
+    usuario: crearUsuarioEmpleadoSchema.optional(),
+    confirmar_cuenta_duplicada: confirmarCuentaDuplicada,
+  })
+  // La misma regla que aplican las RPC crear_contrato y editar_contrato: un
+  // contrato no puede empezar antes de que la persona entre a la empresa.
+  // Las fechas van como 'YYYY-MM-DD', así que se comparan como texto.
+  .superRefine((data, ctx) => {
+    if (data.contratacion.lab_fecha_inicio < data.empleado.emp_fecha_ingreso_original) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['contratacion', 'lab_fecha_inicio'],
+        message: 'El contrato no puede empezar antes del ingreso a la empresa',
+      })
+    }
+  })
 
 export type OnboardingEmpleadoInput = z.infer<typeof onboardingEmpleadoSchema>
 
@@ -351,6 +406,13 @@ export type OnboardingEmpleadoInput = z.infer<typeof onboardingEmpleadoSchema>
 export interface CatalogoItem {
   id: number
   nombre: string
+}
+
+/** Motivo de salida, con lo que el formulario de terminar muestra de cada uno. */
+export interface MotivoSalidaItem extends CatalogoItem {
+  generaCesantia: boolean
+  generaPreaviso: boolean
+  notaLegal: string | null
 }
 
 // ─── View Model — Catálogo territorial ───────────────────────────────────────
@@ -408,8 +470,15 @@ export type ContratoDetalle = HistorialLaboralRow & {
   sucursal_nombre: string
   tipo_contrato_nombre: string
   tipo_jornada_nombre: string
-  // null en el vigente, y en uno cerrado sin motivo registrado.
+  // null en el vigente sin terminación, y en uno cerrado sin motivo registrado.
   motivo_salida_nombre: string | null
+  // Tiene fila en sgrh_liquidaciones. false también para quien no tiene
+  // NOMINA_READ (la RLS oculta la liquidación): la UI solo lo usa con permisos
+  // que la ven.
+  liquidado: boolean
+  // Ya aparece en alguna planilla: cierra la ventana de edición. Solo se
+  // calcula para el vigente; en los cerrados es siempre false.
+  en_planilla: boolean
 }
 
 export type EmpleadoDetalle = EmpleadoRow & {

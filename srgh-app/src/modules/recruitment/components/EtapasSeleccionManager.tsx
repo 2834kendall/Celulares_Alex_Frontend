@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, Milestone, Pencil, Plus, Trash2 } from 'lucide-react'
 import { FASES_SELECCION, type EtapaSeleccionRow } from '@/modules/recruitment/types'
@@ -38,7 +37,6 @@ export function EtapasSeleccionManager({ etapas, canWrite }: EtapasSeleccionMana
     confirmDelete,
   } = useCrudList<EtapaSeleccionRow>(deleteEtapaSeleccion)
 
-  const router = useRouter()
   const [movingId, setMovingId] = useState<number | null>(null)
 
   const isEditing = editing !== null && editing !== 'new'
@@ -51,7 +49,6 @@ export function EtapasSeleccionManager({ etapas, canWrite }: EtapasSeleccionMana
       toast.error(result.error)
       return
     }
-    router.refresh()
   }
 
   async function handleConfirmDelete() {

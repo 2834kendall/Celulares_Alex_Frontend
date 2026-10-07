@@ -8,10 +8,9 @@ import { Loader2, Receipt } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   procesarLiquidacionSchema,
-  type EmpleadoActivoItem,
+  type ContratoPorLiquidarItem,
   type LiquidacionCalculada,
   type LiquidacionListItem,
-  type MotivoSalidaRow,
   type ProcesarLiquidacionInput,
 } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
@@ -21,14 +20,14 @@ import { proponerVacacionesLiquidacion } from '@/modules/payroll/actions/propone
 import type { VacacionesPropuestas } from '@/modules/payroll/lib/derechos'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
-import { ControlledDateField } from '@/components/ui/ControlledDateField'
 import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
 
 interface LiquidacionTabProps {
-  empleados: EmpleadoActivoItem[]
-  motivos: MotivoSalidaRow[]
+  /** Contratos terminados desde el perfil del empleado y sin liquidar. */
+  contratos: ContratoPorLiquidarItem[]
   historial: LiquidacionListItem[]
 }
 
@@ -45,9 +44,11 @@ function ResultadoLinea({ label, valor, dias }: { label: string; valor: number; 
 }
 
 /**
- * Calcula y guarda la liquidación de un empleado. Al confirmarse, cierra su
- * expediente laboral (fecha de fin + motivo de salida) — por eso no se
- * puede deshacer desde acá ni volver a procesar el mismo contrato dos veces.
+ * Calcula y guarda la liquidación de un contrato que RRHH ya terminó desde
+ * el perfil del empleado (SGRH-90). La fecha de salida y el motivo vienen de
+ * esa terminación y acá solo se muestran. Guardar es definitivo: no se puede
+ * deshacer desde acá ni volver a procesar el mismo contrato, y por eso pide
+ * confirmación.
  */
 /**
  * Contrato a preseleccionar desde `?empleado=<lab_id>` (lo manda el tab
@@ -55,20 +56,23 @@ function ResultadoLinea({ label, valor, dias }: { label: string; valor: number; 
  * id que no aparece —ya liquidado, fuera del alcance de la RLS o una URL
  * editada a mano— se ignora y el selector queda vacío.
  */
-function empleadoPreseleccionado(
+function contratoPreseleccionado(
   param: string | null,
-  empleados: EmpleadoActivoItem[]
+  contratos: ContratoPorLiquidarItem[]
 ): number | undefined {
   const id = Number(param)
   if (!Number.isInteger(id) || id <= 0) return undefined
-  return empleados.some((e) => e.historialLaboralId === id) ? id : undefined
+  return contratos.some((c) => c.historialLaboralId === id) ? id : undefined
 }
 
-export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTabProps) {
+export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [serverError, setServerError] = useState<string | null>(null)
   const [resultado, setResultado] = useState<LiquidacionCalculada | null>(null)
+  // Valores ya validados esperando la confirmación del ConfirmDialog.
+  const [porConfirmar, setPorConfirmar] = useState<ProcesarLiquidacionInput | null>(null)
+  const [guardando, setGuardando] = useState(false)
 
   const [propuesta, setPropuesta] = useState<
     (VacacionesPropuestas & { inicioRelacion: string }) | null
@@ -84,30 +88,26 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
     reset,
     setValue,
     setError,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<ProcesarLiquidacionInput>({
     resolver: zodResolver(procesarLiquidacionSchema),
     defaultValues: {
-      historialLaboralId: empleadoPreseleccionado(searchParams.get('empleado'), empleados),
-      fechaSalida: '',
-      motivoSalidaId: undefined,
+      historialLaboralId: contratoPreseleccionado(searchParams.get('empleado'), contratos),
       diasVacacionesPendientes: 0,
       cesantiaPactada: null,
     },
   })
 
-  const motivoElegidoId = watch('motivoSalidaId')
-  const motivoElegido = motivos.find((m) => m.mot_id === motivoElegidoId)
-  const esMutuoAcuerdo = motivoElegido?.mot_codigo === MOTIVO_MUTUO_ACUERDO
-  const empleadoElegidoId = watch('historialLaboralId')
-  const fechaSalidaElegida = watch('fechaSalida')
+  const contratoElegidoId = watch('historialLaboralId')
+  const contratoElegido = contratos.find((c) => c.historialLaboralId === contratoElegidoId)
+  const esMutuoAcuerdo = contratoElegido?.motivo?.codigo === MOTIVO_MUTUO_ACUERDO
 
-  // Con empleado y fecha elegidos, el sistema propone los días de vacaciones
-  // (1 por mes laborado menos los tomados en Ausencias) y los pone en el
-  // campo. Quien liquida los puede corregir; si cambia el empleado o la
-  // fecha, se vuelve a proponer.
+  // Con un contrato elegido, el sistema propone los días de vacaciones (1 por
+  // mes laborado menos los tomados en Ausencias) y los pone en el campo.
+  // Quien liquida los puede corregir; si cambia el contrato, se vuelve a
+  // proponer.
   useEffect(() => {
-    if (!empleadoElegidoId || !/^\d{4}-\d{2}-\d{2}$/.test(fechaSalidaElegida ?? '')) {
+    if (!contratoElegidoId) {
       setPropuesta(null)
       setPropuestaError(null)
       setProponiendo(false)
@@ -115,7 +115,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
     }
     let vigente = true
     setProponiendo(true)
-    proponerVacacionesLiquidacion(empleadoElegidoId, fechaSalidaElegida)
+    proponerVacacionesLiquidacion(contratoElegidoId)
       .then((r) => {
         if (!vigente) return
         setProponiendo(false)
@@ -137,21 +137,18 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
     return () => {
       vigente = false
     }
-  }, [empleadoElegidoId, fechaSalidaElegida, setValue])
+  }, [contratoElegidoId, setValue])
 
-  async function onSubmit(input: ProcesarLiquidacionInput) {
+  async function guardarConfirmado() {
+    // ConfirmDialog no deshabilita su botón mientras espera: sin esto, un
+    // doble clic mandaría dos veces la misma liquidación.
+    if (!porConfirmar || guardando) return
+    setGuardando(true)
     setServerError(null)
     setResultado(null)
-    if (esMutuoAcuerdo && !input.cesantiaPactada) {
-      setError('cesantiaPactada', { message: 'Indicá si se pactó pagar cesantía.' })
-      return
-    }
-    // Fuera del mutuo acuerdo la cesantía la dice el catálogo: una respuesta
-    // que quedó marcada de antes de cambiar el motivo no viaja.
-    const result = await procesarLiquidacion({
-      ...input,
-      cesantiaPactada: esMutuoAcuerdo ? input.cesantiaPactada : null,
-    })
+    const result = await procesarLiquidacion(porConfirmar)
+    setGuardando(false)
+    setPorConfirmar(null)
 
     if (!result.ok) {
       setServerError(result.error)
@@ -161,23 +158,18 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
     setResultado(result.data)
     toast.success('Liquidación calculada y guardada. Pagala desde el historial cuando se entregue.')
     // Sin el historialLaboralId explícito, reset() volvería al preseleccionado
-    // de la URL: el contrato que se acaba de cerrar.
-    reset({
-      historialLaboralId: undefined,
-      fechaSalida: '',
-      motivoSalidaId: undefined,
-      diasVacacionesPendientes: 0,
-      cesantiaPactada: null,
-    })
+    // de la URL: el contrato que se acaba de liquidar.
+    reset({ historialLaboralId: undefined, diasVacacionesPendientes: 0, cesantiaPactada: null })
     setPropuesta(null)
     router.refresh()
   }
 
-  if (empleados.length === 0) {
+  if (contratos.length === 0) {
     return (
       <div className="space-y-4">
         <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-          No hay empleados activos para liquidar.
+          No hay contratos pendientes de liquidar. Los contratos se terminan desde el perfil del
+          empleado.
         </p>
         <LiquidacionesHistorial items={historial} canWrite />
       </div>
@@ -188,7 +180,18 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
     <div className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-2">
         <form
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={handleSubmit((values) => {
+            if (esMutuoAcuerdo && !values.cesantiaPactada) {
+              setError('cesantiaPactada', { message: 'Indicá si se pactó pagar cesantía.' })
+              return
+            }
+            // Fuera del mutuo acuerdo la cesantía la dice el catálogo: una
+            // respuesta que quedó marcada de otro contrato no viaja.
+            setPorConfirmar({
+              ...values,
+              cesantiaPactada: esMutuoAcuerdo ? values.cesantiaPactada : null,
+            })
+          })}
           className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
           noValidate
         >
@@ -200,19 +203,19 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
 
           <div>
             <label className={LABEL} htmlFor="historialLaboralId">
-              Empleado
+              Contrato por liquidar
             </label>
             <ControlledSelectMenu
               control={control}
               name="historialLaboralId"
               id="historialLaboralId"
               parse={parseNumber}
-              disabled={isSubmitting}
+              disabled={guardando}
               invalid={!!errors.historialLaboralId}
-              placeholder="Elegí un empleado"
-              options={empleados.map((e) => ({
-                value: String(e.historialLaboralId),
-                label: `${e.nombre} — ${e.cedula}`,
+              placeholder="Elegí un contrato"
+              options={contratos.map((c) => ({
+                value: String(c.historialLaboralId),
+                label: `${c.nombre} — ${c.cedula} · salió el ${formatDate(c.fechaSalida)}`,
               }))}
             />
             {errors.historialLaboralId && (
@@ -220,52 +223,36 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             )}
           </div>
 
-          <div>
-            <label className={LABEL} htmlFor="fechaSalida">
-              Fecha de salida
-            </label>
-            <ControlledDateField
-              control={control}
-              name="fechaSalida"
-              id="fechaSalida"
-              label="Fecha de salida"
-              disabled={isSubmitting}
-              invalid={!!errors.fechaSalida}
-            />
-            {errors.fechaSalida && (
-              <p className="mt-1 text-[11px] text-rose-600">{errors.fechaSalida.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label className={LABEL} htmlFor="motivoSalidaId">
-              Motivo de salida
-            </label>
-            <ControlledSelectMenu
-              control={control}
-              name="motivoSalidaId"
-              id="motivoSalidaId"
-              parse={parseNumber}
-              disabled={isSubmitting}
-              invalid={!!errors.motivoSalidaId}
-              placeholder="Elegí un motivo"
-              options={motivos.map((m) => ({ value: String(m.mot_id), label: m.mot_nombre }))}
-            />
-            {errors.motivoSalidaId && (
-              <p className="mt-1 text-[11px] text-rose-600">{errors.motivoSalidaId.message}</p>
-            )}
-            {motivoElegido && (
-              <p className="mt-1 text-[11px] text-slate-400">
-                {esMutuoAcuerdo
-                  ? 'Cesantía solo si se pactó (indicalo abajo). '
-                  : motivoElegido.mot_genera_cesantia
-                    ? 'Genera cesantía. '
-                    : 'No genera cesantía. '}
-                {motivoElegido.mot_genera_preaviso ? 'Genera preaviso.' : 'No genera preaviso.'}
-                {motivoElegido.mot_nota_legal && ` ${motivoElegido.mot_nota_legal}`}
-              </p>
-            )}
-          </div>
+          {/* Fecha y motivo los registró RRHH al terminar el contrato: acá se
+              muestran, no se editan. Para corregirlos hay que revertir la
+              terminación desde el perfil y volver a terminarlo. */}
+          {contratoElegido && (
+            <dl className="grid grid-cols-2 gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+              <div>
+                <dt className={LABEL}>Último día de trabajo</dt>
+                <dd className="text-xs text-slate-700">
+                  {formatDate(contratoElegido.fechaSalida)}
+                </dd>
+              </div>
+              <div>
+                <dt className={LABEL}>Motivo de salida</dt>
+                <dd className="text-xs text-slate-700">{contratoElegido.motivo?.nombre ?? '—'}</dd>
+              </div>
+              {contratoElegido.motivo && (
+                <p className="col-span-2 text-[11px] text-slate-400">
+                  {esMutuoAcuerdo
+                    ? 'Cesantía solo si se pactó (indicalo abajo). '
+                    : contratoElegido.motivo.generaCesantia
+                      ? 'Genera cesantía. '
+                      : 'No genera cesantía. '}
+                  {contratoElegido.motivo.generaPreaviso
+                    ? 'Genera preaviso.'
+                    : 'No genera preaviso.'}
+                  {contratoElegido.motivo.notaLegal && ` ${contratoElegido.motivo.notaLegal}`}
+                </p>
+              )}
+            </dl>
+          )}
 
           {esMutuoAcuerdo && (
             <fieldset>
@@ -275,7 +262,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
                   <input
                     type="radio"
                     value="si"
-                    disabled={isSubmitting}
+                    disabled={guardando}
                     {...register('cesantiaPactada')}
                   />
                   Sí, se paga cesantía
@@ -284,7 +271,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
                   <input
                     type="radio"
                     value="no"
-                    disabled={isSubmitting}
+                    disabled={guardando}
                     {...register('cesantiaPactada')}
                   />
                   No se paga
@@ -308,7 +295,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
               id="diasVacacionesPendientes"
               type="number"
               step="0.5"
-              disabled={isSubmitting}
+              disabled={guardando}
               aria-invalid={!!errors.diasVacacionesPendientes}
               {...register('diasVacacionesPendientes', { valueAsNumber: true })}
               className={INPUT}
@@ -330,7 +317,7 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             )}
             {!proponiendo && !propuesta && !propuestaError && (
               <p className="mt-1 text-[11px] text-slate-400">
-                Elegí empleado y fecha de salida para que el sistema proponga los días.
+                Elegí un contrato para que el sistema proponga los días.
               </p>
             )}
             {errors.diasVacacionesPendientes && (
@@ -340,8 +327,8 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
             )}
           </div>
 
-          <Button type="submit" disabled={isSubmitting} size="lg" block>
-            {isSubmitting ? (
+          <Button type="submit" disabled={guardando} size="lg" block>
+            {guardando ? (
               <>
                 <Loader2 className={SPINNER} /> Calculando
               </>
@@ -432,6 +419,19 @@ export function LiquidacionTab({ empleados, motivos, historial }: LiquidacionTab
       </div>
 
       <LiquidacionesHistorial items={historial} canWrite />
+
+      {porConfirmar && (
+        <ConfirmDialog
+          title="Guardar liquidación"
+          message={`Se va a guardar la liquidación de ${
+            contratos.find((c) => c.historialLaboralId === porConfirmar.historialLaboralId)
+              ?.nombre ?? 'este empleado'
+          } y se borrarán sus turnos posteriores a la salida. No se puede deshacer.`}
+          confirmLabel="Guardar liquidación"
+          onCancel={() => setPorConfirmar(null)}
+          onConfirm={() => void guardarConfirmado()}
+        />
+      )}
     </div>
   )
 }

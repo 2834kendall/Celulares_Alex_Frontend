@@ -51,9 +51,11 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 export interface HistorialLiquidacionRow {
   lab_id: number
+  lab_empleado_id: number
   lab_sucursal_id?: number | null
   lab_fecha_inicio: string
   lab_fecha_fin: string | null
+  lab_motivo_salida_id: number | null
   lab_salario_base: number | null
   lab_salario_real: number | null
   sgrh_empleados: {
@@ -61,22 +63,33 @@ export interface HistorialLiquidacionRow {
     /** Todos los contratos del empleado, para armar la relación laboral. */
     sgrh_historial_laboral?: ContratoRow[] | null
   } | null
+  /** La liquidación de ESTE contrato, si ya la tiene. */
+  sgrh_liquidaciones: { liq_id: number } | { liq_id: number }[] | null
 }
 
-export const SELECT_HISTORIAL_LIQUIDACION = `lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
-   sgrh_empleados ( emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) )`
+/** Un contrato que ya se puede liquidar: terminado, con su fecha de salida. */
+export type HistorialTerminadoRow = HistorialLiquidacionRow & {
+  lab_fecha_fin: string
+  lab_motivo_salida_id: number
+}
+
+export const SELECT_HISTORIAL_LIQUIDACION = `lab_id, lab_empleado_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_motivo_salida_id,
+   lab_salario_base, lab_salario_real,
+   sgrh_empleados ( emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) ),
+   sgrh_liquidaciones ( liq_id )`
 
 export type CargarHistorialResult =
-  { ok: true; data: HistorialLiquidacionRow } | { ok: false; error: string }
+  { ok: true; data: HistorialTerminadoRow } | { ok: false; error: string }
 
 /**
- * Lee el contrato a liquidar y verifica que se pueda: que exista, que no
- * tenga ya una salida y que la fecha no sea anterior a su inicio.
+ * Lee el contrato a liquidar y verifica que se pueda: que exista, que RRHH ya
+ * lo haya terminado desde el perfil del empleado (SGRH-90) y que no esté
+ * liquidado. La fecha de salida y el motivo salen de acá, no del formulario:
+ * la liquidación no puede contradecir lo que registró RRHH.
  */
 export async function cargarHistorialParaLiquidacion(
   supabase: SupabaseServerClient,
-  historialLaboralId: number,
-  fechaSalida: string
+  historialLaboralId: number
 ): Promise<CargarHistorialResult> {
   const { data: historial, error } = await supabase
     .from('sgrh_historial_laboral')
@@ -86,16 +99,27 @@ export async function cargarHistorialParaLiquidacion(
 
   if (error) return { ok: false, error: 'No se pudo cargar el historial laboral del empleado.' }
   if (!historial) return { ok: false, error: 'El empleado no existe o no es visible.' }
-  if (historial.lab_fecha_fin) {
-    return { ok: false, error: 'Este empleado ya tiene una salida registrada.' }
-  }
-  if (fechaSalida < historial.lab_fecha_inicio) {
+  if (!historial.lab_fecha_fin) {
     return {
       ok: false,
-      error: `La fecha de salida es anterior a la de ingreso (${historial.lab_fecha_inicio}).`,
+      error: 'Este contrato sigue vigente: primero terminalo desde el perfil del empleado.',
     }
   }
-  return { ok: true, data: historial }
+  if (!historial.lab_motivo_salida_id) {
+    return { ok: false, error: 'El contrato no tiene motivo de salida registrado.' }
+  }
+  const liq = historial.sgrh_liquidaciones
+  if (Array.isArray(liq) ? liq.length > 0 : Boolean(liq)) {
+    return { ok: false, error: 'Este contrato ya fue liquidado.' }
+  }
+  return {
+    ok: true,
+    data: {
+      ...historial,
+      lab_fecha_fin: historial.lab_fecha_fin,
+      lab_motivo_salida_id: historial.lab_motivo_salida_id,
+    },
+  }
 }
 
 export interface BasesLiquidacion {

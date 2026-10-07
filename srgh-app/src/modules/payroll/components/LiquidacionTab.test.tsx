@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiquidacionTab } from './LiquidacionTab'
-import type { EmpleadoActivoItem, MotivoSalidaRow } from '@/modules/payroll/types'
 import { procesarLiquidacion } from '@/modules/payroll/actions/procesarLiquidacion'
+import type { ContratoPorLiquidarItem } from '@/modules/payroll/types'
 
 let searchString = ''
 
@@ -17,8 +17,8 @@ vi.mock('@/modules/payroll/actions/procesarLiquidacion', () => ({
   procesarLiquidacion: vi.fn(),
 }))
 
-// La propuesta de vacaciones y el pago son server actions: acá solo importa
-// la preselección por URL.
+// La propuesta de vacaciones y el pago son server actions con sus propios
+// tests: acá devuelven lo mínimo para que el formulario funcione.
 vi.mock('@/modules/payroll/actions/proponerVacacionesLiquidacion', () => ({
   proponerVacacionesLiquidacion: vi.fn(() => Promise.resolve({ ok: false, error: 'sin datos' })),
 }))
@@ -27,61 +27,64 @@ vi.mock('@/modules/payroll/actions/pagarLiquidacion', () => ({
   pagarLiquidacion: vi.fn(),
 }))
 
-// El calendario propio no es un <input>: para escribir la fecha en los tests
-// se cambia por uno nativo cableado igual (useController).
-vi.mock('@/components/ui/ControlledDateField', async () => {
-  const { useController } = await import('react-hook-form')
-  return {
-    ControlledDateField: ({
-      control,
-      name,
-      id,
-    }: {
-      control: import('react-hook-form').Control<Record<string, unknown>>
-      name: string
-      id?: string
-    }) => {
-      const { field } = useController({ name, control })
-      return (
-        <input
-          id={id}
-          value={(field.value as string) ?? ''}
-          onChange={(e) => field.onChange(e.target.value)}
-        />
-      )
-    },
-  }
-})
-
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))
 
-const EMPLEADOS: EmpleadoActivoItem[] = [
-  { historialLaboralId: 5, nombre: 'Ana Mora', cedula: '1-1111-1111' },
-  { historialLaboralId: 8, nombre: 'Luis Solís', cedula: '2-2222-2222' },
+const mockProcesar = vi.mocked(procesarLiquidacion)
+
+const CONTRATOS: ContratoPorLiquidarItem[] = [
+  {
+    historialLaboralId: 5,
+    nombre: 'Ana Mora',
+    cedula: '1-1111-1111',
+    fechaSalida: '2026-09-20',
+    motivo: {
+      codigo: 'REN001',
+      nombre: 'Renuncia Voluntaria',
+      generaCesantia: false,
+      generaPreaviso: false,
+      notaLegal: null,
+    },
+  },
+  {
+    historialLaboralId: 8,
+    nombre: 'Luis Solís',
+    cedula: '2-2222-2222',
+    fechaSalida: '2026-09-15',
+    motivo: {
+      codigo: 'DES001',
+      nombre: 'Despido con Responsabilidad Patronal',
+      generaCesantia: true,
+      generaPreaviso: true,
+      notaLegal: null,
+    },
+  },
 ]
 
-function renderTab() {
-  render(<LiquidacionTab empleados={EMPLEADOS} motivos={[]} historial={[]} />)
+function renderTab(contratos: ContratoPorLiquidarItem[] = CONTRATOS) {
+  render(<LiquidacionTab contratos={contratos} historial={[]} />)
 }
 
-describe('<LiquidacionTab /> — preselección por URL', () => {
-  beforeEach(() => {
-    searchString = ''
-  })
+beforeEach(() => {
+  vi.clearAllMocks()
+  searchString = ''
+})
 
-  it('sin ?empleado= el selector arranca vacío, como siempre', () => {
+describe('<LiquidacionTab /> — preselección por URL', () => {
+  it('sin ?empleado= el selector arranca vacío', () => {
     renderTab()
 
-    expect(screen.getByLabelText('Empleado')).toHaveTextContent('Elegí un empleado')
+    expect(screen.getByLabelText('Contrato por liquidar')).toHaveTextContent('Elegí un contrato')
   })
 
-  it('con ?empleado= de un contrato liquidable lo deja elegido', () => {
+  it('con ?empleado= de un contrato por liquidar lo deja elegido', () => {
     searchString = 'tab=liquidacion&empleado=8'
     renderTab()
 
-    expect(screen.getByLabelText('Empleado')).toHaveTextContent('Luis Solís — 2-2222-2222')
+    expect(screen.getByLabelText('Contrato por liquidar')).toHaveTextContent(
+      'Luis Solís — 2-2222-2222 · salió el 15/09/2026'
+    )
   })
 
   // El id viaja en la URL: puede ser de alguien ya liquidado, fuera del alcance
@@ -90,80 +93,113 @@ describe('<LiquidacionTab /> — preselección por URL', () => {
     searchString = `tab=liquidacion&empleado=${valor}`
     renderTab()
 
-    expect(screen.getByLabelText('Empleado')).toHaveTextContent('Elegí un empleado')
+    expect(screen.getByLabelText('Contrato por liquidar')).toHaveTextContent('Elegí un contrato')
+  })
+})
+
+describe('<LiquidacionTab /> — contrato terminado desde el perfil', () => {
+  it('sin contratos por liquidar explica dónde se terminan', () => {
+    renderTab([])
+
+    expect(screen.getByText(/no hay contratos pendientes de liquidar/i)).toBeInTheDocument()
+    expect(screen.getByText(/se terminan desde el perfil del empleado/i)).toBeInTheDocument()
+  })
+
+  it('muestra la fecha y el motivo que registró RRHH, sin dejarlos editar', () => {
+    searchString = 'empleado=8'
+    renderTab()
+
+    expect(screen.getByText('15/09/2026')).toBeInTheDocument()
+    expect(screen.getByText('Despido con Responsabilidad Patronal')).toBeInTheDocument()
+    expect(screen.getByText(/genera cesantía\. genera preaviso\./i)).toBeInTheDocument()
+    // Ya no hay campos para capturarlos.
+    expect(screen.queryByLabelText('Fecha de salida')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Motivo de salida')).not.toBeInTheDocument()
+  })
+
+  it('pide confirmación antes de guardar: cancelar no liquida', async () => {
+    const user = userEvent.setup()
+    searchString = 'empleado=5'
+    renderTab()
+
+    await user.click(screen.getByRole('button', { name: /calcular y guardar liquidación/i }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Ana Mora')
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(mockProcesar).not.toHaveBeenCalled()
+  })
+
+  it('al confirmar manda solo el contrato y los días de vacaciones', async () => {
+    const user = userEvent.setup()
+    mockProcesar.mockResolvedValue({ ok: false, error: 'Este contrato ya fue liquidado.' })
+    searchString = 'empleado=5'
+    renderTab()
+
+    await user.click(screen.getByRole('button', { name: /calcular y guardar liquidación/i }))
+    await user.click(await screen.findByRole('button', { name: 'Guardar liquidación' }))
+
+    await waitFor(() =>
+      expect(mockProcesar).toHaveBeenCalledWith({
+        historialLaboralId: 5,
+        diasVacacionesPendientes: 0,
+        cesantiaPactada: null,
+      })
+    )
+    expect(await screen.findByText('Este contrato ya fue liquidado.')).toBeInTheDocument()
   })
 })
 
 describe('<LiquidacionTab /> — mutuo acuerdo', () => {
-  const MOTIVOS = [
-    {
-      mot_id: 4,
-      mot_codigo: 'MUT001',
-      mot_nombre: 'Mutuo Acuerdo entre las Partes',
-      mot_genera_cesantia: true,
-      mot_genera_preaviso: false,
-      mot_nota_legal: null,
+  const MUTUO: ContratoPorLiquidarItem = {
+    historialLaboralId: 9,
+    nombre: 'Fabián Rojas',
+    cedula: '3-3333-3333',
+    fechaSalida: '2026-09-10',
+    motivo: {
+      codigo: 'MUT001',
+      nombre: 'Mutuo Acuerdo entre las Partes',
+      generaCesantia: true,
+      generaPreaviso: false,
+      notaLegal: null,
     },
-    {
-      mot_id: 1,
-      mot_codigo: 'REN001',
-      mot_nombre: 'Renuncia Voluntaria',
-      mot_genera_cesantia: false,
-      mot_genera_preaviso: false,
-      mot_nota_legal: null,
-    },
-  ] as unknown as MotivoSalidaRow[]
-
-  beforeEach(() => {
-    searchString = 'empleado=5'
-    vi.mocked(procesarLiquidacion).mockReset()
-  })
-
-  async function elegirMotivo(user: ReturnType<typeof userEvent.setup>, nombre: string) {
-    await user.click(screen.getByLabelText('Motivo de salida'))
-    // El click va al botón de la opción (el <li> no escucha clicks).
-    await user.click(within(screen.getByRole('option', { name: nombre })).getByRole('button'))
   }
 
-  it('pregunta si se pactó la cesantía solo en mutuo acuerdo', async () => {
-    const user = userEvent.setup()
-    render(<LiquidacionTab empleados={EMPLEADOS} motivos={MOTIVOS} historial={[]} />)
+  it('solo en mutuo acuerdo pregunta si se pactó la cesantía', () => {
+    searchString = 'empleado=9'
+    renderTab([...CONTRATOS, MUTUO])
 
-    await elegirMotivo(user, 'Mutuo Acuerdo entre las Partes')
     expect(screen.getByText('¿Se pactó pagar cesantía?')).toBeInTheDocument()
     expect(screen.getByText(/Cesantía solo si se pactó/)).toBeInTheDocument()
   })
 
-  it('en otro motivo no pregunta', async () => {
-    const user = userEvent.setup()
-    render(<LiquidacionTab empleados={EMPLEADOS} motivos={MOTIVOS} historial={[]} />)
+  it('en otro motivo no pregunta', () => {
+    searchString = 'empleado=8'
+    renderTab([...CONTRATOS, MUTUO])
 
-    await elegirMotivo(user, 'Renuncia Voluntaria')
     expect(screen.queryByText('¿Se pactó pagar cesantía?')).not.toBeInTheDocument()
-    expect(screen.getByText(/No genera cesantía/)).toBeInTheDocument()
   })
 
-  it('no envía la liquidación sin la respuesta, y la manda cuando se elige', async () => {
+  it('sin respuesta no pide confirmación; con respuesta la manda', async () => {
     const user = userEvent.setup()
-    vi.mocked(procesarLiquidacion).mockResolvedValue({ ok: false, error: 'stop' })
-    render(<LiquidacionTab empleados={EMPLEADOS} motivos={MOTIVOS} historial={[]} />)
+    mockProcesar.mockResolvedValue({ ok: false, error: 'stop' })
+    searchString = 'empleado=9'
+    renderTab([...CONTRATOS, MUTUO])
 
-    fireEvent.change(screen.getByLabelText('Fecha de salida'), {
-      target: { value: '2026-01-20' },
-    })
-    await elegirMotivo(user, 'Mutuo Acuerdo entre las Partes')
-    await user.click(screen.getByRole('button', { name: /Calcular y guardar liquidación/ }))
-
+    await user.click(screen.getByRole('button', { name: /calcular y guardar liquidación/i }))
     expect(await screen.findByText('Indicá si se pactó pagar cesantía.')).toBeInTheDocument()
-    expect(procesarLiquidacion).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
 
     await user.click(screen.getByLabelText('No se paga'))
-    await user.click(screen.getByRole('button', { name: /Calcular y guardar liquidación/ }))
+    await user.click(screen.getByRole('button', { name: /calcular y guardar liquidación/i }))
+    await user.click(await screen.findByRole('button', { name: 'Guardar liquidación' }))
 
     await waitFor(() =>
-      expect(procesarLiquidacion).toHaveBeenCalledWith(
-        expect.objectContaining({ motivoSalidaId: 4, cesantiaPactada: 'no' })
-      )
+      expect(mockProcesar).toHaveBeenCalledWith({
+        historialLaboralId: 9,
+        diasVacacionesPendientes: 0,
+        cesantiaPactada: 'no',
+      })
     )
   })
 })

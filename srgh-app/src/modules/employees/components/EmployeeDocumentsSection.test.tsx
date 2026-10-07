@@ -97,7 +97,7 @@ describe('<EmployeeDocumentsSection />', () => {
     expect(screen.getByText(/descargar contrato firmado/i)).toBeInTheDocument()
   })
 
-  it('sube un documento: dropzone → modal de metadata → addEmployeeDocument → toast y refresh', async () => {
+  it('sube un documento: dropzone → modal de metadata → addEmployeeDocument → toast (la acción ya revalida)', async () => {
     mockAdd.mockResolvedValue({ ok: true, docId: 5 })
     const user = userEvent.setup()
     render(<EmployeeDocumentsSection empId={10} documentos={[]} tiposDocumento={TIPOS} canWrite />)
@@ -115,7 +115,7 @@ describe('<EmployeeDocumentsSection />', () => {
     expect(empId).toBe(10)
     expect(formData.get('file')).toBeInstanceOf(File)
     expect(formData.get('doc_tipo_id')).toBe('1')
-    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(refresh).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -161,7 +161,7 @@ describe('<EmployeeDocumentsSection />', () => {
         doc_fecha_vencimiento: null,
       })
     })
-    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('elimina un documento tras confirmar y muestra el toast de éxito', async () => {
@@ -182,7 +182,7 @@ describe('<EmployeeDocumentsSection />', () => {
     await waitFor(() => {
       expect(mockDelete).toHaveBeenCalledWith(1)
     })
-    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('si el borrado falla, muestra el error inline y no refresca', async () => {

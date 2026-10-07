@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { revalidatePath } from 'next/cache'
 import { procesarLiquidacion } from './procesarLiquidacion'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
@@ -12,15 +13,24 @@ vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
+const mockRevalidatePath = vi.mocked(revalidatePath)
 
-/** Ingresó el 15 de enero de 2020 con ₡300.000 al mes. */
+/**
+ * Ingresó el 15 de enero de 2020 con ₡300.000 al mes. RRHH ya terminó el
+ * contrato desde el perfil (SGRH-90): último día el 20 de enero de 2026, 6
+ * años y 5 días de antigüedad. La fecha y el motivo salen de acá, no del
+ * formulario de liquidación.
+ */
 const HISTORIAL = {
   lab_id: 1,
+  lab_empleado_id: 10,
   lab_fecha_inicio: '2020-01-15',
-  lab_fecha_fin: null,
+  lab_fecha_fin: '2026-01-20',
+  lab_motivo_salida_id: 5,
   lab_salario_base: 300000,
   lab_salario_real: 300000,
   sgrh_empleados: { emp_fecha_ingreso_original: '2020-01-15' },
+  sgrh_liquidaciones: null,
 }
 
 // Renuncia sin responsabilidad patronal: no genera cesantía ni preaviso.
@@ -51,22 +61,23 @@ const CONCEPTOS_DEDUCCION = [
   { con_tipo: 'deduccion', con_tipo_calculo: 'porcentaje_deduccion_bruto', con_porcentaje: 10.83 },
 ]
 
-/** Sale el 20 de enero de 2026: 6 años y 5 días de antigüedad. */
 const INPUT: ProcesarLiquidacionInput = {
   historialLaboralId: 1,
-  fechaSalida: '2026-01-20',
-  motivoSalidaId: 5,
   diasVacacionesPendientes: 10,
 }
 
-const INSERTED = { data: { liq_id: 100 }, error: null }
-/** El UPDATE de cierre devuelve la fila que tocó: así se sabe que no fue 0. */
-const CERRADO = { data: [{ lab_id: 1 }], error: null }
+/** registrar_liquidacion devuelve el liq_id guardado. */
+const GUARDADA = { data: 100, error: null }
 
 type Respuesta = { data: unknown; error: unknown }
 
-function mockSupabase(responses: Record<string, Respuesta | Respuesta[]>) {
-  const client = createSupabaseClientMock(responses)
+function mockSupabase(
+  responses: Record<string, Respuesta | Respuesta[]>,
+  registrarLiquidacion: Respuesta = GUARDADA
+) {
+  const client = createSupabaseClientMock(responses, {
+    rpcResponses: { registrar_liquidacion: registrarLiquidacion },
+  })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -101,18 +112,23 @@ const PROVISION_2025_PAGADA = {
   error: null,
 }
 
-function escenario(over: Record<string, Respuesta | Respuesta[]> = {}) {
-  return mockSupabase({
-    sgrh_historial_laboral: [{ data: HISTORIAL, error: null }, CERRADO],
-    sgrh_cat_motivos_salida: { data: MOTIVO_SIN_DERECHOS, error: null },
-    sgrh_nomina_detalle: { data: [], error: null },
-    sgrh_ausencias: { data: [], error: null },
-    sgrh_provisiones_anuales: PROVISION_2025_PAGADA,
-    sgrh_pagos_extraordinarios: { data: [], error: null },
-    sgrh_cat_conceptos_nomina: { data: CONCEPTOS_DEDUCCION, error: null },
-    sgrh_liquidaciones: INSERTED,
-    ...over,
-  })
+function escenario(
+  over: Record<string, Respuesta | Respuesta[]> = {},
+  registrarLiquidacion: Respuesta = GUARDADA
+) {
+  return mockSupabase(
+    {
+      sgrh_historial_laboral: { data: HISTORIAL, error: null },
+      sgrh_cat_motivos_salida: { data: MOTIVO_SIN_DERECHOS, error: null },
+      sgrh_nomina_detalle: { data: [], error: null },
+      sgrh_ausencias: { data: [], error: null },
+      sgrh_provisiones_anuales: PROVISION_2025_PAGADA,
+      sgrh_pagos_extraordinarios: { data: [], error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS_DEDUCCION, error: null },
+      ...over,
+    },
+    registrarLiquidacion
+  )
 }
 
 /** Los mensajes de advertencia que no son el aviso de vacaciones corregidas. */
@@ -120,18 +136,25 @@ function otrasAdvertencias(advertencias: string[]) {
   return advertencias.filter((a) => !a.includes('el sistema proponía'))
 }
 
+/** Los argumentos con que se llamó a la RPC registrar_liquidacion. */
+function llamadaRpc(client: ReturnType<typeof mockSupabase>) {
+  // El mock declara solo el nombre de la función; los argumentos llegan igual.
+  const llamada = client.rpc.mock.calls.find((c) => c[0] === 'registrar_liquidacion') as
+    unknown[] | undefined
+  return llamada?.[1] as { p_lab_id: number; p_liquidacion: Record<string, unknown> }
+}
+
+/** Los montos que se mandaron a guardar. */
 function insercion(client: ReturnType<typeof mockSupabase>) {
-  const i = client.from.mock.calls.findIndex((c) => c[0] === 'sgrh_liquidaciones')
-  const fn = (client.from.mock.results[i].value as { insert: { mock: { calls: unknown[][] } } })
-    .insert
-  return fn.mock.calls[0][0] as Record<string, unknown>
+  return llamadaRpc(client).p_liquidacion
 }
 
 describe('procesarLiquidacion (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Sin HISTORIAL_WRITE a propósito: liquidar ya no cierra el contrato.
     mockRequirePermission.mockResolvedValue({
-      app_metadata: { permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE', 'AUSENCIAS_READ'] },
+      app_metadata: { permisos: ['NOMINA_WRITE', 'AUSENCIAS_READ'] },
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
   })
 
@@ -150,23 +173,31 @@ describe('procesarLiquidacion (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'El empleado no existe o no es visible.' })
   })
 
-  it('rechaza si el empleado ya tiene una salida registrada', async () => {
+  it('rechaza un contrato vigente: primero se termina desde el perfil', async () => {
     mockSupabase({
-      sgrh_historial_laboral: { data: { ...HISTORIAL, lab_fecha_fin: '2025-01-01' }, error: null },
+      sgrh_historial_laboral: { data: { ...HISTORIAL, lab_fecha_fin: null }, error: null },
     })
 
     const result = await procesarLiquidacion(INPUT)
 
-    expect(result).toEqual({ ok: false, error: 'Este empleado ya tiene una salida registrada.' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'Este contrato sigue vigente: primero terminalo desde el perfil del empleado.',
+    })
   })
 
-  it('rechaza una salida anterior al ingreso', async () => {
-    mockSupabase({ sgrh_historial_laboral: { data: HISTORIAL, error: null } })
+  it('rechaza un contrato que ya fue liquidado', async () => {
+    const client = mockSupabase({
+      sgrh_historial_laboral: {
+        data: { ...HISTORIAL, sgrh_liquidaciones: [{ liq_id: 9 }] },
+        error: null,
+      },
+    })
 
-    const result = await procesarLiquidacion({ ...INPUT, fechaSalida: '2019-12-31' })
+    const result = await procesarLiquidacion(INPUT)
 
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain('anterior a la de ingreso')
+    expect(result).toEqual({ ok: false, error: 'Este contrato ya fue liquidado.' })
+    expect(client.rpc).not.toHaveBeenCalled()
   })
 
   it('rechaza si el motivo de salida no existe', async () => {
@@ -212,7 +243,7 @@ describe('procesarLiquidacion (server action)', () => {
   it('con un motivo que SÍ genera cesantía y preaviso, calcula ambos montos', async () => {
     escenario({ sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null } })
 
-    const result = await procesarLiquidacion({ ...INPUT, motivoSalidaId: 6 })
+    const result = await procesarLiquidacion(INPUT)
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -256,20 +287,20 @@ describe('procesarLiquidacion (server action)', () => {
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('sucursal que tu usuario no ve')
-    expect(client.from.mock.calls.map((c) => c[0])).not.toContain('sgrh_liquidaciones')
+    expect(llamadaRpc(client)).toBeUndefined()
   })
 
   describe('mutuo acuerdo (Art. 86 CT): la cesantía se paga solo si se pactó', () => {
     it('sin decir si se pactó, no calcula ni guarda nada', async () => {
       const client = escenario({ sgrh_cat_motivos_salida: { data: MOTIVO_MUTUO, error: null } })
 
-      const result = await procesarLiquidacion({ ...INPUT, motivoSalidaId: 4 })
+      const result = await procesarLiquidacion(INPUT)
 
       expect(result).toEqual({
         ok: false,
         error: 'En una salida por mutuo acuerdo indicá si se pactó pagar cesantía.',
       })
-      expect(client.from.mock.calls.map((c) => c[0])).not.toContain('sgrh_liquidaciones')
+      expect(llamadaRpc(client)).toBeUndefined()
     })
 
     it('pactada: paga la cesantía de la tabla y no el preaviso', async () => {
@@ -277,7 +308,6 @@ describe('procesarLiquidacion (server action)', () => {
 
       const result = await procesarLiquidacion({
         ...INPUT,
-        motivoSalidaId: 4,
         cesantiaPactada: 'si',
       })
 
@@ -296,7 +326,6 @@ describe('procesarLiquidacion (server action)', () => {
 
       const result = await procesarLiquidacion({
         ...INPUT,
-        motivoSalidaId: 4,
         cesantiaPactada: 'no',
       })
 
@@ -315,7 +344,6 @@ describe('procesarLiquidacion (server action)', () => {
 
       const result = await procesarLiquidacion({
         ...INPUT,
-        motivoSalidaId: 6,
         cesantiaPactada: 'no',
       })
 
@@ -335,7 +363,7 @@ describe('procesarLiquidacion (server action)', () => {
       sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null },
     })
 
-    const result = await procesarLiquidacion({ ...INPUT, motivoSalidaId: 6 })
+    const result = await procesarLiquidacion(INPUT)
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -467,27 +495,45 @@ describe('procesarLiquidacion (server action)', () => {
     })
   })
 
-  it('si ya existe una liquidación para el empleado (23505), avisa con un mensaje claro', async () => {
-    escenario({
-      sgrh_liquidaciones: { data: null, error: { code: '23505', message: 'duplicate key' } },
-    })
+  it('si ya existe una liquidación para el contrato (23505), avisa con un mensaje claro', async () => {
+    escenario({}, { data: null, error: { code: '23505', message: 'duplicate key' } })
 
     const result = await procesarLiquidacion(INPUT)
 
     expect(result).toEqual({
       ok: false,
-      error: 'Ya existe una liquidación guardada para este empleado.',
+      error: 'Ya existe una liquidación guardada para este contrato.',
     })
   })
 
-  it('si falla el guardado por otro motivo, avisa con un mensaje genérico en vez de asumir que ya existía o filtrar el error interno', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    escenario({
-      sgrh_liquidaciones: {
+  // Por ejemplo: RRHH revirtió la terminación mientras contabilidad llenaba el
+  // formulario. La RPC lo ve con el contrato bloqueado y lo dice.
+  it('muestra el rechazo de la RPC tal cual cuando viene escrito para la UI', async () => {
+    escenario(
+      {},
+      {
         data: null,
-        error: { code: '42501', message: 'permission denied for table sgrh_liquidaciones' },
-      },
+        error: {
+          code: '23514',
+          message: 'Este contrato sigue vigente: primero terminalo desde el perfil del empleado.',
+        },
+      }
+    )
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Este contrato sigue vigente: primero terminalo desde el perfil del empleado.',
     })
+  })
+
+  it('si falla el guardado por otro motivo, avisa con un mensaje genérico en vez de filtrar el error interno', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    escenario(
+      {},
+      { data: null, error: { code: 'XX000', message: 'relation sgrh_x does not exist' } }
+    )
 
     const result = await procesarLiquidacion(INPUT)
 
@@ -498,54 +544,43 @@ describe('procesarLiquidacion (server action)', () => {
     consoleErrorSpy.mockRestore()
   })
 
-  it('si se guarda pero no se puede cerrar el expediente, avisa para revisarlo a mano', async () => {
-    escenario({
-      sgrh_historial_laboral: [
-        { data: HISTORIAL, error: null },
-        { data: null, error: { message: 'boom' } },
-      ],
-    })
+  // Un solo paso atómico: la RPC guarda la liquidación y borra los turnos
+  // posteriores a la salida. El contrato, la fecha y el motivo los toma de la
+  // fila del contrato, así que no viajan en el payload.
+  it('guarda por la RPC con el contrato, sin mandar fecha ni motivo', async () => {
+    const client = escenario()
 
     const result = await procesarLiquidacion(INPUT)
 
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.error).toContain('NO se cerró')
-      expect(result.error).toContain('100')
-    }
+    expect(result.ok).toBe(true)
+    const llamada = llamadaRpc(client)
+    expect(llamada.p_lab_id).toBe(1)
+    expect(llamada.p_liquidacion).not.toHaveProperty('liq_fecha_salida')
+    expect(llamada.p_liquidacion).not.toHaveProperty('liq_motivo_salida_id')
+    expect(llamada.p_liquidacion).not.toHaveProperty('liq_historial_laboral_id')
+    // Ya no hay un UPDATE suelto sobre el contrato.
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_liquidaciones')
   })
 
-  // El hallazgo del informe: RLS no devuelve error cuando bloquea un UPDATE.
-  // Filtra la fila, se tocan 0 registros y PostgREST responde "todo bien". La
-  // liquidación quedaba guardada, el empleado activo, y como
-  // liq_historial_laboral_id es UNIQUE ya no se podía reintentar.
-  it('detecta el cierre bloqueado por RLS aunque no venga ningún error', async () => {
-    escenario({
-      sgrh_historial_laboral: [
-        { data: HISTORIAL, error: null },
-        { data: [], error: null },
-      ],
-    })
-
-    const result = await procesarLiquidacion(INPUT)
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain('sigue apareciendo como activo')
-  })
-
-  // Mejor todavía: con un rol sin HISTORIAL_WRITE (el CONTADOR del seed) no se
-  // escribe NADA, así no queda el estado a medias que no se puede reintentar.
-  it('no escribe nada si el usuario no puede cerrar el expediente', async () => {
-    mockRequirePermission.mockResolvedValue({
-      app_metadata: { permisos: ['NOMINA_WRITE'] },
-    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  it('revalida el perfil del empleado: deja de estar pendiente de liquidar', async () => {
     escenario()
 
-    const result = await procesarLiquidacion(INPUT)
+    await procesarLiquidacion(INPUT)
 
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain('HISTORIAL_WRITE')
-    expect(mockCreateClient).not.toHaveBeenCalled()
+    expect(mockRevalidatePath).toHaveBeenCalledWith('/payroll/aguinaldo-liquidacion')
+    expect(mockRevalidatePath).toHaveBeenCalledWith('/employees/10')
+  })
+
+  it('usa el motivo que registró RRHH al terminar el contrato', async () => {
+    const client = escenario()
+
+    await procesarLiquidacion(INPUT)
+
+    const iMotivo = client.from.mock.calls.findIndex((c) => c[0] === 'sgrh_cat_motivos_salida')
+    const consulta = client.from.mock.results[iMotivo].value as {
+      eq: { mock: { calls: unknown[][] } }
+    }
+    expect(consulta.eq.mock.calls).toContainEqual(['mot_id', 5])
   })
 
   // La antigüedad es la relación laboral con la empresa, no el contrato
@@ -554,21 +589,18 @@ describe('procesarLiquidacion (server action)', () => {
   it('mide la antigüedad desde el ingreso original, no desde el contrato actual', async () => {
     escenario({
       sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null },
-      sgrh_historial_laboral: [
-        {
-          data: {
-            ...HISTORIAL,
-            // Traslado reciente: el contrato vigente arrancó hace 5 meses.
-            lab_fecha_inicio: '2025-08-15',
-            sgrh_empleados: { emp_fecha_ingreso_original: '2020-01-15' },
-          },
-          error: null,
+      sgrh_historial_laboral: {
+        data: {
+          ...HISTORIAL,
+          // Traslado reciente: el contrato que se liquida arrancó hace 5 meses.
+          lab_fecha_inicio: '2025-08-15',
+          sgrh_empleados: { emp_fecha_ingreso_original: '2020-01-15' },
         },
-        CERRADO,
-      ],
+        error: null,
+      },
     })
 
-    const result = await procesarLiquidacion({ ...INPUT, motivoSalidaId: 6 })
+    const result = await procesarLiquidacion(INPUT)
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -580,10 +612,7 @@ describe('procesarLiquidacion (server action)', () => {
 
   it('sin fecha de ingreso original usa el contrato y avisa que puede quedar corta', async () => {
     escenario({
-      sgrh_historial_laboral: [
-        { data: { ...HISTORIAL, sgrh_empleados: null }, error: null },
-        CERRADO,
-      ],
+      sgrh_historial_laboral: { data: { ...HISTORIAL, sgrh_empleados: null }, error: null },
     })
 
     const result = await procesarLiquidacion(INPUT)
@@ -612,24 +641,18 @@ describe('procesarLiquidacion (server action)', () => {
   it('la antigüedad incluye el día de salida: 1 ene → 31 dic es un año', async () => {
     escenario({
       sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null },
-      sgrh_historial_laboral: [
-        {
-          data: {
-            ...HISTORIAL,
-            lab_fecha_inicio: '2025-01-01',
-            sgrh_empleados: { emp_fecha_ingreso_original: '2025-01-01' },
-          },
-          error: null,
+      sgrh_historial_laboral: {
+        data: {
+          ...HISTORIAL,
+          lab_fecha_inicio: '2025-01-01',
+          lab_fecha_fin: '2025-12-31',
+          sgrh_empleados: { emp_fecha_ingreso_original: '2025-01-01' },
         },
-        CERRADO,
-      ],
+        error: null,
+      },
     })
 
-    const result = await procesarLiquidacion({
-      ...INPUT,
-      motivoSalidaId: 6,
-      fechaSalida: '2025-12-31',
-    })
+    const result = await procesarLiquidacion(INPUT)
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -665,7 +688,7 @@ describe('procesarLiquidacion (server action)', () => {
       },
     })
 
-    const result = await procesarLiquidacion({ ...INPUT, motivoSalidaId: 6 })
+    const result = await procesarLiquidacion(INPUT)
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -714,17 +737,14 @@ describe('procesarLiquidacion (server action)', () => {
 
   it('con menos de un mes continuo no hay aguinaldo proporcional, y lo dice', async () => {
     escenario({
-      sgrh_historial_laboral: [
-        {
-          data: {
-            ...HISTORIAL,
-            lab_fecha_inicio: '2026-01-05',
-            sgrh_empleados: { emp_fecha_ingreso_original: '2026-01-05' },
-          },
-          error: null,
+      sgrh_historial_laboral: {
+        data: {
+          ...HISTORIAL,
+          lab_fecha_inicio: '2026-01-05',
+          sgrh_empleados: { emp_fecha_ingreso_original: '2026-01-05' },
         },
-        CERRADO,
-      ],
+        error: null,
+      },
     })
 
     const result = await procesarLiquidacion(INPUT)
@@ -813,37 +833,34 @@ describe('procesarLiquidacion (server action)', () => {
       (f) => ({ ...f, ndt_historial_laboral_id: 7 })
     )
     escenario({
-      sgrh_historial_laboral: [
-        {
-          data: {
-            ...HISTORIAL,
-            lab_fecha_inicio: '2026-01-01',
-            sgrh_empleados: {
-              emp_fecha_ingreso_original: '2020-01-15',
-              sgrh_historial_laboral: [
-                {
-                  lab_id: 7,
-                  lab_fecha_inicio: '2020-01-15',
-                  lab_fecha_fin: '2025-12-31',
-                  lab_salario_base: 300000,
-                  lab_salario_real: 300000,
-                  sgrh_liquidaciones: [],
-                },
-                {
-                  lab_id: 1,
-                  lab_fecha_inicio: '2026-01-01',
-                  lab_fecha_fin: null,
-                  lab_salario_base: 300000,
-                  lab_salario_real: 300000,
-                  sgrh_liquidaciones: [],
-                },
-              ],
-            },
+      sgrh_historial_laboral: {
+        data: {
+          ...HISTORIAL,
+          lab_fecha_inicio: '2026-01-01',
+          sgrh_empleados: {
+            emp_fecha_ingreso_original: '2020-01-15',
+            sgrh_historial_laboral: [
+              {
+                lab_id: 7,
+                lab_fecha_inicio: '2020-01-15',
+                lab_fecha_fin: '2025-12-31',
+                lab_salario_base: 300000,
+                lab_salario_real: 300000,
+                sgrh_liquidaciones: [],
+              },
+              {
+                lab_id: 1,
+                lab_fecha_inicio: '2026-01-01',
+                lab_fecha_fin: '2026-01-20',
+                lab_salario_base: 300000,
+                lab_salario_real: 300000,
+                sgrh_liquidaciones: [],
+              },
+            ],
           },
-          error: null,
         },
-        CERRADO,
-      ],
+        error: null,
+      },
       sgrh_nomina_detalle: {
         data: [...delContratoViejo, quincena(2026, 1, 1, 150000)],
         error: null,
