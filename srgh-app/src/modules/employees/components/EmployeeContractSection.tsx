@@ -11,7 +11,7 @@ import {
   TABLE_TD_STRONG,
   TABLE_TH,
 } from '@/components/ui/styles'
-import { InfoItem, SectionCard } from './ProfileSection'
+import { InfoItem, SectionCard } from '@/components/ui/ProfileSection'
 
 interface EmployeeContractSectionProps {
   /** Todos los contratos del empleado, del más reciente al más antiguo. */

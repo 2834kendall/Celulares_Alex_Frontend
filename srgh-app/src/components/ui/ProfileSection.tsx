@@ -2,9 +2,10 @@ import { META_LABEL } from '@/components/ui/styles'
 import { cn } from '@/lib/utils/cn'
 
 /**
- * Piezas de presentación de solo lectura del perfil del empleado. Las
- * comparten los tabs de Perfil y Contrato para que las dos secciones se lean
- * igual.
+ * Piezas de presentación de solo lectura para fichas: tarjeta con título y
+ * pares etiqueta/valor. Las usan el perfil del empleado (tabs Perfil y
+ * Contrato) y los datos de la empresa en Configuración (SGRH-92), para que
+ * todas las fichas se lean igual.
  */
 
 export function InfoItem({

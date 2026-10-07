@@ -10,11 +10,16 @@ import { SucursalSwitcher } from '@/components/layout/SucursalSwitcher'
 import type { SucursalConApariencia } from '@/lib/empresa/list-sucursales'
 import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
+import { CompanyLogo } from '@/components/ui/CompanyLogo'
 import { deriveBrandTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
 import { tituloDeRuta } from '@/lib/permissions/zones'
 import { BRAND } from '@/lib/brand'
 import { FormatoHoraProvider } from '@/lib/time/FormatoHoraContext'
 import { FORMATO_HORA_DEFAULT, type FormatoHora } from '@/lib/time/formatoHora'
+import { SettingsModeHeader } from '@/modules/settings/components/SettingsModeHeader'
+import { SettingsSidebarNav } from '@/modules/settings/components/SettingsSidebarNav'
+import { SettingsSearch } from '@/modules/settings/components/SettingsSearch'
+import { isSettingsPath, rememberReturnPath } from '@/modules/settings/lib/returnPath'
 
 interface AppShellProps {
   permisos: string[]
@@ -22,6 +27,8 @@ interface AppShellProps {
   rol: string | null
   /** Nombre real de la empresa (cargado server-side desde sgrh_empresas). */
   empresaNombre: string
+  /** URL firmada del logo de la empresa, o null para mostrar la inicial. */
+  logoUrl?: string | null
   /** Sucursal asignada al usuario, o null si no tiene una fija (p.ej. ADMIN). */
   sucursalNombre: string | null
   /** Color de acento de la sucursal (hex), o null para usar el default del sistema. */
@@ -82,6 +89,7 @@ export function AppShell({
   email,
   rol,
   empresaNombre,
+  logoUrl = null,
   sucursalNombre,
   colorAcento,
   colorSidebar,
@@ -93,8 +101,18 @@ export function AppShell({
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(true) // escritorio
   const [drawerOpen, setDrawerOpen] = useState(false) // movil
+  const [settingsSearchOpen, setSettingsSearchOpen] = useState(false)
 
   const titulo = tituloDeRuta(pathname)
+  // Modo configuración (SGRH-92): en /settings… el menú lateral pasa a ser el
+  // de Configuración y se habilita el buscador de ajustes (Ctrl+K).
+  const settingsMode = isSettingsPath(pathname)
+
+  // Destino de "← Volver": la última pantalla fuera de Configuración. Con la
+  // query incluida, para volver a la misma pestaña (ej. ?tab=usuarios).
+  useEffect(() => {
+    rememberReturnPath(`${window.location.pathname}${window.location.search}`)
+  }, [pathname])
 
   // Estilo de apariencia por sucursal: si no personalizo un color, no se
   // sobrescribe nada y gana el default declarado en globals.css.
@@ -179,20 +197,27 @@ export function AppShell({
             onClick={() => setDrawerOpen(false)}
           />
           <div className="animate-slide-in-left relative flex h-full w-72 max-w-[80vw] flex-col bg-[var(--sidebar-bg)] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[var(--sidebar-border)] px-4 py-4">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-700 text-xs font-black text-white">
-                  {empresaNombre.charAt(0)}
-                </span>
-                <div className="leading-tight">
-                  <p className="text-sm font-extrabold text-[var(--sidebar-text-strong)]">
-                    {empresaNombre}
-                  </p>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
-                    {sucursalNombre ?? BRAND.sistema}
-                  </p>
+            <div
+              className={cn(
+                'flex items-center justify-between border-b px-4 py-4',
+                settingsMode ? 'border-brand-800 bg-brand-700' : 'border-[var(--sidebar-border)]'
+              )}
+            >
+              {settingsMode ? (
+                <SettingsModeHeader empresaNombre={empresaNombre} compact />
+              ) : (
+                <div className="flex items-center gap-2.5">
+                  <CompanyLogo logoUrl={logoUrl} nombre={empresaNombre} size="sm" />
+                  <div className="leading-tight">
+                    <p className="text-sm font-extrabold text-[var(--sidebar-text-strong)]">
+                      {empresaNombre}
+                    </p>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
+                      {sucursalNombre ?? BRAND.sistema}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
               {/*
                 No usa <IconButton tone="slate">: sus tonos son fijos
                 (`slate-100`/`slate-900`) y `cn()` no resuelve conflictos de
@@ -208,7 +233,9 @@ export function AppShell({
                 aria-label="Cerrar menu"
                 className={cn(
                   ICON_CONTROL_BASE,
-                  'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-brand-500/60'
+                  settingsMode
+                    ? 'text-white hover:bg-white/15 focus-visible:ring-white/70'
+                    : 'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-brand-500/60'
                 )}
               >
                 <X className="h-5 w-5" />
@@ -229,7 +256,18 @@ export function AppShell({
             />
 
             <div className="flex-1 overflow-y-auto p-3">
-              <NavLinks permisos={permisos} onNavigate={() => setDrawerOpen(false)} />
+              {settingsMode ? (
+                <SettingsSidebarNav
+                  permisos={permisos}
+                  onNavigate={() => setDrawerOpen(false)}
+                  onOpenSearch={() => {
+                    setDrawerOpen(false)
+                    setSettingsSearchOpen(true)
+                  }}
+                />
+              ) : (
+                <NavLinks permisos={permisos} onNavigate={() => setDrawerOpen(false)} />
+              )}
             </div>
           </div>
         </div>
@@ -240,9 +278,19 @@ export function AppShell({
         <Sidebar
           permisos={permisos}
           empresaNombre={empresaNombre}
+          logoUrl={logoUrl}
           sucursalNombre={sucursalNombre}
           open={sidebarOpen}
+          onOpenSettingsSearch={() => setSettingsSearchOpen(true)}
         />
+        {/* Una sola instancia: el drawer y el sidebar pueden estar montados a la vez */}
+        {settingsMode && (
+          <SettingsSearch
+            permisos={permisos}
+            open={settingsSearchOpen}
+            onOpenChange={setSettingsSearchOpen}
+          />
+        )}
         {/* key={pathname}: reinicia la animacion de entrada en cada navegacion */}
         <main key={pathname} className="animate-page min-w-0 flex-1 p-4 md:p-6">
           <FormatoHoraProvider formato={formatoHora}>{children}</FormatoHoraProvider>
