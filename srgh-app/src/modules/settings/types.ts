@@ -1,57 +1,60 @@
 import { z } from 'zod'
-import type { Database } from '@/types/database.types'
+import { direccionSchema, type DireccionInput } from '@/modules/employees/types'
 
-export type PuestoRow = Database['public']['Tables']['sgrh_cat_puestos']['Row']
+// ─── Perfil de la empresa (Configuración → Empresa → Datos de la empresa) ────
+//
+// La cédula jurídica no está en el schema a propósito: es el identificador
+// legal (CCSS, Hacienda) y no se edita desde la app. La RPC tampoco la toca.
+//
+// La dirección reusa direccionSchema: sgrh_direcciones es una tabla genérica
+// compartida por empleados, empresas y sucursales.
 
-const optionalPositiveSalary = z
-  .string()
-  .optional()
-  .refine(
-    (val) =>
-      val === undefined || val.trim() === '' || (Number.isFinite(Number(val)) && Number(val) > 0),
-    { message: 'Debe ser un numero positivo.' }
+/** Los inputs emiten '' vacíos; las columnas opcionales esperan null. */
+const optionalText = (max: number, message: string) =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+    z.string().trim().max(max, message).nullable()
   )
 
-export const puestoSchema = z.object({
-  pue_nombre: z
-    .string('El nombre es requerido.')
+export const companyProfileSchema = z.object({
+  org_nombre_social: z
+    .string({ error: 'La razón social es obligatoria.' })
     .trim()
-    .min(2, 'El nombre es requerido.')
-    .max(150, 'Maximo 150 caracteres.'),
-  pue_descripcion: z.string().trim().max(500, 'Maximo 500 caracteres.').optional(),
-  pue_salario_minimo_referencia: optionalPositiveSalary,
-  pue_activo: z.boolean().default(true),
+    .min(2, 'La razón social es obligatoria.')
+    .max(200, 'Máximo 200 caracteres.'),
+  org_nombre_fantasia: optionalText(150, 'Máximo 150 caracteres.'),
+  org_email_corporativo: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+    z.email('Correo electrónico inválido.').nullable()
+  ),
+  // Mismo criterio que el teléfono del empleado.
+  org_telefono: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+    z
+      .string()
+      .regex(/^\+?[\d\s\-()]{7,20}$/, 'Número de teléfono inválido.')
+      .nullable()
+  ),
+  org_representante_legal: optionalText(150, 'Máximo 150 caracteres.'),
+  // Código CIIU de la actividad económica (Hacienda), p. ej. 4741.
+  org_actividad_economica_ciiu: optionalText(20, 'Máximo 20 caracteres.'),
+  direccion: direccionSchema,
 })
 
-export type PuestoInput = z.input<typeof puestoSchema>
+export type CompanyProfileInput = z.input<typeof companyProfileSchema>
+export type CompanyProfileData = z.output<typeof companyProfileSchema>
 
-/** Convierte el input string (o vacio) al numero nullable que espera la base. */
-export function parseOptionalSalary(value: string | undefined): number | null {
-  return value === undefined || value.trim() === '' ? null : Number(value)
+/** Lo que la página de Configuración necesita para pintar el perfil. */
+export interface CompanyProfile {
+  org_cedula_juridica: string
+  org_nombre_social: string
+  org_nombre_fantasia: string | null
+  org_email_corporativo: string | null
+  org_telefono: string | null
+  org_representante_legal: string | null
+  org_actividad_economica_ciiu: string | null
+  /** null si la empresa todavía no tiene dirección cargada. */
+  direccion: DireccionInput | null
+  /** URL firmada del logo, o null si no hay (o si no se pudo firmar). */
+  logoUrl: string | null
 }
-
-export type TipoTardiaRow = Database['public']['Tables']['sgrh_cat_tipos_tardia']['Row']
-
-const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
-
-/**
- * Un tipo de tardia del catalogo. Solo se pide el minuto donde EMPIEZA: donde
- * termina se deduce del siguiente tipo, asi el formulario no puede producir
- * huecos ni solapamientos (ver la migracion del catalogo).
- */
-export const tipoTardiaSchema = z.object({
-  tta_nombre: z
-    .string('El nombre es requerido.')
-    .trim()
-    .min(2, 'El nombre es requerido.')
-    .max(60, 'Maximo 60 caracteres.'),
-  tta_desde_minutos: z
-    .number('Indique desde que minuto de atraso empieza.')
-    .int('Tiene que ser un numero entero de minutos.')
-    .min(1, 'Tiene que empezar en el minuto 1 o despues.')
-    .max(720, 'Maximo 720 minutos (12 horas).'),
-  tta_cuenta_advertencia: z.boolean().default(true),
-  tta_color: z.string().regex(HEX_COLOR, 'Color invalido.').nullable().default(null),
-})
-
-export type TipoTardiaInput = z.input<typeof tipoTardiaSchema>

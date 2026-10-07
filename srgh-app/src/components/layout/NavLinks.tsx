@@ -16,7 +16,11 @@ import {
 } from 'lucide-react'
 import { zonasVisibles } from '@/lib/permissions/zones'
 
-const ICONOS: Record<string, LucideIcon> = {
+/**
+ * Ícono de cada zona. Exportado para que el modo configuración
+ * (SettingsSidebarNav) muestre los mismos íconos que el menú principal.
+ */
+export const NAV_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
   employees: Users,
   attendance: CalendarClock,
@@ -26,6 +30,27 @@ const ICONOS: Record<string, LucideIcon> = {
   recruitment: UserSearch,
   evaluations: ClipboardCheck,
   settings: Settings,
+}
+
+interface NavItemOptions {
+  /** Sub-ítem: sangría para alinearse con el texto del padre (sin ícono). */
+  indent?: boolean
+  /** Texto más fuerte sin fondo: el módulo que contiene la página actual. */
+  emphasis?: boolean
+}
+
+/**
+ * Clase de una fila del menú lateral. Compartida con el modo configuración
+ * para que ambos menús se vean exactamente igual. Las variantes salen de acá
+ * y no de sumar clases afuera: `cn()` no resuelve conflictos de Tailwind
+ * (px-3 contra pl-10 ganaría el que se generó después, no el último escrito).
+ */
+export function navItemClass(active: boolean, { indent, emphasis }: NavItemOptions = {}): string {
+  const padding = indent ? 'pl-10 pr-3' : 'px-3'
+  const color = active
+    ? 'bg-brand-700 text-white'
+    : `${emphasis ? 'text-[var(--sidebar-text-strong)]' : 'text-[var(--sidebar-text)]'} hover:bg-black/5 hover:text-[var(--sidebar-text-strong)]`
+  return `flex items-center gap-3 rounded-lg ${padding} py-2 text-sm font-medium transition ${color}`
 }
 
 interface NavLinksProps {
@@ -46,7 +71,7 @@ export function NavLinks({ permisos, onNavigate }: NavLinksProps) {
   return (
     <nav className="flex flex-col gap-1">
       {zonasVisibles(permisos).map(({ key, href, label }) => {
-        const Icon = ICONOS[key] ?? LayoutDashboard
+        const Icon = NAV_ICONS[key] ?? LayoutDashboard
         const active = pathname === href || pathname.startsWith(`${href}/`)
         return (
           <Link
@@ -54,11 +79,7 @@ export function NavLinks({ permisos, onNavigate }: NavLinksProps) {
             href={href}
             onClick={onNavigate}
             aria-current={active ? 'page' : undefined}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-              active
-                ? 'bg-brand-700 text-white'
-                : 'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)]'
-            }`}
+            className={navItemClass(active)}
           >
             <Icon className="h-4 w-4 shrink-0" />
             {label}
