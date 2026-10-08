@@ -19,6 +19,7 @@ import { SelectMenu } from '@/components/ui/SelectMenu'
 import { Badge } from '@/components/ui/Badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Alert } from '@/components/ui/Alert'
+import { StatCard } from '@/components/ui/StatCard'
 import { SPINNER } from '@/components/ui/styles'
 import { useCrudList } from '@/modules/payroll/hooks/useCrudList'
 import { deletePeriodo } from '@/modules/payroll/actions/deletePeriodo'
@@ -67,46 +68,46 @@ export function PeriodosList({ periodos, canWrite = false }: PeriodosListProps) 
   const atrasados = periodos.filter((p) => p.atrasado).length
   const borradores = periodos.filter((p) => p.estado === 'borrador').length - atrasados
 
+  // Cada tarjeta filtra el listado por lo que cuenta (antes parecían botones
+  // y no hacían nada). Usan el mismo estado que el selector de abajo, así que
+  // los dos siempre muestran el mismo filtro; tocar la tarjeta activa lo quita.
   const stats = [
     {
-      key: 'total',
+      key: 'todos',
       icon: CalendarDays,
       label: 'Periodos',
       value: total,
-      tone: 'bg-brand-50 text-brand-600',
+      tone: 'blue',
     },
     {
-      key: 'borradores',
+      key: 'borrador',
       icon: FileClock,
       label: 'En borrador',
       value: borradores,
-      tone: 'bg-amber-50 text-amber-600',
+      tone: 'amber',
     },
     {
-      key: 'atrasados',
+      key: 'atrasado',
       icon: AlertTriangle,
       label: 'Atrasados',
       value: atrasados,
-      tone: 'bg-rose-50 text-rose-600',
+      tone: 'rose',
     },
-  ]
+  ] as const
 
   return (
     <div className="@container space-y-4">
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
-        {stats.map(({ key, icon: Icon, label, value, tone }) => (
-          <div
+        {stats.map(({ key, icon, label, value, tone }) => (
+          <StatCard
             key={key}
-            className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-slate-300"
-          >
-            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}>
-              <Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-slate-500">{label}</p>
-              <p className="text-sm font-bold text-slate-900">{value}</p>
-            </div>
-          </div>
+            icon={icon}
+            tone={tone}
+            label={label}
+            value={value}
+            active={estado === key}
+            onClick={() => setEstado(estado === key ? 'todos' : key)}
+          />
         ))}
       </div>
 
@@ -253,6 +254,7 @@ export function PeriodosList({ periodos, canWrite = false }: PeriodosListProps) 
                           }}
                           disabled={deletingId === p.id}
                           aria-label={`Eliminar ${periodoLabel(p.mes, p.anio, p.quincena)}`}
+                          title="Eliminar periodo"
                           className="rounded-lg p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500 disabled:opacity-50"
                         >
                           {deletingId === p.id ? (

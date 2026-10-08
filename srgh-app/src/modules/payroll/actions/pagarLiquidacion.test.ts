@@ -100,6 +100,37 @@ describe('pagarLiquidacion (server action)', () => {
     })
   })
 
+  it('las horas extra del banco pagadas en el finiquito salen en el comprobante', async () => {
+    const client = mockSupabase({
+      sgrh_liquidaciones: [
+        { data: { ...LIQUIDACION, liq_horas_extra_banco: 26400 }, error: null },
+        { data: null, error: null },
+      ],
+    })
+
+    await pagarLiquidacion(100)
+
+    const lineas = llamadaA(client, 'sgrh_pagos_extraordinarios', 'insert')?.pex_lineas as {
+      concepto: string
+      monto: number
+    }[]
+    expect(
+      lineas.find((l) => l.concepto === 'Horas extra pendientes (banco de horas)')?.monto
+    ).toBe(26400)
+    expect(lineas.some((l) => l.concepto.includes('vacaciones y horas extra'))).toBe(true)
+  })
+
+  it('sin horas del banco no agrega esa línea', async () => {
+    const client = mockSupabase()
+
+    await pagarLiquidacion(100)
+
+    const lineas = llamadaA(client, 'sgrh_pagos_extraordinarios', 'insert')?.pex_lineas as {
+      concepto: string
+    }[]
+    expect(lineas.some((l) => l.concepto.startsWith('Horas extra'))).toBe(false)
+  })
+
   it('no paga dos veces una liquidación ya pagada', async () => {
     const client = mockSupabase({
       sgrh_liquidaciones: { data: { ...LIQUIDACION, liq_pagado: true }, error: null },

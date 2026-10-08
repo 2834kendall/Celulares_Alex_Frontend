@@ -810,7 +810,11 @@ describe('uploadPlanilla (server action)', () => {
       pagadasSinTocar: [],
     })
     // Con el periodo: así entra también quien terminó y todavía tiene fila acá.
-    expect(mockGetEmpleadosActivos).toHaveBeenCalledWith(expect.anything(), 2, 1)
+    expect(mockGetEmpleadosActivos).toHaveBeenCalledWith(expect.anything(), 2, {
+      periodoId: 1,
+      // El fixture no trae fechas: sin fin de periodo no se filtra por ingreso.
+      finPeriodo: undefined,
+    })
   })
 
   it('no saca del Excel a quien tiene horas extra ya pagadas desde el banco de horas', async () => {
@@ -895,7 +899,7 @@ describe('uploadPlanilla (server action)', () => {
     expect(borrados).toEqual([])
   })
 
-  it('al sacar del Excel a quien tiene horas extra pendientes, borra el movimiento antes que la fila', async () => {
+  it('al sacar del Excel a quien tiene horas extra pendientes, borra todo en una sola transacción', async () => {
     const client = mockSupabase({
       sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
@@ -964,26 +968,13 @@ describe('uploadPlanilla (server action)', () => {
     const result = await uploadPlanilla(buildFormData())
 
     expect(result).toMatchObject({ ok: true, eliminados: 1 })
-    // Orden de los borrados: movimiento del banco, líneas, y la fila al final.
-    const orden = client.from.mock.results
-      .map((r, i) => ({
-        tabla: client.from.mock.calls[i][0] as string,
-        b: r.value as { delete: { mock: { calls: unknown[]; invocationCallOrder: number[] } } },
-      }))
-      .filter((x) => x.b.delete.mock.calls.length > 0)
-      .sort(
-        (x, y) => x.b.delete.mock.invocationCallOrder[0] - y.b.delete.mock.invocationCallOrder[0]
-      )
-      .map((x) => x.tabla)
-    expect(orden[0]).toBe('sgrh_banco_horas_movimientos')
-    expect(orden.at(-1)).toBe('sgrh_nomina_detalle')
-    expect(orden).toEqual(
-      expect.arrayContaining([
-        'sgrh_nomina_linea_ingreso',
-        'sgrh_nomina_linea_deduccion',
-        'sgrh_nomina_linea_patronal',
-      ])
+    // Todo el borrado en una transacción (eliminar_filas_planilla): banco de
+    // horas, comisiones, comprobantes, líneas y la fila. Nada tabla por tabla.
+    expect(client.rpc).toHaveBeenCalledWith('eliminar_filas_planilla', { p_ndt_ids: [20] })
+    const borradosDirectos = client.from.mock.results.filter(
+      (r) => (r.value as { delete: { mock: { calls: unknown[] } } }).delete.mock.calls.length > 0
     )
+    expect(borradosDirectos).toEqual([])
   })
 
   it('aplica conceptos del catálogo que no son los fijos históricos (ej. una deducción manual nueva)', async () => {

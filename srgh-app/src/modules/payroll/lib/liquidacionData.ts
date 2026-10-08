@@ -46,6 +46,7 @@ import {
 import { anioCicloAguinaldo, quincenaPagadaEnLiquidacion } from './liquidacion'
 import { parseFechaLocal } from './fechas'
 import { formatCRC } from './format'
+import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from './bancoHoras'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -429,4 +430,60 @@ export async function liquidacionesQueCubren(
     if (deLaRelacion) cubre.set(labId, aCubre(deLaRelacion))
   }
   return { ok: true, data: cubre }
+}
+
+export interface HorasBancoPendientes {
+  /** Cada movimiento pendiente con el monto que se le paga (el sugerido). */
+  movimientos: { bhmId: number; horas: number; monto: number }[]
+  horas: number
+  monto: number
+}
+
+/**
+ * Horas extra que siguen pendientes en el banco de horas de la relación
+ * laboral (ni pagadas ni compensadas), con el mismo monto sugerido que
+ * muestra la pantalla del banco de horas: horas × valor hora × el factor del
+ * concepto HORAS_EXTRA del catálogo. Al liquidar se pagan en el finiquito.
+ */
+export async function horasDeBancoPendientes(
+  supabase: SupabaseServerClient,
+  labIds: number[]
+): Promise<{ ok: true; data: HorasBancoPendientes } | { ok: false }> {
+  const vacio = { movimientos: [], horas: 0, monto: 0 }
+  if (labIds.length === 0) return { ok: true, data: vacio }
+
+  const [movimientos, concepto] = await Promise.all([
+    supabase
+      .from('sgrh_banco_horas_movimientos')
+      .select('bhm_id, bhm_horas, bhm_salario_por_hora')
+      .in('bhm_historial_laboral_id', labIds)
+      .eq('bhm_estado', 'pendiente')
+      .order('bhm_id')
+      .returns<{ bhm_id: number; bhm_horas: number; bhm_salario_por_hora: number }[]>(),
+    supabase
+      .from('sgrh_cat_conceptos_nomina')
+      .select('con_porcentaje')
+      .eq('con_codigo', 'HORAS_EXTRA')
+      .maybeSingle<{ con_porcentaje: number | null }>(),
+  ])
+  if (movimientos.error || concepto.error) return { ok: false }
+
+  const factor = factorHorasExtra(concepto.data?.con_porcentaje ?? null)
+  const lista = (Array.isArray(movimientos.data) ? movimientos.data : []).map((m) => ({
+    bhmId: m.bhm_id,
+    horas: Number(m.bhm_horas),
+    monto: calcularMontoSugeridoBancoHoras(
+      Number(m.bhm_horas),
+      Number(m.bhm_salario_por_hora),
+      factor
+    ),
+  }))
+  return {
+    ok: true,
+    data: {
+      movimientos: lista,
+      horas: lista.reduce((t, m) => t + m.horas, 0),
+      monto: lista.reduce((t, m) => Math.round((t + m.monto) * 100) / 100, 0),
+    },
+  }
 }

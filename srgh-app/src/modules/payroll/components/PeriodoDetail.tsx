@@ -37,6 +37,7 @@ import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePaga
 import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHorasAsistencia'
 import { recalcularPeriodoDesdeAsistencia } from '@/modules/payroll/actions/recalcularPeriodoDesdeAsistencia'
 import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
+import { AvisoDesplegable } from './AvisoDesplegable'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
@@ -293,7 +294,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
 
     const aviso =
       result.sinAsistencia > 0
-        ? ` ${result.sinAsistencia} sin marcas en el periodo: quedaron con la jornada completa supuesta, revisalos.`
+        ? ` ${result.sinAsistencia} sin horario ni marcas utilizables en el periodo: quedaron en 0 h y ₡0, revisalos antes de pagar.`
         : ''
     toast.success(`${result.agregados} empleado(s) agregados desde la asistencia.${aviso}`)
     router.refresh()
@@ -509,83 +510,114 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     )
   }
 
-  /** Toggle de pago + acceso al comprobante. Lo rinden tarjetas y tabla. */
+  /** Toggle de pago. Lo rinden tarjetas y tabla. */
   function EstadoPago({ detalle: d }: { detalle: DetalleNominaItem }) {
     if (d.liquidacionQueLaPaga !== null) {
       return <Badge tone="blue">En liquidación n.° {d.liquidacionQueLaPaga}</Badge>
     }
+    if (!canWrite) {
+      return (
+        <Badge tone={d.pagado ? 'emerald' : 'slate'}>{d.pagado ? 'Pagado' : 'Pendiente'}</Badge>
+      )
+    }
     return (
-      <div className="flex items-center gap-1.5">
-        {canWrite ? (
-          <button
-            type="button"
-            onClick={() => handleTogglePagado(d)}
-            disabled={pagandoId === d.id}
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold outline-none ring-1 ring-inset transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
-              d.pagado
-                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100'
-                : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'
-            }`}
-          >
-            {pagandoId === d.id ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            )}
-            {d.pagado ? 'Pagado' : 'Pendiente'}
-          </button>
+      <button
+        type="button"
+        onClick={() => handleTogglePagado(d)}
+        disabled={pagandoId === d.id}
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold outline-none ring-1 ring-inset transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
+          d.pagado
+            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100'
+            : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'
+        }`}
+      >
+        {pagandoId === d.id ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
         ) : (
-          <Badge tone={d.pagado ? 'emerald' : 'slate'}>{d.pagado ? 'Pagado' : 'Pendiente'}</Badge>
+          <span className="h-1.5 w-1.5 rounded-full bg-current" />
         )}
-        {d.pagado && (
+        {d.pagado ? 'Pagado' : 'Pendiente'}
+      </button>
+    )
+  }
+
+  /** Lugar vacío del mismo tamaño que un botón de icono: mantiene las columnas. */
+  function HuecoAccion() {
+    return (
+      <span aria-hidden="true" className={cn(ICON_CONTROL_BASE, 'invisible')}>
+        <span className="h-3.5 w-3.5" />
+      </span>
+    )
+  }
+
+  /**
+   * Comprobante (ver e imprimir), editar ingresos y registrar incapacidad.
+   *
+   * El comprobante estaba pegado al estado "Pagado", así que esa columna
+   * cambiaba de ancho según la fila y los botones quedaban amontonados.
+   * Ahora las tres acciones van juntas, siempre en el mismo orden y lugar:
+   * la que no aplica a una fila deja su hueco para que no se corran las demás.
+   */
+  function AccionesDetalle({ detalle: d }: { detalle: DetalleNominaItem }) {
+    const conComprobante = d.pagado && d.liquidacionQueLaPaga === null
+    const editable = puedeEditar && !d.pagado && d.liquidacionQueLaPaga === null
+    return (
+      <>
+        {conComprobante ? (
           <Link
             href={`/comprobante/${periodo.id}/${d.id}`}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Ver comprobante de pago"
+            title="Ver e imprimir comprobante de pago"
             className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.blue, 'shrink-0')}
           >
             <Receipt className="h-3.5 w-3.5" />
           </Link>
+        ) : (
+          <HuecoAccion />
         )}
-      </div>
-    )
-  }
-
-  /** Editar ingresos y registrar incapacidad. */
-  function AccionesDetalle({ detalle: d }: { detalle: DetalleNominaItem }) {
-    return (
-      <>
-        {puedeEditar && !d.pagado && d.liquidacionQueLaPaga === null && (
+        {canWrite &&
+          (editable ? (
+            <IconButton
+              onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
+              aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
+              title={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
+              tone="blue"
+            >
+              {editandoId === d.id ? (
+                <X className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </IconButton>
+          ) : (
+            <HuecoAccion />
+          ))}
+        {canWrite && (
           <IconButton
-            onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
-            aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
-            tone="blue"
+            onClick={() =>
+              setRegistrandoIncapacidadId(registrandoIncapacidadId === d.id ? null : d.id)
+            }
+            aria-label={
+              registrandoIncapacidadId === d.id
+                ? 'Cerrar registro de incapacidad'
+                : 'Registrar incapacidad'
+            }
+            title={
+              registrandoIncapacidadId === d.id
+                ? 'Cerrar registro de incapacidad'
+                : 'Registrar incapacidad'
+            }
+            tone="rose"
           >
-            {editandoId === d.id ? (
+            {registrandoIncapacidadId === d.id ? (
               <X className="h-3.5 w-3.5" />
             ) : (
-              <Pencil className="h-3.5 w-3.5" />
+              <Stethoscope className="h-3.5 w-3.5" />
             )}
           </IconButton>
         )}
-        <IconButton
-          onClick={() =>
-            setRegistrandoIncapacidadId(registrandoIncapacidadId === d.id ? null : d.id)
-          }
-          aria-label={
-            registrandoIncapacidadId === d.id
-              ? 'Cerrar registro de incapacidad'
-              : 'Registrar incapacidad'
-          }
-          tone="rose"
-        >
-          {registrandoIncapacidadId === d.id ? (
-            <X className="h-3.5 w-3.5" />
-          ) : (
-            <Stethoscope className="h-3.5 w-3.5" />
-          )}
-        </IconButton>
       </>
     )
   }
@@ -648,24 +680,24 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
       </div>
 
       {enLiquidacion.length > 0 && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
-          <p className="text-sm font-semibold text-blue-900">
-            {enLiquidacion.length} fila(s) se pagan en una liquidación
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-blue-800">
+        <AvisoDesplegable
+          tono="blue"
+          titulo={`${enLiquidacion.length} fila(s) se pagan en una liquidación`}
+        >
+          <p className="text-xs leading-relaxed text-blue-800">
             {enLiquidacion.map((d) => d.empleadoNombre).join(', ')}: su salario de esta quincena va
             en la liquidación como salario pendiente. No se pagan por esta planilla, no suman a los
             totales y no impiden cerrar el periodo.
           </p>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conMarcasIncompletas.length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-sm font-semibold text-amber-900">
-            {conMarcasIncompletas.length} empleado(s) con marcas de asistencia incompletas
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+        <AvisoDesplegable
+          tono="amber"
+          titulo={`${conMarcasIncompletas.length} empleado(s) con marcas de asistencia incompletas`}
+        >
+          <p className="text-xs leading-relaxed text-amber-800">
             Sus horas calculadas están cortas, así que el pago está bloqueado hasta corregir las
             marcas en Asistencia.
           </p>
@@ -683,15 +715,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conDiasSinHorario.length > 0 && (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-          <p className="text-sm font-semibold text-sky-900">
-            {conDiasSinHorario.length} empleado(s) con días para revisar
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-sky-800">
+        <AvisoDesplegable
+          tono="sky"
+          titulo={`${conDiasSinHorario.length} empleado(s) con días para revisar`}
+        >
+          <p className="text-xs leading-relaxed text-sky-800">
             Marcas en días sin horario, en feriados, en días libres o con ausencia, y días pagados
             sin horario programado. Ninguno bloquea el pago, pero algunos pueden significar plata
             que falta pagar (un feriado trabajado se paga doble). Cada línea dice qué hacer.
@@ -710,15 +742,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conMarcasDesactualizadas.length > 0 && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-          <p className="text-sm font-semibold text-rose-900">
-            {conMarcasDesactualizadas.length} empleado(s) con la planilla desactualizada
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+        <AvisoDesplegable
+          tono="rose"
+          titulo={`${conMarcasDesactualizadas.length} empleado(s) con la planilla desactualizada`}
+        >
+          <p className="text-xs leading-relaxed text-rose-800">
             Sus marcas de asistencia cambiaron después de armar la planilla, así que el monto
             calculado ya no corresponde y el pago está bloqueado. Usá el botón{' '}
             <span className="font-semibold">traer … h</span> que aparece junto a las horas de cada
@@ -733,15 +765,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conFilasEnCero.length > 0 && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-          <p className="text-sm font-semibold text-rose-900">
-            {conFilasEnCero.length} empleado(s) con horas trabajadas y ₡0 a pagar
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+        <AvisoDesplegable
+          tono="rose"
+          titulo={`${conFilasEnCero.length} empleado(s) con horas trabajadas y ₡0 a pagar`}
+        >
+          <p className="text-xs leading-relaxed text-rose-800">
             Su fila tiene las horas pero no tiene el salario: quedó a medias. La planilla guarda
             montos, no fórmulas, así que la fila no se arregla sola.{' '}
             {puedeEditar ? (
@@ -768,15 +800,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conBaseDesactualizado.length > 0 && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-          <p className="text-sm font-semibold text-rose-900">
-            {conBaseDesactualizado.length} empleado(s) con el salario desactualizado
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+        <AvisoDesplegable
+          tono="rose"
+          titulo={`${conBaseDesactualizado.length} empleado(s) con el salario desactualizado`}
+        >
+          <p className="text-xs leading-relaxed text-rose-800">
             Su fila se armó con una regla de pago anterior: el salario base ahora es base ÷ 30 por
             día de la quincena, y la diferencia hasta el salario real se paga como ajuste
             automático, los dos según el cumplimiento del horario. El pago está bloqueado hasta
@@ -805,7 +837,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
@@ -971,7 +1003,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   ))}
                 </dl>
 
-                {canWrite && (
+                {(canWrite || (d.pagado && d.liquidacionQueLaPaga === null)) && (
                   // gap-2: con el area tocable en 44px, gap-1 los deja pegados.
                   <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
                     <AccionesDetalle detalle={d} />
@@ -1050,7 +1082,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     Total a pagar
                   </th>
                   <th className={TABLE_TH}>Pago</th>
-                  {canWrite && <th className={TABLE_TH_RIGHT}>Acciones</th>}
+                  <th className={TABLE_TH_RIGHT}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -1118,13 +1150,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                       <td className="px-3 py-2">
                         <EstadoPago detalle={d} />
                       </td>
-                      {canWrite && (
-                        <td className="px-3 py-2">
-                          <div className="flex items-center justify-end gap-1">
-                            <AccionesDetalle detalle={d} />
-                          </div>
-                        </td>
-                      )}
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-2">
+                          <AccionesDetalle detalle={d} />
+                        </div>
+                      </td>
                     </tr>
                     {viendoHorasId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
@@ -1201,7 +1231,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     )}
                   </td>
                   <td className="px-3 py-2" />
-                  {canWrite && <td className="px-3 py-2" />}
+                  <td className="px-3 py-2" />
                 </tr>
               </tfoot>
             </table>

@@ -265,7 +265,7 @@ export async function updateDetalleManual(
     }
   }
 
-  const { error: errUpdate } = await supabase
+  const { data: guardadas, error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
     .update({
       ndt_salario_bruto: salarioBruto,
@@ -278,8 +278,19 @@ export async function updateDetalleManual(
       ...foto.campos,
     })
     .eq('ndt_id', ndtId)
+    // Solo si sigue sin pagar: alguien pudo marcarla pagada mientras se
+    // editaba, y una fila pagada tiene comprobante y aguinaldo con su bruto.
+    .eq('ndt_pagado', false)
+    .select('ndt_id')
+    .returns<{ ndt_id: number }[]>()
   if (errUpdate) {
     return { ok: false, error: 'No se pudieron guardar los montos.' }
+  }
+  if (!guardadas || guardadas.length === 0) {
+    return {
+      ok: false,
+      error: 'Esta fila se marcó como pagada mientras la editabas: no se guardó ningún cambio.',
+    }
   }
 
   const { error: errLineas } = await reemplazarLineasDetalle(

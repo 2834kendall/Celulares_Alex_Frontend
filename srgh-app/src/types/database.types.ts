@@ -131,6 +131,7 @@ export type Database = {
           bhm_fecha_resolucion: string | null
           bhm_historial_laboral_id: number
           bhm_horas: number
+          bhm_liquidacion_id: number | null
           bhm_id: number
           bhm_monto_pagado: number | null
           bhm_nomina_detalle_id: number
@@ -144,6 +145,7 @@ export type Database = {
           bhm_fecha_resolucion?: string | null
           bhm_historial_laboral_id: number
           bhm_horas: number
+          bhm_liquidacion_id?: number | null
           bhm_id?: never
           bhm_monto_pagado?: number | null
           bhm_nomina_detalle_id: number
@@ -157,6 +159,7 @@ export type Database = {
           bhm_fecha_resolucion?: string | null
           bhm_historial_laboral_id?: number
           bhm_horas?: number
+          bhm_liquidacion_id?: number | null
           bhm_id?: never
           bhm_monto_pagado?: number | null
           bhm_nomina_detalle_id?: number
@@ -1815,6 +1818,7 @@ export type Database = {
           liq_dias_preaviso: number
           liq_dias_trabajados_mes: number
           liq_dias_vacaciones_pendientes: number
+          liq_horas_extra_banco: number
           liq_dias_vacaciones_propuestos: number | null
           liq_fecha_pago: string | null
           liq_fecha_salida: string
@@ -1840,6 +1844,7 @@ export type Database = {
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
           liq_dias_vacaciones_pendientes?: number
+          liq_horas_extra_banco?: number
           liq_dias_vacaciones_propuestos?: number | null
           liq_fecha_pago?: string | null
           liq_fecha_salida: string
@@ -1865,6 +1870,7 @@ export type Database = {
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
           liq_dias_vacaciones_pendientes?: number
+          liq_horas_extra_banco?: number
           liq_dias_vacaciones_propuestos?: number | null
           liq_fecha_pago?: string | null
           liq_fecha_salida?: string
@@ -3034,6 +3040,8 @@ export type Database = {
         Returns: number
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      eliminar_filas_planilla: { Args: { p_ndt_ids: number[] }; Returns: number }
+      eliminar_periodo_nomina: { Args: { p_npe_id: number }; Returns: undefined }
       editar_contrato: {
         Args: { p_contrato: Json; p_lab_id: number }
         Returns: undefined

@@ -4,10 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import {
-  filasConHorasDeBancoResueltas,
-  limpiarDependenciasDetalle,
-} from '@/modules/payroll/lib/dependenciasDetalle'
+import { filasConHorasDeBancoResueltas } from '@/modules/payroll/lib/dependenciasDetalle'
 
 export type DeletePeriodoResult = { ok: true } | { ok: false; error: string }
 
@@ -30,9 +27,10 @@ interface DetalleRow {
  * Como un periodo en estado 'pagado' es exactamente aquel donde todos están
  * pagados, esa misma regla lo cubre: no hace falta mirar npe_estado aparte.
  *
- * El orden de borrado lo imponen las llaves foráneas que apuntan a
- * sgrh_nomina_detalle: las tres tablas de líneas, los comprobantes, las
- * comisiones calculadas y —dos veces— el banco de horas.
+ * El borrado lo hace la función eliminar_periodo_nomina en una sola
+ * transacción, en el orden que imponen las llaves foráneas que apuntan a
+ * sgrh_nomina_detalle: el banco de horas (dos veces), las comisiones, los
+ * comprobantes y las tres tablas de líneas.
  */
 export async function deletePeriodo(periodoId: number): Promise<DeletePeriodoResult> {
   if (!Number.isInteger(periodoId) || periodoId <= 0) {
@@ -89,31 +87,21 @@ export async function deletePeriodo(periodoId: number): Promise<DeletePeriodoRes
         error: `No se puede eliminar el periodo: ${resueltas.ndtIds.length} empleado(s) tienen horas extra de esta quincena que ya se pagaron o compensaron desde el banco de horas. Borrar el periodo borraría ese registro. Revertí esos movimientos primero.`,
       }
     }
-
-    const errorDependencias = await limpiarDependenciasDetalle(supabase, ndtIds)
-    if (errorDependencias) {
-      return { ok: false, error: errorDependencias }
-    }
-
-    const { error: errDetalle } = await supabase
-      .from('sgrh_nomina_detalle')
-      .delete()
-      .in('ndt_id', ndtIds)
-
-    if (errDetalle) {
-      return {
-        ok: false,
-        error: 'No se pudo eliminar la planilla del periodo.',
-      }
-    }
   }
 
-  const { error: errBorrado } = await supabase
-    .from('sgrh_nomina_periodo')
-    .delete()
-    .eq('npe_id', periodoId)
-
+  // Todo el borrado (banco de horas, comisiones, comprobantes, líneas, filas
+  // y el periodo) en una sola transacción: o se borra todo o nada (auditoría,
+  // riesgo "borrado sin transacción"). La función repite las validaciones de
+  // arriba por si algo cambió entre la lectura y el borrado.
+  const { error: errBorrado } = await supabase.rpc('eliminar_periodo_nomina', {
+    p_npe_id: periodoId,
+  })
   if (errBorrado) {
+    // Estos códigos traen un mensaje escrito para la pantalla.
+    if (['23514', '42501', 'P0002'].includes(errBorrado.code)) {
+      return { ok: false, error: errBorrado.message }
+    }
+    console.error('deletePeriodo: error al borrar el periodo', errBorrado)
     return { ok: false, error: 'No se pudo eliminar el periodo.' }
   }
 

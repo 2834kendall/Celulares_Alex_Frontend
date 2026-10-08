@@ -311,6 +311,14 @@ export interface LiquidacionInput {
    * salario: el pendiente y las vacaciones. Cero si no se quiere deducir.
    */
   porcentajeDeduccionObrera?: number
+  /**
+   * Horas extra que seguían pendientes en el banco de horas al salir (ni
+   * pagadas ni compensadas). Se pagan en el finiquito: son salario, así que
+   * cotizan y entran al aguinaldo proporcional. Sin esto quedaban pendientes
+   * para siempre, porque ya no hay quincena donde pagarlas (auditoría,
+   * hallazgo 4).
+   */
+  horasExtraBanco?: { horas: number; monto: number }
 }
 
 export interface LiquidacionLinea {
@@ -323,13 +331,15 @@ export interface LiquidacionResultado {
   salarioProporcional: number
   aguinaldoProporcional: number
   vacacionesPagadas: number
+  /** Horas extra pendientes del banco de horas, pagadas en el finiquito. */
+  horasExtraBanco: number
   diasPreaviso: number
   preaviso: number
   diasCesantia: number
   cesantia: number
   /** Suma bruta de todos los rubros. */
   total: number
-  /** Cuota obrera sobre lo que es salario (pendiente + vacaciones). */
+  /** Cuota obrera sobre lo que es salario (pendiente, vacaciones y horas extra). */
   deduccionesObreras: number
   /** total − deduccionesObreras: lo que recibe la persona. */
   neto: number
@@ -340,8 +350,9 @@ export interface LiquidacionResultado {
  * Arma el finiquito.
  *
  * Qué cotiza y qué no, porque cambia el neto:
- *  - Salario pendiente y vacaciones pagadas en dinero SON salario: llevan
- *    cuota obrera de la CCSS igual que una quincena.
+ *  - Salario pendiente, vacaciones pagadas en dinero y horas extra
+ *    pendientes del banco de horas SON salario: llevan cuota obrera de la
+ *    CCSS igual que una quincena, y entran al aguinaldo proporcional.
  *  - Preaviso y cesantía son indemnizaciones, no salario: no cotizan ni
  *    pagan renta.
  *  - El aguinaldo está exento por su propia ley.
@@ -354,10 +365,13 @@ export function calcularLiquidacion(input: LiquidacionInput): LiquidacionResulta
   const diasSobrantes = input.diasSobrantesAntiguedad ?? 0
 
   const salarioProporcional = round2(input.salarioDiario * input.diasTrabajadosMesActual)
+  const horasExtraBanco = round2(Math.max(input.horasExtraBanco?.monto ?? 0, 0))
   const aguinaldoProporcional =
     input.aguinaldoAplica === false
       ? 0
-      : round2((input.sumaSalariosBrutosCicloAguinaldo + salarioProporcional) / 12)
+      : round2(
+          (input.sumaSalariosBrutosCicloAguinaldo + salarioProporcional + horasExtraBanco) / 12
+        )
   const vacacionesPagadas = round2(
     (input.salarioDiarioVacaciones ?? input.salarioDiario) * input.diasVacacionesPendientes
   )
@@ -373,12 +387,17 @@ export function calcularLiquidacion(input: LiquidacionInput): LiquidacionResulta
   const cesantia = round2(input.salarioDiario * diasCesantia)
 
   const total = round2(
-    salarioProporcional + aguinaldoProporcional + vacacionesPagadas + preaviso + cesantia
+    salarioProporcional +
+      aguinaldoProporcional +
+      vacacionesPagadas +
+      horasExtraBanco +
+      preaviso +
+      cesantia
   )
 
   const porcentaje = input.porcentajeDeduccionObrera ?? 0
   const deduccionesObreras = round2(
-    (salarioProporcional + vacacionesPagadas) * (Math.max(porcentaje, 0) / 100)
+    (salarioProporcional + vacacionesPagadas + horasExtraBanco) * (Math.max(porcentaje, 0) / 100)
   )
   const neto = round2(total - deduccionesObreras)
 
@@ -386,6 +405,7 @@ export function calcularLiquidacion(input: LiquidacionInput): LiquidacionResulta
     salarioProporcional,
     aguinaldoProporcional,
     vacacionesPagadas,
+    horasExtraBanco,
     diasPreaviso,
     preaviso,
     diasCesantia,
@@ -405,6 +425,15 @@ export function calcularLiquidacion(input: LiquidacionInput): LiquidacionResulta
         dias: input.diasVacacionesPendientes,
         monto: vacacionesPagadas,
       },
+      ...(horasExtraBanco > 0
+        ? [
+            {
+              concepto: `Horas extra pendientes del banco de horas (${input.horasExtraBanco?.horas ?? 0} h)`,
+              dias: null,
+              monto: horasExtraBanco,
+            },
+          ]
+        : []),
       { concepto: 'Preaviso', dias: diasPreaviso, monto: preaviso },
       { concepto: 'Cesantía', dias: diasCesantia, monto: cesantia },
     ],

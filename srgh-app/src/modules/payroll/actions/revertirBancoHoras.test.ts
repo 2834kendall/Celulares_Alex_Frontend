@@ -264,4 +264,26 @@ describe('revertirBancoHoras (server action)', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('Revisalo a mano')
   })
+
+  it('no devuelve al banco horas que se pagaron en una liquidación', async () => {
+    mockSupabase({
+      sgrh_banco_horas_movimientos: {
+        data: {
+          bhm_id: 3,
+          bhm_estado: 'pagado',
+          bhm_monto_pagado: 26400,
+          bhm_nomina_detalle_pago_id: null,
+          bhm_liquidacion_id: 12,
+        },
+        error: null,
+      },
+    })
+
+    const result = await revertirBancoHoras(3)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Estas horas se pagaron en la liquidación n.° 12: no se pueden devolver al banco.',
+    })
+  })
 })

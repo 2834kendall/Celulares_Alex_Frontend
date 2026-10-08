@@ -19,6 +19,13 @@ interface StatCardProps {
   value: React.ReactNode
   /** Resalta el borde al pasar el mouse (tarjetas de una fila clicable). */
   hoverable?: boolean
+  /**
+   * Convierte la tarjeta en un botón (ej. filtrar el listado por lo que
+   * cuenta). Antes las tarjetas `hoverable` parecían botones y no hacían nada.
+   */
+  onClick?: () => void
+  /** Con `onClick`: el filtro de esta tarjeta es el que está aplicado. */
+  active?: boolean
   className?: string
 }
 
@@ -35,10 +42,12 @@ export function StatCard({
   label,
   value,
   hoverable = false,
+  onClick,
+  active = false,
   className,
 }: StatCardProps) {
-  return (
-    <div className={cn('flex items-center gap-2.5 p-3', hoverable ? CARD_HOVER : CARD, className)}>
+  const contenido = (
+    <>
       <div
         className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', TONES[tone])}
       >
@@ -48,6 +57,30 @@ export function StatCard({
         <p className="text-[10px] font-medium text-slate-500">{label}</p>
         <p className="text-base font-bold tabular-nums text-slate-900">{value}</p>
       </div>
+    </>
+  )
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className={cn(
+          'flex w-full items-center gap-2.5 p-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2',
+          CARD_HOVER,
+          active && 'border-brand-300 ring-2 ring-brand-500/20 hover:border-brand-300',
+          className
+        )}
+      >
+        {contenido}
+      </button>
+    )
+  }
+
+  return (
+    <div className={cn('flex items-center gap-2.5 p-3', hoverable ? CARD_HOVER : CARD, className)}>
+      {contenido}
     </div>
   )
 }

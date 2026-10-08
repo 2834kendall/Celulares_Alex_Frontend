@@ -51,6 +51,9 @@ const SELECT_CONTRATO_PLANILLA = `
  * nombre del empleado. Nota de permisos: RLS de sgrh_historial_laboral exige
  * EMPLEADOS_READ o HISTORIAL_READ además del NOMINA_WRITE de la pantalla.
  *
+ * Con `finPeriodo`, deja afuera los contratos que empiezan después de que
+ * termina la quincena.
+ *
  * Con `periodoId` (plantilla y subida del Excel) suma también los contratos
  * YA TERMINADOS que tienen fila en ese periodo. Sin ellos, alguien terminado
  * y todavía sin liquidar trababa el Excel de un periodo vencido: si se lo
@@ -61,14 +64,19 @@ const SELECT_CONTRATO_PLANILLA = `
 export async function getEmpleadosActivos(
   supabase: SupabaseServerClient,
   sucursalId: number,
-  periodoId?: number
+  opciones: { periodoId?: number; finPeriodo?: string | null } = {}
 ): Promise<GetEmpleadosActivosResult> {
-  const { data, error } = await supabase
+  const { periodoId, finPeriodo } = opciones
+  let consulta = supabase
     .from('sgrh_historial_laboral')
     .select(SELECT_CONTRATO_PLANILLA)
     .eq('lab_sucursal_id', sucursalId)
     .is('lab_fecha_fin', null)
-    .returns<HistorialActivoRow[]>()
+  // Solo quien ya había ingresado cuando terminó la quincena: antes se cargaba
+  // a cualquiera con contrato vigente, y a alguien que entró en mayo se le
+  // armaba (y pagaba) la planilla de diciembre anterior.
+  if (finPeriodo) consulta = consulta.lte('lab_fecha_inicio', finPeriodo)
+  const { data, error } = await consulta.returns<HistorialActivoRow[]>()
 
   if (error) {
     return { ok: false, error: 'No se pudieron cargar los empleados activos de la sucursal.' }

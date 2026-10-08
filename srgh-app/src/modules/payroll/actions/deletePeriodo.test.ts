@@ -18,9 +18,15 @@ const OK = { data: null, error: null }
 const PERIODO = { data: { npe_id: 9 }, error: null }
 
 function mockSupabase(
-  responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
+  responses: Record<
+    string,
+    { data: unknown; error: unknown } | { data: unknown; error: unknown }[]
+  >,
+  borrado: { data: unknown; error: unknown } = { data: null, error: null }
 ) {
-  const client = createSupabaseClientMock(responses)
+  const client = createSupabaseClientMock(responses, {
+    rpcResponses: { eliminar_periodo_nomina: borrado },
+  })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -115,78 +121,6 @@ describe('deletePeriodo (server action)', () => {
     expect(client.from).not.toHaveBeenCalledWith('sgrh_banco_horas_movimientos')
   })
 
-  it('borra el periodo y todo lo que cuelga de sus detalles', async () => {
-    const client = mockSupabase({
-      sgrh_nomina_periodo: [PERIODO, OK],
-      sgrh_nomina_detalle: [
-        {
-          data: [
-            { ndt_id: 1, ndt_pagado: false },
-            { ndt_id: 2, ndt_pagado: false },
-          ],
-          error: null,
-        },
-        OK,
-      ],
-      sgrh_banco_horas_movimientos: OK,
-      sgrh_comisiones_calculadas: OK,
-      sgrh_comprobantes_pago: OK,
-      sgrh_nomina_linea_ingreso: OK,
-      sgrh_nomina_linea_deduccion: OK,
-      sgrh_nomina_linea_patronal: OK,
-    })
-
-    const result = await deletePeriodo(9)
-
-    expect(result).toEqual({ ok: true })
-
-    for (const tabla of [
-      'sgrh_comprobantes_pago',
-      'sgrh_nomina_linea_ingreso',
-      'sgrh_nomina_linea_deduccion',
-      'sgrh_nomina_linea_patronal',
-      'sgrh_nomina_detalle',
-      'sgrh_nomina_periodo',
-    ]) {
-      expect(alguienLlamo(client, tabla, 'delete')).toBe(true)
-    }
-  })
-
-  // Las horas de banco que nacieron en OTRA quincena y se pagaron en esta no
-  // se borran: vuelven a pendientes. Si se borraran, esas horas extra
-  // desaparecerían sin haberse pagado ni compensado.
-  it('devuelve a pendientes las horas de banco que se habían pagado en este periodo', async () => {
-    const client = mockSupabase({
-      sgrh_nomina_periodo: [PERIODO, OK],
-      sgrh_nomina_detalle: [{ data: [{ ndt_id: 1, ndt_pagado: false }], error: null }, OK],
-      sgrh_banco_horas_movimientos: OK,
-      sgrh_comisiones_calculadas: OK,
-      sgrh_comprobantes_pago: OK,
-      sgrh_nomina_linea_ingreso: OK,
-      sgrh_nomina_linea_deduccion: OK,
-      sgrh_nomina_linea_patronal: OK,
-    })
-
-    await deletePeriodo(9)
-
-    const banco = builders(client, 'sgrh_banco_horas_movimientos')
-    const update = banco.find((b) => seLlamo(b, 'update'))
-
-    expect(update).toBeDefined()
-    expect(update!.update).toHaveBeenCalledWith({
-      bhm_estado: 'pendiente',
-      bhm_monto_pagado: null,
-      bhm_nomina_detalle_pago_id: null,
-      bhm_resuelto_por_id: null,
-      bhm_fecha_resolucion: null,
-    })
-    // Y además se borran los movimientos generados por este mismo periodo.
-    expect(banco.some((b) => seLlamo(b, 'delete'))).toBe(true)
-  })
-
-  // Horas extra que nacieron en este periodo y ya se pagaron en otra quincena
-  // (o se compensaron): borrar el periodo borraba ese movimiento, y el pago
-  // hecho en la otra planilla quedaba sin registro ni forma de revertirlo.
   it('no borra el periodo si sus horas de banco ya se pagaron o compensaron', async () => {
     const client = mockSupabase({
       sgrh_nomina_periodo: [PERIODO, OK],
@@ -210,46 +144,70 @@ describe('deletePeriodo (server action)', () => {
     }
   })
 
-  it('suelta las comisiones en vez de borrarlas', async () => {
-    const client = mockSupabase({
-      sgrh_nomina_periodo: [PERIODO, OK],
-      sgrh_nomina_detalle: [{ data: [{ ndt_id: 1, ndt_pagado: false }], error: null }, OK],
-      sgrh_banco_horas_movimientos: OK,
-      sgrh_comisiones_calculadas: OK,
-      sgrh_comprobantes_pago: OK,
-      sgrh_nomina_linea_ingreso: OK,
-      sgrh_nomina_linea_deduccion: OK,
-      sgrh_nomina_linea_patronal: OK,
-    })
+  const DOS_FILAS = {
+    sgrh_nomina_periodo: PERIODO,
+    sgrh_nomina_detalle: {
+      data: [
+        { ndt_id: 1, ndt_pagado: false },
+        { ndt_id: 2, ndt_pagado: false },
+      ],
+      error: null,
+    },
+    sgrh_banco_horas_movimientos: { data: [], error: null },
+  }
 
-    await deletePeriodo(9)
+  // Auditoría, riesgo "borrado sin transacción": todo el borrado (banco de
+  // horas, comisiones, comprobantes, líneas, filas y periodo) lo hace la
+  // función eliminar_periodo_nomina en una transacción. Desde acá no se borra
+  // nada tabla por tabla.
+  it('borra el periodo con todo lo que cuelga en una sola transacción', async () => {
+    const client = mockSupabase(DOS_FILAS)
 
-    const comisiones = builders(client, 'sgrh_comisiones_calculadas')
-    expect(comisiones[0].update).toHaveBeenCalledWith({
-      cal_nomina_detalle_id: null,
-    })
-    expect(seLlamo(comisiones[0], 'delete')).toBe(false)
+    const result = await deletePeriodo(9)
+
+    expect(result).toEqual({ ok: true })
+    expect(client.rpc).toHaveBeenCalledWith('eliminar_periodo_nomina', { p_npe_id: 9 })
+    for (const tabla of [
+      'sgrh_nomina_periodo',
+      'sgrh_nomina_detalle',
+      'sgrh_banco_horas_movimientos',
+      'sgrh_comisiones_calculadas',
+      'sgrh_comprobantes_pago',
+      'sgrh_nomina_linea_ingreso',
+      'sgrh_nomina_linea_deduccion',
+      'sgrh_nomina_linea_patronal',
+    ]) {
+      expect(alguienLlamo(client, tabla, 'delete')).toBe(false)
+      expect(alguienLlamo(client, tabla, 'update')).toBe(false)
+    }
   })
 
-  it('si falla el borrado de las líneas no continúa contra el detalle', async () => {
-    const client = mockSupabase({
-      sgrh_nomina_periodo: [PERIODO, OK],
-      sgrh_nomina_detalle: [{ data: [{ ndt_id: 1, ndt_pagado: false }], error: null }, OK],
-      sgrh_banco_horas_movimientos: OK,
-      sgrh_comisiones_calculadas: OK,
-      sgrh_comprobantes_pago: OK,
-      sgrh_nomina_linea_ingreso: { data: null, error: { message: 'boom' } },
-      sgrh_nomina_linea_deduccion: OK,
-      sgrh_nomina_linea_patronal: OK,
+  it('si la función lo rechaza (algo cambió entre medio), muestra su mensaje', async () => {
+    mockSupabase(DOS_FILAS, {
+      data: null,
+      error: {
+        code: '23514',
+        message: 'No se puede borrar una fila con el pago marcado: desmarcalo primero.',
+      },
     })
 
     const result = await deletePeriodo(9)
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudieron eliminar las líneas de la planilla.',
+      error: 'No se puede borrar una fila con el pago marcado: desmarcalo primero.',
     })
-    expect(alguienLlamo(client, 'sgrh_nomina_detalle', 'delete')).toBe(false)
-    expect(alguienLlamo(client, 'sgrh_nomina_periodo', 'delete')).toBe(false)
+  })
+
+  it('un error inesperado no se muestra tal cual', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockSupabase(DOS_FILAS, {
+      data: null,
+      error: { code: 'XX000', message: 'relation sgrh_algo does not exist' },
+    })
+
+    const result = await deletePeriodo(9)
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo eliminar el periodo.' })
   })
 })

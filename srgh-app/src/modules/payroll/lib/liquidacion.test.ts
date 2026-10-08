@@ -280,6 +280,31 @@ describe('calcularLiquidacion', () => {
     expect(r.total).toBe(round(100000 + 108333.33 + 200000))
   })
 
+  // Auditoría, hallazgo 4: horas extra pendientes en el banco de horas al
+  // salir. Son salario: suman al total, cotizan y entran al aguinaldo.
+  it('paga las horas extra pendientes del banco de horas como salario', () => {
+    const sin = calcularLiquidacion({ ...BASE, generaCesantia: false, generaPreaviso: false })
+    const con = calcularLiquidacion({
+      ...BASE,
+      generaCesantia: false,
+      generaPreaviso: false,
+      horasExtraBanco: { horas: 5.5, monto: 26400 },
+    })
+
+    expect(con.horasExtraBanco).toBe(26400)
+    expect(con.aguinaldoProporcional).toBe(round((1200000 + 100000 + 26400) / 12))
+    expect(con.total).toBe(round(100000 + con.aguinaldoProporcional + 200000 + 26400))
+    expect(con.deduccionesObreras).toBe(round((100000 + 200000 + 26400) * 0.1083))
+    expect(con.lineas).toContainEqual({
+      concepto: 'Horas extra pendientes del banco de horas (5.5 h)',
+      dias: null,
+      monto: 26400,
+    })
+    // Sin horas pendientes, todo igual que antes y sin la línea.
+    expect(sin.horasExtraBanco).toBe(0)
+    expect(sin.lineas.some((l) => l.concepto.startsWith('Horas extra'))).toBe(false)
+  })
+
   it('despido sin justa causa: preaviso de un mes y cesantía de 4 años × 21', () => {
     const r = calcularLiquidacion({ ...BASE, generaCesantia: true, generaPreaviso: true })
 

@@ -18,6 +18,8 @@ const mockRequirePermission = vi.mocked(requirePermission)
 const mockGetHorasDelPeriodo = vi.mocked(getHorasDelPeriodo)
 
 const OK = { data: null, error: null }
+/** El UPDATE de ndt_pagado (solo si sigue en el estado leído) devuelve la fila. */
+const ACTUALIZADA = { data: [{ ndt_id: 1 }], error: null }
 
 const DETALLE_BASE = {
   ndt_id: 1,
@@ -117,7 +119,7 @@ describe('marcarDetallePagado (server action)', () => {
     const client = mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
       ],
       sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -134,7 +136,7 @@ describe('marcarDetallePagado (server action)', () => {
     mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
       ],
       sgrh_provisiones_anuales: [
@@ -191,17 +193,26 @@ describe('marcarDetallePagado (server action)', () => {
       expect(pagos.eq.mock.calls).toContainEqual(['pex_anio_aguinaldo', 2026])
     })
 
-    it('tampoco si el aguinaldo se marcó pagado con el botón viejo', async () => {
-      mockSupabase({
-        sgrh_nomina_detalle: PAGADA,
+    // Auditoría, hallazgo 2: la marca del botón anterior (sin comprobante) ya
+    // no bloquea. Ni siquiera se consulta.
+    it('la marca de aguinaldo del botón anterior ya no bloquea desmarcar', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: [PAGADA, ACTUALIZADA, { data: [], error: null }],
         sgrh_historial_laboral: CONTRATOS,
         sgrh_provisiones_anuales: { data: [{ pra_id: 9 }], error: null },
         sgrh_liquidaciones: { data: [], error: null },
+        sgrh_nomina_periodo: OK,
       })
 
       const result = await marcarDetallePagado(1, false)
 
-      expect(result.ok).toBe(false)
+      expect(result).toEqual({ ok: true })
+      const provisiones = client.from.mock.results
+        .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_provisiones_anuales')
+        .map((r) => r.value as { eq: { mock: { calls: unknown[][] } } })
+      expect(
+        provisiones.some((b) => b.eq.mock.calls.some((c) => c[0] === 'pra_aguinaldo_pagado'))
+      ).toBe(false)
     })
 
     it('no deja desmarcar si una liquidación posterior usó la quincena', async () => {
@@ -297,7 +308,7 @@ describe('marcarDetallePagado (server action)', () => {
             data: { ...DETALLE_BASE, ndt_pagado: false, ndt_dias_incapacidad_empleador: 3 },
             error: null,
           },
-          OK,
+          ACTUALIZADA,
           { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
         ],
         sgrh_historial_laboral: {
@@ -342,7 +353,7 @@ describe('marcarDetallePagado (server action)', () => {
             data: { ...DETALLE_BASE, ndt_pagado: true, ndt_dias_incapacidad_empleador: 3 },
             error: null,
           },
-          OK,
+          ACTUALIZADA,
           { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
         ],
         sgrh_provisiones_anuales: { data: [], error: null },
@@ -360,11 +371,144 @@ describe('marcarDetallePagado (server action)', () => {
     })
   })
 
+  describe('auditoría de nómina', () => {
+    /** ¿Se escribió la fila (UPDATE de ndt_pagado)? */
+    function escribioLaFila(client: ReturnType<typeof mockSupabase>) {
+      return client.from.mock.results
+        .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_detalle')
+        .some(
+          (r) =>
+            (r.value as { update: { mock: { calls: unknown[] } } }).update.mock.calls.length > 0
+        )
+    }
+
+    // Hallazgo 1: la quincena de Laura corría hasta el 15/10 y se pagó el 08/10.
+    it('no deja pagar una quincena que todavía no termina', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: {
+          data: {
+            ...DETALLE_BASE,
+            ndt_pagado: false,
+            sgrh_nomina_periodo: {
+              npe_periodo_mes: 1,
+              npe_periodo_anio: 2099,
+              npe_quincena: 1,
+              npe_fecha_inicio_periodo: '2099-01-01',
+              npe_fecha_fin_periodo: '2099-01-15',
+            },
+          },
+          error: null,
+        },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({
+        ok: false,
+        error:
+          'Esta quincena termina el 15/01/2099: se puede marcar pagada desde ese día. Antes, los días que faltan cuentan como ausencias y el pago sale incompleto.',
+      })
+      expect(escribioLaFila(client)).toBe(false)
+    })
+
+    // Hallazgo 3: Ivannia ingresó el 09/05/2025 y se le pagó diciembre 2024.
+    it('no deja pagar una quincena anterior al ingreso del empleado', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+        sgrh_historial_laboral: {
+          data: { lab_fecha_inicio: '2026-07-01', lab_fecha_fin: null },
+          error: null,
+        },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok)
+        expect(result.error).toContain(
+          'cae fuera del contrato del empleado (ingresó el 01/07/2026)'
+        )
+      expect(escribioLaFila(client)).toBe(false)
+    })
+
+    it('ni una posterior a su salida', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+        sgrh_historial_laboral: {
+          data: { lab_fecha_inicio: '2025-01-01', lab_fecha_fin: '2026-05-31' },
+          error: null,
+        },
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok === false && result.error).toContain('salió el 31/05/2026')
+    })
+
+    // Hallazgo 5: Rebeca, salario ₡0 y ₡21.000 de incapacidad a cargo del patrono.
+    it('una fila en ₡0 con incapacidad a cargo del patrono sí se puede pagar', async () => {
+      mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map() })
+      const client = mockSupabase({
+        sgrh_nomina_detalle: [
+          {
+            data: {
+              ...DETALLE_BASE,
+              ndt_pagado: false,
+              ndt_salario_bruto: 0,
+              ndt_dias_incapacidad_empleador: 3,
+            },
+            error: null,
+          },
+          ACTUALIZADA,
+          { data: [], error: null },
+        ],
+        sgrh_historial_laboral: { data: { lab_salario_base: 420000 }, error: null },
+        sgrh_cat_tipos_ausencia: { data: { tau_porcentaje_pago_empleador: 50 }, error: null },
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true })
+      expect(escribioLaFila(client)).toBe(true)
+    })
+
+    // Riesgo de carrera: dos clics a la vez. El segundo no encuentra la fila
+    // en el estado leído y no toca comprobante ni provisión.
+    it('si la fila cambió de estado mientras tanto, no emite comprobante ni suma aguinaldo', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: [
+          { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+          { data: [], error: null },
+        ],
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok === false && result.error).toContain('cambió mientras tanto')
+      const tablas = client.from.mock.calls.map((c) => c[0])
+      expect(tablas).not.toContain('sgrh_comprobantes_pago')
+      expect(tablas).not.toContain('sgrh_provisiones_anuales')
+      const update = client.from.mock.results
+        .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_detalle')
+        .map(
+          (r) =>
+            r.value as {
+              update: { mock: { calls: unknown[] } }
+              eq: { mock: { calls: unknown[][] } }
+            }
+        )
+        .find((b) => b.update.mock.calls.length > 0)!
+      expect(update.eq.mock.calls).toContainEqual(['ndt_pagado', false])
+    })
+  })
+
   it('no toca la provisión si el estado no cambia (llamada redundante)', async () => {
     mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
       ],
       sgrh_nomina_periodo: OK,
@@ -379,7 +523,7 @@ describe('marcarDetallePagado (server action)', () => {
     const client = mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
         // Tras marcar este, TODOS los empleados del periodo quedan pagados.
         {
           data: [
@@ -413,7 +557,7 @@ describe('marcarDetallePagado (server action)', () => {
     const client = mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
         // Este empleado ya quedó pagado, pero otro del mismo periodo no.
         {
           data: [
@@ -448,7 +592,7 @@ describe('marcarDetallePagado (server action)', () => {
     const client = mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
         {
           data: [
             { ndt_historial_laboral_id: 77, ndt_pagado: true, ndt_fecha_pago: '2026-06-20' },
@@ -507,7 +651,7 @@ describe('marcarDetallePagado (server action)', () => {
     const client = mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
       ],
       sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -539,7 +683,7 @@ describe('marcarDetallePagado (server action)', () => {
     const client = mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
       ],
       sgrh_provisiones_anuales: [
@@ -565,7 +709,7 @@ describe('marcarDetallePagado (server action)', () => {
     const client = mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
       ],
       sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -683,7 +827,7 @@ describe('marcarDetallePagado (server action)', () => {
           },
           error: null,
         },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-16' }], error: null },
       ],
       sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -716,7 +860,7 @@ describe('marcarDetallePagado (server action)', () => {
           },
           error: null,
         },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-16' }], error: null },
       ],
       sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -746,7 +890,7 @@ describe('marcarDetallePagado (server action)', () => {
     mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
       ],
       sgrh_provisiones_anuales: [
@@ -795,7 +939,7 @@ describe('marcarDetallePagado (server action)', () => {
       mockSupabase({
         sgrh_nomina_detalle: [
           DETALLE_NO_PAGADO,
-          OK,
+          ACTUALIZADA,
           { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-20' }], error: null },
         ],
         sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -822,7 +966,7 @@ describe('marcarDetallePagado (server action)', () => {
       mockSupabase({
         sgrh_nomina_detalle: [
           DETALLE_NO_PAGADO,
-          OK,
+          ACTUALIZADA,
           { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-20' }], error: null },
         ],
         sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -882,7 +1026,7 @@ describe('marcarDetallePagado (server action)', () => {
       mockSupabase({
         sgrh_nomina_detalle: [
           DETALLE_NO_PAGADO,
-          OK,
+          ACTUALIZADA,
           { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-20' }], error: null },
         ],
         sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -939,7 +1083,7 @@ describe('marcarDetallePagado (server action)', () => {
     mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
         { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-20' }], error: null },
       ],
       sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
@@ -970,7 +1114,7 @@ describe('marcarDetallePagado (server action)', () => {
     mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_salario_bruto: 0, ndt_pagado: true }, error: null },
-        { data: null, error: null },
+        ACTUALIZADA,
       ],
       sgrh_provisiones_anuales: { data: null, error: null },
       sgrh_comprobantes_pago: { data: null, error: null },
@@ -1032,7 +1176,7 @@ describe('marcarDetallePagado (server action)', () => {
     it('deja pagar un BASE corregido a mano (no es de ninguna regla del sistema)', async () => {
       mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map([[77, CON_VACACIONES]]) })
       mockSupabase({
-        sgrh_nomina_detalle: [{ data: { ...fila, ndt_pagado: false }, error: null }, OK],
+        sgrh_nomina_detalle: [{ data: { ...fila, ndt_pagado: false }, error: null }, ACTUALIZADA],
         sgrh_nomina_linea_ingreso: baseDe(212345),
         sgrh_historial_laboral: contrato,
         sgrh_nomina_periodo: OK,
@@ -1099,7 +1243,7 @@ describe('marcarDetallePagado (server action)', () => {
     mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_salario_bruto: 0, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
       ],
       sgrh_nomina_periodo: OK,
       sgrh_provisiones_anuales: OK,
@@ -1120,7 +1264,7 @@ describe('marcarDetallePagado (server action)', () => {
     mockSupabase({
       sgrh_nomina_detalle: [
         { data: { ...DETALLE_BASE, ndt_salario_bruto: 0, ndt_pagado: false }, error: null },
-        OK,
+        ACTUALIZADA,
       ],
       sgrh_nomina_periodo: OK,
       sgrh_provisiones_anuales: OK,

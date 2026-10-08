@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { PeriodoDetail } from './PeriodoDetail'
 import { formatCRC } from '@/modules/payroll/lib/format'
 import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
@@ -100,11 +101,12 @@ const FABIAN = fila({
 })
 
 describe('PeriodoDetail: filas que paga una liquidación', () => {
-  it('muestra la liquidación que la paga en vez del botón de pago', () => {
+  it('muestra la liquidación que la paga en vez del botón de pago', async () => {
     render(<PeriodoDetail periodo={periodo([ANA, FABIAN])} canWrite conceptosManuales={[]} />)
 
     expect(screen.getAllByText('En liquidación n.° 55').length).toBeGreaterThan(0)
     expect(screen.getByText('1 fila(s) se pagan en una liquidación')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /se pagan en una liquidación/ }))
     expect(screen.getByText(/Fabián Rojas: su salario de esta quincena va/)).toBeInTheDocument()
   })
 
@@ -142,5 +144,130 @@ describe('PeriodoDetail: filas que paga una liquidación', () => {
     expect(screen.queryByText(/En liquidación n\.°/)).not.toBeInTheDocument()
     expect(screen.getAllByText(monto(356680 + 222222)).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Editar ingresos' }).length).toBeGreaterThan(0)
+  })
+})
+
+const PAGADA = fila({
+  id: 3,
+  historialLaboralId: 3,
+  empleadoNombre: 'Carla Solís',
+  empleadoCedula: '3-3333-3333',
+  pagado: true,
+  fechaPago: '2026-09-15',
+  codigoVerificacion: 'ABCD-EFGH-JKMN',
+})
+const SIN_HORARIO = fila({
+  id: 4,
+  historialLaboralId: 4,
+  empleadoNombre: 'Diego Vargas',
+  empleadoCedula: '4-4444-4444',
+  diasPorRevisar: [{ fecha: '2026-09-06', problema: 'sin_horario' }],
+})
+
+describe('PeriodoDetail: avisos desplegables', () => {
+  it('arrancan cerrados: se ve el conteo y no la lista', () => {
+    render(<PeriodoDetail periodo={periodo([ANA, SIN_HORARIO])} canWrite conceptosManuales={[]} />)
+
+    const aviso = screen.getByRole('button', { name: /1 empleado\(s\) con días para revisar/ })
+    expect(aviso).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(/Marcas en días sin horario/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/06\/09\/2026/)).not.toBeInTheDocument()
+  })
+
+  it('se abren al tocarlos y se vuelven a cerrar', async () => {
+    render(<PeriodoDetail periodo={periodo([ANA, SIN_HORARIO])} canWrite conceptosManuales={[]} />)
+    const aviso = screen.getByRole('button', { name: /con días para revisar/ })
+
+    await userEvent.click(aviso)
+    expect(aviso).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText(/Marcas en días sin horario/)).toBeInTheDocument()
+    expect(screen.getByText(/06\/09\/2026/)).toBeInTheDocument()
+
+    await userEvent.click(aviso)
+    expect(aviso).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(/Marcas en días sin horario/)).not.toBeInTheDocument()
+  })
+
+  it('el aviso de marcas incompletas también es desplegable', async () => {
+    render(
+      <PeriodoDetail
+        periodo={periodo([ANA, { ...FABIAN, liquidacionQueLaPaga: null }])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+
+    expect(screen.queryByText(/el pago está bloqueado hasta corregir/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /marcas de asistencia incompletas/ }))
+    expect(screen.getByText(/el pago está bloqueado hasta corregir/)).toBeInTheDocument()
+  })
+})
+
+describe('PeriodoDetail: acciones de cada fila', () => {
+  /** La fila de la tabla de escritorio de ese empleado. */
+  function filaDe(nombre: string) {
+    return within(screen.getByRole('table')).getByText(nombre).closest('tr')!
+  }
+
+  it('el comprobante va en Acciones, no pegado al estado del pago', () => {
+    render(<PeriodoDetail periodo={periodo([PAGADA])} canWrite conceptosManuales={[]} />)
+    const celdas = filaDe('Carla Solís').cells
+    const pago = celdas[celdas.length - 2]
+    const acciones = celdas[celdas.length - 1]
+
+    expect(within(pago).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(acciones).getByRole('link', { name: 'Ver comprobante de pago' })).toHaveAttribute(
+      'href',
+      '/comprobante/7/3'
+    )
+  })
+
+  it('cada acción ocupa siempre el mismo lugar: la que no aplica deja su hueco', () => {
+    render(<PeriodoDetail periodo={periodo([ANA, PAGADA])} canWrite conceptosManuales={[]} />)
+    const ranuras = (nombre: string) => {
+      const celdas = filaDe(nombre).cells
+      return Array.from(celdas[celdas.length - 1].querySelector('div')!.children)
+    }
+
+    // Ana (pendiente): sin comprobante, con editar e incapacidad.
+    const ana = ranuras('Ana Mora')
+    expect(ana).toHaveLength(3)
+    expect(ana[0]).toHaveAttribute('aria-hidden', 'true')
+    expect(ana[1]).toHaveAccessibleName('Editar ingresos')
+    expect(ana[2]).toHaveAccessibleName('Registrar incapacidad')
+
+    // Carla (pagada): con comprobante, sin editar, con incapacidad.
+    const carla = ranuras('Carla Solís')
+    expect(carla).toHaveLength(3)
+    expect(carla[0]).toHaveAccessibleName('Ver comprobante de pago')
+    expect(carla[1]).toHaveAttribute('aria-hidden', 'true')
+    expect(carla[2]).toHaveAccessibleName('Registrar incapacidad')
+  })
+
+  it('los botones de solo icono dicen qué hacen al pasar el mouse', () => {
+    render(<PeriodoDetail periodo={periodo([ANA, PAGADA])} canWrite conceptosManuales={[]} />)
+    const tabla = within(screen.getByRole('table'))
+
+    expect(tabla.getByRole('button', { name: 'Editar ingresos' })).toHaveAttribute(
+      'title',
+      'Editar ingresos'
+    )
+    expect(tabla.getAllByRole('button', { name: 'Registrar incapacidad' })[0]).toHaveAttribute(
+      'title',
+      'Registrar incapacidad'
+    )
+    expect(tabla.getByRole('link', { name: 'Ver comprobante de pago' })).toHaveAttribute(
+      'title',
+      'Ver e imprimir comprobante de pago'
+    )
+  })
+
+  it('sin permiso de escritura igual se puede abrir el comprobante', () => {
+    render(<PeriodoDetail periodo={periodo([PAGADA])} canWrite={false} conceptosManuales={[]} />)
+
+    expect(
+      within(screen.getByRole('table')).getByRole('link', { name: 'Ver comprobante de pago' })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Registrar incapacidad' })).not.toBeInTheDocument()
   })
 })

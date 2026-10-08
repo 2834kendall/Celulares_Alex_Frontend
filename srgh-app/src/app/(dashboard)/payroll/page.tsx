@@ -5,6 +5,7 @@ import { ModulePlaceholder } from '@/components/ui/ModulePlaceholder'
 import { getPeriodos } from '@/modules/payroll/actions/getPeriodos'
 import { PayrollHeader } from '@/modules/payroll/components/PayrollHeader'
 import { PeriodosList } from '@/modules/payroll/components/PeriodosList'
+import { BuscarComprobante } from '@/modules/payroll/components/BuscarComprobante'
 import { Alert } from '@/components/ui/Alert'
 
 export default async function PayrollPage() {
@@ -34,6 +35,7 @@ export default async function PayrollPage() {
   return (
     <div className="min-w-0 space-y-4">
       <PayrollHeader canWrite={canWrite} canManageConceptos={canManageConceptos} />
+      <BuscarComprobante />
       <PeriodosList periodos={periodosResult.data} canWrite={canWrite} />
     </div>
   )

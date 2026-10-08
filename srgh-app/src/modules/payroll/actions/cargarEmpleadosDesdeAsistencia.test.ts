@@ -184,6 +184,10 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       sinAsistencia: 0,
       sinSalario: [],
     })
+    // Solo contratos que empezaron antes de que termine la quincena.
+    expect(mockEmpleados).toHaveBeenCalledWith(expect.anything(), expect.any(Number), {
+      finPeriodo: '2026-09-15',
+    })
 
     const fila = (
       llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<string, unknown>[]

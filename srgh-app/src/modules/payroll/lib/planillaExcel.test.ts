@@ -181,6 +181,82 @@ describe('buildPlanillaTemplate con la fila ya guardada en el periodo', () => {
   })
 })
 
+describe('vista previa de totales en la plantilla (auditoría, hallazgo 6)', () => {
+  const VIATICOS: ConceptoPlanillaColumna = {
+    con_id: 10,
+    con_codigo: 'ING010',
+    con_nombre: 'Viáticos',
+    con_tipo: 'ingreso',
+    con_afecta_salario_bruto: false,
+    con_afecta_base_ccss: false,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+
+  // En el catálogo real HORAS_EXTRA está inactivo (las horas extra van al
+  // banco de horas); el fixture general lo trae activo como columna calculada.
+  const SIN_HORAS_EXTRA = CONCEPTOS.filter((c) => c.con_codigo !== 'HORAS_EXTRA')
+
+  async function formulas(
+    emp: Parameters<typeof buildPlanillaTemplate>[1][number],
+    conceptos: ConceptoPlanillaColumna[] = SIN_HORAS_EXTRA
+  ) {
+    const buffer = await buildPlanillaTemplate(INFO, [emp], [...conceptos, VIATICOS])
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const ws = wb.getWorksheet('Planilla')!
+    const col = (label: string) => {
+      let n = -1
+      ws.getRow(4).eachCell((c, i) => {
+        if (String(c.value).startsWith(label)) n = i
+      })
+      return n
+    }
+    const letra = (n: number) => String.fromCharCode(64 + n)
+    const f = (label: string) =>
+      (ws.getRow(5).getCell(col(label)).value as { formula: string }).formula
+    return {
+      bruto: f('Total bruto'),
+      ccss: f('Rebajo CCSS'),
+      neto: f('Total neto'),
+      base: `${letra(col('Salario base'))}5`,
+      comision: `${letra(col('Comisión'))}5`,
+      viaticos: `${letra(col('Viáticos'))}5`,
+    }
+  }
+
+  it('lo que no es salario no va al bruto ni a la CCSS: se suma al neto', async () => {
+    const f = await formulas(EMPLEADOS[0])
+
+    expect(f.bruto).toBe(`SUM(${f.base},${f.comision})`)
+    expect(f.ccss).toBe(`SUM(${f.base},${f.comision})*10.83/100`)
+    expect(f.neto).toContain(`+SUM(${f.viaticos})`)
+    expect(f.bruto).not.toContain(f.viaticos)
+  })
+
+  it('con HORAS_EXTRA activo como columna, la columna calculada es la que entra', async () => {
+    const f = await formulas(EMPLEADOS[0], CONCEPTOS)
+
+    expect(f.bruto).toMatch(new RegExp(`^SUM\\(${f.base},${f.comision},[A-Z]+5\\)$`))
+  })
+
+  it('el pago de banco de horas ya guardado entra al bruto y a la CCSS', async () => {
+    const f = await formulas({
+      ...EMPLEADOS[0],
+      guardado: {
+        pagado: false,
+        horas: 96,
+        horasExtra: 0,
+        salarioPorHora: 2500,
+        montos: { BASE: 300000, HORAS_EXTRA: 26400 },
+      },
+    })
+
+    expect(f.bruto).toBe(`SUM(${f.base},${f.comision},26400)`)
+    expect(f.ccss).toBe(`SUM(${f.base},${f.comision},26400)*10.83/100`)
+  })
+})
+
 describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
   it('arma una columna por cada concepto de tipo "monto manual" y las prellena', async () => {
     const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)

@@ -99,7 +99,9 @@ export async function cargarEmpleadosDesdeAsistencia(
     return { ok: false, error: 'Solo se puede cargar empleados en un periodo en borrador.' }
   }
 
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id)
+  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+    finPeriodo: periodo.npe_fecha_fin_periodo,
+  })
   if (!empleadosResult.ok) {
     return { ok: false, error: empleadosResult.error }
   }

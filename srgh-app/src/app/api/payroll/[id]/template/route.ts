@@ -62,7 +62,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   // Incluye a quien ya tiene fila en el periodo aunque su contrato haya
   // terminado después: si no, su fila trababa la subida (ver getEmpleadosActivos).
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, periodoId)
+  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+    periodoId,
+    finPeriodo: periodo.npe_fecha_fin_periodo,
+  })
   if (!empleadosResult.ok) {
     return NextResponse.json({ error: empleadosResult.error }, { status: 500 })
   }

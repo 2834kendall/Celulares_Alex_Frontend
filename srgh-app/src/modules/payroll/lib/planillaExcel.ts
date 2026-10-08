@@ -30,6 +30,7 @@ import {
   type QuincenaRef,
 } from './prellenadoAsistencia'
 import { lecturaUtilizable } from './horasPeriodo'
+import { round2 } from './numeros'
 
 const SHEET_NAME = 'Planilla'
 
@@ -311,19 +312,43 @@ export async function buildPlanillaTemplate(
         ? `${columnLetter(inicio)}${rowNumber}:${columnLetter(inicio + cantidad - 1)}${rowNumber}`
         : null
 
-    const sumandosBruto = [
-      rango(colIngresoInicio, ingresoManual.length),
-      rango(colHorasExtraInicio, horasExtra.length),
-    ].filter((r): r is string => r !== null)
-    row.getCell(colTotalBruto).value = {
-      formula: sumandosBruto.length > 0 ? `SUM(${sumandosBruto.join(',')})` : '0',
+    // Vista previa con las mismas reglas que el servidor
+    // (calcularPlanillaPorConceptos), para que el archivo no induzca a error
+    // (auditoría, hallazgo 6):
+    //  - un ingreso que no es salario (con_afecta_salario_bruto = false, ej.
+    //    Aguinaldo o Viáticos) no va al bruto ni a la CCSS: se suma al neto;
+    //  - la CCSS se calcula sobre lo que cotiza (con_afecta_base_ccss), no
+    //    sobre todo el bruto;
+    //  - el pago de banco de horas ya guardado en la fila (HORAS_EXTRA, que no
+    //    es columna) sí es salario y cotiza.
+    // El servidor recalcula todo al subir; esto es solo lo que se ve.
+    const celda = (col: number) => `${columnLetter(col)}${rowNumber}`
+    const ingresosConColumna = [
+      ...ingresoManual.map((c, i) => ({ c, col: colIngresoInicio + i })),
+      ...horasExtra.map((c, i) => ({ c, col: colHorasExtraInicio + i })),
+    ]
+    const esSalario = (c: ConceptoPlanillaColumna) => c.con_afecta_salario_bruto !== false
+    const cotiza = (c: ConceptoPlanillaColumna) => esSalario(c) && c.con_afecta_base_ccss !== false
+    const tieneColumnaHorasExtra = ingresosConColumna.some((x) => x.c.con_codigo === 'HORAS_EXTRA')
+    const bancoPagado = tieneColumnaHorasExtra ? 0 : round2(guardado?.montos.HORAS_EXTRA ?? 0)
+    const suma = (refs: string[], extra = 0) => {
+      const partes = [...refs, ...(extra !== 0 ? [String(extra)] : [])]
+      return partes.length > 0 ? `SUM(${partes.join(',')})` : '0'
     }
+    const refsBruto = ingresosConColumna.filter((x) => esSalario(x.c)).map((x) => celda(x.col))
+    const refsCcss = ingresosConColumna.filter((x) => cotiza(x.c)).map((x) => celda(x.col))
+    const refsNoSalarial = ingresosConColumna
+      .filter((x) => !esSalario(x.c))
+      .map((x) => celda(x.col))
 
-    const letraBruto = columnLetter(colTotalBruto)
+    row.getCell(colTotalBruto).value = { formula: suma(refsBruto, bancoPagado) }
+
+    const baseCcss = suma(refsCcss, bancoPagado)
     deduccionPorcentual.forEach((c, i) => {
       const col = colDeduccionPctInicio + i
-      const factor = (c.con_porcentaje ?? 0) / 100
-      row.getCell(col).value = { formula: `${letraBruto}${rowNumber}*${factor}` }
+      // `*10.83/100` y no `*0.1083`: 10.83 / 100 en JavaScript es
+      // 0.10830000000000001, y eso quedaba escrito en la fórmula.
+      row.getCell(col).value = { formula: `${baseCcss}*${c.con_porcentaje ?? 0}/100` }
     })
 
     const sumandosDeducciones = [
@@ -334,9 +359,12 @@ export async function buildPlanillaTemplate(
       formula: sumandosDeducciones.length > 0 ? `SUM(${sumandosDeducciones.join(',')})` : '0',
     }
 
+    const letraBruto = columnLetter(colTotalBruto)
     const letraDeducciones = columnLetter(colTotalDeducciones)
     row.getCell(colTotalNeto).value = {
-      formula: `${letraBruto}${rowNumber}-${letraDeducciones}${rowNumber}`,
+      formula:
+        `${letraBruto}${rowNumber}-${letraDeducciones}${rowNumber}` +
+        (refsNoSalarial.length > 0 ? `+${suma(refsNoSalarial)}` : ''),
     }
 
     for (let col = colSalarioHora; col <= colTotalNeto; col += 1) {

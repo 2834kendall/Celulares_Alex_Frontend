@@ -382,6 +382,12 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
                 valor={resultado.vacacionesPagadas}
                 dias={resultado.diasVacaciones}
               />
+              {resultado.horasExtraBanco > 0 && (
+                <ResultadoLinea
+                  label="Horas extra pendientes (banco de horas)"
+                  valor={resultado.horasExtraBanco}
+                />
+              )}
               <ResultadoLinea
                 label="Preaviso"
                 valor={resultado.preaviso}
@@ -397,13 +403,18 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
                 <span className="tabular-nums font-medium">{formatCRC(resultado.total)}</span>
               </div>
               {/*
-                Solo cotiza lo que es salario: pendiente y vacaciones. Preaviso
-                y cesantía son indemnizaciones; el aguinaldo está exento.
+                Solo cotiza lo que es salario: pendiente, vacaciones y horas
+                extra del banco. Preaviso y cesantía son indemnizaciones; el
+                aguinaldo está exento.
               */}
               <div className="flex items-center justify-between py-1 text-xs text-slate-600">
                 <span>
                   Cuota obrera CCSS{' '}
-                  <span className="text-slate-400">(sobre salario pendiente y vacaciones)</span>
+                  <span className="text-slate-400">
+                    {resultado.horasExtraBanco > 0
+                      ? '(sobre salario pendiente, vacaciones y horas extra)'
+                      : '(sobre salario pendiente y vacaciones)'}
+                  </span>
                 </span>
                 <span className="tabular-nums font-medium text-rose-700">
                   − {formatCRC(resultado.deduccionesObreras)}

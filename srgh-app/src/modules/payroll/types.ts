@@ -562,13 +562,15 @@ export interface LiquidacionCalculada {
   salarioProporcional: number
   aguinaldoProporcional: number
   vacacionesPagadas: number
+  /** Horas extra que seguían pendientes en el banco de horas, pagadas acá. */
+  horasExtraBanco: number
   diasPreaviso: number
   preaviso: number
   diasCesantia: number
   cesantia: number
   /** Bruto: suma de todos los rubros. */
   total: number
-  /** Cuota obrera sobre salario pendiente y vacaciones. Preaviso, cesantía y aguinaldo no cotizan. */
+  /** Cuota obrera sobre salario pendiente, vacaciones y horas extra. Preaviso, cesantía y aguinaldo no cotizan. */
   deduccionesObreras: number
   /** total − deduccionesObreras. Es lo que se le entrega a la persona. */
   neto: number

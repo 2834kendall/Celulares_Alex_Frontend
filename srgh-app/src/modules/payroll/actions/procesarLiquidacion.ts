@@ -19,10 +19,12 @@ import {
 import { claveQuincenal } from '@/modules/payroll/lib/derechos'
 import { sincronizarPeriodosDeLaSalida } from '@/modules/payroll/lib/estadoPeriodoData'
 import {
+  horasDeBancoPendientes,
   avisoAguinaldoAnterior,
   calcularBasesLiquidacion,
   cargarHistorialParaLiquidacion,
 } from '@/modules/payroll/lib/liquidacionData'
+import { formatCRC, formatHoras } from '@/modules/payroll/lib/format'
 import {
   procesarLiquidacionSchema,
   type LiquidacionCalculada,
@@ -268,7 +270,24 @@ export async function procesarLiquidacion(
   const avisoAnterior = await avisoAguinaldoAnterior(supabase, bases.cicloAnterior)
   if (avisoAnterior) advertencias.push(avisoAnterior)
 
+  // Horas extra que seguían pendientes en el banco de horas: después de la
+  // salida no hay quincena donde pagarlas, así que van en el finiquito
+  // (auditoría, hallazgo 4). La RPC las deja pagadas por esta liquidación.
+  const banco = await horasDeBancoPendientes(supabase, bases.labIds)
+  if (!banco.ok) {
+    return {
+      ok: false,
+      error: 'No se pudieron leer las horas pendientes del banco de horas del empleado.',
+    }
+  }
+  if (banco.data.movimientos.length > 0) {
+    advertencias.push(
+      `Se pagan ${formatHoras(banco.data.horas)} h extra que seguían pendientes en el banco de horas (${formatCRC(banco.data.monto)}). Esos movimientos quedan pagados por esta liquidación.`
+    )
+  }
+
   const resultado = calcularLiquidacion({
+    horasExtraBanco: { horas: banco.data.horas, monto: banco.data.monto },
     salarioDiario,
     salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
     diasTrabajadosMesActual,
@@ -298,6 +317,7 @@ export async function procesarLiquidacion(
       liq_dias_vacaciones_pendientes: data.diasVacacionesPendientes,
       liq_dias_vacaciones_propuestos: propuestos,
       liq_vacaciones_pagadas: resultado.vacacionesPagadas,
+      liq_horas_extra_banco: resultado.horasExtraBanco,
       liq_dias_preaviso: resultado.diasPreaviso,
       liq_preaviso: resultado.preaviso,
       liq_dias_cesantia: resultado.diasCesantia,
@@ -306,6 +326,10 @@ export async function procesarLiquidacion(
       liq_deducciones_obreras: resultado.deduccionesObreras,
       liq_neto: resultado.neto,
       liq_observaciones: advertencias.length > 0 ? advertencias.join('\n') : null,
+      // La RPC deja estos movimientos pagados por la liquidación, en la misma
+      // transacción. Si alguno ya no está pendiente, no guarda nada.
+      banco_horas: banco.data.movimientos.map((m) => ({ bhm_id: m.bhmId, monto: m.monto })),
+      resuelto_por_id: (claims.app_metadata as { usr_id?: number })?.usr_id ?? null,
     },
   })
 
@@ -358,6 +382,7 @@ export async function procesarLiquidacion(
       aguinaldoProporcional: resultado.aguinaldoProporcional,
       diasVacaciones: data.diasVacacionesPendientes,
       vacacionesPagadas: resultado.vacacionesPagadas,
+      horasExtraBanco: resultado.horasExtraBanco,
       diasPreaviso: resultado.diasPreaviso,
       preaviso: resultado.preaviso,
       diasCesantia: resultado.diasCesantia,

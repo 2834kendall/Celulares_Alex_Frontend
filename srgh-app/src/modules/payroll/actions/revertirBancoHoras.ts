@@ -13,6 +13,7 @@ interface MovimientoRow {
   bhm_estado: string
   bhm_monto_pagado: number | null
   bhm_nomina_detalle_pago_id: number | null
+  bhm_liquidacion_id?: number | null
 }
 
 interface DetallePagoRow {
@@ -55,7 +56,7 @@ export async function revertirBancoHoras(bhmId: number): Promise<RevertirBancoHo
 
   const { data: movimiento, error: errMovimiento } = await supabase
     .from('sgrh_banco_horas_movimientos')
-    .select('bhm_id, bhm_estado, bhm_monto_pagado, bhm_nomina_detalle_pago_id')
+    .select('bhm_id, bhm_estado, bhm_monto_pagado, bhm_nomina_detalle_pago_id, bhm_liquidacion_id')
     .eq('bhm_id', bhmId)
     .maybeSingle<MovimientoRow>()
 
@@ -74,6 +75,14 @@ export async function revertirBancoHoras(bhmId: number): Promise<RevertirBancoHo
   // Solo un movimiento PAGADO movió plata. Uno compensado no tocó ninguna
   // planilla, así que no hay nada que devolver.
   if (movimiento.bhm_estado === 'pagado') {
+    // Pagado en un finiquito: la liquidación ya guardó ese monto y no se
+    // puede sacar de ahí.
+    if (movimiento.bhm_liquidacion_id) {
+      return {
+        ok: false,
+        error: `Estas horas se pagaron en la liquidación n.° ${movimiento.bhm_liquidacion_id}: no se pueden devolver al banco.`,
+      }
+    }
     if (!movimiento.bhm_nomina_detalle_pago_id) {
       return {
         ok: false,

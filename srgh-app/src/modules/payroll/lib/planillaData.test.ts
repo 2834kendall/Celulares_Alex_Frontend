@@ -123,7 +123,7 @@ describe('getEmpleadosActivos con el periodo', () => {
       },
     })
 
-    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, 7)
+    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, { periodoId: 7 })
 
     expect(r.ok && r.data.map((e) => [e.labId, e.cedula])).toEqual([
       [1, '1-1111-1111'],
@@ -142,7 +142,7 @@ describe('getEmpleadosActivos con el periodo', () => {
       sgrh_nomina_detalle: { data: [{ ndt_historial_laboral_id: 9 }], error: null },
     })
 
-    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, 7)
+    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, { periodoId: 7 })
 
     expect(r.ok && r.data.map((e) => e.labId)).toEqual([1])
   })
@@ -164,8 +164,36 @@ describe('getEmpleadosActivos con el periodo', () => {
       sgrh_nomina_detalle: { data: null, error: { message: 'boom' } },
     })
 
-    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, 7)
+    const r = await getEmpleadosActivos(supabase as unknown as Cliente, 3, { periodoId: 7 })
 
     expect(r.ok).toBe(false)
+  })
+
+  // Ivannia entró el 9 de mayo de 2025: no se le arma ni se le paga la
+  // planilla de diciembre de 2024.
+  it('con el fin del periodo, deja afuera a quien ingresó después', async () => {
+    const supabase = createSupabaseClientMock({
+      sgrh_historial_laboral: { data: [ANA], error: null },
+    })
+
+    await getEmpleadosActivos(supabase as unknown as Cliente, 3, { finPeriodo: '2024-12-15' })
+
+    const consulta = supabase.from.mock.results[0].value as {
+      lte: { mock: { calls: unknown[][] } }
+    }
+    expect(consulta.lte.mock.calls).toEqual([['lab_fecha_inicio', '2024-12-15']])
+  })
+
+  it('sin fin de periodo no filtra por ingreso', async () => {
+    const supabase = createSupabaseClientMock({
+      sgrh_historial_laboral: { data: [ANA], error: null },
+    })
+
+    await getEmpleadosActivos(supabase as unknown as Cliente, 3)
+
+    const consulta = supabase.from.mock.results[0].value as {
+      lte: { mock: { calls: unknown[][] } }
+    }
+    expect(consulta.lte.mock.calls).toEqual([])
   })
 })

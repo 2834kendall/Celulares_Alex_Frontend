@@ -132,6 +132,8 @@ function escenario(
       sgrh_provisiones_anuales: PROVISION_2025_PAGADA,
       sgrh_pagos_extraordinarios: { data: [], error: null },
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS_DEDUCCION, error: null },
+      // Sin horas pendientes en el banco de horas.
+      sgrh_banco_horas_movimientos: { data: [], error: null },
       ...over,
     },
     registrarLiquidacion
@@ -589,6 +591,64 @@ describe('procesarLiquidacion (server action)', () => {
 
       expect(result.ok).toBe(true)
       expect(mockRevalidatePath).toHaveBeenCalledWith('/payroll/aguinaldo-liquidacion')
+    })
+  })
+
+  describe('horas pendientes del banco de horas (auditoría, hallazgo 4)', () => {
+    const PENDIENTES = {
+      data: [
+        { bhm_id: 7, bhm_horas: 5.5, bhm_salario_por_hora: 3200 },
+        { bhm_id: 8, bhm_horas: 0.5, bhm_salario_por_hora: 1750 },
+      ],
+      error: null,
+    }
+
+    it('las paga en el finiquito y manda los movimientos a la RPC', async () => {
+      const client = escenario({ sgrh_banco_horas_movimientos: PENDIENTES })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      // 5,5 × 3.200 × 1,5 = 26.400 y 0,5 × 1.750 × 1,5 = 1.312,50
+      expect(result.data.horasExtraBanco).toBe(27712.5)
+      const payload = insercion(client)
+      expect(payload).toMatchObject({
+        liq_horas_extra_banco: 27712.5,
+        banco_horas: [
+          { bhm_id: 7, monto: 26400 },
+          { bhm_id: 8, monto: 1312.5 },
+        ],
+      })
+      expect(
+        result.data.advertencias.some((a) => a.includes('6 h extra que seguían pendientes'))
+      ).toBe(true)
+      // Solo los pendientes de la relación laboral.
+      const banco = client.from.mock.results[
+        client.from.mock.calls.findIndex((c) => c[0] === 'sgrh_banco_horas_movimientos')
+      ].value as { eq: { mock: { calls: unknown[][] } }; in: { mock: { calls: unknown[][] } } }
+      expect(banco.eq.mock.calls).toContainEqual(['bhm_estado', 'pendiente'])
+      expect(banco.in.mock.calls[0]).toEqual(['bhm_historial_laboral_id', [1]])
+    })
+
+    it('si no puede leer el banco de horas, no liquida', async () => {
+      const client = escenario({
+        sgrh_banco_horas_movimientos: { data: null, error: { message: 'boom' } },
+      })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(false)
+      expect(client.rpc).not.toHaveBeenCalled()
+    })
+
+    it('sin horas pendientes no agrega nada', async () => {
+      const client = escenario()
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok && result.data.horasExtraBanco).toBe(0)
+      expect(insercion(client)).toMatchObject({ liq_horas_extra_banco: 0, banco_horas: [] })
     })
   })
 

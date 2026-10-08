@@ -39,10 +39,7 @@ import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
-import {
-  filasConHorasDeBancoResueltas,
-  limpiarDependenciasDetalle,
-} from '@/modules/payroll/lib/dependenciasDetalle'
+import { filasConHorasDeBancoResueltas } from '@/modules/payroll/lib/dependenciasDetalle'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos KB
 
@@ -251,7 +248,10 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // 4. Resolver cédulas contra los contratos activos de la sucursal
   // Incluye a quien ya tiene fila en el periodo aunque su contrato haya
   // terminado después (ver getEmpleadosActivos).
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, periodoId)
+  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+    periodoId,
+    finPeriodo: periodo.npe_fecha_fin_periodo,
+  })
   if (!empleadosResult.ok) {
     return { ok: false, error: empleadosResult.error }
   }
@@ -261,7 +261,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   if (desconocidas.length > 0) {
     return {
       ok: false,
-      error: `Cédulas sin contrato activo en la sucursal: ${desconocidas.slice(0, 5).join(', ')}.`,
+      error: `Cédulas sin contrato activo en la sucursal para esta quincena (o que ingresaron después de que terminó): ${desconocidas.slice(0, 5).join(', ')}.`,
     }
   }
 
@@ -614,7 +614,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // horas extra tiene su movimiento en el banco de horas apuntándola, así que
   // el borrado de la fila fallaba por la llave foránea DESPUÉS de haber
   // borrado las líneas: quedaba con su total y sin ninguna línea. Ahora se
-  // revisa primero y se suelta todo en el mismo orden que deletePeriodo.
+  // revisa primero y se borra todo en una transacción, como deletePeriodo.
   if (ndtIdsEliminar.length > 0) {
     const resueltas = await filasConHorasDeBancoResueltas(supabase, ndtIdsEliminar)
     if (!resueltas.ok) {
@@ -639,19 +639,16 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       }
     }
 
-    const errorDependencias = await limpiarDependenciasDetalle(supabase, ndtIdsEliminar)
-    if (errorDependencias) {
-      return {
-        ok: false,
-        error: 'No se pudieron eliminar los empleados que salieron de la planilla.',
-      }
-    }
-
-    const { error: errDelDetalle } = await supabase
-      .from('sgrh_nomina_detalle')
-      .delete()
-      .in('ndt_id', ndtIdsEliminar)
+    // Todo en una transacción (función eliminar_filas_planilla): o salen
+    // completas, o no sale ninguna.
+    const { error: errDelDetalle } = await supabase.rpc('eliminar_filas_planilla', {
+      p_ndt_ids: ndtIdsEliminar,
+    })
     if (errDelDetalle) {
+      if (['23514', '42501'].includes(errDelDetalle.code)) {
+        return { ok: false, error: errDelDetalle.message }
+      }
+      console.error('uploadPlanilla: error al sacar filas de la planilla', errDelDetalle)
       return {
         ok: false,
         error: 'No se pudieron eliminar los empleados que salieron de la planilla.',
