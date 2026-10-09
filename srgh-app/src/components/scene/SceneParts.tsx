@@ -112,7 +112,6 @@ export function Character({
   delay,
   blink,
   lean,
-  hero = false,
   children,
 }: {
   /** Suffix of the `login-idle-*` keyframes: each one fidgets its own way. */
@@ -120,15 +119,12 @@ export function Character({
   delay: number
   blink: number
   lean: number
-  /** The one that takes over the screen on the way out (see playLoginSuccess). */
-  hero?: boolean
   children: ReactNode
 }) {
   return (
     <g
       className="login-character"
       data-character=""
-      data-hero={hero ? '' : undefined}
       style={
         {
           '--char-delay': `${delay}s`,

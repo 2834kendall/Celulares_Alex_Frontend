@@ -80,7 +80,7 @@ export function LoginScene({
 
       <g clipPath={`url(#${GROUND_CLIP_ID})`}>
         {/* Tall block */}
-        <Character idle="stretch" delay={0} blink={5.2} lean={-5} hero>
+        <Character idle="stretch" delay={0} blink={5.2} lean={-5}>
           <path
             d={`M150 ${BURIED_Y} V126 a16 16 0 0 1 16 -16 h88 a16 16 0 0 1 16 16 V${BURIED_Y}Z`}
             className="fill-brand-600"
@@ -131,7 +131,7 @@ export function LoginScene({
 
       <path
         d={`M8 ${GROUND_Y} H464`}
-        className="stroke-brand-200"
+        className="login-ground stroke-brand-200"
         strokeWidth={3}
         strokeLinecap="round"
       />
