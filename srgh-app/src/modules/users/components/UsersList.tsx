@@ -2,17 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  KeyRound,
-  Loader2,
-  Pencil,
-  Search,
-  SearchX,
-  Send,
-  UserCheck,
-  UserPlus,
-  UserX,
-} from 'lucide-react'
+import { KeyRound, Loader2, Pencil, Search, Send, UserCheck, UserPlus, UserX } from 'lucide-react'
 import type { CatalogoItem } from '@/modules/employees/types'
 import type { EmpleadoSinUsuario, UsuarioEstado, UsuarioListItem } from '@/modules/users/types'
 import { resendInvitation } from '@/modules/users/actions/resendInvitation'
@@ -235,7 +225,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={SearchX}
+          variant="no-results"
           title="Sin resultados"
           description="Ningún usuario coincide con la búsqueda o el filtro seleccionado."
         />

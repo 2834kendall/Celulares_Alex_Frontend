@@ -148,6 +148,7 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
         />
       ) : visibleRows.length === 0 ? (
         <EmptyState
+          variant="no-results"
           icon={CalendarCheck2}
           title="Nadie tiene tardias ni ausencias este mes"
           description="Cambia a “Todos” para ver a todo el personal."

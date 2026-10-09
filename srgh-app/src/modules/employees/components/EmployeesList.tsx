@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Search, SearchX, UserCheck, UserPlus, UserX, Users } from 'lucide-react'
+import { Search, UserCheck, UserPlus, UserX, Users } from 'lucide-react'
 import type { EmpleadoListItem } from '@/modules/employees/types'
 import { useEmployeeFilters, type EstadoFiltro } from '@/modules/employees/hooks/useEmployeeFilters'
 import { formatDate, fullName } from '@/modules/employees/lib/format'
@@ -144,7 +144,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={SearchX}
+          variant="no-results"
           title="Sin resultados"
           description="Ningún empleado coincide con la búsqueda o los filtros seleccionados."
         />

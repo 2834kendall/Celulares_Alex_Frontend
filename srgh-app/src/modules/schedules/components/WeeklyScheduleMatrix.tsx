@@ -1230,7 +1230,8 @@ export function WeeklyScheduleMatrix({
 function MatrixEmptyState({ hasUnfilteredRows = false }: { hasUnfilteredRows?: boolean }) {
   return (
     <EmptyState
-      icon={Users}
+      variant={hasUnfilteredRows ? 'no-results' : 'empty'}
+      icon={hasUnfilteredRows ? undefined : Users}
       title={
         hasUnfilteredRows
           ? 'Ningún colaborador coincide con los filtros'
