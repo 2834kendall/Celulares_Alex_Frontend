@@ -99,6 +99,48 @@ export function SearchSpot({ focus = null }: { focus?: number | null }) {
   )
 }
 
+/** A wall calendar whose days light up one after another while hovered. */
+export function CalendarSpot() {
+  return (
+    <svg viewBox="0 0 48 48" className={SPOT} aria-hidden="true" focusable="false">
+      <rect
+        x={5}
+        y={9}
+        width={38}
+        height={34}
+        rx={7}
+        fill="#fff"
+        className="stroke-brand-600"
+        strokeWidth={3}
+      />
+      <path d="M5 19 h38" className="stroke-brand-600" strokeWidth={3} />
+      <g className="stroke-brand-600" strokeWidth={3.5} strokeLinecap="round">
+        <path d="M16 5 v8" />
+        <path d="M32 5 v8" />
+      </g>
+      {[
+        [14, 27],
+        [24, 27],
+        [34, 27],
+        [14, 36],
+        [24, 36],
+        [34, 36],
+      ].map(([x, y], index) => (
+        <rect
+          key={`${x}-${y}`}
+          x={x - 3}
+          y={y - 3}
+          width={6}
+          height={6}
+          rx={2}
+          className={cn('dash-spot-day', index === 3 ? 'fill-brand-600' : 'fill-brand-200')}
+          style={{ animationDelay: `${index * 0.12}s` }}
+        />
+      ))}
+    </svg>
+  )
+}
+
 /** A medal swinging from its ribbon. */
 export function MedalSpot() {
   return (

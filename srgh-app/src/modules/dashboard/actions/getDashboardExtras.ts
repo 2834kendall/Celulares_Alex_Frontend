@@ -7,12 +7,19 @@ import { fullName } from '@/modules/employees/lib/format'
 import {
   summarizeAbsences,
   summarizeEvaluations,
+  summarizeMyAbsences,
+  summarizeMyEvaluations,
+  summarizeWeekSchedule,
   toExpiringContracts,
   type AbsencesSummary,
   type EvaluationsSummary,
   type ExpiringContract,
+  type MyAbsencesSummary,
+  type MyEvaluationsSummary,
   type RosterPerson,
+  type WeekScheduleSummary,
 } from '@/modules/dashboard/lib/extras'
+import { shiftISODate } from '@/modules/attendance/lib/time'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import type { SgrhJwtClaims } from '@/types/auth'
 
@@ -50,6 +57,7 @@ const getSession = cache(async () => {
   return {
     supabase,
     empresaId: meta.empresa_id ?? null,
+    empId: meta.emp_id ?? null,
     permisos: Array.isArray(meta.permisos) ? meta.permisos : [],
   }
 })
@@ -144,6 +152,157 @@ export async function getDashboardAbsences(todayIso: string): Promise<AbsencesSu
     ),
     roster,
     todayIso
+  )
+}
+
+interface MiAusenciaRow {
+  aus_id: number
+  aus_fecha_inicio: string
+  aus_fecha_fin: string
+  aus_estado: string
+  sgrh_cat_tipos_ausencia: { tau_nombre: string; tau_es_intradia: boolean } | null
+}
+
+/* How far back an absence that already ended is still worth showing. */
+const MY_ABSENCES_BACK_DAYS = 30
+
+/**
+ * The reader's own absences: in force, coming, or ended in the last month,
+ * whatever their state (a pending or rejected request is news to them).
+ *
+ * Self-service, like getMyMarks: no permission is asked, because the RLS
+ * policy `ausencias_select` already lets everyone read the absences of their
+ * own contracts. The filter by employee is still explicit here: for a role
+ * that CAN read every absence of the company, RLS alone would return them
+ * all, and this panel is only about the reader.
+ */
+export async function getMyAbsences(todayIso: string): Promise<MyAbsencesSummary | null> {
+  const { supabase, empId } = await getSession()
+  /* A user that is not an employee (an external accountant) has none. */
+  if (!empId) return { pending: 0, absences: [] }
+
+  const { data, error } = await supabase
+    .from('sgrh_ausencias')
+    .select(
+      `
+      aus_id, aus_fecha_inicio, aus_fecha_fin, aus_estado,
+      sgrh_cat_tipos_ausencia ( tau_nombre, tau_es_intradia ),
+      sgrh_historial_laboral!inner ( lab_empleado_id )
+    `
+    )
+    .eq('sgrh_historial_laboral.lab_empleado_id', empId)
+    .gte('aus_fecha_fin', shiftISODate(todayIso, -MY_ABSENCES_BACK_DAYS))
+    .order('aus_fecha_inicio', { ascending: true })
+    .returns<MiAusenciaRow[]>()
+
+  if (error) return null
+
+  return summarizeMyAbsences(
+    (data ?? []).flatMap((row) =>
+      row.sgrh_cat_tipos_ausencia
+        ? [
+            {
+              id: row.aus_id,
+              fechaInicio: row.aus_fecha_inicio,
+              fechaFin: row.aus_fecha_fin,
+              tipo: row.sgrh_cat_tipos_ausencia.tau_nombre,
+              esIntradia: row.sgrh_cat_tipos_ausencia.tau_es_intradia,
+              estado: row.aus_estado,
+            },
+          ]
+        : []
+    ),
+    todayIso
+  )
+}
+
+interface ProgramacionRow {
+  prg_historial_laboral_id: number
+  prg_fecha: string
+  prg_es_dia_libre: boolean
+}
+
+/**
+ * How the week `todayIso` falls in is staffed. Reads three columns of the
+ * weekly schedule — not the shifts, branches and photos the Schedules module
+ * loads to draw its grid.
+ */
+export async function getWeekSchedule(todayIso: string): Promise<WeekScheduleSummary | null> {
+  const { supabase, permisos } = await getSession()
+  const canRead =
+    permisos.includes(PERMISOS.HORARIOS_READ) || permisos.includes(PERMISOS.HORARIOS_WRITE)
+  if (!canRead) return null
+
+  const week = getWeekDates(todayIso)
+  const [roster, { data, error }] = await Promise.all([
+    getRoster(),
+    supabase
+      .from('sgrh_programacion_semanal')
+      .select('prg_historial_laboral_id, prg_fecha, prg_es_dia_libre')
+      .gte('prg_fecha', week[0])
+      .lte('prg_fecha', week[6])
+      .returns<ProgramacionRow[]>(),
+  ])
+
+  if (!roster || error) return null
+
+  return summarizeWeekSchedule(
+    (data ?? []).map((row) => ({
+      labId: row.prg_historial_laboral_id,
+      fecha: row.prg_fecha,
+      esDiaLibre: row.prg_es_dia_libre,
+    })),
+    roster,
+    week,
+    todayIso
+  )
+}
+
+interface MiEvaluacionRow {
+  eve_id: number
+  eve_fecha_evaluacion: string
+  eve_promedio_final: number | null
+  eve_tipo_periodo: string
+}
+
+/* Enough for the columns the panel draws, with room for unscored ones. */
+const MY_EVALUATIONS_LIMIT = 12
+
+/**
+ * The reader's own finished evaluations. Self-service like getMyAbsences:
+ * the RLS policy `evaluaciones_select` lets everyone read the evaluations of
+ * their own contracts, and the filter by employee is explicit for the same
+ * reason as there. A draft is never shown: it is the evaluator's work in
+ * progress, not a result.
+ */
+export async function getMyEvaluations(): Promise<MyEvaluationsSummary | null> {
+  const { supabase, empId } = await getSession()
+  if (!empId) return { evaluations: [], delta: null }
+
+  const { data, error } = await supabase
+    .from('sgrh_evaluaciones')
+    .select(
+      `
+      eve_id, eve_fecha_evaluacion, eve_promedio_final, eve_tipo_periodo,
+      sgrh_historial_laboral!inner ( lab_empleado_id )
+    `
+    )
+    .eq('sgrh_historial_laboral.lab_empleado_id', empId)
+    .neq('eve_estado', 'borrador')
+    .order('eve_fecha_evaluacion', { ascending: false })
+    .order('eve_id', { ascending: false })
+    .limit(MY_EVALUATIONS_LIMIT)
+    .returns<MiEvaluacionRow[]>()
+
+  if (error) return null
+
+  return summarizeMyEvaluations(
+    (data ?? []).map((row) => ({
+      id: row.eve_id,
+      fecha: row.eve_fecha_evaluacion,
+      promedio: row.eve_promedio_final === null ? null : Number(row.eve_promedio_final),
+      periodo: row.eve_tipo_periodo,
+    }))
   )
 }
 

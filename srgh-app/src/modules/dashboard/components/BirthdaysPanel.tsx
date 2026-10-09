@@ -163,7 +163,11 @@ export function BirthdaysPanel({
   return (
     <section
       ref={sectionRef}
-      className={cn(CARD, '@container dash-enter min-w-0 scroll-mt-20 p-4 @3xl:p-5', className)}
+      className={cn(
+        CARD,
+        '@container dash-enter dash-birthdays min-w-0 scroll-mt-20 p-4 @3xl:p-5',
+        className
+      )}
       /* Read by the board: an expanded panel takes the full row, whatever
          size its slot has (`.dash-slot:has(...)` in globals.css). */
       data-expanded={expanded}
@@ -171,7 +175,7 @@ export function BirthdaysPanel({
     >
       <header className="flex flex-wrap items-center gap-2">
         <h2 className="flex items-center gap-2 text-base font-extrabold tracking-tight text-slate-900">
-          <span className="dash-icon-tilt flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+          <span className="dash-widget-icon flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600 transition-colors duration-300">
             <Cake className="h-4 w-4" aria-hidden="true" />
           </span>
           Cumpleaños

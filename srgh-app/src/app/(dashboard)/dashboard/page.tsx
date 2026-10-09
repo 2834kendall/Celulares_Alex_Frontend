@@ -14,6 +14,9 @@ import {
   getDashboardAbsences,
   getDashboardEvaluations,
   getExpiringContracts,
+  getMyAbsences,
+  getMyEvaluations,
+  getWeekSchedule,
 } from '@/modules/dashboard/actions/getDashboardExtras'
 import { getDashboardPeople } from '@/modules/dashboard/actions/getDashboardPeople'
 import { AbsencesWidget } from '@/modules/dashboard/components/AbsencesWidget'
@@ -26,13 +29,15 @@ import { DashboardBoard } from '@/modules/dashboard/components/DashboardBoard'
 import { DayScene, type DayPeriod } from '@/modules/dashboard/components/DayScene'
 import { EvaluationsWidget } from '@/modules/dashboard/components/EvaluationsWidget'
 import { MonthTardinessWidget } from '@/modules/dashboard/components/MonthTardinessWidget'
+import { MyAbsencesWidget } from '@/modules/dashboard/components/MyAbsencesWidget'
+import { MyEvaluationsWidget } from '@/modules/dashboard/components/MyEvaluationsWidget'
 import { MyMarksWidget } from '@/modules/dashboard/components/MyMarksWidget'
 import { MyWeekWidget } from '@/modules/dashboard/components/MyWeekWidget'
 import { NewHiresWidget } from '@/modules/dashboard/components/NewHiresWidget'
 import { PayrollWidget } from '@/modules/dashboard/components/PayrollWidget'
-import { QuickLinks } from '@/modules/dashboard/components/QuickLinks'
 import { RecruitmentWidget } from '@/modules/dashboard/components/RecruitmentWidget'
 import { SettlementsWidget } from '@/modules/dashboard/components/SettlementsWidget'
+import { TeamScheduleWidget } from '@/modules/dashboard/components/TeamScheduleWidget'
 import { TeamWidget } from '@/modules/dashboard/components/TeamWidget'
 import { MONTHS_LONG, countdownLabel } from '@/modules/dashboard/lib/birthdays'
 import {
@@ -41,13 +46,16 @@ import {
   DEMO_CONTRACTS,
   DEMO_MONTH,
   DEMO_MY_DAY,
+  DEMO_MY_EVALUATIONS,
   DEMO_RECRUITMENT,
   DEMO_SETTLEMENTS,
   DEMO_TEAM,
   demoEvaluations,
+  demoMyAbsences,
   demoMyWeek,
   demoPayroll,
   demoPeople,
+  demoWeekSchedule,
 } from '@/modules/dashboard/lib/demoData'
 import { describeMyDay } from '@/modules/dashboard/lib/extras'
 import { PANELS, resolvePanels, type PanelId } from '@/modules/dashboard/lib/panels'
@@ -82,6 +90,7 @@ const DEMO_PERMISOS = [
   PERMISOS.NOMINA_WRITE,
   PERMISOS.AUSENCIAS_READ,
   PERMISOS.EVALUACIONES_READ,
+  PERMISOS.HORARIOS_READ,
 ]
 
 /* Greeting and date are resolved on the server, in the company's time zone:
@@ -169,6 +178,9 @@ export default async function DashboardPage({
     realAbsences,
     realEvaluations,
     realContracts,
+    realMyAbsences,
+    realMyEvaluations,
+    realWeekSchedule,
   ] = await Promise.all([
     getEmpresaNombre(),
     /* Birthdays, anniversaries and headcount come from one pair of queries,
@@ -190,6 +202,9 @@ export default async function DashboardPage({
     loads('absences') ? getDashboardAbsences(todayIso) : null,
     loads('evaluations') ? getDashboardEvaluations(todayIso) : null,
     loads('contracts') ? getExpiringContracts(todayIso) : null,
+    loads('my-absences') ? getMyAbsences(todayIso) : null,
+    loads('my-evaluations') ? getMyEvaluations() : null,
+    loads('team-schedule') ? getWeekSchedule(todayIso) : null,
   ])
 
   const people = isDemo ? { ...demoPeople(todayIso), team: DEMO_TEAM, canSee: true } : realPeople
@@ -237,6 +252,9 @@ export default async function DashboardPage({
   const absences = isDemo ? DEMO_ABSENCES : realAbsences
   const evaluations = isDemo ? demoEvaluations(todayIso) : realEvaluations
   const contracts = isDemo ? DEMO_CONTRACTS : realContracts
+  const myAbsences = isDemo ? demoMyAbsences(todayIso) : realMyAbsences
+  const myEvaluations = isDemo ? DEMO_MY_EVALUATIONS : realMyEvaluations
+  const weekSchedule = isDemo ? demoWeekSchedule(todayIso) : realWeekSchedule
 
   const todayMonth = Number(todayIso.split('-')[1])
   const nextBirthday = people.birthdays[0]
@@ -276,6 +294,10 @@ export default async function DashboardPage({
     'new-hires': () => people.canSee && <NewHiresWidget hires={people.newHires} step={9} />,
     settlements: () => settlements && <SettlementsWidget settlements={settlements} step={10} />,
     'my-marks': () => myDay && <MyMarksWidget summary={myDay} step={11} />,
+    'my-absences': () => myAbsences && <MyAbsencesWidget summary={myAbsences} step={15} />,
+    'my-evaluations': () =>
+      myEvaluations && <MyEvaluationsWidget summary={myEvaluations} step={16} />,
+    'team-schedule': () => weekSchedule && <TeamScheduleWidget summary={weekSchedule} step={17} />,
     absences: () => absences && <AbsencesWidget summary={absences} step={12} />,
     evaluations: () => evaluations && <EvaluationsWidget summary={evaluations} step={13} />,
     contracts: () =>
@@ -354,8 +376,6 @@ export default async function DashboardPage({
       </section>
 
       <DashboardBoard panels={panels} nodes={nodes} />
-
-      <QuickLinks permisos={permisos} />
     </div>
   )
 }

@@ -7,6 +7,9 @@ import {
 import type { PendingSettlement } from '@/modules/dashboard/components/SettlementsWidget'
 import {
   describeMyDay,
+  summarizeMyAbsences,
+  summarizeMyEvaluations,
+  type WeekScheduleSummary,
   type AbsencesSummary,
   type EvaluationsSummary,
   type ExpiringContract,
@@ -327,6 +330,82 @@ export const DEMO_CONTRACTS: ExpiringContract[] = [
     daysLeft: 45,
   },
 ]
+
+/** One request waiting, vacations coming and a sick day that went by. */
+export function demoMyAbsences(todayIso: string) {
+  const day = (delta: number) => {
+    const date = new Date(`${todayIso}T00:00:00Z`)
+    date.setUTCDate(date.getUTCDate() + delta)
+    return date.toISOString().slice(0, 10)
+  }
+
+  return summarizeMyAbsences(
+    [
+      {
+        id: 1,
+        fechaInicio: day(12),
+        fechaFin: day(16),
+        tipo: 'Vacaciones',
+        esIntradia: false,
+        estado: 'aprobada',
+      },
+      {
+        id: 2,
+        fechaInicio: day(30),
+        fechaFin: day(30),
+        tipo: 'Permiso con goce',
+        esIntradia: false,
+        estado: 'pendiente',
+      },
+      {
+        id: 3,
+        fechaInicio: day(-9),
+        fechaFin: day(-8),
+        tipo: 'Incapacidad CCSS',
+        esIntradia: false,
+        estado: 'aprobada',
+      },
+    ],
+    todayIso
+  )
+}
+
+/** Five evaluations climbing, with one dip. */
+export const DEMO_MY_EVALUATIONS = summarizeMyEvaluations([
+  { id: 1, fecha: '2025-09-12', promedio: 7.4, periodo: 'trimestral' },
+  { id: 2, fecha: '2025-12-10', promedio: 8.1, periodo: 'trimestral' },
+  { id: 3, fecha: '2026-03-14', promedio: 7.8, periodo: 'trimestral' },
+  { id: 4, fecha: '2026-06-11', promedio: 8.6, periodo: 'trimestral' },
+  { id: 5, fecha: '2026-09-15', promedio: 9.1, periodo: 'trimestral' },
+])
+
+/** A week with a thinner weekend and three people nobody scheduled. */
+export function demoWeekSchedule(todayIso: string): WeekScheduleSummary {
+  const monday = new Date(`${todayIso}T00:00:00Z`)
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7))
+  const staffed = [41, 43, 40, 42, 44, 28, 12]
+  const labels = ['LU', 'MA', 'MI', 'JU', 'VI', 'SÁ', 'DO']
+  const names = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
+
+  return {
+    days: staffed.map((working, index) => {
+      const date = new Date(monday)
+      date.setUTCDate(monday.getUTCDate() + index)
+      const iso = date.toISOString().slice(0, 10)
+      return {
+        date: iso,
+        label: labels[index],
+        name: names[index],
+        working,
+        off: 45 - working,
+        isToday: iso === todayIso,
+      }
+    }),
+    rosterSize: 48,
+    unassigned: 3,
+    unassignedNames: ['Bryan Cordero Solano', 'Melissa Zúñiga Rojas', 'Sofía Madrigal Ureña'],
+  }
+}
 
 /** Mid-shift: in, break taken, out to lunch. */
 export const DEMO_MY_DAY = describeMyDay({

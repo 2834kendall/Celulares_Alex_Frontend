@@ -11,6 +11,7 @@ const ALL = [
   PERMISOS.NOMINA_WRITE,
   PERMISOS.AUSENCIAS_READ,
   PERMISOS.EVALUACIONES_READ,
+  PERMISOS.HORARIOS_READ,
 ]
 
 const ids = (panels: { id: string }[]) => panels.map((panel) => panel.id)
@@ -29,6 +30,9 @@ describe('resolvePanels', () => {
       'new-hires',
       'settlements',
       'my-marks',
+      'my-absences',
+      'my-evaluations',
+      'team-schedule',
       'absences',
       'evaluations',
       'contracts',
@@ -59,7 +63,7 @@ describe('resolvePanels', () => {
     const panels = resolvePanels({ order: ['payroll', 'attendance'], hidden: [], sizes: {} }, ALL)
 
     expect(ids(panels).slice(0, 2)).toEqual(['payroll', 'attendance'])
-    expect(ids(panels)).toHaveLength(14)
+    expect(ids(panels)).toHaveLength(17)
   })
 
   it('drops from a stored order what the role lost, and ignores duplicates', () => {

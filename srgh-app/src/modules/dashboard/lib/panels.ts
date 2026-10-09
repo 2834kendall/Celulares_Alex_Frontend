@@ -23,6 +23,9 @@ export const PANEL_IDS = [
   'new-hires',
   'settlements',
   'my-marks',
+  'my-absences',
+  'my-evaluations',
+  'team-schedule',
   'absences',
   'evaluations',
   'contracts',
@@ -133,6 +136,31 @@ export const PANELS: readonly PanelDefinition[] = [
     defaultSize: 3,
     // Mismo público que "Mi semana": quien tiene su propio horario.
     allowed: has(PERMISOS.MI_HORARIO_READ),
+  },
+  {
+    id: 'my-absences',
+    label: 'Mis ausencias',
+    description: 'Tus vacaciones, permisos e incapacidades, y cómo va cada solicitud.',
+    defaultSize: 3,
+    // Mismo público que "Mi semana". No pide un permiso de ausencias: la RLS
+    // ya deja a cada quien leer las de sus propios contratos.
+    allowed: has(PERMISOS.MI_HORARIO_READ),
+  },
+  {
+    id: 'my-evaluations',
+    label: 'Mis evaluaciones',
+    description: 'Tu última evaluación y cómo vienen las anteriores.',
+    defaultSize: 3,
+    // Mismo criterio que "Mis ausencias": la RLS ya deja leer las propias.
+    allowed: has(PERMISOS.MI_HORARIO_READ),
+  },
+  {
+    id: 'team-schedule',
+    label: 'Horarios de la semana',
+    description: 'Cuánta gente trabaja cada día y quién quedó sin horario.',
+    defaultSize: 3,
+    allowed: (permisos) =>
+      permisos.includes(PERMISOS.HORARIOS_READ) || permisos.includes(PERMISOS.HORARIOS_WRITE),
   },
   {
     id: 'absences',

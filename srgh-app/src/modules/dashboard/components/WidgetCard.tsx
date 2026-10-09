@@ -24,8 +24,8 @@ export function WidgetCard({
 }: {
   icon: LucideIcon
   title: string
-  /** Module this panel summarizes. */
-  href: string
+  /** Module this panel summarizes. Without one, the panel is the whole story. */
+  href?: string
   /** Position in the staggered entrance of the page (see `.dash-enter`). */
   step?: number
   className?: string
@@ -49,17 +49,19 @@ export function WidgetCard({
         <h2 className="min-w-0 truncate text-base font-extrabold tracking-tight text-slate-900">
           {title}
         </h2>
-        <Link
-          href={href}
-          aria-label={`Abrir ${title}`}
-          className="group ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition duration-200 hover:bg-brand-50 active:scale-95 pointer-coarse:min-h-10"
-        >
-          Abrir
-          <ArrowUpRight
-            className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
-            aria-hidden="true"
-          />
-        </Link>
+        {href && (
+          <Link
+            href={href}
+            aria-label={`Abrir ${title}`}
+            className="group ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition duration-200 hover:bg-brand-50 active:scale-95 pointer-coarse:min-h-10"
+          >
+            Abrir
+            <ArrowUpRight
+              className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+              aria-hidden="true"
+            />
+          </Link>
+        )}
       </header>
       <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
     </section>

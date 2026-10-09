@@ -121,6 +121,255 @@ export function summarizeAbsences(
   }
 }
 
+/* -------------------------------------------------------------- my absences */
+
+export type MyAbsenceStatus = 'pendiente' | 'aprobada' | 'rechazada'
+
+export interface MyAbsenceSource {
+  id: number
+  fechaInicio: string
+  fechaFin: string
+  tipo: string
+  esIntradia: boolean
+  /** Free text in the database (no CHECK): anything unknown is dropped. */
+  estado: string
+}
+
+export interface MyAbsence {
+  id: number
+  tipo: string
+  range: string
+  esIntradia: boolean
+  estado: MyAbsenceStatus
+  /** Approved and covering today. */
+  isNow: boolean
+  /** Days until it starts; 0 or less once it started. */
+  startsIn: number
+}
+
+export interface MyAbsencesSummary {
+  /** Requests still waiting for an answer. */
+  pending: number
+  absences: MyAbsence[]
+}
+
+const MY_ABSENCE_STATUSES: readonly string[] = ['pendiente', 'aprobada', 'rechazada']
+
+/**
+ * The reader's own absences that are still relevant: the one in force first,
+ * then what is coming (soonest first), then what already went by (latest
+ * first). A request that was turned down stays in the list — its answer is
+ * exactly what the person is waiting to see.
+ */
+export function summarizeMyAbsences(
+  absences: MyAbsenceSource[],
+  todayIso: string
+): MyAbsencesSummary {
+  const todayMs = isoToMs(todayIso)
+
+  const rows = absences.flatMap((absence) => {
+    if (!MY_ABSENCE_STATUSES.includes(absence.estado)) return []
+    const estado = absence.estado as MyAbsenceStatus
+
+    return [
+      {
+        id: absence.id,
+        tipo: absence.tipo,
+        range: rangeLabel(absence.fechaInicio, absence.fechaFin),
+        esIntradia: absence.esIntradia,
+        estado,
+        isNow:
+          estado === 'aprobada' && absence.fechaInicio <= todayIso && todayIso <= absence.fechaFin,
+        startsIn: Math.round((isoToMs(absence.fechaInicio) - todayMs) / MS_PER_DAY),
+        isPast: absence.fechaFin < todayIso,
+        end: absence.fechaFin,
+      },
+    ]
+  })
+
+  rows.sort(
+    (a, b) =>
+      Number(b.isNow) - Number(a.isNow) ||
+      Number(a.isPast) - Number(b.isPast) ||
+      (a.isPast ? b.end.localeCompare(a.end) : a.startsIn - b.startsIn) ||
+      a.id - b.id
+  )
+
+  return {
+    pending: rows.filter((row) => row.estado === 'pendiente' && !row.isPast).length,
+    absences: rows.map((row) => ({
+      id: row.id,
+      tipo: row.tipo,
+      range: row.range,
+      esIntradia: row.esIntradia,
+      estado: row.estado,
+      isNow: row.isNow,
+      startsIn: row.startsIn,
+    })),
+  }
+}
+
+/** "Hoy", "Mañana", "en 12 días"; empty once it started. */
+export function startsInLabel(startsIn: number) {
+  if (startsIn <= 0) return ''
+  if (startsIn === 1) return 'Mañana'
+  return `en ${startsIn} días`
+}
+
+/* ------------------------------------------------------------ week schedule */
+
+export interface ScheduleSource {
+  labId: number
+  /** "YYYY-MM-DD" */
+  fecha: string
+  esDiaLibre: boolean
+}
+
+export interface WeekScheduleDay {
+  date: string
+  /** "LU" */
+  label: string
+  /** "lunes" */
+  name: string
+  /** People scheduled to work that day. */
+  working: number
+  /** People whose schedule for that day is a day off. */
+  off: number
+  isToday: boolean
+}
+
+export interface WeekScheduleSummary {
+  days: WeekScheduleDay[]
+  rosterSize: number
+  /** People on the roster with nothing scheduled in the whole week. */
+  unassigned: number
+  unassignedNames: string[]
+}
+
+const WEEKDAYS = [
+  ['LU', 'lunes'],
+  ['MA', 'martes'],
+  ['MI', 'miércoles'],
+  ['JU', 'jueves'],
+  ['VI', 'viernes'],
+  ['SÁ', 'sábado'],
+  ['DO', 'domingo'],
+] as const
+
+const UNASSIGNED_NAMES = 3
+
+/**
+ * How the week is staffed. `week` is its seven dates, Monday first. A person
+ * counts once per day whatever the number of rows, and a schedule of someone
+ * no longer on the roster is ignored, like in the other panels.
+ */
+export function summarizeWeekSchedule(
+  schedules: ScheduleSource[],
+  roster: Map<number, RosterPerson>,
+  week: readonly string[],
+  todayIso: string
+): WeekScheduleSummary {
+  const working = new Map<string, Set<number>>()
+  const off = new Map<string, Set<number>>()
+  const scheduled = new Set<number>()
+
+  for (const schedule of schedules) {
+    if (!roster.has(schedule.labId)) continue
+    scheduled.add(schedule.labId)
+
+    const bucket = schedule.esDiaLibre ? off : working
+    const people = bucket.get(schedule.fecha) ?? new Set<number>()
+    people.add(schedule.labId)
+    bucket.set(schedule.fecha, people)
+  }
+
+  const missing = Array.from(roster.values())
+    .filter((person) => !scheduled.has(person.labId))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+
+  return {
+    days: week.map((date, index) => {
+      const atWork = working.get(date) ?? new Set<number>()
+      /* Someone with a shift AND a day-off row that day is working. */
+      const resting = Array.from(off.get(date) ?? []).filter((labId) => !atWork.has(labId))
+      return {
+        date,
+        label: WEEKDAYS[index % 7][0],
+        name: WEEKDAYS[index % 7][1],
+        working: atWork.size,
+        off: resting.length,
+        isToday: date === todayIso,
+      }
+    }),
+    rosterSize: roster.size,
+    unassigned: missing.length,
+    unassignedNames: missing.slice(0, UNASSIGNED_NAMES).map((person) => person.nombre),
+  }
+}
+
+/* ----------------------------------------------------------- my evaluations */
+
+export interface MyEvaluationSource {
+  id: number
+  /** "YYYY-MM-DD" */
+  fecha: string
+  promedio: number | null
+  /** Period it covers, as stored ("trimestral", "periodo_prueba"…). */
+  periodo: string
+}
+
+export interface MyEvaluation {
+  id: number
+  /** "7 oct 2026" */
+  fecha: string
+  /** "oct 26": what fits under a column. */
+  fechaCorta: string
+  promedio: number
+  /** "Trimestral" */
+  periodo: string
+}
+
+export interface MyEvaluationsSummary {
+  /** Oldest first, so they read left to right as columns. */
+  evaluations: MyEvaluation[]
+  /** Latest score minus the one before; null with fewer than two. */
+  delta: number | null
+}
+
+const MY_EVALUATIONS_SHOWN = 6
+
+function periodLabel(periodo: string) {
+  const words = periodo.replace(/_/g, ' ').trim()
+  return words ? words[0].toUpperCase() + words.slice(1) : 'Evaluación'
+}
+
+/** The reader's last evaluations that have a score, oldest first. */
+export function summarizeMyEvaluations(evaluations: MyEvaluationSource[]): MyEvaluationsSummary {
+  const scored = evaluations
+    .flatMap((evaluation) =>
+      evaluation.promedio === null ? [] : [{ ...evaluation, promedio: evaluation.promedio }]
+    )
+    .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id - b.id)
+    .slice(-MY_EVALUATIONS_SHOWN)
+
+  const latest = scored[scored.length - 1]
+  const previous = scored[scored.length - 2]
+
+  return {
+    evaluations: scored.map((evaluation) => {
+      const [year, month] = evaluation.fecha.split('-').map(Number)
+      return {
+        id: evaluation.id,
+        fecha: `${shortDate(evaluation.fecha)} ${year}`,
+        fechaCorta: `${MONTHS_SHORT[month - 1]} ${String(year).slice(2)}`,
+        promedio: evaluation.promedio,
+        periodo: periodLabel(evaluation.periodo),
+      }
+    }),
+    delta: latest && previous ? Math.round((latest.promedio - previous.promedio) * 10) / 10 : null,
+  }
+}
+
 /* -------------------------------------------------------------- evaluations */
 
 export interface EvaluationSource {
