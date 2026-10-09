@@ -13,7 +13,7 @@ import {
   SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react'
-import { NAV_ICONS, navItemClass } from '@/components/layout/NavLinks'
+import { NAV_GROUP_LABEL, NAV_ICONS, navItemClass } from '@/components/layout/NavLinks'
 import { cn } from '@/lib/utils/cn'
 import { visibleTree, type SettingsModuleId } from '@/modules/settings/lib/sections'
 import { DEFAULT_RETURN_PATH, readReturnPath } from '@/modules/settings/lib/returnPath'
@@ -91,9 +91,7 @@ export function SettingsSidebarNav({
       <nav aria-label="Configuración" className="flex flex-col gap-4">
         {tree.company.length > 0 && (
           <div className="flex flex-col gap-1">
-            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
-              Empresa
-            </p>
+            <p className={cn(NAV_GROUP_LABEL, 'pb-1')}>Empresa</p>
             {tree.company.map(({ id, href, label }) => {
               const Icon = COMPANY_ICONS[id] ?? SlidersHorizontal
               const active = isActive(href)
@@ -116,9 +114,7 @@ export function SettingsSidebarNav({
 
         {tree.modules.length > 0 && (
           <div className="flex flex-col gap-1">
-            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
-              Módulos
-            </p>
+            <p className={cn(NAV_GROUP_LABEL, 'pb-1')}>Módulos</p>
             {tree.modules.map((mod) => {
               const Icon = NAV_ICONS[mod.id] ?? LayoutDashboard
               const open = isOpen(mod.id)
