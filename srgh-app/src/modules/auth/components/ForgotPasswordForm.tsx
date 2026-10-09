@@ -2,18 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useForm, useWatch } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Check,
-  KeyRound,
-  Loader2,
-  Mail,
-  MailCheck,
-  Send,
-} from 'lucide-react'
+import { AlertTriangle, ArrowLeft, KeyRound, Loader2, Mail, MailCheck, Send } from 'lucide-react'
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@/modules/auth/types'
 import { requestPasswordReset } from '@/modules/auth/actions/requestPasswordReset'
 import {
@@ -35,10 +26,6 @@ import { FIELD_ERROR, INPUT } from '@/components/ui/styles'
 /* How long the envelope stays upset after a failed attempt. */
 const ERROR_MOOD_MS = 1600
 
-/* Only decides whether to show the "looks good" check: the real validation is
-   forgotPasswordSchema, on submit. */
-const EMAIL_SHAPE = /^\S+@\S+\.\S+$/
-
 /**
  * Entrada de la recuperación: se pide el correo y se dispara el enlace.
  *
@@ -58,7 +45,6 @@ export function ForgotPasswordForm() {
   const {
     register,
     handleSubmit,
-    control,
     formState: { errors, isSubmitting },
   } = useForm<ForgotPasswordInput>({
     resolver: zodResolver(forgotPasswordSchema),
@@ -66,8 +52,6 @@ export function ForgotPasswordForm() {
   })
 
   const emailField = register('email')
-  const emailValue = useWatch({ control, name: 'email' })
-  const emailLooksValid = !errors.email && EMAIL_SHAPE.test(emailValue.trim())
 
   useEffect(() => {
     if (!errorPulse) return
@@ -182,14 +166,6 @@ export function ForgotPasswordForm() {
                   className={cn(INPUT, AUTH_INPUT)}
                   placeholder="correo@sucursal.com"
                 />
-                {emailLooksValid && (
-                  <span
-                    aria-hidden="true"
-                    className="login-pop-in pointer-events-none absolute top-1/2 right-3.5 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-emerald-500 text-white"
-                  >
-                    <Check className="h-3 w-3" strokeWidth={3.5} />
-                  </span>
-                )}
               </div>
               {errors.email && <p className={FIELD_ERROR}>{errors.email.message}</p>}
             </div>

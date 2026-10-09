@@ -60,7 +60,7 @@ export const AUTH_FIELD_LABEL =
   'block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1.5 auth-short:mb-1'
 
 export const AUTH_FIELD_ICON =
-  'absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none transition-all duration-200 group-focus-within:text-brand-600 group-focus-within:scale-110'
+  'absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none transition-all duration-200 group-hover:text-brand-500 group-focus-within:text-brand-600 group-focus-within:scale-110'
 
 /* Appended to INPUT. `text-base` on phones is deliberate: below 16px iOS
    zooms the page when the field takes focus. */

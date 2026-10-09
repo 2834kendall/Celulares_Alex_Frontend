@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useForm, useWatch } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   AlertTriangle,
@@ -39,9 +39,15 @@ import { FIELD_ERROR, INPUT } from '@/components/ui/styles'
    reacting to whatever field is focused. */
 const ERROR_MOOD_MS = 1600
 
-/* Only decides whether to show the "looks good" check: the real validation is
-   loginSchema, on submit. */
-const EMAIL_SHAPE = /^\S+@\S+\.\S+$/
+/* The card flinches when an attempt is rejected: a short, damped shake. */
+const REJECT_KEYFRAMES = [
+  { transform: 'translateX(0)' },
+  { transform: 'translateX(-9px)' },
+  { transform: 'translateX(7px)' },
+  { transform: 'translateX(-5px)' },
+  { transform: 'translateX(3px)' },
+  { transform: 'translateX(0)' },
+]
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -62,6 +68,7 @@ export function LoginForm() {
   const [typing, signalTyping] = useTypingSignal()
   const [capsLock, setCapsLock] = useState(false)
   const [granted, setGranted] = useState(false)
+  const formRef = useRef<HTMLFormElement>(null)
 
   /* The hour is the visitor's, not the server's: read on the client only, so
      the server-rendered HTML and the first client render agree. */
@@ -70,7 +77,6 @@ export function LoginForm() {
   const {
     register,
     handleSubmit,
-    control,
     formState: { errors, isSubmitting },
   } = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -79,14 +85,24 @@ export function LoginForm() {
 
   const emailField = register('email')
   const passwordField = register('password')
-  const emailValue = useWatch({ control, name: 'email' })
-  const emailLooksValid = !errors.email && EMAIL_SHAPE.test(emailValue.trim())
 
   useEffect(() => {
     if (!errorPulse) return
+
+    /* On the card, from here: it is the shell's element, and its entrance is
+       a CSS animation that a second one declared in CSS would restart. */
+    const card = formRef.current?.closest<HTMLElement>('.login-card')
+    const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (card && typeof card.animate === 'function' && !calm) {
+      card.animate(REJECT_KEYFRAMES, { duration: 420, easing: 'cubic-bezier(0.3, 0.6, 0.4, 1)' })
+    }
+
     const timeout = setTimeout(() => setErrorPulse(false), ERROR_MOOD_MS)
     return () => clearTimeout(timeout)
   }, [errorPulse])
+
+  /* The server turned the attempt down: both fields say so for a moment. */
+  const rejected = errorPulse && serverError !== null
 
   /* While the password is hidden they do not look; once it is shown there is
      nothing left to hide, so they lean in to read it. That holds without
@@ -148,9 +164,11 @@ export function LoginForm() {
       {serverError && (
         <div
           role="alert"
-          className="login-alert bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 rounded-xl flex gap-2.5 items-start"
+          className="login-alert flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800"
         >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+          <span className="login-alert-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+            <AlertTriangle className="h-3.5 w-3.5" />
+          </span>
           <div>{serverError}</div>
         </div>
       )}
@@ -158,6 +176,7 @@ export function LoginForm() {
       {/* method="post": si el form se envia antes de que React hidrate,
           las credenciales van en el body y nunca en la URL */}
       <form
+        ref={formRef}
         onSubmit={handleSubmit(onSubmit, () => setErrorPulse(true))}
         method="post"
         className="space-y-4 auth-wide:space-y-5 auth-short:space-y-3"
@@ -174,6 +193,7 @@ export function LoginForm() {
               id="email-input"
               autoComplete="email"
               disabled={isSubmitting}
+              data-rejected={rejected}
               aria-invalid={!!errors.email}
               {...emailField}
               onChange={(event) => {
@@ -188,14 +208,6 @@ export function LoginForm() {
               className={cn(INPUT, AUTH_INPUT)}
               placeholder="correo@sucursal.com"
             />
-            {emailLooksValid && (
-              <span
-                aria-hidden="true"
-                className="login-pop-in pointer-events-none absolute top-1/2 right-3.5 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-emerald-500 text-white"
-              >
-                <Check className="h-3 w-3" strokeWidth={3.5} />
-              </span>
-            )}
           </div>
           {errors.email && <p className={FIELD_ERROR}>{errors.email.message}</p>}
         </div>
@@ -211,6 +223,7 @@ export function LoginForm() {
               id="pass-input"
               autoComplete="current-password"
               disabled={isSubmitting}
+              data-rejected={rejected}
               aria-invalid={!!errors.password}
               {...passwordField}
               onChange={(event) => {
@@ -231,9 +244,14 @@ export function LoginForm() {
               onClick={() => setShowPassword((visible) => !visible)}
               disabled={isSubmitting}
               aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
-              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 transition hover:text-brand-600 active:scale-90 disabled:cursor-not-allowed"
+              className="group/eye absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 transition-colors duration-200 hover:text-brand-600 disabled:cursor-not-allowed"
             >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <span
+                key={String(showPassword)}
+                className="login-pop-in flex h-8 w-8 items-center justify-center rounded-lg transition duration-200 group-hover/eye:bg-brand-50 group-active/eye:scale-85"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </span>
             </button>
           </div>
           {errors.password && <p className={FIELD_ERROR}>{errors.password.message}</p>}
@@ -247,7 +265,7 @@ export function LoginForm() {
             )}
             <Link
               href="/forgot-password"
-              className="text-xs font-semibold text-brand-700 transition hover:text-brand-800 hover:underline"
+              className="auth-link text-xs font-semibold text-brand-700 transition-colors duration-200 hover:text-brand-800"
             >
               ¿Olvidó su contraseña?
             </Link>
@@ -273,7 +291,7 @@ export function LoginForm() {
             ) : (
               <>
                 Iniciar sesion
-                <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                <ArrowRight className="auth-submit-arrow h-4 w-4" />
               </>
             )}
           </button>
