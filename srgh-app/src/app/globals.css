@@ -470,6 +470,102 @@ h3 {
   .nav-item[data-icon='settings']:hover .nav-icon {
     rotate: 120deg;
   }
+
+  /*
+   * Menu de Configuracion (SettingsSidebarNav). Sus modulos reusan los
+   * gestos de arriba (misma clave de zona); estos son los de lo que solo
+   * existe ahi.
+   */
+
+  /* Volver: la flecha toma impulso hacia donde lleva. */
+  @keyframes nav-back {
+    40% {
+      transform: translateX(-4px);
+    }
+    70% {
+      transform: translateX(1px);
+    }
+  }
+
+  .nav-item[data-icon='back']:hover .nav-icon > * {
+    animation: nav-back 0.5s ease-in-out;
+  }
+
+  /* Buscar: la lupa da un barrido corto. */
+  @keyframes nav-seek {
+    35% {
+      transform: translate(-2px, -2px);
+    }
+    70% {
+      transform: translate(2px, 1px);
+    }
+  }
+
+  .nav-item[data-icon='search']:hover .nav-icon > * {
+    animation: nav-seek 0.6s ease-in-out;
+  }
+
+  /* Datos de la empresa: se encienden las ventanas y se abre la puerta. */
+  .nav-item[data-icon='settings-profile']:hover .nav-icon > :nth-child(1),
+  .nav-item[data-icon='settings-profile']:hover .nav-icon > :nth-child(2) {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: nav-tile 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) backwards;
+  }
+
+  .nav-item[data-icon='settings-profile']:hover .nav-icon > :nth-child(1) {
+    animation-delay: 0.12s;
+  }
+
+  .nav-item[data-icon='settings-profile']:hover .nav-icon > :nth-child(3) {
+    animation: nav-nod 0.45s ease-in-out 0.2s;
+  }
+
+  /* General: las tres perillas se deslizan sobre sus rieles y vuelven. */
+  @keyframes nav-knob {
+    50% {
+      transform: translateX(var(--knob, 3px));
+    }
+  }
+
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(3),
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(4),
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(8) {
+    animation: nav-knob 0.6s cubic-bezier(0.4, 0, 0.3, 1);
+  }
+
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(3) {
+    --knob: -4px;
+  }
+
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(4) {
+    --knob: -5px;
+    animation-delay: 0.08s;
+  }
+
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(8) {
+    --knob: 5px;
+    animation-delay: 0.16s;
+  }
+
+  /* Apariencia: las gotas de pintura aparecen una tras otra. */
+  .nav-item[data-icon='settings-appearance']:hover .nav-icon > circle {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: nav-tile 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) backwards;
+  }
+
+  .nav-item[data-icon='settings-appearance']:hover .nav-icon > :nth-child(3) {
+    animation-delay: 0.07s;
+  }
+
+  .nav-item[data-icon='settings-appearance']:hover .nav-icon > :nth-child(4) {
+    animation-delay: 0.14s;
+  }
+
+  .nav-item[data-icon='settings-appearance']:hover .nav-icon > :nth-child(5) {
+    animation-delay: 0.21s;
+  }
 }
 
 /* ===== Pantalla de login ===== */
@@ -716,6 +812,49 @@ h3 {
 .mail-scene[data-mood='sent'] .mail-done-check {
   stroke-dashoffset: 0;
   transition: stroke-dashoffset 0.4s ease-out 1.95s;
+}
+
+/* Piso de la escena del login: se recoge hacia su centro al salir. */
+.login-ground {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Credenciales rechazadas: los dos campos lo marcan un momento. El INPUT
+   compartido ya trae la transicion. */
+.login-screen input[data-rejected='true'] {
+  border-color: #fb7185;
+  box-shadow: 0 0 0 4px rgb(251 113 133 / 0.18);
+}
+
+.login-screen input:hover:not(:focus, :disabled, [data-rejected='true'], [aria-invalid='true']) {
+  border-color: var(--color-brand-300);
+}
+
+/* Enlace de texto: el subrayado se dibuja desde la izquierda y se retira
+   hacia la derecha. */
+.auth-link {
+  position: relative;
+}
+
+.auth-link::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  left: 0;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.25s cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+
+.auth-link:hover::after,
+.auth-link:focus-visible::after {
+  transform: scaleX(1);
+  transform-origin: left;
 }
 
 /* Insignia que encabeza la tarjeta (llave / correo enviado). */
@@ -1143,8 +1282,9 @@ h3 {
    * keyframe con peso: se agachan para tomar impulso, se estiran al subir,
    * cuelgan un instante arriba, aterrizan aplastandose, rebotan y recien
    * ahi se hunden. El 130% final es del alto de la figura entera (incluida
-   * la parte enterrada), asi que quedan del todo bajo la linea. Lo que sigue
-   * (la ola que cubre la pantalla) es de playLoginSuccess.
+   * la parte enterrada), asi que quedan del todo bajo la linea. Detras de
+   * ellas se va la linea del piso, y lo que sigue (las dos mitades de la
+   * pantalla abriendose) es de playLoginSuccess.
    */
   @keyframes login-cheer {
     0% {
@@ -1179,6 +1319,19 @@ h3 {
   .login-scene[data-mood='success'] .login-pop {
     animation: login-cheer 1s linear forwards;
     animation-delay: calc(var(--char-delay, 0s) * 0.5);
+  }
+
+  /* El piso se recoge hacia el centro cuando la ultima ya se hundio: una
+     linea sola, sin nadie parado encima, quedaba colgada en el panel. */
+  @keyframes login-ground-out {
+    to {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+  }
+
+  .login-scene[data-mood='success'] .login-ground {
+    animation: login-ground-out 0.36s cubic-bezier(0.6, 0, 0.8, 0.4) 0.8s forwards;
   }
 
   /* Error: niegan de lado a lado. */
@@ -1258,20 +1411,16 @@ h3 {
     animation: login-card 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
   }
 
+  /* Aviso de error: cae en su lugar con un rebote corto. El sacudon lo da
+     la tarjeta entera (ver LoginForm), no el aviso. */
   @keyframes login-alert {
     0% {
       opacity: 0;
-      transform: translateY(-6px);
-    }
-    40% {
-      opacity: 1;
-      transform: translateX(-5px);
+      transform: translateY(-10px) scale(0.96);
     }
     60% {
-      transform: translateX(4px);
-    }
-    80% {
-      transform: translateX(-2px);
+      opacity: 1;
+      transform: translateY(2px) scale(1.01);
     }
     100% {
       transform: none;
@@ -1279,7 +1428,43 @@ h3 {
   }
 
   .login-alert {
-    animation: login-alert 0.4s ease-out;
+    animation: login-alert 0.42s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+
+  @keyframes login-alert-icon {
+    0%,
+    100% {
+      transform: none;
+    }
+    20% {
+      transform: rotate(-16deg) scale(1.18);
+    }
+    45% {
+      transform: rotate(12deg) scale(1.1);
+    }
+    70% {
+      transform: rotate(-6deg);
+    }
+  }
+
+  .login-alert-icon {
+    animation: login-alert-icon 0.6s ease-in-out 0.18s;
+  }
+
+  /* Boton principal: la flecha avanza y vuelve mientras el puntero esta
+     encima, invitando a seguir. */
+  @keyframes auth-arrow {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    50% {
+      transform: translateX(5px);
+    }
+  }
+
+  :hover > .auth-submit-arrow {
+    animation: auth-arrow 0.9s ease-in-out infinite;
   }
 
   /* Aparicion de detalles pequenos (check de correo valido, avisos). */
@@ -1362,8 +1547,6 @@ h3 {
   grid-template-rows: 1fr;
 }
 
-/* Acceso rapido: un resplandor que sigue al puntero (`--mx`/`--my` los
-   escribe QuickLinks sobre la propia tarjeta). */
 /* --- Pastel (ver BirthdayCake) --- */
 
 .dash-candle,
@@ -1463,7 +1646,6 @@ h3 {
     }
   }
 
-  .dash-icon-tilt:hover svg,
   .dash-stat:hover svg {
     animation: dash-wiggle 0.5s ease-in-out;
   }
@@ -1822,8 +2004,6 @@ h3 {
 
 /* --- Paneles: respuesta al puntero (WidgetCard y lo que llevan adentro) --- */
 
-/* Mismo resplandor que los accesos rapidos, para cualquier tarjeta que
-   escriba `--mx`/`--my` sobre si misma. */
 /*
  * Resplandor que sigue al puntero sobre una tarjeta (ver Glow.tsx). Es un
  * circulo con el degradado ya pintado, que solo se MUEVE con `transform`:
@@ -1842,11 +2022,14 @@ h3 {
   opacity: 0;
   transition: opacity 0.3s ease-out;
   pointer-events: none;
-  will-change: transform;
 }
 
+/* Capa propia solo mientras el puntero esta encima. Declarada siempre, cada
+   tarjeta mantenia una capa de 28rem y obligaba a promover a capa todo lo
+   que se pinta sobre ella: decenas de capas con el tablero quieto. */
 .dash-glow:hover > .dash-glow-spot {
   opacity: 1;
+  will-change: transform;
 }
 
 .dash-widget {
@@ -1861,9 +2044,18 @@ h3 {
   box-shadow: 0 14px 30px -18px rgb(15 23 42 / 0.3);
 }
 
-.dash-widget:hover .dash-widget-icon {
+/* El panel de cumpleaños arma su propia tarjeta (se amplia, no es un
+   WidgetCard), pero su icono responde igual que el de los demas. */
+.dash-widget:hover .dash-widget-icon,
+.dash-birthdays:hover .dash-widget-icon {
   background-color: var(--color-brand-600);
   color: #fff;
+}
+
+/* Medidor circular (ver MyEvaluationsWidget): al señalar otra evaluacion el
+   arco se desliza hasta su valor. */
+.dash-gauge {
+  transition: stroke-dashoffset 0.45s cubic-bezier(0.3, 0.8, 0.3, 1);
 }
 
 /* Cifra dentro de un panel: se destaca al pasarle por encima. */
@@ -1929,8 +2121,38 @@ h3 {
   }
 
   .dash-widget:hover .dash-widget-icon svg,
+  .dash-birthdays:hover .dash-widget-icon svg,
   .dash-widget:hover .dash-badge {
     animation: dash-wiggle 0.5s ease-in-out;
+  }
+
+  /* Columnas de un grafico: crecen desde su base, una tras otra. */
+  @keyframes dash-column {
+    from {
+      transform: scaleY(0);
+    }
+  }
+
+  .dash-column {
+    transform-origin: center bottom;
+    animation: dash-column 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 70ms + 250ms);
+  }
+
+  /* El medidor se llena desde vacio al aparecer. */
+  @keyframes dash-gauge {
+    from {
+      stroke-dashoffset: 100;
+    }
+  }
+
+  .dash-gauge {
+    animation: dash-gauge 0.9s cubic-bezier(0.3, 0.8, 0.4, 1) 0.25s backwards;
+  }
+
+  /* Calendario: sus dias saltan en fila mientras el puntero esta encima. */
+  .dash-widget:hover .dash-spot-day {
+    animation: dash-bob 0.9s ease-in-out infinite;
   }
 
   .dash-figure:hover .dash-figure-value {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WeeklyScheduleMatrix } from './WeeklyScheduleMatrix'
 import { assignDaySchedule } from '@/modules/schedules/actions/assignDaySchedule'
@@ -96,6 +96,13 @@ function makeRow(overrides: Partial<EmployeeWeekRow> = {}): EmployeeWeekRow {
     weeklyTotal: 0,
     ...overrides,
   }
+}
+
+/** Abre uno de los menus de la celda y elige la opcion con ese texto. */
+async function chooseFrom(trigger: HTMLElement, label: string) {
+  await userEvent.click(trigger)
+  const option = await screen.findByRole('option', { name: label })
+  await userEvent.click(within(option).getByRole('button'))
 }
 
 function renderMatrix(
@@ -282,7 +289,7 @@ describe('<WeeklyScheduleMatrix />', () => {
       false
     )
 
-    expect(screen.queryAllByRole('combobox', { name: /Asignar horario/ })).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /Asignar horario/ })).toHaveLength(0)
     expect(screen.getAllByText('Turno A').length).toBeGreaterThan(0)
   })
 
@@ -291,7 +298,7 @@ describe('<WeeklyScheduleMatrix />', () => {
     renderMatrix([makeRow()])
 
     const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
-    await userEvent.selectOptions(select, '1')
+    await chooseFrom(select, 'Turno A')
 
     await waitFor(() =>
       expect(mockAssignDaySchedule).toHaveBeenCalledWith(
@@ -323,7 +330,7 @@ describe('<WeeklyScheduleMatrix />', () => {
     ])
 
     const [branchSelect] = screen.getAllByLabelText('Sucursal de Ana Perez el Lunes')
-    await userEvent.selectOptions(branchSelect, '200')
+    await chooseFrom(branchSelect, 'Sucursal Norte')
 
     await waitFor(() =>
       expect(mockAssignDaySchedule).toHaveBeenCalledWith(
@@ -342,7 +349,7 @@ describe('<WeeklyScheduleMatrix />', () => {
     renderMatrix([makeRow()])
 
     const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
-    await userEvent.selectOptions(select, '__free__')
+    await chooseFrom(select, 'Descanso')
 
     await waitFor(() =>
       expect(mockAssignDaySchedule).toHaveBeenCalledWith(
@@ -355,7 +362,7 @@ describe('<WeeklyScheduleMatrix />', () => {
     renderMatrix([makeRow()])
 
     const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
-    await userEvent.selectOptions(select, '__custom__')
+    await chooseFrom(select, 'Personalizado')
 
     expect(mockAssignDaySchedule).not.toHaveBeenCalled()
     expect(await screen.findByText('Horario personalizado')).toBeInTheDocument()
@@ -366,7 +373,7 @@ describe('<WeeklyScheduleMatrix />', () => {
     renderMatrix([makeRow()])
 
     const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
-    await userEvent.selectOptions(select, '__custom__')
+    await chooseFrom(select, 'Personalizado')
 
     await userEvent.click(await screen.findByRole('button', { name: 'Guardar' }))
 
@@ -386,7 +393,7 @@ describe('<WeeklyScheduleMatrix />', () => {
     renderMatrix([makeRow()])
 
     const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
-    await userEvent.selectOptions(select, '__free__')
+    await chooseFrom(select, 'Descanso')
 
     expect(await screen.findByText('No se pudo guardar.')).toBeInTheDocument()
   })

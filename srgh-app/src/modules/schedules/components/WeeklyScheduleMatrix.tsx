@@ -51,6 +51,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { formatHoursValue } from '@/modules/schedules/lib/hours'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchSelect } from '@/components/ui/SearchSelect'
+import { SelectMenu, type SelectMenuOption } from '@/components/ui/SelectMenu'
 import { META_LABEL } from '@/components/ui/styles'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
 import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
@@ -238,20 +239,26 @@ function timeRange(
   return rango(start, end)
 }
 
-function AssignmentOptions({ scheduleOptions }: { scheduleOptions: ScheduleRow[] }) {
-  return (
-    <>
-      <option value="">Asignar horario</option>
-      <option value="__free__">Descanso</option>
-      <option value="__custom__">Personalizado</option>
-      {scheduleOptions.map((schedule) => (
-        <option key={schedule.hor_id} value={schedule.hor_id}>
-          {schedule.hor_nombre}
-        </option>
-      ))}
-    </>
-  )
+function assignmentOptions(scheduleOptions: ScheduleRow[]): SelectMenuOption[] {
+  return [
+    { value: '', label: 'Asignar horario' },
+    { value: '__free__', label: 'Descanso' },
+    { value: '__custom__', label: 'Personalizado' },
+    ...scheduleOptions.map((schedule) => ({
+      value: String(schedule.hor_id),
+      label: schedule.hor_nombre,
+    })),
+  ]
 }
+
+/*
+ * Los dos selectores de la celda (horario y sucursal) son un SelectMenu
+ * invisible que la cubre: el clic en cualquier punto abre la lista, y la
+ * lista es la de la aplicacion. Antes eran <select> nativos transparentes,
+ * cuya lista la dibuja el sistema operativo y no acepta estilos.
+ */
+const CELL_MENU = '!absolute inset-0'
+const CELL_TRIGGER = 'block h-full w-full opacity-0 outline-none'
 
 interface ScheduleCellProps {
   row: EmployeeWeekRowWithAusencia
@@ -269,7 +276,7 @@ interface ScheduleCellProps {
   onBranchChange: (branchId: number) => void
 }
 
-// Franja al pie de la celda para ver/cambiar la sucursal de ese dia (select transparente superpuesto).
+// Franja al pie de la celda para ver/cambiar la sucursal de ese dia (menu transparente superpuesto).
 function BranchBar({
   assignment,
   employeeName,
@@ -304,26 +311,25 @@ function BranchBar({
       <span className="min-w-0 truncate text-[9.5px] font-semibold leading-none text-slate-600">
         {assignment.branchName ?? 'Sin sucursal'}
       </span>
-      <select
-        className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 outline-none disabled:cursor-not-allowed"
-        value={assignment.branchId}
+      <SelectMenu
+        size="sm"
+        className={CELL_MENU}
+        triggerClassName={`${CELL_TRIGGER} cursor-pointer disabled:cursor-not-allowed`}
+        options={sucursales.map((sucursal) => ({
+          value: String(sucursal.id),
+          label: sucursal.nombre,
+        }))}
+        value={String(assignment.branchId)}
         disabled={isSaving}
-        onClick={(event) => event.stopPropagation()}
-        onChange={(event) => onBranchChange(Number(event.target.value))}
-        aria-label={`Sucursal de ${employeeName} el ${dayLabel}`}
-      >
-        {sucursales.map((sucursal) => (
-          <option key={sucursal.id} value={sucursal.id}>
-            {sucursal.nombre}
-          </option>
-        ))}
-      </select>
+        onChange={(value) => onBranchChange(Number(value))}
+        ariaLabel={`Sucursal de ${employeeName} el ${dayLabel}`}
+      />
     </div>
   )
 }
 
 /**
- * Celda de la matriz. El select nativo se superpone transparente sobre toda la
+ * Celda de la matriz. El selector se superpone transparente sobre toda la
  * celda para que un clic en cualquier punto abra la lista de horarios sin
  * perder el teclado ni el nombre accesible del control.
  */
@@ -419,7 +425,7 @@ function ScheduleCell({
   ) : (
     <div className="flex flex-1 items-center justify-center gap-1 rounded-lg">
       {canWrite ? (
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700 text-white opacity-0 shadow-md transition group-hover/cell:opacity-100 peer-focus-visible:opacity-100">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700 text-white opacity-0 shadow-md transition group-hover/cell:opacity-100 group-has-[button:focus-visible]/cell:opacity-100">
           <Plus className="h-3.5 w-3.5" />
         </span>
       ) : (
@@ -435,17 +441,16 @@ function ScheduleCell({
       className="group/cell relative flex h-full min-h-[58px] flex-col"
     >
       {canWrite && (
-        <select
-          className={`peer absolute inset-0 z-0 h-full w-full appearance-none bg-transparent opacity-0 outline-none ${
-            isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'
-          }`}
+        <SelectMenu
+          size="sm"
+          className={`${CELL_MENU} z-0`}
+          triggerClassName={`${CELL_TRIGGER} ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+          options={assignmentOptions(scheduleOptions)}
           value={currentValue}
           disabled={isDisabled}
-          onChange={(event) => onChange(event.target.value)}
-          aria-label={`Asignar horario para ${row.fullName} el ${WEEKDAY_NAMES[dayIndex]}`}
-        >
-          <AssignmentOptions scheduleOptions={scheduleOptions} />
-        </select>
+          onChange={onChange}
+          ariaLabel={`Asignar horario para ${row.fullName} el ${WEEKDAY_NAMES[dayIndex]}`}
+        />
       )}
       <div className="pointer-events-none relative z-10 flex flex-1 flex-col">{content}</div>
     </div>

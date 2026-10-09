@@ -39,7 +39,9 @@ interface SettingsSidebarNavProps {
 /**
  * Menú del "modo configuración" (SGRH-92): reemplaza al menú principal
  * mientras la ruta es /settings…. Usa la misma fila e íconos que NavLinks
- * para que los módulos se reconozcan como los mismos del menú principal.
+ * para que los módulos se reconozcan como los mismos del menú principal, y
+ * sus mismos ganchos (`nav-icon`, `data-icon`) para que los íconos
+ * respondan al puntero igual que allá (ver "Dock" en globals.css).
  *
  * Es UX, no seguridad: cada subpágina valida su ajuste y cada acción su
  * permiso.
@@ -68,17 +70,18 @@ export function SettingsSidebarNav({
 
   return (
     <div className="flex flex-col gap-3">
-      <Link href={returnPath} onClick={onNavigate} className={navItemClass(false)}>
-        <ArrowLeft className="h-4 w-4 shrink-0" />
+      <Link href={returnPath} onClick={onNavigate} data-icon="back" className={navItemClass(false)}>
+        <ArrowLeft className="nav-icon h-4 w-4 shrink-0" aria-hidden="true" />
         Volver al menú principal
       </Link>
 
       <button
         type="button"
         onClick={onOpenSearch}
-        className="flex items-center gap-2 rounded-lg border border-[var(--sidebar-border)] bg-white/70 px-3 py-2 text-left text-sm text-[var(--sidebar-text)] transition hover:bg-white pointer-coarse:min-h-11"
+        data-icon="search"
+        className="nav-item flex items-center gap-2 rounded-lg border border-[var(--sidebar-border)] bg-white/70 px-3 py-2 text-left text-sm text-[var(--sidebar-text)] transition hover:bg-white pointer-coarse:min-h-11"
       >
-        <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <Search className="nav-icon h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="flex-1">Buscar ajuste…</span>
         <kbd className="hidden rounded border border-[var(--sidebar-border)] px-1.5 text-[10px] font-semibold md:inline">
           Ctrl K
@@ -100,9 +103,10 @@ export function SettingsSidebarNav({
                   href={href}
                   onClick={onNavigate}
                   aria-current={active ? 'page' : undefined}
+                  data-icon={`settings-${id}`}
                   className={navItemClass(active)}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
+                  <Icon className="nav-icon h-4 w-4 shrink-0" aria-hidden="true" />
                   {label}
                 </Link>
               )
@@ -126,12 +130,13 @@ export function SettingsSidebarNav({
                     aria-expanded={open}
                     aria-controls={listId}
                     onClick={() => setToggled((current) => ({ ...current, [mod.id]: !open }))}
+                    data-icon={mod.id}
                     className={cn(
                       navItemClass(false, { emphasis: mod.id === activeModule }),
                       'w-full text-left'
                     )}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <Icon className="nav-icon h-4 w-4 shrink-0" aria-hidden="true" />
                     <span className="flex-1">{mod.label}</span>
                     <ChevronRight
                       className={cn('h-4 w-4 shrink-0 transition-transform', open && 'rotate-90')}
