@@ -2,7 +2,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getConceptos } from '@/modules/payroll/actions/getConceptos'
 import { ConceptosList } from '@/modules/payroll/components/ConceptosList'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 
 /**
@@ -16,7 +16,11 @@ export default async function PayrollConceptsPage() {
   const conceptosResult = await getConceptos()
 
   if (!conceptosResult.ok) {
-    return <Alert size="md">{conceptosResult.error}</Alert>
+    return (
+      <PageError title="Conceptos de nómina" backHref="/payroll" backLabel="Volver a nómina">
+        {conceptosResult.error}
+      </PageError>
+    )
   }
 
   return (
@@ -25,7 +29,7 @@ export default async function PayrollConceptsPage() {
         backHref="/payroll"
         backLabel="Volver a nómina"
         title="Conceptos de nómina"
-        description="Crea, edita o elimina los conceptos usados al procesar la planilla."
+        description="Conceptos que se aplican al procesar la planilla."
       />
 
       <ConceptosList conceptos={conceptosResult.data} canWrite />

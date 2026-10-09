@@ -37,12 +37,11 @@ export function MyScheduleView({
   return (
     <div className={`${CARD} p-5`}>
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-bold text-slate-900">Mi Horario</h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            {formatDateLabel(weekDates[0])} — {formatDateLabel(weekDates[6])}
-          </p>
-        </div>
+        {/* El titulo "Mi horario" ya lo pone el encabezado de la pagina: la
+            tarjeta se titula con la semana que muestra. */}
+        <h2 className="text-sm font-bold text-slate-900">
+          {formatDateLabel(weekDates[0])} — {formatDateLabel(weekDates[6])}
+        </h2>
         <div className="flex items-center gap-1.5">
           <Link
             href={`?week=${prevWeek}`}

@@ -6,7 +6,7 @@ import { getEtapasSeleccion } from '@/modules/recruitment/actions/getEtapasSelec
 import { getSelectionCriteria } from '@/modules/recruitment/actions/getSelectionCriteria'
 import { getPuestos, getSucursales } from '@/modules/employees/actions/getCatalogs'
 import { CandidateDetail } from '@/modules/recruitment/components/CandidateDetail'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 
 interface CandidateDetailPageProps {
   params: Promise<{ id: string }>
@@ -33,18 +33,26 @@ export default async function CandidateDetailPage({ params }: CandidateDetailPag
       getSucursales(),
     ])
 
+  // Sin datos no hay nombre que mostrar: el error lleva un titulo generico y
+  // la flecha de volver, para no dejar la pantalla sin salida.
+  const errorView = (message: string) => (
+    <PageError title="Ficha del candidato" backHref="/recruitment" backLabel="Volver al tablero">
+      {message}
+    </PageError>
+  )
+
   if (!detailResult.ok) {
     if (detailResult.notFound) notFound()
-    return <Alert size="md">{detailResult.error}</Alert>
+    return errorView(detailResult.error)
   }
   if (!etapasResult.ok) {
-    return <Alert size="md">{etapasResult.error}</Alert>
+    return errorView(etapasResult.error)
   }
   if (!criteriosResult.ok) {
-    return <Alert size="md">{criteriosResult.error}</Alert>
+    return errorView(criteriosResult.error)
   }
   if (!puestosResult.ok || !sucursalesResult.ok) {
-    return <Alert size="md">No se pudieron cargar los catálogos.</Alert>
+    return errorView('No se pudieron cargar los catálogos.')
   }
 
   return (

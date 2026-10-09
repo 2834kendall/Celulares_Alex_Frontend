@@ -18,6 +18,7 @@ import {
   type EmployeeWizardPrefill,
 } from '@/modules/employees/components/EmployeeWizard'
 import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 
 interface HireCandidatePageProps {
@@ -43,8 +44,21 @@ export default async function HireCandidatePage({ params, searchParams }: HireCa
   if (!Number.isInteger(candidatoId) || candidatoId <= 0) {
     notFound()
   }
+
+  // Sin datos no hay nombre que mostrar: el error lleva un titulo generico y
+  // la flecha de volver, para no dejar la pantalla sin salida.
+  const errorView = (message: string) => (
+    <PageError
+      title="Contratar candidato"
+      backHref={`/recruitment/candidates/${candidatoId}`}
+      backLabel="Volver a la ficha del candidato"
+    >
+      {message}
+    </PageError>
+  )
+
   if (!Number.isInteger(postulacionId) || postulacionId <= 0) {
-    return <Alert size="md">Falta indicar la postulación que se está contratando.</Alert>
+    return errorView('Falta indicar la postulación que se está contratando.')
   }
 
   await requirePermission(PERMISOS.EMPLEADOS_WRITE)
@@ -79,15 +93,15 @@ export default async function HireCandidatePage({ params, searchParams }: HireCa
 
   if (!detailResult.ok) {
     if (detailResult.notFound) notFound()
-    return <Alert size="md">{detailResult.error}</Alert>
+    return errorView(detailResult.error)
   }
 
   const postulacion = detailResult.data.postulaciones.find((p) => p.pos_id === postulacionId)
   if (!postulacion) {
-    return <Alert size="md">Esa postulación no pertenece a este candidato.</Alert>
+    return errorView('Esa postulación no pertenece a este candidato.')
   }
   if (postulacion.pos_estado_final !== 'en_proceso') {
-    return <Alert size="md">Esta postulación ya no está en proceso.</Alert>
+    return errorView('Esta postulación ya no está en proceso.')
   }
 
   const results = [
@@ -101,13 +115,13 @@ export default async function HireCandidatePage({ params, searchParams }: HireCa
   ]
   const failed = results.find((result) => !result.ok)
   if (failed && !failed.ok) {
-    return <Alert size="md">{failed.error}</Alert>
+    return errorView(failed.error)
   }
   if (rolesResult && !rolesResult.ok) {
-    return <Alert size="md">{rolesResult.error}</Alert>
+    return errorView(rolesResult.error)
   }
   if (tiposDocumentoResult && !tiposDocumentoResult.ok) {
-    return <Alert size="md">{tiposDocumentoResult.error}</Alert>
+    return errorView(tiposDocumentoResult.error)
   }
 
   const candidato = detailResult.data
@@ -142,7 +156,7 @@ export default async function HireCandidatePage({ params, searchParams }: HireCa
         backHref={`/recruitment/candidates/${candidatoId}`}
         backLabel="Volver a la ficha del candidato"
         title={`Contratar a ${candidato.cdt_nombre} ${candidato.cdt_apellido_1}`}
-        description="Alta de empleado con los datos que ya entregó el candidato. Al guardar, la postulación queda cerrada como contratada."
+        description="Al guardar, la postulación queda cerrada como contratada."
       />
 
       {!puestoPrefill && (
