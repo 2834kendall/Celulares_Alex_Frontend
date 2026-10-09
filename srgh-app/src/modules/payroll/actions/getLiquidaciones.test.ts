@@ -18,6 +18,24 @@ function mockSupabase(data: unknown, error: unknown = null) {
   )
 }
 
+/** Rubros guardados de una liquidación (columnas liq_*). */
+const RUBROS = {
+  liq_salario_diario: 16666.67,
+  liq_salario_diario_vacaciones: 16000,
+  liq_dias_trabajados_mes: 15,
+  liq_salario_proporcional: 250000,
+  liq_aguinaldo_proporcional: 187400,
+  liq_dias_vacaciones_pendientes: 10,
+  liq_vacaciones_pagadas: 160000,
+  liq_horas_extra_banco: 40000,
+  liq_dias_preaviso: 30,
+  liq_preaviso: 500000,
+  liq_dias_cesantia: 42,
+  liq_cesantia: 700000,
+  liq_deducciones_obreras: 32490,
+  liq_observaciones: 'Primer aviso.\nSegundo aviso.',
+}
+
 describe('getLiquidaciones (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -55,6 +73,7 @@ describe('getLiquidaciones (server action)', () => {
         liq_pagado: false,
         liq_fecha_pago: null,
         liq_created_at: '2026-07-15T10:00:00',
+        ...RUBROS,
         sgrh_cat_motivos_salida: { mot_nombre: 'Despido sin responsabilidad patronal' },
         sgrh_historial_laboral: {
           sgrh_empleados: {
@@ -84,6 +103,24 @@ describe('getLiquidaciones (server action)', () => {
           pagoId: null,
           fechaPago: null,
           createdAt: '2026-07-15T10:00:00',
+          desglose: {
+            salarioDiario: 16666.67,
+            salarioDiarioVacaciones: 16000,
+            diasSalarioPendiente: 15,
+            salarioProporcional: 250000,
+            aguinaldoProporcional: 187400,
+            diasVacaciones: 10,
+            vacacionesPagadas: 160000,
+            horasExtraBanco: 40000,
+            diasPreaviso: 30,
+            preaviso: 500000,
+            diasCesantia: 42,
+            cesantia: 700000,
+            total: 1837400,
+            deduccionesObreras: 32490,
+            neto: 1804910,
+            advertencias: ['Primer aviso.', 'Segundo aviso.'],
+          },
         },
       ],
     })
@@ -99,6 +136,11 @@ describe('getLiquidaciones (server action)', () => {
         liq_pagado: true,
         liq_fecha_pago: '2026-07-12',
         liq_created_at: '2026-07-10T08:00:00',
+        ...RUBROS,
+        liq_salario_diario_vacaciones: null,
+        liq_horas_extra_banco: null,
+        liq_deducciones_obreras: null,
+        liq_observaciones: null,
         sgrh_cat_motivos_salida: null,
         sgrh_historial_laboral: null,
       },
@@ -121,6 +163,16 @@ describe('getLiquidaciones (server action)', () => {
           pagoId: null,
           fechaPago: '2026-07-12',
           createdAt: '2026-07-10T08:00:00',
+          // Liquidación guardada antes de esas columnas: lo que falta no
+          // inventa montos (sin neto, el neto es el bruto).
+          desglose: expect.objectContaining({
+            salarioDiarioVacaciones: null,
+            horasExtraBanco: 0,
+            deduccionesObreras: 0,
+            total: 300000,
+            neto: 300000,
+            advertencias: [],
+          }),
         },
       ],
     })

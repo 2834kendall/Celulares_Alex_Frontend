@@ -132,6 +132,7 @@ export type Database = {
           bhm_historial_laboral_id: number
           bhm_horas: number
           bhm_liquidacion_id: number | null
+          bhm_observaciones: string | null
           bhm_id: number
           bhm_monto_pagado: number | null
           bhm_nomina_detalle_id: number
@@ -146,6 +147,7 @@ export type Database = {
           bhm_historial_laboral_id: number
           bhm_horas: number
           bhm_liquidacion_id?: number | null
+          bhm_observaciones?: string | null
           bhm_id?: never
           bhm_monto_pagado?: number | null
           bhm_nomina_detalle_id: number
@@ -160,6 +162,7 @@ export type Database = {
           bhm_historial_laboral_id?: number
           bhm_horas?: number
           bhm_liquidacion_id?: number | null
+          bhm_observaciones?: string | null
           bhm_id?: never
           bhm_monto_pagado?: number | null
           bhm_nomina_detalle_id?: number

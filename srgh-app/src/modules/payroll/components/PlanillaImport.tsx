@@ -92,6 +92,11 @@ export function PlanillaImport({ periodoId, estado }: PlanillaImportProps) {
           partes.length > 0 ? ` (${partes.join(', ')})` : ''
         }.`
       )
+      if (result.enLiquidacionSinTocar.length > 0) {
+        toast.info(
+          `No se cambiaron ${result.enLiquidacionSinTocar.length} fila(s) que se pagan en una liquidación (${result.enLiquidacionSinTocar.join(', ')}): su salario de esta quincena ya va en el finiquito.`
+        )
+      }
       if (result.pagadasSinTocar.length > 0) {
         toast.warning(
           `No se cambiaron ${result.pagadasSinTocar.length} fila(s) ya pagadas (${result.pagadasSinTocar.join(', ')}): el archivo traía otros datos. Para corregirlas, desmarcá el pago primero.`

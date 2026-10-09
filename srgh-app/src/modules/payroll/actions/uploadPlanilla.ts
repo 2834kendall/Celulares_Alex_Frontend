@@ -142,6 +142,12 @@ export type UploadPlanillaResult =
        * se tocaron. Para corregirlas hay que desmarcar el pago primero.
        */
       pagadasSinTocar: string[]
+      /**
+       * Empleados cuyo salario de esta quincena ya va en una liquidación: su
+       * fila no se paga por planilla, así que tampoco se reescribe aunque el
+       * archivo traiga otros datos.
+       */
+      enLiquidacionSinTocar: string[]
     }
   | { ok: false; error: string }
 
@@ -464,6 +470,25 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
   }
 
+  // Filas impagas cuyo salario ya pagó una liquidación (salario pendiente
+  // del mes de salida). Se averigua una sola vez: sirve para no reescribirlas
+  // y para dejar sacarlas de un periodo vencido (paso 7).
+  const labsImpagosPrevios = (detallesPrevios ?? [])
+    .filter((d: DetalleExistenteRow) => !d.ndt_pagado)
+    .map((d: DetalleExistenteRow) => d.ndt_historial_laboral_id)
+  let cubiertasPorLiquidacion = new Set<number>()
+  if (labsImpagosPrevios.length > 0) {
+    const cubiertas = await liquidacionesQueCubren(supabase, labsImpagosPrevios, {
+      anio: periodo.npe_periodo_anio,
+      mes: periodo.npe_periodo_mes,
+      quincena: periodo.npe_quincena,
+    })
+    if (!cubiertas.ok) {
+      return { ok: false, error: 'No se pudo verificar las liquidaciones de los empleados.' }
+    }
+    cubiertasPorLiquidacion = new Set(cubiertas.data.keys())
+  }
+
   // 6. Clasificar cada fila del Excel: nueva, sin cambios o actualizada
   const filasNuevas: PlanillaRowInput[] = []
   const filasActualizar: {
@@ -473,6 +498,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   }[] = []
   let sinCambios = 0
   const pagadasSinTocar: string[] = []
+  const enLiquidacionSinTocar: string[] = []
 
   const labIdsEnExcel = new Set<number>()
   for (const row of rows) {
@@ -539,6 +565,11 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       // fila con comprobante emitido y aguinaldo ya acumulado con el bruto
       // viejo. Se deja como está y se avisa.
       pagadasSinTocar.push(porCedula.get(row.cedula)!.nombre)
+    } else if (cubiertasPorLiquidacion.has(labId)) {
+      // Su salario de esta quincena ya va en la liquidación: la fila no se
+      // paga por planilla ni se puede editar en pantalla. Antes el Excel la
+      // reescribía igual.
+      enLiquidacionSinTocar.push(porCedula.get(row.cedula)!.nombre)
     } else {
       filasActualizar.push({ row, ndtId, totales })
     }
@@ -566,21 +597,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // liquidación (salario pendiente del mes de salida). No se le debe nada
   // por planilla y marcarDetallePagado no la deja pagar: sacarla del periodo
   // es la única forma de cerrarlo.
-  const labsImpagos = salieronDelExcel
-    .filter((d: DetalleExistenteRow) => !d.ndt_pagado)
-    .map((d: DetalleExistenteRow) => d.ndt_historial_laboral_id)
-  let saldadasEnLiquidacion = new Set<number>()
-  if (vencido && labsImpagos.length > 0) {
-    const cubiertas = await liquidacionesQueCubren(supabase, labsImpagos, {
-      anio: periodo.npe_periodo_anio,
-      mes: periodo.npe_periodo_mes,
-      quincena: periodo.npe_quincena,
-    })
-    if (!cubiertas.ok) {
-      return { ok: false, error: 'No se pudo verificar las liquidaciones de los empleados.' }
-    }
-    saldadasEnLiquidacion = new Set(cubiertas.data.keys())
-  }
+  const saldadasEnLiquidacion = vencido ? cubiertasPorLiquidacion : new Set<number>()
 
   const protegidos = salieronDelExcel.filter(
     (d: DetalleExistenteRow) =>
@@ -805,5 +822,6 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     sinCambios,
     eliminados: ndtIdsEliminar.length,
     pagadasSinTocar,
+    enLiquidacionSinTocar,
   }
 }

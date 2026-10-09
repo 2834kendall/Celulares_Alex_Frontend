@@ -7,6 +7,7 @@ import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from '@/modules/pay
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import { leerPaginado } from '@/modules/payroll/lib/paginado'
 import type { BancoHorasItem, EstadoBancoHoras } from '@/modules/payroll/types'
+import { liquidacionQueDejoElMovimiento } from '@/modules/payroll/lib/bancoHorasLiquidado'
 
 interface MovimientoRow {
   bhm_id: number
@@ -17,12 +18,22 @@ interface MovimientoRow {
   bhm_monto_pagado: number | null
   bhm_fecha_resolucion: string | null
   bhm_created_at: string
+  bhm_observaciones: string | null
   sgrh_historial_laboral: {
+    lab_fecha_inicio: string
     sgrh_empleados: {
       emp_nombre: string
       emp_apellido_1: string
       emp_apellido_2: string | null
       emp_numero_identificacion: string | null
+      sgrh_historial_laboral:
+        | {
+            sgrh_liquidaciones:
+              | { liq_id: number; liq_fecha_salida: string }
+              | { liq_id: number; liq_fecha_salida: string }[]
+              | null
+          }[]
+        | null
     } | null
   } | null
   sgrh_nomina_detalle: {
@@ -30,6 +41,7 @@ interface MovimientoRow {
       npe_periodo_mes: number
       npe_periodo_anio: number
       npe_quincena: number
+      npe_fecha_inicio_periodo: string | null
     } | null
   } | null
 }
@@ -72,11 +84,16 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
       bhm_monto_pagado,
       bhm_fecha_resolucion,
       bhm_created_at,
+      bhm_observaciones,
       sgrh_historial_laboral (
-        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
+        lab_fecha_inicio,
+        sgrh_empleados (
+          emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion,
+          sgrh_historial_laboral ( sgrh_liquidaciones ( liq_id, liq_fecha_salida ) )
+        )
       ),
       sgrh_nomina_detalle!sgrh_banco_horas_movimientos_bhm_nomina_detalle_id_fkey (
-        sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio, npe_quincena )
+        sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio, npe_quincena, npe_fecha_inicio_periodo )
       )
     `
       )
@@ -121,6 +138,11 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
       montoPagado: row.bhm_monto_pagado,
       fechaResolucion: row.bhm_fecha_resolucion,
       createdAt: row.bhm_created_at,
+      observaciones: row.bhm_observaciones ?? null,
+      // Solo importa mientras siga pendiente: horas que una liquidación vieja
+      // dejó fuera y ya no se pueden pagar por planilla.
+      liquidadoSinIncluir:
+        row.bhm_estado === 'pendiente' ? liquidacionQueDejoElMovimiento(row) : null,
     }
   })
 

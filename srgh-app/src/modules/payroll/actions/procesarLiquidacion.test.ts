@@ -991,11 +991,13 @@ describe('procesarLiquidacion (server action)', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    const aviso = result.data.advertencias.find((a) => a.includes('ciclo 2025'))
+    const aviso = result.data.advertencias.find((a) =>
+      a.includes('aguinaldo 2025 (dic 2024 – nov 2025')
+    )
     expect(aviso).toContain('NO está incluido')
     // El proporcional sigue siendo solo el del ciclo 2026.
     expect(result.data.aguinaldoProporcional).toBe(41666.67)
-    expect(insercion(client).liq_observaciones).toContain('ciclo 2025')
+    expect(insercion(client).liq_observaciones).toContain('aguinaldo 2025 (dic 2024 – nov 2025')
   })
 
   it('un traslado no parte el aguinaldo: suma las quincenas del contrato anterior', async () => {
@@ -1043,5 +1045,53 @@ describe('procesarLiquidacion (server action)', () => {
     if (!result.ok) return
     // Dic 2025 (contrato viejo) + ene 2026 Q1 + 5 días pendientes, ÷ 12.
     expect(result.data.aguinaldoProporcional).toBe(41666.67)
+  })
+})
+
+describe('procesarLiquidacion: vista previa antes de guardar', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('soloCalcular devuelve el desglose sin guardar nada', async () => {
+    const client = escenario({
+      sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null },
+    })
+
+    const result = await procesarLiquidacion(INPUT, { soloCalcular: true })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.liqId).toBeNull()
+    expect(result.data.neto).toBeGreaterThan(0)
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('la vista previa y lo que se guarda son el mismo cálculo', async () => {
+    escenario({ sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null } })
+    const previa = await procesarLiquidacion(INPUT, { soloCalcular: true })
+    const client = escenario({
+      sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null },
+    })
+    if (!previa.ok) throw new Error(previa.error)
+
+    const guardada = await procesarLiquidacion(INPUT, { netoEsperado: previa.data.neto })
+
+    expect(guardada.ok).toBe(true)
+    if (!guardada.ok) return
+    expect({ ...guardada.data, liqId: null }).toEqual(previa.data)
+    expect(insercion(client).liq_neto).toBe(previa.data.neto)
+  })
+
+  it('si el neto cambió desde la vista previa, no guarda y lo dice', async () => {
+    const client = escenario({
+      sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null },
+    })
+
+    const result = await procesarLiquidacion(INPUT, { netoEsperado: 1 })
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Los montos cambiaron desde la vista previa')
+    expect(client.rpc).not.toHaveBeenCalled()
   })
 })

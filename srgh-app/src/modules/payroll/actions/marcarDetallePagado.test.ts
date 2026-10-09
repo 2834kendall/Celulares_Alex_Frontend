@@ -183,7 +183,9 @@ describe('marcarDetallePagado (server action)', () => {
 
       expect(result.ok).toBe(false)
       if (!result.ok)
-        expect(result.error).toContain('el aguinaldo 2026 de este empleado ya se pagó')
+        expect(result.error).toContain(
+          'el aguinaldo 2026 (dic 2025 – nov 2026) de este empleado ya se pagó'
+        )
       expect(seActualizoLaFila(client)).toBe(false)
       // Busca en todos los contratos del empleado (un traslado paga el aguinaldo en el último).
       const pagos = client.from.mock.results[

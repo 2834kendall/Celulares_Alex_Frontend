@@ -549,12 +549,18 @@ export const procesarLiquidacionSchema = z.object({
 
 export type ProcesarLiquidacionInput = z.infer<typeof procesarLiquidacionSchema>
 
-export interface LiquidacionCalculada {
-  liqId: number
+/**
+ * Rubros de una liquidación: lo que se muestra en la vista previa, al
+ * guardarla y en el historial antes de pagarla.
+ */
+export interface DesgloseLiquidacion {
   /** Promedio de los últimos seis meses ÷ 30 (Art. 30 CT), o el contrato si no hubo con qué. */
   salarioDiario: number
-  /** Promedio de la última cincuentena ÷ 30 (Art. 157 CT): con esto se pagan las vacaciones. */
-  salarioDiarioVacaciones: number
+  /**
+   * Promedio de la última cincuentena ÷ 30 (Art. 157 CT): con esto se pagan
+   * las vacaciones. null en liquidaciones guardadas antes de esa columna.
+   */
+  salarioDiarioVacaciones: number | null
   /** Días de vacaciones que se liquidaron. */
   diasVacaciones: number
   /** Días del mes de salida que no se habían pagado por planilla. */
@@ -578,6 +584,13 @@ export interface LiquidacionCalculada {
   advertencias: string[]
 }
 
+/** Resultado de procesarLiquidacion. */
+export interface LiquidacionCalculada extends DesgloseLiquidacion {
+  /** null en la vista previa: todavía no se guardó. */
+  liqId: number | null
+  salarioDiarioVacaciones: number
+}
+
 /** Una fila del historial de liquidaciones ya generadas (sección de solo lectura). */
 export interface LiquidacionListItem {
   liqId: number
@@ -594,6 +607,8 @@ export interface LiquidacionListItem {
   pagoId: number | null
   fechaPago: string | null
   createdAt: string
+  /** Rubros guardados, para revisarlos antes de pagar. */
+  desglose: DesgloseLiquidacion
 }
 
 /** Una línea del comprobante de un pago de aguinaldo o liquidación. */
@@ -703,6 +718,14 @@ export interface BancoHorasItem {
   montoPagado: number | null
   fechaResolucion: string | null
   createdAt: string
+  /** Nota de quien lo resolvió (ver compensarBancoHoras). */
+  observaciones: string | null
+  /**
+   * Pendiente de alguien que ya se liquidó: una liquidación anterior al
+   * arreglo de la auditoría dejó estas horas fuera. No se pueden pagar por
+   * planilla; se registran como compensadas con una nota.
+   */
+  liquidadoSinIncluir: { liqId: number; fechaSalida: string } | null
 }
 
 export const pagarBancoHorasSchema = z.object({

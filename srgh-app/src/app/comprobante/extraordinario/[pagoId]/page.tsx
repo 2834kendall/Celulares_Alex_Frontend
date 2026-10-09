@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { getPagoExtraordinario } from '@/modules/payroll/actions/getPagoExtraordinario'
-import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
+import { formatCRC, formatDate, nombreAguinaldo } from '@/modules/payroll/lib/format'
 import { PrintComprobanteButton } from '@/modules/payroll/components/PrintComprobanteButton'
 
 interface ComprobanteExtraordinarioPageProps {
@@ -57,10 +57,14 @@ export default async function ComprobanteExtraordinarioPage({
   const pago = pagoResult.data
 
   const titulo =
-    pago.tipo === 'aguinaldo' ? 'Comprobante de pago de aguinaldo' : 'Comprobante de liquidación'
+    pago.tipo === 'aguinaldo'
+      ? pago.anioAguinaldo
+        ? `Comprobante de pago del ${nombreAguinaldo(pago.anioAguinaldo).toLowerCase()}`
+        : 'Comprobante de pago de aguinaldo'
+      : 'Comprobante de liquidación'
   const subtitulo =
     pago.tipo === 'aguinaldo' && pago.anioAguinaldo
-      ? `Ciclo del 1 de diciembre de ${pago.anioAguinaldo - 1} al 30 de noviembre de ${pago.anioAguinaldo}`
+      ? `Cubre del 1 de diciembre de ${pago.anioAguinaldo - 1} al 30 de noviembre de ${pago.anioAguinaldo}`
       : `Salida: ${formatDate(pago.fechaSalida)}${pago.motivoSalida ? ` · ${pago.motivoSalida}` : ''}`
 
   const rubros = pago.lineas.filter((l) => !l.informativo && !l.deduccion)

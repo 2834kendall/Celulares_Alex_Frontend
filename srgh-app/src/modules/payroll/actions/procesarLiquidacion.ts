@@ -80,7 +80,22 @@ interface ConceptoDeduccionRow {
  * no solo del contrato vigente.
  */
 export async function procesarLiquidacion(
-  input: ProcesarLiquidacionInput
+  input: ProcesarLiquidacionInput,
+  opciones: {
+    /**
+     * Solo calcula, sin guardar nada: la vista previa de la pantalla. Antes
+     * "Calcular y guardar" guardaba de una vez, y el desglose y los avisos se
+     * veían cuando ya no se podía corregir (una liquidación guardada no se
+     * deshace).
+     */
+    soloCalcular?: boolean
+    /**
+     * Neto que se vio en la vista previa. Si al guardar el cálculo da otro
+     * (alguien pagó una quincena o cambió una ausencia mientras tanto), no se
+     * guarda: hay que volver a calcular y mirar.
+     */
+    netoEsperado?: number
+  } = {}
 ): Promise<ProcesarLiquidacionResult> {
   // Liquidar ya no cierra el contrato (lo cierra RRHH al terminarlo), así que
   // alcanza con NOMINA_WRITE: no hace falta HISTORIAL_WRITE.
@@ -301,6 +316,38 @@ export async function procesarLiquidacion(
     porcentajeDeduccionObrera,
   })
 
+  const desglose = {
+    salarioDiario,
+    salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
+    diasSalarioPendiente: diasTrabajadosMesActual,
+    salarioProporcional: resultado.salarioProporcional,
+    aguinaldoProporcional: resultado.aguinaldoProporcional,
+    diasVacaciones: data.diasVacacionesPendientes,
+    vacacionesPagadas: resultado.vacacionesPagadas,
+    horasExtraBanco: resultado.horasExtraBanco,
+    diasPreaviso: resultado.diasPreaviso,
+    preaviso: resultado.preaviso,
+    diasCesantia: resultado.diasCesantia,
+    cesantia: resultado.cesantia,
+    total: resultado.total,
+    deduccionesObreras: resultado.deduccionesObreras,
+    neto: resultado.neto,
+    advertencias,
+  }
+
+  if (opciones.soloCalcular) {
+    return { ok: true, data: { liqId: null, ...desglose } }
+  }
+  if (
+    typeof opciones.netoEsperado === 'number' &&
+    Math.abs(opciones.netoEsperado - resultado.neto) > 0.005
+  ) {
+    return {
+      ok: false,
+      error: `Los montos cambiaron desde la vista previa (el neto era ${formatCRC(opciones.netoEsperado)} y ahora da ${formatCRC(resultado.neto)}): no se guardó nada. Volvé a calcular y revisá el desglose.`,
+    }
+  }
+
   // Una sola transacción (RPC registrar_liquidacion): guarda la liquidación y
   // borra los turnos posteriores a la salida. El contrato, la fecha y el
   // motivo los toma la RPC de la fila del contrato, bloqueada: no viajan en
@@ -371,26 +418,5 @@ export async function procesarLiquidacion(
   revalidatePath('/employees')
   revalidatePath(`/employees/${historial.lab_empleado_id}`)
 
-  return {
-    ok: true,
-    data: {
-      liqId,
-      salarioDiario,
-      salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
-      diasSalarioPendiente: diasTrabajadosMesActual,
-      salarioProporcional: resultado.salarioProporcional,
-      aguinaldoProporcional: resultado.aguinaldoProporcional,
-      diasVacaciones: data.diasVacacionesPendientes,
-      vacacionesPagadas: resultado.vacacionesPagadas,
-      horasExtraBanco: resultado.horasExtraBanco,
-      diasPreaviso: resultado.diasPreaviso,
-      preaviso: resultado.preaviso,
-      diasCesantia: resultado.diasCesantia,
-      cesantia: resultado.cesantia,
-      total: resultado.total,
-      deduccionesObreras: resultado.deduccionesObreras,
-      neto: resultado.neto,
-      advertencias,
-    },
-  }
+  return { ok: true, data: { liqId, ...desglose } }
 }

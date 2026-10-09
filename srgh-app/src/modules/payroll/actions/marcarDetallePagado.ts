@@ -22,7 +22,7 @@ import {
   type QuincenaRef,
 } from '@/modules/payroll/lib/prellenadoAsistencia'
 import { CODIGO_AJUSTE, CODIGO_SALARIO_BASE } from '@/modules/payroll/lib/planilla'
-import { formatCRC, formatDate, formatHoras } from '@/modules/payroll/lib/format'
+import { formatCRC, formatDate, formatHoras, rangoAguinaldo } from '@/modules/payroll/lib/format'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 
 interface DetalleActualRow {
@@ -319,7 +319,7 @@ async function motivoParaNoDesmarcar(
   if (hay(pagos)) {
     return {
       ok: true,
-      motivo: `No se puede desmarcar: el aguinaldo ${ciclo} de este empleado ya se pagó, y se calculó con esta quincena. Desmarcarla dejaría ese aguinaldo con un monto que ya no coincide con la planilla.`,
+      motivo: `No se puede desmarcar: el aguinaldo ${ciclo} (${rangoAguinaldo(ciclo)}) de este empleado ya se pagó, y se calculó con esta quincena. Desmarcarla dejaría ese aguinaldo con un monto que ya no coincide con la planilla.`,
     }
   }
   return { ok: true, motivo: null }

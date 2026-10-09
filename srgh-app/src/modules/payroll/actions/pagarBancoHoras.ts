@@ -9,12 +9,18 @@ import { periodoLabel } from '@/modules/payroll/lib/format'
 import { ahoraLocal } from '@/modules/payroll/lib/fechas'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 import {
+  SELECT_LIQUIDACION_DEL_MOVIMIENTO,
+  liquidacionQueDejoElMovimiento,
+  type MovimientoConLiquidaciones,
+} from '@/modules/payroll/lib/bancoHorasLiquidado'
+import { formatDate } from '@/modules/payroll/lib/format'
+import {
   pagarBancoHorasSchema,
   type PagarBancoHorasInput,
   type PagarBancoHorasResult,
 } from '@/modules/payroll/types'
 
-interface MovimientoRow {
+interface MovimientoRow extends MovimientoConLiquidaciones {
   bhm_id: number
   bhm_historial_laboral_id: number
   bhm_estado: string
@@ -59,7 +65,7 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
 
   const { data: movimiento, error: errMovimiento } = await supabase
     .from('sgrh_banco_horas_movimientos')
-    .select('bhm_id, bhm_historial_laboral_id, bhm_estado')
+    .select(`bhm_id, bhm_historial_laboral_id, bhm_estado, ${SELECT_LIQUIDACION_DEL_MOVIMIENTO}`)
     .eq('bhm_id', parsed.data.bhmId)
     .maybeSingle<MovimientoRow>()
 
@@ -71,6 +77,17 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
   }
   if (movimiento.bhm_estado !== 'pendiente') {
     return { ok: false, error: 'Este movimiento ya fue resuelto (pagado o compensado).' }
+  }
+
+  // Horas que una liquidación vieja dejó fuera: la persona ya no tiene
+  // quincenas abiertas. Antes caía en "no tiene ninguna quincena sin pagar",
+  // que no explicaba nada.
+  const liquidacion = liquidacionQueDejoElMovimiento(movimiento)
+  if (liquidacion) {
+    return {
+      ok: false,
+      error: `Este empleado ya se liquidó (liquidación n.° ${liquidacion.liqId}, salida del ${formatDate(liquidacion.fechaSalida)}) y estas horas quedaron fuera de esa liquidación: ya no se pueden pagar por planilla. Si se le pagaron por fuera, marcalas como compensadas con una nota.`,
+    }
   }
 
   // Periodo en borrador más reciente del empleado, donde se va a aplicar el pago.

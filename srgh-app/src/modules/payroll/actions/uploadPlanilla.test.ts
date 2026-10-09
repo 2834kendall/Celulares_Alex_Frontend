@@ -91,6 +91,9 @@ function mockSupabase(
     sgrh_banco_horas_movimientos: { data: [], error: null },
     sgrh_comisiones_calculadas: { data: [], error: null },
     sgrh_comprobantes_pago: { data: [], error: null },
+    // Ninguna fila va en una liquidación (liquidacionesQueCubren).
+    sgrh_historial_laboral: { data: [], error: null },
+    sgrh_liquidaciones: { data: [], error: null },
     ...responses,
   })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
@@ -264,6 +267,7 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 1,
       eliminados: 0,
       pagadasSinTocar: [],
+      enLiquidacionSinTocar: [],
     })
   })
 
@@ -310,6 +314,7 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 0,
       eliminados: 0,
       pagadasSinTocar: [],
+      enLiquidacionSinTocar: [],
     })
   })
 
@@ -581,6 +586,7 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 0,
       eliminados: 0,
       pagadasSinTocar: [],
+      enLiquidacionSinTocar: [],
     })
   })
 
@@ -654,6 +660,7 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 0,
       eliminados: 0,
       pagadasSinTocar: ['Cambio Pagado'],
+      enLiquidacionSinTocar: [],
     })
     expect(argumentos(client, 'sgrh_nomina_detalle', 'update')).toEqual([])
   })
@@ -729,6 +736,7 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 0,
       eliminados: 0,
       pagadasSinTocar: [],
+      enLiquidacionSinTocar: [],
     })
   })
 
@@ -808,6 +816,7 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 1,
       eliminados: 1,
       pagadasSinTocar: [],
+      enLiquidacionSinTocar: [],
     })
     // Con el periodo: así entra también quien terminó y todavía tiene fila acá.
     expect(mockGetEmpleadosActivos).toHaveBeenCalledWith(expect.anything(), 2, {
@@ -1031,6 +1040,7 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 0,
       eliminados: 0,
       pagadasSinTocar: [],
+      enLiquidacionSinTocar: [],
     })
   })
   // Regresion: la comparacion de "sin cambios" solo miraba los campos del
@@ -1302,6 +1312,7 @@ describe('uploadPlanilla (server action)', () => {
       sinCambios: 0,
       eliminados: 0,
       pagadasSinTocar: [],
+      enLiquidacionSinTocar: [],
     })
   })
   // Regresion: la subida borraba cualquier detalle que no viniera en el
@@ -1454,6 +1465,53 @@ describe('uploadPlanilla (server action)', () => {
       const result = await uploadPlanilla(buildFormData())
 
       expect(result).toMatchObject({ ok: true, eliminados: 1 })
+    })
+
+    it('si sigue en el Excel, su fila no se reescribe: va en la liquidación', async () => {
+      const client = escenarioBeto({
+        data: [
+          {
+            liq_historial_laboral_id: 66,
+            liq_fecha_salida: '2026-08-10',
+            liq_dias_trabajados_mes: 10,
+          },
+        ],
+        error: null,
+      })
+      mockParsePlanillaWorkbook.mockResolvedValue({
+        rows: [fila('KEEP', { BASE: 100000 }), fila('OUT', { BASE: 150000 })],
+        errors: [],
+      })
+      mockGetEmpleadosActivos.mockResolvedValue({
+        ok: true,
+        data: [
+          {
+            labId: 55,
+            cedula: 'KEEP',
+            nombre: 'Ana',
+            salarioBaseMensual: 200000,
+            salarioRealMensual: null,
+            horasSemanales: 48,
+          },
+          {
+            labId: 66,
+            cedula: 'OUT',
+            nombre: 'Beto Solís',
+            salarioBaseMensual: 200000,
+            salarioRealMensual: null,
+            horasSemanales: 48,
+          },
+        ],
+      })
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result).toMatchObject({
+        ok: true,
+        actualizados: 0,
+        enLiquidacionSinTocar: ['Beto Solís'],
+      })
+      expect(argumentos(client, 'sgrh_nomina_detalle', 'update')).toEqual([])
     })
 
     it('sin liquidación que la cubra sigue protegida como deuda', async () => {

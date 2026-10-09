@@ -92,4 +92,60 @@ describe('compensarBancoHoras (server action)', () => {
       error: 'Este movimiento ya fue resuelto (pagado o compensado).',
     })
   })
+
+  describe('horas que una liquidación vieja dejó fuera', () => {
+    const HUERFANO = {
+      bhm_id: 1,
+      bhm_estado: 'pendiente',
+      bhm_created_at: '2026-08-20T10:00:00',
+      sgrh_historial_laboral: {
+        lab_fecha_inicio: '2025-05-09',
+        sgrh_empleados: {
+          sgrh_historial_laboral: [
+            { sgrh_liquidaciones: { liq_id: 4, liq_fecha_salida: '2026-10-07' } },
+          ],
+        },
+      },
+      sgrh_nomina_detalle: { sgrh_nomina_periodo: { npe_fecha_inicio_periodo: '2026-08-16' } },
+    }
+
+    it('sin nota no se cierran', async () => {
+      const client = mockSupabase({
+        sgrh_banco_horas_movimientos: { data: HUERFANO, error: null },
+      })
+
+      const result = await compensarBancoHoras(1, '  ')
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('escribí una nota')
+      expect(client.from).toHaveBeenCalledTimes(1)
+    })
+
+    it('con nota quedan compensadas y la nota se guarda', async () => {
+      const client = mockSupabase({
+        sgrh_banco_horas_movimientos: [
+          { data: HUERFANO, error: null },
+          { data: [{ bhm_id: 1 }], error: null },
+        ],
+      })
+
+      const result = await compensarBancoHoras(1, ' Pagadas por transferencia el 10/10. ')
+
+      expect(result).toEqual({ ok: true })
+      const update = client.from.mock.results[1].value as {
+        update: { mock: { calls: [{ bhm_estado: string; bhm_observaciones: string }][] } }
+      }
+      expect(update.update.mock.calls[0][0]).toMatchObject({
+        bhm_estado: 'compensado',
+        bhm_observaciones: 'Pagadas por transferencia el 10/10.',
+      })
+    })
+
+    it('una nota demasiado larga se rechaza antes de tocar la base', async () => {
+      const result = await compensarBancoHoras(1, 'x'.repeat(501))
+
+      expect(result.ok).toBe(false)
+      expect(mockCreateClient).not.toHaveBeenCalled()
+    })
+  })
 })

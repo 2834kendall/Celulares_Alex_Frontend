@@ -136,3 +136,47 @@ describe('<AguinaldoTab />', () => {
     expect(tabla().getByText(/licencia de maternidad/)).toBeInTheDocument()
   })
 })
+
+describe('<AguinaldoTab /> nombre del aguinaldo', () => {
+  it('se nombra por el año en que se paga, con lo que cubre', () => {
+    renderTab([item()])
+
+    expect(
+      screen.getByRole('link', { name: /Aguinaldo 2026 · dic 2025 – nov 2026/ })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /Aguinaldo 2025 · dic 2024 – nov 2025/ })
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Ciclo 2025-2026/)).not.toBeInTheDocument()
+  })
+
+  it('mientras se acumula, lo dice', () => {
+    renderTab([item()], { cicloCerrado: false })
+
+    expect(screen.getByText(/Todavía se está acumulando/)).toBeInTheDocument()
+  })
+})
+
+describe('<AguinaldoTab /> aguinaldos del año anterior sin pagar', () => {
+  it('avisa con cuántos, cuánto y el enlace', () => {
+    renderTab([item()], {
+      anio: 2027,
+      anioActual: 2027,
+      cicloCerrado: false,
+      pendientesAnterior: { anio: 2026, cantidad: 3, monto: 1290000 },
+    })
+
+    const aviso = screen.getByRole('note')
+    expect(aviso).toHaveTextContent('Quedan 3 empleado(s) con el aguinaldo 2026 sin pagar')
+    expect(within(aviso).getByRole('link', { name: 'Ver aguinaldo 2026' })).toHaveAttribute(
+      'href',
+      '/payroll/aguinaldo-liquidacion?anio=2026'
+    )
+  })
+
+  it('sin pendientes no hay aviso', () => {
+    renderTab([item()], { pendientesAnterior: null })
+
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+})

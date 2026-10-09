@@ -45,7 +45,7 @@ import {
 } from './derechosData'
 import { anioCicloAguinaldo, quincenaPagadaEnLiquidacion } from './liquidacion'
 import { parseFechaLocal } from './fechas'
-import { formatCRC } from './format'
+import { formatCRC, rangoAguinaldo } from './format'
 import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from './bancoHoras'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -328,12 +328,12 @@ export async function avisoAguinaldoAnterior(
     ])
 
   if (errProv || errPagos) {
-    return `No se pudo verificar si el aguinaldo del ciclo ${cicloAnterior.anio} ya se pagó. Revisalo en la pestaña Aguinaldo antes de entregar el finiquito.`
+    return `No se pudo verificar si el aguinaldo ${cicloAnterior.anio} (${rangoAguinaldo(cicloAnterior.anio)}) ya se pagó. Revisalo en la pestaña Aguinaldo antes de entregar el finiquito.`
   }
   const pagado = (pagos ?? []).length > 0 || (provisiones ?? []).some((p) => p.pra_aguinaldo_pagado)
   if (pagado) return null
 
-  return `El aguinaldo del ciclo ${cicloAnterior.anio} (${formatCRC(cicloAnterior.monto)}) no consta como pagado y NO está incluido en esta liquidación. Si no se le ha pagado, pagalo desde la pestaña Aguinaldo; si se pagó fuera del sistema, ignorá este aviso.`
+  return `El aguinaldo ${cicloAnterior.anio} (${rangoAguinaldo(cicloAnterior.anio)}, ${formatCRC(cicloAnterior.monto)}) no consta como pagado y NO está incluido en esta liquidación. Si no se le ha pagado, pagalo desde la pestaña Aguinaldo; si se pagó fuera del sistema, ignorá este aviso.`
 }
 
 /** Liquidación que ya pagó una quincena como salario pendiente. */

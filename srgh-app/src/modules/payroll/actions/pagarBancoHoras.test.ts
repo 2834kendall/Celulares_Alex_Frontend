@@ -119,6 +119,37 @@ describe('pagarBancoHoras (server action)', () => {
     })
   })
 
+  // Auditoría, hallazgo 4: liquidaciones de antes del arreglo dejaron horas
+  // pendientes. Antes el error decía "no tiene ninguna quincena sin pagar".
+  it('de alguien ya liquidado dice por qué no se puede pagar, sin tocar nada', async () => {
+    const client = mockSupabase({
+      sgrh_banco_horas_movimientos: {
+        data: {
+          ...MOVIMIENTO_PENDIENTE,
+          bhm_created_at: '2026-08-20T10:00:00',
+          sgrh_historial_laboral: {
+            lab_fecha_inicio: '2025-05-09',
+            sgrh_empleados: {
+              sgrh_historial_laboral: [
+                { sgrh_liquidaciones: { liq_id: 4, liq_fecha_salida: '2026-10-07' } },
+              ],
+            },
+          },
+          sgrh_nomina_detalle: {
+            sgrh_nomina_periodo: { npe_fecha_inicio_periodo: '2026-08-16' },
+          },
+        },
+        error: null,
+      },
+    })
+
+    const result = await pagarBancoHoras({ bhmId: 1, monto: 1312.5 })
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('liquidación n.° 4, salida del 07/10/2026')
+    expect(client.from.mock.calls.map((c) => c[0])).toEqual(['sgrh_banco_horas_movimientos'])
+  })
+
   it('avisa si el empleado no tiene una quincena sin pagar en un periodo abierto', async () => {
     mockSupabase({
       sgrh_banco_horas_movimientos: { data: MOVIMIENTO_PENDIENTE, error: null },

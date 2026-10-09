@@ -13,6 +13,20 @@ interface LiquidacionRow {
   liq_pagado: boolean
   liq_fecha_pago: string | null
   liq_created_at: string
+  liq_salario_diario: number
+  liq_salario_diario_vacaciones: number | null
+  liq_dias_trabajados_mes: number
+  liq_salario_proporcional: number
+  liq_aguinaldo_proporcional: number
+  liq_dias_vacaciones_pendientes: number
+  liq_vacaciones_pagadas: number
+  liq_horas_extra_banco: number
+  liq_dias_preaviso: number
+  liq_preaviso: number
+  liq_dias_cesantia: number
+  liq_cesantia: number
+  liq_deducciones_obreras: number
+  liq_observaciones: string | null
   sgrh_pagos_extraordinarios: { pex_id: number; pex_fecha_pago: string }[] | null
   sgrh_cat_motivos_salida: { mot_nombre: string } | null
   sgrh_historial_laboral: {
@@ -50,6 +64,20 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       liq_pagado,
       liq_fecha_pago,
       liq_created_at,
+      liq_salario_diario,
+      liq_salario_diario_vacaciones,
+      liq_dias_trabajados_mes,
+      liq_salario_proporcional,
+      liq_aguinaldo_proporcional,
+      liq_dias_vacaciones_pendientes,
+      liq_vacaciones_pagadas,
+      liq_horas_extra_banco,
+      liq_dias_preaviso,
+      liq_preaviso,
+      liq_dias_cesantia,
+      liq_cesantia,
+      liq_deducciones_obreras,
+      liq_observaciones,
       sgrh_pagos_extraordinarios ( pex_id, pex_fecha_pago ),
       sgrh_cat_motivos_salida ( mot_nombre ),
       sgrh_historial_laboral (
@@ -88,6 +116,29 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       pagoId: pago?.pex_id ?? null,
       fechaPago: pago?.pex_fecha_pago ?? row.liq_fecha_pago,
       createdAt: row.liq_created_at,
+      // numeric llega como número desde PostgREST; Number() por si un día
+      // llega como texto (numeric grande).
+      desglose: {
+        salarioDiario: Number(row.liq_salario_diario),
+        salarioDiarioVacaciones:
+          row.liq_salario_diario_vacaciones === null
+            ? null
+            : Number(row.liq_salario_diario_vacaciones),
+        diasSalarioPendiente: Number(row.liq_dias_trabajados_mes),
+        salarioProporcional: Number(row.liq_salario_proporcional),
+        aguinaldoProporcional: Number(row.liq_aguinaldo_proporcional),
+        diasVacaciones: Number(row.liq_dias_vacaciones_pendientes),
+        vacacionesPagadas: Number(row.liq_vacaciones_pagadas),
+        horasExtraBanco: Number(row.liq_horas_extra_banco ?? 0),
+        diasPreaviso: Number(row.liq_dias_preaviso),
+        preaviso: Number(row.liq_preaviso),
+        diasCesantia: Number(row.liq_dias_cesantia),
+        cesantia: Number(row.liq_cesantia),
+        total: Number(row.liq_total),
+        deduccionesObreras: Number(row.liq_deducciones_obreras ?? 0),
+        neto: Number(row.liq_neto ?? row.liq_total),
+        advertencias: (row.liq_observaciones ?? '').split('\n').filter((a) => a.trim()),
+      },
     }
   })
 
