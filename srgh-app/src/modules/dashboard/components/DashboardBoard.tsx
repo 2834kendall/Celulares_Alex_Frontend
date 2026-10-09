@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useTransition, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Check,
   ChevronLeft,
@@ -13,7 +14,6 @@ import {
   SlidersHorizontal,
 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { saveDashboardPrefs } from '@/modules/dashboard/actions/saveDashboardPrefs'
 import {
   PANEL_BY_ID,
   PANEL_IDS,
@@ -23,6 +23,7 @@ import {
   type PanelSize,
   type ResolvedPanel,
 } from '@/modules/dashboard/lib/panels'
+import { saveDashboardPrefs } from '@/modules/dashboard/lib/savePrefs'
 
 /*
  * Columns each size takes. On a wide dashboard the grid has 6 columns; on a
@@ -60,10 +61,11 @@ function move<T>(list: readonly T[], from: number, to: number): T[] {
  *
  * The panels themselves arrive already rendered from the server (`nodes`),
  * only the visible ones: a hidden panel is not even queried. That is why
- * showing a panel again goes through the server — saveDashboardPrefs stores
- * the choice in a cookie and the page renders again with the new panel — and
- * a placeholder holds its place meanwhile. Everything else (order, size,
- * hiding) is applied here at once and saved in the background.
+ * showing a panel that was not loaded goes through the server — once the
+ * choice is saved, the page is rendered again with the new panel — and a
+ * placeholder holds its place meanwhile. Everything else (order, size,
+ * hiding) is applied here at once and only saved in the background: the page
+ * is not rendered again for it.
  */
 export function DashboardBoard({
   panels,
@@ -79,6 +81,7 @@ export function DashboardBoard({
   const [error, setError] = useState<string | null>(null)
   const [dragId, setDragId] = useState<PanelId | null>(null)
   const [isSaving, startSaving] = useTransition()
+  const router = useRouter()
   /* What the drag has rearranged so far, to save it when the drag ends. */
   const draggedOrder = useRef<ResolvedPanel[] | null>(null)
 
@@ -94,9 +97,11 @@ export function DashboardBoard({
   function save(next: ResolvedPanel[]) {
     setDraft(next)
     setError(null)
+    const needsLoading = next.some((panel) => !panel.hidden && nodes[panel.id] === undefined)
     startSaving(async () => {
       const result = await saveDashboardPrefs(toPrefs(next))
       if (!result.ok) setError(result.error)
+      else if (needsLoading) router.refresh()
     })
   }
 
