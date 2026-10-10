@@ -246,6 +246,109 @@ h3 {
   }
 }
 
+/* ===== Tablero de reclutamiento: microinteracciones ===== */
+
+/*
+ * Cada una confirma algo que la persona acaba de hacer; nada se mueve en
+ * reposo, salvo el hueco "Solta aca", que late solo mientras hay una tarjeta
+ * en el aire. Todo bajo `prefers-reduced-motion: no-preference`: sin
+ * movimiento el tablero funciona igual, solo que quieto.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /* Una tarjeta que aterriza en su columna (al cargar o al cambiarla de etapa). */
+  @keyframes board-card-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-board-card-in {
+    animation: board-card-in 0.22s cubic-bezier(0.25, 1, 0.5, 1) backwards;
+  }
+
+  /* El conteo de una columna cuando cambia: un saltito que lleva el ojo ahi. */
+  @keyframes board-count-pop {
+    0%,
+    100% {
+      transform: none;
+    }
+    40% {
+      transform: scale(1.3);
+    }
+  }
+
+  .animate-board-count-pop {
+    animation: board-count-pop 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+  }
+
+  /* Contraer / expandir una columna: se abre desde su borde izquierdo. */
+  @keyframes board-column-in {
+    from {
+      opacity: 0.3;
+      transform: scaleX(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-board-column-in {
+    animation: board-column-in 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    transform-origin: left center;
+  }
+
+  /* Zonas de Contratar / Descartar: suben desde abajo al levantar una tarjeta. */
+  @keyframes board-zone-in {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-board-zone-in {
+    animation: board-zone-in 0.24s cubic-bezier(0.25, 1, 0.5, 1) backwards;
+  }
+
+  /* Hueco "Solta aca" de una columna vacia mientras se arrastra. */
+  @keyframes board-drop-hint {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .animate-board-drop-hint {
+    animation: board-drop-hint 1.1s ease-in-out infinite;
+  }
+
+  /* Fila de una lista que se acaba de mover o restaurar: destello que se apaga. */
+  @keyframes row-flash {
+    from {
+      background-color: var(--color-brand-100);
+    }
+    to {
+      background-color: var(--color-white);
+    }
+  }
+
+  .animate-row-flash {
+    animation: row-flash 0.9s ease-out;
+  }
+}
+
 /* ===== Menu lateral: iconos con efecto dock ===== */
 
 /*
