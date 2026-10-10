@@ -64,10 +64,11 @@ export function playLoginSuccess(): void {
   layer.style.cssText = 'position:fixed;inset:0;z-index:2147483000;overflow:hidden'
 
   const copy = screen.cloneNode(true) as HTMLElement
-  /* What was typed is a property, not an attribute: cloning drops it. */
+  /* What was typed is a property, not an attribute: cloning drops it. A deep
+     clone has the same inputs in the same order, so they pair by index. */
   const fields = screen.querySelectorAll('input')
   copy.querySelectorAll('input').forEach((field, index) => {
-    field.value = fields[index]?.value ?? ''
+    field.value = fields[index].value
   })
   /* No duplicated ids for the form controls while both copies coexist. The
      clipPath keeps its id: the scene references it by url(#…). */

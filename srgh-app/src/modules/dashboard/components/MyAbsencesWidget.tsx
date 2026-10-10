@@ -1,6 +1,7 @@
 'use client'
 
 import { CalendarHeart } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { cn } from '@/lib/utils/cn'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
 import { WidgetCard } from '@/modules/dashboard/components/WidgetCard'
@@ -38,9 +39,12 @@ export function MyAbsencesWidget({ summary, step }: { summary: MyAbsencesSummary
   return (
     <WidgetCard icon={CalendarHeart} title="Mis ausencias" href="/my-schedule" step={step}>
       {absences.length === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          No tenés vacaciones, permisos ni incapacidades registradas para estos días.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={CalendarHeart}
+          title="No tenés vacaciones, permisos ni incapacidades registradas para estos días."
+        />
       ) : (
         <>
           <p className="mt-4 text-base font-extrabold tracking-tight text-slate-900">

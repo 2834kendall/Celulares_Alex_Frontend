@@ -27,9 +27,10 @@ export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
         <div className="flex items-center gap-4">
           <Avatar size="lg" nombre={email} iniciales={initialsOfEmail(email)} />
           <div className="min-w-0 leading-tight">
-            <h1 className="text-xl font-extrabold text-slate-900">
+            {/* h2: el h1 de la pagina es el encabezado "Mi perfil". */}
+            <h2 className="text-xl font-extrabold text-slate-900">
               <BreakableEmail email={email} />
-            </h1>
+            </h2>
             <p className="mt-1 text-sm text-slate-500">{empresaNombre}</p>
           </div>
         </div>

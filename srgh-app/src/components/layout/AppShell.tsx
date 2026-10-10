@@ -10,10 +10,9 @@ import { SucursalSwitcher } from '@/components/layout/SucursalSwitcher'
 import type { SucursalConApariencia } from '@/lib/empresa/list-sucursales'
 import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
-import { CompanyLogo } from '@/components/ui/CompanyLogo'
+import { CompanyIdentity } from '@/components/layout/CompanyIdentity'
+import { TopbarBrand } from '@/components/layout/TopbarBrand'
 import { deriveBrandTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
-import { tituloDeRuta } from '@/lib/permissions/zones'
-import { BRAND } from '@/lib/brand'
 import { FormatoHoraProvider } from '@/lib/time/FormatoHoraContext'
 import { FORMATO_HORA_DEFAULT, type FormatoHora } from '@/lib/time/formatoHora'
 import { SettingsModeHeader } from '@/modules/settings/components/SettingsModeHeader'
@@ -78,10 +77,10 @@ function BurgerIcon({ open }: { open: boolean }) {
 
 /**
  * Cascaron responsive del dashboard.
- * La barra superior ocupa todo el ancho, con la hamburguesa FIJA en la
- * esquina superior izquierda — no se mueve al abrir/cerrar el sidebar.
- * - Escritorio: la hamburguesa colapsa/expande el sidebar (con animacion de ancho)
- * - Movil: la hamburguesa abre el drawer lateral
+ * - Escritorio: la empresa ocupa la columna izquierda de la barra superior,
+ *   del mismo ancho que el sidebar; su boton colapsa el sidebar a un riel de
+ *   iconos (y el logo del riel lo vuelve a expandir).
+ * - Movil: la hamburguesa abre el drawer lateral.
  * La seguridad ya paso en el layout (server); esto es solo presentacion.
  */
 export function AppShell({
@@ -99,11 +98,10 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const pathname = usePathname()
-  const [sidebarOpen, setSidebarOpen] = useState(true) // escritorio
+  const [sidebarOpen, setSidebarOpen] = useState(true) // escritorio: false = riel de iconos
   const [drawerOpen, setDrawerOpen] = useState(false) // movil
   const [settingsSearchOpen, setSettingsSearchOpen] = useState(false)
 
-  const titulo = tituloDeRuta(pathname)
   // Modo configuración (SGRH-92): en /settings… el menú lateral pasa a ser el
   // de Configuración y se habilita el buscador de ajustes (Ctrl+K).
   const settingsMode = isSettingsPath(pathname)
@@ -145,44 +143,47 @@ export function AppShell({
       className="flex min-h-screen flex-col bg-[var(--page-bg)] text-slate-900"
       style={shellStyle}
     >
-      {/* Barra superior de ancho completo — la hamburguesa vive siempre en la esquina */}
-      <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-3 md:px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          {/* Hamburguesa movil: abre el drawer */}
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Abrir menu"
-            // El icono mide 16x20, asi que con p-2.5 el boton quedaba en
-            // 36x40: por debajo de los 44px de WCAG 2.5.5, y es el control
-            // MAS usado de toda la app en un telefono. El minimo solo aplica
-            // con dedo, asi que en escritorio el boton no cambia de tamaño.
-            className="inline-flex items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[var(--sidebar-text)] transition hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] md:hidden"
-          >
-            <BurgerIcon open={drawerOpen} />
-          </button>
-          {/* Hamburguesa escritorio: colapsa/expande el sidebar */}
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((v) => !v)}
-            aria-label={sidebarOpen ? 'Ocultar menu lateral' : 'Mostrar menu lateral'}
-            aria-expanded={sidebarOpen}
-            className="hidden items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[var(--sidebar-text)] transition hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] md:inline-flex"
-          >
-            <BurgerIcon open={sidebarOpen} />
-          </button>
+      {/*
+        Barra superior de ancho completo. A la izquierda va la empresa: en
+        escritorio, en una columna del mismo ancho que el sidebar (ver
+        TopbarBrand), con el boton de colapsar; en movil, compacta junto a la
+        hamburguesa. Ya no muestra el titulo de la ruta: lo pone el
+        encabezado de cada pagina (PageHeader).
+      */}
+      <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-3 md:pr-4 md:pl-0">
+        {/* Hamburguesa movil: abre el drawer */}
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Abrir menú"
+          // El icono mide 16x20, asi que con p-2.5 el boton quedaba en
+          // 36x40: por debajo de los 44px de WCAG 2.5.5, y es el control
+          // MAS usado de toda la app en un telefono. El minimo solo aplica
+          // con dedo, asi que en escritorio el boton no cambia de tamaño.
+          className="inline-flex shrink-0 items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[var(--sidebar-text)] transition hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] md:hidden"
+        >
+          <BurgerIcon open={drawerOpen} />
+        </button>
 
-          <div className="min-w-0 leading-tight">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
-              {BRAND.sistema}
-            </p>
-            <h1 className="truncate text-base font-extrabold tracking-tight text-[var(--sidebar-text-strong)] md:text-lg">
-              {titulo}
-            </h1>
-          </div>
-        </div>
+        <CompanyIdentity
+          className="md:hidden"
+          size="sm"
+          compact
+          logoUrl={logoUrl}
+          empresaNombre={empresaNombre}
+          sucursalNombre={sucursalNombre}
+        />
 
-        <div className="flex shrink-0 items-center gap-3">
+        <TopbarBrand
+          className="hidden md:flex"
+          collapsed={!sidebarOpen}
+          onToggle={() => setSidebarOpen((v) => !v)}
+          logoUrl={logoUrl}
+          empresaNombre={empresaNombre}
+          sucursalNombre={sucursalNombre}
+        />
+
+        <div className="ml-auto flex shrink-0 items-center gap-3">
           <SucursalSwitcher sucursales={sucursales} sucursalPreviewId={sucursalPreviewId} />
           <UserMenu email={email} rol={rol} />
         </div>
@@ -206,17 +207,12 @@ export function AppShell({
               {settingsMode ? (
                 <SettingsModeHeader empresaNombre={empresaNombre} compact />
               ) : (
-                <div className="flex items-center gap-2.5">
-                  <CompanyLogo logoUrl={logoUrl} nombre={empresaNombre} size="sm" />
-                  <div className="leading-tight">
-                    <p className="text-sm font-extrabold text-[var(--sidebar-text-strong)]">
-                      {empresaNombre}
-                    </p>
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
-                      {sucursalNombre ?? BRAND.sistema}
-                    </p>
-                  </div>
-                </div>
+                <CompanyIdentity
+                  size="sm"
+                  logoUrl={logoUrl}
+                  empresaNombre={empresaNombre}
+                  sucursalNombre={sucursalNombre}
+                />
               )}
               {/*
                 No usa <IconButton tone="slate">: sus tonos son fijos
@@ -278,9 +274,7 @@ export function AppShell({
         <Sidebar
           permisos={permisos}
           empresaNombre={empresaNombre}
-          logoUrl={logoUrl}
-          sucursalNombre={sucursalNombre}
-          open={sidebarOpen}
+          collapsed={!sidebarOpen}
           onOpenSettingsSearch={() => setSettingsSearchOpen(true)}
         />
         {/* Una sola instancia: el drawer y el sidebar pueden estar montados a la vez */}

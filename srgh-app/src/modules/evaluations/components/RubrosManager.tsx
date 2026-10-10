@@ -127,7 +127,7 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
             }
           />
         ) : visibleRubros.length === 0 ? (
-          <EmptyState icon={Search} title={`Ningún rubro coincide con “${query.trim()}”.`} />
+          <EmptyState variant="no-results" title={`Ningún rubro coincide con “${query.trim()}”.`} />
         ) : (
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
             {visibleRubros.map((rubro) => (

@@ -1,6 +1,7 @@
 'use client'
 
 import { CalendarOff } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Avatar } from '@/components/ui/Avatar'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
 import { WidgetCard } from '@/modules/dashboard/components/WidgetCard'
@@ -14,9 +15,12 @@ export function AbsencesWidget({ summary, step }: { summary: AbsencesSummary; st
   return (
     <WidgetCard icon={CalendarOff} title="Ausencias de la semana" href="/schedule" step={step}>
       {absences.length === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          No hay ausencias aprobadas para esta semana.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={CalendarOff}
+          title="No hay ausencias aprobadas para esta semana."
+        />
       ) : (
         <>
           <p className="mt-4 text-sm text-slate-500">

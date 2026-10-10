@@ -2,6 +2,7 @@
 
 import { useState, type CSSProperties } from 'react'
 import { AlarmClock } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Avatar } from '@/components/ui/Avatar'
 import { cn } from '@/lib/utils/cn'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
@@ -43,9 +44,12 @@ export function MonthTardinessWidget({
       </div>
 
       {summary.people.length === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          Nadie acumula tardías ni ausencias en {monthLabel}.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={AlarmClock}
+          title={`Nadie acumula tardías ni ausencias en ${monthLabel}.`}
+        />
       ) : (
         /* Who accumulates the most: one bar per person, tardiness plus
            absences, from a shared baseline. One hue; the split is in the text. */

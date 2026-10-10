@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { renderToString } from 'react-dom/server'
 import { LoginForm } from './LoginForm'
 import { login } from '@/modules/auth/actions/login'
 
@@ -25,9 +26,48 @@ async function fillAndSubmit(email = 'user@mail.com', password = 'secreto') {
   return user
 }
 
+/* jsdom no trae Web Animations: para ver la sacudida se instala uno falso. */
+function installAnimate() {
+  const animate = vi.fn()
+  Object.defineProperty(HTMLElement.prototype, 'animate', {
+    value: animate,
+    configurable: true,
+    writable: true,
+  })
+  return animate
+}
+
+const submitButton = () => screen.getByRole('button', { name: /iniciar sesion/i })
+
 describe('<LoginForm />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    Reflect.deleteProperty(HTMLElement.prototype, 'animate')
+  })
+
+  it.each([
+    [8, 'Buenos días'],
+    [15, 'Buenas tardes'],
+    [20, 'Buenas noches'],
+  ])('a las %i h saluda con "%s"', (hour, greeting) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 9, hour))
+
+    render(<LoginForm />)
+
+    expect(screen.getByText(greeting)).toBeInTheDocument()
+  })
+
+  it('el HTML del servidor saluda sin hora: la que vale es la del visitante', () => {
+    const html = renderToString(<LoginForm />)
+
+    expect(html).toContain('Hola')
+    expect(html).not.toMatch(/Buen(os|as) /)
   })
 
   it('renderiza la identidad del sistema', () => {
@@ -125,6 +165,59 @@ describe('<LoginForm />', () => {
 
     resolveLogin({ ok: true, destination: '/dashboard' })
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'))
+  })
+
+  it('un intento fallido sacude la tarjeta y las figuras se reponen al rato', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const animate = installAnimate()
+    const { container } = render(<LoginForm />)
+    const scene = container.querySelector('.login-scene')
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    await user.click(submitButton())
+
+    await waitFor(() => expect(scene).toHaveAttribute('data-mood', 'error'))
+    expect(animate).toHaveBeenCalledTimes(1)
+    expect(animate.mock.contexts[0]).toHaveClass('login-card')
+
+    // Vuelven a reaccionar al campo enfocado: el formulario lleva el foco
+    // al primer campo invalido, el correo.
+    act(() => vi.advanceTimersByTime(1600))
+    expect(scene).toHaveAttribute('data-mood', 'watching')
+  })
+
+  it('con movimiento reducido no sacude la tarjeta', async () => {
+    const animate = installAnimate()
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query }))
+    const { container } = render(<LoginForm />)
+
+    await userEvent.setup().click(submitButton())
+
+    await waitFor(() =>
+      expect(container.querySelector('.login-scene')).toHaveAttribute('data-mood', 'error')
+    )
+    expect(animate).not.toHaveBeenCalled()
+  })
+
+  it('avisa del Bloq Mayús solo mientras se escribe la contraseña', async () => {
+    render(<LoginForm />)
+    const user = userEvent.setup()
+    const password = screen.getByLabelText('Contrasena')
+    const warning = () => screen.queryByText(/bloq mayús activado/i)
+
+    await user.click(password)
+    await user.keyboard('{CapsLock}')
+    expect(warning()).toBeInTheDocument()
+
+    // Fuera del campo no se muestra, aunque siga activado.
+    await user.click(screen.getByLabelText('Correo Electronico'))
+    expect(warning()).not.toBeInTheDocument()
+    await user.click(password)
+    expect(warning()).toBeInTheDocument()
+
+    // Se lee en cada tecla que se suelta: al apagarlo, la siguiente lo quita.
+    await user.keyboard('{CapsLock}a')
+    expect(warning()).not.toBeInTheDocument()
   })
 
   it('alterna la visibilidad de la contrasena', async () => {

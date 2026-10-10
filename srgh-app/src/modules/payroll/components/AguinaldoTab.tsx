@@ -17,6 +17,7 @@ import {
   TABLE_TH,
 } from '@/components/ui/styles'
 import { Badge, type BadgeTone } from '@/components/ui/Badge'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface AguinaldoTabProps {
   anio: number
@@ -183,9 +184,7 @@ export function AguinaldoTab({
       )}
 
       {items.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-          No hay empleados con aguinaldo en este ciclo.
-        </p>
+        <EmptyState icon={Gift} title="No hay empleados con aguinaldo en este ciclo." />
       ) : (
         <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
           {/* Movil: tarjeta por empleado, con el monto destacado. */}

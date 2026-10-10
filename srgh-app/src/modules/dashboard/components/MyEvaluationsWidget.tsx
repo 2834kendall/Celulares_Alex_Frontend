@@ -2,6 +2,7 @@
 
 import { useState, type CSSProperties } from 'react'
 import { Award, TrendingDown, TrendingUp } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
 import { WidgetCard } from '@/modules/dashboard/components/WidgetCard'
@@ -37,9 +38,12 @@ export function MyEvaluationsWidget({
   return (
     <WidgetCard icon={Award} title="Mis evaluaciones" step={step}>
       {!shown ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          Todavía no tenés evaluaciones registradas.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={Award}
+          title="Todavía no tenés evaluaciones registradas."
+        />
       ) : (
         <>
           <div className="mt-4 flex items-center gap-4">

@@ -4,7 +4,7 @@ import { getProvisionesAguinaldo } from '@/modules/payroll/actions/getProvisione
 import { getContratosPorLiquidar } from '@/modules/payroll/actions/getContratosPorLiquidar'
 import { getLiquidaciones } from '@/modules/payroll/actions/getLiquidaciones'
 import { AguinaldoLiquidacionView } from '@/modules/payroll/components/AguinaldoLiquidacionView'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { aperturaPagoAguinaldo } from '@/modules/payroll/lib/aguinaldoData'
@@ -35,14 +35,20 @@ export default async function AguinaldoLiquidacionPage({
     getLiquidaciones(),
   ])
 
+  const errorView = (message: string) => (
+    <PageError title="Aguinaldo y liquidación" backHref="/payroll" backLabel="Volver a nómina">
+      {message}
+    </PageError>
+  )
+
   if (!aguinaldosResult.ok) {
-    return <Alert size="md">{aguinaldosResult.error}</Alert>
+    return errorView(aguinaldosResult.error)
   }
   if (!contratosResult.ok) {
-    return <Alert size="md">{contratosResult.error}</Alert>
+    return errorView(contratosResult.error)
   }
   if (!liquidacionesResult.ok) {
-    return <Alert size="md">{liquidacionesResult.error}</Alert>
+    return errorView(liquidacionesResult.error)
   }
 
   return (
@@ -51,7 +57,7 @@ export default async function AguinaldoLiquidacionPage({
         backHref="/payroll"
         backLabel="Volver a nómina"
         title="Aguinaldo y liquidación"
-        description="Aguinaldo del ciclo y liquidaciones por salida de empleado, cada pago con su comprobante."
+        description="Aguinaldo del ciclo y liquidaciones por salida, con su comprobante."
       />
 
       <AguinaldoLiquidacionView

@@ -2,6 +2,7 @@
 
 import { useState, type CSSProperties } from 'react'
 import { Building2 } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { cn } from '@/lib/utils/cn'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
 import { TeamSpot } from '@/modules/dashboard/components/Spots'
@@ -27,9 +28,12 @@ export function TeamWidget({
   return (
     <WidgetCard icon={Building2} title="Equipo por sucursal" href="/employees" step={step}>
       {total === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          No hay colaboradores con contrato vigente.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={Building2}
+          title="No hay colaboradores con contrato vigente."
+        />
       ) : (
         <>
           <div className="mt-4 flex items-center gap-3">

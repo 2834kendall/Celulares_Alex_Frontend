@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { ArrowRight, FileClock, TriangleAlert } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { cn } from '@/lib/utils/cn'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
 import { WidgetCard } from '@/modules/dashboard/components/WidgetCard'
@@ -25,9 +26,12 @@ export function ContractsWidget({
   return (
     <WidgetCard icon={FileClock} title="Contratos por vencer" href="/employees" step={step}>
       {contracts.length === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          Ningún contrato vence en los próximos 60 días.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={FileClock}
+          title="Ningún contrato vence en los próximos 60 días."
+        />
       ) : (
         <>
           <p className="mt-4 text-sm text-slate-500">

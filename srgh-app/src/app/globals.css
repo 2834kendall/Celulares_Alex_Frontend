@@ -568,6 +568,374 @@ h3 {
   }
 }
 
+/* ===== Estados vacíos (EmptyState) ===== */
+
+/*
+ * Mismas convenciones que el dock del menu: ganchos de clase (`empty-state`,
+ * `empty-state-badge`, `empty-state-copy`), la variante en `data-variant`,
+ * todo bajo `prefers-reduced-motion: no-preference` y lo que depende del
+ * puntero ademas bajo `(hover: hover)`. Sin movimiento, el estado se ve
+ * exactamente igual, solo que quieto.
+ *
+ * Se anima el badge entero, nunca las piezas del icono: cada pantalla pasa su
+ * propio icono de lucide y no hay un orden de nodos en comun del que fiarse.
+ *
+ * Nada se mueve en reposo. Y como el componente queda montado mientras el
+ * usuario escribe en un buscador (solo cambia el texto), la entrada no se
+ * repite en cada tecla.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes empty-pop {
+    0% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+    100% {
+      transform: none;
+    }
+  }
+
+  @keyframes empty-ring {
+    from {
+      opacity: 0.6;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.8);
+    }
+  }
+
+  /* El mismo resorte que el icono del dock al crecer. */
+  .empty-state-badge {
+    animation: empty-pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) backwards;
+  }
+
+  /* Un anillo que se expande una vez, en el color de la sucursal. */
+  .empty-state-badge::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid var(--color-brand-300);
+    opacity: 0;
+    animation: empty-ring 0.9s ease-out 0.3s;
+  }
+
+  .empty-state-copy {
+    animation: fade-slide-up 0.3s ease-out 0.08s backwards;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  @keyframes empty-bob {
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+
+  @keyframes empty-seek {
+    0%,
+    100% {
+      transform: none;
+    }
+    30% {
+      transform: translateX(-2px) rotate(-12deg);
+    }
+    70% {
+      transform: translateX(2px) rotate(12deg);
+    }
+  }
+
+  /* Vacío: el icono flota. */
+  .empty-state[data-variant='empty']:hover .empty-state-badge > svg {
+    animation: empty-bob 0.9s ease-in-out infinite;
+  }
+
+  /* Sin resultados: el icono "busca" de un lado a otro, como una lupa. */
+  .empty-state[data-variant='no-results']:hover .empty-state-badge > svg {
+    animation: empty-seek 1.1s ease-in-out infinite;
+  }
+}
+
+/* ===== Escenas de estado (components/scene/states) ===== */
+
+/*
+ * Vacio, sin resultados, 404, sin acceso y error. Las figuras son las del
+ * login (`login-scene`): parpadeo, reposo, mirada, toque, entrada y pausa
+ * fuera de pantalla vienen de alla. Aca van sus expresiones propias, por
+ * `data-mood`, y la utileria de cada escena (`state-*`).
+ *
+ * Mismas guardas que el resto: las expresiones fuera de todo media query (sin
+ * movimiento la escena igual se entiende), la animacion bajo
+ * `prefers-reduced-motion: no-preference` y lo que dispara el puntero ademas
+ * bajo `(hover: hover)`.
+ */
+.state-zzz,
+.state-ask,
+.state-sweep,
+.state-lock,
+.state-spark {
+  transform-box: fill-box;
+}
+
+/* Dormido (vacio): los ojos cerrados salen de la regla del login; boca chica. */
+.state-scene[data-mood='sleeping'] .login-mouth-curve {
+  transform: scale(0.5, 0.2);
+}
+
+/* Al tocarlo se despierta sobresaltado: ojos abiertos y boca en "O". */
+.state-scene[data-mood='sleeping'] .login-character[data-poked] .login-eye-open {
+  opacity: 1;
+  transform: none;
+}
+
+.state-scene[data-mood='sleeping'] .login-character[data-poked] .login-eye-lid,
+.state-scene[data-mood='sleeping'] .login-character[data-poked] .login-mouth-curve {
+  opacity: 0;
+}
+
+.state-scene[data-mood='sleeping'] .login-character[data-poked] .login-mouth-o {
+  opacity: 1;
+  transform: none;
+}
+
+/* `visibility` y no `opacity`: la animacion de las "z" pisaria la opacidad. */
+.state-empty:has([data-poked]) .state-zzz {
+  visibility: hidden;
+}
+
+/* Desconcertado (sin resultados): una ceja arriba y otra abajo, boca torcida. */
+.state-scene[data-mood='confused'] .login-brow {
+  transform: translateY(calc(var(--brow-side, 1) * -2.5px));
+}
+
+.state-scene[data-mood='confused'] .login-mouth-curve {
+  transform: rotate(-10deg) scale(0.55, 0.25);
+}
+
+/* Perdido (404): cejas arriba y una "o" chica. */
+.state-scene[data-mood='lost'] .login-brow {
+  transform: translateY(-3px);
+}
+
+.state-scene[data-mood='lost'] .login-mouth-curve {
+  opacity: 0;
+}
+
+.state-scene[data-mood='lost'] .login-mouth-o {
+  opacity: 1;
+  transform: scale(0.75);
+}
+
+/* Serio (sin acceso): cejas fruncidas hacia adentro y boca recta. */
+.state-scene[data-mood='stern'] .login-brow {
+  transform: translateY(1.5px) rotate(calc(var(--brow-side, 1) * -14deg));
+}
+
+.state-scene[data-mood='stern'] .login-mouth-curve {
+  transform: scale(0.8, 0.1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Las "z" suben y se apagan, una detras de otra. */
+  @keyframes state-zzz {
+    0% {
+      opacity: 0;
+      transform: translate(0, 4px) scale(0.6);
+    }
+    25% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(6px, -12px) scale(1.1);
+    }
+  }
+
+  .state-zzz {
+    opacity: 0;
+    animation: state-zzz 3s ease-out infinite;
+  }
+
+  .state-zzz-2 {
+    animation-delay: 1s;
+  }
+
+  .state-zzz-3 {
+    animation-delay: 2s;
+  }
+
+  /* Dormido: respira lento, en lugar del gesto de reposo de la figura. */
+  @keyframes state-breathe {
+    0%,
+    100% {
+      transform: none;
+    }
+    50% {
+      transform: scale(1.03, 0.97);
+    }
+  }
+
+  .state-scene[data-mood='sleeping'] .login-idle {
+    animation: state-breathe 3.6s ease-in-out infinite;
+  }
+
+  /* El "?" aparece con un salto y despues se balancea. */
+  @keyframes state-ask {
+    0% {
+      opacity: 0;
+      transform: scale(0.3);
+    }
+    45% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+    70% {
+      transform: none;
+    }
+  }
+
+  @keyframes state-tilt {
+    0%,
+    100% {
+      transform: none;
+    }
+    30% {
+      transform: rotate(-12deg);
+    }
+    60% {
+      transform: rotate(8deg);
+    }
+  }
+
+  .state-ask {
+    transform-origin: 50% 100%;
+    animation:
+      state-ask 0.7s cubic-bezier(0.3, 1.4, 0.5, 1) 0.5s backwards,
+      state-tilt 3.2s ease-in-out 1.4s infinite;
+  }
+
+  /* La lupa barre de un lado a otro, pivotando en el mango. */
+  @keyframes state-sweep {
+    0%,
+    100% {
+      transform: translate(-6px, 2px) rotate(-10deg);
+    }
+    50% {
+      transform: translate(6px, -3px) rotate(10deg);
+    }
+  }
+
+  .state-sweep {
+    transform-origin: 85% 85%;
+    animation: state-sweep 2.6s ease-in-out infinite;
+  }
+
+  /* Chispas del bloque roto: titilan desfasadas. */
+  @keyframes state-spark {
+    0%,
+    100% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    15% {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+    35% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+  }
+
+  .state-spark {
+    transform-origin: center;
+    animation: state-spark 1.8s ease-out infinite;
+  }
+
+  .state-spark-late {
+    animation-delay: 0.9s;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  @keyframes state-lock-shake {
+    0%,
+    100% {
+      transform: none;
+    }
+    20%,
+    60% {
+      transform: rotate(-9deg);
+    }
+    40%,
+    80% {
+      transform: rotate(9deg);
+    }
+  }
+
+  /* Sin acceso, al pasar el puntero: el candado tiembla y el guardia niega
+     con la cabeza (el mismo gesto del error del login). */
+  .state-forbidden:hover .state-lock {
+    transform-origin: 50% 100%;
+    animation: state-lock-shake 0.5s ease-in-out;
+  }
+
+  .state-forbidden:hover .login-pop {
+    animation: login-shake 0.5s ease-in-out;
+  }
+}
+
+/* ===== Skeletons de carga (components/ui/Skeleton) ===== */
+
+/*
+ * El brillo es el mismo barrido que `.dash-meter-shine` del dashboard
+ * (`dash-shine`), pero continuo en vez de solo al pasar el puntero. Sin
+ * movimiento, los bloques quedan grises y quietos: la silueta ya comunica que
+ * algo esta cargando.
+ *
+ * Los bloques son grises y el brillo lleva un toque del color de la sucursal.
+ * Al reves no: un bloque de color se confunde con contenido (un badge, una
+ * fila seleccionada), y con un acento rojo o naranja la carga pareceria una
+ * alerta.
+ *
+ * El retraso de la region esta aca y no en una clase arbitraria de Tailwind:
+ * estas reglas no estan en una capa de cascada, asi que le ganan a cualquier
+ * utilidad y un `[animation-delay:…]` en el componente se perderia en silencio.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes skeleton-shine {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
+  }
+
+  .skeleton {
+    background-image: linear-gradient(
+      100deg,
+      transparent 35%,
+      color-mix(in oklab, var(--color-brand-100) 45%, rgb(255 255 255 / 0.6)) 50%,
+      transparent 65%
+    );
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: skeleton-shine 1.4s linear infinite;
+  }
+
+  /* Aparece con un pequeno retraso: en una navegacion rapida ni se llega a ver. */
+  .skeleton-region {
+    animation: fade-in 0.2s ease-out 0.12s backwards;
+  }
+}
+
 /* ===== Pantalla de login ===== */
 
 /*
@@ -677,10 +1045,11 @@ h3 {
 
 /* Contrasena oculta y en foco: no miran. Ojos cerrados, labios apretados.
    (Los mismos ojos cerrados sirven de cara feliz: al tocarlas, o el sobre
-   cuando sale con el correo.) */
+   cuando sale con el correo; y de figura dormida en los estados vacios.) */
 .login-scene[data-mood='hiding'] .login-eye-open,
 .login-scene[data-mood='sent'] .login-eye-open,
 .login-scene[data-mood='success'] .login-eye-open,
+.state-scene[data-mood='sleeping'] .login-eye-open,
 .login-character[data-poked] .login-eye-open {
   opacity: 0;
   transform: scaleY(0.05);
@@ -689,6 +1058,7 @@ h3 {
 .login-scene[data-mood='hiding'] .login-eye-lid,
 .login-scene[data-mood='sent'] .login-eye-lid,
 .login-scene[data-mood='success'] .login-eye-lid,
+.state-scene[data-mood='sleeping'] .login-eye-lid,
 .login-character[data-poked] .login-eye-lid {
   opacity: 1;
 }

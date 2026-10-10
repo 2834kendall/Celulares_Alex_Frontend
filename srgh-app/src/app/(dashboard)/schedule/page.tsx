@@ -14,6 +14,8 @@ import { buildAusenciaOverlayEntries } from '@/modules/absences/lib/overlay'
 import { AbsencesPanel } from '@/modules/absences/components/AbsencesPanel'
 import type { EmployeeOption } from '@/modules/absences/types'
 import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 interface SchedulePageProps {
   searchParams?:
@@ -57,19 +59,19 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
   ])
 
   if (!schedulesResult.ok) {
-    return <Alert size="md">{schedulesResult.error}</Alert>
+    return <PageError title="Horarios">{schedulesResult.error}</PageError>
   }
 
   if (!shiftTypesResult.ok) {
-    return <Alert size="md">{shiftTypesResult.error}</Alert>
+    return <PageError title="Horarios">{shiftTypesResult.error}</PageError>
   }
 
   if (weeklyScheduleResult && !weeklyScheduleResult.ok) {
-    return <Alert size="md">{weeklyScheduleResult.error}</Alert>
+    return <PageError title="Horarios">{weeklyScheduleResult.error}</PageError>
   }
 
   if (!ausenciaTypesResult.ok) {
-    return <Alert size="md">{ausenciaTypesResult.error}</Alert>
+    return <PageError title="Horarios">{ausenciaTypesResult.error}</PageError>
   }
 
   // Un fallo al cargar las ausencias (ej. la migracion de tau_es_intradia aun
@@ -92,6 +94,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
 
   return (
     <div className="min-w-0 space-y-4">
+      <PageHeader title="Horarios" />
       <ScheduleTabs
         plantillaContent={
           weeklyScheduleResult ? (

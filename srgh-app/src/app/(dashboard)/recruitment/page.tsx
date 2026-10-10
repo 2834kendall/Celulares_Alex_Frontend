@@ -8,7 +8,7 @@ import {
   getTiposIdentificacion,
 } from '@/modules/employees/actions/getCatalogs'
 import { RecruitmentBoard } from '@/modules/recruitment/components/RecruitmentBoard'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 
 // Los criterios de puntaje NO se administran desde acá: viven en
@@ -28,18 +28,15 @@ export default async function RecruitmentPage() {
     ])
 
   if (!boardResult.ok) {
-    return <Alert size="md">{boardResult.error}</Alert>
+    return <PageError title="Reclutamiento">{boardResult.error}</PageError>
   }
   if (!tiposIdentificacionResult.ok || !puestosResult.ok || !sucursalesResult.ok) {
-    return <Alert size="md">No se pudieron cargar los catálogos.</Alert>
+    return <PageError title="Reclutamiento">No se pudieron cargar los catálogos.</PageError>
   }
 
   return (
     <div className="min-w-0 space-y-4">
-      <PageHeader
-        title="Reclutamiento"
-        description="Candidatos, postulaciones y embudo de selección."
-      />
+      <PageHeader title="Reclutamiento" />
 
       <RecruitmentBoard
         postulaciones={boardResult.data}

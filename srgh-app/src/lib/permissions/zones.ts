@@ -2,9 +2,9 @@ import { PERMISOS, type Permiso } from '@/lib/permissions/catalog'
 
 /**
  * Fuente unica de verdad de las ZONAS de la aplicacion:
- * que ruta existe, como se llama, y que permisos dan acceso a ella.
- * La usan el Sidebar (visibilidad), el Topbar (titulo de pagina)
- * y las pages (guard server-side con requirePermission/requireAnyPermission).
+ * que ruta existe, como se llama, en que grupo del menu va y que permisos dan
+ * acceso a ella. La usan el menu lateral (visibilidad y agrupacion) y las
+ * pages (guard server-side con requirePermission/requireAnyPermission).
  */
 
 // Conjuntos de acceso por zona (visible/accesible con AL MENOS UNO)
@@ -35,39 +35,93 @@ export const ACCESO_CONFIGURACION: Permiso[] = [
   PERMISOS.USUARIOS_WRITE,
 ]
 
+/** Grupos rotulados del menu principal. El orden de este arreglo es el del menu. */
+export type ZoneGroupId = 'people' | 'operations' | 'administration'
+
+export interface ZoneGroup {
+  id: ZoneGroupId
+  label: string
+}
+
+export const ZONE_GROUPS: readonly ZoneGroup[] = [
+  { id: 'people', label: 'Personal' },
+  { id: 'operations', label: 'Operación' },
+  { id: 'administration', label: 'Administración' },
+]
+
 export interface Zona {
   key: string
   href: string
   label: string
   /** Vacio = visible para cualquier usuario autenticado con permisos */
   permisos: Permiso[]
+  /** null = sin grupo, arriba de todo (solo Inicio). */
+  group: ZoneGroupId | null
 }
 
+/**
+ * En el orden del menu: cada grupo junto, en el orden de `ZONE_GROUPS`. Un
+ * test compara este arreglo contra lo que arma `visibleNavSections`, asi que
+ * una zona fuera de lugar se detecta ahi y no en pantalla.
+ */
 export const ZONAS: Zona[] = [
-  { key: 'dashboard', href: '/dashboard', label: 'Inicio', permisos: [] },
-  { key: 'employees', href: '/employees', label: 'Empleados', permisos: ACCESO_EMPLEADOS },
-  { key: 'attendance', href: '/attendance', label: 'Asistencia', permisos: ACCESO_ASISTENCIA },
-  { key: 'schedule', href: '/schedule', label: 'Horarios', permisos: ACCESO_HORARIOS },
+  { key: 'dashboard', href: '/dashboard', label: 'Inicio', permisos: [], group: null },
   {
-    key: 'my-schedule',
-    href: '/my-schedule',
-    label: 'Mi Horario',
-    permisos: ACCESO_MI_HORARIO,
+    key: 'employees',
+    href: '/employees',
+    label: 'Empleados',
+    permisos: ACCESO_EMPLEADOS,
+    group: 'people',
   },
-  { key: 'payroll', href: '/payroll', label: 'Nomina', permisos: ACCESO_NOMINA },
   {
     key: 'recruitment',
     href: '/recruitment',
     label: 'Reclutamiento',
     permisos: ACCESO_RECLUTAMIENTO,
+    group: 'people',
   },
   {
     key: 'evaluations',
     href: '/evaluations',
     label: 'Evaluaciones',
     permisos: ACCESO_EVALUACIONES,
+    group: 'people',
   },
-  { key: 'settings', href: '/settings', label: 'Configuracion', permisos: ACCESO_CONFIGURACION },
+  {
+    key: 'attendance',
+    href: '/attendance',
+    label: 'Asistencia',
+    permisos: ACCESO_ASISTENCIA,
+    group: 'operations',
+  },
+  {
+    key: 'schedule',
+    href: '/schedule',
+    label: 'Horarios',
+    permisos: ACCESO_HORARIOS,
+    group: 'operations',
+  },
+  {
+    key: 'my-schedule',
+    href: '/my-schedule',
+    label: 'Mi horario',
+    permisos: ACCESO_MI_HORARIO,
+    group: 'operations',
+  },
+  {
+    key: 'payroll',
+    href: '/payroll',
+    label: 'Nómina',
+    permisos: ACCESO_NOMINA,
+    group: 'administration',
+  },
+  {
+    key: 'settings',
+    href: '/settings',
+    label: 'Configuración',
+    permisos: ACCESO_CONFIGURACION,
+    group: 'administration',
+  },
 ]
 
 /** Zonas que el usuario puede ver segun los permisos de su JWT (solo UX). */
@@ -77,20 +131,29 @@ export function zonasVisibles(permisos: string[]): Zona[] {
   )
 }
 
-/** Rutas que no aparecen en el sidebar pero tienen titulo propio en el Topbar. */
-const TITULOS_EXTRA: Record<string, string> = {
-  '/profile': 'Mi perfil',
+/** Un tramo del menu: las zonas sin grupo, o las de un grupo con su rotulo. */
+export interface NavSection {
+  group: ZoneGroup | null
+  zonas: Zona[]
 }
 
-/** Titulo de pagina para el Topbar segun la ruta actual. */
-export function tituloDeRuta(pathname: string): string {
-  const zona = ZONAS.find((z) => pathname === z.href || pathname.startsWith(`${z.href}/`))
-  if (zona) {
-    return zona.label
+/**
+ * Zonas visibles agrupadas para el menu. Los grupos sin ninguna zona visible
+ * no aparecen, para no dejar un rotulo sin items debajo.
+ *
+ * La seccion sin grupo va siempre: Inicio no pide permisos, asi que nunca
+ * queda vacia (un test lo fija).
+ */
+export function visibleNavSections(permisos: string[]): NavSection[] {
+  const visibles = zonasVisibles(permisos)
+  const sections: NavSection[] = [
+    { group: null, zonas: visibles.filter((zona) => zona.group === null) },
+  ]
+  for (const group of ZONE_GROUPS) {
+    const zonas = visibles.filter((zona) => zona.group === group.id)
+    if (zonas.length > 0) {
+      sections.push({ group, zonas })
+    }
   }
-
-  const extra = Object.entries(TITULOS_EXTRA).find(
-    ([href]) => pathname === href || pathname.startsWith(`${href}/`)
-  )
-  return extra?.[1] ?? 'SGRH'
+  return sections
 }

@@ -2,6 +2,7 @@
 
 import { useState, type CSSProperties } from 'react'
 import { CalendarRange, CircleCheck, TriangleAlert } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { cn } from '@/lib/utils/cn'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
 import { CalendarSpot } from '@/modules/dashboard/components/Spots'
@@ -33,9 +34,12 @@ export function TeamScheduleWidget({
   return (
     <WidgetCard icon={CalendarRange} title="Horarios de la semana" href="/schedule" step={step}>
       {summary.rosterSize === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          No hay colaboradores con contrato vigente para programar.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={CalendarRange}
+          title="No hay colaboradores con contrato vigente para programar."
+        />
       ) : (
         <>
           <div className="mt-4 flex items-center gap-3">

@@ -1,4 +1,5 @@
 import { Alert } from '@/components/ui/Alert'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { ACCESO_ASISTENCIA } from '@/lib/permissions/zones'
@@ -24,13 +25,19 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const claims = await requireAnyPermission(ACCESO_ASISTENCIA)
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canReadDashboard = permisos.includes(PERMISOS.ASISTENCIA_READ)
+  // La barra superior ya no muestra el titulo de la ruta: el encabezado va en
+  // todas las ramas, incluida la de error, o la pantalla queda sin titulo.
+  const header = <PageHeader title="Asistencia" />
 
   if (!canReadDashboard) {
     return (
-      <Alert tone="info" size="md">
-        Tu rol no tiene permiso para ver el panel de asistencia de la sucursal. Tu historial
-        personal de marcas estara disponible en tu perfil.
-      </Alert>
+      <div className="min-w-0 space-y-4">
+        {header}
+        <Alert tone="info" size="md">
+          Tu rol no tiene permiso para ver el panel de asistencia de la sucursal. Tu historial
+          personal de marcas estara disponible en tu perfil.
+        </Alert>
+      </div>
     )
   }
 
@@ -88,11 +95,14 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
     : 0
 
   return (
-    <AttendanceTabs
-      diarioContent={diarioContent}
-      resumenContent={resumenContent}
-      justificarContent={justificarContent}
-      pendingCount={pendingCount}
-    />
+    <div className="min-w-0 space-y-4">
+      {header}
+      <AttendanceTabs
+        diarioContent={diarioContent}
+        resumenContent={resumenContent}
+        justificarContent={justificarContent}
+        pendingCount={pendingCount}
+      />
+    </div>
   )
 }

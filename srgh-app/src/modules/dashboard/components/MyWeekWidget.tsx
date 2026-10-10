@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { CalendarCheck } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { RangoHora } from '@/components/ui/Hora'
 import { cn } from '@/lib/utils/cn'
 import { WidgetCard } from '@/modules/dashboard/components/WidgetCard'
@@ -41,9 +42,12 @@ export function MyWeekWidget({
   return (
     <WidgetCard icon={CalendarCheck} title="Mi semana" href="/my-schedule" step={step}>
       {days.length === 0 || !detail ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          Todavía no tenés horario cargado para esta semana.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={CalendarCheck}
+          title="Todavía no tenés horario cargado para esta semana."
+        />
       ) : (
         <>
           <div className="mt-4 grid grid-cols-7 gap-1" role="group" aria-label="Días de la semana">

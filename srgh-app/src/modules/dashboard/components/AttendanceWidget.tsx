@@ -10,6 +10,7 @@ import {
   Hourglass,
   type LucideIcon,
 } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Avatar } from '@/components/ui/Avatar'
 import { Hora } from '@/components/ui/Hora'
 import { cn } from '@/lib/utils/cn'
@@ -128,9 +129,12 @@ export function AttendanceWidget({
       className={className}
     >
       {summary.expected === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          Nadie tiene turno programado para hoy.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={CalendarClock}
+          title="Nadie tiene turno programado para hoy."
+        />
       ) : (
         <>
           <div className="mt-4 flex items-center gap-3">

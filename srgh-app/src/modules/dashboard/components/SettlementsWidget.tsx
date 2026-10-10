@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { FileText, TriangleAlert } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
 import { CoinsSpot } from '@/modules/dashboard/components/Spots'
 import { WidgetCard } from '@/modules/dashboard/components/WidgetCard'
@@ -41,9 +42,12 @@ export function SettlementsWidget({
       step={step}
     >
       {settlements.length === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          No hay contratos terminados esperando liquidación.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={FileText}
+          title="No hay contratos terminados esperando liquidación."
+        />
       ) : (
         <>
           <div className="mt-4 flex items-center gap-3">
