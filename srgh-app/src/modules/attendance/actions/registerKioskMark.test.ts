@@ -428,25 +428,10 @@ describe('registerKioskMark (server action)', () => {
       mar_fecha_hora: '2026-08-14 08:00:00',
     }
 
-    it('rechaza empezar el almuerzo fuera de su ventana', async () => {
+    it('acepta empezarlo a cualquier hora, lejos de la del horario', async () => {
+      // SGRH-95: el almuerzo ya no tiene ventana.
       vi.useFakeTimers()
       vi.setSystemTime(new Date('2026-08-14T16:00:00Z')) // 10:00 en Costa Rica
-      const client = useClient(mockConAlmuerzo([ENTRADA]))
-
-      const result = await registerKioskMark(await validInput({ tipo: 'inicio_almuerzo' }))
-
-      expect(result).toEqual({
-        ok: false,
-        error:
-          'Tu almuerzo es de 12:00 a 13:00. Si necesitas tomarlo a otra hora, avisa al encargado.',
-        definitivo: true,
-      })
-      expect(insertedMark(client)).toBeUndefined()
-    })
-
-    it('acepta empezarlo dentro de la media hora previa', async () => {
-      vi.useFakeTimers()
-      vi.setSystemTime(new Date('2026-08-14T17:40:00Z')) // 11:40 en Costa Rica
       const client = useClient(mockConAlmuerzo([ENTRADA]))
 
       expect(await registerKioskMark(await validInput({ tipo: 'inicio_almuerzo' }))).toEqual({
