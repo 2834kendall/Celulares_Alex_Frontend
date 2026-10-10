@@ -103,6 +103,41 @@ describe('getHorasDelPeriodo', () => {
     expect(totales.diasConProblema).toEqual([])
   })
 
+  // Auditoría 2, riesgo "sin límite semanal": el tope sale de la jornada del
+  // contrato. Con un tope de 10 h (dos días de 8 h = 16 h), 6 h son extra.
+  it('aplica el tope semanal de la jornada del contrato', async () => {
+    const result = await getHorasDelPeriodo(
+      supabase({
+        sgrh_programacion_semanal: {
+          data: [programado('2026-07-06'), programado('2026-07-07')],
+          error: null,
+        },
+        sgrh_marcas_asistencia: {
+          data: [
+            marca('2026-07-06', 'entrada', '08:00:00'),
+            marca('2026-07-06', 'salida', '17:00:00'),
+            marca('2026-07-07', 'entrada', '08:00:00'),
+            marca('2026-07-07', 'salida', '17:00:00'),
+          ],
+          error: null,
+        },
+        sgrh_ausencias: { data: [], error: null },
+        sgrh_historial_laboral: {
+          data: [{ lab_id: 5, sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: 10 } }],
+          error: null,
+        },
+      }),
+      PARAMS
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const totales = result.data.get(5)!
+    expect(totales.horasOrdinarias).toBe(10)
+    expect(totales.horasExtra).toBe(6)
+    expect(totales.horasProgramadasTotales).toBe(10)
+  })
+
   it('un día sin fila de programación se marca sinProgramar, a diferencia de un día libre', async () => {
     const result = await getHorasDelPeriodo(
       supabase({

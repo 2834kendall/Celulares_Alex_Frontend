@@ -17,6 +17,8 @@ export type CreatePeriodoResult =
       sinAsistencia: number
       /** Por qué no se pudieron cargar, si es que no se pudo. El periodo existe igual. */
       avisoCarga: string | null
+      /** Las filas se cargaron, pero sin las incapacidades ya registradas. */
+      avisoAusencias?: string | null
     }
   | { ok: false; error: string }
 
@@ -84,5 +86,6 @@ export async function createPeriodo(input: CrearPeriodoInput): Promise<CreatePer
     empleadosCargados: carga.ok ? carga.agregados : 0,
     sinAsistencia: carga.ok ? carga.sinAsistencia : 0,
     avisoCarga: carga.ok ? null : carga.error,
+    avisoAusencias: carga.ok ? (carga.avisoAusencias ?? null) : null,
   }
 }

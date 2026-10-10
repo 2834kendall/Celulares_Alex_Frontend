@@ -188,6 +188,7 @@ export async function getHorasDelPeriodo(
     { data: asistencia, error: errAsistencia },
     { data: ausencias, error: errAusencias },
     { data: feriados, error: errFeriados },
+    jornadas,
   ] = await Promise.all([
     // Programación y marcas del contrato en CUALQUIER sucursal: un día
     // cubierto en otra tienda (SGRH-84: el día se mueve de sucursal, el
@@ -228,6 +229,19 @@ export async function getHorasDelPeriodo(
       .gte('fer_fecha', fechaInicio)
       .lte('fer_fecha', fechaFin)
       .returns<FeriadoRow[]>(),
+    // Tope semanal de la jornada de cada contrato (Art. 136 CT), para que las
+    // horas que pasan de la semana legal sean extra aunque estén programadas
+    // (ver calcularHorasPeriodo).
+    supabase
+      .from('sgrh_historial_laboral')
+      .select('lab_id, sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )')
+      .in('lab_id', historialLaboralIds)
+      .returns<
+        {
+          lab_id: number
+          sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
+        }[]
+      >(),
   ])
 
   const leida = asistenciaDelPeriodo(asistencia)
@@ -242,6 +256,15 @@ export async function getHorasDelPeriodo(
   }
   if (errAusencias) return { ok: false, error: 'No se pudieron cargar las ausencias aprobadas.' }
   if (errFeriados) return { ok: false, error: 'No se pudieron cargar los feriados del periodo.' }
+  // Sin poder leer la jornada no se aplica el tope: se calcula como antes, día
+  // por día contra el horario. No se corta todo por un dato complementario.
+  const topePorLab = new Map<number, number>()
+  if (jornadas && !jornadas.error && Array.isArray(jornadas.data)) {
+    for (const j of jornadas.data) {
+      const tope = Number(j.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? 0)
+      if (tope > 0) topePorLab.set(j.lab_id, tope)
+    }
+  }
 
   const { programacion, marcas } = leida
   const fechasFeriado = new Set((feriados ?? []).map((f) => f.fer_fecha.slice(0, 10)))
@@ -371,7 +394,7 @@ export async function getHorasDelPeriodo(
       }
     })
 
-    resultado.set(labId, calcularHorasPeriodo(dias))
+    resultado.set(labId, calcularHorasPeriodo(dias, topePorLab.get(labId) ?? null))
   }
 
   return { ok: true, data: resultado }

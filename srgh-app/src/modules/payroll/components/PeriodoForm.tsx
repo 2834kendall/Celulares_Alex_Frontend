@@ -98,6 +98,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
 
     // El periodo ya existe pase lo que pase; lo que puede fallar es la carga
     // de los empleados, y eso se avisa sin tratarlo como un error de creación.
+    if (result.avisoAusencias) toast.warning(result.avisoAusencias)
     if (result.avisoCarga) {
       toast.warning(`Periodo creado, pero no se cargaron los empleados: ${result.avisoCarga}`)
     } else if (result.empleadosCargados === 0) {

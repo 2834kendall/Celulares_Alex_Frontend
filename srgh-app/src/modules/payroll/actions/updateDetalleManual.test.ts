@@ -387,6 +387,8 @@ describe('updateDetalleManual (server action)', () => {
             horasExtra: 0,
             horasAcreditadas: 0,
             diasAcreditadosSinHorario: 0,
+            horasAcreditadasAusencias: 0,
+            diasAcreditadosAusenciasSinHorario: 0,
             diasJustificados: 0,
             periodoCubiertoPorAusencias: false,
             horasProgramadasTotales: 96,

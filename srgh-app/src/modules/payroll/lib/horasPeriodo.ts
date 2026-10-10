@@ -142,7 +142,7 @@ export const MENSAJE_PROBLEMA: Record<ProblemaDia, string> = {
   marco_en_dia_libre:
     'Marcó en su día libre, así que esas horas no se contaron. Si de verdad trabajó, programá el día en Horarios; trabajar el día de descanso se paga doble (Art. 152 CT).',
   justificado_sin_horario:
-    'Día pagado (feriado o ausencia aprobada) sin horario programado: se le acreditó la jornada diaria promedio del contrato (horas semanales ÷ 7). Si ese día tenía horario, programalo para que se acredite exacto.',
+    'Día pagado (feriado o ausencia aprobada) sin horario programado: se le acreditó la jornada diaria del contrato (horas semanales ÷ 6). Si ese día tenía horario, programalo para que se acredite exacto.',
   sin_programar:
     'No hay programación para este día: ni horario, ni día libre, ni feriado, ni ausencia. No se pudo medir, así que cuenta como jornada sin cumplir para el cálculo de la quincena y baja lo que corresponde cobrar. Completá el horario de ese día o marcalo como libre.',
 }
@@ -170,6 +170,12 @@ export const PROBLEMAS_QUE_BLOQUEAN: ReadonlySet<ProblemaDia> = new Set<Problema
 
 export interface DiaCalculado {
   fecha: string
+  /**
+   * El día cae antes del inicio (o después del fin) del contrato. Solo lo
+   * pone la pantalla del periodo para no mostrarlo como problema (auditoría
+   * 2, hallazgo 12); el cálculo no lo usa.
+   */
+  fueraDelContrato?: boolean
   /** Horas que la persona tenía programadas. 0 si el día no cuenta. */
   horasEsperadas: number
   /** Horas efectivamente trabajadas según las marcas. */
@@ -188,6 +194,15 @@ export interface DiaCalculado {
    * que faltó, en un permiso intradía) por la fracción pagada.
    */
   horasAcreditadas: number
+  /**
+   * La parte de horasAcreditadas que viene de una AUSENCIA (vacaciones,
+   * permisos), no de un feriado. Una ausencia se puede aprobar después de
+   * armada la fila: con esto se reconoce el monto que el sistema escribió
+   * antes de que existiera (ver basesDelSistema).
+   */
+  horasAcreditadasAusencia: number
+  /** Igual que diaAcreditadoSinHorario, pero solo por ausencias. */
+  diaAcreditadoAusenciaSinHorario: number
   /**
    * Día pagado sin horario programado, como fracción de día (0 a 1). Las horas
    * las pone quien sabe la jornada del contrato (lib/prellenadoAsistencia.ts):
@@ -324,6 +339,8 @@ const DIA_VACIO = (
   cuenta: horasEsperadas > 0,
   justificacion: null,
   horasAcreditadas: 0,
+  horasAcreditadasAusencia: 0,
+  diaAcreditadoAusenciaSinHorario: 0,
   diaAcreditadoSinHorario: 0,
   horasProgramadasDia: horasEsperadas,
   diaJustificadoSinHorario: 0,
@@ -391,11 +408,16 @@ export function calcularDia(dia: DiaProgramado): DiaCalculado {
       problema = 'justificado_sin_horario'
     }
 
+    const horasAcreditadas = programadas === null ? 0 : round2(programadas * fraccion)
+    const diaAcreditadoSinHorario = programadas === null ? fraccion : 0
+    const esAusencia = justificacion.motivo !== 'feriado'
     return {
       ...DIA_VACIO(dia.fecha, problema, 0),
       justificacion: { ...justificacion, fraccionPagada: fraccion },
-      horasAcreditadas: programadas === null ? 0 : round2(programadas * fraccion),
-      diaAcreditadoSinHorario: programadas === null ? fraccion : 0,
+      horasAcreditadas,
+      horasAcreditadasAusencia: esAusencia ? horasAcreditadas : 0,
+      diaAcreditadoAusenciaSinHorario: esAusencia ? diaAcreditadoSinHorario : 0,
+      diaAcreditadoSinHorario,
       horasProgramadasDia: programadas ?? 0,
       diaJustificadoSinHorario: programadas === null ? 1 : 0,
     }
@@ -473,6 +495,11 @@ export function calcularDia(dia: DiaProgramado): DiaCalculado {
   // extras incluidas.
   const intradia = justificacion?.esIntradia ? justificacion : null
   const faltante = Math.max(0, horasEsperadas - horasOrdinarias)
+  const horasAcreditadas = intradia
+    ? round2(
+        Math.min(faltante, HORAS_MAX_INTRADIA_POR_DIA) * fraccionValida(intradia.fraccionPagada)
+      )
+    : 0
 
   return {
     fecha: dia.fecha,
@@ -483,11 +510,10 @@ export function calcularDia(dia: DiaProgramado): DiaCalculado {
     problema: null,
     cuenta: true,
     justificacion: intradia,
-    horasAcreditadas: intradia
-      ? round2(
-          Math.min(faltante, HORAS_MAX_INTRADIA_POR_DIA) * fraccionValida(intradia.fraccionPagada)
-        )
-      : 0,
+    horasAcreditadas,
+    // Un permiso intradía (lactancia) es siempre una ausencia.
+    horasAcreditadasAusencia: horasAcreditadas,
+    diaAcreditadoAusenciaSinHorario: 0,
     diaAcreditadoSinHorario: 0,
     horasProgramadasDia: horasEsperadas,
     diaJustificadoSinHorario: 0,
@@ -509,6 +535,10 @@ export interface TotalesPeriodo {
   horasAcreditadas: number
   /** Días pagados sin horario programado, en fracción de día. Ver DiaCalculado. */
   diasAcreditadosSinHorario: number
+  /** Parte de horasAcreditadas que viene de ausencias, no de feriados. */
+  horasAcreditadasAusencias: number
+  /** Parte de diasAcreditadosSinHorario que viene de ausencias. */
+  diasAcreditadosAusenciasSinHorario: number
   /** Días de feriado o ausencia de día completo, se paguen o no. */
   diasJustificados: number
   /**
@@ -530,6 +560,12 @@ export interface TotalesPeriodo {
    * del contrato sin cumplir para el cumplimiento (lib/prellenadoAsistencia.ts).
    */
   diasSinProgramar: number
+  /**
+   * Horas que pasaron de ordinarias a extra por superar el tope semanal de la
+   * jornada del contrato (Art. 136 CT: 48 h en la diurna). Ya están sumadas en
+   * horasExtra y restadas de horasOrdinarias. 0 sin tope o sin exceso.
+   */
+  horasExtraPorTopeSemanal?: number
   /** Todos los días con algo que reportar, para mostrarlos en pantalla. */
   diasConProblema: { fecha: string; problema: ProblemaDia }[]
   /** Solo los que impiden marcar el pago (ver PROBLEMAS_QUE_BLOQUEAN). */
@@ -580,9 +616,80 @@ export function lecturaUtilizable(
   return Number.isFinite(totales.horasOrdinarias ?? 0) && Number.isFinite(totales.horasExtra ?? 0)
 }
 
-/** Suma los días de la quincena de un empleado. */
-export function calcularHorasPeriodo(dias: DiaProgramado[]): TotalesPeriodo {
+/** Lunes de la semana de una fecha 'YYYY-MM-DD' (la semana va de lunes a domingo). */
+function lunesDeLaSemana(fecha: string): string {
+  const [anio, mes, dia] = fecha.slice(0, 10).split('-').map(Number)
+  const t = Date.UTC(anio, mes - 1, dia)
+  const diaSemana = new Date(t).getUTCDay() // 0 = domingo
+  const atras = (diaSemana + 6) % 7
+  return new Date(t - atras * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+/**
+ * Tope semanal de la jornada (Art. 136 CT). Las horas extra se calculan día
+ * por día contra el horario programado, así que un horario de 12 h nunca
+ * generaba extra aunque la semana pasara de 48 h (auditoría 2, riesgo "sin
+ * límite semanal").
+ *
+ * Por cada semana (lunes a domingo) de la quincena:
+ *  - lo trabajado como ordinario más lo pagado sin trabajar (feriados y
+ *    ausencias con horario) que pase del tope son horas extra;
+ *  - las horas programadas y esperadas no pasan del tope, para que el
+ *    cumplimiento (y con él el salario base) se mida contra la semana legal y
+ *    no contra un horario que la excede.
+ *
+ * Una semana que cruza a la otra quincena solo se mide con sus días de esta:
+ * si esos días ya pasan del tope, la semana entera también. Puede quedar
+ * corto (nunca de más) cuando el exceso se reparte entre dos quincenas.
+ */
+function aplicarTopeSemanal(
+  calculados: DiaCalculado[],
+  topeSemanal: number
+): { ordinarias: number; extra: number; programadas: number; esperadas: number } {
+  const semanas = new Map<
+    string,
+    { ordinarias: number; acreditadas: number; programadas: number; esperadas: number }
+  >()
+  for (const d of calculados) {
+    const k = lunesDeLaSemana(d.fecha)
+    const s = semanas.get(k) ?? { ordinarias: 0, acreditadas: 0, programadas: 0, esperadas: 0 }
+    s.ordinarias += d.horasOrdinarias
+    s.acreditadas += d.horasAcreditadas
+    s.programadas += d.horasProgramadasDia
+    s.esperadas += d.horasEsperadas
+    semanas.set(k, s)
+  }
+  let extra = 0
+  let programadas = 0
+  let esperadas = 0
+  for (const s of semanas.values()) {
+    extra += Math.min(s.ordinarias, Math.max(0, s.ordinarias + s.acreditadas - topeSemanal))
+    programadas += Math.max(0, s.programadas - topeSemanal)
+    esperadas += Math.max(0, s.esperadas - topeSemanal)
+  }
+  return {
+    ordinarias: round2(extra),
+    extra: round2(extra),
+    programadas: round2(programadas),
+    esperadas: round2(esperadas),
+  }
+}
+
+/**
+ * Suma los días de la quincena de un empleado.
+ *
+ * `topeSemanal`: horas máximas por semana de la jornada del contrato
+ * (tjo_horas_max_semanales). Sin él no se aplica tope (ver aplicarTopeSemanal).
+ */
+export function calcularHorasPeriodo(
+  dias: DiaProgramado[],
+  topeSemanal: number | null = null
+): TotalesPeriodo {
   const calculados = dias.map(calcularDia)
+  const exceso =
+    typeof topeSemanal === 'number' && Number.isFinite(topeSemanal) && topeSemanal > 0
+      ? aplicarTopeSemanal(calculados, topeSemanal)
+      : { ordinarias: 0, extra: 0, programadas: 0, esperadas: 0 }
 
   const acumular = (
     campo:
@@ -590,6 +697,8 @@ export function calcularHorasPeriodo(dias: DiaProgramado[]): TotalesPeriodo {
       | 'horasOrdinarias'
       | 'horasExtra'
       | 'horasAcreditadas'
+      | 'horasAcreditadasAusencia'
+      | 'diaAcreditadoAusenciaSinHorario'
       | 'diaAcreditadoSinHorario'
       | 'horasProgramadasDia'
       | 'diaJustificadoSinHorario'
@@ -601,11 +710,14 @@ export function calcularHorasPeriodo(dias: DiaProgramado[]): TotalesPeriodo {
     .map((d) => ({ fecha: d.fecha, problema: d.problema }))
 
   return {
-    horasEsperadas: acumular('horasEsperadas'),
-    horasOrdinarias: acumular('horasOrdinarias'),
-    horasExtra: acumular('horasExtra'),
+    horasEsperadas: round2(acumular('horasEsperadas') - exceso.esperadas),
+    horasOrdinarias: round2(acumular('horasOrdinarias') - exceso.ordinarias),
+    horasExtra: round2(acumular('horasExtra') + exceso.extra),
+    horasExtraPorTopeSemanal: exceso.extra,
     horasAcreditadas: acumular('horasAcreditadas'),
     diasAcreditadosSinHorario: acumular('diaAcreditadoSinHorario'),
+    horasAcreditadasAusencias: acumular('horasAcreditadasAusencia'),
+    diasAcreditadosAusenciasSinHorario: acumular('diaAcreditadoAusenciaSinHorario'),
     diasJustificados: calculados.filter((d) => d.justificacion && !d.justificacion.esIntradia)
       .length,
     // Hace falta al menos un día justificado: una quincena entera de días
@@ -616,7 +728,7 @@ export function calcularHorasPeriodo(dias: DiaProgramado[]): TotalesPeriodo {
       calculados.every(
         (d, i) => dias[i].esDiaLibre || (d.justificacion !== null && !d.justificacion.esIntradia)
       ),
-    horasProgramadasTotales: acumular('horasProgramadasDia'),
+    horasProgramadasTotales: round2(acumular('horasProgramadasDia') - exceso.programadas),
     diasJustificadosSinHorario: acumular('diaJustificadoSinHorario'),
     diasSinProgramar: acumular('diaSinProgramar'),
     diasConProblema: conProblema,

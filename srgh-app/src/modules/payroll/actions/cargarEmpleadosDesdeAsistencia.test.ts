@@ -72,6 +72,8 @@ function totales(over: Record<string, unknown> = {}) {
     diasQueBloquean: [],
     horasAcreditadas: 0,
     diasAcreditadosSinHorario: 0,
+    horasAcreditadasAusencias: 0,
+    diasAcreditadosAusenciasSinHorario: 0,
     diasJustificados: 0,
     periodoCubiertoPorAusencias: false,
     horasProgramadasTotales: (over.horasEsperadas as number | undefined) ?? 96,
@@ -85,7 +87,11 @@ function totales(over: Record<string, unknown> = {}) {
 function mockSupabase(
   responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
 ) {
-  const client = createSupabaseClientMock(responses)
+  const client = createSupabaseClientMock({
+    // Sin incapacidades ni licencias registradas (aplicarAusenciasAFilasNuevas).
+    sgrh_ausencias: { data: [], error: null },
+    ...responses,
+  })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -183,6 +189,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       yaEstaban: 0,
       sinAsistencia: 0,
       sinSalario: [],
+      avisoAusencias: null,
     })
     // Solo contratos que empezaron antes de que termine la quincena.
     expect(mockEmpleados).toHaveBeenCalledWith(expect.anything(), expect.any(Number), {
@@ -310,6 +317,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       yaEstaban: 1,
       sinAsistencia: 0,
       sinSalario: [],
+      avisoAusencias: null,
     })
 
     const insertadas = llamadas(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<
@@ -365,6 +373,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       yaEstaban: 0,
       sinAsistencia: 1,
       sinSalario: [],
+      avisoAusencias: null,
     })
 
     const fila = (

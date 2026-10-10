@@ -712,3 +712,100 @@ describe('calcularHorasPeriodo', () => {
     expect(r.diasQueBloquean).toEqual([]) // avisa, no bloquea (decisión del negocio)
   })
 })
+
+describe('crédito de ausencias separado del de feriados', () => {
+  it('vacaciones con horario suman a horasAcreditadasAusencias; un feriado no', () => {
+    const vacaciones: JustificacionDia = {
+      motivo: 'ausencia',
+      codigo: 'VAC',
+      esIntradia: false,
+      fraccionPagada: 1,
+    }
+    const r = calcularHorasPeriodo([
+      dia({ fecha: '2026-09-16', ausencia: vacaciones }),
+      dia({ fecha: '2026-09-17', esFeriado: true }),
+      dia({ fecha: '2026-09-18', horario: null, ausencia: vacaciones }),
+    ])
+
+    expect(r.horasAcreditadas).toBe(16)
+    expect(r.horasAcreditadasAusencias).toBe(8)
+    expect(r.diasAcreditadosSinHorario).toBe(1)
+    expect(r.diasAcreditadosAusenciasSinHorario).toBe(1)
+  })
+})
+
+// Auditoría 2, riesgo "sin límite semanal de 48 h" (Art. 136 CT): con un
+// horario de 12 h la semana pasaba de 48 h y no generaba ninguna extra.
+describe('calcularHorasPeriodo con tope semanal', () => {
+  /** 8:00 a 21:00 con una hora de almuerzo = 12 h pagadas. */
+  const HORARIO_12H: HorarioDia = { ...HORARIO_8H, salida: '21:00:00' }
+  const doce = (fecha: string, salida = '21:00:00') =>
+    dia({
+      fecha,
+      horario: HORARIO_12H,
+      marcas: [marca('entrada', `${fecha} 08:00:00`), marca('salida', `${fecha} ${salida}`)],
+    })
+  // Lunes 6 a sábado 11 de julio de 2026: 6 × 12 h = 72 h en una semana.
+  const SEMANA = [
+    '2026-07-06',
+    '2026-07-07',
+    '2026-07-08',
+    '2026-07-09',
+    '2026-07-10',
+    '2026-07-11',
+  ]
+
+  it('lo que pasa de 48 h en la semana es extra, y el cumplimiento se mide contra 48', () => {
+    const r = calcularHorasPeriodo(
+      SEMANA.map((f) => doce(f)),
+      48
+    )
+
+    expect(r.horasOrdinarias).toBe(48)
+    expect(r.horasExtra).toBe(24)
+    expect(r.horasExtraPorTopeSemanal).toBe(24)
+    expect(r.horasProgramadasTotales).toBe(48)
+    expect(r.horasEsperadas).toBe(48)
+  })
+
+  it('sin tope (jornada desconocida) se calcula como antes, día por día', () => {
+    const r = calcularHorasPeriodo(SEMANA.map((f) => doce(f)))
+
+    expect(r.horasOrdinarias).toBe(72)
+    expect(r.horasExtra).toBe(0)
+    expect(r.horasExtraPorTopeSemanal).toBe(0)
+  })
+
+  it('una semana dentro del tope no cambia', () => {
+    const r = calcularHorasPeriodo(
+      SEMANA.slice(0, 4).map((f) => doce(f)),
+      48
+    )
+
+    expect(r.horasOrdinarias).toBe(48)
+    expect(r.horasExtra).toBe(0)
+  })
+
+  it('cada semana se mide aparte (lunes a domingo)', () => {
+    // Jueves 9 a sábado 11 (36 h) y lunes 13 a miércoles 15 (36 h): ninguna
+    // semana pasa de 48 h aunque la suma dé 72.
+    const r = calcularHorasPeriodo(
+      ['2026-07-09', '2026-07-10', '2026-07-11', '2026-07-13', '2026-07-14', '2026-07-15'].map(
+        (f) => doce(f)
+      ),
+      48
+    )
+
+    expect(r.horasOrdinarias).toBe(72)
+    expect(r.horasExtra).toBe(0)
+  })
+
+  it('si trabajó menos de lo programado, solo es extra lo que pasa de 48', () => {
+    // Cinco días de 12 h y uno de 4 h (salió a las 13:00): 64 h → 16 extra.
+    const dias = [...SEMANA.slice(0, 5).map((f) => doce(f)), doce('2026-07-11', '12:00:00')]
+    const r = calcularHorasPeriodo(dias, 48)
+
+    expect(r.horasOrdinarias).toBe(48)
+    expect(r.horasExtra).toBe(16)
+  })
+})

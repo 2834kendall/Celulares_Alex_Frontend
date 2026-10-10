@@ -23,6 +23,7 @@ import { prellenarDesdeAsistencia } from '@/modules/payroll/lib/prellenadoAsiste
 import { camposFotoAsistencia } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal, hoyLocal } from '@/modules/payroll/lib/fechas'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
+import { aplicarAusenciasAFilasNuevas } from '@/modules/payroll/lib/ausenciaNominaSync'
 
 export type CargarEmpleadosResult =
   | {
@@ -32,6 +33,11 @@ export type CargarEmpleadosResult =
       sinAsistencia: number
       /** Nombres de quienes quedarían en ₡0 por no tener salario en su contrato. */
       sinSalario: string[]
+      /**
+       * No se pudieron aplicar las incapacidades y licencias ya registradas a
+       * las filas nuevas (ver aplicarAusenciasAFilasNuevas). Las filas quedaron.
+       */
+      avisoAusencias?: string | null
     }
   | { ok: false; error: string }
 
@@ -317,6 +323,14 @@ export async function cargarEmpleadosDesdeAsistencia(
     }
   }
 
+  // Incapacidades y licencias registradas antes de que existiera esta fila
+  // (auditoría 2, fallo 2).
+  const ausencias = await aplicarAusenciasAFilasNuevas(
+    supabase,
+    insertados.map((d) => ({ ndtId: d.ndt_id, labId: d.ndt_historial_laboral_id })),
+    { inicio: periodo.npe_fecha_inicio_periodo, fin: periodo.npe_fecha_fin_periodo }
+  )
+
   revalidatePath('/payroll')
   revalidatePath(`/payroll/${periodoId}`)
   revalidatePath('/payroll/banco-horas')
@@ -327,5 +341,6 @@ export async function cargarEmpleadosDesdeAsistencia(
     yaEstaban: existentes.size,
     sinAsistencia,
     sinSalario,
+    avisoAusencias: ausencias.ok ? null : ausencias.error,
   }
 }
