@@ -74,5 +74,11 @@ VALUES
   (20, 'PAT004', 'FODESAF / IMAS / INA',      'patronal', false, false, 'cargas_sociales_ley', true,  'monto_manual_ingreso', NULL)
 ON CONFLICT DO NOTHING;
 
+-- La ausencia sin goce rebaja el salario (bruto, CCSS y aguinaldo), no solo
+-- el neto. Ver la migración 20261010130000_ausencia_sin_goce_rebaja_salario.
+UPDATE public.sgrh_cat_conceptos_nomina
+SET con_rebaja_salario = true
+WHERE con_codigo = 'DED006' AND con_tipo_calculo = 'monto_manual_deduccion';
+
 SELECT setval(pg_get_serial_sequence('public.sgrh_cat_conceptos_nomina', 'con_id'),
               COALESCE((SELECT MAX(con_id) FROM public.sgrh_cat_conceptos_nomina), 1), true);
