@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { PostulacionPanel } from './PostulacionPanel'
 import { savePostulacionScores } from '@/modules/recruitment/actions/savePostulacionScores'
-import { advanceStage } from '@/modules/recruitment/actions/advanceStage'
+import { moveApplicationToStage } from '@/modules/recruitment/actions/moveApplicationToStage'
 import type { CriterioSeleccionItem, PostulacionDetalle } from '@/modules/recruitment/types'
 
 const refresh = vi.fn()
@@ -13,7 +13,9 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/modules/recruitment/actions/savePostulacionScores', () => ({
   savePostulacionScores: vi.fn(),
 }))
-vi.mock('@/modules/recruitment/actions/advanceStage', () => ({ advanceStage: vi.fn() }))
+vi.mock('@/modules/recruitment/actions/moveApplicationToStage', () => ({
+  moveApplicationToStage: vi.fn(),
+}))
 vi.mock('@/modules/recruitment/actions/rejectPostulacion', () => ({ rejectPostulacion: vi.fn() }))
 
 const criterios: CriterioSeleccionItem[] = [
@@ -49,7 +51,7 @@ function renderPanel() {
     <PostulacionPanel
       candidatoId={3}
       postulacion={postulacion}
-      etapas={[{ id: 5, nombre: 'Entrevista RRHH', orden: 1, fase: 2, color: null }]}
+      etapas={[{ id: 5, nombre: 'Entrevista RRHH', orden: 0, color: null }]}
       criterios={criterios}
       canWrite
     />
@@ -100,22 +102,36 @@ describe('<PostulacionPanel />', () => {
     expect(screen.queryByText('Cambios sin guardar')).not.toBeInTheDocument()
   })
 
-  it('registrar etapa usa el resultado elegido y confirma con un toast', async () => {
-    vi.mocked(advanceStage).mockResolvedValue({ ok: true })
+  it('"Pasar a" mueve de un toque, sin ventana ni resultado, y confirma con un toast', async () => {
+    vi.mocked(moveApplicationToStage).mockResolvedValue({ ok: true })
     const user = userEvent.setup()
     renderPanel()
 
-    // Un toque abre la ventana con la siguiente etapa ya elegida.
-    await user.click(screen.getByRole('button', { name: /Avanzar a: Entrevista RRHH/ }))
-    expect(screen.getByLabelText('Etapa')).toHaveTextContent('Entrevista RRHH')
-    await user.click(screen.getByRole('radio', { name: 'Aprobado' }))
-    await user.click(screen.getByRole('button', { name: 'Registrar etapa' }))
+    // Sin etapa todavía: la siguiente es la primera columna del tablero.
+    await user.click(screen.getByRole('button', { name: /Pasar a: Entrevista RRHH/ }))
 
-    expect(advanceStage).toHaveBeenCalledWith(
-      expect.objectContaining({ postulacionId: 9, etapaId: 5, resultado: 'aprobado' })
+    expect(moveApplicationToStage).toHaveBeenCalledWith(
+      expect.objectContaining({ applicationId: 9, stageId: 5 })
     )
-    expect(toast.success).toHaveBeenCalledWith('Etapa registrada: Entrevista RRHH.')
+    // Ya no existe el paso de "aprobado / rechazado / pendiente".
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Aprobado' })).not.toBeInTheDocument()
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Pasó a Entrevista RRHH.'))
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('si el movimiento falla muestra el error del servidor, sin toast de éxito', async () => {
+    vi.mocked(moveApplicationToStage).mockResolvedValue({
+      ok: false,
+      error: 'La postulación ya está cerrada.',
+    })
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(screen.getByRole('button', { name: /Pasar a: Entrevista RRHH/ }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('La postulación ya está cerrada.'))
+    expect(toast.success).not.toHaveBeenCalled()
   })
 
   it('"Contratar" es un único enlace, no un botón dentro de un enlace', () => {
@@ -197,22 +213,18 @@ describe('<PostulacionPanel /> — postulación cerrada', () => {
 })
 
 describe('<PostulacionPanel /> — etapas y secciones', () => {
-  const entrevista = { id: 5, nombre: 'Entrevista RRHH', orden: 30, fase: 2 as const, color: null }
-  const prueba = { id: 6, nombre: 'Prueba práctica', orden: 31, fase: 2 as const, color: '#1e3a8a' }
-  const decision = {
-    id: 7,
-    nombre: 'Pendiente de decisión',
-    orden: 1,
-    fase: 3 as const,
-    color: null,
-  }
+  // Las columnas del tablero, en su orden.
+  const entrevista = { id: 5, nombre: 'Entrevista RRHH', orden: 0, color: null }
+  const prueba = { id: 6, nombre: 'Prueba práctica', orden: 1, color: '#1e3a8a' }
+  const decision = { id: 7, nombre: 'Pendiente de decisión', orden: 2, color: null }
+  const columnas = [entrevista, prueba, decision]
 
-  function renderEnPrueba() {
+  function renderEn(etapaActual: PostulacionDetalle['etapaActual'], etapas = columnas) {
     render(
       <PostulacionPanel
         candidatoId={3}
-        postulacion={{ ...postulacion, etapaActual: prueba } as PostulacionDetalle}
-        etapas={[decision, prueba, entrevista]}
+        postulacion={{ ...postulacion, etapaActual } as PostulacionDetalle}
+        etapas={etapas}
         criterios={criterios}
         canWrite
       />
@@ -223,19 +235,39 @@ describe('<PostulacionPanel /> — etapas y secciones', () => {
     vi.clearAllMocks()
   })
 
-  it('solo ofrece etapas posteriores a la actual', async () => {
+  it('"Otra etapa" ofrece todas menos la actual: también las anteriores', async () => {
     const user = userEvent.setup()
-    renderEnPrueba()
+    renderEn(prueba)
 
-    await user.click(screen.getByRole('button', { name: /Avanzar a: Pendiente de decisión/ }))
+    await user.click(screen.getByRole('button', { name: /Otra etapa/ }))
     await user.click(screen.getByLabelText('Etapa'))
 
     const opciones = screen.getAllByRole('option').map((o) => o.textContent)
-    expect(opciones).toEqual(['Pendiente de decisión'])
+    expect(opciones).toEqual(['Entrevista RRHH', 'Pendiente de decisión'])
+  })
+
+  it('"Otra etapa" permite devolverla a una anterior, con una nota para el historial', async () => {
+    vi.mocked(moveApplicationToStage).mockResolvedValue({ ok: true })
+    const user = userEvent.setup()
+    renderEn(prueba)
+
+    await user.click(screen.getByRole('button', { name: /Otra etapa/ }))
+    // Arranca en la primera opción: la etapa anterior.
+    expect(screen.getByLabelText('Etapa')).toHaveTextContent('Entrevista RRHH')
+    await user.type(screen.getByLabelText('Nota (opcional)'), 'Se reprograma la prueba')
+    await user.click(screen.getByRole('button', { name: 'Mover' }))
+
+    expect(moveApplicationToStage).toHaveBeenCalledWith({
+      applicationId: 9,
+      stageId: 5,
+      note: 'Se reprograma la prueba',
+    })
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Pasó a Entrevista RRHH.'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('la barra de pasos marca la etapa actual y nombra la siguiente', () => {
-    renderEnPrueba()
+    renderEn(prueba)
 
     expect(
       screen.getByText('Prueba práctica', { selector: 'span.font-semibold' })
@@ -243,22 +275,37 @@ describe('<PostulacionPanel /> — etapas y secciones', () => {
     expect(screen.getByText(/Siguiente: Pendiente de decisión/)).toBeInTheDocument()
     const pasos = screen.getByRole('list', { name: 'Etapas del proceso' })
     expect(pasos.querySelector('[aria-current="step"]')).toHaveAttribute('title', 'Prueba práctica')
+    expect(screen.getByRole('button', { name: /Pasar a: Pendiente de decisión/ })).toBeEnabled()
   })
 
-  it('en la última etapa no hay "Avanzar" y Contratar pasa a ser la acción principal', () => {
-    render(
-      <PostulacionPanel
-        candidatoId={3}
-        postulacion={{ ...postulacion, etapaActual: decision } as PostulacionDetalle}
-        etapas={[entrevista, prueba, decision]}
-        criterios={criterios}
-        canWrite
-      />
-    )
+  it('en la última etapa no hay "Pasar a" y Contratar pasa a ser la acción principal', () => {
+    renderEn(decision)
 
-    expect(screen.queryByRole('button', { name: /Avanzar a:/ })).not.toBeInTheDocument()
-    expect(screen.getByText('Ya pasó por todas las etapas: falta decidir.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Pasar a:/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Está en la última etapa: falta decidir.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /contratar/i }).className).toContain('bg-brand-600')
+    // Todavía se puede devolver a una etapa anterior.
+    expect(screen.getByRole('button', { name: /Otra etapa/ })).toBeEnabled()
+  })
+
+  it('si su etapa ya no es una columna, se nombra igual y vuelve a entrar por la primera', () => {
+    renderEn({ id: 99, nombre: 'Assessment Center', color: null })
+
+    expect(screen.getByText('Assessment Center')).toBeInTheDocument()
+    const pasos = screen.getByRole('list', { name: 'Etapas del proceso' })
+    expect(pasos.querySelector('[aria-current="step"]')).toBeNull()
+    expect(screen.getByRole('button', { name: /Pasar a: Entrevista RRHH/ })).toBeInTheDocument()
+  })
+
+  it('sin columnas en el tablero, manda a crearlas ahí en vez de ofrecer movimientos', () => {
+    renderEn(null, [])
+
+    expect(screen.queryByRole('button', { name: /Pasar a:/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Otra etapa/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'tablero de Reclutamiento' })).toHaveAttribute(
+      'href',
+      '/recruitment'
+    )
   })
 
   it('Puntaje e Historial arrancan cerrados y se abren con un toque', async () => {
@@ -274,7 +321,7 @@ describe('<PostulacionPanel /> — etapas y secciones', () => {
                 pet_id: 1,
                 pet_etapa_id: 5,
                 pet_fecha: '2026-09-20',
-                pet_resultado: 'aprobado',
+                pet_resultado: null,
                 pet_notas: null,
                 etapaNombre: 'Entrevista RRHH',
                 responsableNombre: null,
