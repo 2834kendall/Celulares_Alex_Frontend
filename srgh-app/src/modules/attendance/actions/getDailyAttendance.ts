@@ -9,6 +9,7 @@ import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
 import { getDayAssignments, type DayAssignment } from '@/modules/attendance/lib/workingDay'
 import {
   classifyTardiness,
+  LUNCH_MINUTES,
   PAID_BREAK_MINUTES,
   periodExcessMinutes,
   type TardinessBadge,
@@ -108,8 +109,8 @@ export interface DailyAttendanceRow {
   /** Tardanza al volver del almuerzo, con el mismo catalogo (SGRH-88). */
   lunchTardiness: DailyTardiness | null
   /**
-   * Minutos que el almuerzo se paso de su duracion programada. null si no hay
-   * almuerzo programado o no se marco completo; 0 si no se paso.
+   * Minutos que el almuerzo se paso de su hora, contada desde la marca de
+   * inicio (SGRH-95). null si no se marco completo; 0 si no se paso.
    */
   lunchExcessMinutes: number | null
   /**
@@ -394,8 +395,9 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     const journey = groupIntoDayJourney(marksByHistoryId.get(h.lab_id) ?? [])
 
     // Cada marca se compara contra SU hora programada: la entrada contra la
-    // entrada, el almuerzo y el receso contra los suyos (SGRH-88). La salida
-    // sigue sin comparacion — nadie definio todavia que es "salir tarde".
+    // entrada y el receso contra el suyo (SGRH-88). La salida sigue sin
+    // comparacion — nadie definio todavia que es "salir tarde" — y el
+    // almuerzo tampoco tiene hora programada que respetar (SGRH-95).
     function markInfo(mark: RawMark | null, expected: string | null): DailyMarkInfo | null {
       if (!mark) return null
       const time = timeOfDay(mark.fechaHora)
@@ -420,8 +422,18 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
     const inicioReceso = markInfo(journey.inicioReceso, assignment?.expectedBreakStart ?? null)
     const finReceso = markInfo(journey.finReceso, assignment?.expectedBreakEnd ?? null)
-    const inicioAlmuerzo = markInfo(journey.inicioAlmuerzo, assignment?.expectedLunchStart ?? null)
-    const finAlmuerzo = markInfo(journey.finAlmuerzo, assignment?.expectedLunchEnd ?? null)
+    const inicioAlmuerzo = markInfo(journey.inicioAlmuerzo, null)
+
+    // El almuerzo se toma a cualquier hora; lo que cuenta es que no pase de
+    // su hora, contada desde que se marco el inicio (SGRH-95).
+    const finAlmuerzoBase = markInfo(journey.finAlmuerzo, null)
+    const finAlmuerzo = finAlmuerzoBase && {
+      ...finAlmuerzoBase,
+      // Contra el limite del regreso: una hora despues del inicio marcado.
+      diffMinutes: inicioAlmuerzo
+        ? diffMinutes(finAlmuerzoBase.time, inicioAlmuerzo.time) - LUNCH_MINUTES
+        : null,
+    }
 
     const tardiness = noSeTrabaja
       ? null
@@ -429,14 +441,6 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     const lunchTardiness = noSeTrabaja
       ? null
       : tardinessOf(finAlmuerzo, journey.finAlmuerzo, tipos, justificacionByMarkId)
-
-    // El almuerzo se mide contra la duracion PROGRAMADA (fin - inicio del
-    // turno). El kiosco solo deja tomarlo dentro de su ventana (SGRH-88),
-    // asi que un exceso aca es tiempo de mas de verdad.
-    const lunchAllowed =
-      assignment?.expectedLunchStart && assignment?.expectedLunchEnd
-        ? diffMinutes(assignment.expectedLunchEnd, assignment.expectedLunchStart)
-        : null
 
     return {
       employmentHistoryId: h.lab_id,
@@ -461,8 +465,8 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       tardiness,
       lunchTardiness,
       lunchExcessMinutes:
-        inicioAlmuerzo && finAlmuerzo && lunchAllowed !== null
-          ? periodExcessMinutes(inicioAlmuerzo.time, finAlmuerzo.time, lunchAllowed)
+        inicioAlmuerzo && finAlmuerzo
+          ? periodExcessMinutes(inicioAlmuerzo.time, finAlmuerzo.time, LUNCH_MINUTES)
           : null,
       // El receso se mide contra los minutos pagados, con o sin receso
       // programado: es la regla con que la matriz semanal calcula las horas.

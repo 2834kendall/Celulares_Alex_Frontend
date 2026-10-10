@@ -97,35 +97,6 @@ export function groupIntoDayJourney(marks: RawMark[]): DayJourney {
 }
 
 /**
- * Holgura para empezar el almuerzo antes o despues de la hora programada.
- * Media hora: en una tienda la afluencia manda y el minuto exacto no se puede
- * exigir, pero la jornada sigue siendo la que dicta el horario.
- */
-export const LUNCH_WINDOW_TOLERANCE_MINUTES = 30
-
-/**
- * Si a esta hora se puede EMPEZAR el almuerzo: dentro de la media hora previa
- * o posterior a la hora programada (SGRH-88, decision del cliente).
- *
- * Sin almuerzo programado devuelve true: no hay hora que respetar, y bloquear
- * ahi dejaria sin almuerzo a quien tiene un horario sin almuerzo cargado.
- *
- * Cerrar el almuerzo (fin_almuerzo) nunca se bloquea: quien ya salio tiene
- * que poder volver, y volver tarde ya se mide como tardia.
- *
- * Las tres horas van en "HH:mm".
- */
-export function isLunchWindowOpen(
-  now: string,
-  expectedLunchStart: string | null | undefined,
-  tolerancia: number = LUNCH_WINDOW_TOLERANCE_MINUTES
-): boolean {
-  if (!expectedLunchStart) return true
-
-  return Math.abs(diffMinutes(now, expectedLunchStart)) <= tolerancia
-}
-
-/**
  * Cuanto antes de su hora de salida se puede marcar la salida. Quince
  * minutos: cubre a quien ya cerro y esta guardando, sin volver util el
  * boton a media jornada — tocarlo por error a las 10 de la mañana cerraba
@@ -160,11 +131,6 @@ export function describeExitWindow(expectedEnd: string) {
   return `Tu salida es a las ${expectedEnd}. Si necesitas salir antes, avisa al encargado.`
 }
 
-/** El aviso de que todavia no es (o ya paso) la hora del almuerzo. */
-export function describeLunchWindow(expectedLunchStart: string, expectedLunchEnd: string) {
-  return `Tu almuerzo es de ${expectedLunchStart} a ${expectedLunchEnd}. Si necesitas tomarlo a otra hora, avisa al encargado.`
-}
-
 /** * Las marcas que tienen sentido AHORA, dada la jornada hasta aca (SGRH-88).
  * El kiosco solo ofrece estas, y registerKioskMark rechaza cualquier otra:
  * esconder un boton no es una regla, la accion es invocable directamente.
@@ -183,22 +149,23 @@ export function describeLunchWindow(expectedLunchStart: string, expectedLunchEnd
  * El receso solo se ofrece si el horario del dia lo contempla: preguntarle
  * por un receso a quien no lo tiene invita a tomarlo (SGRH-88).
  *
- * El almuerzo y la salida, en cambio, SI respetan la hora del horario: ver
- * isLunchWindowOpen e isExitWindowOpen. Tomar el almuerzo cuando a cada
- * quien le parezca desordena la planilla, que liquida sobre la jornada
- * programada; y la salida a destiempo suele ser un toque por error que
- * cierra el dia (decision del cliente, 2026-09-19).
+ * La salida, en cambio, SI respeta la hora del horario (ver
+ * isExitWindowOpen): a destiempo suele ser un toque por error que cierra el
+ * dia (decision del cliente, 2026-09-19).
+ *
+ * El almuerzo no: cada quien lo toma a la hora que quiera (SGRH-95, que
+ * revierte la ventana de SGRH-88). Lo que se controla es que no pase de una
+ * hora desde que se marca el inicio — ver lunchLateMinutes en lib/infractions.ts.
  */
 export function allowedNextMarks(
   journey: DayJourney,
   ventanas: {
-    lunchWindowOpen?: boolean
     exitWindowOpen?: boolean
     /** El horario del dia contempla receso. Si no, no hay nada que marcar. */
     breakScheduled?: boolean
   } = {}
 ): MarkType[] {
-  const { lunchWindowOpen = true, exitWindowOpen = true, breakScheduled = true } = ventanas
+  const { exitWindowOpen = true, breakScheduled = true } = ventanas
   if (!journey.entrada) return ['entrada']
   if (journey.salida) return []
 
@@ -207,7 +174,7 @@ export function allowedNextMarks(
 
   const next: MarkType[] = []
   if (!journey.inicioReceso && breakScheduled) next.push('inicio_receso')
-  if (!journey.inicioAlmuerzo && lunchWindowOpen) next.push('inicio_almuerzo')
+  if (!journey.inicioAlmuerzo) next.push('inicio_almuerzo')
   if (exitWindowOpen) next.push('salida')
 
   return next

@@ -95,7 +95,7 @@ function markDetail(
 
   const label = diffLabel(diffMinutes)
 
-  return label ? `Marco a las ${time}, ${label} de su hora programada.` : null
+  return label ? `Marco a las ${time}, ${label} de su hora.` : null
 }
 
 /**

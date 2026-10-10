@@ -4,12 +4,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
-import {
-  allowedNextMarks,
-  isExitWindowOpen,
-  isLunchWindowOpen,
-  type MarkType,
-} from '@/modules/attendance/lib/marks'
+import { allowedNextMarks, isExitWindowOpen, type MarkType } from '@/modules/attendance/lib/marks'
 import {
   absenceBlocksMarkMessage,
   findApprovedAbsence,
@@ -82,15 +77,13 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
     return { ok: false, error: jornada.error }
   }
 
-  // El almuerzo solo dentro de su ventana y la salida solo cerca de su hora
-  // (SGRH-88): la planilla liquida sobre la jornada programada, y una salida
-  // marcada por error a media mañana cierra el dia.
+  // La salida solo cerca de su hora (SGRH-88): marcada por error a media
+  // mañana cierra el dia. El almuerzo no tiene hora (SGRH-95).
   const ahora = timeOfDay(nowInCostaRica())
 
   return {
     ok: true,
     allowed: allowedNextMarks(jornada.journey, {
-      lunchWindowOpen: isLunchWindowOpen(ahora, turno.expectedLunchStart),
       exitWindowOpen: isExitWindowOpen(ahora, turno.expectedEnd),
       breakScheduled: turno.expectedBreakStart !== null,
     }),
