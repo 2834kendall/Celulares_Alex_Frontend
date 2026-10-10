@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FileText, Loader2 } from 'lucide-react'
+import { ChevronDown, FileText, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
@@ -20,6 +20,7 @@ import {
   TABLE_TH_RIGHT,
 } from '@/components/ui/styles'
 import { Badge } from '@/components/ui/Badge'
+import { DesgloseLiquidacionView } from './DesgloseLiquidacionView'
 
 interface LiquidacionesHistorialProps {
   items: LiquidacionListItem[]
@@ -61,14 +62,36 @@ function AccionLiquidacion({
   )
 }
 
+/** Muestra u oculta los rubros de una liquidación. */
+function BotonDetalle({ abierto, onClick }: { abierto: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={abierto}
+      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 outline-none transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+    >
+      {abierto ? 'Ocultar detalle' : 'Ver detalle'}
+      <ChevronDown
+        className={`h-3 w-3 transition-transform ${abierto ? 'rotate-180' : ''}`}
+        aria-hidden="true"
+      />
+    </button>
+  )
+}
+
 /**
  * Historial paginado de liquidaciones ya generadas, más recientes primero.
+ * "Ver detalle" muestra los rubros guardados: antes solo se veía el neto, y
+ * se pagaba sin poder revisar de dónde salía.
  * Pagar registra el pago con su propio comprobante: no depende de ningún
  * periodo de planilla, porque la persona ya no trabaja.
  */
 export function LiquidacionesHistorial({ items, canWrite = false }: LiquidacionesHistorialProps) {
   const router = useRouter()
   const [pagandoId, setPagandoId] = useState<number | null>(null)
+  const [abiertoId, setAbiertoId] = useState<number | null>(null)
+  const alternar = (liqId: number) => setAbiertoId(abiertoId === liqId ? null : liqId)
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     items,
     8
@@ -147,7 +170,20 @@ export function LiquidacionesHistorial({ items, canWrite = false }: Liquidacione
                   ))}
                 </dl>
 
-                <div className="flex justify-end">
+                {abiertoId === item.liqId && (
+                  <div className="rounded-xl bg-slate-50/60 p-3">
+                    <DesgloseLiquidacionView
+                      datos={item.desglose}
+                      etiquetaNeto={item.pagado ? 'Neto entregado' : 'Neto a entregar'}
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-3">
+                  <BotonDetalle
+                    abierto={abiertoId === item.liqId}
+                    onClick={() => alternar(item.liqId)}
+                  />
                   <AccionLiquidacion
                     item={item}
                     canWrite={canWrite}
@@ -174,31 +210,51 @@ export function LiquidacionesHistorial({ items, canWrite = false }: Liquidacione
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {paginatedItems.map((item) => (
-                  <tr key={item.liqId}>
-                    <td className={TABLE_TD_STRONG}>{item.empleadoNombre}</td>
-                    <td className={TABLE_TD}>{item.empleadoCedula}</td>
-                    <td className={TABLE_TD}>{formatDate(item.fechaSalida)}</td>
-                    <td className={TABLE_TD}>{item.motivoNombre}</td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800"
-                      title={`Bruto ${formatCRC(item.total)}`}
-                    >
-                      {formatCRC(item.neto)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Badge tone={item.pagado ? 'emerald' : 'amber'} size="xs">
-                        {item.pagado ? 'Pagada' : 'Pendiente de pago'}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <AccionLiquidacion
-                        item={item}
-                        canWrite={canWrite}
-                        pagando={pagandoId === item.liqId}
-                        onPagar={handlePagar}
-                      />
-                    </td>
-                  </tr>
+                  <Fragment key={item.liqId}>
+                    <tr>
+                      <td className={TABLE_TD_STRONG}>{item.empleadoNombre}</td>
+                      <td className={TABLE_TD}>{item.empleadoCedula}</td>
+                      <td className={TABLE_TD}>{formatDate(item.fechaSalida)}</td>
+                      <td className={TABLE_TD}>{item.motivoNombre}</td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800"
+                        title={`Bruto ${formatCRC(item.total)}`}
+                      >
+                        {formatCRC(item.neto)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge tone={item.pagado ? 'emerald' : 'amber'} size="xs">
+                          {item.pagado ? 'Pagada' : 'Pendiente de pago'}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-3">
+                          <BotonDetalle
+                            abierto={abiertoId === item.liqId}
+                            onClick={() => alternar(item.liqId)}
+                          />
+                          <AccionLiquidacion
+                            item={item}
+                            canWrite={canWrite}
+                            pagando={pagandoId === item.liqId}
+                            onPagar={handlePagar}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                    {abiertoId === item.liqId && (
+                      <tr className="bg-slate-50/60">
+                        <td colSpan={7} className="px-4 py-4">
+                          <div className="max-w-xl">
+                            <DesgloseLiquidacionView
+                              datos={item.desglose}
+                              etiquetaNeto={item.pagado ? 'Neto entregado' : 'Neto a entregar'}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

@@ -218,7 +218,11 @@ export function useWeeklyScheduleMatrix({
       assignmentId: assignment.assignmentId,
       employmentHistoryId: row.employmentHistoryId,
       employeeId: row.employeeId,
-      branchId: row.branchId,
+      // La sucursal DEL DÍA, no la de casa: cambiarle el horario a un día
+      // que se movió a otra sucursal (cubrir un turno) lo devolvía a la de
+      // casa sin avisar, y el kiosco donde iba a trabajar ya no lo dejaba
+      // marcar. Un día sin fila ya trae la sucursal de casa.
+      branchId: assignment.branchId,
       date: assignment.date,
       scheduleId,
       isDayOff: isFreeDay,

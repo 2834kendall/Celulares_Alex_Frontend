@@ -34,6 +34,12 @@ export interface SincronizarAusenciaParams {
    * inserta INC_ENF). Sin él, el tipo se lee de la ausencia aprobada con esas fechas.
    */
   esSubsidio?: boolean
+  /**
+   * Solo estas filas reciben los días. Es para una fila NUEVA de un periodo
+   * creado después de registrar la ausencia (ver aplicarAusenciasAFilasNuevas):
+   * las demás filas ya los tienen, así que solo cuentan para el tope del mes.
+   */
+  soloNdtIds?: number[]
 }
 
 export type SincronizarAusenciaResult =
@@ -86,6 +92,7 @@ export async function sincronizarAusenciaEnNomina(
     fechaFin,
     topeMensualEmpleador,
     esSubsidio,
+    soloNdtIds,
   }: SincronizarAusenciaParams
 ): Promise<SincronizarAusenciaResult> {
   // Este camino es para SUBSIDIOS: incapacidades y licencias certificadas por
@@ -167,6 +174,7 @@ export async function sincronizarAusenciaEnNomina(
   )
 
   // Días de esta ausencia que caen dentro de cada periodo existente.
+  const destino = soloNdtIds ? new Set(soloNdtIds) : null
   const diasNuevosPorNdt = new Map<number, number>()
   for (const fila of filas) {
     const p = fila.sgrh_nomina_periodo
@@ -205,8 +213,15 @@ export async function sincronizarAusenciaEnNomina(
       )
       .sort((a, b) => a.sgrh_nomina_periodo.npe_quincena - b.sgrh_nomina_periodo.npe_quincena)
 
-    let usadoEsteMes = 0
+    // Con soloNdtIds, lo que ya tienen anotado las demás filas del mes cuenta
+    // primero para el tope, estén antes o después: esos días ya se pagan.
+    let usadoEsteMes = destino
+      ? filasDelMes
+          .filter((f) => !destino.has(f.ndt_id))
+          .reduce((suma, f) => suma + f.ndt_dias_incapacidad_empleador, 0)
+      : 0
     for (const fila of filasDelMes) {
+      if (destino && !destino.has(fila.ndt_id)) continue
       const diasNuevos = diasNuevosPorNdt.get(fila.ndt_id) ?? 0
 
       if (diasNuevos === 0) {
@@ -290,4 +305,84 @@ export async function sincronizarAusenciaEnNomina(
     diasSinPeriodo,
     ...(periodosPagadosOmitidos.length > 0 ? { periodosPagadosOmitidos } : {}),
   }
+}
+
+interface AusenciaSubsidioRow {
+  aus_historial_laboral_id: number
+  aus_fecha_inicio: string
+  aus_fecha_fin: string
+  sgrh_cat_tipos_ausencia: {
+    tau_requiere_documento_ccss: boolean
+    tau_paga_empleador_dias: number
+    tau_es_intradia: boolean
+  } | null
+}
+
+/**
+ * Aplica a filas RECIÉN creadas las incapacidades y licencias que ya estaban
+ * registradas. sincronizarAusenciaEnNomina solo corre al registrar la
+ * ausencia, sobre los periodos que existen en ese momento: un periodo creado
+ * después nacía sin el subsidio del patrono (auditoría 2, fallo 2: la
+ * licencia de Rebeca del 28 al 31/07 no aparecía en Jul 2.ª).
+ *
+ * Mismo reparto que al registrar la ausencia (tope de días del patrono por
+ * mes calendario), pero solo sobre estas filas.
+ */
+export async function aplicarAusenciasAFilasNuevas(
+  supabase: SupabaseServerClient,
+  filas: { ndtId: number; labId: number }[],
+  periodo: { inicio: string | null; fin: string | null }
+): Promise<{ ok: true; filasConAusencias: number } | { ok: false; error: string }> {
+  if (filas.length === 0 || !periodo.inicio || !periodo.fin) {
+    return { ok: true, filasConAusencias: 0 }
+  }
+
+  const { data, error } = await supabase
+    .from('sgrh_ausencias')
+    .select(
+      `aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin,
+       sgrh_cat_tipos_ausencia ( tau_requiere_documento_ccss, tau_paga_empleador_dias, tau_es_intradia )`
+    )
+    .in(
+      'aus_historial_laboral_id',
+      filas.map((f) => f.labId)
+    )
+    .eq('aus_estado', 'aprobada')
+    .lte('aus_fecha_inicio', periodo.fin)
+    .gte('aus_fecha_fin', periodo.inicio)
+    .returns<AusenciaSubsidioRow[]>()
+
+  if (error) {
+    return {
+      ok: false,
+      error:
+        'No se pudieron leer las incapacidades y licencias ya registradas: revisá los días de incapacidad de las filas nuevas.',
+    }
+  }
+
+  const subsidios = (data ?? [])
+    .filter(
+      (a) =>
+        a.sgrh_cat_tipos_ausencia?.tau_requiere_documento_ccss === true &&
+        !a.sgrh_cat_tipos_ausencia.tau_es_intradia
+    )
+    .sort((a, b) => a.aus_fecha_inicio.localeCompare(b.aus_fecha_inicio))
+
+  const conAusencias = new Set<number>()
+  for (const ausencia of subsidios) {
+    const fila = filas.find((f) => f.labId === ausencia.aus_historial_laboral_id)
+    if (!fila) continue
+    const sync = await sincronizarAusenciaEnNomina(supabase, {
+      historialLaboralId: ausencia.aus_historial_laboral_id,
+      fechaInicio: ausencia.aus_fecha_inicio,
+      fechaFin: ausencia.aus_fecha_fin,
+      topeMensualEmpleador: ausencia.sgrh_cat_tipos_ausencia!.tau_paga_empleador_dias,
+      esSubsidio: true,
+      soloNdtIds: [fila.ndtId],
+    })
+    if (!sync.ok) return sync
+    if (sync.periodosActualizados.length > 0) conAusencias.add(fila.ndtId)
+  }
+
+  return { ok: true, filasConAusencias: conAusencias.size }
 }

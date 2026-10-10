@@ -69,6 +69,10 @@ export interface HorasDeAsistencia {
   horasAcreditadas: number
   /** Feriados y ausencias pagadas SIN horario, en fracción de día. */
   diasAcreditadosSinHorario: number
+  /** Parte de horasAcreditadas que viene de ausencias (no feriados). */
+  horasAcreditadasAusencias?: number
+  /** Parte de diasAcreditadosSinHorario que viene de ausencias. */
+  diasAcreditadosAusenciasSinHorario?: number
   /** Toda la quincena cubierta por feriados o ausencias. Ver lecturaUtilizable. */
   periodoCubiertoPorAusencias: boolean
   /** Horas del horario de toda la quincena, trabajadas o no. Denominador del ratio. */
@@ -221,15 +225,29 @@ export function prellenarDesdeAsistencia(
  * Montos de BASE que el SISTEMA pudo haber escrito para unas horas guardadas,
  * con cada regla que existió:
  *
- *  - la quincena entera (supuesto cuando la asistencia no servía);
  *  - las horas contra 96 h de jornada, sin acreditar feriados ni ausencias
  *    (la regla que rebajaba vacaciones);
  *  - las horas contra 96 h de jornada, acreditándolos;
  *  - las horas contra las horas esperadas del periodo (la regla original);
  *  - la regla de hoy (base ÷ 30 × días × ratio).
  *
+ *  - la de hoy, pero SIN las ausencias pagadas: es lo que escribió el sistema
+ *    si la fila se armó antes de que se aprobara la ausencia (auditoría 2,
+ *    fallo 1: unas vacaciones aprobadas después se pagaban de menos, y como el
+ *    monto viejo no coincidía con ninguna regla se tomaba por una corrección
+ *    a mano y nadie lo arreglaba).
+ *
  * Sirve para distinguir un BASE que puso el sistema —y que se puede rehacer—
  * de uno que corrigió una persona, que no se pisa.
+ *
+ * La quincena entera por sí sola NO está en la lista, aunque hubo una regla
+ * vieja que la ponía cuando la asistencia no servía: es también el monto que
+ * más se escribe a mano (pagarle la quincena completa a alguien a quien le
+ * faltan horas). Con ella en la lista, ese monto escrito a mano se cambiaba
+ * en silencio por el proporcional al guardar el detalle, al subir el Excel o
+ * al recalcular. evaluarBaseGuardado ya la excluía por la misma razón. Cuando
+ * las horas sí dan la quincena completa, las reglas de abajo la devuelven
+ * igual.
  */
 export function basesDelSistema(
   contrato: ContratoPago,
@@ -239,7 +257,7 @@ export function basesDelSistema(
 ): number[] {
   const mitad = contrato.salarioBaseMensual / 2
   const jornada = horasJornadaQuincena(contrato.horasSemanales)
-  const bases = [round2(mitad), round2((mitad * Math.min(guardadas.horas, jornada)) / jornada)]
+  const bases = [round2((mitad * Math.min(guardadas.horas, jornada)) / jornada)]
 
   if (lectura) {
     // La regla de 96 h acreditaba un día sin horario como jornada ÷ 2 ÷ 7.
@@ -258,6 +276,26 @@ export function basesDelSistema(
         quincena
       ).base
     )
+    const horasAusencias = lectura.horasAcreditadasAusencias ?? 0
+    const diasAusencias = lectura.diasAcreditadosAusenciasSinHorario ?? 0
+    if (horasAusencias > 0 || diasAusencias > 0) {
+      bases.push(
+        prellenarDesdeAsistencia(
+          contrato,
+          {
+            ...lectura,
+            horasOrdinarias: guardadas.horas,
+            horasExtra: guardadas.horasExtra,
+            horasAcreditadas: Math.max(0, lectura.horasAcreditadas - horasAusencias),
+            diasAcreditadosSinHorario: Math.max(
+              0,
+              lectura.diasAcreditadosSinHorario - diasAusencias
+            ),
+          },
+          quincena
+        ).base
+      )
+    }
   }
   return bases
 }

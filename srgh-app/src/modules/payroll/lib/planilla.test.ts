@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   agruparConceptosPlanilla,
   calcularPlanillaPorConceptos,
+  firmaCatalogo,
   hayConceptoSalarioBase,
   parsePlanillaRow,
   sameRowValues,
@@ -427,6 +428,64 @@ describe('parsePlanillaRow', () => {
     }
   })
 
+  describe('números escritos como texto', () => {
+    const base = (valor: string) => {
+      const r = parsePlanillaRow(5, '1-1111-1111', 88, 0, 2500, columnas({ BASE: valor }))
+      return r.ok === true ? r.row.montos.BASE : r.ok === false ? r.error.mensaje : 'vacía'
+    }
+
+    it.each([
+      ['215000', 215000],
+      ['₡215 000', 215000],
+      // Formato de Costa Rica: antes "215.000" se leía como 215.
+      ['215.000', 215000],
+      ['₡215.000', 215000],
+      ['1.234.567', 1234567],
+      // Antes "1.234,56" se leía como 1,23456.
+      ['1.234,56', 1234.56],
+      ['1234,56', 1234.56],
+      // Formato de Excel en inglés, como antes.
+      ['215,000', 215000],
+      ['1,234.56', 1234.56],
+      ['8.5', 8.5],
+    ])('"%s" → %d', (texto, esperado) => {
+      expect(base(texto)).toBe(esperado)
+    })
+
+    it.each(['1.234.56', '12.34.567', '1,234,56', 'abc', '1.234,567'])(
+      '"%s" no calza con ningún formato y se rechaza',
+      (texto) => {
+        expect(base(texto)).toBe('El campo "BASE" no es un número válido.')
+      }
+    )
+  })
+
+  describe('topes (los mismos del formulario manual)', () => {
+    it('rechaza más de 999 horas trabajadas o extra', () => {
+      const horas = parsePlanillaRow(5, '1', 1000, 0, 2500, columnas({ BASE: 1 }))
+      const extra = parsePlanillaRow(5, '1', 88, 5000, 2500, columnas({ BASE: 1 }))
+      expect(horas.ok === false && horas.error.mensaje).toContain('demasiado alto')
+      expect(extra.ok === false && extra.error.mensaje).toContain('demasiado alto')
+    })
+
+    it('rechaza un monto de más de ₡99.999.999', () => {
+      const r = parsePlanillaRow(5, '1', 88, 0, 2500, columnas({ COMISION: 100_000_000 }))
+      expect(r.ok === false && r.error.mensaje).toBe(
+        'El campo "COMISION" es demasiado alto (máximo ₡99.999.999).'
+      )
+    })
+
+    it('rechaza un salario por hora absurdo', () => {
+      const r = parsePlanillaRow(5, '1', 88, 0, 100_000_000, columnas({ BASE: 1 }))
+      expect(r.ok === false && r.error.mensaje).toContain('demasiado alto')
+    })
+
+    it('acepta los valores justo en el tope', () => {
+      const r = parsePlanillaRow(5, '1', 999, 999, 2500, columnas({ BASE: 99_999_999 }))
+      expect(r.ok).toBe(true)
+    })
+  })
+
   it('ignora filas totalmente vacías', () => {
     const result = parsePlanillaRow(
       9,
@@ -619,5 +678,107 @@ describe('hayConceptoSalarioBase', () => {
       calcularPlanillaPorConceptos([{ ...BASE_OK, con_afecta_salario_bruto: false }], input)
         .salarioBruto
     ).toBe(0)
+  })
+})
+
+// Auditoría 2, hallazgo 6. Decisión del cliente: la ausencia sin goce cargada
+// por Excel o a mano rebaja el salario, igual que por la asistencia.
+describe('ausencia sin goce (deducción que rebaja el salario)', () => {
+  const BASE = {
+    con_id: 1,
+    con_codigo: 'BASE',
+    con_tipo: 'ingreso',
+    con_afecta_salario_bruto: true,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+  const PRESTAMO = {
+    con_id: 3,
+    con_codigo: 'PRESTAMO',
+    con_tipo: 'deduccion',
+    // Así queda un concepto creado desde el formulario: la bandera viene
+    // tildada. No debe convertir el préstamo en rebajo de salario.
+    con_afecta_salario_bruto: true,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_deduccion',
+    con_porcentaje: null,
+  }
+  const SIN_GOCE = {
+    con_id: 16,
+    con_codigo: 'DED006',
+    con_tipo: 'deduccion',
+    con_afecta_salario_bruto: false,
+    con_afecta_base_ccss: false,
+    con_tipo_calculo: 'monto_manual_deduccion',
+    con_porcentaje: null,
+    con_rebaja_salario: true,
+  }
+  const CCSS = {
+    con_id: 26,
+    con_codigo: 'CCSS_OBRERA',
+    con_tipo: 'deduccion',
+    con_afecta_salario_bruto: false,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'porcentaje_deduccion_bruto',
+    con_porcentaje: 10.83,
+  }
+  const entrada = (montos: Record<string, number>) => ({
+    montos,
+    horasTrabajadas: 0,
+    horasExtra: 0,
+    salarioPorHora: 0,
+  })
+
+  it('baja el bruto y la CCSS; no se resta otra vez del neto', () => {
+    const r = calcularPlanillaPorConceptos(
+      [BASE, PRESTAMO, SIN_GOCE, CCSS],
+      entrada({ BASE: 200000, DED006: 40000, PRESTAMO: 10000 })
+    )
+
+    expect(r.salarioBruto).toBe(160000)
+    expect(r.baseCcss).toBe(160000)
+    // CCSS 10,83 % de 160.000 + préstamo.
+    expect(r.totalDeducciones).toBe(17328 + 10000)
+    expect(r.salarioNeto).toBe(160000 - 17328 - 10000)
+    expect(r.lineas.find((l) => l.con_codigo === 'DED006')).toEqual({
+      con_id: 16,
+      con_codigo: 'DED006',
+      monto: 40000,
+      esIngreso: false,
+      esRebajoSalario: true,
+    })
+  })
+
+  it('no rebaja más salario del que hay', () => {
+    const r = calcularPlanillaPorConceptos(
+      [BASE, SIN_GOCE, CCSS],
+      entrada({ BASE: 100000, DED006: 150000 })
+    )
+
+    expect(r.salarioBruto).toBe(0)
+    expect(r.totalDeducciones).toBe(0)
+    expect(r.salarioNeto).toBe(0)
+    expect(r.lineas.find((l) => l.con_codigo === 'DED006')?.monto).toBe(100000)
+  })
+
+  it('sin la marca es una deducción normal (solo baja el neto)', () => {
+    const r = calcularPlanillaPorConceptos(
+      [BASE, { ...SIN_GOCE, con_rebaja_salario: false }, CCSS],
+      entrada({ BASE: 200000, DED006: 40000 })
+    )
+
+    expect(r.salarioBruto).toBe(200000)
+    expect(r.totalDeducciones).toBe(21660 + 40000)
+  })
+
+  it('la huella del catálogo cambia con la marca, y no cambia para catálogos sin ella', () => {
+    const conMarca = { ...SIN_GOCE, con_nombre: 'Ausencia sin goce' }
+    const sinMarca = { ...conMarca, con_rebaja_salario: false }
+    const sinCampo = { ...conMarca }
+    delete (sinCampo as { con_rebaja_salario?: boolean }).con_rebaja_salario
+
+    expect(firmaCatalogo([conMarca])).not.toBe(firmaCatalogo([sinMarca]))
+    expect(firmaCatalogo([sinMarca])).toBe(firmaCatalogo([sinCampo]))
   })
 })

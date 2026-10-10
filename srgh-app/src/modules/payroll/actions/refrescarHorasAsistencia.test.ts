@@ -84,6 +84,8 @@ function totales(over: Record<string, unknown> = {}) {
     diasQueBloquean: [],
     horasAcreditadas: 0,
     diasAcreditadosSinHorario: 0,
+    horasAcreditadasAusencias: 0,
+    diasAcreditadosAusenciasSinHorario: 0,
     diasJustificados: 0,
     periodoCubiertoPorAusencias: false,
     horasProgramadasTotales: (over.horasEsperadas as number | undefined) ?? 96,

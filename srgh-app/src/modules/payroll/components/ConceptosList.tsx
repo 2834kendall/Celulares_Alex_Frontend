@@ -76,15 +76,25 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
         )}
       </div>
 
-      <div className="flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2.5 text-xs text-brand-800">
-        <FileSpreadsheet className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-600" />
+      {/*
+        Aviso en ámbar y con borde marcado: en el azul tenue de antes pasaba
+        desapercibido. Lo de Excel va en verde, el color con que se reconoce.
+      */}
+      <div
+        role="note"
+        className="flex items-start gap-2.5 rounded-xl border-2 border-amber-300 bg-amber-50 px-3.5 py-3 text-xs text-amber-950 shadow-sm"
+      >
+        <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
         <p>
           Todo concepto <span className="font-semibold">activo</span> aparece en la próxima
-          plantilla de Excel que se descargue. Los marcados con{' '}
-          <span className="font-semibold">&ldquo;Excel&rdquo;</span> (ingreso o deducción de monto
-          manual) salen como una columna que se llena a mano; los demás (% del bruto, horas extra
-          automático) se calculan solos, igual que en la edición manual. Si desactivas un concepto,
-          deja de aparecer en la próxima planilla.
+          plantilla de <span className="font-semibold text-emerald-700">Excel</span> que se
+          descargue. Los marcados con{' '}
+          <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-800 ring-1 ring-inset ring-emerald-200">
+            Excel
+          </span>{' '}
+          (ingreso o deducción de monto manual) salen como una columna que se llena a mano; los
+          demás (% del bruto, horas extra automático) se calculan solos, igual que en la edición
+          manual. Si desactivas un concepto, deja de aparecer en la próxima planilla.
         </p>
       </div>
 
@@ -99,6 +109,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
           <IconButton
             onClick={() => setEditing(null)}
             aria-label="Cerrar formulario"
+            title="Cerrar formulario"
             className="absolute right-3.5 top-3.5"
           >
             <X className="h-3.5 w-3.5" />
@@ -149,7 +160,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
                       {ES_COLUMNA_EXCEL.has(concepto.con_tipo_calculo) && (
                         <span
                           title="Es una columna editable en la plantilla de Excel"
-                          className="inline-flex items-center rounded-full bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-700"
+                          className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-800 ring-1 ring-inset ring-emerald-200"
                         >
                           Excel
                         </span>
@@ -185,6 +196,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
                     <IconButton
                       onClick={() => setEditing(concepto)}
                       aria-label="Editar"
+                      title="Editar"
                       tone="blue"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -193,6 +205,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
                       onClick={() => requestDelete(concepto.con_id)}
                       disabled={deletingId === concepto.con_id}
                       aria-label="Eliminar"
+                      title="Eliminar"
                       tone="rose"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -230,7 +243,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
                         {ES_COLUMNA_EXCEL.has(concepto.con_tipo_calculo) && (
                           <span
                             title="Es una columna editable en la plantilla de Excel"
-                            className="inline-flex items-center rounded-full bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-700"
+                            className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-800 ring-1 ring-inset ring-emerald-200"
                           >
                             Excel
                           </span>
@@ -254,6 +267,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
                           <IconButton
                             onClick={() => setEditing(concepto)}
                             aria-label="Editar"
+                            title="Editar"
                             tone="blue"
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -262,6 +276,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
                             onClick={() => requestDelete(concepto.con_id)}
                             disabled={deletingId === concepto.con_id}
                             aria-label="Eliminar"
+                            title="Eliminar"
                             tone="rose"
                           >
                             <Trash2 className="h-3.5 w-3.5" />

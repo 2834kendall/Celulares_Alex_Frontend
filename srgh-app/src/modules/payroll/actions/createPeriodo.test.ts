@@ -21,7 +21,7 @@ const mockRequirePermission = vi.mocked(requirePermission)
 const mockCargar = vi.mocked(cargarEmpleadosDesdeAsistencia)
 
 /** Lo que devuelve createPeriodo cuando la carga de empleados salió bien. */
-const CARGA_OK = { empleadosCargados: 3, sinAsistencia: 0, avisoCarga: null }
+const CARGA_OK = { empleadosCargados: 3, sinAsistencia: 0, avisoCarga: null, avisoAusencias: null }
 
 const CLAIMS = { app_metadata: { empresa_id: 1 } } as unknown as Awaited<
   ReturnType<typeof requirePermission>

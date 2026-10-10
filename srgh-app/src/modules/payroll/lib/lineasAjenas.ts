@@ -34,6 +34,7 @@ export interface ConceptoDeLinea {
   con_afecta_base_ccss: boolean
   con_tipo_calculo: string
   con_porcentaje: number | null
+  con_rebaja_salario?: boolean | null
 }
 
 export interface LineaAjena {
@@ -44,7 +45,7 @@ export interface LineaAjena {
 
 /** Campos del concepto que hay que traer en el join para poder conservar la línea. */
 export const CAMPOS_CONCEPTO_DE_LINEA =
-  'con_id, con_codigo, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
+  'con_id, con_codigo, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje, con_rebaja_salario'
 
 /**
  * ¿Esta línea guardada hay que conservarla?

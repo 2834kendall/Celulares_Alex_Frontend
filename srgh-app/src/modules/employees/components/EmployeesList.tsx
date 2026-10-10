@@ -69,20 +69,32 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
     // ser muy distinto. Mismo criterio que asistencia.
     <div className="@container space-y-4">
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
-        <StatCard icon={Users} label="Total empleados" value={total} hoverable />
+        {/*
+          Cada tarjeta filtra por lo que cuenta, con el mismo estado que el
+          selector de abajo; tocar la tarjeta activa vuelve a "todos".
+        */}
+        <StatCard
+          icon={Users}
+          label="Total empleados"
+          value={total}
+          active={estado === 'todos'}
+          onClick={() => setEstado('todos')}
+        />
         <StatCard
           icon={UserCheck}
           tone="emerald"
           label="Con contrato vigente"
           value={activos}
-          hoverable
+          active={estado === 'activos'}
+          onClick={() => setEstado(estado === 'activos' ? 'todos' : 'activos')}
         />
         <StatCard
           icon={UserX}
           tone="rose"
           label="Sin contrato vigente"
           value={total - activos}
-          hoverable
+          active={estado === 'inactivos'}
+          onClick={() => setEstado(estado === 'inactivos' ? 'todos' : 'inactivos')}
         />
       </div>
 

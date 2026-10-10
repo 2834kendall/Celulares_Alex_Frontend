@@ -15,6 +15,17 @@
  */
 
 import { round2 } from '@/modules/payroll/lib/numeros'
+import { ultimoDiaDelMes } from '@/modules/payroll/lib/fechas'
+
+/**
+ * Código del motivo "Mutuo Acuerdo entre las Partes" en
+ * sgrh_cat_motivos_salida. El Art. 86 CT lo pone entre las causas que
+ * terminan el contrato sin responsabilidad para ninguna de las partes: no
+ * hay preaviso ni cesantía que la ley obligue a pagar, pero las partes pueden
+ * pactarla. Por eso la cesantía de este motivo no sale del catálogo: la
+ * indica quien liquida (ProcesarLiquidacionInput.cesantiaPactada).
+ */
+export const MOTIVO_MUTUO_ACUERDO = 'MUT001'
 
 /**
  * Tabla del Art. 29 CT: días de salario por año laborado según la antigüedad
@@ -152,6 +163,76 @@ export function calcularDiasPreaviso(mesesAntiguedad: number, diasSobrantes = 0)
   return 30
 }
 
+/**
+ * Tipos de contrato a los que aplica el Art. 31 CT ("contrato a plazo fijo
+ * y para obra determinada"). Códigos de sgrh_cat_tipos_contrato.
+ */
+export const TIPOS_CONTRATO_ART_31 = new Set(['PLAZO_FIJO', 'OBRA_DET'])
+
+const MS_POR_DIA = 24 * 60 * 60 * 1000
+
+function fechaUtc(fecha: string): number {
+  const [anio, mes, dia] = fecha.slice(0, 10).split('-').map(Number)
+  return Date.UTC(anio, mes - 1, dia)
+}
+
+/**
+ * Días de salario de la indemnización del Art. 31 CT cuando el patrono rompe
+ * sin justa causa un contrato a plazo fijo o por obra determinada antes de
+ * que termine (texto vigente, reformado por la Ley 7983 del 16/2/2000):
+ *
+ *   "un día de salario por cada siete días de trabajo continuo ejecutado o
+ *   fracción de tiempo menor, si no se hubiera ajustado dicho término"; "en
+ *   ningún caso esta suma podrá ser inferior a tres días de salario"; y si el
+ *   contrato "se ha estipulado por seis meses o más", nunca inferior a
+ *   veintidós días de salario.
+ *
+ * La "fracción de tiempo menor" cuenta como un día más (redondeo hacia
+ * arriba). La ley no fija tope. Aparte, el trabajador puede reclamar los
+ * daños y perjuicios que demuestre; eso lo fija un juez y no se calcula acá.
+ */
+export function calcularDiasIndemnizacionPlazoFijo(
+  diasTrabajados: number,
+  seisMesesOMas: boolean
+): number {
+  const porSemanas = Math.ceil(Math.max(diasTrabajados, 0) / 7)
+  return Math.max(porSemanas, 3, seisMesesOMas ? 22 : 0)
+}
+
+/**
+ * Por qué el preaviso o la cesantía quedaron en 0 días, para decirlo en el
+ * desglose y en el comprobante: un "Preaviso (0 días)" sin explicación
+ * parece un error (auditoría 2, hallazgo 10). null si tiene días.
+ */
+export function notaRubroSinDias(input: {
+  rubro: 'preaviso' | 'cesantia'
+  dias: number
+  /** Se pagó la indemnización del Art. 31 en su lugar. */
+  plazoFijo: boolean
+  /** El motivo de salida genera este rubro (mot_genera_preaviso / _cesantia). */
+  generaPorMotivo: boolean
+  motivoNombre: string
+  /** Mutuo acuerdo en que quien liquidó indicó que no se pactó cesantía. */
+  mutuoAcuerdoSinCesantia?: boolean
+}): string | null {
+  if (input.dias > 0) return null
+  if (input.plazoFijo) {
+    return 'no aplica a un contrato a plazo fijo terminado por el patrono: se paga la indemnización del Art. 31'
+  }
+  if (input.rubro === 'cesantia' && input.mutuoAcuerdoSinCesantia) {
+    return 'mutuo acuerdo sin cesantía pactada (Art. 86)'
+  }
+  if (!input.generaPorMotivo) {
+    return `no aplica por el motivo de salida (${input.motivoNombre})`
+  }
+  return 'menos de 3 meses de antigüedad (Arts. 28 y 29)'
+}
+
+/** Días calendario de `inicio` a `fin`, contando los dos. */
+export function diasCalendarioInclusive(inicio: string, fin: string): number {
+  return Math.round((fechaUtc(fin) - fechaUtc(inicio)) / MS_POR_DIA) + 1
+}
+
 /** Quincenas que caben en los seis meses del Art. 30. */
 export const QUINCENAS_PROMEDIO_LIQUIDACION = 12
 
@@ -178,9 +259,18 @@ export interface SalarioDiarioResultado {
  */
 export function calcularSalarioDiario(
   brutosQuincenasPagadas: readonly number[],
-  salarioMensualContrato: number
+  salarioMensualContrato: number,
+  /**
+   * Qué parte de una quincena completa trabajó en cada una (1 = completa).
+   * Una quincena de ingreso o de salida es parcial: contarla como completa
+   * bajaba el promedio (auditoría 2, fallo 3: un solo día de julio contaba
+   * como media mensualidad y el diario salía 23 % más bajo).
+   */
+  pesos?: readonly number[]
 ): SalarioDiarioResultado {
-  const quincenas = brutosQuincenasPagadas.filter((b) => Number.isFinite(b) && b > 0)
+  const quincenas = brutosQuincenasPagadas
+    .map((bruto, i) => ({ bruto, peso: pesos?.[i] ?? 1 }))
+    .filter((q) => Number.isFinite(q.bruto) && q.bruto > 0 && q.peso > 0)
 
   // No se redondea: el diario se multiplica hasta por 172 días de cesantía y
   // dos centavos de redondeo se vuelven medio colón. Se redondea cada rubro.
@@ -188,9 +278,24 @@ export function calcularSalarioDiario(
     return { salarioDiario: salarioMensualContrato / 30, origen: 'contrato' }
   }
 
-  const suma = quincenas.reduce((acc, b) => acc + b, 0)
-  const meses = quincenas.length / 2
+  const suma = quincenas.reduce((acc, q) => acc + q.bruto, 0)
+  const meses = quincenas.reduce((acc, q) => acc + Math.min(q.peso, 1), 0) / 2
   return { salarioDiario: suma / meses / 30, origen: 'promedio' }
+}
+
+/**
+ * Día de salida en mes comercial de 30 días, que es como paga la planilla
+ * (cada quincena vale medio salario, tenga el mes 28 o 31 días).
+ *
+ *  - El último día del mes cuenta como 30: salir el 28 de febrero es salir a
+ *    fin de mes. Antes contaba 28, y con la 1ª quincena pagada salían 13 días
+ *    de salario pendiente cuando la planilla paga 15 por esa quincena.
+ *  - El 31 también cuenta como 30 (ya era así).
+ */
+export function diaComercialDeSalida(fechaSalida: string): number {
+  const [anio, mes, dia] = fechaSalida.split('-').map(Number)
+  if (dia >= ultimoDiaDelMes(mes, anio)) return 30
+  return Math.min(dia, 30)
 }
 
 /**
@@ -213,6 +318,35 @@ export function diasSalarioPendiente(input: {
   const dia = Math.min(Math.max(input.diaSalida, 0), 30)
   if (dia <= 15) return dia
   return input.primeraQuincenaPagada ? dia - 15 : dia
+}
+
+/**
+ * ¿Esta quincena ya se pagó dentro de una liquidación, como salario
+ * pendiente? Se deduce de los días guardados (ver diasSalarioPendiente):
+ *
+ *  - salida del 1 al 15: la 1ª quincena del mes;
+ *  - salida del 16 en adelante: la 2ª, y la 1ª solo si tampoco estaba pagada
+ *    al liquidar (el pendiente arrancó el día 1: días > día de salida − 15).
+ *
+ * Una 1ª quincena que ya estaba pagada no cuenta aunque después la
+ * desmarquen: si no, no se podía volver a marcar y esos días quedaban sin
+ * pagar por ningún lado.
+ */
+export function quincenaPagadaEnLiquidacion(
+  liquidacion: { fechaSalida: string; diasSalarioPendiente: number },
+  quincena: { anio: number; mes: number; quincena: number }
+): boolean {
+  const dias = liquidacion.diasSalarioPendiente
+  if (!(dias > 0)) return false
+  const [anio, mes] = liquidacion.fechaSalida.split('-').map(Number)
+  if (quincena.anio !== anio || quincena.mes !== mes) return false
+  // Mismo día comercial con que se calcularon los días (diaComercialDeSalida).
+  // Una liquidación guardada con la regla anterior también calza: salida el
+  // 28 de febrero con la 1ª pagada guardó 13 días, y 13 > 15 es falso igual.
+  const diaSalida = diaComercialDeSalida(liquidacion.fechaSalida)
+  if (diaSalida <= 15) return quincena.quincena === 1
+  if (quincena.quincena === 2) return true
+  return dias > diaSalida - 15
 }
 
 export interface LiquidacionInput {
@@ -251,11 +385,26 @@ export interface LiquidacionInput {
   /** Del catálogo de motivos de salida (mot_genera_preaviso). */
   generaPreaviso: boolean
   /**
+   * Contrato a plazo fijo (u obra determinada) que el patrono rompió sin justa
+   * causa antes del plazo: en vez de preaviso y cesantía se paga la
+   * indemnización del Art. 31 CT (ver calcularDiasIndemnizacionPlazoFijo).
+   * Quien llama decide si aplica; acá solo se calcula.
+   */
+  plazoFijo?: { diasTrabajados: number; seisMesesOMas: boolean } | null
+  /**
    * Suma de los porcentajes de deducción obrera del catálogo (CCSS obrera y
    * cualquier otra "porcentaje del bruto"). Se aplica solo a lo que es
    * salario: el pendiente y las vacaciones. Cero si no se quiere deducir.
    */
   porcentajeDeduccionObrera?: number
+  /**
+   * Horas extra que seguían pendientes en el banco de horas al salir (ni
+   * pagadas ni compensadas). Se pagan en el finiquito: son salario, así que
+   * cotizan y entran al aguinaldo proporcional. Sin esto quedaban pendientes
+   * para siempre, porque ya no hay quincena donde pagarlas (auditoría,
+   * hallazgo 4).
+   */
+  horasExtraBanco?: { horas: number; monto: number }
 }
 
 export interface LiquidacionLinea {
@@ -268,13 +417,18 @@ export interface LiquidacionResultado {
   salarioProporcional: number
   aguinaldoProporcional: number
   vacacionesPagadas: number
+  /** Horas extra pendientes del banco de horas, pagadas en el finiquito. */
+  horasExtraBanco: number
   diasPreaviso: number
   preaviso: number
   diasCesantia: number
   cesantia: number
+  /** Indemnización del Art. 31 CT (contrato a plazo fijo roto sin justa causa). */
+  diasIndemnizacionPlazoFijo: number
+  indemnizacionPlazoFijo: number
   /** Suma bruta de todos los rubros. */
   total: number
-  /** Cuota obrera sobre lo que es salario (pendiente + vacaciones). */
+  /** Cuota obrera sobre lo que es salario (pendiente, vacaciones y horas extra). */
   deduccionesObreras: number
   /** total − deduccionesObreras: lo que recibe la persona. */
   neto: number
@@ -285,10 +439,15 @@ export interface LiquidacionResultado {
  * Arma el finiquito.
  *
  * Qué cotiza y qué no, porque cambia el neto:
- *  - Salario pendiente y vacaciones pagadas en dinero SON salario: llevan
- *    cuota obrera de la CCSS igual que una quincena.
- *  - Preaviso y cesantía son indemnizaciones, no salario: no cotizan ni
- *    pagan renta.
+ *  - Salario pendiente, vacaciones pagadas en dinero y horas extra
+ *    pendientes del banco de horas SON salario: llevan cuota obrera de la
+ *    CCSS igual que una quincena, y entran al aguinaldo proporcional.
+ *  - Preaviso, cesantía y la indemnización del Art. 31 (plazo fijo) son
+ *    indemnizaciones, no salario: no cotizan ni pagan renta.
+ *
+ * En un contrato a plazo fijo roto por el patrono antes del plazo no hay
+ * preaviso ni cesantía (son del contrato por tiempo indefinido, Arts. 28 y
+ * 29): se paga la indemnización del Art. 31.
  *  - El aguinaldo está exento por su propia ley.
  *
  * El aguinaldo proporcional incluye el salario pendiente de este mismo
@@ -299,31 +458,49 @@ export function calcularLiquidacion(input: LiquidacionInput): LiquidacionResulta
   const diasSobrantes = input.diasSobrantesAntiguedad ?? 0
 
   const salarioProporcional = round2(input.salarioDiario * input.diasTrabajadosMesActual)
+  const horasExtraBanco = round2(Math.max(input.horasExtraBanco?.monto ?? 0, 0))
   const aguinaldoProporcional =
     input.aguinaldoAplica === false
       ? 0
-      : round2((input.sumaSalariosBrutosCicloAguinaldo + salarioProporcional) / 12)
+      : round2(
+          (input.sumaSalariosBrutosCicloAguinaldo + salarioProporcional + horasExtraBanco) / 12
+        )
   const vacacionesPagadas = round2(
     (input.salarioDiarioVacaciones ?? input.salarioDiario) * input.diasVacacionesPendientes
   )
 
-  const diasPreaviso = input.generaPreaviso
-    ? calcularDiasPreaviso(input.mesesAntiguedad, diasSobrantes)
-    : 0
+  const plazoFijo = input.plazoFijo ?? null
+
+  const diasPreaviso =
+    input.generaPreaviso && !plazoFijo
+      ? calcularDiasPreaviso(input.mesesAntiguedad, diasSobrantes)
+      : 0
   const preaviso = round2(input.salarioDiario * diasPreaviso)
 
-  const diasCesantia = input.generaCesantia
-    ? calcularDiasCesantia(input.mesesAntiguedad, diasSobrantes)
-    : 0
+  const diasCesantia =
+    input.generaCesantia && !plazoFijo
+      ? calcularDiasCesantia(input.mesesAntiguedad, diasSobrantes)
+      : 0
   const cesantia = round2(input.salarioDiario * diasCesantia)
 
+  const diasIndemnizacionPlazoFijo = plazoFijo
+    ? calcularDiasIndemnizacionPlazoFijo(plazoFijo.diasTrabajados, plazoFijo.seisMesesOMas)
+    : 0
+  const indemnizacionPlazoFijo = round2(input.salarioDiario * diasIndemnizacionPlazoFijo)
+
   const total = round2(
-    salarioProporcional + aguinaldoProporcional + vacacionesPagadas + preaviso + cesantia
+    salarioProporcional +
+      aguinaldoProporcional +
+      vacacionesPagadas +
+      horasExtraBanco +
+      preaviso +
+      cesantia +
+      indemnizacionPlazoFijo
   )
 
   const porcentaje = input.porcentajeDeduccionObrera ?? 0
   const deduccionesObreras = round2(
-    (salarioProporcional + vacacionesPagadas) * (Math.max(porcentaje, 0) / 100)
+    (salarioProporcional + vacacionesPagadas + horasExtraBanco) * (Math.max(porcentaje, 0) / 100)
   )
   const neto = round2(total - deduccionesObreras)
 
@@ -331,10 +508,13 @@ export function calcularLiquidacion(input: LiquidacionInput): LiquidacionResulta
     salarioProporcional,
     aguinaldoProporcional,
     vacacionesPagadas,
+    horasExtraBanco,
     diasPreaviso,
     preaviso,
     diasCesantia,
     cesantia,
+    diasIndemnizacionPlazoFijo,
+    indemnizacionPlazoFijo,
     total,
     deduccionesObreras,
     neto,
@@ -350,8 +530,26 @@ export function calcularLiquidacion(input: LiquidacionInput): LiquidacionResulta
         dias: input.diasVacacionesPendientes,
         monto: vacacionesPagadas,
       },
+      ...(horasExtraBanco > 0
+        ? [
+            {
+              concepto: `Horas extra pendientes del banco de horas (${input.horasExtraBanco?.horas ?? 0} h)`,
+              dias: null,
+              monto: horasExtraBanco,
+            },
+          ]
+        : []),
       { concepto: 'Preaviso', dias: diasPreaviso, monto: preaviso },
       { concepto: 'Cesantía', dias: diasCesantia, monto: cesantia },
+      ...(plazoFijo
+        ? [
+            {
+              concepto: 'Indemnización por contrato a plazo fijo (Art. 31)',
+              dias: diasIndemnizacionPlazoFijo,
+              monto: indemnizacionPlazoFijo,
+            },
+          ]
+        : []),
     ],
   }
 }

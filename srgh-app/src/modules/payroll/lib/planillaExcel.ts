@@ -13,6 +13,7 @@ import ExcelJS from 'exceljs'
 import {
   CODIGO_AJUSTE,
   CODIGO_SALARIO_BASE,
+  esRebajoDeSalario,
   agruparConceptosPlanilla,
   firmaCatalogo,
   parsePlanillaRow,
@@ -22,10 +23,15 @@ import {
   type RawCell,
 } from './planilla'
 import {
+  basesDelSistema,
+  esBaseDelSistema,
   prellenarDesdeAsistencia,
+  type ContratoPago,
   type HorasDeAsistencia,
   type QuincenaRef,
 } from './prellenadoAsistencia'
+import { lecturaUtilizable } from './horasPeriodo'
+import { round2 } from './numeros'
 
 const SHEET_NAME = 'Planilla'
 
@@ -77,6 +83,61 @@ export interface EmpleadoPlantilla {
     /** Días programados con marcas incompletas; hay que corregirlos antes de pagar. */
     diasPorRevisar: number
   }
+  /**
+   * La fila que el empleado YA tiene en este periodo, si tiene. Sin esto la
+   * plantilla traía en 0 todo monto manual que no fuera BASE o AJUSTE: bajarla
+   * y subirla (lo que pide el aviso de "las marcas cambiaron") borraba
+   * comisiones, préstamos y el BASE corregido a mano de todas las filas.
+   */
+  guardado?: FilaGuardadaPlantilla
+}
+
+/** Lo guardado en la fila del periodo, en la forma que usa la plantilla. */
+export interface FilaGuardadaPlantilla {
+  pagado: boolean
+  horas: number
+  horasExtra: number
+  salarioPorHora: number
+  /** Monto por código de concepto manual (BASE, AJUSTE, COMISION, PRESTAMO…). */
+  montos: Record<string, number>
+  /**
+   * Las horas guardadas no son las que dijeron las marcas: alguien las
+   * corrigió (origenHoras = 'ajustadas'). La plantilla las trae tal cual, con
+   * su salario; si trajera las de las marcas, subir el archivo sin tocarlo
+   * borraba la corrección (auditoría 2, hallazgo 7: 40 h → 0).
+   */
+  horasAjustadas?: boolean
+}
+
+/**
+ * BASE que va en la plantilla para una fila sin pagar.
+ *
+ * El que prellenó el sistema se rehace con las marcas de hoy (para eso se
+ * vuelve a bajar la plantilla). Uno corregido a mano se respeta, con el mismo
+ * criterio que la subida (baseParaHorasEditadas): si no coincide con ninguna
+ * regla del sistema, es una decisión de alguien. Sin marcas utilizables no
+ * hay con qué recalcular, así que queda lo guardado.
+ */
+function baseDeLaPlantilla(
+  prellenado: number,
+  guardado: FilaGuardadaPlantilla | undefined,
+  contrato: ContratoPago,
+  lectura: HorasDeAsistencia | null,
+  quincena: QuincenaRef
+): number {
+  const base = guardado?.montos[CODIGO_SALARIO_BASE] ?? 0
+  if (!guardado || !(base > 0)) return prellenado
+  if (!lecturaUtilizable(lectura)) return base
+  const candidatos = [
+    prellenado,
+    ...basesDelSistema(
+      contrato,
+      { horas: guardado.horas, horasExtra: guardado.horasExtra },
+      lectura,
+      quincena
+    ),
+  ]
+  return esBaseDelSistema(base, candidatos) ? prellenado : base
 }
 
 export interface PlantillaInfo {
@@ -199,28 +260,42 @@ export async function buildPlanillaTemplate(
     //
     // Es un prellenado, no una imposición: el encargado revisa el archivo antes
     // de subirlo.
-    const prellenado = prellenarDesdeAsistencia(
-      {
-        salarioBaseMensual: emp.salarioBaseMensual,
-        salarioRealMensual: emp.salarioRealMensual ?? null,
-        horasSemanales: emp.horasSemanales ?? null,
-      },
-      emp.horas?.lectura ?? null,
-      info.quincena
-    )
+    const contrato: ContratoPago = {
+      salarioBaseMensual: emp.salarioBaseMensual,
+      salarioRealMensual: emp.salarioRealMensual ?? null,
+      horasSemanales: emp.horasSemanales ?? null,
+    }
+    const lecturaEmp = emp.horas?.lectura ?? null
+    const prellenado = prellenarDesdeAsistencia(contrato, lecturaEmp, info.quincena)
+    const guardado = emp.guardado
 
-    row.getCell(colHoras).value = prellenado.horas
-    row.getCell(colHorasExtra).value = prellenado.horasExtra
-    row.getCell(colSalarioHora).value = prellenado.salarioPorHora
+    // Una fila ya pagada va tal cual se pagó: la subida no la cambia (tiene
+    // comprobante emitido), y traerla recalculada solo generaba el aviso de
+    // "pagadas sin tocar" en cada subida. Una con horas corregidas a mano,
+    // también: esa corrección es una decisión de alguien (hallazgo 7).
+    const conservada =
+      guardado?.pagado === true || guardado?.horasAjustadas === true ? guardado : null
+    const montoGuardado = (codigo: string) => guardado?.montos[codigo] ?? 0
+
+    row.getCell(colHoras).value = conservada ? conservada.horas : prellenado.horas
+    row.getCell(colHorasExtra).value = conservada ? conservada.horasExtra : prellenado.horasExtra
+    row.getCell(colSalarioHora).value = conservada
+      ? conservada.salarioPorHora
+      : prellenado.salarioPorHora
     row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
+
+    const base = conservada
+      ? montoGuardado(CODIGO_SALARIO_BASE)
+      : baseDeLaPlantilla(prellenado.base, guardado, contrato, lecturaEmp, info.quincena)
+    const ajuste = conservada ? montoGuardado(CODIGO_AJUSTE) : prellenado.ajuste
 
     ingresoManual.forEach((c, i) => {
       row.getCell(colIngresoInicio + i).value =
         c.con_codigo === CODIGO_SALARIO_BASE
-          ? prellenado.base
+          ? base
           : c.con_codigo === CODIGO_AJUSTE
-            ? prellenado.ajuste
-            : 0
+            ? ajuste
+            : montoGuardado(c.con_codigo)
       if (c.con_codigo === CODIGO_AJUSTE) {
         row.getCell(colIngresoInicio + i).fill = {
           type: 'pattern',
@@ -229,8 +304,8 @@ export async function buildPlanillaTemplate(
         }
       }
     })
-    deduccionManual.forEach((_, i) => {
-      row.getCell(colDeduccionManualInicio + i).value = 0
+    deduccionManual.forEach((c, i) => {
+      row.getCell(colDeduccionManualInicio + i).value = montoGuardado(c.con_codigo)
     })
 
     const letraHorasExtra = columnLetter(colHorasExtra)
@@ -249,32 +324,75 @@ export async function buildPlanillaTemplate(
         ? `${columnLetter(inicio)}${rowNumber}:${columnLetter(inicio + cantidad - 1)}${rowNumber}`
         : null
 
-    const sumandosBruto = [
-      rango(colIngresoInicio, ingresoManual.length),
-      rango(colHorasExtraInicio, horasExtra.length),
-    ].filter((r): r is string => r !== null)
-    row.getCell(colTotalBruto).value = {
-      formula: sumandosBruto.length > 0 ? `SUM(${sumandosBruto.join(',')})` : '0',
+    // Vista previa con las mismas reglas que el servidor
+    // (calcularPlanillaPorConceptos), para que el archivo no induzca a error
+    // (auditoría, hallazgo 6):
+    //  - un ingreso que no es salario (con_afecta_salario_bruto = false, ej.
+    //    Aguinaldo o Viáticos) no va al bruto ni a la CCSS: se suma al neto;
+    //  - la CCSS se calcula sobre lo que cotiza (con_afecta_base_ccss), no
+    //    sobre todo el bruto;
+    //  - el pago de banco de horas ya guardado en la fila (HORAS_EXTRA, que no
+    //    es columna) sí es salario y cotiza.
+    // El servidor recalcula todo al subir; esto es solo lo que se ve.
+    const celda = (col: number) => `${columnLetter(col)}${rowNumber}`
+    const ingresosConColumna = [
+      ...ingresoManual.map((c, i) => ({ c, col: colIngresoInicio + i })),
+      ...horasExtra.map((c, i) => ({ c, col: colHorasExtraInicio + i })),
+    ]
+    const esSalario = (c: ConceptoPlanillaColumna) => c.con_afecta_salario_bruto !== false
+    const cotiza = (c: ConceptoPlanillaColumna) => esSalario(c) && c.con_afecta_base_ccss !== false
+    const tieneColumnaHorasExtra = ingresosConColumna.some((x) => x.c.con_codigo === 'HORAS_EXTRA')
+    const bancoPagado = tieneColumnaHorasExtra ? 0 : round2(guardado?.montos.HORAS_EXTRA ?? 0)
+    const suma = (refs: string[], extra = 0) => {
+      const partes = [...refs, ...(extra !== 0 ? [String(extra)] : [])]
+      return partes.length > 0 ? `SUM(${partes.join(',')})` : '0'
     }
+    const refsBruto = ingresosConColumna.filter((x) => esSalario(x.c)).map((x) => celda(x.col))
+    const refsCcss = ingresosConColumna.filter((x) => cotiza(x.c)).map((x) => celda(x.col))
+    const refsNoSalarial = ingresosConColumna
+      .filter((x) => !esSalario(x.c))
+      .map((x) => celda(x.col))
 
-    const letraBruto = columnLetter(colTotalBruto)
+    // La ausencia sin goce rebaja el salario: sale del bruto y de la base de
+    // la CCSS, no del neto (auditoría 2, hallazgo 6). Igual que el motor, el
+    // bruto no baja de 0.
+    const refsRebajo = deduccionManual
+      .map((c, i) => ({ c, col: colDeduccionManualInicio + i }))
+      .filter((x) => esRebajoDeSalario(x.c))
+      .map((x) => celda(x.col))
+    const menosRebajo = (formula: string) =>
+      refsRebajo.length > 0 ? `MAX(0,${formula}-${suma(refsRebajo)})` : formula
+
+    row.getCell(colTotalBruto).value = { formula: menosRebajo(suma(refsBruto, bancoPagado)) }
+
+    const baseCcss = menosRebajo(suma(refsCcss, bancoPagado))
     deduccionPorcentual.forEach((c, i) => {
       const col = colDeduccionPctInicio + i
-      const factor = (c.con_porcentaje ?? 0) / 100
-      row.getCell(col).value = { formula: `${letraBruto}${rowNumber}*${factor}` }
+      // `*10.83/100` y no `*0.1083`: 10.83 / 100 en JavaScript es
+      // 0.10830000000000001, y eso quedaba escrito en la fórmula.
+      row.getCell(col).value = { formula: `${baseCcss}*${c.con_porcentaje ?? 0}/100` }
     })
 
+    // El rebajo de salario ya se restó del bruto: no se resta otra vez.
     const sumandosDeducciones = [
-      rango(colDeduccionManualInicio, deduccionManual.length),
+      ...(refsRebajo.length > 0
+        ? deduccionManual
+            .map((c, i) => ({ c, col: colDeduccionManualInicio + i }))
+            .filter((x) => !esRebajoDeSalario(x.c))
+            .map((x) => celda(x.col))
+        : [rango(colDeduccionManualInicio, deduccionManual.length)]),
       rango(colDeduccionPctInicio, deduccionPorcentual.length),
     ].filter((r): r is string => r !== null)
     row.getCell(colTotalDeducciones).value = {
       formula: sumandosDeducciones.length > 0 ? `SUM(${sumandosDeducciones.join(',')})` : '0',
     }
 
+    const letraBruto = columnLetter(colTotalBruto)
     const letraDeducciones = columnLetter(colTotalDeducciones)
     row.getCell(colTotalNeto).value = {
-      formula: `${letraBruto}${rowNumber}-${letraDeducciones}${rowNumber}`,
+      formula:
+        `${letraBruto}${rowNumber}-${letraDeducciones}${rowNumber}` +
+        (refsNoSalarial.length > 0 ? `+${suma(refsNoSalarial)}` : ''),
     }
 
     for (let col = colSalarioHora; col <= colTotalNeto; col += 1) {

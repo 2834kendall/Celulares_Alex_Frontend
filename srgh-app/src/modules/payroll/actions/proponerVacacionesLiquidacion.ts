@@ -3,7 +3,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { ERROR_SIN_PERMISO_AUSENCIAS, puedeLeerAusencias } from '@/modules/payroll/lib/derechosData'
+import {
+  ERROR_SIN_PERMISO_AUSENCIAS,
+  puedeLeerAusencias,
+  sucursalesVisibles,
+} from '@/modules/payroll/lib/derechosData'
 import {
   calcularBasesLiquidacion,
   cargarHistorialParaLiquidacion,
@@ -40,7 +44,8 @@ export async function proponerVacacionesLiquidacion(
   const bases = await calcularBasesLiquidacion(
     supabase,
     historial.data,
-    historial.data.lab_fecha_fin
+    historial.data.lab_fecha_fin,
+    sucursalesVisibles(claims)
   )
   if (!bases.ok) return bases
 

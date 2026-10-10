@@ -7,6 +7,7 @@ import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
 import { getConceptos } from '@/modules/payroll/actions/getConceptos'
 import { formatCRC, formatDate, formatHoras, periodoLabel } from '@/modules/payroll/lib/format'
+import { esRebajoDeSalario } from '@/modules/payroll/lib/planilla'
 import { PrintComprobanteButton } from '@/modules/payroll/components/PrintComprobanteButton'
 
 interface ComprobantePageProps {
@@ -112,6 +113,12 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
     if (codigosMostrados.has(codigo) || monto <= 0) continue
     const concepto = conceptoPorCodigo.get(codigo)
     const label = concepto?.con_nombre ?? codigo
+    // La ausencia sin goce rebaja el salario: va restando en el bloque del
+    // salario, para que ese bloque sume el bruto (auditoría 2, hallazgo 6).
+    if (concepto && esRebajoDeSalario(concepto)) {
+      lineasIngreso.push({ label, value: -monto })
+      continue
+    }
     if (concepto && TIPOS_CALCULO_INGRESO.has(concepto.con_tipo_calculo)) {
       agregarIngreso(concepto, label, monto)
     } else {
@@ -193,6 +200,18 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
             <p className="font-semibold tabular-nums text-slate-900">
               {detalle.horasExtra > 0 ? `${formatHoras(detalle.horasExtra)} h` : '—'}
             </p>
+            {/*
+              Las horas extra no se pagan en la quincena: van al banco de
+              horas. Sin decirlo, el comprobante mostraba "6 h" que no estaban
+              en el bruto (auditoría 2, hallazgo 11).
+            */}
+            {detalle.horasExtra > 0 && (
+              <p className="mt-0.5 text-[10px] leading-tight text-slate-400">
+                {(detalle.montosPorConcepto.HORAS_EXTRA ?? 0) > 0
+                  ? 'Pagadas desde el banco de horas: el monto va en ingresos.'
+                  : 'En el banco de horas: no se pagan en este comprobante.'}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-[11px] font-medium text-slate-400">Valor de la hora</p>
@@ -210,7 +229,11 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
             <p className="text-xs text-slate-400">Sin ingresos registrados.</p>
           ) : (
             lineasIngreso.map((l) => (
-              <Linea key={l.label} label={l.label} value={formatCRC(l.value)} />
+              <Linea
+                key={l.label}
+                label={l.label}
+                value={l.value < 0 ? `− ${formatCRC(-l.value)}` : formatCRC(l.value)}
+              />
             ))
           )}
           <div className="my-2 border-t border-slate-100" />
@@ -262,7 +285,7 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
           {detalle.incapacidad && (
             <>
               <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                Incapacidad por enfermedad
+                {detalle.incapacidad.tipoNombre ?? 'Incapacidad'}
               </p>
               <Linea
                 label={`Días pagados por la empresa (${detalle.incapacidad.porcentajePagoEmpleador}% del salario)`}
@@ -276,7 +299,7 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
               )}
               <div className="my-2 border-t border-slate-100" />
               <Linea
-                label="Monto de incapacidad"
+                label="Monto que paga la empresa"
                 value={formatCRC(detalle.incapacidad.monto)}
                 strong
               />

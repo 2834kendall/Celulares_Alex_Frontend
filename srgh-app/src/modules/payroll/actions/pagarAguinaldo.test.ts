@@ -111,6 +111,49 @@ describe('pagarAguinaldo (server action)', () => {
     vi.useRealTimers()
   })
 
+  describe('usuario de sucursal', () => {
+    // Ana vino trasladada: el contrato 9 (sucursal 1, cerrado en mayo) y el 1
+    // (sucursal 2, vigente) son la misma relación.
+    const ANTERIOR = {
+      ...CONTRATO,
+      lab_id: 9,
+      lab_sucursal_id: 1,
+      lab_fecha_inicio: '2020-01-15',
+      lab_fecha_fin: '2026-05-31',
+    }
+    const ACTUAL = { ...CONTRATO, lab_sucursal_id: 2, lab_fecha_inicio: '2026-06-01' }
+    const TRASLADADA = {
+      ...ACTUAL,
+      sgrh_empleados: { ...CANDIDATO.sgrh_empleados, sgrh_historial_laboral: [ANTERIOR, ACTUAL] },
+    }
+
+    function comoUsuarioDe(sucursales: number[]) {
+      mockRequirePermission.mockResolvedValue({
+        app_metadata: { permisos: ['NOMINA_WRITE', 'AUSENCIAS_READ'], sucursal_ids: sucursales },
+      } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    }
+
+    it('no paga si parte de la relación está en una sucursal que no ve', async () => {
+      comoUsuarioDe([2])
+      const client = mockSupabase({ sgrh_historial_laboral: { data: [TRASLADADA], error: null } })
+
+      const result = await pagarAguinaldo(1, 2026)
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('sucursal que tu usuario no ve')
+      expect(llamada(client, 'sgrh_pagos_extraordinarios', 'insert')).toBeUndefined()
+    })
+
+    it('sí paga si ve todas las sucursales de la relación', async () => {
+      comoUsuarioDe([1, 2])
+      mockSupabase({ sgrh_historial_laboral: { data: [TRASLADADA], error: null } })
+
+      const result = await pagarAguinaldo(1, 2026)
+
+      expect(result).toEqual({ ok: true, pagoId: 55 })
+    })
+  })
+
   it('registra el pago con el monto calculado, sin deducciones, y marca la provisión', async () => {
     const client = mockSupabase()
 

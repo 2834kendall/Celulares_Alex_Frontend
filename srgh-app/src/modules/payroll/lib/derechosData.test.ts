@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { cargarAusencias, cargarQuincenas, puedeLeerAusencias } from './derechosData'
+import {
+  SELECT_CONTRATO,
+  aContrato,
+  cargarAusencias,
+  cargarQuincenas,
+  contratosFueraDeAlcance,
+  puedeLeerAusencias,
+  sucursalesVisibles,
+} from './derechosData'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { createClient } from '@/lib/supabase/server'
 
@@ -139,5 +147,39 @@ describe('puedeLeerAusencias', () => {
     expect(puedeLeerAusencias({ app_metadata: { permisos: ['AUSENCIAS_READ'] } })).toBe(true)
     expect(puedeLeerAusencias({ app_metadata: { permisos: [] } })).toBe(false)
     expect(puedeLeerAusencias({})).toBe(false)
+  })
+})
+
+describe('alcance por sucursal', () => {
+  it('sucursalesVisibles: null = toda la empresa; si no, las del JWT', () => {
+    expect(sucursalesVisibles({ app_metadata: { sucursal_ids: null } })).toBeNull()
+    expect(sucursalesVisibles({ app_metadata: {} })).toBeNull()
+    expect(sucursalesVisibles({})).toBeNull()
+    expect(sucursalesVisibles({ app_metadata: { sucursal_ids: [2, 3] } })).toEqual([2, 3])
+  })
+
+  it('pide y guarda la sucursal de cada contrato', () => {
+    expect(SELECT_CONTRATO).toContain('lab_sucursal_id')
+    expect(
+      aContrato({
+        lab_id: 7,
+        lab_sucursal_id: 2,
+        lab_fecha_inicio: '2020-01-01',
+        lab_fecha_fin: null,
+        lab_salario_base: 1,
+        lab_salario_real: 1,
+        sgrh_liquidaciones: null,
+      }).sucursalId
+    ).toBe(2)
+  })
+
+  it('contratosFueraDeAlcance: un traslado desde una sucursal que no se ve', () => {
+    const a = { ...CONTRATO, labId: 1, sucursalId: 1 }
+    const b = { ...CONTRATO, labId: 2, sucursalId: 2 }
+
+    expect(contratosFueraDeAlcance([a, b], null)).toBe(false)
+    expect(contratosFueraDeAlcance([a, b], [1, 2])).toBe(false)
+    expect(contratosFueraDeAlcance([b], [2])).toBe(false)
+    expect(contratosFueraDeAlcance([a, b], [2])).toBe(true)
   })
 })

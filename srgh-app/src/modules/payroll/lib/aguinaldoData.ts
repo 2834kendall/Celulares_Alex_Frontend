@@ -39,6 +39,7 @@ import {
   aContrato,
   cargarAusencias,
   cargarQuincenas,
+  contratosFueraDeAlcance,
   juntarAusencias,
   juntarQuincenas,
   type ContratoRow,
@@ -48,6 +49,7 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 interface CandidatoRow {
   lab_id: number
+  lab_sucursal_id: number | null
   lab_fecha_inicio: string
   lab_fecha_fin: string | null
   lab_salario_base: number | null
@@ -73,6 +75,12 @@ export interface AguinaldoDeRelacion {
   calculo: AguinaldoCalculado
   /** Ausencias cuyo tipo no se pudo leer (no se sabe si son maternidad). */
   ausenciasSinTipo: number
+  /**
+   * La relación tiene contratos en sucursales que el usuario no ve (un
+   * traslado): el monto sale de menos y no se deja pagar. Ver
+   * contratosFueraDeAlcance.
+   */
+  sucursalesOcultas: boolean
   pagado: boolean
   fechaPago: string | null
   pagoId: number | null
@@ -90,12 +98,14 @@ export function aperturaPagoAguinaldo(anio: number): string {
 export async function calcularAguinaldosDelCiclo(
   supabase: SupabaseServerClient,
   anio: number,
+  /** sucursalesVisibles(claims): null = toda la empresa. */
+  visibles: number[] | null,
   soloLabId?: number
 ): Promise<AguinaldosResult> {
   let consulta = supabase
     .from('sgrh_historial_laboral')
     .select(
-      `lab_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
+      `lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion,
                         emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) )`
     )
@@ -126,7 +136,18 @@ export async function calcularAguinaldosDelCiclo(
     }
   }
 
-  const filas = [...porRelacion.values()]
+  // El historial se ve en toda la empresa, pero la planilla de un contrato
+  // solo en su sucursal: a quien hoy es de otra sucursal no se le puede
+  // calcular nada, y listarlo en ₡0 decía "no se le debe". Se mira el
+  // contrato MÁS RECIENTE de la relación (ya elegido arriba), no cada
+  // candidato: si no, alguien trasladado a una sucursal que no se ve seguía
+  // apareciendo bajo su contrato viejo.
+  const filas = [...porRelacion.values()].filter(
+    ({ candidato }) =>
+      visibles === null ||
+      candidato.lab_sucursal_id === null ||
+      visibles.includes(candidato.lab_sucursal_id)
+  )
   const todosLosContratos = filas.flatMap((f) => f.relacion)
   const todosLosIds = [...new Set(todosLosContratos.map((c) => c.labId))]
 
@@ -216,6 +237,15 @@ export async function calcularAguinaldosDelCiclo(
       fechaSalida: candidato.lab_fecha_fin,
       calculo,
       ausenciasSinTipo: ausencias.sinTipo,
+      // Solo importan los contratos que tocan el ciclo: un traslado de hace
+      // años no esconde ninguna quincena de este aguinaldo.
+      sucursalesOcultas: contratosFueraDeAlcance(
+        relacion.filter(
+          (c) =>
+            c.fechaInicio <= `${anio}-11-30` && (!c.fechaFin || c.fechaFin >= `${anio - 1}-12-01`)
+        ),
+        visibles
+      ),
       pagado: pago !== null || provisionPagada !== null,
       fechaPago: pago?.pex_fecha_pago ?? provisionPagada?.pra_fecha_pago_aguinaldo ?? null,
       pagoId: pago?.pex_id ?? null,

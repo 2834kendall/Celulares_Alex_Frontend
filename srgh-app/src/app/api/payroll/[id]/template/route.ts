@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { buildPlanillaTemplate } from '@/modules/payroll/lib/planillaExcel'
-import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
+import { getEmpleadosActivos, getFilasGuardadas } from '@/modules/payroll/lib/planillaData'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import type { ConceptoPlanillaColumna } from '@/modules/payroll/lib/planilla'
@@ -60,7 +60,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'El periodo no existe o no es visible.' }, { status: 404 })
   }
 
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id)
+  // Incluye a quien ya tiene fila en el periodo aunque su contrato haya
+  // terminado después: si no, su fila trababa la subida (ver getEmpleadosActivos).
+  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+    periodoId,
+    finPeriodo: periodo.npe_fecha_fin_periodo,
+  })
   if (!empleadosResult.ok) {
     return NextResponse.json({ error: empleadosResult.error }, { status: 500 })
   }
@@ -79,7 +84,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
     .select(
-      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
+      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje, con_rebaja_salario'
     )
     .eq('con_activo', true)
     .returns<ConceptoPlanillaColumna[]>()
@@ -115,13 +120,22 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const horasPorLab = horasResult?.ok ? horasResult.data : null
 
+  // Lo que ya está guardado en el periodo: comisiones, préstamos y BASE
+  // corregidos a mano vuelven en la plantilla en vez de venir en 0.
+  const guardadas = await getFilasGuardadas(supabase, periodoId)
+  if (!guardadas.ok) {
+    return NextResponse.json({ error: guardadas.error }, { status: 500 })
+  }
+
   const empleados = empleadosResult.data.map((empleado) => {
     const totales = horasPorLab?.get(empleado.labId)
-    if (!totales) return empleado
-
+    const guardado = guardadas.data.get(empleado.labId)
     return {
       ...empleado,
-      horas: { lectura: totales, diasPorRevisar: totales.diasQueBloquean.length },
+      ...(guardado ? { guardado } : {}),
+      ...(totales
+        ? { horas: { lectura: totales, diasPorRevisar: totales.diasQueBloquean.length } }
+        : {}),
     }
   })
 

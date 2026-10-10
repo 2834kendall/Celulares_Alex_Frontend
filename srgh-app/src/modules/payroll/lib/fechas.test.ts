@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hoyLocal, parseFechaLocal, rangoQuincena, ultimoDiaDelMes } from './fechas'
+import { ahoraLocal, hoyLocal, parseFechaLocal, rangoQuincena, ultimoDiaDelMes } from './fechas'
 
 describe('rangoQuincena', () => {
   it('la primera quincena va del 1 al 15', () => {
@@ -56,17 +56,26 @@ describe('parseFechaLocal', () => {
   })
 })
 
-describe('hoyLocal', () => {
-  it('devuelve el dia de hoy en formato YYYY-MM-DD', () => {
-    const hoy = new Date()
-    const esperado = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(
-      hoy.getDate()
-    ).padStart(2, '0')}`
+describe('hoyLocal / ahoraLocal (hora de Costa Rica)', () => {
+  // 01:00 UTC del 31 de octubre = 19:00 del 30 en Costa Rica (UTC-6). Con la
+  // hora del proceso, un servidor en UTC ya decía 31.
+  const NOCHE_DEL_30 = new Date('2026-10-31T01:00:00Z')
 
-    expect(hoyLocal()).toBe(esperado)
+  it('después de las 18:00 de Costa Rica sigue siendo el mismo día', () => {
+    expect(hoyLocal(NOCHE_DEL_30)).toBe('2026-10-30')
+    expect(ahoraLocal(NOCHE_DEL_30)).toBe('2026-10-30 19:00:00')
   })
 
-  it('siempre rellena mes y dia a dos digitos', () => {
+  it('el 31 de diciembre a las 18:30 todavía es el año que termina', () => {
+    expect(hoyLocal(new Date('2027-01-01T00:30:00Z'))).toBe('2026-12-31')
+  })
+
+  it('a medianoche de Costa Rica ya cambia de día', () => {
+    expect(ahoraLocal(new Date('2026-11-01T06:00:00Z'))).toBe('2026-11-01 00:00:00')
+  })
+
+  it('siempre rellena mes, día y hora a dos dígitos', () => {
     expect(hoyLocal()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(ahoraLocal(new Date('2026-02-03T10:04:05Z'))).toBe('2026-02-03 04:04:05')
   })
 })

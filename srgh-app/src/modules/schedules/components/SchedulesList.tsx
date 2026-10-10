@@ -67,12 +67,16 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
   const activeCount = schedules.filter((s) => s.hor_activo).length
 
   const [nameFilter, setNameFilter] = useState('')
+  const [soloActivas, setSoloActivas] = useState(false)
 
   const filteredSchedules = useMemo(() => {
     const query = normalizeSearchText(nameFilter.trim())
-    if (!query) return schedules
-    return schedules.filter((s) => normalizeSearchText(s.hor_nombre).includes(query))
-  }, [schedules, nameFilter])
+    return schedules.filter(
+      (s) =>
+        (!soloActivas || s.hor_activo) &&
+        (!query || normalizeSearchText(s.hor_nombre).includes(query))
+    )
+  }, [schedules, nameFilter, soloActivas])
 
   const {
     page,
@@ -89,13 +93,21 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
   return (
     <div className="@container space-y-4">
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
-        <StatCard icon={ListChecks} label="Total plantillas" value={total} hoverable />
+        {/* Las tarjetas filtran el listado; tocar "Activas" otra vez lo quita. */}
+        <StatCard
+          icon={ListChecks}
+          label="Total plantillas"
+          value={total}
+          active={!soloActivas}
+          onClick={() => setSoloActivas(false)}
+        />
         <StatCard
           icon={CheckCircle2}
           tone="emerald"
           label="Activas"
           value={activeCount}
-          hoverable
+          active={soloActivas}
+          onClick={() => setSoloActivas(!soloActivas)}
         />
         <Link
           href="?tab=jornadas"
@@ -181,9 +193,17 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
         />
       ) : filteredSchedules.length === 0 ? (
         <EmptyState
-          variant="no-results"
-          title={`Ningún horario coincide con “${nameFilter}”`}
-          description="Prueba con otro nombre."
+          variant={nameFilter.trim() ? 'no-results' : 'empty'}
+          title={
+            nameFilter.trim()
+              ? `Ningún horario coincide con “${nameFilter}”`
+              : 'No hay plantillas activas'
+          }
+          description={
+            nameFilter.trim()
+              ? 'Prueba con otro nombre.'
+              : 'Toca “Total plantillas” para ver todas.'
+          }
         />
       ) : (
         <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">

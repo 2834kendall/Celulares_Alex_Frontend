@@ -76,6 +76,8 @@ const CONTRATO = {
 }
 
 const OK = { data: null, error: null }
+/** El UPDATE de la fila (solo si sigue sin pagar) devuelve la fila. */
+const GUARDADA = { data: [{ ndt_id: 1 }], error: null }
 
 function mockSupabase(
   responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
@@ -139,6 +141,29 @@ describe('updateDetalleManual (server action)', () => {
     })
   })
 
+  it('rechaza editar una fila que ya tiene el pago marcado', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: {
+        data: {
+          ndt_id: 1,
+          ndt_nomina_periodo_id: 9,
+          ndt_historial_laboral_id: 5,
+          ndt_pagado: true,
+          sgrh_nomina_periodo: { npe_estado: 'borrador' },
+        },
+        error: null,
+      },
+    })
+
+    const result = await updateDetalleManual(1, INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Esta fila ya tiene el pago marcado. Para corregirla, desmarcá el pago primero.',
+    })
+    expect(client.from.mock.calls.map((c) => c[0])).not.toContain('sgrh_cat_conceptos_nomina')
+  })
+
   it('avisa si no hay conceptos activos en el catálogo', async () => {
     mockSupabase({
       sgrh_nomina_detalle: {
@@ -173,7 +198,7 @@ describe('updateDetalleManual (server action)', () => {
           },
           error: null,
         },
-        OK,
+        GUARDADA,
       ],
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
       sgrh_nomina_linea_ingreso: [OK, OK],
@@ -190,6 +215,61 @@ describe('updateDetalleManual (server action)', () => {
     expect(result).toEqual({ ok: true })
   })
 
+  // Riesgo de la auditoría: alguien marca la fila pagada mientras otro la edita.
+  it('si la fila se pagó mientras se editaba, no guarda nada', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: [
+        {
+          data: {
+            ndt_id: 1,
+            ndt_nomina_periodo_id: 9,
+            ndt_historial_laboral_id: 5,
+            sgrh_nomina_periodo: { npe_estado: 'borrador' },
+          },
+          error: null,
+        },
+        { data: [], error: null },
+      ],
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
+      sgrh_nomina_linea_ingreso: [OK, OK],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [OK, OK],
+      // horasTrabajadas del INPUT (80) no supera el tope (88), así que
+      // sincronizarMovimientoBancoHoras solo hace un select (sin movimiento
+      // pendiente que borrar).
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+
+    const result = await updateDetalleManual(1, INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Esta fila se marcó como pagada mientras la editabas: no se guardó ningún cambio.',
+    })
+    // Ni las líneas: se cortó antes.
+    const escrituras = client.from.mock.results
+      .filter((_, i) => String(client.from.mock.calls[i][0]).startsWith('sgrh_nomina_linea_'))
+      .flatMap((r) => {
+        const b = r.value as {
+          insert: { mock: { calls: unknown[] } }
+          delete: { mock: { calls: unknown[] } }
+        }
+        return [...b.insert.mock.calls, ...b.delete.mock.calls]
+      })
+    expect(escrituras).toEqual([])
+    const update = client.from.mock.results
+      .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_detalle')
+      .map(
+        (r) =>
+          r.value as {
+            update: { mock: { calls: unknown[] } }
+            eq: { mock: { calls: unknown[][] } }
+          }
+      )
+      .find((b) => b.update.mock.calls.length > 0)!
+    expect(update.eq.mock.calls).toContainEqual(['ndt_pagado', false])
+  })
+
   it('registra un movimiento pendiente en el banco de horas si se superan las horas normales', async () => {
     mockSupabase({
       sgrh_nomina_detalle: [
@@ -202,7 +282,7 @@ describe('updateDetalleManual (server action)', () => {
           },
           error: null,
         },
-        OK,
+        GUARDADA,
       ],
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
       sgrh_nomina_linea_ingreso: [OK, OK],
@@ -250,7 +330,7 @@ describe('updateDetalleManual (server action)', () => {
           },
           error: null,
         },
-        OK,
+        GUARDADA,
       ],
       sgrh_cat_conceptos_nomina: { data: activos, error: null },
       sgrh_nomina_linea_ingreso: [
@@ -307,6 +387,8 @@ describe('updateDetalleManual (server action)', () => {
             horasExtra: 0,
             horasAcreditadas: 0,
             diasAcreditadosSinHorario: 0,
+            horasAcreditadasAusencias: 0,
+            diasAcreditadosAusenciasSinHorario: 0,
             diasJustificados: 0,
             periodoCubiertoPorAusencias: false,
             horasProgramadasTotales: 96,
@@ -341,7 +423,7 @@ describe('updateDetalleManual (server action)', () => {
           },
           error: null,
         },
-        OK,
+        GUARDADA,
       ],
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS_ACTIVOS, error: null },
       sgrh_nomina_linea_ingreso: [{ data: [], error: null }, OK, OK],

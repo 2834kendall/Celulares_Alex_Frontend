@@ -4,14 +4,30 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularLiquidacion, diasSalarioPendiente } from '@/modules/payroll/lib/liquidacion'
-import { esConceptoDelTrabajador } from '@/modules/payroll/lib/planilla'
-import { ERROR_SIN_PERMISO_AUSENCIAS, puedeLeerAusencias } from '@/modules/payroll/lib/derechosData'
 import {
+  diaComercialDeSalida,
+  MOTIVO_MUTUO_ACUERDO,
+  TIPOS_CONTRATO_ART_31,
+  calcularLiquidacion,
+  diasCalendarioInclusive,
+  diasSalarioPendiente,
+  notaRubroSinDias,
+} from '@/modules/payroll/lib/liquidacion'
+import { esConceptoDelTrabajador } from '@/modules/payroll/lib/planilla'
+import {
+  ERROR_SIN_PERMISO_AUSENCIAS,
+  puedeLeerAusencias,
+  sucursalesVisibles,
+} from '@/modules/payroll/lib/derechosData'
+import { claveQuincenal } from '@/modules/payroll/lib/derechos'
+import { sincronizarPeriodosDeLaSalida } from '@/modules/payroll/lib/estadoPeriodoData'
+import {
+  horasDeBancoPendientes,
   avisoAguinaldoAnterior,
   calcularBasesLiquidacion,
   cargarHistorialParaLiquidacion,
 } from '@/modules/payroll/lib/liquidacionData'
+import { formatCRC, formatHoras } from '@/modules/payroll/lib/format'
 import {
   procesarLiquidacionSchema,
   type LiquidacionCalculada,
@@ -23,6 +39,8 @@ export type ProcesarLiquidacionResult =
 
 interface MotivoRow {
   mot_id: number
+  mot_codigo: string
+  mot_nombre: string
   mot_genera_cesantia: boolean
   mot_genera_preaviso: boolean
 }
@@ -66,7 +84,22 @@ interface ConceptoDeduccionRow {
  * no solo del contrato vigente.
  */
 export async function procesarLiquidacion(
-  input: ProcesarLiquidacionInput
+  input: ProcesarLiquidacionInput,
+  opciones: {
+    /**
+     * Solo calcula, sin guardar nada: la vista previa de la pantalla. Antes
+     * "Calcular y guardar" guardaba de una vez, y el desglose y los avisos se
+     * veían cuando ya no se podía corregir (una liquidación guardada no se
+     * deshace).
+     */
+    soloCalcular?: boolean
+    /**
+     * Neto que se vio en la vista previa. Si al guardar el cálculo da otro
+     * (alguien pagó una quincena o cambió una ausencia mientras tanto), no se
+     * guarda: hay que volver a calcular y mirar.
+     */
+    netoEsperado?: number
+  } = {}
 ): Promise<ProcesarLiquidacionResult> {
   // Liquidar ya no cierra el contrato (lo cierra RRHH al terminarlo), así que
   // alcanza con NOMINA_WRITE: no hace falta HISTORIAL_WRITE.
@@ -94,7 +127,7 @@ export async function procesarLiquidacion(
 
   const { data: motivo, error: errMotivo } = await supabase
     .from('sgrh_cat_motivos_salida')
-    .select('mot_id, mot_genera_cesantia, mot_genera_preaviso')
+    .select('mot_id, mot_codigo, mot_nombre, mot_genera_cesantia, mot_genera_preaviso')
     .eq('mot_id', historial.lab_motivo_salida_id)
     .maybeSingle<MotivoRow>()
 
@@ -105,7 +138,35 @@ export async function procesarLiquidacion(
     return { ok: false, error: 'El motivo de salida no existe.' }
   }
 
-  const basesResult = await calcularBasesLiquidacion(supabase, historial, fechaSalida)
+  // Mutuo acuerdo: la ley no obliga a pagar cesantía (Art. 86 CT), pero se
+  // puede pactar. Lo dice quien liquida, siempre: no se supone ninguna de
+  // las dos cosas.
+  const esMutuoAcuerdo = motivo.mot_codigo === MOTIVO_MUTUO_ACUERDO
+  if (esMutuoAcuerdo && !data.cesantiaPactada) {
+    return {
+      ok: false,
+      error: 'En una salida por mutuo acuerdo indicá si se pactó pagar cesantía.',
+    }
+  }
+  const generaCesantia = esMutuoAcuerdo ? data.cesantiaPactada === 'si' : motivo.mot_genera_cesantia
+
+  const tipoContrato = historial.sgrh_cat_tipos_contrato?.tco_codigo ?? null
+  const plazoFijoArt31 =
+    tipoContrato !== null && TIPOS_CONTRATO_ART_31.has(tipoContrato) && motivo.mot_genera_preaviso
+  if (plazoFijoArt31 && !data.plazoSeisMesesOMas) {
+    return {
+      ok: false,
+      error:
+        'Es un contrato a plazo fijo terminado por el patrono: indicá si se pactó por seis meses o más.',
+    }
+  }
+
+  const basesResult = await calcularBasesLiquidacion(
+    supabase,
+    historial,
+    fechaSalida,
+    sucursalesVisibles(claims)
+  )
   if (!basesResult.ok) return basesResult
   const bases = basesResult.data
 
@@ -143,11 +204,12 @@ export async function procesarLiquidacion(
     return {
       ok: false,
       error:
-        'No hay salario con qué calcular: el empleado no tiene quincenas pagadas y su contrato no tiene salario base.',
+        'No hay salario con qué calcular: el empleado no tiene quincenas pagadas y su contrato no tiene salario.',
     }
   }
 
-  const diaSalida = Number(fechaSalida.slice(8, 10))
+  // Mes comercial: el último día del mes cuenta como 30 (ver diaComercialDeSalida).
+  const diaSalida = diaComercialDeSalida(fechaSalida)
   const { primeraQuincenaPagada, quincenaDeSalidaPagada } = bases.diasSalarioPendienteBase
   const diasTrabajadosMesActual = diasSalarioPendiente({
     diaSalida,
@@ -160,13 +222,41 @@ export async function procesarLiquidacion(
     )
   }
 
+  // Las quincenas del mes de salida que siguen sin pagar son justamente las
+  // que paga el salario pendiente (ver diasSalarioPendiente). Mandarlas a
+  // pagar por planilla era pagar esos días dos veces; marcarDetallePagado ya
+  // no lo permite.
+  const clavePrimeraDelMes = claveQuincenal(
+    Number(fechaSalida.slice(0, 4)),
+    Number(fechaSalida.slice(5, 7)),
+    1
+  )
+  // Mismas quincenas que paga diasSalarioPendiente (y que después frena
+  // quincenaPagadaEnLiquidacion): la de salida y, si el pendiente arrancó el
+  // día 1, también la primera del mes.
+  const clavesEnLiquidacion = new Set<number>()
+  if (diasTrabajadosMesActual > 0) {
+    clavesEnLiquidacion.add(bases.claveSalida)
+    if (diaSalida > 15 && diasTrabajadosMesActual > diaSalida - 15) {
+      clavesEnLiquidacion.add(clavePrimeraDelMes)
+    }
+  }
+  const enLaLiquidacion = bases.sinPagar.filter((q) => clavesEnLiquidacion.has(q.clave))
+  const porPlanilla = bases.sinPagar.filter((q) => !enLaLiquidacion.includes(q))
+
+  if (enLaLiquidacion.length > 0) {
+    advertencias.push(
+      `${enLaLiquidacion.map((q) => q.etiqueta).join(' y ')}: sin pagar por planilla; esos días van en esta liquidación como salario pendiente (${diasTrabajadosMesActual} día(s)). No se pagan también por planilla.`
+    )
+  }
+
   // Lo que está en borrador no entra en ningún promedio ni en el aguinaldo,
   // y nadie tiene por qué adivinarlo mirando el resultado.
-  if (bases.sinPagar.length > 0) {
-    const etiquetas = bases.sinPagar.map((q) => q.etiqueta).slice(0, 4)
-    const resto = bases.sinPagar.length > 4 ? ` y ${bases.sinPagar.length - 4} más` : ''
+  if (porPlanilla.length > 0) {
+    const etiquetas = porPlanilla.map((q) => q.etiqueta).slice(0, 4)
+    const resto = porPlanilla.length > 4 ? ` y ${porPlanilla.length - 4} más` : ''
     advertencias.push(
-      `Hay ${bases.sinPagar.length} quincena(s) sin marcar como pagadas (${etiquetas.join(', ')}${resto}). No entraron en el promedio ni en el aguinaldo: pagalas por planilla antes de cerrar el finiquito, o quedarán fuera.`
+      `Hay ${porPlanilla.length} quincena(s) sin marcar como pagadas (${etiquetas.join(', ')}${resto}). No entraron en el promedio ni en el aguinaldo: pagalas por planilla antes de cerrar el finiquito, o quedarán fuera.`
     )
   }
 
@@ -186,6 +276,10 @@ export async function procesarLiquidacion(
     advertencias.push(
       'El empleado no tiene fecha de ingreso original registrada, así que la antigüedad se midió desde el inicio de este contrato. Si tuvo contratos anteriores, la cesantía y el preaviso quedan cortos: cargá la fecha en su ficha y volvé a calcular.'
     )
+  } else if (bases.inicioRelacion && bases.inicioRelacion > bases.ingresoOriginal) {
+    advertencias.push(
+      `La antigüedad se midió desde el reingreso (${bases.inicioRelacion}): la relación anterior ya se liquidó y ese tiempo no se vuelve a contar.`
+    )
   } else if (bases.ingresoOriginal !== historial.lab_fecha_inicio) {
     advertencias.push(
       `La antigüedad se midió desde el ingreso a la empresa (${bases.ingresoOriginal}), no desde el inicio de este contrato (${historial.lab_fecha_inicio}).`
@@ -199,10 +293,68 @@ export async function procesarLiquidacion(
     )
   }
 
+  if (esMutuoAcuerdo) {
+    advertencias.push(
+      data.cesantiaPactada === 'si'
+        ? 'Mutuo acuerdo: se pagó cesantía porque quien liquidó indicó que se pactó (la ley no la exige, Art. 86 CT).'
+        : 'Mutuo acuerdo: no se pagó cesantía; quien liquidó indicó que no se pactó (Art. 86 CT: termina sin responsabilidad para las partes).'
+    )
+  }
+
+  // Contrato a plazo fijo (u obra determinada) que el patrono termina sin
+  // justa causa: no lleva preaviso ni cesantía (son del contrato por tiempo
+  // indefinido) sino la indemnización del Art. 31 CT. Antes se liquidaba como
+  // indefinido (auditoría 2, riesgo "plazo fijo"). "Sin justa causa" = un
+  // motivo que genera preaviso (despido con responsabilidad, reducción de
+  // personal, cierre…); si el plazo se cumplió, el motivo es "Fin de
+  // contrato a plazo fijo", que no genera nada.
+  const plazoFijo = plazoFijoArt31
+    ? {
+        diasTrabajados: diasCalendarioInclusive(historial.lab_fecha_inicio, fechaSalida),
+        seisMesesOMas: data.plazoSeisMesesOMas === 'si',
+      }
+    : null
+  if (plazoFijo) {
+    advertencias.push(
+      `${historial.sgrh_cat_tipos_contrato?.tco_codigo === 'OBRA_DET' ? 'Contrato por obra determinada' : 'Contrato a plazo fijo'} terminado por el patrono: en vez de preaviso y cesantía se paga la indemnización del Art. 31 del Código de Trabajo, un día de salario por cada siete días trabajados (${plazoFijo.diasTrabajados} días), con un mínimo de 3 días${plazoFijo.seisMesesOMas ? ' y, por haberse pactado por seis meses o más, de 22 días' : ''}. El trabajador puede reclamar además daños y perjuicios por el plazo que faltaba; eso lo fija un juez y no está en este cálculo.`
+    )
+  }
+
   const avisoAnterior = await avisoAguinaldoAnterior(supabase, bases.cicloAnterior)
   if (avisoAnterior) advertencias.push(avisoAnterior)
 
+  // Horas extra que seguían pendientes en el banco de horas: después de la
+  // salida no hay quincena donde pagarlas, así que van en el finiquito
+  // (auditoría, hallazgo 4). La RPC las deja pagadas por esta liquidación.
+  const banco = await horasDeBancoPendientes(supabase, bases.labIds, clavesEnLiquidacion)
+  if (!banco.ok) {
+    return {
+      ok: false,
+      error: 'No se pudieron leer las horas pendientes del banco de horas del empleado.',
+    }
+  }
+  if (banco.data.movimientos.length > 0) {
+    advertencias.push(
+      `Se pagan ${formatHoras(banco.data.horas)} h extra que seguían pendientes en el banco de horas (${formatCRC(banco.data.monto)}). Esos movimientos quedan pagados por esta liquidación.`
+    )
+  }
+  // Horas del banco que ya se habían pagado a una quincena que esta
+  // liquidación cubre: esa fila no se paga por planilla, así que sin esto la
+  // plata no salía por ningún lado (auditoría 2, fallo 4).
+  const absorbidos = banco.data.absorbidos
+  const horasAbsorbidas = absorbidos.reduce((t, m) => t + m.horas, 0)
+  const montoAbsorbido = absorbidos.reduce((t, m) => Math.round((t + m.monto) * 100) / 100, 0)
+  if (absorbidos.length > 0) {
+    advertencias.push(
+      `Se pagan también ${formatHoras(horasAbsorbidas)} h extra del banco de horas (${formatCRC(montoAbsorbido)}) que se habían sumado a ${[...new Set(absorbidos.map((m) => m.quincena))].join(' y ')}: esa quincena va en esta liquidación como salario pendiente y no se paga por planilla.`
+    )
+  }
+
   const resultado = calcularLiquidacion({
+    horasExtraBanco: {
+      horas: banco.data.horas + horasAbsorbidas,
+      monto: Math.round((banco.data.monto + montoAbsorbido) * 100) / 100,
+    },
     salarioDiario,
     salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
     diasTrabajadosMesActual,
@@ -211,10 +363,63 @@ export async function procesarLiquidacion(
     diasVacacionesPendientes: data.diasVacacionesPendientes,
     mesesAntiguedad: bases.antiguedad.meses,
     diasSobrantesAntiguedad: bases.antiguedad.diasSobrantes,
-    generaCesantia: motivo.mot_genera_cesantia,
+    generaCesantia,
     generaPreaviso: motivo.mot_genera_preaviso,
     porcentajeDeduccionObrera,
+    plazoFijo,
   })
+
+  const notaPreaviso = notaRubroSinDias({
+    rubro: 'preaviso',
+    dias: resultado.diasPreaviso,
+    plazoFijo: plazoFijo !== null,
+    generaPorMotivo: motivo.mot_genera_preaviso,
+    motivoNombre: motivo.mot_nombre,
+  })
+  const notaCesantia = notaRubroSinDias({
+    rubro: 'cesantia',
+    dias: resultado.diasCesantia,
+    plazoFijo: plazoFijo !== null,
+    generaPorMotivo: generaCesantia || esMutuoAcuerdo,
+    motivoNombre: motivo.mot_nombre,
+    mutuoAcuerdoSinCesantia: esMutuoAcuerdo && data.cesantiaPactada !== 'si',
+  })
+
+  const desglose = {
+    salarioDiario,
+    salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
+    diasSalarioPendiente: diasTrabajadosMesActual,
+    salarioProporcional: resultado.salarioProporcional,
+    aguinaldoProporcional: resultado.aguinaldoProporcional,
+    diasVacaciones: data.diasVacacionesPendientes,
+    vacacionesPagadas: resultado.vacacionesPagadas,
+    horasExtraBanco: resultado.horasExtraBanco,
+    diasPreaviso: resultado.diasPreaviso,
+    preaviso: resultado.preaviso,
+    diasCesantia: resultado.diasCesantia,
+    cesantia: resultado.cesantia,
+    notaPreaviso,
+    notaCesantia,
+    diasIndemnizacionPlazoFijo: resultado.diasIndemnizacionPlazoFijo,
+    indemnizacionPlazoFijo: resultado.indemnizacionPlazoFijo,
+    total: resultado.total,
+    deduccionesObreras: resultado.deduccionesObreras,
+    neto: resultado.neto,
+    advertencias,
+  }
+
+  if (opciones.soloCalcular) {
+    return { ok: true, data: { liqId: null, ...desglose } }
+  }
+  if (
+    typeof opciones.netoEsperado === 'number' &&
+    Math.abs(opciones.netoEsperado - resultado.neto) > 0.005
+  ) {
+    return {
+      ok: false,
+      error: `Los montos cambiaron desde la vista previa (el neto era ${formatCRC(opciones.netoEsperado)} y ahora da ${formatCRC(resultado.neto)}): no se guardó nada. Volvé a calcular y revisá el desglose.`,
+    }
+  }
 
   // Una sola transacción (RPC registrar_liquidacion): guarda la liquidación y
   // borra los turnos posteriores a la salida. El contrato, la fecha y el
@@ -232,14 +437,26 @@ export async function procesarLiquidacion(
       liq_dias_vacaciones_pendientes: data.diasVacacionesPendientes,
       liq_dias_vacaciones_propuestos: propuestos,
       liq_vacaciones_pagadas: resultado.vacacionesPagadas,
+      liq_horas_extra_banco: resultado.horasExtraBanco,
       liq_dias_preaviso: resultado.diasPreaviso,
       liq_preaviso: resultado.preaviso,
       liq_dias_cesantia: resultado.diasCesantia,
       liq_cesantia: resultado.cesantia,
+      liq_nota_preaviso: notaPreaviso,
+      liq_nota_cesantia: notaCesantia,
+      liq_dias_indemnizacion_plazo_fijo: resultado.diasIndemnizacionPlazoFijo,
+      liq_indemnizacion_plazo_fijo: resultado.indemnizacionPlazoFijo,
       liq_total: resultado.total,
       liq_deducciones_obreras: resultado.deduccionesObreras,
       liq_neto: resultado.neto,
       liq_observaciones: advertencias.length > 0 ? advertencias.join('\n') : null,
+      // La RPC deja estos movimientos pagados por la liquidación, en la misma
+      // transacción. Si alguno ya no está pendiente, no guarda nada.
+      banco_horas: [
+        ...banco.data.movimientos.map((m) => ({ bhm_id: m.bhmId, monto: m.monto })),
+        ...absorbidos.map((m) => ({ bhm_id: m.bhmId, monto: m.monto, absorbido: true })),
+      ],
+      resuelto_por_id: (claims.app_metadata as { usr_id?: number })?.usr_id ?? null,
     },
   })
 
@@ -264,30 +481,22 @@ export async function procesarLiquidacion(
     }
   }
 
+  // La fila impaga de la quincena de salida ya la paga esta liquidación: su
+  // periodo puede cerrarse si todos los demás estaban pagados. Si el
+  // salario pendiente es 0 no hay ninguna que cubrir.
+  if (diasTrabajadosMesActual > 0) {
+    try {
+      await sincronizarPeriodosDeLaSalida(supabase, bases.labIds, fechaSalida)
+      revalidatePath('/payroll')
+    } catch (err) {
+      console.error('procesarLiquidacion: no se pudo recalcular el periodo de la salida', err)
+    }
+  }
+
   revalidatePath('/payroll/aguinaldo-liquidacion')
   // El perfil deja de mostrar el contrato como "pendiente de liquidar".
   revalidatePath('/employees')
   revalidatePath(`/employees/${historial.lab_empleado_id}`)
 
-  return {
-    ok: true,
-    data: {
-      liqId,
-      salarioDiario,
-      salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
-      diasSalarioPendiente: diasTrabajadosMesActual,
-      salarioProporcional: resultado.salarioProporcional,
-      aguinaldoProporcional: resultado.aguinaldoProporcional,
-      diasVacaciones: data.diasVacacionesPendientes,
-      vacacionesPagadas: resultado.vacacionesPagadas,
-      diasPreaviso: resultado.diasPreaviso,
-      preaviso: resultado.preaviso,
-      diasCesantia: resultado.diasCesantia,
-      cesantia: resultado.cesantia,
-      total: resultado.total,
-      deduccionesObreras: resultado.deduccionesObreras,
-      neto: resultado.neto,
-      advertencias,
-    },
-  }
+  return { ok: true, data: { liqId, ...desglose } }
 }

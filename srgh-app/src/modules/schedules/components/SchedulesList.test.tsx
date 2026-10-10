@@ -127,3 +127,33 @@ describe('<SchedulesList />', () => {
     expect(activeValue).toHaveTextContent('1')
   })
 })
+
+describe('<SchedulesList /> tarjetas de filtro', () => {
+  const HORARIOS = [
+    makeSchedule({ hor_id: 1, hor_nombre: 'Turno Diurno' }),
+    makeSchedule({ hor_id: 2, hor_nombre: 'Turno Viejo', hor_activo: false }),
+  ]
+
+  it('"Activas" deja solo las activas y tocarla otra vez las muestra todas', async () => {
+    render(<SchedulesList schedules={HORARIOS} shiftTypes={shiftTypes} canWrite={true} />)
+    const activas = screen.getByRole('button', { name: /Activas/ })
+
+    await userEvent.click(activas)
+    expect(activas).toHaveAttribute('aria-pressed', 'true')
+    expect(tabla().getByText('Turno Diurno')).toBeInTheDocument()
+    expect(tabla().queryByText('Turno Viejo')).not.toBeInTheDocument()
+
+    await userEvent.click(activas)
+    expect(activas).toHaveAttribute('aria-pressed', 'false')
+    expect(tabla().getByText('Turno Viejo')).toBeInTheDocument()
+  })
+
+  it('"Total plantillas" quita el filtro', async () => {
+    render(<SchedulesList schedules={HORARIOS} shiftTypes={shiftTypes} canWrite={true} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Activas/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Total plantillas/ }))
+
+    expect(tabla().getByText('Turno Viejo')).toBeInTheDocument()
+  })
+})

@@ -5,15 +5,22 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { ProcesarLiquidacionInput } from '@/modules/payroll/types'
+import { sincronizarPeriodosDeLaSalida } from '@/modules/payroll/lib/estadoPeriodoData'
 
 vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+// El recálculo del estado del periodo tiene sus propios tests
+// (estadoPeriodoData.test.ts); acá solo importa cuándo se llama.
+vi.mock('@/modules/payroll/lib/estadoPeriodoData', () => ({
+  sincronizarPeriodosDeLaSalida: vi.fn(),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
+const mockSincronizar = vi.mocked(sincronizarPeriodosDeLaSalida)
 
 /**
  * Ingresó el 15 de enero de 2020 con ₡300.000 al mes. RRHH ya terminó el
@@ -34,9 +41,27 @@ const HISTORIAL = {
 }
 
 // Renuncia sin responsabilidad patronal: no genera cesantía ni preaviso.
-const MOTIVO_SIN_DERECHOS = { mot_id: 5, mot_genera_cesantia: false, mot_genera_preaviso: false }
+const MOTIVO_SIN_DERECHOS = {
+  mot_id: 5,
+  mot_codigo: 'REN001',
+  mot_genera_cesantia: false,
+  mot_genera_preaviso: false,
+}
 // Despido injustificado: genera ambos.
-const MOTIVO_CON_DERECHOS = { mot_id: 6, mot_genera_cesantia: true, mot_genera_preaviso: true }
+const MOTIVO_CON_DERECHOS = {
+  mot_id: 6,
+  mot_codigo: 'DES001',
+  mot_genera_cesantia: true,
+  mot_genera_preaviso: true,
+}
+// Mutuo acuerdo, tal como está en el catálogo (con cesantía en true): la
+// cesantía la decide quien liquida, no el catálogo.
+const MOTIVO_MUTUO = {
+  mot_id: 4,
+  mot_codigo: 'MUT001',
+  mot_genera_cesantia: true,
+  mot_genera_preaviso: false,
+}
 
 /** Solo la CCSS obrera del catálogo, como en el seed. */
 const CONCEPTOS_DEDUCCION = [
@@ -107,6 +132,8 @@ function escenario(
       sgrh_provisiones_anuales: PROVISION_2025_PAGADA,
       sgrh_pagos_extraordinarios: { data: [], error: null },
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS_DEDUCCION, error: null },
+      // Sin horas pendientes en el banco de horas.
+      sgrh_banco_horas_movimientos: { data: [], error: null },
       ...over,
     },
     registrarLiquidacion
@@ -195,6 +222,25 @@ describe('procesarLiquidacion (server action)', () => {
 
   // Sin quincenas pagadas no hay promedio: se usa el contrato (₡300.000 ÷ 30
   // = ₡10.000) y se avisa. Sale el 20 sin nada pagado ese mes: 20 días.
+  // La planilla paga real ÷ 2 por quincena (BASE + AJUSTE): sin quincenas
+  // para promediar, el diario sale del REAL. Con el base (₡300.000) salía
+  // ₡10.000 en vez de ₡11.000 y se liquidaba de menos.
+  it('sin quincenas pagadas usa el salario real del contrato, no el base', async () => {
+    escenario({
+      sgrh_historial_laboral: {
+        data: { ...HISTORIAL, lab_salario_base: 300000, lab_salario_real: 330000 },
+        error: null,
+      },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.salarioDiario).toBe(11000)
+    expect(result.data.salarioProporcional).toBe(220000) // 20 días
+  })
+
   it('con un motivo que NO genera cesantía ni preaviso, los guarda en 0', async () => {
     escenario()
 
@@ -238,6 +284,213 @@ describe('procesarLiquidacion (server action)', () => {
     // Preaviso y cesantía no cotizan: la deducción es la misma que sin ellos.
     expect(result.data.deduccionesObreras).toBe(32490)
     expect(result.data.neto).toBe(1874176.67)
+  })
+
+  // Riesgo de la auditoría 2: un contrato a plazo fijo roto por el patrono se
+  // liquidaba como indefinido. Art. 31 CT (reforma Ley 7983): un día de
+  // salario por cada siete trabajados o fracción, mínimo 3 (22 si se pactó
+  // por seis meses o más), en vez de preaviso y cesantía.
+  describe('contrato a plazo fijo (Art. 31)', () => {
+    const PLAZO_FIJO = { ...HISTORIAL, sgrh_cat_tipos_contrato: { tco_codigo: 'PLAZO_FIJO' } }
+    const DESPIDO = {
+      data: { ...MOTIVO_CON_DERECHOS, mot_nombre: 'Despido con Responsabilidad Patronal' },
+      error: null,
+    }
+
+    it('despido: indemnización del Art. 31, sin preaviso ni cesantía', async () => {
+      const client = escenario({
+        sgrh_historial_laboral: { data: PLAZO_FIJO, error: null },
+        sgrh_cat_motivos_salida: DESPIDO,
+      })
+
+      const result = await procesarLiquidacion({ ...INPUT, plazoSeisMesesOMas: 'si' })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      // 15/1/2020 → 20/1/2026 = 2198 días (con los dos extremos) → 2198 ÷ 7 = 314.
+      expect(result.data.diasIndemnizacionPlazoFijo).toBe(314)
+      expect(result.data.indemnizacionPlazoFijo).toBe(3140000)
+      expect(result.data.diasPreaviso).toBe(0)
+      expect(result.data.diasCesantia).toBe(0)
+      expect(result.data.notaPreaviso).toContain('plazo fijo')
+      expect(result.data.notaCesantia).toContain('plazo fijo')
+      // No es salario: no cotiza.
+      expect(result.data.deduccionesObreras).toBe(32490)
+      expect(result.data.advertencias.some((a) => a.includes('Art. 31'))).toBe(true)
+      expect(insercion(client)).toMatchObject({
+        liq_dias_indemnizacion_plazo_fijo: 314,
+        liq_indemnizacion_plazo_fijo: 3140000,
+        liq_dias_preaviso: 0,
+        liq_dias_cesantia: 0,
+      })
+    })
+
+    it('el mínimo depende del plazo pactado: 3 días, o 22 con seis meses o más', async () => {
+      // Contrato del 1 al 20 de enero de 2026: 20 días → 3 días de salario.
+      const corto = { ...PLAZO_FIJO, lab_fecha_inicio: '2026-01-01' }
+      escenario({
+        sgrh_historial_laboral: { data: corto, error: null },
+        sgrh_cat_motivos_salida: DESPIDO,
+      })
+      const menos = await procesarLiquidacion({ ...INPUT, plazoSeisMesesOMas: 'no' })
+      escenario({
+        sgrh_historial_laboral: { data: corto, error: null },
+        sgrh_cat_motivos_salida: DESPIDO,
+      })
+      const mas = await procesarLiquidacion({ ...INPUT, plazoSeisMesesOMas: 'si' })
+
+      expect(menos.ok && menos.data.diasIndemnizacionPlazoFijo).toBe(3)
+      expect(mas.ok && mas.data.diasIndemnizacionPlazoFijo).toBe(22)
+    })
+
+    it('sin decir el plazo pactado no calcula ni guarda nada', async () => {
+      const client = escenario({
+        sgrh_historial_laboral: { data: PLAZO_FIJO, error: null },
+        sgrh_cat_motivos_salida: DESPIDO,
+      })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result).toEqual({
+        ok: false,
+        error:
+          'Es un contrato a plazo fijo terminado por el patrono: indicá si se pactó por seis meses o más.',
+      })
+      expect(client.rpc).not.toHaveBeenCalled()
+    })
+
+    it('fin del plazo o renuncia: sin indemnización y sin preguntar', async () => {
+      escenario({
+        sgrh_historial_laboral: { data: PLAZO_FIJO, error: null },
+        sgrh_cat_motivos_salida: {
+          data: { ...MOTIVO_SIN_DERECHOS, mot_nombre: 'Fin de Contrato a Plazo Fijo' },
+          error: null,
+        },
+      })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.indemnizacionPlazoFijo).toBe(0)
+      expect(result.data.notaPreaviso).toBe(
+        'no aplica por el motivo de salida (Fin de Contrato a Plazo Fijo)'
+      )
+    })
+
+    it('un contrato indefinido no cambia', async () => {
+      escenario({
+        sgrh_historial_laboral: {
+          data: { ...HISTORIAL, sgrh_cat_tipos_contrato: { tco_codigo: 'INDEF' } },
+          error: null,
+        },
+        sgrh_cat_motivos_salida: DESPIDO,
+      })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.indemnizacionPlazoFijo).toBe(0)
+      expect(result.data.diasPreaviso).toBe(30)
+      expect(result.data.notaPreaviso).toBeNull()
+    })
+  })
+
+  it('usuario de sucursal: no liquida si parte de la relación está en otra que no ve', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {
+        permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE', 'AUSENCIAS_READ'],
+        sucursal_ids: [2],
+      },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const anterior = { ...HISTORIAL, lab_id: 9, lab_sucursal_id: 1, lab_fecha_fin: '2025-05-31' }
+    const actual = { ...HISTORIAL, lab_sucursal_id: 2, lab_fecha_inicio: '2025-06-01' }
+    const client = escenario({
+      sgrh_historial_laboral: {
+        data: {
+          ...actual,
+          sgrh_empleados: {
+            emp_fecha_ingreso_original: '2020-01-15',
+            sgrh_historial_laboral: [
+              { ...anterior, sgrh_liquidaciones: null },
+              { ...actual, sgrh_liquidaciones: null },
+            ],
+          },
+        },
+        error: null,
+      },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('sucursal que tu usuario no ve')
+    expect(llamadaRpc(client)).toBeUndefined()
+  })
+
+  describe('mutuo acuerdo (Art. 86 CT): la cesantía se paga solo si se pactó', () => {
+    it('sin decir si se pactó, no calcula ni guarda nada', async () => {
+      const client = escenario({ sgrh_cat_motivos_salida: { data: MOTIVO_MUTUO, error: null } })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'En una salida por mutuo acuerdo indicá si se pactó pagar cesantía.',
+      })
+      expect(llamadaRpc(client)).toBeUndefined()
+    })
+
+    it('pactada: paga la cesantía de la tabla y no el preaviso', async () => {
+      escenario({ sgrh_cat_motivos_salida: { data: MOTIVO_MUTUO, error: null } })
+
+      const result = await procesarLiquidacion({
+        ...INPUT,
+        cesantiaPactada: 'si',
+      })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.diasCesantia).toBe(129)
+      expect(result.data.cesantia).toBe(1290000)
+      expect(result.data.preaviso).toBe(0)
+      expect(result.data.advertencias.some((a) => a.startsWith('Mutuo acuerdo: se pagó'))).toBe(
+        true
+      )
+    })
+
+    it('no pactada: cesantía en 0 aunque el catálogo diga que genera', async () => {
+      const client = escenario({ sgrh_cat_motivos_salida: { data: MOTIVO_MUTUO, error: null } })
+
+      const result = await procesarLiquidacion({
+        ...INPUT,
+        cesantiaPactada: 'no',
+      })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.diasCesantia).toBe(0)
+      expect(result.data.cesantia).toBe(0)
+      expect(insercion(client)).toMatchObject({ liq_cesantia: 0, liq_dias_cesantia: 0 })
+      expect(result.data.advertencias.some((a) => a.startsWith('Mutuo acuerdo: no se pagó'))).toBe(
+        true
+      )
+    })
+
+    it('en otro motivo la respuesta se ignora: manda el catálogo', async () => {
+      escenario({ sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null } })
+
+      const result = await procesarLiquidacion({
+        ...INPUT,
+        cesantiaPactada: 'no',
+      })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.cesantia).toBe(1290000)
+      expect(result.data.advertencias.some((a) => a.startsWith('Mutuo acuerdo'))).toBe(false)
+    })
   })
 
   // El bug que había: seis QUINCENAS (tres meses) divididas entre 30 como si
@@ -288,6 +541,29 @@ describe('procesarLiquidacion (server action)', () => {
   // Una quincena en borrador no es plata devengada todavía, pero tampoco se
   // esconde: quien firma el finiquito tiene que saber que quedó fuera.
   it('avisa por nombre las quincenas sin pagar que quedaron fuera', async () => {
+    const filas = seisMesesPagados(150000).map((q) =>
+      q.sgrh_nomina_periodo.npe_periodo_anio === 2025 &&
+      q.sgrh_nomina_periodo.npe_periodo_mes === 12 &&
+      q.sgrh_nomina_periodo.npe_quincena === 2
+        ? { ...q, ndt_pagado: false }
+        : q
+    )
+    const client = escenario({ sgrh_nomina_detalle: { data: filas, error: null } })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const aviso = result.data.advertencias.find((a) => a.includes('sin marcar como pagadas'))
+    expect(aviso).toContain('Diciembre 2025 · 2ª quincena')
+    // Queda escrito en la liquidación, no solo en el toast.
+    expect(insercion(client).liq_observaciones).toContain('Diciembre 2025 · 2ª quincena')
+  })
+
+  // Sale el 20 con la 2ª de enero en borrador: esos 5 días los paga la
+  // liquidación. Antes el aviso decía "pagala por planilla", o sea pagarlos
+  // dos veces.
+  it('la quincena de salida sin pagar va en la liquidación, no se manda a planilla', async () => {
     const client = escenario({
       sgrh_nomina_detalle: {
         data: [...seisMesesPagados(150000), quincena(2026, 1, 2, 150000, false)],
@@ -299,10 +575,57 @@ describe('procesarLiquidacion (server action)', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    const aviso = result.data.advertencias.find((a) => a.includes('sin marcar como pagadas'))
+    expect(result.data.diasSalarioPendiente).toBe(5)
+    expect(result.data.advertencias.some((a) => a.includes('sin marcar como pagadas'))).toBe(false)
+    const aviso = result.data.advertencias.find((a) => a.includes('van en esta liquidación'))
     expect(aviso).toContain('Enero 2026 · 2ª quincena')
-    // Queda escrito en la liquidación, no solo en el toast.
-    expect(insercion(client).liq_observaciones).toContain('Enero 2026 · 2ª quincena')
+    expect(insercion(client).liq_observaciones).toContain('No se pagan también por planilla')
+  })
+
+  // Mes comercial: salir el 28 de febrero es salir a fin de mes. Con la 1ª
+  // quincena pagada se deben 15 días (lo que paga la planilla por la 2ª), no 13.
+  it('salida el 28 de febrero con la 1ª pagada: 15 días de salario pendiente', async () => {
+    const filas = [quincena(2025, 8, 2, 150000)]
+    for (const mes of [9, 10, 11, 12]) {
+      filas.push(quincena(2025, mes, 1, 150000), quincena(2025, mes, 2, 150000))
+    }
+    filas.push(quincena(2026, 1, 1, 150000), quincena(2026, 1, 2, 150000))
+    filas.push(quincena(2026, 2, 1, 150000), quincena(2026, 2, 2, 150000, false))
+    escenario({
+      sgrh_historial_laboral: { data: { ...HISTORIAL, lab_fecha_fin: '2026-02-28' }, error: null },
+      sgrh_nomina_detalle: { data: filas, error: null },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.diasSalarioPendiente).toBe(15)
+    // 300.000 / 30 × 15
+    expect(result.data.salarioProporcional).toBe(150000)
+    const aviso = result.data.advertencias.find((a) => a.includes('van en esta liquidación'))
+    expect(aviso).toContain('Febrero 2026 · 2ª quincena')
+    expect(aviso).not.toContain('1ª quincena')
+  })
+
+  it('con las dos quincenas del mes sin pagar, las dos van en la liquidación', async () => {
+    const filas = [
+      ...seisMesesPagados(150000).map((q) =>
+        q.sgrh_nomina_periodo.npe_periodo_anio === 2026 ? { ...q, ndt_pagado: false } : q
+      ),
+      quincena(2026, 1, 2, 150000, false),
+    ]
+    escenario({ sgrh_nomina_detalle: { data: filas, error: null } })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.diasSalarioPendiente).toBe(20)
+    const aviso = result.data.advertencias.find((a) => a.includes('van en esta liquidación'))
+    expect(aviso).toContain('Enero 2026 · 1ª quincena')
+    expect(aviso).toContain('Enero 2026 · 2ª quincena')
+    expect(result.data.advertencias.some((a) => a.includes('sin marcar como pagadas'))).toBe(false)
   })
 
   it('si la quincena de salida ya se pagó, no incluye salario pendiente y lo dice', async () => {
@@ -322,6 +645,122 @@ describe('procesarLiquidacion (server action)', () => {
     expect(result.data.advertencias.some((a) => a.includes('ya está marcada como pagada'))).toBe(
       true
     )
+  })
+
+  describe('periodo de la quincena de salida', () => {
+    const CON_SALIDA_IMPAGA = {
+      sgrh_nomina_detalle: {
+        data: [...seisMesesPagados(150000), quincena(2026, 1, 2, 150000, false)],
+        error: null,
+      },
+    }
+
+    it('después de guardar, recalcula el periodo de la salida (puede quedar pagado)', async () => {
+      const client = escenario(CON_SALIDA_IMPAGA)
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      expect(mockSincronizar).toHaveBeenCalledTimes(1)
+      expect(mockSincronizar).toHaveBeenCalledWith(client, [1], '2026-01-20')
+      expect(mockRevalidatePath).toHaveBeenCalledWith('/payroll')
+      // Primero se guarda la liquidación, después se recalcula.
+      expect(client.rpc.mock.invocationCallOrder[0]).toBeLessThan(
+        mockSincronizar.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('sin salario pendiente no hay fila que cubrir: no toca periodos', async () => {
+      escenario({
+        sgrh_nomina_detalle: {
+          data: [...seisMesesPagados(150000), quincena(2026, 1, 2, 150000, true)],
+          error: null,
+        },
+      })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      expect(mockSincronizar).not.toHaveBeenCalled()
+    })
+
+    it('si la liquidación no se guardó, no toca periodos', async () => {
+      escenario(CON_SALIDA_IMPAGA, { data: null, error: { code: 'XX000', message: 'boom' } })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(false)
+      expect(mockSincronizar).not.toHaveBeenCalled()
+    })
+
+    it('si el recálculo falla, la liquidación ya guardada se informa como guardada', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      escenario(CON_SALIDA_IMPAGA)
+      mockSincronizar.mockRejectedValueOnce(new Error('red caída'))
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      expect(mockRevalidatePath).toHaveBeenCalledWith('/payroll/aguinaldo-liquidacion')
+    })
+  })
+
+  describe('horas pendientes del banco de horas (auditoría, hallazgo 4)', () => {
+    const PENDIENTES = {
+      data: [
+        { bhm_id: 7, bhm_horas: 5.5, bhm_salario_por_hora: 3200 },
+        { bhm_id: 8, bhm_horas: 0.5, bhm_salario_por_hora: 1750 },
+      ],
+      error: null,
+    }
+
+    it('las paga en el finiquito y manda los movimientos a la RPC', async () => {
+      const client = escenario({ sgrh_banco_horas_movimientos: PENDIENTES })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      // 5,5 × 3.200 × 1,5 = 26.400 y 0,5 × 1.750 × 1,5 = 1.312,50
+      expect(result.data.horasExtraBanco).toBe(27712.5)
+      const payload = insercion(client)
+      expect(payload).toMatchObject({
+        liq_horas_extra_banco: 27712.5,
+        banco_horas: [
+          { bhm_id: 7, monto: 26400 },
+          { bhm_id: 8, monto: 1312.5 },
+        ],
+      })
+      expect(
+        result.data.advertencias.some((a) => a.includes('6 h extra que seguían pendientes'))
+      ).toBe(true)
+      // Solo los pendientes de la relación laboral.
+      const banco = client.from.mock.results[
+        client.from.mock.calls.findIndex((c) => c[0] === 'sgrh_banco_horas_movimientos')
+      ].value as { eq: { mock: { calls: unknown[][] } }; in: { mock: { calls: unknown[][] } } }
+      expect(banco.eq.mock.calls).toContainEqual(['bhm_estado', 'pendiente'])
+      expect(banco.in.mock.calls[0]).toEqual(['bhm_historial_laboral_id', [1]])
+    })
+
+    it('si no puede leer el banco de horas, no liquida', async () => {
+      const client = escenario({
+        sgrh_banco_horas_movimientos: { data: null, error: { message: 'boom' } },
+      })
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok).toBe(false)
+      expect(client.rpc).not.toHaveBeenCalled()
+    })
+
+    it('sin horas pendientes no agrega nada', async () => {
+      const client = escenario()
+
+      const result = await procesarLiquidacion(INPUT)
+
+      expect(result.ok && result.data.horasExtraBanco).toBe(0)
+      expect(insercion(client)).toMatchObject({ liq_horas_extra_banco: 0, banco_horas: [] })
+    })
   })
 
   it('guarda deducciones y neto en la liquidación', async () => {
@@ -663,11 +1102,13 @@ describe('procesarLiquidacion (server action)', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    const aviso = result.data.advertencias.find((a) => a.includes('ciclo 2025'))
+    const aviso = result.data.advertencias.find((a) =>
+      a.includes('aguinaldo 2025 (dic 2024 – nov 2025')
+    )
     expect(aviso).toContain('NO está incluido')
     // El proporcional sigue siendo solo el del ciclo 2026.
     expect(result.data.aguinaldoProporcional).toBe(41666.67)
-    expect(insercion(client).liq_observaciones).toContain('ciclo 2025')
+    expect(insercion(client).liq_observaciones).toContain('aguinaldo 2025 (dic 2024 – nov 2025')
   })
 
   it('un traslado no parte el aguinaldo: suma las quincenas del contrato anterior', async () => {
@@ -715,5 +1156,158 @@ describe('procesarLiquidacion (server action)', () => {
     if (!result.ok) return
     // Dic 2025 (contrato viejo) + ene 2026 Q1 + 5 días pendientes, ÷ 12.
     expect(result.data.aguinaldoProporcional).toBe(41666.67)
+  })
+})
+
+describe('procesarLiquidacion: vista previa antes de guardar', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('soloCalcular devuelve el desglose sin guardar nada', async () => {
+    const client = escenario({
+      sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null },
+    })
+
+    const result = await procesarLiquidacion(INPUT, { soloCalcular: true })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.liqId).toBeNull()
+    expect(result.data.neto).toBeGreaterThan(0)
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('la vista previa y lo que se guarda son el mismo cálculo', async () => {
+    escenario({ sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null } })
+    const previa = await procesarLiquidacion(INPUT, { soloCalcular: true })
+    const client = escenario({
+      sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null },
+    })
+    if (!previa.ok) throw new Error(previa.error)
+
+    const guardada = await procesarLiquidacion(INPUT, { netoEsperado: previa.data.neto })
+
+    expect(guardada.ok).toBe(true)
+    if (!guardada.ok) return
+    expect({ ...guardada.data, liqId: null }).toEqual(previa.data)
+    expect(insercion(client).liq_neto).toBe(previa.data.neto)
+  })
+
+  it('si el neto cambió desde la vista previa, no guarda y lo dice', async () => {
+    const client = escenario({
+      sgrh_nomina_detalle: { data: seisMesesPagados(150000), error: null },
+    })
+
+    const result = await procesarLiquidacion(INPUT, { netoEsperado: 1 })
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Los montos cambiaron desde la vista previa')
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+})
+
+// Auditoría 2, hallazgo 13: tras un reingreso, la antigüedad no cuenta el
+// tiempo de la relación que ya se liquidó.
+describe('procesarLiquidacion: antigüedad tras un reingreso', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('se mide desde el reingreso, no desde el ingreso original de la ficha', async () => {
+    // Trabajó 2020–2024, se liquidó, y volvió el 2 de enero de 2025.
+    const anterior = {
+      ...HISTORIAL,
+      lab_id: 9,
+      lab_fecha_inicio: '2020-01-15',
+      lab_fecha_fin: '2024-12-31',
+      sgrh_liquidaciones: [{ liq_id: 3 }],
+    }
+    const actual = { ...HISTORIAL, lab_fecha_inicio: '2025-01-02', lab_fecha_fin: '2026-01-20' }
+    const client = escenario({
+      sgrh_historial_laboral: {
+        data: {
+          ...actual,
+          sgrh_empleados: {
+            emp_fecha_ingreso_original: '2020-01-15',
+            sgrh_historial_laboral: [anterior, { ...actual, sgrh_liquidaciones: null }],
+          },
+        },
+        error: null,
+      },
+      sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // 1 año y 18 días: cesantía 19,5 días (fila de 1 año), preaviso 30.
+    expect(result.data.diasCesantia).toBe(19.5)
+    expect(result.data.diasPreaviso).toBe(30)
+    expect(result.data.advertencias.join(' ')).toContain('desde el reingreso (2025-01-02)')
+    expect(insercion(client).liq_dias_cesantia).toBe(19.5)
+  })
+})
+
+// Auditoría 2, fallo 4: pedro tenía ₡14.583,30 del banco de horas pagados a la
+// quincena de salida, que la liquidación cubre como salario pendiente: no
+// salían ni por planilla ni por el finiquito.
+describe('procesarLiquidacion: horas del banco pagadas a una quincena que cubre', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function conAbsorbido(movimientoPagado: unknown) {
+    return escenario({
+      sgrh_nomina_detalle: {
+        data: [...seisMesesPagados(150000), quincena(2026, 1, 2, 150000, false)],
+        error: null,
+      },
+      sgrh_banco_horas_movimientos: [
+        { data: [], error: null },
+        { data: [movimientoPagado], error: null },
+      ],
+    })
+  }
+
+  const PAGADO_A_LA_CUBIERTA = {
+    bhm_id: 70,
+    bhm_horas: 5,
+    bhm_monto_pagado: 14583.3,
+    sgrh_nomina_detalle: {
+      ndt_pagado: false,
+      sgrh_nomina_periodo: { npe_periodo_anio: 2026, npe_periodo_mes: 1, npe_quincena: 2 },
+    },
+  }
+
+  it('entran al finiquito con lo que se pagó y se ligan a la liquidación', async () => {
+    const client = conAbsorbido(PAGADO_A_LA_CUBIERTA)
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.horasExtraBanco).toBe(14583.3)
+    expect(result.data.advertencias.join(' ')).toContain('Enero 2026 · 2ª quincena')
+    expect(insercion(client)).toMatchObject({
+      liq_horas_extra_banco: 14583.3,
+      banco_horas: [{ bhm_id: 70, monto: 14583.3, absorbido: true }],
+    })
+  })
+
+  it('las pagadas a otra quincena no se tocan', async () => {
+    const client = conAbsorbido({
+      ...PAGADO_A_LA_CUBIERTA,
+      sgrh_nomina_detalle: {
+        ndt_pagado: false,
+        sgrh_nomina_periodo: { npe_periodo_anio: 2026, npe_periodo_mes: 1, npe_quincena: 1 },
+      },
+    })
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok && result.data.horasExtraBanco).toBe(0)
+    expect(insercion(client)).toMatchObject({ liq_horas_extra_banco: 0, banco_horas: [] })
   })
 })

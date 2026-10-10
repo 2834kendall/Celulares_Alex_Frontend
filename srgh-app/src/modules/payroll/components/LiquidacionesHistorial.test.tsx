@@ -12,6 +12,29 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const mockPagar = vi.mocked(pagarLiquidacion)
 
+const DESGLOSE: LiquidacionListItem['desglose'] = {
+  salarioDiario: 10000,
+  salarioDiarioVacaciones: 10000,
+  diasSalarioPendiente: 15,
+  salarioProporcional: 150000,
+  aguinaldoProporcional: 100000,
+  diasVacaciones: 5,
+  vacacionesPagadas: 50000,
+  horasExtraBanco: 0,
+  diasPreaviso: 0,
+  preaviso: 0,
+  diasCesantia: 0,
+  cesantia: 0,
+  notaPreaviso: 'no aplica por el motivo de salida (Renuncia Voluntaria)',
+  notaCesantia: 'no aplica por el motivo de salida (Renuncia Voluntaria)',
+  diasIndemnizacionPlazoFijo: 0,
+  indemnizacionPlazoFijo: 0,
+  total: 300000,
+  deduccionesObreras: 21660,
+  neto: 278340,
+  advertencias: ['Se liquidaron 5 día(s) de vacaciones; el sistema proponía 6.'],
+}
+
 function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem {
   return {
     liqId: 1,
@@ -25,6 +48,7 @@ function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem
     pagoId: null,
     fechaPago: null,
     createdAt: '2026-07-15T10:00:00',
+    desglose: DESGLOSE,
     ...overrides,
   }
 }
@@ -118,5 +142,31 @@ describe('<LiquidacionesHistorial />', () => {
       '/comprobante/extraordinario/12'
     )
     expect(tabla().queryByRole('button', { name: 'Pagar' })).not.toBeInTheDocument()
+  })
+})
+
+describe('<LiquidacionesHistorial /> detalle', () => {
+  it('muestra los rubros guardados antes de pagar, y los oculta otra vez', async () => {
+    render(<LiquidacionesHistorial items={[item()]} canWrite />)
+    const boton = tabla().getByRole('button', { name: 'Ver detalle' })
+    expect(screen.queryByText('Vacaciones no disfrutadas')).not.toBeInTheDocument()
+
+    await userEvent.click(boton)
+
+    expect(boton).toHaveAttribute('aria-expanded', 'true')
+    const fila = tabla().getByText('Vacaciones no disfrutadas').closest('tr')!
+    expect(within(fila).getByText(/el sistema proponía 6/)).toBeInTheDocument()
+    expect(within(fila).getByText('Neto a entregar')).toBeInTheDocument()
+
+    await userEvent.click(tabla().getByRole('button', { name: 'Ocultar detalle' }))
+    expect(screen.queryByText('Vacaciones no disfrutadas')).not.toBeInTheDocument()
+  })
+
+  it('una pagada dice neto entregado', async () => {
+    render(<LiquidacionesHistorial items={[item({ pagado: true, pagoId: 9 })]} canWrite />)
+
+    await userEvent.click(tabla().getByRole('button', { name: 'Ver detalle' }))
+
+    expect(tabla().getByText('Neto entregado')).toBeInTheDocument()
   })
 })

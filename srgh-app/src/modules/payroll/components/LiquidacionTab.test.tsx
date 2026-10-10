@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiquidacionTab } from './LiquidacionTab'
 import { procesarLiquidacion } from '@/modules/payroll/actions/procesarLiquidacion'
-import type { ContratoPorLiquidarItem } from '@/modules/payroll/types'
+import { formatCRC } from '@/modules/payroll/lib/format'
+import type { ContratoPorLiquidarItem, LiquidacionCalculada } from '@/modules/payroll/types'
 
 let searchString = ''
 
@@ -40,11 +41,14 @@ const CONTRATOS: ContratoPorLiquidarItem[] = [
     cedula: '1-1111-1111',
     fechaSalida: '2026-09-20',
     motivo: {
+      codigo: 'REN001',
       nombre: 'Renuncia Voluntaria',
       generaCesantia: false,
       generaPreaviso: false,
       notaLegal: null,
     },
+
+    tipoContrato: { codigo: 'INDEF', nombre: 'Contrato por Tiempo Indefinido' },
   },
   {
     historialLaboralId: 8,
@@ -52,13 +56,40 @@ const CONTRATOS: ContratoPorLiquidarItem[] = [
     cedula: '2-2222-2222',
     fechaSalida: '2026-09-15',
     motivo: {
+      codigo: 'DES001',
       nombre: 'Despido con Responsabilidad Patronal',
       generaCesantia: true,
       generaPreaviso: true,
       notaLegal: null,
     },
+
+    tipoContrato: { codigo: 'INDEF', nombre: 'Contrato por Tiempo Indefinido' },
   },
 ]
+
+const CALCULO: LiquidacionCalculada = {
+  liqId: null,
+  salarioDiario: 10000,
+  salarioDiarioVacaciones: 10000,
+  diasSalarioPendiente: 15,
+  salarioProporcional: 150000,
+  aguinaldoProporcional: 100000,
+  diasVacaciones: 5,
+  vacacionesPagadas: 50000,
+  horasExtraBanco: 0,
+  diasPreaviso: 0,
+  preaviso: 0,
+  diasCesantia: 0,
+  cesantia: 0,
+  notaPreaviso: 'no aplica por el motivo de salida (Renuncia Voluntaria)',
+  notaCesantia: 'no aplica por el motivo de salida (Renuncia Voluntaria)',
+  diasIndemnizacionPlazoFijo: 0,
+  indemnizacionPlazoFijo: 0,
+  total: 300000,
+  deduccionesObreras: 21660,
+  neto: 278340,
+  advertencias: ['Se liquidaron 0 día(s) de vacaciones; el sistema proponía 3.'],
+}
 
 function renderTab(contratos: ContratoPorLiquidarItem[] = CONTRATOS) {
   render(<LiquidacionTab contratos={contratos} historial={[]} />)
@@ -115,34 +146,223 @@ describe('<LiquidacionTab /> — contrato terminado desde el perfil', () => {
     expect(screen.queryByLabelText('Motivo de salida')).not.toBeInTheDocument()
   })
 
-  it('pide confirmación antes de guardar: cancelar no liquida', async () => {
+  it('Calcular muestra una vista previa y no guarda nada', async () => {
     const user = userEvent.setup()
+    mockProcesar.mockResolvedValue({ ok: true, data: CALCULO })
     searchString = 'empleado=5'
     renderTab()
 
-    await user.click(screen.getByRole('button', { name: /calcular y guardar liquidación/i }))
-    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Ana Mora')
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+
+    await waitFor(() =>
+      expect(mockProcesar).toHaveBeenCalledWith(
+        {
+          historialLaboralId: 5,
+          diasVacacionesPendientes: 0,
+          cesantiaPactada: null,
+          plazoSeisMesesOMas: null,
+        },
+        { soloCalcular: true }
+      )
+    )
+    expect(await screen.findByText('Todavía no se guardó')).toBeInTheDocument()
+    expect(screen.getByText(/proponía 3/)).toBeInTheDocument()
+    expect(mockProcesar).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('guardar pide confirmación con el neto; cancelar no guarda', async () => {
+    const user = userEvent.setup()
+    mockProcesar.mockResolvedValue({ ok: true, data: CALCULO })
+    searchString = 'empleado=5'
+    renderTab()
+
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+    await user.click(await screen.findByRole('button', { name: 'Guardar liquidación' }))
+    const dialogo = await screen.findByRole('alertdialog')
+    expect(dialogo).toHaveTextContent('Ana Mora')
+    expect(dialogo).toHaveTextContent(formatCRC(278340).replace(/\s/g, ' '))
 
     await user.click(screen.getByRole('button', { name: 'Cancelar' }))
 
-    expect(mockProcesar).not.toHaveBeenCalled()
+    expect(mockProcesar).toHaveBeenCalledTimes(1)
   })
 
-  it('al confirmar manda solo el contrato y los días de vacaciones', async () => {
+  it('al confirmar guarda con el neto de la vista previa', async () => {
     const user = userEvent.setup()
-    mockProcesar.mockResolvedValue({ ok: false, error: 'Este contrato ya fue liquidado.' })
+    mockProcesar
+      .mockResolvedValueOnce({ ok: true, data: CALCULO })
+      .mockResolvedValueOnce({ ok: false, error: 'Este contrato ya fue liquidado.' })
     searchString = 'empleado=5'
     renderTab()
 
-    await user.click(screen.getByRole('button', { name: /calcular y guardar liquidación/i }))
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
     await user.click(await screen.findByRole('button', { name: 'Guardar liquidación' }))
+    const dialogo = await screen.findByRole('alertdialog')
+    await user.click(within(dialogo).getByRole('button', { name: 'Guardar liquidación' }))
 
     await waitFor(() =>
-      expect(mockProcesar).toHaveBeenCalledWith({
-        historialLaboralId: 5,
-        diasVacacionesPendientes: 0,
-      })
+      expect(mockProcesar).toHaveBeenLastCalledWith(
+        {
+          historialLaboralId: 5,
+          diasVacacionesPendientes: 0,
+          cesantiaPactada: null,
+          plazoSeisMesesOMas: null,
+        },
+        { netoEsperado: 278340 }
+      )
     )
     expect(await screen.findByText('Este contrato ya fue liquidado.')).toBeInTheDocument()
+  })
+
+  it('guardada, muestra el número de liquidación', async () => {
+    const user = userEvent.setup()
+    mockProcesar
+      .mockResolvedValueOnce({ ok: true, data: CALCULO })
+      .mockResolvedValueOnce({ ok: true, data: { ...CALCULO, liqId: 77 } })
+    searchString = 'empleado=5'
+    renderTab()
+
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+    await user.click(await screen.findByRole('button', { name: 'Guardar liquidación' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Guardar liquidación',
+      })
+    )
+
+    expect(await screen.findByText('Liquidación guardada')).toBeInTheDocument()
+    expect(screen.getByText('n.° 77')).toBeInTheDocument()
+    expect(screen.queryByText('Todavía no se guardó')).not.toBeInTheDocument()
+  })
+
+  it('si cambian los días después de calcular, la vista previa se descarta', async () => {
+    const user = userEvent.setup()
+    mockProcesar.mockResolvedValue({ ok: true, data: CALCULO })
+    searchString = 'empleado=5'
+    renderTab()
+
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+    expect(await screen.findByText('Todavía no se guardó')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Días de vacaciones pendientes'), '2')
+
+    expect(screen.queryByText('Todavía no se guardó')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Guardar liquidación' })).not.toBeInTheDocument()
+  })
+})
+
+describe('<LiquidacionTab /> — mutuo acuerdo', () => {
+  const MUTUO: ContratoPorLiquidarItem = {
+    historialLaboralId: 9,
+    nombre: 'Fabián Rojas',
+    cedula: '3-3333-3333',
+    fechaSalida: '2026-09-10',
+    motivo: {
+      codigo: 'MUT001',
+      nombre: 'Mutuo Acuerdo entre las Partes',
+      generaCesantia: true,
+      generaPreaviso: false,
+      notaLegal: null,
+    },
+    tipoContrato: { codigo: 'INDEF', nombre: 'Contrato por Tiempo Indefinido' },
+  }
+
+  it('solo en mutuo acuerdo pregunta si se pactó la cesantía', () => {
+    searchString = 'empleado=9'
+    renderTab([...CONTRATOS, MUTUO])
+
+    expect(screen.getByText('¿Se pactó pagar cesantía?')).toBeInTheDocument()
+    expect(screen.getByText(/Cesantía solo si se pactó/)).toBeInTheDocument()
+  })
+
+  it('en otro motivo no pregunta', () => {
+    searchString = 'empleado=8'
+    renderTab([...CONTRATOS, MUTUO])
+
+    expect(screen.queryByText('¿Se pactó pagar cesantía?')).not.toBeInTheDocument()
+  })
+
+  it('sin respuesta no calcula; con respuesta la manda', async () => {
+    const user = userEvent.setup()
+    mockProcesar.mockResolvedValue({ ok: false, error: 'stop' })
+    searchString = 'empleado=9'
+    renderTab([...CONTRATOS, MUTUO])
+
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+    expect(await screen.findByText('Indicá si se pactó pagar cesantía.')).toBeInTheDocument()
+    expect(mockProcesar).not.toHaveBeenCalled()
+
+    await user.click(screen.getByLabelText('No se paga'))
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+
+    await waitFor(() =>
+      expect(mockProcesar).toHaveBeenCalledWith(
+        {
+          historialLaboralId: 9,
+          diasVacacionesPendientes: 0,
+          cesantiaPactada: 'no',
+          plazoSeisMesesOMas: null,
+        },
+        { soloCalcular: true }
+      )
+    )
+    expect(await screen.findByText('stop')).toBeInTheDocument()
+  })
+})
+
+// Auditoría 2: contrato a plazo fijo terminado por el patrono (Art. 31).
+describe('<LiquidacionTab /> — contrato a plazo fijo', () => {
+  const PLAZO_FIJO: ContratoPorLiquidarItem = {
+    historialLaboralId: 12,
+    nombre: 'Beto Vargas',
+    cedula: '4-4444-4444',
+    fechaSalida: '2026-09-25',
+    motivo: {
+      codigo: 'DES001',
+      nombre: 'Despido con Responsabilidad Patronal',
+      generaCesantia: true,
+      generaPreaviso: true,
+      notaLegal: null,
+    },
+    tipoContrato: { codigo: 'PLAZO_FIJO', nombre: 'Contrato a Plazo Fijo' },
+  }
+
+  it('avisa que va la indemnización del Art. 31 y pide el plazo pactado', async () => {
+    const user = userEvent.setup()
+    mockProcesar.mockResolvedValue({ ok: false, error: 'stop' })
+    searchString = 'empleado=12'
+    renderTab([...CONTRATOS, PLAZO_FIJO])
+
+    expect(screen.getByText(/indemnización del Art. 31/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+    expect(
+      await screen.findByText('Indicá si el contrato se pactó por seis meses o más.')
+    ).toBeInTheDocument()
+    expect(mockProcesar).not.toHaveBeenCalled()
+
+    await user.click(screen.getByLabelText('Sí, seis meses o más'))
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+
+    await waitFor(() =>
+      expect(mockProcesar).toHaveBeenCalledWith(
+        {
+          historialLaboralId: 12,
+          diasVacacionesPendientes: 0,
+          cesantiaPactada: null,
+          plazoSeisMesesOMas: 'si',
+        },
+        { soloCalcular: true }
+      )
+    )
+  })
+
+  it('un indefinido despedido no pregunta el plazo', () => {
+    searchString = 'empleado=8'
+    renderTab([...CONTRATOS, PLAZO_FIJO])
+
+    expect(
+      screen.queryByText('¿El contrato se pactó por seis meses o más?')
+    ).not.toBeInTheDocument()
   })
 })

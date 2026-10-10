@@ -12,23 +12,35 @@ const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 
 const RENUNCIA = {
+  mot_codigo: 'REN001',
   mot_nombre: 'Renuncia Voluntaria',
   mot_genera_cesantia: false,
   mot_genera_preaviso: false,
   mot_nota_legal: 'Sin responsabilidad patronal.',
 }
 
-function terminado(labId: number, nombre: string, liquidaciones: unknown) {
+function terminado(
+  labId: number,
+  nombre: string,
+  liquidaciones: unknown,
+  otrosContratos: { lab_id: number; lab_fecha_inicio: string }[] = []
+) {
   return {
     lab_id: labId,
+    lab_fecha_inicio: '2020-01-01',
     lab_fecha_fin: '2026-09-20',
     sgrh_empleados: {
       emp_numero_identificacion: `${labId}-0000-0000`,
       emp_nombre: nombre,
       emp_apellido_1: 'Mora',
       emp_apellido_2: null,
+      sgrh_historial_laboral: [
+        { lab_id: labId, lab_fecha_inicio: '2020-01-01' },
+        ...otrosContratos,
+      ],
     },
     sgrh_cat_motivos_salida: RENUNCIA,
+    sgrh_cat_tipos_contrato: { tco_codigo: 'PLAZO_FIJO', tco_nombre: 'Contrato a Plazo Fijo' },
     sgrh_liquidaciones: liquidaciones,
   }
 }
@@ -95,14 +107,52 @@ describe('getContratosPorLiquidar (server action)', () => {
           cedula: '1-0000-0000',
           fechaSalida: '2026-09-20',
           motivo: {
+            codigo: 'REN001',
             nombre: 'Renuncia Voluntaria',
             generaCesantia: false,
             generaPreaviso: false,
             notaLegal: 'Sin responsabilidad patronal.',
           },
+          // El tipo de contrato decide si va la indemnización del Art. 31.
+          tipoContrato: { codigo: 'PLAZO_FIJO', nombre: 'Contrato a Plazo Fijo' },
         },
       ],
     })
+  })
+
+  // Antes de SGRH-90 un traslado cerraba el contrato y abría otro sin
+  // liquidar. Ese contrato viejo no es una salida: no hay nada que liquidar.
+  it('deja fuera el contrato viejo de un traslado (tiene un contrato posterior)', async () => {
+    mockHistorial({
+      data: [
+        terminado(1, 'Ana', null, [{ lab_id: 9, lab_fecha_inicio: '2026-09-21' }]),
+        terminado(2, 'Bea', null, [{ lab_id: 3, lab_fecha_inicio: '2018-01-01' }]),
+      ],
+      error: null,
+    })
+
+    const result = await getContratosPorLiquidar()
+
+    expect(result.ok && result.data.map((c) => c.historialLaboralId)).toEqual([2])
+  })
+
+  it('lee por páginas: con más de mil contratos cerrados no pierde los pendientes', async () => {
+    const liquidados = Array.from({ length: 1000 }, (_, i) =>
+      terminado(100 + i, 'Liq', { liq_id: i + 1 })
+    )
+    const client = createSupabaseClientMock({
+      sgrh_historial_laboral: [
+        { data: liquidados, error: null },
+        { data: [terminado(5000, 'Pendiente', null)], error: null },
+      ],
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getContratosPorLiquidar()
+
+    expect(result.ok && result.data.map((c) => c.historialLaboralId)).toEqual([5000])
   })
 
   it('ordena por nombre', async () => {

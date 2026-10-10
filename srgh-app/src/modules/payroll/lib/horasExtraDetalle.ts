@@ -16,7 +16,6 @@
 import 'server-only'
 import type { createClient } from '@/lib/supabase/server'
 import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
-import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
 import {
   CAMPOS_CONCEPTO_DE_LINEA,
   fusionarAjenas,
@@ -54,7 +53,16 @@ export async function aplicarHorasExtraEnDetalle(
   supabase: SupabaseServerClient,
   detalle: DetalleRow,
   delta: number
-): Promise<{ error: string | null }> {
+): Promise<{
+  error: string | null
+  /**
+   * true = el error llegó DESPUÉS de escribir los montos de la fila. Ya no
+   * pasa: totales y líneas se guardan juntos (guardar_calculo_detalle), así
+   * que un error siempre quiere decir que no se tocó nada. Queda en el tipo
+   * para quien llama.
+   */
+  aMedias?: boolean
+}> {
   const [{ data: conceptosActivos, error: errConceptos }, { data: horasExtraConcepto }] =
     await Promise.all([
       supabase
@@ -83,6 +91,19 @@ export async function aplicarHorasExtraEnDetalle(
     ...(conceptosActivos ?? []),
     { ...horasExtraConcepto, con_tipo_calculo: 'monto_manual_ingreso' },
   ]
+
+  // El bruto de la fila ANTES de leer las líneas. Se guarda solo si sigue
+  // siendo este (ver guardar_calculo_detalle): si otro pago u otra edición la
+  // cambió en el medio, el cálculo de acá ya no vale y se avisa en vez de
+  // pisar lo del otro (auditoría 2, riesgo de lectura y escritura).
+  const { data: actual, error: errActual } = await supabase
+    .from('sgrh_nomina_detalle')
+    .select('ndt_salario_bruto')
+    .eq('ndt_id', detalle.ndt_id)
+    .maybeSingle<{ ndt_salario_bruto: number }>()
+  if (errActual || !actual) {
+    return { error: 'No se pudo leer la fila de la planilla.' }
+  }
 
   // Montos ya guardados, para no perderlos al recalcular: más abajo se borran
   // y se rehacen todas las líneas desde lo que devuelva el motor, así que
@@ -128,19 +149,46 @@ export async function aplicarHorasExtraEnDetalle(
     salarioPorHora: detalle.ndt_salario_por_hora,
   })
 
-  const { error: errUpdate } = await supabase
-    .from('sgrh_nomina_detalle')
-    .update({
-      ndt_salario_bruto: salarioBruto,
-      ndt_total_deducciones_obreras: totalDeducciones,
-      ndt_salario_neto: salarioNeto,
-      ndt_total_cargas_patronales: totalCargasPatronales,
-    })
-    .eq('ndt_id', detalle.ndt_id)
+  // Totales y líneas en una sola transacción, con la fila bloqueada y solo
+  // si nadie la cambió desde que se leyó. Antes eran llamadas sueltas: dos
+  // pagos a la vez sobre la misma fila perdían uno, y un fallo entre los
+  // totales y las líneas dejaba el pago "a medias".
+  const { error: errGuardar } = await supabase.rpc('guardar_calculo_detalle', {
+    p_ndt_id: detalle.ndt_id,
+    p_bruto_anterior: Number(actual.ndt_salario_bruto ?? 0),
+    p_calculo: {
+      bruto: salarioBruto,
+      deducciones: totalDeducciones,
+      neto: salarioNeto,
+      cargas: totalCargasPatronales,
+      ingresos: lineas
+        .filter((l) => l.esIngreso)
+        .map((l) => ({ con_id: l.con_id, monto: l.monto })),
+      deducciones_lineas: lineas
+        .filter((l) => !l.esIngreso)
+        .map((l) => ({
+          con_id: l.con_id,
+          monto: l.monto,
+          porcentaje: l.porcentajeAplicado ?? null,
+          base: l.baseCalculo ?? null,
+        })),
+      patronales: lineasPatronales.map((l) => ({
+        con_id: l.con_id,
+        monto: l.monto,
+        porcentaje: l.porcentajeAplicado,
+        base: l.baseCalculo,
+      })),
+    },
+  })
 
-  if (errUpdate) {
+  if (errGuardar) {
+    // 55000 (la fila cambió), 23514 (ya pagada), 23503 (ya no existe) y 42501
+    // traen un mensaje escrito para la pantalla. Lo demás queda en el log.
+    if (['55000', '23514', '23503', '42501'].includes(errGuardar.code ?? '')) {
+      return { error: errGuardar.message }
+    }
+    console.error('aplicarHorasExtraEnDetalle: no se pudo guardar la fila', errGuardar)
     return { error: 'No se pudieron actualizar los montos del periodo.' }
   }
-
-  return reemplazarLineasDetalle(supabase, detalle.ndt_id, lineas, lineasPatronales)
+  return { error: null }
 }

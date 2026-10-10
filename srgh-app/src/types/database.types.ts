@@ -131,6 +131,8 @@ export type Database = {
           bhm_fecha_resolucion: string | null
           bhm_historial_laboral_id: number
           bhm_horas: number
+          bhm_liquidacion_id: number | null
+          bhm_observaciones: string | null
           bhm_id: number
           bhm_monto_pagado: number | null
           bhm_nomina_detalle_id: number
@@ -144,6 +146,8 @@ export type Database = {
           bhm_fecha_resolucion?: string | null
           bhm_historial_laboral_id: number
           bhm_horas: number
+          bhm_liquidacion_id?: number | null
+          bhm_observaciones?: string | null
           bhm_id?: never
           bhm_monto_pagado?: number | null
           bhm_nomina_detalle_id: number
@@ -157,6 +161,8 @@ export type Database = {
           bhm_fecha_resolucion?: string | null
           bhm_historial_laboral_id?: number
           bhm_horas?: number
+          bhm_liquidacion_id?: number | null
+          bhm_observaciones?: string | null
           bhm_id?: never
           bhm_monto_pagado?: number | null
           bhm_nomina_detalle_id?: number
@@ -584,6 +590,7 @@ export type Database = {
           con_id: number
           con_nombre: string
           con_porcentaje: number | null
+          con_rebaja_salario: boolean
           con_tipo: string
           con_tipo_calculo: string
         }
@@ -596,6 +603,7 @@ export type Database = {
           con_id?: never
           con_nombre: string
           con_porcentaje?: number | null
+          con_rebaja_salario?: boolean
           con_tipo: string
           con_tipo_calculo?: string
         }
@@ -608,6 +616,7 @@ export type Database = {
           con_id?: never
           con_nombre?: string
           con_porcentaje?: number | null
+          con_rebaja_salario?: boolean
           con_tipo?: string
           con_tipo_calculo?: string
         }
@@ -1812,9 +1821,12 @@ export type Database = {
           liq_created_at: string
           liq_deducciones_obreras: number
           liq_dias_cesantia: number
+          liq_dias_indemnizacion_plazo_fijo: number
           liq_dias_preaviso: number
           liq_dias_trabajados_mes: number
           liq_dias_vacaciones_pendientes: number
+          liq_horas_extra_banco: number
+          liq_indemnizacion_plazo_fijo: number
           liq_dias_vacaciones_propuestos: number | null
           liq_fecha_pago: string | null
           liq_fecha_salida: string
@@ -1822,6 +1834,8 @@ export type Database = {
           liq_id: number
           liq_motivo_salida_id: number
           liq_neto: number
+          liq_nota_cesantia: string | null
+          liq_nota_preaviso: string | null
           liq_observaciones: string | null
           liq_pagado: boolean
           liq_preaviso: number
@@ -1837,9 +1851,12 @@ export type Database = {
           liq_created_at?: string
           liq_deducciones_obreras?: number
           liq_dias_cesantia?: number
+          liq_dias_indemnizacion_plazo_fijo?: number
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
           liq_dias_vacaciones_pendientes?: number
+          liq_horas_extra_banco?: number
+          liq_indemnizacion_plazo_fijo?: number
           liq_dias_vacaciones_propuestos?: number | null
           liq_fecha_pago?: string | null
           liq_fecha_salida: string
@@ -1847,6 +1864,8 @@ export type Database = {
           liq_id?: never
           liq_motivo_salida_id: number
           liq_neto?: number
+          liq_nota_cesantia?: string | null
+          liq_nota_preaviso?: string | null
           liq_observaciones?: string | null
           liq_pagado?: boolean
           liq_preaviso?: number
@@ -1862,9 +1881,12 @@ export type Database = {
           liq_created_at?: string
           liq_deducciones_obreras?: number
           liq_dias_cesantia?: number
+          liq_dias_indemnizacion_plazo_fijo?: number
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
           liq_dias_vacaciones_pendientes?: number
+          liq_horas_extra_banco?: number
+          liq_indemnizacion_plazo_fijo?: number
           liq_dias_vacaciones_propuestos?: number | null
           liq_fecha_pago?: string | null
           liq_fecha_salida?: string
@@ -1872,6 +1894,8 @@ export type Database = {
           liq_id?: never
           liq_motivo_salida_id?: number
           liq_neto?: number
+          liq_nota_cesantia?: string | null
+          liq_nota_preaviso?: string | null
           liq_observaciones?: string | null
           liq_pagado?: boolean
           liq_preaviso?: number
@@ -1993,6 +2017,8 @@ export type Database = {
           ndt_dias_ausencia_sin_goce: number
           ndt_dias_incapacidad_ccss: number
           ndt_dias_incapacidad_empleador: number
+          ndt_monto_incapacidad: number | null
+          ndt_porcentaje_incapacidad: number | null
           ndt_fecha_pago: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
@@ -2020,6 +2046,8 @@ export type Database = {
           ndt_dias_ausencia_sin_goce?: number
           ndt_dias_incapacidad_ccss?: number
           ndt_dias_incapacidad_empleador?: number
+          ndt_monto_incapacidad?: number | null
+          ndt_porcentaje_incapacidad?: number | null
           ndt_fecha_pago?: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
@@ -2047,6 +2075,8 @@ export type Database = {
           ndt_dias_ausencia_sin_goce?: number
           ndt_dias_incapacidad_ccss?: number
           ndt_dias_incapacidad_empleador?: number
+          ndt_monto_incapacidad?: number | null
+          ndt_porcentaje_incapacidad?: number | null
           ndt_fecha_pago?: string | null
           ndt_fecha_registro?: string
           ndt_historial_laboral_id?: number
@@ -3028,6 +3058,8 @@ export type Database = {
         Returns: number
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      eliminar_filas_planilla: { Args: { p_ndt_ids: number[] }; Returns: number }
+      eliminar_periodo_nomina: { Args: { p_npe_id: number }; Returns: undefined }
       editar_contrato: {
         Args: { p_contrato: Json; p_lab_id: number }
         Returns: undefined
@@ -3037,6 +3069,14 @@ export type Database = {
       get_rol: { Args: never; Returns: string }
       get_sucursal_ids: { Args: never; Returns: number[] }
       get_usr_id: { Args: never; Returns: number }
+      guardar_calculo_detalle: {
+        Args: { p_bruto_anterior: number; p_calculo: Json; p_ndt_id: number }
+        Returns: undefined
+      }
+      nomina_asistencia_periodo: {
+        Args: { p_desde: string; p_hasta: string; p_lab_ids: number[] }
+        Returns: Json
+      }
       registrar_etapa_postulacion: {
         Args: {
           p_etapa_id: number

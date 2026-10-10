@@ -156,6 +156,21 @@ function horarioDelDia(row: ProgramacionRow): HorarioDia | null {
 }
 
 /**
+ * Lo que devuelve nomina_asistencia_periodo: un jsonb con las dos listas, con
+ * la misma forma que tenían las filas leídas de las tablas. null si no tiene
+ * esa forma (no se adivina: un dato ilegible no puede leerse como "no
+ * trabajó").
+ */
+function asistenciaDelPeriodo(
+  valor: unknown
+): { programacion: ProgramacionRow[]; marcas: MarcaRow[] } | null {
+  if (!valor || typeof valor !== 'object') return null
+  const { programacion, marcas } = valor as { programacion?: unknown; marcas?: unknown }
+  if (!Array.isArray(programacion) || !Array.isArray(marcas)) return null
+  return { programacion: programacion as ProgramacionRow[], marcas: marcas as MarcaRow[] }
+}
+
+/**
  * Horas trabajadas de cada contrato en el periodo.
  *
  * La ventana de marcas se abre un día más allá del fin del periodo a
@@ -170,43 +185,23 @@ export async function getHorasDelPeriodo(
   if (historialLaboralIds.length === 0) return { ok: true, data: new Map() }
 
   const [
-    { data: programacion, error: errProgramacion },
-    { data: marcas, error: errMarcas },
+    { data: asistencia, error: errAsistencia },
     { data: ausencias, error: errAusencias },
     { data: feriados, error: errFeriados },
+    jornadas,
   ] = await Promise.all([
-    supabase
-      .from('sgrh_programacion_semanal')
-      .select(
-        `
-        prg_historial_laboral_id,
-        prg_fecha,
-        prg_es_dia_libre,
-        prg_es_feriado,
-        prg_hora_entrada_custom,
-        prg_hora_salida_custom,
-        prg_hora_inicio_almuerzo_custom,
-        prg_hora_fin_almuerzo_custom,
-        prg_hora_inicio_break_custom,
-        prg_hora_fin_break_custom,
-        sgrh_cat_horarios (
-          hor_hora_entrada, hor_hora_salida,
-          hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo,
-          hor_hora_inicio_break, hor_hora_fin_break
-        )
-      `
-      )
-      .in('prg_historial_laboral_id', historialLaboralIds)
-      .gte('prg_fecha', fechaInicio)
-      .lte('prg_fecha', fechaFin)
-      .returns<ProgramacionRow[]>(),
-    supabase
-      .from('sgrh_marcas_asistencia')
-      .select('mar_id, mar_historial_laboral_id, mar_tipo, mar_fecha_hora')
-      .in('mar_historial_laboral_id', historialLaboralIds)
-      .gte('mar_fecha_hora', `${fechaInicio} 00:00:00`)
-      .lte('mar_fecha_hora', `${sumarDias(fechaFin, 1)} 23:59:59`)
-      .returns<MarcaRow[]>(),
+    // Programación y marcas del contrato en CUALQUIER sucursal: un día
+    // cubierto en otra tienda (SGRH-84: el día se mueve de sucursal, el
+    // contrato no) se paga en la planilla del contrato. Leídas con la sesión
+    // del usuario, RLS las filtraba por la sucursal del día y quien solo ve
+    // su sucursal perdía esas horas sin ningún error. La función autoriza por
+    // la sucursal del CONTRATO; ver la migración
+    // 20261002120000_asistencia_nomina_otras_sucursales.sql.
+    supabase.rpc('nomina_asistencia_periodo', {
+      p_lab_ids: historialLaboralIds,
+      p_desde: fechaInicio,
+      p_hasta: fechaFin,
+    }),
     supabase
       .from('sgrh_ausencias')
       .select(
@@ -234,24 +229,55 @@ export async function getHorasDelPeriodo(
       .gte('fer_fecha', fechaInicio)
       .lte('fer_fecha', fechaFin)
       .returns<FeriadoRow[]>(),
+    // Tope semanal de la jornada de cada contrato (Art. 136 CT), para que las
+    // horas que pasan de la semana legal sean extra aunque estén programadas
+    // (ver calcularHorasPeriodo).
+    supabase
+      .from('sgrh_historial_laboral')
+      .select('lab_id, sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )')
+      .in('lab_id', historialLaboralIds)
+      .returns<
+        {
+          lab_id: number
+          sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
+        }[]
+      >(),
   ])
 
-  if (errProgramacion) return { ok: false, error: 'No se pudo cargar la programación del periodo.' }
-  if (errMarcas) return { ok: false, error: 'No se pudieron cargar las marcas de asistencia.' }
+  const leida = asistenciaDelPeriodo(asistencia)
+  if (errAsistencia || !leida) {
+    // Si la función no existe (PGRST202), falta aplicar la migración
+    // 20261002120000_asistencia_nomina_otras_sucursales.sql.
+    console.error(
+      'getHorasDelPeriodo: nomina_asistencia_periodo falló',
+      errAsistencia ?? asistencia
+    )
+    return { ok: false, error: 'No se pudieron cargar el horario y las marcas del periodo.' }
+  }
   if (errAusencias) return { ok: false, error: 'No se pudieron cargar las ausencias aprobadas.' }
   if (errFeriados) return { ok: false, error: 'No se pudieron cargar los feriados del periodo.' }
+  // Sin poder leer la jornada no se aplica el tope: se calcula como antes, día
+  // por día contra el horario. No se corta todo por un dato complementario.
+  const topePorLab = new Map<number, number>()
+  if (jornadas && !jornadas.error && Array.isArray(jornadas.data)) {
+    for (const j of jornadas.data) {
+      const tope = Number(j.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? 0)
+      if (tope > 0) topePorLab.set(j.lab_id, tope)
+    }
+  }
 
+  const { programacion, marcas } = leida
   const fechasFeriado = new Set((feriados ?? []).map((f) => f.fer_fecha.slice(0, 10)))
 
   const clave = (labId: number, fecha: string) => `${labId}|${fecha}`
 
   const programacionPorDia = new Map<string, ProgramacionRow>()
-  for (const row of programacion ?? []) {
+  for (const row of programacion) {
     programacionPorDia.set(clave(row.prg_historial_laboral_id, row.prg_fecha), row)
   }
 
   const marcasPorDia = new Map<string, RawMark[]>()
-  for (const row of marcas ?? []) {
+  for (const row of marcas) {
     // mar_tipo es varchar sin enum en los tipos generados: una fila que no
     // calce se descarta en silencio, igual que en el panel de asistencia.
     const tipo = marcaTipoSchema.safeParse(row.mar_tipo)
@@ -368,7 +394,7 @@ export async function getHorasDelPeriodo(
       }
     })
 
-    resultado.set(labId, calcularHorasPeriodo(dias))
+    resultado.set(labId, calcularHorasPeriodo(dias, topePorLab.get(labId) ?? null))
   }
 
   return { ok: true, data: resultado }

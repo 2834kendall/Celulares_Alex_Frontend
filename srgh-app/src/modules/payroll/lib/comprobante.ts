@@ -33,3 +33,15 @@ export function generarCodigoVerificacion(): string {
     letras.slice(g * LARGO_GRUPO, (g + 1) * LARGO_GRUPO).join('')
   ).join('-')
 }
+
+/**
+ * Deja un código escrito a mano como se guardó: en mayúsculas y con guiones
+ * (XXXX-XXXX-XXXX). Acepta minúsculas, espacios y guiones de más o de menos,
+ * porque se copia de un papel impreso. Devuelve null si no tiene 12
+ * caracteres alfanuméricos.
+ */
+export function normalizarCodigoVerificacion(codigo: string): string | null {
+  const limpio = codigo.toUpperCase().replace(/[\s-]/g, '')
+  if (!/^[A-Z0-9]{12}$/.test(limpio)) return null
+  return [limpio.slice(0, 4), limpio.slice(4, 8), limpio.slice(8)].join('-')
+}

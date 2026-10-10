@@ -3,10 +3,15 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FileText, Gift, Loader2 } from 'lucide-react'
+import { AlertTriangle, FileText, Gift, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AguinaldoItem } from '@/modules/payroll/types'
-import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
+import {
+  formatCRC,
+  formatDate,
+  nombreAguinaldo,
+  rangoAguinaldo,
+} from '@/modules/payroll/lib/format'
 import { pagarAguinaldo } from '@/modules/payroll/actions/pagarAguinaldo'
 import {
   META_LABEL,
@@ -29,6 +34,12 @@ interface AguinaldoTabProps {
   cicloCerrado: boolean
   /** Sin permiso de ausencias el monto no ve la maternidad: no se deja pagar. */
   puedeLeerAusencias: boolean
+  /**
+   * Aguinaldos del año anterior que siguen sin pagar. Solo se manda cuando se
+   * mira el año en curso: en enero la pestaña abre el aguinaldo nuevo (todo
+   * en ₡0) y los atrasados quedaban escondidos en el otro botón.
+   */
+  pendientesAnterior?: { anio: number; cantidad: number; monto: number } | null
 }
 
 type Estado = { label: string; tone: BadgeTone }
@@ -54,6 +65,21 @@ function notasDe(item: AguinaldoItem): string[] {
   }
   if (!item.pagado && item.quincenasSinPagar.length > 0) {
     notas.push(`Sin pagar (no entran): ${item.quincenasSinPagar.join(', ')}.`)
+  }
+  if (item.pagado && !item.pagoId) {
+    notas.push(
+      'Marcado pagado con el botón anterior, sin comprobante: el monto mostrado es el calculado, no uno registrado.'
+    )
+  }
+  if (!item.pagado && item.ausenciasSinTipo > 0) {
+    notas.push(
+      `${item.ausenciasSinTipo} ausencia(s) sin tipo legible: revisalas en Ausencias antes de pagar.`
+    )
+  }
+  if (!item.pagado && item.sucursalesOcultas) {
+    notas.push(
+      'Trabajó en una sucursal que tu usuario no ve: el monto sale de menos. Lo tiene que pagar alguien con acceso a esa sucursal.'
+    )
   }
   return notas
 }
@@ -108,6 +134,7 @@ export function AguinaldoTab({
   canWrite,
   cicloCerrado,
   puedeLeerAusencias,
+  pendientesAnterior = null,
 }: AguinaldoTabProps) {
   const router = useRouter()
   const [pagandoId, setPagandoId] = useState<number | null>(null)
@@ -120,7 +147,9 @@ export function AguinaldoTab({
       !item.pagado &&
       item.elegible &&
       item.monto > 0 &&
-      item.quincenasSinPagar.length === 0
+      item.quincenasSinPagar.length === 0 &&
+      item.ausenciasSinTipo === 0 &&
+      !item.sucursalesOcultas
     )
   }
 
@@ -160,7 +189,8 @@ export function AguinaldoTab({
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Ciclo {a - 1}-{a}
+            {nombreAguinaldo(a)}{' '}
+            <span className="font-normal opacity-80">· {rangoAguinaldo(a)}</span>
           </Link>
         ))}
       </div>
@@ -168,13 +198,37 @@ export function AguinaldoTab({
       <div className="flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-800">
         <Gift className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <p>
-          Ciclo {anio - 1}-{anio}: del 1 de diciembre de {anio - 1} al 30 de noviembre de {anio}, se
-          paga desde el 1 de diciembre de {anio} (a más tardar el 20). Monto: salario de cada
-          quincena pagada ÷ 12. La licencia de maternidad cuenta como salario; las incapacidades no
-          (son subsidio). Hace falta un mes laborado continuo al 30 de noviembre. El pago queda con
-          su propio comprobante y no toca la planilla.
+          <span className="font-semibold">{nombreAguinaldo(anio)}</span>: cubre del 1 de diciembre
+          de {anio - 1} al 30 de noviembre de {anio} y se paga desde el 1 de diciembre de {anio} (a
+          más tardar el 20).{' '}
+          {!cicloCerrado &&
+            'Todavía se está acumulando: el monto crece con cada quincena que se paga. '}
+          Monto: salario de cada quincena pagada ÷ 12. La licencia de maternidad cuenta como
+          salario; las incapacidades no (son subsidio). Hace falta un mes laborado continuo al 30 de
+          noviembre. El pago queda con su propio comprobante y no toca la planilla.
         </p>
       </div>
+
+      {pendientesAnterior && pendientesAnterior.cantidad > 0 && (
+        <div
+          role="note"
+          className="flex flex-wrap items-start gap-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <p className="min-w-0 flex-1">
+            Quedan <span className="font-semibold">{pendientesAnterior.cantidad}</span> empleado(s)
+            con el {nombreAguinaldo(pendientesAnterior.anio).toLowerCase()} sin pagar (
+            {formatCRC(pendientesAnterior.monto)}). Se debía pagar a más tardar el 20 de diciembre
+            de {pendientesAnterior.anio}.
+          </p>
+          <Link
+            href={`/payroll/aguinaldo-liquidacion?anio=${pendientesAnterior.anio}`}
+            className="shrink-0 font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-950"
+          >
+            Ver {nombreAguinaldo(pendientesAnterior.anio).toLowerCase()}
+          </Link>
+        </div>
+      )}
 
       {!puedeLeerAusencias && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -184,7 +238,10 @@ export function AguinaldoTab({
       )}
 
       {items.length === 0 ? (
-        <EmptyState icon={Gift} title="No hay empleados con aguinaldo en este ciclo." />
+        <EmptyState
+          icon={Gift}
+          title={`No hay empleados con ${nombreAguinaldo(anio).toLowerCase()}.`}
+        />
       ) : (
         <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
           {/* Movil: tarjeta por empleado, con el monto destacado. */}

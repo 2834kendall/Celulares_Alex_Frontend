@@ -170,18 +170,35 @@ export interface SumaCiclo {
   maternidad: number
 }
 
-/** Suma el salario computable de las quincenas pagadas entre dos claves (incluidas). */
+/**
+ * Suma el salario computable de las quincenas pagadas entre dos claves
+ * (incluidas).
+ *
+ * `licenciaDeSinPagar`: también suma la parte de licencia de maternidad de
+ * las quincenas que tienen fila sin pagar (borrador). La licencia no depende
+ * de la planilla: sin esto, el aguinaldo perdía la licencia mientras existía
+ * el borrador de la quincena y la recuperaba al pagarla (auditoría 2,
+ * hallazgo 8). Si la quincena no tuviera fila, completarQuincenasDeLicencia
+ * ya la cuenta; esto cubre el caso de la fila en borrador. Solo lo usa el
+ * aguinaldo del ciclo: en la liquidación, la quincena de salida sin pagar la
+ * paga el salario pendiente.
+ */
 export function sumarCiclo(
   quincenas: readonly QuincenaComputable[],
   desdeClave: number,
-  hastaClave: number
+  hastaClave: number,
+  licenciaDeSinPagar = false
 ): SumaCiclo {
   const enRango = quincenas.filter((q) => q.clave >= desdeClave && q.clave <= hastaClave)
   const pagadas = enRango.filter((q) => q.pagado)
+  const sinPagar = enRango.filter((q) => !q.pagado).sort((a, b) => a.clave - b.clave)
+  const licenciaSinPagar = licenciaDeSinPagar
+    ? sinPagar.reduce((acc, q) => acc + q.montoMaternidad, 0)
+    : 0
   return {
-    suma: pagadas.reduce((acc, q) => acc + q.salarioComputable, 0),
-    maternidad: pagadas.reduce((acc, q) => acc + q.montoMaternidad, 0),
-    sinPagar: enRango.filter((q) => !q.pagado).sort((a, b) => a.clave - b.clave),
+    suma: pagadas.reduce((acc, q) => acc + q.salarioComputable, 0) + licenciaSinPagar,
+    maternidad: pagadas.reduce((acc, q) => acc + q.montoMaternidad, 0) + licenciaSinPagar,
+    sinPagar,
   }
 }
 
@@ -204,12 +221,30 @@ export interface PromedioSinSubsidios extends SalarioDiarioResultado {
  *
  * La división la hace calcularSalarioDiario: suma ÷ meses ÷ 30, y con menos
  * de dos quincenas cae al salario del contrato.
+ *
+ * Una quincena que la persona no trabajó entera (la de ingreso, o la de
+ * salida si se pagó por planilla) cuenta por la parte trabajada, en días
+ * comerciales de 1/30 del mes: un día vale 1/15 de quincena (Art. 30 CT,
+ * promedio de lo devengado en el tiempo efectivamente laborado).
  */
+export function pesoQuincena(
+  q: Pick<QuincenaComputable, 'fechaInicio' | 'fechaFin'>,
+  rango: { inicio: string; fin: string } | null
+): number {
+  if (!rango) return 1
+  const total = diasEnComun(q.fechaInicio, q.fechaFin, q.fechaInicio, q.fechaFin)
+  const laborados = diasEnComun(q.fechaInicio, q.fechaFin, rango.inicio, rango.fin)
+  if (laborados >= total) return 1
+  return Math.min(laborados, 15) / 15
+}
+
 export function promedioDiarioSinSubsidios(
   quincenas: readonly QuincenaComputable[],
   hastaClave: number,
   cuantas: number,
-  salarioMensualContrato: number
+  salarioMensualContrato: number,
+  /** Inicio de la relación y último día trabajado: marcan las quincenas parciales. */
+  rango: { inicio: string; fin: string } | null = null
 ): PromedioSinSubsidios {
   const candidatas = quincenas
     .filter((q) => q.pagado && q.clave <= hastaClave && q.salarioComputable > 0)
@@ -228,7 +263,8 @@ export function promedioDiarioSinSubsidios(
 
   const resultado = calcularSalarioDiario(
     usadas.map((q) => q.salarioComputable),
-    salarioMensualContrato
+    salarioMensualContrato,
+    usadas.map((q) => pesoQuincena(q, rango))
   )
   return { ...resultado, usadas: usadas.map((q) => q.etiqueta), excluidas }
 }
@@ -316,6 +352,8 @@ export interface ContratoDelEmpleado {
   salarioMensual: number
   /** Ya tiene una liquidación guardada: esa relación laboral terminó ahí. */
   liquidado: boolean
+  /** lab_sucursal_id. Ver contratosFueraDeAlcance. */
+  sucursalId?: number | null
 }
 
 /**
@@ -414,7 +452,7 @@ export function aguinaldoDelCiclo(input: {
   const desde = claveQuincenal(input.anio - 1, 12, 1)
   const hasta = claveQuincenal(input.anio, 11, 2)
   const corte = `${input.anio}-11-30`
-  const ciclo = sumarCiclo(input.quincenas, desde, hasta)
+  const ciclo = sumarCiclo(input.quincenas, desde, hasta, true)
   const elegible =
     input.inicioRelacion !== '' && cumpleMesMinimoAguinaldo(input.inicioRelacion, corte)
   const suma = round2(ciclo.suma)

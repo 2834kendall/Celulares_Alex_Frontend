@@ -31,8 +31,9 @@ export interface CatalogoItem {
  * Solo 2: mientras falte pagarle a algún empleado es 'borrador' (editable:
  * se puede subir Excel, editar montos a mano); pasa a 'pagado' solo, sin
  * botón, en cuanto TODOS los empleados del periodo quedan marcados como
- * pagados (ver sincronizarEstadoPeriodo en marcarDetallePagado.ts). Si se
- * desmarca a alguien, vuelve a 'borrador'.
+ * pagados (ver sincronizarEstadoPeriodo en estadoPeriodoData.ts; una fila
+ * cuyo salario ya pagó una liquidación cuenta como resuelta). Si se desmarca
+ * a alguien, vuelve a 'borrador'.
  */
 export type PeriodoEstado = 'borrador' | 'pagado'
 
@@ -79,6 +80,13 @@ export interface DetalleNominaItem {
   salarioNeto: number
   pagado: boolean
   fechaPago: string | null
+  /**
+   * La liquidación (liq_id) que ya paga el salario de esta fila como salario
+   * pendiente del mes de salida. Esa fila no se paga por planilla (sería
+   * pagarla dos veces) y cuenta como resuelta para cerrar el periodo. Null en
+   * las demás.
+   */
+  liquidacionQueLaPaga: number | null
   /** Código impreso en el comprobante (sgrh_comprobantes_pago). Null mientras el pago no se haya marcado. */
   codigoVerificacion: string | null
   /**
@@ -125,6 +133,12 @@ export interface DetalleNominaItem {
   ajusteEsperado: number | null
   /** Día por día de la quincena, para explicar de dónde sale el total. */
   dias: DiaCalculado[]
+  /**
+   * Horas que la asistencia de hoy pasa a extra por superar el tope semanal
+   * de la jornada (Art. 136 CT). Solo viene si hay. Explica por qué el día a
+   * día no suma lo mismo que el total.
+   */
+  horasExtraPorTopeSemanal?: number
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
   incapacidad: IncapacidadItem | null
   /**
@@ -157,6 +171,11 @@ export interface IncapacidadItem {
   diasCcss: number
   porcentajePagoEmpleador: number
   monto: number
+  /**
+   * Tipo de la ausencia (tau_nombre: "Incapacidad por Maternidad"…), para el
+   * rótulo del comprobante. null si no se pudo leer: queda el genérico.
+   */
+  tipoNombre?: string | null
 }
 
 export interface PeriodoDetalle {
@@ -490,6 +509,10 @@ export interface AguinaldoItem {
   elegible: boolean
   /** Quincenas del ciclo que no se han pagado: no entraron en el monto. */
   quincenasSinPagar: string[]
+  /** Ausencias aprobadas cuyo tipo no se pudo leer: no se sabe si son maternidad. */
+  ausenciasSinTipo: number
+  /** Trabajó en una sucursal que el usuario no ve: el monto sale de menos. */
+  sucursalesOcultas: boolean
   pagado: boolean
   fechaPago: string | null
   /** Pago con comprobante. Null si se marcó pagado con el botón viejo. */
@@ -510,11 +533,20 @@ export interface ContratoPorLiquidarItem {
   /** Último día trabajado (lab_fecha_fin). */
   fechaSalida: string
   motivo: {
+    /** mot_codigo: MUT001 (mutuo acuerdo) pide decidir la cesantía al liquidar. */
+    codigo: string
     nombre: string
     generaCesantia: boolean
     generaPreaviso: boolean
     notaLegal: string | null
   } | null
+  /**
+   * Tipo de contrato (tco_codigo). Un contrato a plazo fijo o por obra
+   * determinada terminado por el patrono lleva la indemnización del Art. 31
+   * en vez de preaviso y cesantía, y pide decir si se pactó por seis meses o
+   * más. Null si no se pudo leer.
+   */
+  tipoContrato: { codigo: string; nombre: string } | null
 }
 
 // La fecha de salida y el motivo ya no se capturan acá: salen del contrato,
@@ -525,16 +557,35 @@ export const procesarLiquidacionSchema = z.object({
     .number({ error: 'Los días de vacaciones son obligatorios' })
     .min(0, 'No puede ser negativo')
     .max(365, 'Revisá los días de vacaciones'),
+  /**
+   * Solo en mutuo acuerdo (MOTIVO_MUTUO_ACUERDO): si las partes pactaron
+   * pagar cesantía. Lo decide quien liquida; en los demás motivos manda el
+   * catálogo y esto se ignora.
+   */
+  cesantiaPactada: z.enum(['si', 'no']).nullish(),
+  /**
+   * Solo en un contrato a plazo fijo u obra determinada que el patrono
+   * termina (Art. 31 CT): si se pactó por seis meses o más (o la obra debía
+   * durar eso). Cambia el mínimo de la indemnización de 3 a 22 días. El
+   * sistema no guarda el plazo pactado, así que lo dice quien liquida.
+   */
+  plazoSeisMesesOMas: z.enum(['si', 'no']).nullish(),
 })
 
 export type ProcesarLiquidacionInput = z.infer<typeof procesarLiquidacionSchema>
 
-export interface LiquidacionCalculada {
-  liqId: number
+/**
+ * Rubros de una liquidación: lo que se muestra en la vista previa, al
+ * guardarla y en el historial antes de pagarla.
+ */
+export interface DesgloseLiquidacion {
   /** Promedio de los últimos seis meses ÷ 30 (Art. 30 CT), o el contrato si no hubo con qué. */
   salarioDiario: number
-  /** Promedio de la última cincuentena ÷ 30 (Art. 157 CT): con esto se pagan las vacaciones. */
-  salarioDiarioVacaciones: number
+  /**
+   * Promedio de la última cincuentena ÷ 30 (Art. 157 CT): con esto se pagan
+   * las vacaciones. null en liquidaciones guardadas antes de esa columna.
+   */
+  salarioDiarioVacaciones: number | null
   /** Días de vacaciones que se liquidaron. */
   diasVacaciones: number
   /** Días del mes de salida que no se habían pagado por planilla. */
@@ -542,18 +593,36 @@ export interface LiquidacionCalculada {
   salarioProporcional: number
   aguinaldoProporcional: number
   vacacionesPagadas: number
+  /** Horas extra que seguían pendientes en el banco de horas, pagadas acá. */
+  horasExtraBanco: number
   diasPreaviso: number
   preaviso: number
   diasCesantia: number
   cesantia: number
+  /**
+   * Por qué el preaviso o la cesantía quedaron en 0 días (ver
+   * notaRubroSinDias). null si tienen días o en liquidaciones viejas sin nota.
+   */
+  notaPreaviso: string | null
+  notaCesantia: string | null
+  /** Indemnización del Art. 31 CT (contrato a plazo fijo roto sin justa causa). */
+  diasIndemnizacionPlazoFijo: number
+  indemnizacionPlazoFijo: number
   /** Bruto: suma de todos los rubros. */
   total: number
-  /** Cuota obrera sobre salario pendiente y vacaciones. Preaviso, cesantía y aguinaldo no cotizan. */
+  /** Cuota obrera sobre salario pendiente, vacaciones y horas extra. Preaviso, cesantía y aguinaldo no cotizan. */
   deduccionesObreras: number
   /** total − deduccionesObreras. Es lo que se le entrega a la persona. */
   neto: number
   /** Cosas que el cálculo no pudo resolver solo y alguien tiene que mirar. */
   advertencias: string[]
+}
+
+/** Resultado de procesarLiquidacion. */
+export interface LiquidacionCalculada extends DesgloseLiquidacion {
+  /** null en la vista previa: todavía no se guardó. */
+  liqId: number | null
+  salarioDiarioVacaciones: number
 }
 
 /** Una fila del historial de liquidaciones ya generadas (sección de solo lectura). */
@@ -572,6 +641,8 @@ export interface LiquidacionListItem {
   pagoId: number | null
   fechaPago: string | null
   createdAt: string
+  /** Rubros guardados, para revisarlos antes de pagar. */
+  desglose: DesgloseLiquidacion
 }
 
 /** Una línea del comprobante de un pago de aguinaldo o liquidación. */
@@ -681,6 +752,16 @@ export interface BancoHorasItem {
   montoPagado: number | null
   fechaResolucion: string | null
   createdAt: string
+  /** Nota de quien lo resolvió (ver compensarBancoHoras). */
+  observaciones: string | null
+  /** Liquidación que pagó estas horas: no se pueden devolver al banco. */
+  liquidacionId?: number | null
+  /**
+   * Pendiente de alguien que ya se liquidó: una liquidación anterior al
+   * arreglo de la auditoría dejó estas horas fuera. No se pueden pagar por
+   * planilla; se registran como compensadas con una nota.
+   */
+  liquidadoSinIncluir: { liqId: number; fechaSalida: string } | null
 }
 
 export const pagarBancoHorasSchema = z.object({

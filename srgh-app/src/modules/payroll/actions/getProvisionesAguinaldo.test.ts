@@ -95,6 +95,26 @@ describe('getProvisionesAguinaldo (server action)', () => {
     conPermisos(['NOMINA_READ', 'AUSENCIAS_READ'])
   })
 
+  // 00:30 UTC del 1 de enero = 18:30 del 31 de diciembre en Costa Rica: el
+  // ciclo por defecto sigue siendo el del año que termina. Con el año del
+  // servidor (UTC) ya saltaba al siguiente.
+  it('sin año, toma el de Costa Rica, no el del servidor', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2027-01-01T00:30:00Z'))
+    try {
+      mockSupabase({
+        sgrh_historial_laboral: { data: [], error: null },
+        sgrh_nomina_detalle: { data: [], error: null },
+      })
+
+      const result = await getProvisionesAguinaldo()
+
+      expect(result.ok && result.data.anio).toBe(2026)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('calcula el aguinaldo desde las quincenas pagadas: ciclo completo = un salario', async () => {
     mockSupabase({
       sgrh_historial_laboral: { data: [candidato(1, 'Ana', '2020-01-15')], error: null },
@@ -303,6 +323,112 @@ describe('getProvisionesAguinaldo (server action)', () => {
     if (!result.ok) return
     expect(result.data.items).toHaveLength(1)
     expect(result.data.items[0]).toMatchObject({ historialLaboralId: 8, monto: 430000 })
+  })
+
+  // RLS le esconde a un usuario de sucursal la planilla de las otras: el
+  // aguinaldo saldría con lo que alcanza a ver.
+  it('usuario de una sucursal: no lista a los de otras, y marca el traslado incompleto', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { permisos: ['NOMINA_READ', 'AUSENCIAS_READ'], sucursal_ids: [2] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const enSucursal = (c: ReturnType<typeof contrato>, suc: number) => ({
+      ...c,
+      lab_sucursal_id: suc,
+    })
+    const contratosCaro = [
+      enSucursal(contrato(7, '2020-01-15', '2026-05-31'), 1),
+      enSucursal(contrato(8, '2026-06-01'), 2),
+    ]
+    mockSupabase({
+      sgrh_historial_laboral: {
+        data: [
+          {
+            ...candidato(8, 'Caro', '2026-06-01', { contratos: contratosCaro }),
+            lab_sucursal_id: 2,
+          },
+          {
+            ...candidato(9, 'Dani', '2020-01-15', {
+              contratos: [enSucursal(contrato(9, '2020-01-15'), 2)],
+            }),
+            lab_sucursal_id: 2,
+          },
+          { ...candidato(5, 'Eva', '2020-01-15'), lab_sucursal_id: 1 },
+        ],
+        error: null,
+      },
+      sgrh_nomina_detalle: { data: [...ciclo2026(8), ...ciclo2026(9)], error: null },
+    })
+
+    const result = await getProvisionesAguinaldo(2026)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const porNombre = new Map(result.data.items.map((i) => [i.empleadoNombre, i]))
+    expect([...porNombre.keys()].sort()).toEqual(['Caro Prueba', 'Dani Prueba'])
+    expect(porNombre.get('Caro Prueba')!.sucursalesOcultas).toBe(true)
+    expect(porNombre.get('Dani Prueba')!.sucursalesOcultas).toBe(false)
+  })
+
+  it('un traslado de hace años desde una sucursal que no ve no frena el aguinaldo', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { permisos: ['NOMINA_READ', 'AUSENCIAS_READ'], sucursal_ids: [2] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const contratos = [
+      { ...contrato(7, '2018-01-15', '2022-05-31'), lab_sucursal_id: 1 },
+      { ...contrato(8, '2022-06-01'), lab_sucursal_id: 2 },
+    ]
+    mockSupabase({
+      sgrh_historial_laboral: {
+        data: [
+          {
+            ...candidato(8, 'Caro', '2022-06-01', { ingreso: '2018-01-15', contratos }),
+            lab_sucursal_id: 2,
+          },
+        ],
+        error: null,
+      },
+      sgrh_nomina_detalle: { data: ciclo2026(8), error: null },
+    })
+
+    const result = await getProvisionesAguinaldo(2026)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items[0]).toMatchObject({ sucursalesOcultas: false, monto: 430000 })
+  })
+
+  it('trasladado a una sucursal que no ve: no aparece, ni bajo el contrato viejo', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { permisos: ['NOMINA_READ', 'AUSENCIAS_READ'], sucursal_ids: [2] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    // Salió de la 2 el 4 de diciembre (después del cierre: sigue siendo
+    // candidato) y sigue en la 1.
+    const contratos = [
+      { ...contrato(7, '2020-01-15', '2026-12-04'), lab_sucursal_id: 2 },
+      { ...contrato(8, '2026-12-05'), lab_sucursal_id: 1 },
+    ]
+    mockSupabase({
+      sgrh_historial_laboral: {
+        data: [
+          {
+            ...candidato(7, 'Caro', '2020-01-15', { fin: '2026-12-04', contratos }),
+            lab_sucursal_id: 2,
+          },
+          {
+            ...candidato(8, 'Caro', '2026-12-05', { ingreso: '2020-01-15', contratos }),
+            lab_sucursal_id: 1,
+          },
+        ],
+        error: null,
+      },
+      sgrh_nomina_detalle: { data: ciclo2026(7), error: null },
+    })
+
+    const result = await getProvisionesAguinaldo(2026)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items).toEqual([])
   })
 
   it('una quincena del ciclo sin pagar no entra y se nombra', async () => {

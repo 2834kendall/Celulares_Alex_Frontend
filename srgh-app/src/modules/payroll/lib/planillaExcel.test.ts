@@ -111,6 +111,223 @@ const INFO = {
   quincena: { anio: 2026, mes: 8, quincena: 1 },
 }
 
+describe('buildPlanillaTemplate con la fila ya guardada en el periodo', () => {
+  /** Valores de la fila de Ana: horas, extra, valor hora, BASE, COMISION, PRESTAMO. */
+  async function filaAna(emp: Parameters<typeof buildPlanillaTemplate>[1][number]) {
+    const buffer = await buildPlanillaTemplate(INFO, [emp], CONCEPTOS)
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const fila = wb.getWorksheet('Planilla')!.getRow(5)
+    return [3, 4, 5, 6, 7, 8].map((c) => fila.getCell(c).value)
+  }
+  const ANA = EMPLEADOS[0]
+  const GUARDADO = {
+    pagado: false,
+    horas: 96,
+    horasExtra: 0,
+    salarioPorHora: 2500,
+    montos: { BASE: 300000, COMISION: 50000, PRESTAMO: 20000, CCSS_OBRERA: 37905 },
+  }
+
+  // Antes venían en 0: bajar la plantilla y subirla borraba comisiones y
+  // préstamos de todas las filas.
+  it('trae las comisiones y deducciones manuales que ya tenía la fila', async () => {
+    expect(await filaAna({ ...ANA, guardado: GUARDADO })).toEqual([
+      96, 0, 2500, 300000, 50000, 20000,
+    ])
+  })
+
+  it('un BASE del sistema se rehace con las marcas de hoy', async () => {
+    // Se guardó con 96 h (300.000); hoy las marcas dicen 72 de 96 → 225.000.
+    expect(
+      await filaAna({
+        ...ANA,
+        horas: { lectura: lectura(72, 96), diasPorRevisar: 0 },
+        guardado: GUARDADO,
+      })
+    ).toEqual([72, 0, 2500, 225000, 50000, 20000])
+  })
+
+  it('un BASE corregido a mano se respeta', async () => {
+    expect(
+      await filaAna({
+        ...ANA,
+        horas: { lectura: lectura(72, 96), diasPorRevisar: 0 },
+        guardado: { ...GUARDADO, horas: 72, montos: { ...GUARDADO.montos, BASE: 280000 } },
+      })
+    ).toEqual([72, 0, 2500, 280000, 50000, 20000])
+  })
+
+  it('sin marcas utilizables queda el BASE guardado', async () => {
+    const { horas: _sinMarcas, ...sinHoras } = ANA
+    void _sinMarcas
+    const [, , , base] = await filaAna({ ...sinHoras, guardado: GUARDADO })
+    expect(base).toBe(300000)
+  })
+
+  it('una fila ya pagada va tal cual se pagó', async () => {
+    expect(
+      await filaAna({
+        ...ANA,
+        guardado: {
+          pagado: true,
+          horas: 80,
+          horasExtra: 2,
+          salarioPorHora: 2400,
+          montos: { BASE: 250000, COMISION: 10000 },
+        },
+      })
+    ).toEqual([80, 2, 2400, 250000, 10000, 0])
+  })
+
+  // Auditoría 2, hallazgo 7: subir la plantilla recién bajada, sin tocarla,
+  // dejaba en 0 las horas que alguien había corregido a mano (40 h → 0).
+  it('una fila con horas corregidas a mano trae esas horas y su salario', async () => {
+    expect(
+      await filaAna({
+        ...ANA,
+        horas: { lectura: lectura(0, 96), diasPorRevisar: 0 },
+        guardado: {
+          pagado: false,
+          horas: 40,
+          horasExtra: 0,
+          salarioPorHora: 2500,
+          montos: { BASE: 125000, COMISION: 5000 },
+          horasAjustadas: true,
+        },
+      })
+    ).toEqual([40, 0, 2500, 125000, 5000, 0])
+  })
+
+  it('sin la corrección, las horas son las de las marcas', async () => {
+    const [horas] = await filaAna({
+      ...ANA,
+      horas: { lectura: lectura(0, 96), diasPorRevisar: 0 },
+      guardado: {
+        pagado: false,
+        horas: 40,
+        horasExtra: 0,
+        salarioPorHora: 2500,
+        montos: { BASE: 125000 },
+        horasAjustadas: false,
+      },
+    })
+    expect(horas).toBe(0)
+  })
+})
+
+describe('vista previa de totales en la plantilla (auditoría, hallazgo 6)', () => {
+  const VIATICOS: ConceptoPlanillaColumna = {
+    con_id: 10,
+    con_codigo: 'ING010',
+    con_nombre: 'Viáticos',
+    con_tipo: 'ingreso',
+    con_afecta_salario_bruto: false,
+    con_afecta_base_ccss: false,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+
+  // En el catálogo real HORAS_EXTRA está inactivo (las horas extra van al
+  // banco de horas); el fixture general lo trae activo como columna calculada.
+  const SIN_HORAS_EXTRA = CONCEPTOS.filter((c) => c.con_codigo !== 'HORAS_EXTRA')
+
+  async function formulas(
+    emp: Parameters<typeof buildPlanillaTemplate>[1][number],
+    conceptos: ConceptoPlanillaColumna[] = SIN_HORAS_EXTRA
+  ) {
+    const buffer = await buildPlanillaTemplate(INFO, [emp], [...conceptos, VIATICOS])
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const ws = wb.getWorksheet('Planilla')!
+    const col = (label: string) => {
+      let n = -1
+      ws.getRow(4).eachCell((c, i) => {
+        if (String(c.value).startsWith(label)) n = i
+      })
+      return n
+    }
+    const letra = (n: number) => String.fromCharCode(64 + n)
+    const f = (label: string) =>
+      (ws.getRow(5).getCell(col(label)).value as { formula: string }).formula
+    return {
+      bruto: f('Total bruto'),
+      ccss: f('Rebajo CCSS'),
+      neto: f('Total neto'),
+      base: `${letra(col('Salario base'))}5`,
+      comision: `${letra(col('Comisión'))}5`,
+      viaticos: `${letra(col('Viáticos'))}5`,
+    }
+  }
+
+  it('lo que no es salario no va al bruto ni a la CCSS: se suma al neto', async () => {
+    const f = await formulas(EMPLEADOS[0])
+
+    expect(f.bruto).toBe(`SUM(${f.base},${f.comision})`)
+    expect(f.ccss).toBe(`SUM(${f.base},${f.comision})*10.83/100`)
+    expect(f.neto).toContain(`+SUM(${f.viaticos})`)
+    expect(f.bruto).not.toContain(f.viaticos)
+  })
+
+  it('con HORAS_EXTRA activo como columna, la columna calculada es la que entra', async () => {
+    const f = await formulas(EMPLEADOS[0], CONCEPTOS)
+
+    expect(f.bruto).toMatch(new RegExp(`^SUM\\(${f.base},${f.comision},[A-Z]+5\\)$`))
+  })
+
+  it('el pago de banco de horas ya guardado entra al bruto y a la CCSS', async () => {
+    const f = await formulas({
+      ...EMPLEADOS[0],
+      guardado: {
+        pagado: false,
+        horas: 96,
+        horasExtra: 0,
+        salarioPorHora: 2500,
+        montos: { BASE: 300000, HORAS_EXTRA: 26400 },
+      },
+    })
+
+    expect(f.bruto).toBe(`SUM(${f.base},${f.comision},26400)`)
+    expect(f.ccss).toBe(`SUM(${f.base},${f.comision},26400)*10.83/100`)
+  })
+
+  // Auditoría 2, hallazgo 6: la ausencia sin goce rebaja el salario.
+  it('la ausencia sin goce sale del bruto y de la CCSS, no del neto', async () => {
+    const SIN_GOCE: ConceptoPlanillaColumna = {
+      con_id: 16,
+      con_codigo: 'DED006',
+      con_nombre: 'Ausencia sin goce',
+      con_tipo: 'deduccion',
+      con_afecta_salario_bruto: false,
+      con_afecta_base_ccss: false,
+      con_tipo_calculo: 'monto_manual_deduccion',
+      con_porcentaje: null,
+      con_rebaja_salario: true,
+    }
+    const buffer = await buildPlanillaTemplate(INFO, [EMPLEADOS[0]], [...SIN_HORAS_EXTRA, SIN_GOCE])
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const ws = wb.getWorksheet('Planilla')!
+    const col = (label: string) => {
+      let n = -1
+      ws.getRow(4).eachCell((c, i) => {
+        if (String(c.value).startsWith(label)) n = i
+      })
+      return n
+    }
+    const celda = (label: string) => `${String.fromCharCode(64 + col(label))}5`
+    const f = (label: string) =>
+      (ws.getRow(5).getCell(col(label)).value as { formula: string }).formula
+    const suma = `SUM(${celda('Salario base')},${celda('Comisión')})`
+
+    expect(f('Total bruto')).toBe(`MAX(0,${suma}-SUM(${celda('Ausencia sin goce')}))`)
+    expect(f('Rebajo CCSS')).toBe(`MAX(0,${suma}-SUM(${celda('Ausencia sin goce')}))*10.83/100`)
+    expect(f('Total deducciones')).toBe(
+      `SUM(${celda('Préstamo')},${celda('Rebajo CCSS')}:${celda('Rebajo CCSS')})`
+    )
+  })
+})
+
 describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
   it('arma una columna por cada concepto de tipo "monto manual" y las prellena', async () => {
     const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)

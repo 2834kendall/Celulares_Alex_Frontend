@@ -321,6 +321,37 @@ describe('baseParaHorasEditadas', () => {
     expect(r).toEqual({ base: 212345, conservado: true })
   })
 
+  // RRHH decide pagarle la quincena completa a alguien que cumplió 72 de 96 h
+  // y escribe 200.000. Antes la quincena entera contaba como "del sistema" y
+  // se cambiaba en silencio por el proporcional (150.000).
+  it('la quincena completa escrita a mano se respeta aunque falten horas', () => {
+    const r = baseParaHorasEditadas({
+      baseIngresado: 200000,
+      contrato: CONTRATO,
+      lectura: lectura(72, 96),
+      horasPrevias: { horas: 72, horasExtra: 0 },
+      horasNuevas: { horas: 72, horasExtra: 0 },
+      quincena: Q1_AGOSTO,
+    })
+
+    expect(r).toEqual({ base: 200000, conservado: true })
+  })
+
+  // La otra cara: si la quincena completa la puso el sistema porque las horas
+  // daban 96, al bajarle las horas sí sigue a las nuevas.
+  it('la quincena completa del sistema (96 h) sigue a las horas nuevas', () => {
+    const r = baseParaHorasEditadas({
+      baseIngresado: 200000,
+      contrato: CONTRATO,
+      lectura: lectura(72, 96),
+      horasPrevias: { horas: 96, horasExtra: 0 },
+      horasNuevas: { horas: 72, horasExtra: 0 },
+      quincena: Q1_AGOSTO,
+    })
+
+    expect(r).toEqual({ base: 150000, conservado: false })
+  })
+
   it('sin lectura no hay con qué recalcular: queda lo que llegó', () => {
     const r = baseParaHorasEditadas({
       baseIngresado: 200000,
@@ -332,5 +363,103 @@ describe('baseParaHorasEditadas', () => {
     })
 
     expect(r.base).toBe(200000)
+  })
+})
+
+// Auditoría 2, fallo 1: Rebeca, Sep 2.ª. La fila se armó cuando 4 días eran
+// faltas; después se aprobaron como vacaciones. El monto viejo no coincidía
+// con ninguna regla y se tomaba por una corrección a mano.
+describe('vacaciones aprobadas después de armar la fila', () => {
+  const Q2_SETIEMBRE = { anio: 2026, mes: 9, quincena: 2 }
+  // 120 h programadas, 88 trabajadas; 32 h (4 días) ahora son vacaciones.
+  // Los días justificados no son horas esperadas: 120 − 32.
+  const CON_VACACIONES = lectura(88, 120, {
+    horasEsperadas: 88,
+    horasAcreditadas: 32,
+    horasAcreditadasAusencias: 32,
+  })
+  // Lo que escribió el sistema al armarla, sin las vacaciones: 200.000 × 88/120.
+  const BASE_VIEJA = 146666.67
+  const AJUSTE_VIEJO = 157666.67 - BASE_VIEJA
+
+  it('el monto viejo se reconoce como del sistema y la fila queda desactualizada', () => {
+    const r = evaluarBaseGuardado({
+      baseGuardado: BASE_VIEJA,
+      ajusteGuardado: AJUSTE_VIEJO,
+      contrato: CONTRATO,
+      guardadas: { horas: 88, horasExtra: 0 },
+      lectura: CON_VACACIONES,
+      quincena: Q2_SETIEMBRE,
+    })
+
+    expect(r.desactualizado).toBe(true)
+    expect(r.esperado).toBe(200000)
+    expect(r.ajusteEsperado).toBe(15000)
+  })
+
+  // Sin ajuste (base = real), el AJUSTE no delataba nada: la app dejaba pagar.
+  it('sin ajuste que lo delate, el BASE viejo igual bloquea el pago', () => {
+    const r = evaluarBaseGuardado({
+      baseGuardado: BASE_VIEJA,
+      ajusteGuardado: 0,
+      contrato: { salarioBaseMensual: 400000, salarioRealMensual: 400000, horasSemanales: 48 },
+      guardadas: { horas: 88, horasExtra: 0 },
+      lectura: CON_VACACIONES,
+      quincena: Q2_SETIEMBRE,
+    })
+
+    expect(r).toEqual({ desactualizado: true, esperado: 200000, ajusteEsperado: 0 })
+  })
+
+  it('recalcular lo rehace con las vacaciones pagadas', () => {
+    const r = baseParaHorasEditadas({
+      baseIngresado: BASE_VIEJA,
+      contrato: CONTRATO,
+      lectura: CON_VACACIONES,
+      horasPrevias: { horas: 88, horasExtra: 0 },
+      horasNuevas: { horas: 88, horasExtra: 0 },
+      quincena: Q2_SETIEMBRE,
+    })
+
+    expect(r).toEqual({ base: 200000, conservado: false })
+  })
+
+  it('un monto escrito a mano se sigue respetando', () => {
+    const r = baseParaHorasEditadas({
+      baseIngresado: 180000,
+      contrato: CONTRATO,
+      lectura: CON_VACACIONES,
+      horasPrevias: { horas: 88, horasExtra: 0 },
+      horasNuevas: { horas: 88, horasExtra: 0 },
+      quincena: Q2_SETIEMBRE,
+    })
+
+    expect(r).toEqual({ base: 180000, conservado: true })
+  })
+
+  it('un feriado no cuenta como ausencia: su crédito ya estaba al armar la fila', () => {
+    const r = evaluarBaseGuardado({
+      baseGuardado: BASE_VIEJA,
+      ajusteGuardado: AJUSTE_VIEJO,
+      contrato: CONTRATO,
+      guardadas: { horas: 88, horasExtra: 0 },
+      // Las mismas 32 h, pero de feriados: el monto viejo no es del sistema.
+      lectura: lectura(88, 120, { horasEsperadas: 88, horasAcreditadas: 32 }),
+      quincena: Q2_SETIEMBRE,
+    })
+
+    // Sigue marcada por el AJUSTE (siempre lo calcula el sistema), pero el BASE
+    // se toma por manual y se respeta.
+    expect(
+      baseParaHorasEditadas({
+        baseIngresado: BASE_VIEJA,
+        contrato: CONTRATO,
+        lectura: lectura(88, 120, { horasEsperadas: 88, horasAcreditadas: 32 }),
+        horasPrevias: { horas: 88, horasExtra: 0 },
+        horasNuevas: { horas: 88, horasExtra: 0 },
+        quincena: Q2_SETIEMBRE,
+      }).conservado
+    ).toBe(true)
+    expect(r.esperado).toBe(200000)
   })
 })

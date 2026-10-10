@@ -5,8 +5,13 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
-import { formatDate } from '@/modules/payroll/lib/format'
-import { ERROR_SIN_PERMISO_AUSENCIAS, puedeLeerAusencias } from '@/modules/payroll/lib/derechosData'
+import { formatDate, rangoAguinaldo } from '@/modules/payroll/lib/format'
+import {
+  ERROR_SIN_PERMISO_AUSENCIAS,
+  ERROR_SUCURSAL_NO_VISIBLE,
+  puedeLeerAusencias,
+  sucursalesVisibles,
+} from '@/modules/payroll/lib/derechosData'
 import {
   aperturaPagoAguinaldo,
   calcularAguinaldosDelCiclo,
@@ -51,36 +56,42 @@ export async function pagarAguinaldo(
   if (hoy < apertura) {
     return {
       ok: false,
-      error: `El ciclo ${anio - 1}-${anio} cierra el 30 de noviembre: su aguinaldo se paga desde el ${formatDate(apertura)} (y a más tardar el 20 de diciembre).`,
+      error: `El aguinaldo ${anio} cubre hasta el 30 de noviembre de ${anio} (${rangoAguinaldo(anio)}): se paga desde el ${formatDate(apertura)} y a más tardar el 20 de diciembre.`,
     }
   }
 
   const supabase = await createClient()
-  const resultado = await calcularAguinaldosDelCiclo(supabase, anio, historialLaboralId)
+  const resultado = await calcularAguinaldosDelCiclo(
+    supabase,
+    anio,
+    sucursalesVisibles(claims),
+    historialLaboralId
+  )
   if (!resultado.ok) return resultado
 
   const aguinaldo = resultado.data.find((a) => a.labId === historialLaboralId)
   if (!aguinaldo) {
     return {
       ok: false,
-      error:
-        'Este empleado no tiene aguinaldo en este ciclo: o entró después del 30 de noviembre, o salió antes y su aguinaldo va en la liquidación.',
+      error: `Este empleado no tiene aguinaldo ${anio}: o entró después del 30 de noviembre de ${anio}, o salió antes y su aguinaldo va en la liquidación.`,
     }
   }
   if (aguinaldo.pagado) {
     return { ok: false, error: 'Este aguinaldo ya estaba pagado.' }
   }
+  if (aguinaldo.sucursalesOcultas) {
+    return { ok: false, error: ERROR_SUCURSAL_NO_VISIBLE }
+  }
   if (aguinaldo.calculo.sinPagar.length > 0) {
     return {
       ok: false,
-      error: `Hay quincenas del ciclo sin marcar como pagadas (${aguinaldo.calculo.sinPagar.join(', ')}). Pagalas por planilla primero: si no, quedarían fuera del aguinaldo.`,
+      error: `Hay quincenas de ${rangoAguinaldo(anio)} sin marcar como pagadas (${aguinaldo.calculo.sinPagar.join(', ')}). Pagalas por planilla primero: si no, quedarían fuera del aguinaldo.`,
     }
   }
   if (!aguinaldo.calculo.elegible) {
     return {
       ok: false,
-      error:
-        'No le corresponde aguinaldo de este ciclo: al 30 de noviembre no tenía un mes laborado en forma continua, que es el mínimo que exige la ley (MTSS).',
+      error: `No le corresponde el aguinaldo ${anio}: al 30 de noviembre no tenía un mes laborado en forma continua, que es el mínimo que exige la ley (MTSS).`,
     }
   }
   if (aguinaldo.ausenciasSinTipo > 0) {
@@ -91,13 +102,16 @@ export async function pagarAguinaldo(
     }
   }
   if (aguinaldo.calculo.monto <= 0) {
-    return { ok: false, error: 'No hay salario pagado en este ciclo: el aguinaldo es ₡0.' }
+    return {
+      ok: false,
+      error: `No hay salario pagado en ${rangoAguinaldo(anio)}: el aguinaldo es ₡0.`,
+    }
   }
 
   const { monto, sumaSalarios, maternidad } = aguinaldo.calculo
   const lineas: LineaPagoExtraordinario[] = [
     {
-      concepto: `Salario del ciclo (1 dic ${anio - 1} al 30 nov ${anio})`,
+      concepto: `Salario de ${rangoAguinaldo(anio)} (1 dic ${anio - 1} al 30 nov ${anio})`,
       dias: null,
       monto: sumaSalarios,
       informativo: true,

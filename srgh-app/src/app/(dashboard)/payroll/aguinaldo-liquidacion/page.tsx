@@ -27,13 +27,17 @@ export default async function AguinaldoLiquidacionPage({
   const { anio: anioParam } = await searchParams
   const anio = Number(anioParam) === anioActual - 1 ? anioActual - 1 : anioActual
 
-  const [aguinaldosResult, contratosResult, liquidacionesResult] = await Promise.all([
-    getProvisionesAguinaldo(anio),
-    // Contratos que RRHH ya terminó desde el perfil del empleado y falta
-    // liquidar (SGRH-90). La fecha y el motivo vienen con cada uno.
-    canWrite ? getContratosPorLiquidar() : Promise.resolve({ ok: true as const, data: [] }),
-    getLiquidaciones(),
-  ])
+  const [aguinaldosResult, contratosResult, liquidacionesResult, anteriorResult] =
+    await Promise.all([
+      getProvisionesAguinaldo(anio),
+      // Contratos que RRHH ya terminó desde el perfil del empleado y falta
+      // liquidar (SGRH-90). La fecha y el motivo vienen con cada uno.
+      canWrite ? getContratosPorLiquidar() : Promise.resolve({ ok: true as const, data: [] }),
+      getLiquidaciones(),
+      // Mirando el año en curso, ¿quedó algún aguinaldo del anterior sin pagar?
+      // En enero la pestaña abre el nuevo y esos se perdían de vista.
+      anio === anioActual ? getProvisionesAguinaldo(anioActual - 1) : Promise.resolve(null),
+    ])
 
   const errorView = (message: string) => (
     <PageError title="Aguinaldo y liquidación" backHref="/payroll" backLabel="Volver a nómina">
@@ -51,13 +55,27 @@ export default async function AguinaldoLiquidacionPage({
     return errorView(liquidacionesResult.error)
   }
 
+  // Es un aviso, no el contenido de la pantalla: si esa lectura falla, la
+  // pantalla se muestra igual, sin el aviso.
+  const pendientes = anteriorResult?.ok
+    ? anteriorResult.data.items.filter((a) => !a.pagado && a.elegible && a.monto > 0)
+    : []
+  const pendientesAnterior =
+    pendientes.length > 0
+      ? {
+          anio: anioActual - 1,
+          cantidad: pendientes.length,
+          monto: Math.round(pendientes.reduce((s, a) => s + a.monto, 0) * 100) / 100,
+        }
+      : null
+
   return (
     <div className="min-w-0 space-y-4">
       <PageHeader
         backHref="/payroll"
         backLabel="Volver a nómina"
         title="Aguinaldo y liquidación"
-        description="Aguinaldo del ciclo y liquidaciones por salida, con su comprobante."
+        description="Aguinaldo de cada año y liquidaciones por salida, con su comprobante."
       />
 
       <AguinaldoLiquidacionView
@@ -69,6 +87,7 @@ export default async function AguinaldoLiquidacionPage({
         canWrite={canWrite}
         contratosPorLiquidar={contratosResult.data}
         liquidaciones={liquidacionesResult.data}
+        pendientesAnterior={pendientesAnterior}
       />
     </div>
   )

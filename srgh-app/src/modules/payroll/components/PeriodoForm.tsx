@@ -98,6 +98,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
 
     // El periodo ya existe pase lo que pase; lo que puede fallar es la carga
     // de los empleados, y eso se avisa sin tratarlo como un error de creación.
+    if (result.avisoAusencias) toast.warning(result.avisoAusencias)
     if (result.avisoCarga) {
       toast.warning(`Periodo creado, pero no se cargaron los empleados: ${result.avisoCarga}`)
     } else if (result.empleadosCargados === 0) {
@@ -105,7 +106,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
     } else {
       const sinHorario =
         result.sinAsistencia > 0
-          ? ` ${result.sinAsistencia} sin horario programado: quedaron con la jornada completa supuesta, revisalos.`
+          ? ` ${result.sinAsistencia} sin horario ni marcas utilizables en el periodo: quedaron en 0 h y ₡0, revisalos antes de pagar.`
           : ''
       toast.success(
         `Periodo creado con ${result.empleadosCargados} empleado(s) y sus horas de asistencia.${sinHorario}`

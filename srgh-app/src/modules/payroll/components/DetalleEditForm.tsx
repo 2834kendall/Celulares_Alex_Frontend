@@ -11,7 +11,7 @@ import {
   type ConceptoNominaRow,
 } from '@/modules/payroll/types'
 import { updateDetalleManual } from '@/modules/payroll/actions/updateDetalleManual'
-import { CODIGO_AJUSTE } from '@/modules/payroll/lib/planilla'
+import { CODIGO_AJUSTE, esRebajoDeSalario } from '@/modules/payroll/lib/planilla'
 import { formatCRC } from '@/modules/payroll/lib/format'
 import { Button } from '@/components/ui/Button'
 import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
@@ -157,6 +157,11 @@ export function DetalleEditForm({
                           className={`${INPUT} pl-6 pr-3`}
                         />
                       </div>
+                      {esRebajoDeSalario(concepto) && (
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          Rebaja el salario bruto: baja también la CCSS y el aguinaldo.
+                        </p>
+                      )}
                       {errors.montos?.[concepto.con_codigo] && (
                         <p className="mt-1 text-[11px] text-rose-600">
                           {errors.montos[concepto.con_codigo]?.message}

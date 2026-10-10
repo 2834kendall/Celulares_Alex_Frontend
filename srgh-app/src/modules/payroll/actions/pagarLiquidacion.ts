@@ -19,10 +19,15 @@ interface LiquidacionRow {
   liq_aguinaldo_proporcional: number
   liq_dias_vacaciones_pendientes: number
   liq_vacaciones_pagadas: number
+  liq_horas_extra_banco: number | null
   liq_dias_preaviso: number
   liq_preaviso: number
   liq_dias_cesantia: number
   liq_cesantia: number
+  liq_nota_preaviso: string | null
+  liq_nota_cesantia: string | null
+  liq_dias_indemnizacion_plazo_fijo: number | null
+  liq_indemnizacion_plazo_fijo: number | null
   liq_total: number
   liq_deducciones_obreras: number
   liq_neto: number | null
@@ -54,8 +59,9 @@ export async function pagarLiquidacion(liqId: number): Promise<PagarLiquidacionR
     .select(
       `liq_id, liq_historial_laboral_id, liq_pagado, liq_dias_trabajados_mes,
        liq_salario_proporcional, liq_aguinaldo_proporcional, liq_dias_vacaciones_pendientes,
-       liq_vacaciones_pagadas, liq_dias_preaviso, liq_preaviso, liq_dias_cesantia, liq_cesantia,
-       liq_total, liq_deducciones_obreras, liq_neto, liq_observaciones`
+       liq_vacaciones_pagadas, liq_horas_extra_banco, liq_dias_preaviso, liq_preaviso, liq_dias_cesantia, liq_cesantia,
+       liq_nota_preaviso, liq_nota_cesantia, liq_dias_indemnizacion_plazo_fijo,
+       liq_indemnizacion_plazo_fijo, liq_total, liq_deducciones_obreras, liq_neto, liq_observaciones`
     )
     .eq('liq_id', liqId)
     .maybeSingle<LiquidacionRow>()
@@ -65,6 +71,8 @@ export async function pagarLiquidacion(liqId: number): Promise<PagarLiquidacionR
   if (liq.liq_pagado) return { ok: false, error: 'Esta liquidación ya estaba pagada.' }
 
   const neto = liq.liq_neto ?? liq.liq_total
+  const horasExtra = Number(liq.liq_horas_extra_banco ?? 0)
+  const indemnizacionPlazoFijo = Number(liq.liq_indemnizacion_plazo_fijo ?? 0)
   const lineas: LineaPagoExtraordinario[] = [
     {
       concepto: 'Salario pendiente',
@@ -77,10 +85,36 @@ export async function pagarLiquidacion(liqId: number): Promise<PagarLiquidacionR
       dias: liq.liq_dias_vacaciones_pendientes,
       monto: liq.liq_vacaciones_pagadas,
     },
-    { concepto: 'Preaviso', dias: liq.liq_dias_preaviso, monto: liq.liq_preaviso },
-    { concepto: 'Cesantía', dias: liq.liq_dias_cesantia, monto: liq.liq_cesantia },
+    // Horas extra que seguían en el banco de horas al salir (auditoría,
+    // hallazgo 4). Solo aparece si las hubo.
+    ...(horasExtra > 0
+      ? [{ concepto: 'Horas extra pendientes (banco de horas)', dias: null, monto: horasExtra }]
+      : []),
+    // Con 0 días se dice por qué (auditoría 2, hallazgo 10).
     {
-      concepto: 'Cuota obrera CCSS (sobre salario pendiente y vacaciones)',
+      concepto: liq.liq_nota_preaviso ? `Preaviso: ${liq.liq_nota_preaviso}` : 'Preaviso',
+      dias: liq.liq_dias_preaviso,
+      monto: liq.liq_preaviso,
+    },
+    {
+      concepto: liq.liq_nota_cesantia ? `Cesantía: ${liq.liq_nota_cesantia}` : 'Cesantía',
+      dias: liq.liq_dias_cesantia,
+      monto: liq.liq_cesantia,
+    },
+    ...(indemnizacionPlazoFijo > 0
+      ? [
+          {
+            concepto: 'Indemnización por contrato a plazo fijo (Art. 31)',
+            dias: Number(liq.liq_dias_indemnizacion_plazo_fijo ?? 0),
+            monto: indemnizacionPlazoFijo,
+          },
+        ]
+      : []),
+    {
+      concepto:
+        horasExtra > 0
+          ? 'Cuota obrera CCSS (sobre salario pendiente, vacaciones y horas extra)'
+          : 'Cuota obrera CCSS (sobre salario pendiente y vacaciones)',
       dias: null,
       monto: liq.liq_deducciones_obreras,
       deduccion: true,

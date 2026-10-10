@@ -11,6 +11,7 @@ import {
   Receipt,
   RefreshCw,
   Stethoscope,
+  Trash2,
   Users,
   X,
 } from 'lucide-react'
@@ -37,6 +38,8 @@ import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePaga
 import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHorasAsistencia'
 import { recalcularPeriodoDesdeAsistencia } from '@/modules/payroll/actions/recalcularPeriodoDesdeAsistencia'
 import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
+import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla'
+import { AvisoDesplegable } from './AvisoDesplegable'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
@@ -128,7 +131,9 @@ function DesgloseHoras({ detalle: d }: { detalle: DetalleNominaItem }) {
                   {textoJustificacion(dia) && (
                     <span className="block text-emerald-700">{textoJustificacion(dia)}</span>
                   )}
-                  {dia.problema ? (
+                  {dia.fueraDelContrato ? (
+                    'fuera del contrato'
+                  ) : dia.problema ? (
                     <span className="block font-semibold text-amber-600">
                       {MENSAJE_PROBLEMA[dia.problema]}
                     </span>
@@ -144,6 +149,13 @@ function DesgloseHoras({ detalle: d }: { detalle: DetalleNominaItem }) {
         </table>
       </div>
 
+      {(d.horasExtraPorTopeSemanal ?? 0) > 0 && (
+        <p className="mt-2 text-[11px] font-medium text-amber-700">
+          {formatHoras(d.horasExtraPorTopeSemanal ?? 0)} h pasan de ordinarias a extra porque la
+          semana superó el máximo de la jornada del contrato (Art. 136 del Código de Trabajo). Por
+          eso el día a día no suma lo mismo que el total.
+        </p>
+      )}
       <p className="mt-2 text-[11px] text-slate-400">
         {d.horasLeidasEn
           ? `Leído de las marcas el ${formatDate(d.horasLeidasEn.slice(0, 10))}. `
@@ -228,6 +240,24 @@ function filaEnCero(d: DetalleNominaItem): boolean {
 }
 
 /**
+ * Fila sin nada que pagar: ₡0, sin horas, sin horas extra y sin incapacidad.
+ * Es alguien cargado sin horario ni marcas. No se puede marcar pagada, así
+ * que se ofrece quitarla para que el periodo pueda cerrar (misma regla que
+ * lib/filaSinNadaQuePagar, que la acción vuelve a verificar).
+ */
+function filaVacia(d: DetalleNominaItem): boolean {
+  return (
+    !d.pagado &&
+    d.liquidacionQueLaPaga === null &&
+    !(d.salarioBruto > 0) &&
+    !(d.salarioNeto > 0) &&
+    !(d.horasTrabajadas > 0) &&
+    !(d.horasExtra > 0) &&
+    !((d.incapacidad?.diasEmpleador ?? 0) > 0)
+  )
+}
+
+/**
  * Cabecera del periodo + tabla de planilla. La edición manual de ingresos
  * (BASE, FERIADO, COMISION, HORAS_EXTRA, AJUSTE) solo se ofrece mientras el
  * periodo está en borrador — igual que la subida de Excel.
@@ -243,12 +273,17 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const [cargandoEmpleados, setCargandoEmpleados] = useState(false)
   const [recalculandoTodo, setRecalculandoTodo] = useState(false)
   /** Fila cuyas horas corregidas a mano habría que pisar: se pregunta antes. */
+  const [quitando, setQuitando] = useState<DetalleNominaItem | null>(null)
+  const [quitandoId, setQuitandoId] = useState<number | null>(null)
   const [confirmandoHoras, setConfirmandoHoras] = useState<{
     detalle: DetalleNominaItem
     mensaje: string
   } | null>(null)
 
   const puedeEditar = canWrite && periodo.estado === 'borrador'
+  // Con alguna fila para quitar, las demás dejan el hueco de ese botón para
+  // que las acciones queden alineadas en columna.
+  const hayFilasVacias = puedeEditar && periodo.detalles.some(filaVacia)
 
   // Marcar/desmarcar un pago individual no depende del estado del periodo
   // (ndt_pagado es independiente de npe_estado) — solo requiere permiso de
@@ -293,9 +328,10 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
 
     const aviso =
       result.sinAsistencia > 0
-        ? ` ${result.sinAsistencia} sin marcas en el periodo: quedaron con la jornada completa supuesta, revisalos.`
+        ? ` ${result.sinAsistencia} sin horario ni marcas utilizables en el periodo: quedaron en 0 h y ₡0, revisalos antes de pagar.`
         : ''
     toast.success(`${result.agregados} empleado(s) agregados desde la asistencia.${aviso}`)
+    if (result.avisoAusencias) toast.warning(result.avisoAusencias)
     router.refresh()
   }
 
@@ -346,6 +382,19 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
    * `necesitaConfirmacion` y acá se pregunta. Reemplazar una corrección
    * deliberada sin avisar sería borrar una decisión sin dejar rastro.
    */
+  async function handleQuitarFila(detalle: DetalleNominaItem) {
+    setQuitando(null)
+    setQuitandoId(detalle.id)
+    const result = await quitarFilaPlanilla(detalle.id)
+    setQuitandoId(null)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(`Se quitó a ${detalle.empleadoNombre} de esta planilla.`)
+    router.refresh()
+  }
+
   async function handleRefrescarHoras(detalle: DetalleNominaItem, confirmado: boolean) {
     setConfirmandoHoras(null)
     setRefrescandoId(detalle.id)
@@ -377,19 +426,25 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     router.refresh()
   }
 
+  // Filas cuyo salario ya va en una liquidación (salario pendiente del mes
+  // de salida): no se pagan por esta planilla, así que no suman a los
+  // totales ni generan avisos de "corregí antes de pagar".
+  const enLiquidacion = periodo.detalles.filter((d) => d.liquidacionQueLaPaga !== null)
+  const filasDelPago = periodo.detalles.filter((d) => d.liquidacionQueLaPaga === null)
+
   // Los totales se calculan sobre todos los detalles del periodo, no solo
   // sobre la página visible — son un resumen del periodo completo.
-  const totalBruto = periodo.detalles.reduce((sum, d) => sum + d.salarioBruto, 0)
+  const totalBruto = filasDelPago.reduce((sum, d) => sum + d.salarioBruto, 0)
   // Empleados a los que no se les puede marcar el pago todavía: sus marcas del
   // periodo están incompletas, así que las horas calculadas están cortas.
-  const conMarcasIncompletas = periodo.detalles.filter((d) =>
+  const conMarcasIncompletas = filasDelPago.filter((d) =>
     d.diasPorRevisar.some((r) => PROBLEMAS_QUE_BLOQUEAN.has(r.problema as ProblemaDia))
   )
   // Días que solo se avisan: la persona marcó pero ese día no tenía horario
   // programado, así que esas horas no entraron. No traba el pago — trabarlo
   // obligaría a inventarle un horario a un día pasado, y eso cambiaría el
   // valor de la hora de toda la quincena.
-  const conDiasSinHorario = periodo.detalles
+  const conDiasSinHorario = filasDelPago
     .map((d) => ({
       detalle: d,
       dias: d.diasPorRevisar.filter((r) => !PROBLEMAS_QUE_BLOQUEAN.has(r.problema as ProblemaDia)),
@@ -398,33 +453,30 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   // Alguien corrigió una marca DESPUÉS de armada la planilla, así que el monto
   // guardado ya no corresponde. Solo cuenta cuando las horas venían de la
   // asistencia: si estaban corregidas a mano, la diferencia es deliberada.
-  const conMarcasDesactualizadas = periodo.detalles.filter(
+  const conMarcasDesactualizadas = filasDelPago.filter(
     (d) => d.marcasCambiaron && d.horasOrigen === 'asistencia'
   )
   // Filas con horas y sin plata. Nadie decide pagarle ₡0 a alguien que trabajó:
   // es una fila que quedó a medias (nació sin salario base, o se armó antes de
   // que la asistencia entrara al cálculo). Se avisa arriba porque en la tabla,
   // entre nueve columnas de montos, un 0 no salta a la vista.
-  const conFilasEnCero = periodo.detalles.filter(filaEnCero)
+  const conFilasEnCero = filasDelPago.filter(filaEnCero)
   // El salario base guardado salió de una regla vieja (antes, vacaciones y
   // feriados rebajaban el base). El pago está bloqueado hasta recalcular.
-  const conBaseDesactualizado = periodo.detalles.filter(
+  const conBaseDesactualizado = filasDelPago.filter(
     (d) => d.baseDesactualizado && !d.pagado && !filaEnCero(d)
   )
-  const totalDeduccionPorcentual = periodo.detalles.reduce(
-    (sum, d) => sum + d.deduccionPorcentual,
-    0
-  )
-  const totalDeduccionManual = periodo.detalles.reduce((sum, d) => sum + d.deduccionManual, 0)
-  const totalNeto = periodo.detalles.reduce((sum, d) => sum + d.salarioNeto, 0)
-  const totalHoras = periodo.detalles.reduce((sum, d) => sum + d.horasTrabajadas, 0)
-  const totalHorasExtra = periodo.detalles.reduce((sum, d) => sum + d.horasExtra, 0)
-  const totalIncapacidad = periodo.detalles.reduce((sum, d) => sum + (d.incapacidad?.monto ?? 0), 0)
-  const totalNoSalarial = periodo.detalles.reduce((sum, d) => sum + d.totalNoSalarial, 0)
-  const totalCargasPatronales = periodo.detalles.reduce((sum, d) => sum + d.cargasPatronales, 0)
+  const totalDeduccionPorcentual = filasDelPago.reduce((sum, d) => sum + d.deduccionPorcentual, 0)
+  const totalDeduccionManual = filasDelPago.reduce((sum, d) => sum + d.deduccionManual, 0)
+  const totalNeto = filasDelPago.reduce((sum, d) => sum + d.salarioNeto, 0)
+  const totalHoras = filasDelPago.reduce((sum, d) => sum + d.horasTrabajadas, 0)
+  const totalHorasExtra = filasDelPago.reduce((sum, d) => sum + d.horasExtra, 0)
+  const totalIncapacidad = filasDelPago.reduce((sum, d) => sum + (d.incapacidad?.monto ?? 0), 0)
+  const totalNoSalarial = filasDelPago.reduce((sum, d) => sum + d.totalNoSalarial, 0)
+  const totalCargasPatronales = filasDelPago.reduce((sum, d) => sum + d.cargasPatronales, 0)
   // Lo que de verdad sale del banco por este periodo. Es el mismo número que
   // imprime el comprobante de cada empleado.
-  const totalAPagar = periodo.detalles.reduce((sum, d) => sum + d.totalAPagar, 0)
+  const totalAPagar = filasDelPago.reduce((sum, d) => sum + d.totalAPagar, 0)
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     periodo.detalles,
@@ -467,7 +519,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     // (ej. vacaciones que rebajaban el base), aunque las horas no cambien.
     const baseViejo = d.baseDesactualizado && d.baseEsperado !== null
     const boton =
-      puedeEditar && !d.pagado && (nuevas || baseViejo) ? (
+      puedeEditar && !d.pagado && d.liquidacionQueLaPaga === null && (nuevas || baseViejo) ? (
         <button
           type="button"
           onClick={() => handleRefrescarHoras(d, false)}
@@ -506,80 +558,132 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     )
   }
 
-  /** Toggle de pago + acceso al comprobante. Lo rinden tarjetas y tabla. */
+  /** Toggle de pago. Lo rinden tarjetas y tabla. */
   function EstadoPago({ detalle: d }: { detalle: DetalleNominaItem }) {
+    if (d.liquidacionQueLaPaga !== null) {
+      return <Badge tone="blue">En liquidación n.° {d.liquidacionQueLaPaga}</Badge>
+    }
+    if (!canWrite) {
+      return (
+        <Badge tone={d.pagado ? 'emerald' : 'slate'}>{d.pagado ? 'Pagado' : 'Pendiente'}</Badge>
+      )
+    }
     return (
-      <div className="flex items-center gap-1.5">
-        {canWrite ? (
-          <button
-            type="button"
-            onClick={() => handleTogglePagado(d)}
-            disabled={pagandoId === d.id}
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold outline-none ring-1 ring-inset transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
-              d.pagado
-                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100'
-                : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'
-            }`}
-          >
-            {pagandoId === d.id ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            )}
-            {d.pagado ? 'Pagado' : 'Pendiente'}
-          </button>
+      <button
+        type="button"
+        onClick={() => handleTogglePagado(d)}
+        disabled={pagandoId === d.id}
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold outline-none ring-1 ring-inset transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
+          d.pagado
+            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100'
+            : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'
+        }`}
+      >
+        {pagandoId === d.id ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
         ) : (
-          <Badge tone={d.pagado ? 'emerald' : 'slate'}>{d.pagado ? 'Pagado' : 'Pendiente'}</Badge>
+          <span className="h-1.5 w-1.5 rounded-full bg-current" />
         )}
-        {d.pagado && (
+        {d.pagado ? 'Pagado' : 'Pendiente'}
+      </button>
+    )
+  }
+
+  /** Lugar vacío del mismo tamaño que un botón de icono: mantiene las columnas. */
+  function HuecoAccion() {
+    return (
+      <span aria-hidden="true" className={cn(ICON_CONTROL_BASE, 'invisible')}>
+        <span className="h-3.5 w-3.5" />
+      </span>
+    )
+  }
+
+  /**
+   * Comprobante (ver e imprimir), editar ingresos y registrar incapacidad.
+   *
+   * El comprobante estaba pegado al estado "Pagado", así que esa columna
+   * cambiaba de ancho según la fila y los botones quedaban amontonados.
+   * Ahora las tres acciones van juntas, siempre en el mismo orden y lugar:
+   * la que no aplica a una fila deja su hueco para que no se corran las demás.
+   */
+  function AccionesDetalle({ detalle: d }: { detalle: DetalleNominaItem }) {
+    const conComprobante = d.pagado && d.liquidacionQueLaPaga === null
+    const editable = puedeEditar && !d.pagado && d.liquidacionQueLaPaga === null
+    return (
+      <>
+        {conComprobante ? (
           <Link
             href={`/comprobante/${periodo.id}/${d.id}`}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Ver comprobante de pago"
+            title="Ver e imprimir comprobante de pago"
             className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.blue, 'shrink-0')}
           >
             <Receipt className="h-3.5 w-3.5" />
           </Link>
+        ) : (
+          <HuecoAccion />
         )}
-      </div>
-    )
-  }
-
-  /** Editar ingresos y registrar incapacidad. */
-  function AccionesDetalle({ detalle: d }: { detalle: DetalleNominaItem }) {
-    return (
-      <>
-        {puedeEditar && (
+        {canWrite &&
+          (editable ? (
+            <IconButton
+              onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
+              aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
+              title={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
+              tone="blue"
+            >
+              {editandoId === d.id ? (
+                <X className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </IconButton>
+          ) : (
+            <HuecoAccion />
+          ))}
+        {canWrite && (
           <IconButton
-            onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
-            aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
-            tone="blue"
+            onClick={() =>
+              setRegistrandoIncapacidadId(registrandoIncapacidadId === d.id ? null : d.id)
+            }
+            aria-label={
+              registrandoIncapacidadId === d.id
+                ? 'Cerrar registro de incapacidad'
+                : 'Registrar incapacidad'
+            }
+            title={
+              registrandoIncapacidadId === d.id
+                ? 'Cerrar registro de incapacidad'
+                : 'Registrar incapacidad'
+            }
+            tone="rose"
           >
-            {editandoId === d.id ? (
+            {registrandoIncapacidadId === d.id ? (
               <X className="h-3.5 w-3.5" />
             ) : (
-              <Pencil className="h-3.5 w-3.5" />
+              <Stethoscope className="h-3.5 w-3.5" />
             )}
           </IconButton>
         )}
-        <IconButton
-          onClick={() =>
-            setRegistrandoIncapacidadId(registrandoIncapacidadId === d.id ? null : d.id)
-          }
-          aria-label={
-            registrandoIncapacidadId === d.id
-              ? 'Cerrar registro de incapacidad'
-              : 'Registrar incapacidad'
-          }
-          tone="rose"
-        >
-          {registrandoIncapacidadId === d.id ? (
-            <X className="h-3.5 w-3.5" />
+        {hayFilasVacias &&
+          (filaVacia(d) ? (
+            <IconButton
+              onClick={() => setQuitando(d)}
+              disabled={quitandoId === d.id}
+              aria-label="Quitar de la planilla"
+              title="Esta fila no tiene nada que pagar (₡0, sin horas). Quitala para poder cerrar el periodo."
+              tone="rose"
+            >
+              {quitandoId === d.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+            </IconButton>
           ) : (
-            <Stethoscope className="h-3.5 w-3.5" />
-          )}
-        </IconButton>
+            <HuecoAccion />
+          ))}
       </>
     )
   }
@@ -641,12 +745,25 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
         )}
       </div>
 
-      {conMarcasIncompletas.length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-sm font-semibold text-amber-900">
-            {conMarcasIncompletas.length} empleado(s) con marcas de asistencia incompletas
+      {enLiquidacion.length > 0 && (
+        <AvisoDesplegable
+          tono="blue"
+          titulo={`${enLiquidacion.length} fila(s) se pagan en una liquidación`}
+        >
+          <p className="text-xs leading-relaxed text-blue-800">
+            {enLiquidacion.map((d) => d.empleadoNombre).join(', ')}: su salario de esta quincena va
+            en la liquidación como salario pendiente. No se pagan por esta planilla, no suman a los
+            totales y no impiden cerrar el periodo.
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+        </AvisoDesplegable>
+      )}
+
+      {conMarcasIncompletas.length > 0 && (
+        <AvisoDesplegable
+          tono="amber"
+          titulo={`${conMarcasIncompletas.length} empleado(s) con marcas de asistencia incompletas`}
+        >
+          <p className="text-xs leading-relaxed text-amber-800">
             Sus horas calculadas están cortas, así que el pago está bloqueado hasta corregir las
             marcas en Asistencia.
           </p>
@@ -664,15 +781,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conDiasSinHorario.length > 0 && (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-          <p className="text-sm font-semibold text-sky-900">
-            {conDiasSinHorario.length} empleado(s) con días para revisar
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-sky-800">
+        <AvisoDesplegable
+          tono="sky"
+          titulo={`${conDiasSinHorario.length} empleado(s) con días para revisar`}
+        >
+          <p className="text-xs leading-relaxed text-sky-800">
             Marcas en días sin horario, en feriados, en días libres o con ausencia, y días pagados
             sin horario programado. Ninguno bloquea el pago, pero algunos pueden significar plata
             que falta pagar (un feriado trabajado se paga doble). Cada línea dice qué hacer.
@@ -691,15 +808,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conMarcasDesactualizadas.length > 0 && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-          <p className="text-sm font-semibold text-rose-900">
-            {conMarcasDesactualizadas.length} empleado(s) con la planilla desactualizada
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+        <AvisoDesplegable
+          tono="rose"
+          titulo={`${conMarcasDesactualizadas.length} empleado(s) con la planilla desactualizada`}
+        >
+          <p className="text-xs leading-relaxed text-rose-800">
             Sus marcas de asistencia cambiaron después de armar la planilla, así que el monto
             calculado ya no corresponde y el pago está bloqueado. Usá el botón{' '}
             <span className="font-semibold">traer … h</span> que aparece junto a las horas de cada
@@ -714,15 +831,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conFilasEnCero.length > 0 && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-          <p className="text-sm font-semibold text-rose-900">
-            {conFilasEnCero.length} empleado(s) con horas trabajadas y ₡0 a pagar
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+        <AvisoDesplegable
+          tono="rose"
+          titulo={`${conFilasEnCero.length} empleado(s) con horas trabajadas y ₡0 a pagar`}
+        >
+          <p className="text-xs leading-relaxed text-rose-800">
             Su fila tiene las horas pero no tiene el salario: quedó a medias. La planilla guarda
             montos, no fórmulas, así que la fila no se arregla sola.{' '}
             {puedeEditar ? (
@@ -749,15 +866,15 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       {conBaseDesactualizado.length > 0 && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-          <p className="text-sm font-semibold text-rose-900">
-            {conBaseDesactualizado.length} empleado(s) con el salario desactualizado
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-rose-800">
+        <AvisoDesplegable
+          tono="rose"
+          titulo={`${conBaseDesactualizado.length} empleado(s) con el salario desactualizado`}
+        >
+          <p className="text-xs leading-relaxed text-rose-800">
             Su fila se armó con una regla de pago anterior: el salario base ahora es base ÷ 30 por
             día de la quincena, y la diferencia hasta el salario real se paga como ajuste
             automático, los dos según el cumplimiento del horario. El pago está bloqueado hasta
@@ -786,7 +903,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
               </li>
             ))}
           </ul>
-        </div>
+        </AvisoDesplegable>
       )}
 
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
@@ -932,7 +1049,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                       valor: formatCRC(d.deduccionManual),
                     },
                     {
-                      label: 'Viáticos',
+                      label: 'Pagos no salariales',
                       valor: d.totalNoSalarial > 0 ? formatCRC(d.totalNoSalarial) : '—',
                     },
                     { label: 'Salario neto', valor: formatCRC(d.salarioNeto) },
@@ -952,14 +1069,14 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   ))}
                 </dl>
 
-                {canWrite && (
+                {(canWrite || (d.pagado && d.liquidacionQueLaPaga === null)) && (
                   // gap-2: con el area tocable en 44px, gap-1 los deja pegados.
                   <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
                     <AccionesDetalle detalle={d} />
                   </div>
                 )}
 
-                {puedeEditar && editandoId === d.id && (
+                {puedeEditar && !d.pagado && editandoId === d.id && (
                   <div className="rounded-xl bg-slate-50/60 p-3">
                     <div className="mb-3 flex items-center gap-2">
                       <Pencil className="h-3.5 w-3.5 text-brand-600" />
@@ -1020,7 +1137,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   </th>
                   <th
                     className={TABLE_TH_RIGHT}
-                    title="Bruto − deducciones + viáticos. Los viáticos no cotizan, por eso van al final"
+                    title="Bruto − deducciones + pagos que no son salario (viáticos, aguinaldo). No cotizan, por eso van al final"
                   >
                     Salario neto
                   </th>
@@ -1031,7 +1148,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     Total a pagar
                   </th>
                   <th className={TABLE_TH}>Pago</th>
-                  {canWrite && <th className={TABLE_TH_RIGHT}>Acciones</th>}
+                  <th className={TABLE_TH_RIGHT}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -1081,7 +1198,8 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                         <span className="tabular-nums">{formatCRC(d.salarioNeto)}</span>
                         {d.totalNoSalarial > 0 && (
                           <span className="mt-0.5 block text-[11px] text-slate-400">
-                            incl. {formatCRC(d.totalNoSalarial)} de viáticos
+                            incl. {formatCRC(d.totalNoSalarial)} que no es salario (viáticos,
+                            aguinaldo)
                           </span>
                         )}
                       </td>
@@ -1099,13 +1217,11 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                       <td className="px-3 py-2">
                         <EstadoPago detalle={d} />
                       </td>
-                      {canWrite && (
-                        <td className="px-3 py-2">
-                          <div className="flex items-center justify-end gap-1">
-                            <AccionesDetalle detalle={d} />
-                          </div>
-                        </td>
-                      )}
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-2">
+                          <AccionesDetalle detalle={d} />
+                        </div>
+                      </td>
                     </tr>
                     {viendoHorasId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
@@ -1114,7 +1230,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                         </td>
                       </tr>
                     )}
-                    {puedeEditar && editandoId === d.id && (
+                    {puedeEditar && !d.pagado && editandoId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
                         <td colSpan={10} className="px-4 py-4">
                           <div className="mb-3 flex items-center gap-2">
@@ -1182,7 +1298,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                     )}
                   </td>
                   <td className="px-3 py-2" />
-                  {canWrite && <td className="px-3 py-2" />}
+                  <td className="px-3 py-2" />
                 </tr>
               </tfoot>
             </table>
@@ -1194,6 +1310,16 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
             onNext={goToNextPage}
           />
         </div>
+      )}
+
+      {quitando && (
+        <ConfirmDialog
+          title={`Quitar a ${quitando.empleadoNombre} de la planilla`}
+          message="Esta fila está en ₡0: no tiene horas, ni horas extra, ni incapacidad, así que no hay nada que pagarle en esta quincena. Al quitarla, el periodo se cierra solo si los demás ya están pagados. Si después aparecen marcas, se puede volver a cargar con «Cargar empleados desde asistencia»."
+          confirmLabel="Quitar"
+          onCancel={() => setQuitando(null)}
+          onConfirm={() => void handleQuitarFila(quitando)}
+        />
       )}
 
       {confirmandoHoras && (

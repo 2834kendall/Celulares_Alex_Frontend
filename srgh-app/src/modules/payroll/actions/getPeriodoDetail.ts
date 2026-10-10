@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
+import { montoIncapacidadEnVivo } from '@/modules/payroll/lib/incapacidad'
 import { round2 } from '@/modules/payroll/lib/numeros'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
@@ -11,9 +11,14 @@ import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 import type { DiaCalculado, TotalesPeriodo } from '@/modules/payroll/lib/horasPeriodo'
 import { evaluarBaseGuardado } from '@/modules/payroll/lib/prellenadoAsistencia'
-import { CODIGO_AJUSTE, CODIGO_SALARIO_BASE } from '@/modules/payroll/lib/planilla'
+import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  esRebajoDeSalario,
+} from '@/modules/payroll/lib/planilla'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
+import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 
 interface PeriodoRow {
   npe_id: number
@@ -41,12 +46,16 @@ interface DetalleRow {
   ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
   ndt_dias_incapacidad_empleador: number
+  ndt_monto_incapacidad?: number | null
+  ndt_porcentaje_incapacidad?: number | null
   ndt_dias_incapacidad_ccss: number
   ndt_horas_asistencia: number | null
   ndt_horas_extra_asistencia: number | null
   ndt_horas_leidas_en: string | null
   ndt_horas_ajustadas_en: string | null
   sgrh_historial_laboral: {
+    lab_fecha_inicio?: string | null
+    lab_fecha_fin?: string | null
     lab_salario_base: number
     lab_salario_real: number | null
     sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
@@ -84,7 +93,11 @@ interface LineaIngresoRow {
 interface LineaDeduccionRow {
   ded_nomina_detalle_id: number
   ded_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string; con_tipo_calculo: string } | null
+  sgrh_cat_conceptos_nomina: {
+    con_codigo: string
+    con_tipo_calculo: string
+    con_rebaja_salario?: boolean | null
+  } | null
 }
 
 export type GetPeriodoDetailResult =
@@ -147,12 +160,16 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_horas_extra_al_50,
       ndt_salario_por_hora,
       ndt_dias_incapacidad_empleador,
+      ndt_monto_incapacidad,
+      ndt_porcentaje_incapacidad,
       ndt_dias_incapacidad_ccss,
       ndt_horas_asistencia,
       ndt_horas_extra_asistencia,
       ndt_horas_leidas_en,
       ndt_horas_ajustadas_en,
       sgrh_historial_laboral (
+        lab_fecha_inicio,
+        lab_fecha_fin,
         lab_salario_base,
         lab_salario_real,
         sgrh_cat_tipos_jornada ( tjo_horas_max_semanales ),
@@ -264,7 +281,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       supabase
         .from('sgrh_nomina_linea_deduccion')
         .select(
-          'ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_tipo_calculo )'
+          'ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_tipo_calculo, con_rebaja_salario )'
         )
         .in('ded_nomina_detalle_id', idsDetalle)
         .returns<LineaDeduccionRow[]>(),
@@ -291,6 +308,12 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       montos[codigo] = linea.ded_monto
       montosPorNdt.set(linea.ded_nomina_detalle_id, montos)
 
+      // La ausencia sin goce ya se restó del bruto: no es una deducción del
+      // neto y no va en esas columnas (auditoría 2, hallazgo 6).
+      if (linea.sgrh_cat_conceptos_nomina && esRebajoDeSalario(linea.sgrh_cat_conceptos_nomina)) {
+        continue
+      }
+
       const acumulado = deduccionesPorNdt.get(linea.ded_nomina_detalle_id) ?? {
         porcentual: 0,
         manual: 0,
@@ -301,6 +324,79 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
         acumulado.manual += linea.ded_monto
       }
       deduccionesPorNdt.set(linea.ded_nomina_detalle_id, acumulado)
+    }
+  }
+
+  // De qué ausencia son los días de subsidio de cada fila (incapacidad por
+  // enfermedad, maternidad, paternidad…). El comprobante decía siempre
+  // "Incapacidad por enfermedad", también en una licencia de maternidad
+  // (auditoría 2, hallazgo 9). Informativo: si la lectura falla, queda el
+  // rótulo genérico.
+  const tipoSubsidioPorLab = new Map<number, string>()
+  const labsConSubsidio = (detalles ?? [])
+    .filter(
+      (d: DetalleRow) => d.ndt_dias_incapacidad_empleador > 0 || d.ndt_dias_incapacidad_ccss > 0
+    )
+    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
+  if (
+    labsConSubsidio.length > 0 &&
+    periodo.npe_fecha_inicio_periodo &&
+    periodo.npe_fecha_fin_periodo
+  ) {
+    const { data: ausencias, error: errAusencias } = await supabase
+      .from('sgrh_ausencias')
+      .select(
+        'aus_historial_laboral_id, aus_fecha_inicio, sgrh_cat_tipos_ausencia ( tau_nombre, tau_requiere_documento_ccss )'
+      )
+      .in('aus_historial_laboral_id', labsConSubsidio)
+      .eq('aus_estado', 'aprobada')
+      .lte('aus_fecha_inicio', periodo.npe_fecha_fin_periodo)
+      .gte('aus_fecha_fin', periodo.npe_fecha_inicio_periodo)
+      .order('aus_fecha_inicio', { ascending: true })
+      .returns<
+        {
+          aus_historial_laboral_id: number
+          aus_fecha_inicio: string
+          sgrh_cat_tipos_ausencia: {
+            tau_nombre: string
+            tau_requiere_documento_ccss: boolean
+          } | null
+        }[]
+      >()
+    if (!errAusencias && Array.isArray(ausencias)) {
+      const nombresPorLab = new Map<number, string[]>()
+      for (const a of ausencias) {
+        const tipo = a.sgrh_cat_tipos_ausencia
+        if (!tipo?.tau_requiere_documento_ccss) continue
+        const nombres = nombresPorLab.get(a.aus_historial_laboral_id) ?? []
+        if (!nombres.includes(tipo.tau_nombre)) nombres.push(tipo.tau_nombre)
+        nombresPorLab.set(a.aus_historial_laboral_id, nombres)
+      }
+      for (const [labId, nombres] of nombresPorLab) {
+        tipoSubsidioPorLab.set(labId, nombres.join(' y '))
+      }
+    }
+  }
+
+  // Filas impagas cuyo salario ya va en una liquidación (salario pendiente
+  // del mes de salida): no se pagan por planilla. Informativo: si la lectura
+  // falla se muestran como pendientes, igual que antes.
+  const liquidacionPorLab = new Map<number, number>()
+  const labsImpagos = (detalles ?? [])
+    .filter((d: DetalleRow) => !d.ndt_pagado)
+    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
+  if (labsImpagos.length > 0) {
+    try {
+      const cubiertas = await liquidacionesQueCubren(supabase, labsImpagos, {
+        anio: periodo.npe_periodo_anio,
+        mes: periodo.npe_periodo_mes,
+        quincena: periodo.npe_quincena,
+      })
+      if (cubiertas.ok) {
+        for (const [labId, liq] of cubiertas.data) liquidacionPorLab.set(labId, liq.liqId)
+      }
+    } catch (err) {
+      console.error('getPeriodoDetail: no se pudieron leer las liquidaciones', err)
     }
   }
 
@@ -356,21 +452,47 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
 
     const deducciones = deduccionesPorNdt.get(row.ndt_id) ?? { porcentual: 0, manual: 0 }
 
+    // Días de la quincena antes del ingreso (o después de la salida): no son
+    // un problema de marcas, la persona todavía no trabajaba ahí. Se mostraban
+    // como "sin programar" en "ver días" (auditoría 2, hallazgo 12). Solo es
+    // la pantalla: el cálculo de las horas no cambia.
+    const inicioContrato = row.sgrh_historial_laboral?.lab_fecha_inicio ?? null
+    const finContrato = row.sgrh_historial_laboral?.lab_fecha_fin ?? null
+    const fueraDelContrato = (fecha: string) =>
+      (inicioContrato !== null && fecha < inicioContrato) ||
+      (finContrato !== null && fecha > finContrato)
+
     let incapacidad: IncapacidadItem | null = null
-    if (
-      (row.ndt_dias_incapacidad_empleador > 0 || row.ndt_dias_incapacidad_ccss > 0) &&
-      tipoAusencia
-    ) {
-      const salarioDiario = (row.sgrh_historial_laboral?.lab_salario_base ?? 0) / 30
+    const tieneIncapacidad =
+      row.ndt_dias_incapacidad_empleador > 0 || row.ndt_dias_incapacidad_ccss > 0
+    const congelado = row.ndt_monto_incapacidad
+    if (tieneIncapacidad && congelado !== null && congelado !== undefined) {
+      // Fila pagada: el monto se guardó al marcar el pago (ver
+      // marcarDetallePagado) y el comprobante no cambia aunque después cambie
+      // el salario o el porcentaje del catálogo.
+      incapacidad = {
+        diasEmpleador: row.ndt_dias_incapacidad_empleador,
+        diasCcss: row.ndt_dias_incapacidad_ccss,
+        porcentajePagoEmpleador:
+          row.ndt_porcentaje_incapacidad ?? tipoAusencia?.tau_porcentaje_pago_empleador ?? 0,
+        monto: Number(congelado),
+        tipoNombre: tipoSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? null,
+      }
+    } else if (tieneIncapacidad && tipoAusencia) {
+      // Sin pagar (o pagada antes de que se guardara el monto): en vivo.
       incapacidad = {
         diasEmpleador: row.ndt_dias_incapacidad_empleador,
         diasCcss: row.ndt_dias_incapacidad_ccss,
         porcentajePagoEmpleador: tipoAusencia.tau_porcentaje_pago_empleador,
-        monto: calcularMontoIncapacidad(
+        monto: montoIncapacidadEnVivo(
           row.ndt_dias_incapacidad_empleador,
-          salarioDiario,
+          {
+            salarioBaseMensual: row.sgrh_historial_laboral?.lab_salario_base ?? 0,
+            salarioRealMensual: row.sgrh_historial_laboral?.lab_salario_real ?? null,
+          },
           tipoAusencia.tau_porcentaje_pago_empleador
         ),
+        tipoNombre: tipoSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? null,
       }
     }
 
@@ -427,8 +549,13 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       salarioNeto: row.ndt_salario_neto,
       pagado: row.ndt_pagado,
       fechaPago: row.ndt_fecha_pago,
+      liquidacionQueLaPaga: row.ndt_pagado
+        ? null
+        : (liquidacionPorLab.get(row.ndt_historial_laboral_id) ?? null),
       codigoVerificacion: codigoPorNdt.get(row.ndt_id) ?? null,
-      diasPorRevisar: revisarPorLab.get(row.ndt_historial_laboral_id) ?? [],
+      diasPorRevisar: (revisarPorLab.get(row.ndt_historial_laboral_id) ?? []).filter(
+        (r) => !fueraDelContrato(r.fecha)
+      ),
       montosPorConcepto: montosPorNdt.get(row.ndt_id) ?? {},
       horasTrabajadas: row.ndt_horas_ordinarias_diurnas,
       horasExtra: row.ndt_horas_extra_al_50 ?? 0,
@@ -443,7 +570,15 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       baseDesactualizado: evaluacionBase.desactualizado,
       baseEsperado: evaluacionBase.esperado,
       ajusteEsperado: evaluacionBase.ajusteEsperado,
-      dias: diasPorLab.get(row.ndt_historial_laboral_id) ?? [],
+      ...((totalesPorLab.get(row.ndt_historial_laboral_id)?.horasExtraPorTopeSemanal ?? 0) > 0
+        ? {
+            horasExtraPorTopeSemanal: totalesPorLab.get(row.ndt_historial_laboral_id)!
+              .horasExtraPorTopeSemanal,
+          }
+        : {}),
+      dias: (diasPorLab.get(row.ndt_historial_laboral_id) ?? []).map((dia) =>
+        fueraDelContrato(dia.fecha) ? { ...dia, problema: null, fueraDelContrato: true } : dia
+      ),
       incapacidad,
       totalAPagar: round2(row.ndt_salario_neto + (incapacidad?.monto ?? 0)),
       numeroCuenta: datosPago?.numeroCuenta ?? null,

@@ -54,6 +54,21 @@ export function estadoBadgeTone(estado: string): BadgeTone {
   return ESTADO_BADGE_TONES[estado] ?? 'slate'
 }
 
+/**
+ * El aguinaldo se nombra por el año en que se paga, como se dice en Costa
+ * Rica: el "aguinaldo 2026" es el de diciembre de 2026 y cubre de diciembre de
+ * 2025 a noviembre de 2026. Antes la pantalla decía "Ciclo 2025-2026" y los
+ * avisos "aguinaldo 2025" o "ciclo 2025" para cosas distintas.
+ */
+export function nombreAguinaldo(anio: number): string {
+  return `Aguinaldo ${anio}`
+}
+
+/** 'dic 2025 – nov 2026': lo que cubre el aguinaldo de `anio`. */
+export function rangoAguinaldo(anio: number): string {
+  return `dic ${anio - 1} – nov ${anio}`
+}
+
 /** 'Enero 2026 · 1ª quincena' — encabezado legible del periodo. */
 export function periodoLabel(mes: number, anio: number, quincena: number) {
   const nombreMes = MESES[mes - 1] ?? `Mes ${mes}`

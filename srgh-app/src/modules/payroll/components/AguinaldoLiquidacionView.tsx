@@ -20,6 +20,8 @@ interface AguinaldoLiquidacionViewProps {
   canWrite: boolean
   contratosPorLiquidar: ContratoPorLiquidarItem[]
   liquidaciones: LiquidacionListItem[]
+  /** Aguinaldos del año anterior sin pagar (ver AguinaldoTab). */
+  pendientesAnterior?: { anio: number; cantidad: number; monto: number } | null
 }
 
 type TabId = 'aguinaldo' | 'liquidacion'
@@ -38,6 +40,7 @@ export function AguinaldoLiquidacionView({
   canWrite,
   contratosPorLiquidar,
   liquidaciones,
+  pendientesAnterior = null,
 }: AguinaldoLiquidacionViewProps) {
   const tabs: TabDefinition<TabId>[] = [
     {
@@ -52,6 +55,7 @@ export function AguinaldoLiquidacionView({
           canWrite={canWrite}
           cicloCerrado={cicloCerrado}
           puedeLeerAusencias={puedeLeerAusencias}
+          pendientesAnterior={pendientesAnterior}
         />
       ),
     },

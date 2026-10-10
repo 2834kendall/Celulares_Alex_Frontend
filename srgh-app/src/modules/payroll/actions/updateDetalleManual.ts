@@ -32,6 +32,7 @@ interface DetalleActualRow {
   ndt_id: number
   ndt_nomina_periodo_id: number
   ndt_historial_laboral_id: number
+  ndt_pagado: boolean
   ndt_horas_ordinarias_diurnas: number
   ndt_horas_extra_al_50: number
   ndt_horas_asistencia: number | null
@@ -81,7 +82,7 @@ export async function updateDetalleManual(
   const { data: detalle, error: errDetalle } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
-      `ndt_id, ndt_nomina_periodo_id, ndt_historial_laboral_id,
+      `ndt_id, ndt_nomina_periodo_id, ndt_historial_laboral_id, ndt_pagado,
        ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50,
        ndt_horas_asistencia, ndt_horas_extra_asistencia,
        sgrh_nomina_periodo (
@@ -102,6 +103,14 @@ export async function updateDetalleManual(
     return {
       ok: false,
       error: 'Solo se puede editar la planilla mientras el periodo está en borrador.',
+    }
+  }
+  // Una fila pagada tiene comprobante emitido y aguinaldo acumulado con su
+  // bruto: cambiarla dejaba los tres papeles diciendo cosas distintas.
+  if (detalle.ndt_pagado) {
+    return {
+      ok: false,
+      error: 'Esta fila ya tiene el pago marcado. Para corregirla, desmarcá el pago primero.',
     }
   }
 
@@ -256,7 +265,7 @@ export async function updateDetalleManual(
     }
   }
 
-  const { error: errUpdate } = await supabase
+  const { data: guardadas, error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
     .update({
       ndt_salario_bruto: salarioBruto,
@@ -269,8 +278,19 @@ export async function updateDetalleManual(
       ...foto.campos,
     })
     .eq('ndt_id', ndtId)
+    // Solo si sigue sin pagar: alguien pudo marcarla pagada mientras se
+    // editaba, y una fila pagada tiene comprobante y aguinaldo con su bruto.
+    .eq('ndt_pagado', false)
+    .select('ndt_id')
+    .returns<{ ndt_id: number }[]>()
   if (errUpdate) {
     return { ok: false, error: 'No se pudieron guardar los montos.' }
+  }
+  if (!guardadas || guardadas.length === 0) {
+    return {
+      ok: false,
+      error: 'Esta fila se marcó como pagada mientras la editabas: no se guardó ningún cambio.',
+    }
   }
 
   const { error: errLineas } = await reemplazarLineasDetalle(
