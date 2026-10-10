@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { calcularMontoIncapacidad, diasSuperpuestos, repartirDiasIncapacidad } from './incapacidad'
+import {
+  calcularMontoIncapacidad,
+  diasSuperpuestos,
+  montoIncapacidadEnVivo,
+  repartirDiasIncapacidad,
+} from './incapacidad'
 import { parseFechaLocal } from './fechas'
 
 describe('diasSuperpuestos', () => {
@@ -82,5 +87,23 @@ describe('calcularMontoIncapacidad', () => {
 
   it('redondea a 2 decimales', () => {
     expect(calcularMontoIncapacidad(1, 10000.333, 50)).toBe(5000.17)
+  })
+})
+
+describe('montoIncapacidadEnVivo (auditoría 2, hallazgo 15)', () => {
+  it('usa el salario real ÷ 30', () => {
+    // 3 días × 600.000 / 30 × 50 % = 30.000
+    expect(
+      montoIncapacidadEnVivo(3, { salarioBaseMensual: 400000, salarioRealMensual: 600000 }, 50)
+    ).toBe(30000)
+  })
+
+  it('sin salario real usa el base', () => {
+    expect(
+      montoIncapacidadEnVivo(3, { salarioBaseMensual: 400000, salarioRealMensual: null }, 50)
+    ).toBe(20000)
+    expect(
+      montoIncapacidadEnVivo(3, { salarioBaseMensual: 400000, salarioRealMensual: 0 }, 50)
+    ).toBe(20000)
   })
 })

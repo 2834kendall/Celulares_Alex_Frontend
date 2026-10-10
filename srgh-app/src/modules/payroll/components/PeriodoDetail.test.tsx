@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PeriodoDetail } from './PeriodoDetail'
+import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla'
 import { formatCRC } from '@/modules/payroll/lib/format'
 import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
 
@@ -21,6 +22,9 @@ vi.mock('@/modules/payroll/actions/recalcularPeriodoDesdeAsistencia', () => ({
 }))
 vi.mock('@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia', () => ({
   cargarEmpleadosDesdeAsistencia: vi.fn(),
+}))
+vi.mock('@/modules/payroll/actions/quitarFilaPlanilla', () => ({
+  quitarFilaPlanilla: vi.fn(),
 }))
 vi.mock('./DetalleEditForm', () => ({ DetalleEditForm: () => null }))
 vi.mock('./RegistrarIncapacidadForm', () => ({ RegistrarIncapacidadForm: () => null }))
@@ -269,5 +273,59 @@ describe('PeriodoDetail: acciones de cada fila', () => {
       within(screen.getByRole('table')).getByRole('link', { name: 'Ver comprobante de pago' })
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Registrar incapacidad' })).not.toBeInTheDocument()
+  })
+})
+
+// Auditoría 2, fallo 5: una fila cargada sin horario (₡0, sin horas) no se
+// puede pagar; sin poder quitarla, el periodo vencido no cerraba nunca.
+describe('PeriodoDetail: quitar una fila sin nada que pagar', () => {
+  const VACIA = fila({
+    id: 9,
+    historialLaboralId: 9,
+    empleadoNombre: 'Juan Vacío',
+    empleadoCedula: '9-9999-9999',
+    salarioBruto: 0,
+    totalDeducciones: 0,
+    deduccionPorcentual: 0,
+    cargasPatronales: 0,
+    salarioNeto: 0,
+    totalAPagar: 0,
+    horasTrabajadas: 0,
+    horasAsistencia: 0,
+  })
+
+  it('ofrece quitarla y, al confirmar, la quita', async () => {
+    vi.mocked(quitarFilaPlanilla).mockResolvedValue({ ok: true })
+    render(<PeriodoDetail periodo={periodo([ANA, VACIA])} canWrite conceptosManuales={[]} />)
+    const tabla = within(screen.getByRole('table'))
+
+    expect(tabla.getAllByRole('button', { name: 'Quitar de la planilla' })).toHaveLength(1)
+    await userEvent.click(tabla.getByRole('button', { name: 'Quitar de la planilla' }))
+    expect(screen.getByText('Quitar a Juan Vacío de la planilla')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Quitar' }))
+
+    expect(quitarFilaPlanilla).toHaveBeenCalledWith(9)
+  })
+
+  it('no se ofrece en una fila con horas, con incapacidad, pagada o sin permiso', () => {
+    const conHoras = fila({ ...VACIA, id: 10, empleadoNombre: 'Con Horas', horasTrabajadas: 8 })
+    const conIncapacidad = fila({
+      ...VACIA,
+      id: 11,
+      empleadoNombre: 'Con Incapacidad',
+      incapacidad: { diasEmpleador: 3, diasCcss: 0, porcentajePagoEmpleador: 50, monto: 1000 },
+    })
+    const { unmount } = render(
+      <PeriodoDetail
+        periodo={periodo([conHoras, conIncapacidad])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Quitar de la planilla' })).not.toBeInTheDocument()
+    unmount()
+
+    render(<PeriodoDetail periodo={periodo([VACIA])} canWrite={false} conceptosManuales={[]} />)
+    expect(screen.queryByRole('button', { name: 'Quitar de la planilla' })).not.toBeInTheDocument()
   })
 })

@@ -43,6 +43,8 @@ const SIN_PROBLEMAS = {
   diasQueBloquean: [],
   horasAcreditadas: 0,
   diasAcreditadosSinHorario: 0,
+  horasAcreditadasAusencias: 0,
+  diasAcreditadosAusenciasSinHorario: 0,
   diasJustificados: 0,
   periodoCubiertoPorAusencias: false,
   horasProgramadasTotales: 88,
@@ -331,6 +333,38 @@ describe('marcarDetallePagado (server action)', () => {
         ndt_monto_incapacidad: 20000,
         ndt_porcentaje_incapacidad: 50,
       })
+    })
+
+    // Auditoría 2, hallazgo 15: la incapacidad se paga sobre el salario REAL,
+    // como el resto del módulo; el base solo si no hay real.
+    it('con salario real, la incapacidad se calcula sobre el real', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: [
+          {
+            data: { ...DETALLE_BASE, ndt_pagado: false, ndt_dias_incapacidad_empleador: 3 },
+            error: null,
+          },
+          ACTUALIZADA,
+          { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
+        ],
+        sgrh_historial_laboral: {
+          data: {
+            lab_salario_base: 400000,
+            lab_salario_real: 600000,
+            sgrh_cat_tipos_jornada: null,
+          },
+          error: null,
+        },
+        sgrh_cat_tipos_ausencia: { data: { tau_porcentaje_pago_empleador: 50 }, error: null },
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true })
+      // 3 días × 600.000 / 30 × 50 % = 30.000
+      expect(updateDeLaFila(client)).toMatchObject({ ndt_monto_incapacidad: 30000 })
     })
 
     it('si no puede leer el porcentaje, no marca el pago', async () => {
@@ -1103,6 +1137,7 @@ describe('marcarDetallePagado (server action)', () => {
   it('no deja marcar como pagada una fila en ₡0', async () => {
     mockSupabase({
       sgrh_nomina_detalle: { data: { ...DETALLE_BASE, ndt_salario_bruto: 0 }, error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
     })
 
     const result = await marcarDetallePagado(10, true)
@@ -1275,5 +1310,58 @@ describe('marcarDetallePagado (server action)', () => {
     const result = await marcarDetallePagado(1, true)
 
     expect(result.ok).toBe(true)
+  })
+
+  // Auditoría 2, hallazgo 6: la ausencia sin goce cargada por Excel rebaja el
+  // salario. Si se come la quincena entera, el ₡0 es el monto correcto.
+  it('deja marcar en ₡0 una fila cuyo salario se lo llevó la ausencia sin goce', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: { ...DETALLE_BASE, ndt_salario_bruto: 0, ndt_pagado: false }, error: null },
+        ACTUALIZADA,
+      ],
+      sgrh_nomina_linea_deduccion: {
+        data: [
+          {
+            ded_monto: 100000,
+            sgrh_cat_conceptos_nomina: {
+              con_tipo_calculo: 'monto_manual_deduccion',
+              con_rebaja_salario: true,
+            },
+          },
+        ],
+        error: null,
+      },
+      sgrh_nomina_periodo: OK,
+      sgrh_provisiones_anuales: OK,
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result.ok).toBe(true)
+    expect(client.from).toHaveBeenCalledWith('sgrh_nomina_linea_deduccion')
+  })
+
+  it('un préstamo no justifica el ₡0: solo la ausencia sin goce', async () => {
+    mockSupabase({
+      sgrh_nomina_detalle: { data: { ...DETALLE_BASE, ndt_salario_bruto: 0 }, error: null },
+      sgrh_nomina_linea_deduccion: {
+        data: [
+          {
+            ded_monto: 100000,
+            sgrh_cat_conceptos_nomina: {
+              con_tipo_calculo: 'monto_manual_deduccion',
+              con_rebaja_salario: false,
+            },
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await marcarDetallePagado(10, true)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('está en ₡0')
   })
 })

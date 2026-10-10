@@ -77,6 +77,8 @@ function mockTables(responses: Record<string, { data: unknown; error: unknown }>
       // ¿Alguna fila impaga ya va en una liquidación? Por defecto no.
       sgrh_historial_laboral: { data: [], error: null },
       sgrh_liquidaciones: { data: [], error: null },
+      // De qué ausencia son los días de subsidio. Por defecto ninguna.
+      sgrh_ausencias: { data: [], error: null },
       ...responses,
     }) as unknown as Awaited<ReturnType<typeof createClient>>
   )
@@ -163,6 +165,17 @@ describe('getPeriodoDetail (server action)', () => {
               con_tipo_calculo: 'monto_manual_deduccion',
             },
           },
+          // Ausencia sin goce: ya está restada del bruto, así que no cuenta
+          // como deducción manual del neto (auditoría 2, hallazgo 6).
+          {
+            ded_nomina_detalle_id: 21,
+            ded_monto: 20000,
+            sgrh_cat_conceptos_nomina: {
+              con_codigo: 'DED006',
+              con_tipo_calculo: 'monto_manual_deduccion',
+              con_rebaja_salario: true,
+            },
+          },
         ],
         error: null,
       },
@@ -205,7 +218,13 @@ describe('getPeriodoDetail (server action)', () => {
           fechaPago: null,
           codigoVerificacion: 'ABCD-EFGH-JKMN',
           diasPorRevisar: [],
-          montosPorConcepto: { BASE: 450000, COMISION: 50000, CCSS_OBRERA: 52500, PRESTAMO: 10000 },
+          montosPorConcepto: {
+            BASE: 450000,
+            COMISION: 50000,
+            CCSS_OBRERA: 52500,
+            PRESTAMO: 10000,
+            DED006: 20000,
+          },
           horasTrabajadas: 88,
           horasExtra: 0,
           salarioPorHora: 2500,
@@ -390,12 +409,88 @@ describe('getPeriodoDetail (server action)', () => {
         diasCcss: 2,
         porcentajePagoEmpleador: 50,
         monto: 25000,
+        tipoNombre: null,
       })
       // Y el total a pagar la incluye. Antes el comprobante la sumaba por su
       // cuenta y la pantalla del periodo no, así que los dos papeles del mismo
       // pago mostraban cifras distintas.
       expect(result.data.detalles[0].totalAPagar).toBe(472500) // 447500 + 25000
     }
+  })
+
+  // Auditoría 2, hallazgo 9: el comprobante de una licencia de maternidad
+  // decía "Incapacidad por enfermedad".
+  it('trae el tipo de la ausencia para el rótulo del comprobante', async () => {
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: {
+        data: [{ ...DETALLE_ROW, ndt_dias_incapacidad_empleador: 3, ndt_dias_incapacidad_ccss: 2 }],
+        error: null,
+      },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+      sgrh_ausencias: {
+        data: [
+          {
+            aus_historial_laboral_id: 9,
+            aus_fecha_inicio: '2026-07-01',
+            sgrh_cat_tipos_ausencia: {
+              tau_nombre: 'Incapacidad por Maternidad',
+              tau_requiere_documento_ccss: true,
+            },
+          },
+          // Unas vacaciones en la misma quincena no cambian el rótulo.
+          {
+            aus_historial_laboral_id: 9,
+            aus_fecha_inicio: '2026-07-10',
+            sgrh_cat_tipos_ausencia: {
+              tau_nombre: 'Vacaciones',
+              tau_requiere_documento_ccss: false,
+            },
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.detalles[0].incapacidad?.tipoNombre).toBe('Incapacidad por Maternidad')
+    }
+  })
+
+  // Auditoría 2, hallazgo 15: sobre el salario real, no el base.
+  it('la incapacidad en vivo usa el salario real del contrato', async () => {
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: {
+        data: [
+          {
+            ...DETALLE_ROW,
+            ndt_dias_incapacidad_empleador: 3,
+            sgrh_historial_laboral: {
+              ...DETALLE_ROW.sgrh_historial_laboral,
+              lab_salario_real: 600000,
+            },
+          },
+        ],
+        error: null,
+      },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    // 3 días × 600.000 / 30 × 50 % = 30.000
+    if (result.ok) expect(result.data.detalles[0].incapacidad?.monto).toBe(30000)
   })
 
   it('una fila pagada usa el monto de incapacidad guardado, aunque el salario haya cambiado', async () => {
@@ -431,6 +526,7 @@ describe('getPeriodoDetail (server action)', () => {
       diasCcss: 2,
       porcentajePagoEmpleador: 50,
       monto: 20000,
+      tipoNombre: null,
     })
     expect(result.data.detalles[0].totalAPagar).toBe(467500) // 447500 + 20000
   })
@@ -488,6 +584,8 @@ describe('getPeriodoDetail (server action)', () => {
             diasQueBloquean: [{ fecha: '2026-07-08', problema: 'sin_salida' as const }],
             horasAcreditadas: 0,
             diasAcreditadosSinHorario: 0,
+            horasAcreditadasAusencias: 0,
+            diasAcreditadosAusenciasSinHorario: 0,
             diasJustificados: 0,
             periodoCubiertoPorAusencias: false,
             horasProgramadasTotales: 88,
@@ -516,6 +614,86 @@ describe('getPeriodoDetail (server action)', () => {
         { fecha: '2026-07-08', problema: 'sin_salida' },
       ])
     }
+  })
+
+  // Auditoría 2, hallazgo 12: los días antes del ingreso salían como
+  // problemas en "ver días".
+  it('los días antes del inicio del contrato no se reportan como problema', async () => {
+    const dia = (fecha: string) => ({
+      fecha,
+      horasEsperadas: 0,
+      horasTrabajadas: 0,
+      horasOrdinarias: 0,
+      horasExtra: 0,
+      horasAcreditadas: 0,
+      diaAcreditadoSinHorario: 0,
+      horasAcreditadasAusencia: 0,
+      diaAcreditadoAusenciaSinHorario: 0,
+      horasProgramadasDia: 0,
+      diaJustificadoSinHorario: 0,
+      diaSinProgramar: 1,
+      cuenta: false,
+      justificacion: null,
+      problema: 'sin_programar' as const,
+    })
+    mockGetHorasDelPeriodo.mockResolvedValue({
+      ok: true,
+      data: new Map([
+        [
+          9,
+          {
+            horasEsperadas: 88,
+            horasOrdinarias: 80,
+            horasExtra: 0,
+            diasConProblema: [
+              { fecha: '2026-07-02', problema: 'sin_programar' as const },
+              { fecha: '2026-07-08', problema: 'sin_programar' as const },
+            ],
+            diasQueBloquean: [],
+            horasAcreditadas: 0,
+            diasAcreditadosSinHorario: 0,
+            horasAcreditadasAusencias: 0,
+            diasAcreditadosAusenciasSinHorario: 0,
+            diasJustificados: 0,
+            periodoCubiertoPorAusencias: false,
+            horasProgramadasTotales: 88,
+            diasJustificadosSinHorario: 0,
+            diasSinProgramar: 2,
+            dias: [dia('2026-07-02'), dia('2026-07-08')],
+          },
+        ],
+      ]),
+    })
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: {
+        data: [
+          {
+            ...DETALLE_ROW,
+            sgrh_historial_laboral: {
+              ...DETALLE_ROW.sgrh_historial_laboral,
+              lab_fecha_inicio: '2026-07-05',
+              lab_fecha_fin: null,
+            },
+          },
+        ],
+        error: null,
+      },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const fila = result.data.detalles[0]
+    expect(fila.diasPorRevisar).toEqual([{ fecha: '2026-07-08', problema: 'sin_programar' }])
+    expect(fila.dias[0]).toMatchObject({ problema: null, fueraDelContrato: true })
+    expect(fila.dias[1]).toMatchObject({ problema: 'sin_programar' })
+    expect(fila.dias[1].fueraDelContrato).toBeUndefined()
   })
 
   it('si la lectura de marcas falla, la planilla se muestra igual', async () => {

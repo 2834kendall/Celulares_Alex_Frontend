@@ -11,6 +11,7 @@ import {
   Receipt,
   RefreshCw,
   Stethoscope,
+  Trash2,
   Users,
   X,
 } from 'lucide-react'
@@ -37,6 +38,7 @@ import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePaga
 import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHorasAsistencia'
 import { recalcularPeriodoDesdeAsistencia } from '@/modules/payroll/actions/recalcularPeriodoDesdeAsistencia'
 import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
+import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla'
 import { AvisoDesplegable } from './AvisoDesplegable'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetalleEditForm } from './DetalleEditForm'
@@ -129,7 +131,9 @@ function DesgloseHoras({ detalle: d }: { detalle: DetalleNominaItem }) {
                   {textoJustificacion(dia) && (
                     <span className="block text-emerald-700">{textoJustificacion(dia)}</span>
                   )}
-                  {dia.problema ? (
+                  {dia.fueraDelContrato ? (
+                    'fuera del contrato'
+                  ) : dia.problema ? (
                     <span className="block font-semibold text-amber-600">
                       {MENSAJE_PROBLEMA[dia.problema]}
                     </span>
@@ -145,6 +149,13 @@ function DesgloseHoras({ detalle: d }: { detalle: DetalleNominaItem }) {
         </table>
       </div>
 
+      {(d.horasExtraPorTopeSemanal ?? 0) > 0 && (
+        <p className="mt-2 text-[11px] font-medium text-amber-700">
+          {formatHoras(d.horasExtraPorTopeSemanal ?? 0)} h pasan de ordinarias a extra porque la
+          semana superó el máximo de la jornada del contrato (Art. 136 del Código de Trabajo). Por
+          eso el día a día no suma lo mismo que el total.
+        </p>
+      )}
       <p className="mt-2 text-[11px] text-slate-400">
         {d.horasLeidasEn
           ? `Leído de las marcas el ${formatDate(d.horasLeidasEn.slice(0, 10))}. `
@@ -229,6 +240,24 @@ function filaEnCero(d: DetalleNominaItem): boolean {
 }
 
 /**
+ * Fila sin nada que pagar: ₡0, sin horas, sin horas extra y sin incapacidad.
+ * Es alguien cargado sin horario ni marcas. No se puede marcar pagada, así
+ * que se ofrece quitarla para que el periodo pueda cerrar (misma regla que
+ * lib/filaSinNadaQuePagar, que la acción vuelve a verificar).
+ */
+function filaVacia(d: DetalleNominaItem): boolean {
+  return (
+    !d.pagado &&
+    d.liquidacionQueLaPaga === null &&
+    !(d.salarioBruto > 0) &&
+    !(d.salarioNeto > 0) &&
+    !(d.horasTrabajadas > 0) &&
+    !(d.horasExtra > 0) &&
+    !((d.incapacidad?.diasEmpleador ?? 0) > 0)
+  )
+}
+
+/**
  * Cabecera del periodo + tabla de planilla. La edición manual de ingresos
  * (BASE, FERIADO, COMISION, HORAS_EXTRA, AJUSTE) solo se ofrece mientras el
  * periodo está en borrador — igual que la subida de Excel.
@@ -244,12 +273,17 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   const [cargandoEmpleados, setCargandoEmpleados] = useState(false)
   const [recalculandoTodo, setRecalculandoTodo] = useState(false)
   /** Fila cuyas horas corregidas a mano habría que pisar: se pregunta antes. */
+  const [quitando, setQuitando] = useState<DetalleNominaItem | null>(null)
+  const [quitandoId, setQuitandoId] = useState<number | null>(null)
   const [confirmandoHoras, setConfirmandoHoras] = useState<{
     detalle: DetalleNominaItem
     mensaje: string
   } | null>(null)
 
   const puedeEditar = canWrite && periodo.estado === 'borrador'
+  // Con alguna fila para quitar, las demás dejan el hueco de ese botón para
+  // que las acciones queden alineadas en columna.
+  const hayFilasVacias = puedeEditar && periodo.detalles.some(filaVacia)
 
   // Marcar/desmarcar un pago individual no depende del estado del periodo
   // (ndt_pagado es independiente de npe_estado) — solo requiere permiso de
@@ -297,6 +331,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
         ? ` ${result.sinAsistencia} sin horario ni marcas utilizables en el periodo: quedaron en 0 h y ₡0, revisalos antes de pagar.`
         : ''
     toast.success(`${result.agregados} empleado(s) agregados desde la asistencia.${aviso}`)
+    if (result.avisoAusencias) toast.warning(result.avisoAusencias)
     router.refresh()
   }
 
@@ -347,6 +382,19 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
    * `necesitaConfirmacion` y acá se pregunta. Reemplazar una corrección
    * deliberada sin avisar sería borrar una decisión sin dejar rastro.
    */
+  async function handleQuitarFila(detalle: DetalleNominaItem) {
+    setQuitando(null)
+    setQuitandoId(detalle.id)
+    const result = await quitarFilaPlanilla(detalle.id)
+    setQuitandoId(null)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(`Se quitó a ${detalle.empleadoNombre} de esta planilla.`)
+    router.refresh()
+  }
+
   async function handleRefrescarHoras(detalle: DetalleNominaItem, confirmado: boolean) {
     setConfirmandoHoras(null)
     setRefrescandoId(detalle.id)
@@ -618,6 +666,24 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
             )}
           </IconButton>
         )}
+        {hayFilasVacias &&
+          (filaVacia(d) ? (
+            <IconButton
+              onClick={() => setQuitando(d)}
+              disabled={quitandoId === d.id}
+              aria-label="Quitar de la planilla"
+              title="Esta fila no tiene nada que pagar (₡0, sin horas). Quitala para poder cerrar el periodo."
+              tone="rose"
+            >
+              {quitandoId === d.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+            </IconButton>
+          ) : (
+            <HuecoAccion />
+          ))}
       </>
     )
   }
@@ -983,7 +1049,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                       valor: formatCRC(d.deduccionManual),
                     },
                     {
-                      label: 'Viáticos',
+                      label: 'Pagos no salariales',
                       valor: d.totalNoSalarial > 0 ? formatCRC(d.totalNoSalarial) : '—',
                     },
                     { label: 'Salario neto', valor: formatCRC(d.salarioNeto) },
@@ -1071,7 +1137,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                   </th>
                   <th
                     className={TABLE_TH_RIGHT}
-                    title="Bruto − deducciones + viáticos. Los viáticos no cotizan, por eso van al final"
+                    title="Bruto − deducciones + pagos que no son salario (viáticos, aguinaldo). No cotizan, por eso van al final"
                   >
                     Salario neto
                   </th>
@@ -1132,7 +1198,8 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
                         <span className="tabular-nums">{formatCRC(d.salarioNeto)}</span>
                         {d.totalNoSalarial > 0 && (
                           <span className="mt-0.5 block text-[11px] text-slate-400">
-                            incl. {formatCRC(d.totalNoSalarial)} de viáticos
+                            incl. {formatCRC(d.totalNoSalarial)} que no es salario (viáticos,
+                            aguinaldo)
                           </span>
                         )}
                       </td>
@@ -1243,6 +1310,16 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
             onNext={goToNextPage}
           />
         </div>
+      )}
+
+      {quitando && (
+        <ConfirmDialog
+          title={`Quitar a ${quitando.empleadoNombre} de la planilla`}
+          message="Esta fila está en ₡0: no tiene horas, ni horas extra, ni incapacidad, así que no hay nada que pagarle en esta quincena. Al quitarla, el periodo se cierra solo si los demás ya están pagados. Si después aparecen marcas, se puede volver a cargar con «Cargar empleados desde asistencia»."
+          confirmLabel="Quitar"
+          onCancel={() => setQuitando(null)}
+          onConfirm={() => void handleQuitarFila(quitando)}
+        />
       )}
 
       {confirmandoHoras && (

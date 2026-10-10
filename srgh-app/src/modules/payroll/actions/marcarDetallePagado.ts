@@ -21,7 +21,11 @@ import {
   evaluarBaseGuardado,
   type QuincenaRef,
 } from '@/modules/payroll/lib/prellenadoAsistencia'
-import { CODIGO_AJUSTE, CODIGO_SALARIO_BASE } from '@/modules/payroll/lib/planilla'
+import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  esRebajoDeSalario,
+} from '@/modules/payroll/lib/planilla'
 import { formatCRC, formatDate, formatHoras, rangoAguinaldo } from '@/modules/payroll/lib/format'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 
@@ -326,6 +330,34 @@ async function motivoParaNoDesmarcar(
 }
 
 /**
+ * ¿La fila tiene una línea de ausencia sin goce (concepto que rebaja el
+ * salario)? Ante un error de lectura, no: el ₡0 queda bloqueado como antes.
+ */
+async function tieneRebajoDeSalario(
+  supabase: SupabaseServerClient,
+  ndtId: number
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('sgrh_nomina_linea_deduccion')
+    .select('ded_monto, sgrh_cat_conceptos_nomina!inner ( con_tipo_calculo, con_rebaja_salario )')
+    .eq('ded_nomina_detalle_id', ndtId)
+    .eq('sgrh_cat_conceptos_nomina.con_rebaja_salario', true)
+    .returns<
+      {
+        ded_monto: number
+        sgrh_cat_conceptos_nomina: { con_tipo_calculo: string; con_rebaja_salario: boolean } | null
+      }[]
+    >()
+  if (error || !Array.isArray(data)) return false
+  return data.some(
+    (l) =>
+      Number(l.ded_monto) > 0 &&
+      l.sgrh_cat_conceptos_nomina !== null &&
+      esRebajoDeSalario(l.sgrh_cat_conceptos_nomina)
+  )
+}
+
+/**
  * Monto y porcentaje de la incapacidad para congelarlos al marcar el pago,
  * con la misma cuenta que muestra la planilla (montoIncapacidadEnVivo). null
  * si no se pudo leer el contrato o el catálogo.
@@ -338,9 +370,9 @@ async function incapacidadAlPagar(
   const [contrato, tipo] = await Promise.all([
     supabase
       .from('sgrh_historial_laboral')
-      .select('lab_salario_base')
+      .select('lab_salario_base, lab_salario_real')
       .eq('lab_id', labId)
-      .maybeSingle<{ lab_salario_base: number | null }>(),
+      .maybeSingle<{ lab_salario_base: number | null; lab_salario_real: number | null }>(),
     supabase
       .from('sgrh_cat_tipos_ausencia')
       .select('tau_porcentaje_pago_empleador')
@@ -352,7 +384,10 @@ async function incapacidadAlPagar(
   return {
     ndt_monto_incapacidad: montoIncapacidadEnVivo(
       diasEmpleador,
-      Number(contrato.data.lab_salario_base ?? 0),
+      {
+        salarioBaseMensual: Number(contrato.data.lab_salario_base ?? 0),
+        salarioRealMensual: contrato.data.lab_salario_real ?? null,
+      },
       porcentaje
     ),
     ndt_porcentaje_incapacidad: porcentaje,
@@ -624,10 +659,15 @@ export async function marcarDetallePagado(
   // con salario ₡0 y ₡21.000 de incapacidad sí tiene algo que pagar
   // (auditoría, hallazgo 5).
   const tieneIncapacidadQuePagar = Number(incapacidad.ndt_monto_incapacidad ?? 0) > 0
-  const ceroJustificado =
+  let ceroJustificado =
     tieneIncapacidadQuePagar ||
     totales?.periodoCubiertoPorAusencias === true ||
     (lecturaUtilizable(totales) && cumplimientoQuincena(totales!, null).ratio === 0)
+  // Y una más: la ausencia sin goce cargada por Excel o a mano se comió todo
+  // el salario (auditoría 2, hallazgo 6). El ₡0 es el monto correcto.
+  if (pagado && !(detalle.ndt_salario_bruto > 0) && !ceroJustificado) {
+    ceroJustificado = await tieneRebajoDeSalario(supabase, detalle.ndt_id)
+  }
   if (pagado && !(detalle.ndt_salario_bruto > 0) && !ceroJustificado) {
     return {
       ok: false,
