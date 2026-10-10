@@ -81,11 +81,10 @@ export interface DayForInfraction {
    */
   isJustifiedTardiness: boolean
   /**
-   * "HH:mm" en que debia terminar el almuerzo, y en que se marco el fin.
-   * Opcionales: un dia sin almuerzo programado o sin marcarlo simplemente
-   * no tiene tardanza de regreso (SGRH-88).
+   * "HH:mm" en que se marco el inicio y el fin del almuerzo. Opcionales: sin
+   * las dos marcas no hay con que medir el regreso (SGRH-95).
    */
-  expectedLunchEnd?: string | null
+  inicioAlmuerzoTime?: string | null
   finAlmuerzoTime?: string | null
   /** Justificacion de la tardanza al volver del almuerzo, sobre su propia marca. */
   isJustifiedLunchTardiness?: boolean
@@ -140,8 +139,25 @@ export function classifyDay(day: DayForInfraction, tipos: TardinessType[]): DayA
  * una tardanza, no estar justificada, y ser de un tipo que cuente.
  */
 /**
+ * Lo que dura el almuerzo: una hora fija para todos, sin importar lo que diga
+ * el horario del dia (decision del cliente, SGRH-95).
+ */
+export const LUNCH_MINUTES = 60
+
+/**
+ * Minutos que el regreso del almuerzo se paso de su limite, que corre desde
+ * la marca de INICIO y no desde el horario (decision del cliente, SGRH-95):
+ * quien empieza 12:40 vuelve a tiempo hasta las 13:40. Negativo o cero si volvio a tiempo; null si falta alguna marca.
+ */
+export function lunchLateMinutes(day: DayForInfraction): number | null {
+  if (!day.inicioAlmuerzoTime || !day.finAlmuerzoTime) return null
+
+  return diffMinutes(day.finAlmuerzoTime, day.inicioAlmuerzoTime) - LUNCH_MINUTES
+}
+
+/**
  * Tipo de tardia al VOLVER del almuerzo, o null si volvio a tiempo, el dia no
- * aplica o falta alguna de las dos horas (SGRH-88).
+ * aplica o falta alguna de las dos marcas (SGRH-88).
  *
  * Se clasifica con el MISMO catalogo que la entrada: volver 3 minutos tarde
  * del almuerzo es una tardia leve igual que entrar 3 minutos tarde. Dos
@@ -152,9 +168,11 @@ export function lunchTardinessOfDay(
   tipos: TardinessType[]
 ): TardinessType | null {
   if (day.isJustifiedAbsence || day.isDayOff || day.isHoliday) return null
-  if (!day.expectedLunchEnd || !day.finAlmuerzoTime) return null
 
-  return classifyTardiness(diffMinutes(day.finAlmuerzoTime, day.expectedLunchEnd), tipos)
+  const atraso = lunchLateMinutes(day)
+  if (atraso === null) return null
+
+  return classifyTardiness(atraso, tipos)
 }
 
 /** Si la tardanza al volver del almuerzo suma para la advertencia del mes. */

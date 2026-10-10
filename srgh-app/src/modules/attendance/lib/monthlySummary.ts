@@ -34,7 +34,6 @@ interface HistorialRow {
 
 interface AssignmentJoin {
   hor_hora_entrada: string
-  hor_hora_fin_almuerzo: string | null
 }
 
 interface AssignmentRow {
@@ -45,7 +44,6 @@ interface AssignmentRow {
   prg_es_feriado: boolean
   prg_hora_entrada_custom: string | null
   prg_hora_salida_custom: string | null
-  prg_hora_fin_almuerzo_custom: string | null
   sgrh_cat_horarios: AssignmentJoin | null
 }
 
@@ -176,8 +174,7 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
       prg_es_feriado,
       prg_hora_entrada_custom,
       prg_hora_salida_custom,
-      prg_hora_fin_almuerzo_custom,
-      sgrh_cat_horarios ( hor_hora_entrada, hor_hora_fin_almuerzo )
+      sgrh_cat_horarios ( hor_hora_entrada )
     `
     )
     .gte('prg_fecha', start)
@@ -279,8 +276,9 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
       )
       .in('mar_historial_laboral_id', historyIds)
       // La entrada y el regreso del almuerzo: las dos marcas que pueden
-      // llegar tarde (SGRH-88).
-      .in('mar_tipo', ['entrada', 'fin_almuerzo'])
+      // llegar tarde (SGRH-88). El inicio del almuerzo es desde donde se
+      // cuenta su duracion (SGRH-95).
+      .in('mar_tipo', ['entrada', 'inicio_almuerzo', 'fin_almuerzo'])
       .gte('mar_fecha_hora', `${start} 00:00:00`)
       .lte('mar_fecha_hora', `${end} 23:59:59`)
       .returns<MarkDbRow[]>(),
@@ -358,6 +356,7 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
   // Primera marca valida por (historial, fecha) de cada tipo — mismo
   // criterio de "primera cronologica gana" que groupIntoDayJourney.
   const entradaByHistAndDate = new Map<string, MarcaDelDia>()
+  const inicioAlmuerzoByHistAndDate = new Map<string, MarcaDelDia>()
   const finAlmuerzoByHistAndDate = new Map<string, MarcaDelDia>()
   for (const m of marks ?? []) {
     const parsedTipo = marcaTipoSchema.safeParse(m.mar_tipo)
@@ -366,9 +365,11 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
     const destino =
       parsedTipo.data === 'entrada'
         ? entradaByHistAndDate
-        : parsedTipo.data === 'fin_almuerzo'
-          ? finAlmuerzoByHistAndDate
-          : null
+        : parsedTipo.data === 'inicio_almuerzo'
+          ? inicioAlmuerzoByHistAndDate
+          : parsedTipo.data === 'fin_almuerzo'
+            ? finAlmuerzoByHistAndDate
+            : null
     if (!destino) continue
 
     const date = dateOfDay(m.mar_fecha_hora)
@@ -393,13 +394,8 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
       .map((a) => {
         const expectedRaw = a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
         const entrada = entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
+        const inicioAlmuerzo = inicioAlmuerzoByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         const finAlmuerzo = finAlmuerzoByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
-        // Mismo criterio que lib/workingDay.ts: horario personalizado del dia
-        // si trae entrada y salida propias, y si no el de la plantilla.
-        const isCustom = Boolean(a.prg_hora_entrada_custom && a.prg_hora_salida_custom)
-        const lunchEndRaw = isCustom
-          ? a.prg_hora_fin_almuerzo_custom
-          : a.sgrh_cat_horarios?.hor_hora_fin_almuerzo
         const ausenciaTipo = justifiedDays.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         return {
           date: a.prg_fecha,
@@ -412,7 +408,7 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
           entradaMarkId: entrada?.markId ?? null,
           isJustifiedTardiness: entrada?.justificada ?? false,
           tardiaJustificacion: entrada?.justificacion ?? null,
-          expectedLunchEnd: lunchEndRaw ? timeOfDay(lunchEndRaw) : null,
+          inicioAlmuerzoTime: inicioAlmuerzo?.time ?? null,
           finAlmuerzoTime: finAlmuerzo?.time ?? null,
           finAlmuerzoMarkId: finAlmuerzo?.markId ?? null,
           isJustifiedLunchTardiness: finAlmuerzo?.justificada ?? false,
