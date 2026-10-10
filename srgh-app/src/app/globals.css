@@ -246,6 +246,696 @@ h3 {
   }
 }
 
+/* ===== Menu lateral: iconos con efecto dock ===== */
+
+/*
+ * Como el Dock de macOS: el icono bajo el puntero crece, sus vecinos crecen
+ * un poco menos, y al entrar a una seccion su icono da un par de rebotes.
+ *
+ * Solo CSS, sobre los ganchos `nav-item` / `nav-icon` de NavLinks. Los
+ * vecinos se alcanzan con hermanos adyacentes: `+` para el de abajo y
+ * `:has(+ …)` para el de arriba.
+ *
+ * Dentro de `hover: hover` porque en una pantalla tactil el "hover" se queda
+ * pegado al ultimo item tocado, y de `prefers-reduced-motion` porque todo
+ * esto es movimiento puro: sin el, el menu funciona exactamente igual.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .nav-icon {
+    transition: transform 0.22s cubic-bezier(0.3, 1.6, 0.5, 1);
+  }
+
+  /* Rebote al quedar activo. Corre cuando el item pasa a ser la pagina
+     actual (y una vez al cargar), no en cada render. */
+  @keyframes nav-bounce {
+    0%,
+    100% {
+      transform: none;
+    }
+    28% {
+      transform: translateY(-7px) scale(1.15);
+    }
+    52% {
+      transform: translateY(0) scale(0.95, 1.05);
+    }
+    72% {
+      transform: translateY(-3px);
+    }
+    88% {
+      transform: translateY(0);
+    }
+  }
+
+  .nav-item[aria-current='page'] .nav-icon {
+    animation: nav-bounce 0.65s cubic-bezier(0.3, 0.6, 0.4, 1);
+  }
+
+  /* Al presionar: el icono se hunde, como una tecla. */
+  .nav-item:active .nav-icon {
+    transform: scale(0.82);
+    transition-duration: 0.08s;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  .nav-item:hover .nav-icon {
+    transform: scale(1.4);
+  }
+
+  .nav-item:hover + .nav-item .nav-icon,
+  .nav-item:has(+ .nav-item:hover) .nav-icon {
+    transform: scale(1.16);
+  }
+
+  /* Presionado gana al hover: mismo peso, va despues. */
+  .nav-item:hover:active .nav-icon {
+    transform: scale(0.82);
+  }
+}
+
+/*
+ * Ademas de crecer, cada icono hace su propio gesto al pasarle el puntero:
+ * el reloj da una vuelta de agujas, el engranaje gira, el check se dibuja…
+ *
+ * Los gestos mueven PIEZAS del icono (los hijos del <svg> de lucide, por
+ * posicion), asi que no chocan con el `transform` del icono entero que usa el
+ * efecto dock. `data-icon` es la clave de zona que pone NavLinks. Si lucide
+ * cambia el orden interno de un icono, su gesto deja de verse bien pero nada
+ * se rompe: son solo animaciones.
+ *
+ * Los origenes van en unidades del propio icono (su viewBox es 24x24): para
+ * girar las agujas del reloj, `12px 12px` es su centro.
+ */
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  /* Inicio: los cuatro bloques aparecen uno tras otro. */
+  @keyframes nav-tile {
+    0% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    70% {
+      transform: scale(1.12);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .nav-item[data-icon='dashboard']:hover .nav-icon > * {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: nav-tile 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) backwards;
+  }
+
+  .nav-item[data-icon='dashboard']:hover .nav-icon > :nth-child(2) {
+    animation-delay: 0.07s;
+  }
+
+  .nav-item[data-icon='dashboard']:hover .nav-icon > :nth-child(3) {
+    animation-delay: 0.14s;
+  }
+
+  .nav-item[data-icon='dashboard']:hover .nav-icon > :nth-child(4) {
+    animation-delay: 0.21s;
+  }
+
+  /* Empleados: la segunda persona se asoma desde atras y la primera saluda. */
+  @keyframes nav-join {
+    0% {
+      opacity: 0;
+      transform: translateX(-4px);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes nav-nod {
+    40% {
+      transform: translateY(-2px);
+    }
+  }
+
+  .nav-item[data-icon='employees']:hover .nav-icon > :nth-child(2),
+  .nav-item[data-icon='employees']:hover .nav-icon > :nth-child(3) {
+    animation: nav-join 0.45s cubic-bezier(0.3, 1.3, 0.5, 1) 0.1s backwards;
+  }
+
+  .nav-item[data-icon='employees']:hover .nav-icon > :nth-child(4) {
+    animation: nav-nod 0.45s ease-in-out;
+  }
+
+  /* Asistencia y Horarios: las agujas dan una vuelta completa. */
+  @keyframes nav-turn {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .nav-item[data-icon='attendance']:hover .nav-icon > :nth-child(1) {
+    transform-origin: 16px 16px;
+    animation: nav-turn 0.8s cubic-bezier(0.4, 0, 0.3, 1);
+  }
+
+  .nav-item[data-icon='schedule']:hover .nav-icon > :nth-child(2) {
+    transform-origin: 12px 12px;
+    animation: nav-turn 0.8s cubic-bezier(0.4, 0, 0.3, 1);
+  }
+
+  /* Mi Horario y Evaluaciones: el check se dibuja de nuevo. */
+  @keyframes nav-draw {
+    from {
+      stroke-dashoffset: 10;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  .nav-item[data-icon='my-schedule']:hover .nav-icon > :nth-child(5),
+  .nav-item[data-icon='evaluations']:hover .nav-icon > :nth-child(3) {
+    stroke-dasharray: 10;
+    animation: nav-draw 0.45s ease-out 0.08s backwards;
+  }
+
+  /* Nomina: el billete se voltea y el centro late. */
+  @keyframes nav-flip {
+    50% {
+      transform: scaleX(0.1);
+    }
+  }
+
+  @keyframes nav-beat {
+    50% {
+      transform: scale(1.7);
+    }
+  }
+
+  .nav-item[data-icon='payroll']:hover .nav-icon > :nth-child(1),
+  .nav-item[data-icon='payroll']:hover .nav-icon > :nth-child(3) {
+    transform-origin: 12px 12px;
+    animation: nav-flip 0.5s ease-in-out;
+  }
+
+  .nav-item[data-icon='payroll']:hover .nav-icon > :nth-child(2) {
+    transform-origin: 12px 12px;
+    animation: nav-beat 0.5s ease-in-out 0.25s;
+  }
+
+  /* Reclutamiento: la lupa recorre a la persona. */
+  @keyframes nav-scan {
+    35% {
+      transform: translate(-5px, -6px);
+    }
+    70% {
+      transform: translate(-2px, 1px);
+    }
+  }
+
+  .nav-item[data-icon='recruitment']:hover .nav-icon > :nth-child(3),
+  .nav-item[data-icon='recruitment']:hover .nav-icon > :nth-child(4) {
+    animation: nav-scan 0.9s ease-in-out;
+  }
+
+  /* Configuracion: el engranaje gira un tercio de vuelta. Va con la
+     propiedad `rotate` y no con `transform`, que ya la usa el efecto dock. */
+  .nav-item[data-icon='settings'] .nav-icon {
+    transition:
+      transform 0.22s cubic-bezier(0.3, 1.6, 0.5, 1),
+      rotate 0.6s cubic-bezier(0.3, 1.3, 0.5, 1);
+  }
+
+  .nav-item[data-icon='settings']:hover .nav-icon {
+    rotate: 120deg;
+  }
+
+  /*
+   * Menu de Configuracion (SettingsSidebarNav). Sus modulos reusan los
+   * gestos de arriba (misma clave de zona); estos son los de lo que solo
+   * existe ahi.
+   */
+
+  /* Volver: la flecha toma impulso hacia donde lleva. */
+  @keyframes nav-back {
+    40% {
+      transform: translateX(-4px);
+    }
+    70% {
+      transform: translateX(1px);
+    }
+  }
+
+  .nav-item[data-icon='back']:hover .nav-icon > * {
+    animation: nav-back 0.5s ease-in-out;
+  }
+
+  /* Buscar: la lupa da un barrido corto. */
+  @keyframes nav-seek {
+    35% {
+      transform: translate(-2px, -2px);
+    }
+    70% {
+      transform: translate(2px, 1px);
+    }
+  }
+
+  .nav-item[data-icon='search']:hover .nav-icon > * {
+    animation: nav-seek 0.6s ease-in-out;
+  }
+
+  /* Datos de la empresa: se encienden las ventanas y se abre la puerta. */
+  .nav-item[data-icon='settings-profile']:hover .nav-icon > :nth-child(1),
+  .nav-item[data-icon='settings-profile']:hover .nav-icon > :nth-child(2) {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: nav-tile 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) backwards;
+  }
+
+  .nav-item[data-icon='settings-profile']:hover .nav-icon > :nth-child(1) {
+    animation-delay: 0.12s;
+  }
+
+  .nav-item[data-icon='settings-profile']:hover .nav-icon > :nth-child(3) {
+    animation: nav-nod 0.45s ease-in-out 0.2s;
+  }
+
+  /* General: las tres perillas se deslizan sobre sus rieles y vuelven. */
+  @keyframes nav-knob {
+    50% {
+      transform: translateX(var(--knob, 3px));
+    }
+  }
+
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(3),
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(4),
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(8) {
+    animation: nav-knob 0.6s cubic-bezier(0.4, 0, 0.3, 1);
+  }
+
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(3) {
+    --knob: -4px;
+  }
+
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(4) {
+    --knob: -5px;
+    animation-delay: 0.08s;
+  }
+
+  .nav-item[data-icon='settings-general']:hover .nav-icon > :nth-child(8) {
+    --knob: 5px;
+    animation-delay: 0.16s;
+  }
+
+  /* Apariencia: las gotas de pintura aparecen una tras otra. */
+  .nav-item[data-icon='settings-appearance']:hover .nav-icon > circle {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: nav-tile 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) backwards;
+  }
+
+  .nav-item[data-icon='settings-appearance']:hover .nav-icon > :nth-child(3) {
+    animation-delay: 0.07s;
+  }
+
+  .nav-item[data-icon='settings-appearance']:hover .nav-icon > :nth-child(4) {
+    animation-delay: 0.14s;
+  }
+
+  .nav-item[data-icon='settings-appearance']:hover .nav-icon > :nth-child(5) {
+    animation-delay: 0.21s;
+  }
+}
+
+/* ===== Estados vacíos (EmptyState) ===== */
+
+/*
+ * Mismas convenciones que el dock del menu: ganchos de clase (`empty-state`,
+ * `empty-state-badge`, `empty-state-copy`), la variante en `data-variant`,
+ * todo bajo `prefers-reduced-motion: no-preference` y lo que depende del
+ * puntero ademas bajo `(hover: hover)`. Sin movimiento, el estado se ve
+ * exactamente igual, solo que quieto.
+ *
+ * Se anima el badge entero, nunca las piezas del icono: cada pantalla pasa su
+ * propio icono de lucide y no hay un orden de nodos en comun del que fiarse.
+ *
+ * Nada se mueve en reposo. Y como el componente queda montado mientras el
+ * usuario escribe en un buscador (solo cambia el texto), la entrada no se
+ * repite en cada tecla.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes empty-pop {
+    0% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+    100% {
+      transform: none;
+    }
+  }
+
+  @keyframes empty-ring {
+    from {
+      opacity: 0.6;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.8);
+    }
+  }
+
+  /* El mismo resorte que el icono del dock al crecer. */
+  .empty-state-badge {
+    animation: empty-pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) backwards;
+  }
+
+  /* Un anillo que se expande una vez, en el color de la sucursal. */
+  .empty-state-badge::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid var(--color-brand-300);
+    opacity: 0;
+    animation: empty-ring 0.9s ease-out 0.3s;
+  }
+
+  .empty-state-copy {
+    animation: fade-slide-up 0.3s ease-out 0.08s backwards;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  @keyframes empty-bob {
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+
+  @keyframes empty-seek {
+    0%,
+    100% {
+      transform: none;
+    }
+    30% {
+      transform: translateX(-2px) rotate(-12deg);
+    }
+    70% {
+      transform: translateX(2px) rotate(12deg);
+    }
+  }
+
+  /* Vacío: el icono flota. */
+  .empty-state[data-variant='empty']:hover .empty-state-badge > svg {
+    animation: empty-bob 0.9s ease-in-out infinite;
+  }
+
+  /* Sin resultados: el icono "busca" de un lado a otro, como una lupa. */
+  .empty-state[data-variant='no-results']:hover .empty-state-badge > svg {
+    animation: empty-seek 1.1s ease-in-out infinite;
+  }
+}
+
+/* ===== Escenas de estado (components/scene/states) ===== */
+
+/*
+ * Vacio, sin resultados, 404, sin acceso y error. Las figuras son las del
+ * login (`login-scene`): parpadeo, reposo, mirada, toque, entrada y pausa
+ * fuera de pantalla vienen de alla. Aca van sus expresiones propias, por
+ * `data-mood`, y la utileria de cada escena (`state-*`).
+ *
+ * Mismas guardas que el resto: las expresiones fuera de todo media query (sin
+ * movimiento la escena igual se entiende), la animacion bajo
+ * `prefers-reduced-motion: no-preference` y lo que dispara el puntero ademas
+ * bajo `(hover: hover)`.
+ */
+.state-zzz,
+.state-ask,
+.state-sweep,
+.state-lock,
+.state-spark {
+  transform-box: fill-box;
+}
+
+/* Dormido (vacio): los ojos cerrados salen de la regla del login; boca chica. */
+.state-scene[data-mood='sleeping'] .login-mouth-curve {
+  transform: scale(0.5, 0.2);
+}
+
+/* Al tocarlo se despierta sobresaltado: ojos abiertos y boca en "O". */
+.state-scene[data-mood='sleeping'] .login-character[data-poked] .login-eye-open {
+  opacity: 1;
+  transform: none;
+}
+
+.state-scene[data-mood='sleeping'] .login-character[data-poked] .login-eye-lid,
+.state-scene[data-mood='sleeping'] .login-character[data-poked] .login-mouth-curve {
+  opacity: 0;
+}
+
+.state-scene[data-mood='sleeping'] .login-character[data-poked] .login-mouth-o {
+  opacity: 1;
+  transform: none;
+}
+
+/* `visibility` y no `opacity`: la animacion de las "z" pisaria la opacidad. */
+.state-empty:has([data-poked]) .state-zzz {
+  visibility: hidden;
+}
+
+/* Desconcertado (sin resultados): una ceja arriba y otra abajo, boca torcida. */
+.state-scene[data-mood='confused'] .login-brow {
+  transform: translateY(calc(var(--brow-side, 1) * -2.5px));
+}
+
+.state-scene[data-mood='confused'] .login-mouth-curve {
+  transform: rotate(-10deg) scale(0.55, 0.25);
+}
+
+/* Perdido (404): cejas arriba y una "o" chica. */
+.state-scene[data-mood='lost'] .login-brow {
+  transform: translateY(-3px);
+}
+
+.state-scene[data-mood='lost'] .login-mouth-curve {
+  opacity: 0;
+}
+
+.state-scene[data-mood='lost'] .login-mouth-o {
+  opacity: 1;
+  transform: scale(0.75);
+}
+
+/* Serio (sin acceso): cejas fruncidas hacia adentro y boca recta. */
+.state-scene[data-mood='stern'] .login-brow {
+  transform: translateY(1.5px) rotate(calc(var(--brow-side, 1) * -14deg));
+}
+
+.state-scene[data-mood='stern'] .login-mouth-curve {
+  transform: scale(0.8, 0.1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Las "z" suben y se apagan, una detras de otra. */
+  @keyframes state-zzz {
+    0% {
+      opacity: 0;
+      transform: translate(0, 4px) scale(0.6);
+    }
+    25% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(6px, -12px) scale(1.1);
+    }
+  }
+
+  .state-zzz {
+    opacity: 0;
+    animation: state-zzz 3s ease-out infinite;
+  }
+
+  .state-zzz-2 {
+    animation-delay: 1s;
+  }
+
+  .state-zzz-3 {
+    animation-delay: 2s;
+  }
+
+  /* Dormido: respira lento, en lugar del gesto de reposo de la figura. */
+  @keyframes state-breathe {
+    0%,
+    100% {
+      transform: none;
+    }
+    50% {
+      transform: scale(1.03, 0.97);
+    }
+  }
+
+  .state-scene[data-mood='sleeping'] .login-idle {
+    animation: state-breathe 3.6s ease-in-out infinite;
+  }
+
+  /* El "?" aparece con un salto y despues se balancea. */
+  @keyframes state-ask {
+    0% {
+      opacity: 0;
+      transform: scale(0.3);
+    }
+    45% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+    70% {
+      transform: none;
+    }
+  }
+
+  @keyframes state-tilt {
+    0%,
+    100% {
+      transform: none;
+    }
+    30% {
+      transform: rotate(-12deg);
+    }
+    60% {
+      transform: rotate(8deg);
+    }
+  }
+
+  .state-ask {
+    transform-origin: 50% 100%;
+    animation:
+      state-ask 0.7s cubic-bezier(0.3, 1.4, 0.5, 1) 0.5s backwards,
+      state-tilt 3.2s ease-in-out 1.4s infinite;
+  }
+
+  /* La lupa barre de un lado a otro, pivotando en el mango. */
+  @keyframes state-sweep {
+    0%,
+    100% {
+      transform: translate(-6px, 2px) rotate(-10deg);
+    }
+    50% {
+      transform: translate(6px, -3px) rotate(10deg);
+    }
+  }
+
+  .state-sweep {
+    transform-origin: 85% 85%;
+    animation: state-sweep 2.6s ease-in-out infinite;
+  }
+
+  /* Chispas del bloque roto: titilan desfasadas. */
+  @keyframes state-spark {
+    0%,
+    100% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    15% {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+    35% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+  }
+
+  .state-spark {
+    transform-origin: center;
+    animation: state-spark 1.8s ease-out infinite;
+  }
+
+  .state-spark-late {
+    animation-delay: 0.9s;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  @keyframes state-lock-shake {
+    0%,
+    100% {
+      transform: none;
+    }
+    20%,
+    60% {
+      transform: rotate(-9deg);
+    }
+    40%,
+    80% {
+      transform: rotate(9deg);
+    }
+  }
+
+  /* Sin acceso, al pasar el puntero: el candado tiembla y el guardia niega
+     con la cabeza (el mismo gesto del error del login). */
+  .state-forbidden:hover .state-lock {
+    transform-origin: 50% 100%;
+    animation: state-lock-shake 0.5s ease-in-out;
+  }
+
+  .state-forbidden:hover .login-pop {
+    animation: login-shake 0.5s ease-in-out;
+  }
+}
+
+/* ===== Skeletons de carga (components/ui/Skeleton) ===== */
+
+/*
+ * El brillo es el mismo barrido que `.dash-meter-shine` del dashboard
+ * (`dash-shine`), pero continuo en vez de solo al pasar el puntero. Sin
+ * movimiento, los bloques quedan grises y quietos: la silueta ya comunica que
+ * algo esta cargando.
+ *
+ * Los bloques son grises y el brillo lleva un toque del color de la sucursal.
+ * Al reves no: un bloque de color se confunde con contenido (un badge, una
+ * fila seleccionada), y con un acento rojo o naranja la carga pareceria una
+ * alerta.
+ *
+ * El retraso de la region esta aca y no en una clase arbitraria de Tailwind:
+ * estas reglas no estan en una capa de cascada, asi que le ganan a cualquier
+ * utilidad y un `[animation-delay:…]` en el componente se perderia en silencio.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes skeleton-shine {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
+  }
+
+  .skeleton {
+    background-image: linear-gradient(
+      100deg,
+      transparent 35%,
+      color-mix(in oklab, var(--color-brand-100) 45%, rgb(255 255 255 / 0.6)) 50%,
+      transparent 65%
+    );
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: skeleton-shine 1.4s linear infinite;
+  }
+
+  /* Aparece con un pequeno retraso: en una navegacion rapida ni se llega a ver. */
+  .skeleton-region {
+    animation: fade-in 0.2s ease-out 0.12s backwards;
+  }
+}
+
 /* ===== Pantalla de login ===== */
 
 /*
@@ -355,10 +1045,11 @@ h3 {
 
 /* Contrasena oculta y en foco: no miran. Ojos cerrados, labios apretados.
    (Los mismos ojos cerrados sirven de cara feliz: al tocarlas, o el sobre
-   cuando sale con el correo.) */
+   cuando sale con el correo; y de figura dormida en los estados vacios.) */
 .login-scene[data-mood='hiding'] .login-eye-open,
 .login-scene[data-mood='sent'] .login-eye-open,
 .login-scene[data-mood='success'] .login-eye-open,
+.state-scene[data-mood='sleeping'] .login-eye-open,
 .login-character[data-poked] .login-eye-open {
   opacity: 0;
   transform: scaleY(0.05);
@@ -367,6 +1058,7 @@ h3 {
 .login-scene[data-mood='hiding'] .login-eye-lid,
 .login-scene[data-mood='sent'] .login-eye-lid,
 .login-scene[data-mood='success'] .login-eye-lid,
+.state-scene[data-mood='sleeping'] .login-eye-lid,
 .login-character[data-poked] .login-eye-lid {
   opacity: 1;
 }
@@ -490,6 +1182,49 @@ h3 {
 .mail-scene[data-mood='sent'] .mail-done-check {
   stroke-dashoffset: 0;
   transition: stroke-dashoffset 0.4s ease-out 1.95s;
+}
+
+/* Piso de la escena del login: se recoge hacia su centro al salir. */
+.login-ground {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Credenciales rechazadas: los dos campos lo marcan un momento. El INPUT
+   compartido ya trae la transicion. */
+.login-screen input[data-rejected='true'] {
+  border-color: #fb7185;
+  box-shadow: 0 0 0 4px rgb(251 113 133 / 0.18);
+}
+
+.login-screen input:hover:not(:focus, :disabled, [data-rejected='true'], [aria-invalid='true']) {
+  border-color: var(--color-brand-300);
+}
+
+/* Enlace de texto: el subrayado se dibuja desde la izquierda y se retira
+   hacia la derecha. */
+.auth-link {
+  position: relative;
+}
+
+.auth-link::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  left: 0;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.25s cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+
+.auth-link:hover::after,
+.auth-link:focus-visible::after {
+  transform: scaleX(1);
+  transform-origin: left;
 }
 
 /* Insignia que encabeza la tarjeta (llave / correo enviado). */
@@ -917,8 +1652,9 @@ h3 {
    * keyframe con peso: se agachan para tomar impulso, se estiran al subir,
    * cuelgan un instante arriba, aterrizan aplastandose, rebotan y recien
    * ahi se hunden. El 130% final es del alto de la figura entera (incluida
-   * la parte enterrada), asi que quedan del todo bajo la linea. Lo que sigue
-   * (la ola que cubre la pantalla) es de playLoginSuccess.
+   * la parte enterrada), asi que quedan del todo bajo la linea. Detras de
+   * ellas se va la linea del piso, y lo que sigue (las dos mitades de la
+   * pantalla abriendose) es de playLoginSuccess.
    */
   @keyframes login-cheer {
     0% {
@@ -953,6 +1689,19 @@ h3 {
   .login-scene[data-mood='success'] .login-pop {
     animation: login-cheer 1s linear forwards;
     animation-delay: calc(var(--char-delay, 0s) * 0.5);
+  }
+
+  /* El piso se recoge hacia el centro cuando la ultima ya se hundio: una
+     linea sola, sin nadie parado encima, quedaba colgada en el panel. */
+  @keyframes login-ground-out {
+    to {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+  }
+
+  .login-scene[data-mood='success'] .login-ground {
+    animation: login-ground-out 0.36s cubic-bezier(0.6, 0, 0.8, 0.4) 0.8s forwards;
   }
 
   /* Error: niegan de lado a lado. */
@@ -1032,20 +1781,16 @@ h3 {
     animation: login-card 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
   }
 
+  /* Aviso de error: cae en su lugar con un rebote corto. El sacudon lo da
+     la tarjeta entera (ver LoginForm), no el aviso. */
   @keyframes login-alert {
     0% {
       opacity: 0;
-      transform: translateY(-6px);
-    }
-    40% {
-      opacity: 1;
-      transform: translateX(-5px);
+      transform: translateY(-10px) scale(0.96);
     }
     60% {
-      transform: translateX(4px);
-    }
-    80% {
-      transform: translateX(-2px);
+      opacity: 1;
+      transform: translateY(2px) scale(1.01);
     }
     100% {
       transform: none;
@@ -1053,7 +1798,43 @@ h3 {
   }
 
   .login-alert {
-    animation: login-alert 0.4s ease-out;
+    animation: login-alert 0.42s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+
+  @keyframes login-alert-icon {
+    0%,
+    100% {
+      transform: none;
+    }
+    20% {
+      transform: rotate(-16deg) scale(1.18);
+    }
+    45% {
+      transform: rotate(12deg) scale(1.1);
+    }
+    70% {
+      transform: rotate(-6deg);
+    }
+  }
+
+  .login-alert-icon {
+    animation: login-alert-icon 0.6s ease-in-out 0.18s;
+  }
+
+  /* Boton principal: la flecha avanza y vuelve mientras el puntero esta
+     encima, invitando a seguir. */
+  @keyframes auth-arrow {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    50% {
+      transform: translateX(5px);
+    }
+  }
+
+  :hover > .auth-submit-arrow {
+    animation: auth-arrow 0.9s ease-in-out infinite;
   }
 
   /* Aparicion de detalles pequenos (check de correo valido, avisos). */
@@ -1086,5 +1867,745 @@ h3 {
   .login-blob-late {
     animation-duration: 19s;
     animation-direction: reverse;
+  }
+}
+
+/* ===== Dashboard ===== */
+
+/*
+ * Panel de inicio (ver modules/dashboard). Mismo criterio que el login: los
+ * ESTADOS (vela apagada, globo reventado, fila abierta, anillo de cercania)
+ * son CSS plano y funcionan siempre; el MOVIMIENTO va dentro del media query,
+ * asi que con "reducir movimiento" el panel sigue siendo usable y solo deja
+ * de animarse.
+ *
+ * El color sale de la escala `brand`, o sea el de la sucursal: el pastel y
+ * las figuras cambian con la plantilla elegida.
+ */
+.dash-hero {
+  background-image: radial-gradient(ellipse at 100% 100%, var(--color-brand-50), transparent 62%);
+}
+
+.dash-today {
+  border: 1px solid var(--color-brand-100);
+  background-image: linear-gradient(100deg, var(--color-brand-50), #fff 70%);
+}
+
+/* Anillo del avatar: se llena a medida que se acerca el cumpleanos.
+   `--ring` va de 0 a 100 y el SVG trae pathLength=100. */
+.dash-ring {
+  stroke-dasharray: 100;
+  stroke-dashoffset: calc(100 - var(--ring, 0));
+  transition:
+    stroke-dashoffset 0.6s ease-out,
+    stroke-width 0.2s ease-out;
+}
+
+.dash-row:hover .dash-ring {
+  stroke-width: 4.5;
+}
+
+/* Acciones de una fila. De 0fr a 1fr: se anima hasta el alto real del
+   contenido sin medirlo. */
+.dash-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s cubic-bezier(0.3, 0.9, 0.4, 1);
+}
+
+.dash-collapse[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+/* --- Pastel (ver BirthdayCake) --- */
+
+.dash-candle,
+.dash-balloon {
+  cursor: pointer;
+}
+
+.dash-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition:
+    transform 0.16s ease-in,
+    opacity 0.16s ease-in;
+}
+
+.dash-candle[data-lit='false'] .dash-flame {
+  opacity: 0;
+  transform: scale(0);
+}
+
+.dash-smoke {
+  opacity: 0;
+}
+
+/* El cuerpo del globo crece desde el nudo: su grupo padre lo ubica ahi con
+   un translate, asi que el origen por defecto (0,0) ya es ese punto. Al
+   reventar se encoge de golpe; al volver, se infla con rebote. */
+.dash-balloon-body {
+  transition: transform 0.55s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.dash-balloon:hover .dash-balloon-body {
+  transform: scale(1.08);
+}
+
+.dash-balloon[data-popped='true'] .dash-balloon-body {
+  transform: scale(0);
+  transition: transform 0.07s ease-in;
+}
+
+.dash-balloon-burst {
+  opacity: 0;
+}
+
+/* Celebrando: cara de contento, igual que al tocarlo. */
+.dash-cake[data-party='true'] .login-eye-open {
+  opacity: 0;
+  transform: scaleY(0.05);
+}
+
+.dash-cake[data-party='true'] .login-eye-lid {
+  opacity: 1;
+}
+
+/* El confeti es puro movimiento: sin animaciones no se dibuja. */
+.dash-confetti {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes dash-enter {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .dash-enter {
+    animation: dash-enter 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+
+  @keyframes dash-ring-in {
+    from {
+      stroke-dashoffset: 100;
+    }
+  }
+
+  .dash-ring {
+    animation: dash-ring-in 0.9s cubic-bezier(0.3, 0.8, 0.4, 1) 0.25s backwards;
+  }
+
+  @keyframes dash-wiggle {
+    0%,
+    100% {
+      transform: none;
+    }
+    30% {
+      transform: rotate(-12deg) scale(1.1);
+    }
+    65% {
+      transform: rotate(9deg) scale(1.05);
+    }
+  }
+
+  .dash-stat:hover svg {
+    animation: dash-wiggle 0.5s ease-in-out;
+  }
+
+  .dash-stat:hover {
+    transform: translateY(-2px);
+  }
+
+  /* "Hoy": un aro que late alrededor de la etiqueta. */
+  @keyframes dash-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand-500) 55%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 9px transparent;
+    }
+  }
+
+  .dash-pulse {
+    animation: dash-pulse 1.6s ease-out 3;
+  }
+
+  @keyframes dash-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.3) rotate(-25deg);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .dash-pop {
+    animation: dash-pop 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+  }
+
+  /* Llama: titila mientras esta encendida. Al apagarse deja de animarse
+     (asi vale la regla de estado de arriba) y sale el humo. */
+  @keyframes dash-flicker {
+    0%,
+    100% {
+      transform: scale(1, 1) rotate(-2deg);
+    }
+    35% {
+      transform: scale(0.92, 1.1) rotate(3deg);
+    }
+    70% {
+      transform: scale(1.06, 0.94) rotate(-3deg);
+    }
+  }
+
+  .dash-candle[data-lit='true'] .dash-flame {
+    animation: dash-flicker 1.1s ease-in-out infinite;
+  }
+
+  .dash-candle:nth-of-type(2)[data-lit='true'] .dash-flame {
+    animation-duration: 0.9s;
+  }
+
+  .dash-candle:nth-of-type(3)[data-lit='true'] .dash-flame {
+    animation-duration: 1.3s;
+  }
+
+  @keyframes dash-smoke {
+    0% {
+      opacity: 0.85;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-16px) scaleX(1.4);
+    }
+  }
+
+  .dash-candle[data-lit='false'] .dash-smoke {
+    animation: dash-smoke 1s ease-out forwards;
+  }
+
+  @keyframes dash-float {
+    0%,
+    100% {
+      transform: none;
+    }
+    50% {
+      transform: translateY(-7px) rotate(2.5deg);
+    }
+  }
+
+  .dash-balloon {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: dash-float 5s ease-in-out infinite;
+  }
+
+  @keyframes dash-burst {
+    from {
+      opacity: 1;
+      transform: scale(0.4);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.35);
+    }
+  }
+
+  .dash-balloon[data-popped='true'] .dash-balloon-burst {
+    animation: dash-burst 0.35s ease-out forwards;
+  }
+
+  .dash-cake[data-party='true'] .login-pop {
+    animation: login-hop 0.5s ease-in-out 3;
+  }
+
+  /* Confeti: sale del centro, sube abriendose y cae girando. Cada pieza
+     trae su destino, giro y retraso en variables (ver ConfettiBurst). */
+  @keyframes dash-confetti {
+    0% {
+      opacity: 1;
+      transform: translate(0, 0) rotate(0deg) scale(0.4);
+    }
+    55% {
+      opacity: 1;
+      transform: translate(var(--dx), var(--dy)) rotate(calc(var(--spin) * 0.6)) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(calc(var(--dx) * 1.15), calc(var(--dy) + 90px)) rotate(var(--spin))
+        scale(0.9);
+    }
+  }
+
+  .dash-confetti {
+    position: absolute;
+    top: 45%;
+    left: 50%;
+    z-index: 10;
+    display: block;
+    pointer-events: none;
+  }
+
+  .dash-confetti i {
+    position: absolute;
+    opacity: 0;
+    animation: dash-confetti 1.25s cubic-bezier(0.2, 0.7, 0.3, 1) var(--delay, 0ms) forwards;
+  }
+}
+
+/* --- Escena del saludo (DayScene) y viñetas de los paneles (Spots) --- */
+
+/*
+ * Escena fuera de pantalla: en pausa. Las animaciones de un SVG se pintan en
+ * el hilo principal, asi que lo que no se ve solo cuesta. `data-live` lo
+ * pone useSceneGaze con un IntersectionObserver; mientras no lo haya puesto
+ * (HTML del servidor, sin JS) no hay atributo y todo corre normal.
+ */
+.login-scene[data-live='false'],
+.login-scene[data-live='false'] * {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes dash-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Contenido del panel de cumpleaños al ampliarse o reducirse: entra con un
+     fundido corto. */
+  @keyframes dash-swap {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  .dash-swap {
+    animation: dash-swap 0.28s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+
+  /*
+   * Las viñetas de los paneles (reloj, monedas, lupa, medalla, equipo) solo se
+   * animan con el puntero sobre su panel. Animadas siempre, cada una repintaba
+   * su SVG 60 veces por segundo aunque nadie la mirara, y entre todas eran una
+   * parte medible del costo de la pantalla en reposo.
+   */
+
+  /* Rayos del sol y agujas del reloj: giran sobre (0,0), que su grupo padre
+     ya ubico en el centro con un translate. */
+  .dash-rays {
+    animation: dash-spin 28s linear infinite;
+  }
+
+  .dash-widget:hover .dash-spot-minute {
+    animation: dash-spin 1.4s linear infinite;
+  }
+
+  .dash-widget:hover .dash-spot-hour {
+    animation: dash-spin 16.8s linear infinite;
+  }
+
+  @keyframes dash-twinkle {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: scale(0.7) rotate(0deg);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15) rotate(20deg);
+    }
+  }
+
+  .dash-star {
+    animation: dash-twinkle 3s ease-in-out infinite;
+  }
+
+  /* La nube deriva de lado a lado, muy despacio. */
+  @keyframes dash-drift {
+    50% {
+      transform: translateX(14px);
+    }
+  }
+
+  .dash-cloud {
+    animation: dash-drift 11s ease-in-out infinite;
+  }
+
+  @keyframes dash-steam {
+    0% {
+      opacity: 0;
+      transform: translateY(6px) scaleX(0.8);
+    }
+    40% {
+      opacity: 0.9;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-10px) scaleX(1.3);
+    }
+  }
+
+  .dash-steam {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: dash-steam 2.6s ease-out infinite;
+  }
+
+  .dash-steam-late {
+    animation-delay: 1.2s;
+  }
+
+  @keyframes dash-leaves {
+    0%,
+    100% {
+      transform: rotate(-4deg);
+    }
+    50% {
+      transform: rotate(4deg);
+    }
+  }
+
+  .dash-leaves {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: dash-leaves 4.6s ease-in-out infinite;
+  }
+
+  /* Barras y medidores: crecen desde la base al aparecer. */
+  @keyframes dash-bar {
+    from {
+      transform: scaleX(0);
+    }
+  }
+
+  .dash-bar,
+  .dash-meter {
+    transform-origin: left center;
+    animation: dash-bar 0.8s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 90ms + 250ms);
+  }
+
+  /* Moneda que cae sobre la pila, en bucle. */
+  @keyframes dash-coin {
+    0% {
+      opacity: 0;
+      transform: translateY(-16px);
+    }
+    12% {
+      opacity: 1;
+      transform: none;
+    }
+    16% {
+      transform: translateY(-2px);
+    }
+    20%,
+    86% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+      transform: none;
+    }
+  }
+
+  .dash-widget:hover .dash-spot-coin {
+    animation: dash-coin 1.6s ease-in infinite backwards;
+    animation-delay: 0.5s;
+  }
+
+  .dash-widget:hover .dash-spot-coin-late {
+    animation-delay: 0.7s;
+  }
+
+  /* Lupa que recorre la fila de postulantes. */
+  @keyframes dash-scan {
+    0%,
+    100% {
+      transform: none;
+    }
+    40%,
+    55% {
+      transform: translateX(15px);
+    }
+    85%,
+    95% {
+      transform: translateX(30px);
+    }
+  }
+
+  .dash-widget:hover .dash-spot-lens:not([data-held='true']) {
+    animation: dash-scan 2s ease-in-out infinite;
+  }
+
+  /* Aviso de atrasados: un toque cada tanto para que no pase de largo. */
+  @keyframes dash-nudge {
+    0%,
+    86%,
+    100% {
+      transform: none;
+    }
+    90% {
+      transform: rotate(-12deg) scale(1.15);
+    }
+    95% {
+      transform: rotate(10deg) scale(1.1);
+    }
+  }
+
+  .dash-nudge {
+    animation: dash-nudge 4s ease-in-out infinite;
+  }
+}
+
+/* --- Paneles: respuesta al puntero (WidgetCard y lo que llevan adentro) --- */
+
+/*
+ * Resplandor que sigue al puntero sobre una tarjeta (ver Glow.tsx). Es un
+ * circulo con el degradado ya pintado, que solo se MUEVE con `transform`:
+ * lo desplaza el compositor, sin recalcular estilos ni repintar la tarjeta.
+ * Los margenes negativos lo centran sobre el punto adonde se lo lleva.
+ */
+.dash-glow-spot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 28rem;
+  height: 28rem;
+  margin: -14rem 0 0 -14rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--color-brand-50) 0%, transparent 68%);
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+  pointer-events: none;
+}
+
+/* Capa propia solo mientras el puntero esta encima. Declarada siempre, cada
+   tarjeta mantenia una capa de 28rem y obligaba a promover a capa todo lo
+   que se pinta sobre ella: decenas de capas con el tablero quieto. */
+.dash-glow:hover > .dash-glow-spot {
+  opacity: 1;
+  will-change: transform;
+}
+
+.dash-widget {
+  transition:
+    transform 0.25s cubic-bezier(0.3, 1.2, 0.4, 1),
+    border-color 0.25s ease-out,
+    box-shadow 0.25s ease-out;
+}
+
+.dash-widget:hover {
+  border-color: var(--color-brand-200);
+  box-shadow: 0 14px 30px -18px rgb(15 23 42 / 0.3);
+}
+
+/* El panel de cumpleaños arma su propia tarjeta (se amplia, no es un
+   WidgetCard), pero su icono responde igual que el de los demas. */
+.dash-widget:hover .dash-widget-icon,
+.dash-birthdays:hover .dash-widget-icon {
+  background-color: var(--color-brand-600);
+  color: #fff;
+}
+
+/* Medidor circular (ver MyEvaluationsWidget): al señalar otra evaluacion el
+   arco se desliza hasta su valor. */
+.dash-gauge {
+  transition: stroke-dashoffset 0.45s cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+
+/* Cifra dentro de un panel: se destaca al pasarle por encima. */
+.dash-figure {
+  transition: background-color 0.2s ease-out;
+}
+
+.dash-figure:hover {
+  background-color: var(--color-slate-50);
+}
+
+.dash-figure-value {
+  transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+/* Lupa de reclutamiento: al señalar una etapa deja de barrer y se queda
+   sobre ese postulante (`--at` lo pone SearchSpot). */
+.dash-spot-lens {
+  transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+
+.dash-spot-lens[data-held='true'] {
+  animation: none;
+  transform: translateX(var(--at, 0px));
+}
+
+/*
+ * Tablero personalizable (ver DashboardBoard). Cada panel vive en un
+ * "slot" de la grilla, que es quien decide su ancho.
+ *
+ * El panel de cumpleaños ampliado ocupa la fila entera sea cual sea el
+ * tamaño elegido para su slot: el slot lo detecta con :has(), sin que el
+ * panel tenga que avisarle nada al tablero.
+ */
+.dash-slot:has([data-expanded='true']) {
+  grid-column: 1 / -1;
+}
+
+.dash-slot {
+  transition: opacity 0.2s ease-out;
+}
+
+/* Personalizando: cada panel se ve como un bloque que se puede mover. */
+.dash-slot[data-editing='true'] {
+  border-radius: 0.875rem;
+  outline: 2px dashed var(--color-brand-300);
+  outline-offset: 4px;
+  cursor: grab;
+}
+
+.dash-slot[data-editing='true']:active {
+  cursor: grabbing;
+}
+
+/* Moneda lanzada al aire: sin animaciones no se dibuja. */
+.dash-spot-toss {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dash-widget:hover {
+    transform: translateY(-3px);
+  }
+
+  .dash-widget:hover .dash-widget-icon svg,
+  .dash-birthdays:hover .dash-widget-icon svg,
+  .dash-widget:hover .dash-badge {
+    animation: dash-wiggle 0.5s ease-in-out;
+  }
+
+  /* Columnas de un grafico: crecen desde su base, una tras otra. */
+  @keyframes dash-column {
+    from {
+      transform: scaleY(0);
+    }
+  }
+
+  .dash-column {
+    transform-origin: center bottom;
+    animation: dash-column 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 70ms + 250ms);
+  }
+
+  /* El medidor se llena desde vacio al aparecer. */
+  @keyframes dash-gauge {
+    from {
+      stroke-dashoffset: 100;
+    }
+  }
+
+  .dash-gauge {
+    animation: dash-gauge 0.9s cubic-bezier(0.3, 0.8, 0.4, 1) 0.25s backwards;
+  }
+
+  /* Calendario: sus dias saltan en fila mientras el puntero esta encima. */
+  .dash-widget:hover .dash-spot-day {
+    animation: dash-bob 0.9s ease-in-out infinite;
+  }
+
+  .dash-figure:hover .dash-figure-value {
+    transform: scale(1.18);
+  }
+
+  .dash-line:hover {
+    transform: translateX(3px);
+  }
+
+  /* Medalla que se mece colgada de su cinta, y equipo que se balancea. */
+  @keyframes dash-swing {
+    0%,
+    100% {
+      transform: rotate(-7deg);
+    }
+    50% {
+      transform: rotate(7deg);
+    }
+  }
+
+  .dash-widget:hover .dash-spot-medal {
+    animation: dash-swing 1.1s ease-in-out infinite;
+  }
+
+  @keyframes dash-bob {
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+
+  .dash-widget:hover .dash-spot-person {
+    animation: dash-bob 0.9s ease-in-out infinite;
+  }
+
+  @keyframes dash-toss {
+    0% {
+      opacity: 1;
+      transform: translateY(0) scaleY(1);
+    }
+    25% {
+      transform: translateY(-15px) scaleY(-1);
+    }
+    50% {
+      transform: translateY(-21px) scaleY(1);
+    }
+    75% {
+      opacity: 1;
+      transform: translateY(-12px) scaleY(-1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(0) scaleY(1);
+    }
+  }
+
+  .dash-spot-toss {
+    animation: dash-toss 0.7s cubic-bezier(0.3, 0.6, 0.5, 1) forwards;
+  }
+
+  /* Brillo que recorre el medidor mientras el puntero esta sobre el panel. */
+  @keyframes dash-shine {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
+  }
+
+  .dash-meter-shine {
+    background-image: linear-gradient(
+      100deg,
+      transparent 35%,
+      rgb(255 255 255 / 0.4) 50%,
+      transparent 65%
+    );
+    background-size: 200% 100%;
+    background-position: 150% 0;
+    background-repeat: no-repeat;
+  }
+
+  .dash-widget:hover .dash-meter-shine {
+    animation: dash-shine 1.3s linear infinite;
   }
 }

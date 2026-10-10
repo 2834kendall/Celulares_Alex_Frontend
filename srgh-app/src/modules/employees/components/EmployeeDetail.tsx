@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, Cake, Camera, Pencil } from 'lucide-react'
+import { Cake, Camera, Pencil } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
+import { PageHeader } from '@/components/ui/PageHeader'
 import type {
   CatalogoItem,
   DocumentoEmpleado,
@@ -31,8 +31,6 @@ import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
 import { InfoItem, SectionCard } from '@/components/ui/ProfileSection'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { ICON_CONTROL_BASE, ICON_CONTROL_TONES } from '@/components/ui/IconButton'
-import { cn } from '@/lib/utils/cn'
 
 interface EmployeeDetailProps {
   empleado: EmpleadoDetalle
@@ -260,15 +258,11 @@ export function EmployeeDetail({
 
   return (
     <div className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Link
-            href="/employees"
-            aria-label="Volver al listado"
-            className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.slate, 'shrink-0')}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+      <PageHeader
+        title={nombreCompleto}
+        backHref="/employees"
+        backLabel="Volver al listado"
+        leading={
           <div className="relative shrink-0">
             <Avatar size="xl" fotoUrl={empleado.foto_url} nombre={nombreCompleto} />
             {/* Simétrico con el resto de la ficha: nada es editable fuera de
@@ -284,27 +278,32 @@ export function EmployeeDetail({
               </button>
             )}
           </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-bold text-slate-900">{nombreCompleto}</h1>
-            <p className="text-xs text-slate-500">
+        }
+        description={
+          <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
               {empleado.tipo_identificacion_nombre} · {empleado.emp_numero_identificacion}
-            </p>
-          </div>
-          <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              historial ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-            }`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {historial ? 'Activo' : 'Sin contrato vigente'}
+            </span>
+            <span
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                historial ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {historial ? 'Activo' : 'Sin contrato vigente'}
+            </span>
           </span>
-        </div>
-        {canWrite && !editing && enPerfil && (
-          <Button onClick={() => setEditing(true)} className="shrink-0">
-            <Pencil className="h-3.5 w-3.5" /> Editar
-          </Button>
-        )}
-      </div>
+        }
+        actions={
+          canWrite &&
+          !editing &&
+          enPerfil && (
+            <Button onClick={() => setEditing(true)} className="shrink-0">
+              <Pencil className="h-3.5 w-3.5" /> Editar
+            </Button>
+          )
+        }
+      />
 
       <EmployeeProfileTabs
         perfilContent={perfilContent}

@@ -1,8 +1,12 @@
-// app/(dashboard)/error.tsx
 'use client'
 
 import { useEffect } from 'react'
+import Link from 'next/link'
+import { Button, BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '@/components/ui/Button'
+import { StatePanel } from '@/components/ui/StatePanel'
+import { cn } from '@/lib/utils/cn'
 
+/** Error de una sección del dashboard: se muestra dentro de la app, con el menú. */
 export default function DashboardError({
   error,
   reset,
@@ -15,14 +19,23 @@ export default function DashboardError({
   }, [error])
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-      <h2 className="text-lg font-semibold">No se pudo cargar esta sección</h2>
-      <p className="text-sm text-muted-foreground">
-        Hubo un problema al cargar el contenido del dashboard.
-      </p>
-      <button onClick={reset} className="px-4 py-2 rounded bg-primary text-primary-foreground">
-        Reintentar
-      </button>
-    </div>
+    <StatePanel
+      kind="error"
+      title="No se pudo cargar esta sección"
+      description="Hubo un problema al cargar el contenido. Intente de nuevo en unos segundos."
+      actions={
+        <>
+          <Button size="lg" onClick={reset}>
+            Reintentar
+          </Button>
+          <Link
+            href="/dashboard"
+            className={cn(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES.lg)}
+          >
+            Ir al inicio
+          </Link>
+        </>
+      }
+    />
   )
 }

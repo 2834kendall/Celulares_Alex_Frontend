@@ -193,7 +193,7 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
         />
       ) : filteredSchedules.length === 0 ? (
         <EmptyState
-          icon={Search}
+          variant={nameFilter.trim() ? 'no-results' : 'empty'}
           title={
             nameFilter.trim()
               ? `Ningún horario coincide con “${nameFilter}”`

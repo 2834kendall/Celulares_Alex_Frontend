@@ -5,7 +5,7 @@ import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
 import { getConceptos } from '@/modules/payroll/actions/getConceptos'
 import { PeriodoDetail } from '@/modules/payroll/components/PeriodoDetail'
 import { PlanillaImport } from '@/modules/payroll/components/PlanillaImport'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 
 interface PeriodoDetailPageProps {
@@ -33,7 +33,11 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
     if (detailResult.notFound) {
       notFound()
     }
-    return <Alert size="md">{detailResult.error}</Alert>
+    return (
+      <PageError title="Detalle del periodo" backHref="/payroll" backLabel="Volver al listado">
+        {detailResult.error}
+      </PageError>
+    )
   }
 
   const conceptosManuales = (conceptosResult.ok ? conceptosResult.data : []).filter(

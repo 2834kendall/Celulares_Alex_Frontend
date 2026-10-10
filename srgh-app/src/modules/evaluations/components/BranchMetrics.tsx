@@ -24,6 +24,7 @@ import { ScoreBadge } from './ScoreBadge'
 import { ScoreBar } from './ScoreBar'
 import { ScoreCell } from './ScoreCell'
 import { CARD, META_LABEL, TABLE_HEAD, TABLE_WRAP } from '@/components/ui/styles'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 type OpenModal = 'promedios' | 'pendientes' | 'bajo' | null
 
@@ -289,12 +290,11 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
           <p className="ml-auto text-[10px] font-medium text-slate-400">Escala 0–10</p>
         </div>
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-400 ring-1 ring-slate-200">
-              <UserRound className="h-4 w-4" />
-            </div>
-            <p className="text-xs text-slate-500">No hay colaboradores activos en esta sucursal.</p>
-          </div>
+          <EmptyState
+            framed={false}
+            icon={UserRound}
+            title="No hay colaboradores activos en esta sucursal."
+          />
         ) : (
           <>
             <div className="overflow-x-auto">

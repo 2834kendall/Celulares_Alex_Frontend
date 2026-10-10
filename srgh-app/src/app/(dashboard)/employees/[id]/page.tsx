@@ -15,7 +15,7 @@ import {
   getTiposJornada,
 } from '@/modules/employees/actions/getCatalogs'
 import { EmployeeDetail } from '@/modules/employees/components/EmployeeDetail'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 
 interface EmployeeDetailPageProps {
   params: Promise<{ id: string }>
@@ -70,23 +70,31 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
       : Promise.resolve(null),
   ])
 
+  // Sin datos no hay nombre que mostrar: el error lleva un titulo generico y
+  // la flecha de volver, para no dejar la pantalla sin salida.
+  const errorView = (message: string) => (
+    <PageError title="Ficha del empleado" backHref="/employees" backLabel="Volver al listado">
+      {message}
+    </PageError>
+  )
+
   if (!detailResult.ok) {
     if (detailResult.notFound) {
       notFound()
     }
-    return <Alert size="md">{detailResult.error}</Alert>
+    return errorView(detailResult.error)
   }
 
   if (!tiposIdentificacionResult.ok) {
-    return <Alert size="md">{tiposIdentificacionResult.error}</Alert>
+    return errorView(tiposIdentificacionResult.error)
   }
 
   if (!bancosResult.ok) {
-    return <Alert size="md">{bancosResult.error}</Alert>
+    return errorView(bancosResult.error)
   }
 
   if (!territorioResult.ok) {
-    return <Alert size="md">{territorioResult.error}</Alert>
+    return errorView(territorioResult.error)
   }
 
   // A diferencia de los catálogos base, un fallo en documentos NO tumba la

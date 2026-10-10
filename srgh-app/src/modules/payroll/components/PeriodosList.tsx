@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/Badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Alert } from '@/components/ui/Alert'
 import { StatCard } from '@/components/ui/StatCard'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { SPINNER } from '@/components/ui/styles'
 import { useCrudList } from '@/modules/payroll/hooks/useCrudList'
 import { deletePeriodo } from '@/modules/payroll/actions/deletePeriodo'
@@ -144,14 +145,19 @@ export function PeriodosList({ periodos, canWrite = false }: PeriodosListProps) 
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-          <p className="text-sm font-semibold text-slate-700">Sin periodos de nómina</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {total === 0
-              ? 'Crea el primer periodo de planilla para empezar a procesar la nómina.'
-              : 'Ningún periodo coincide con los filtros seleccionados.'}
-          </p>
-        </div>
+        total === 0 ? (
+          <EmptyState
+            icon={CalendarDays}
+            title="Sin periodos de nómina"
+            description="Crea el primer periodo de planilla para empezar a procesar la nómina."
+          />
+        ) : (
+          <EmptyState
+            variant="no-results"
+            title="Sin periodos de nómina"
+            description="Ningún periodo coincide con los filtros seleccionados."
+          />
+        )
       ) : (
         <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
           {/*

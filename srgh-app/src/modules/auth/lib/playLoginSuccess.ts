@@ -1,7 +1,8 @@
 /**
- * Way out of the login once access is granted: the shapes cheer, the tall
- * blue one grows until it fills the screen, and then it lifts like a curtain
- * over the app.
+ * Way out of the login once access is granted: the shapes cheer and dive
+ * behind the floor, the floor line draws itself away after them, and then
+ * the two halves of the screen —the scene and the card— slide apart like
+ * doors, opening onto the app.
  *
  * It runs on a frozen COPY of the login screen, in a layer appended to
  * <body>, and that is the whole point. A server action that sets the session
@@ -12,17 +13,21 @@
  * so it stays up while the app loads underneath — no time is added to the
  * sign-in, the wait just stops being blank.
  *
+ * The cheer and the floor line are CSS, keyed on `data-mood='success'` (see
+ * globals.css): the copy plays them by itself. Only the doors are driven
+ * from here, and they only move `transform`, so the browser slides two
+ * already-painted layers without drawing anything again.
+ *
  * Does nothing when the user asked for reduced motion or the environment has
  * no Web Animations (jsdom in tests).
  */
 
-/* The cheer (`login-cheer` in globals.css) lands at about this point. */
-const GROW_AT_MS = 600
-const GROW_MS = 650
-const LIFT_MS = 700
-/* Hold the full-blue frame this long once the destination is in place. */
-const SETTLE_MS = 160
-/* Give up waiting for the route change and lift anyway. */
+/* The cheer and the floor line (globals.css) are over by this point. */
+const CHEER_MS = 1150
+const OPEN_MS = 720
+/* A beat between the app being in place and the doors opening onto it. */
+const SETTLE_MS = 120
+/* Give up waiting for the route change and open anyway. */
 const ROUTE_TIMEOUT_MS = 8000
 
 const EASE = 'cubic-bezier(0.7, 0, 0.2, 1)'
@@ -56,79 +61,61 @@ export function playLoginSuccess(): void {
   layer.className = 'auth-snapshot'
   layer.setAttribute('aria-hidden', 'true')
   layer.inert = true
-  layer.style.cssText =
-    'position:fixed;inset:0;z-index:2147483000;overflow:hidden;background:#fff;will-change:transform'
+  layer.style.cssText = 'position:fixed;inset:0;z-index:2147483000;overflow:hidden'
 
   const copy = screen.cloneNode(true) as HTMLElement
-  /* What was typed is a property, not an attribute: cloning drops it. */
+  /* What was typed is a property, not an attribute: cloning drops it. A deep
+     clone has the same inputs in the same order, so they pair by index. */
   const fields = screen.querySelectorAll('input')
   copy.querySelectorAll('input').forEach((field, index) => {
-    field.value = fields[index]?.value ?? ''
+    field.value = fields[index].value
   })
   /* No duplicated ids for the form controls while both copies coexist. The
      clipPath keeps its id: the scene references it by url(#…). */
   copy.querySelectorAll('input[id], button[id]').forEach((node) => node.removeAttribute('id'))
   copy.style.transform = `translateY(${-window.scrollY}px)`
 
+  /* Side by side or stacked: measured on the real screen, before it goes. */
+  const [first, second] = Array.from(screen.children) as HTMLElement[]
+  const sideBySide =
+    first && second
+      ? first.getBoundingClientRect().right <= second.getBoundingClientRect().left + 1
+      : true
+
   layer.append(copy)
   document.body.append(layer)
 
-  void run(layer, copy, location.pathname)
+  void run(layer, copy, sideBySide, location.pathname)
 }
 
-async function run(layer: HTMLElement, copy: HTMLElement, startedOn: string) {
-  await wait(GROW_AT_MS)
+async function run(layer: HTMLElement, copy: HTMLElement, sideBySide: boolean, startedOn: string) {
+  const doors = Array.from(copy.children).filter(
+    (node): node is HTMLElement => node instanceof HTMLElement
+  )
 
-  const scene = copy.querySelector<SVGSVGElement>('.login-scene')
-  const hero = scene?.querySelector<SVGGElement>('[data-hero]')
-  const body = hero?.querySelector<SVGGElement>('.login-pop')
-
-  if (scene && hero && body) {
-    /* Let it out: of the panel, of the SVG, and of the group clipped at the
-       ground. It goes right before that group, so it stays behind the rest. */
-    const panel = scene.closest('section')
-    if (panel) {
-      panel.style.overflow = 'visible'
-      panel.style.zIndex = '1'
-    }
-    scene.style.overflow = 'visible'
-    const clipped = hero.parentNode
-    if (clipped instanceof SVGGElement) scene.insertBefore(hero, clipped)
-
-    const box = body.getBoundingClientRect()
-    const centerX = box.left + box.width / 2
-    const centerY = box.top + box.height / 2
-    /* Enough to reach the farthest corner, plus slack for the rounded top. */
-    const scale =
-      1.4 *
-      Math.max(
-        (2 * Math.max(centerX, window.innerWidth - centerX)) / box.width,
-        (2 * Math.max(centerY, window.innerHeight - centerY)) / box.height
-      )
-
-    body.style.transformOrigin = 'center'
-    body.animate(
-      [
-        { transform: 'scale(1, 1)' },
-        { offset: 0.22, transform: 'scale(1.14, 0.9)', easing: 'cubic-bezier(0.6, 0, 0.3, 1)' },
-        { transform: `scale(${scale})` },
-      ],
-      { duration: GROW_MS, fill: 'forwards' }
-    )
-    /* The face would turn into two giant eyes: it bows out as it grows. */
-    hero
-      .querySelector('.login-face')
-      ?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' })
+  /* Each half carries its own background from now on: the screen behind
+     them has to be see-through once they start moving apart. */
+  for (const door of doors) {
+    door.style.backgroundColor = getComputedStyle(door).backgroundColor
+    if (door.style.backgroundColor === 'rgba(0, 0, 0, 0)') door.style.backgroundColor = '#fff'
+    door.style.willChange = 'transform'
   }
 
-  await Promise.all([wait(GROW_MS), routeChanged(startedOn)])
+  await Promise.all([wait(CHEER_MS), routeChanged(startedOn)])
   await wait(SETTLE_MS)
 
-  layer.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-100%)' }], {
-    duration: LIFT_MS,
-    easing: EASE,
-    fill: 'forwards',
+  copy.style.backgroundColor = 'transparent'
+  doors.forEach((door, index) => {
+    const away = index === 0 ? '-101%' : '101%'
+    door.animate(
+      [
+        { transform: 'none' },
+        { transform: sideBySide ? `translateX(${away})` : `translateY(${away})` },
+      ],
+      { duration: OPEN_MS, easing: EASE, fill: 'forwards' }
+    )
   })
-  await wait(LIFT_MS + 50)
+
+  await wait(OPEN_MS + 50)
   layer.remove()
 }

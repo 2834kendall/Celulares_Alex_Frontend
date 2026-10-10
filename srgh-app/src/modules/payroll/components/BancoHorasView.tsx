@@ -12,6 +12,7 @@ import { revertirBancoHoras } from '@/modules/payroll/actions/revertirBancoHoras
 import { PagarBancoHorasModal } from './PagarBancoHorasModal'
 import { CompensarHorasLiquidadoModal } from './CompensarHorasLiquidadoModal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { EmptyState } from '@/components/ui/EmptyState'
 import {
   META_LABEL,
   TABLE_HEAD,
@@ -164,11 +165,14 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
       </div>
 
       {items.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-          {tab === 'pendientes'
-            ? 'No hay horas pendientes por resolver.'
-            : 'Todavía no hay movimientos pagados ni compensados.'}
-        </p>
+        <EmptyState
+          icon={Clock}
+          title={
+            tab === 'pendientes'
+              ? 'No hay horas pendientes por resolver.'
+              : 'Todavía no hay movimientos pagados ni compensados.'
+          }
+        />
       ) : (
         <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
           {/*

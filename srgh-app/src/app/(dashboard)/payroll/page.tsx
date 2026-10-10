@@ -20,7 +20,7 @@ export default async function PayrollPage() {
   if (!canRead) {
     return (
       <ModulePlaceholder
-        title="Nomina"
+        title="Nómina"
         description="Aquí podrás consultar tus comprobantes de pago. Disponible próximamente."
       />
     )
@@ -28,15 +28,15 @@ export default async function PayrollPage() {
 
   const periodosResult = await getPeriodos()
 
-  if (!periodosResult.ok) {
-    return <Alert size="md">{periodosResult.error}</Alert>
-  }
-
   return (
     <div className="min-w-0 space-y-4">
       <PayrollHeader canWrite={canWrite} canManageConceptos={canManageConceptos} />
       <BuscarComprobante />
-      <PeriodosList periodos={periodosResult.data} canWrite={canWrite} />
+      {periodosResult.ok ? (
+        <PeriodosList periodos={periodosResult.data} canWrite={canWrite} />
+      ) : (
+        <Alert size="md">{periodosResult.error}</Alert>
+      )}
     </div>
   )
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Calculator, Loader2, Save } from 'lucide-react'
+import { Calculator, Loader2, Receipt, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   procesarLiquidacionSchema,
@@ -25,6 +25,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface LiquidacionTabProps {
   /** Contratos terminados desde el perfil del empleado y sin liquidar. */
@@ -225,10 +226,11 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
   if (contratos.length === 0) {
     return (
       <div className="space-y-4">
-        <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-          No hay contratos pendientes de liquidar. Los contratos se terminan desde el perfil del
-          empleado.
-        </p>
+        <EmptyState
+          icon={Receipt}
+          title="No hay contratos pendientes de liquidar."
+          description="Los contratos se terminan desde el perfil del empleado."
+        />
         <LiquidacionesHistorial items={historial} canWrite />
       </div>
     )
