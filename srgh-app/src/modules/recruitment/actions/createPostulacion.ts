@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { placeInFirstStage } from '@/modules/recruitment/lib/stageColumns'
 import { postulacionSchema, type PostulacionInput } from '@/modules/recruitment/types'
 
 export type CreatePostulacionResult =
@@ -29,7 +30,7 @@ export async function createPostulacion(
   }
 
   const claims = await requirePermission(PERMISOS.RECLUTAMIENTO_WRITE)
-  const meta = claims.app_metadata as { empresa_id?: number }
+  const meta = claims.app_metadata as { empresa_id?: number; usr_id?: number }
   const empresaId = meta?.empresa_id
   if (!empresaId) {
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
@@ -58,6 +59,8 @@ export async function createPostulacion(
   if (postulacionError || !postulacion) {
     return { ok: false, error: 'No se pudo registrar la postulación.' }
   }
+
+  await placeInFirstStage(supabase, postulacion.pos_id, meta?.usr_id)
 
   revalidatePath('/recruitment')
   revalidatePath(`/recruitment/candidates/${candidatoId}`)

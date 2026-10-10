@@ -63,6 +63,7 @@ describe('createCandidateWithPostulacion (server action)', () => {
     mockClient({
       sgrh_candidatos: { data: { cdt_id: 1 }, error: null },
       sgrh_postulaciones: { data: { pos_id: 1 }, error: null },
+      sgrh_cat_etapas_seleccion: { data: [], error: null },
     })
 
     await createCandidateWithPostulacion(INPUT)
@@ -119,11 +120,54 @@ describe('createCandidateWithPostulacion (server action)', () => {
     mockClient({
       sgrh_candidatos: { data: { cdt_id: 7 }, error: null },
       sgrh_postulaciones: { data: { pos_id: 42 }, error: null },
+      sgrh_cat_etapas_seleccion: { data: [], error: null },
     })
 
     const result = await createCandidateWithPostulacion(INPUT)
 
     expect(result).toEqual({ ok: true, candidatoId: 7, postulacionId: 42 })
     expect(mockRevalidatePath).toHaveBeenCalledWith('/recruitment')
+  })
+})
+
+describe('createCandidateWithPostulacion — entrada al tablero', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(CLAIMS)
+  })
+
+  it('la postulación nueva entra a la PRIMERA columna del tablero', async () => {
+    const client = mockClient({
+      sgrh_candidatos: { data: { cdt_id: 7 }, error: null },
+      sgrh_postulaciones: { data: { pos_id: 42 }, error: null },
+      sgrh_cat_etapas_seleccion: {
+        data: [
+          // Desordenadas a propósito: la primera es la de menor eta_orden.
+          { eta_id: 30, eta_nombre: 'Entrevista', eta_orden: 2, eta_fase: null, eta_color: null },
+          { eta_id: 10, eta_nombre: 'Recibido', eta_orden: 1, eta_fase: null, eta_color: null },
+        ],
+        error: null,
+      },
+    })
+
+    await createCandidateWithPostulacion(INPUT)
+
+    expect(client.rpc).toHaveBeenCalledWith(
+      'registrar_etapa_postulacion',
+      expect.objectContaining({ p_postulacion_id: 42, p_etapa_id: 10, p_resultado: null })
+    )
+  })
+
+  it('sin columnas todavía, la crea igual y no registra ninguna etapa', async () => {
+    const client = mockClient({
+      sgrh_candidatos: { data: { cdt_id: 7 }, error: null },
+      sgrh_postulaciones: { data: { pos_id: 42 }, error: null },
+      sgrh_cat_etapas_seleccion: { data: [], error: null },
+    })
+
+    const result = await createCandidateWithPostulacion(INPUT)
+
+    expect(result).toEqual({ ok: true, candidatoId: 7, postulacionId: 42 })
+    expect(client.rpc).not.toHaveBeenCalled()
   })
 })

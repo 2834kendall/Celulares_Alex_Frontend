@@ -6,7 +6,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import type {
   CandidatoDetalle,
   CandidatoDocumento,
-  EtapaSeleccionItem,
+  EtapaActual,
   PostulacionDetalle,
   PostulacionEtapaItem,
   PuntajeCriterioItem,
@@ -42,8 +42,6 @@ interface PostulacionQueryRow {
   sgrh_cat_etapas_seleccion: {
     eta_id: number
     eta_nombre: string
-    eta_orden: number
-    eta_fase: number | null
     eta_color: string | null
   } | null
 }
@@ -128,7 +126,7 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
       pos_observaciones, pos_puntaje_promedio, pos_empleado_id, pos_etapa_actual_id,
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_nombre ),
-      sgrh_cat_etapas_seleccion ( eta_id, eta_nombre, eta_orden, eta_fase, eta_color )
+      sgrh_cat_etapas_seleccion ( eta_id, eta_nombre, eta_color )
     `
       )
       .eq('pos_candidato_id', candidatoId)
@@ -224,12 +222,10 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
   }
 
   const postulacionesDetalle: PostulacionDetalle[] = (postulaciones ?? []).map((row) => {
-    const etapaActual: EtapaSeleccionItem | null = row.sgrh_cat_etapas_seleccion
+    const etapaActual: EtapaActual | null = row.sgrh_cat_etapas_seleccion
       ? {
           id: row.sgrh_cat_etapas_seleccion.eta_id,
           nombre: row.sgrh_cat_etapas_seleccion.eta_nombre,
-          orden: row.sgrh_cat_etapas_seleccion.eta_orden,
-          fase: (row.sgrh_cat_etapas_seleccion.eta_fase ?? 1) as 1 | 2 | 3,
           color: row.sgrh_cat_etapas_seleccion.eta_color,
         }
       : null

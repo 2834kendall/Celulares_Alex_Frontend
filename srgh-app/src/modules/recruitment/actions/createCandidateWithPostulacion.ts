@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { placeInFirstStage } from '@/modules/recruitment/lib/stageColumns'
 import { mapRecruitmentUniqueError } from '@/modules/recruitment/lib/dbErrors'
 import { nuevoCandidatoSchema, type NuevoCandidatoInput } from '@/modules/recruitment/types'
 
@@ -27,7 +28,7 @@ export async function createCandidateWithPostulacion(
   }
 
   const claims = await requirePermission(PERMISOS.RECLUTAMIENTO_WRITE)
-  const meta = claims.app_metadata as { empresa_id?: number }
+  const meta = claims.app_metadata as { empresa_id?: number; usr_id?: number }
   const empresaId = meta?.empresa_id
   if (!empresaId) {
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
@@ -61,6 +62,8 @@ export async function createCandidateWithPostulacion(
     await supabase.from('sgrh_candidatos').delete().eq('cdt_id', candidato.cdt_id)
     return { ok: false, error: 'No se pudo registrar la postulación.' }
   }
+
+  await placeInFirstStage(supabase, postulacion.pos_id, meta?.usr_id)
 
   revalidatePath('/recruitment')
   return { ok: true, candidatoId: candidato.cdt_id, postulacionId: postulacion.pos_id }

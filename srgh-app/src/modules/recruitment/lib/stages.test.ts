@@ -1,40 +1,69 @@
 import { describe, expect, it } from 'vitest'
-import { compareStages, isForward, sortStages, stagesAfter } from './stages'
+import { nextStage, sortStageRows } from './stages'
 
-const recepcion = { id: 1, fase: 1, orden: 1 }
-const entrevista = { id: 2, fase: 2, orden: 30 }
-const prueba = { id: 3, fase: 2, orden: 31 }
-// Creada ANTES que las otras (orden menor) pero en la columna de Decisión:
-// igual va al final del embudo.
-const decision = { id: 4, fase: 3, orden: 5 }
-
-describe('orden del embudo', () => {
-  it('ordena primero por columna y después por el orden configurado', () => {
-    expect(sortStages([decision, prueba, recepcion, entrevista]).map((s) => s.id)).toEqual([
-      1, 2, 3, 4,
-    ])
+describe('sortStageRows — orden de las columnas', () => {
+  it('sin fase (catálogo ya reordenado) manda solo eta_orden', () => {
+    const rows = [
+      { eta_id: 3, eta_orden: 2, eta_fase: null },
+      { eta_id: 1, eta_orden: 3, eta_fase: null },
+      { eta_id: 2, eta_orden: 1, eta_fase: null },
+    ]
+    expect(sortStageRows(rows).map((r) => r.eta_id)).toEqual([2, 3, 1])
   })
 
-  it('compareStages: la misma etapa no es "después"', () => {
-    expect(compareStages(prueba, prueba)).toBe(0)
+  it('respeta el orden histórico (fase y después orden) mientras nadie reordene', () => {
+    const rows = [
+      // "Decisión" creada antes que las de evaluación: igual iba al final.
+      { eta_id: 4, eta_orden: 1, eta_fase: 3 },
+      { eta_id: 2, eta_orden: 30, eta_fase: 2 },
+      { eta_id: 1, eta_orden: 40, eta_fase: 1 },
+      { eta_id: 3, eta_orden: 31, eta_fase: 2 },
+    ]
+    expect(sortStageRows(rows).map((r) => r.eta_id)).toEqual([1, 2, 3, 4])
+  })
+
+  it('una etapa nueva (sin fase) va después de las que todavía tienen fase', () => {
+    const rows = [
+      { eta_id: 9, eta_orden: 1, eta_fase: null },
+      { eta_id: 1, eta_orden: 50, eta_fase: 3 },
+    ]
+    expect(sortStageRows(rows).map((r) => r.eta_id)).toEqual([1, 9])
+  })
+
+  it('no modifica el arreglo original', () => {
+    const rows = [
+      { eta_id: 2, eta_orden: 2, eta_fase: null },
+      { eta_id: 1, eta_orden: 1, eta_fase: null },
+    ]
+    sortStageRows(rows)
+    expect(rows.map((r) => r.eta_id)).toEqual([2, 1])
   })
 })
 
-describe('solo hacia adelante', () => {
-  it('desde "Prueba práctica" solo se puede ir a las posteriores', () => {
-    expect(stagesAfter([recepcion, entrevista, prueba, decision], prueba).map((s) => s.id)).toEqual(
-      [4]
-    )
+describe('nextStage', () => {
+  const stages = [
+    { id: 10, orden: 0 },
+    { id: 20, orden: 1 },
+    { id: 30, orden: 2 },
+  ]
+
+  it('sin etapa actual ofrece la primera columna', () => {
+    expect(nextStage(stages, null)?.id).toBe(10)
   })
 
-  it('no se puede volver atrás ni repetir la etapa actual', () => {
-    expect(isForward(prueba, entrevista)).toBe(false)
-    expect(isForward(prueba, prueba)).toBe(false)
-    expect(isForward(prueba, decision)).toBe(true)
+  it('devuelve la columna siguiente', () => {
+    expect(nextStage(stages, { id: 20, orden: 1 })?.id).toBe(30)
   })
 
-  it('sin etapa actual (postulación nueva) todas son válidas', () => {
-    expect(stagesAfter([decision, recepcion], null).map((s) => s.id)).toEqual([1, 4])
-    expect(isForward(null, recepcion)).toBe(true)
+  it('en la última columna no hay siguiente', () => {
+    expect(nextStage(stages, { id: 30, orden: 2 })).toBeNull()
+  })
+
+  it('si la etapa actual ya no es una columna, ofrece la primera', () => {
+    expect(nextStage(stages, { id: 99, orden: -1 })?.id).toBe(10)
+  })
+
+  it('sin columnas no hay siguiente', () => {
+    expect(nextStage([], null)).toBeNull()
   })
 })
