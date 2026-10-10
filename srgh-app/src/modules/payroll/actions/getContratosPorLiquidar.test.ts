@@ -40,6 +40,7 @@ function terminado(
       ],
     },
     sgrh_cat_motivos_salida: RENUNCIA,
+    sgrh_cat_tipos_contrato: { tco_codigo: 'PLAZO_FIJO', tco_nombre: 'Contrato a Plazo Fijo' },
     sgrh_liquidaciones: liquidaciones,
   }
 }
@@ -112,6 +113,8 @@ describe('getContratosPorLiquidar (server action)', () => {
             generaPreaviso: false,
             notaLegal: 'Sin responsabilidad patronal.',
           },
+          // El tipo de contrato decide si va la indemnización del Art. 31.
+          tipoContrato: { codigo: 'PLAZO_FIJO', nombre: 'Contrato a Plazo Fijo' },
         },
       ],
     })

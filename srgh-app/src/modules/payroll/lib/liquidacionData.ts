@@ -45,7 +45,7 @@ import {
 } from './derechosData'
 import { anioCicloAguinaldo, quincenaPagadaEnLiquidacion } from './liquidacion'
 import { parseFechaLocal } from './fechas'
-import { formatCRC, rangoAguinaldo } from './format'
+import { formatCRC, periodoLabel, rangoAguinaldo } from './format'
 import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from './bancoHoras'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -59,6 +59,8 @@ export interface HistorialLiquidacionRow {
   lab_motivo_salida_id: number | null
   lab_salario_base: number | null
   lab_salario_real: number | null
+  /** Tipo de contrato: decide si aplica el Art. 31 (plazo fijo). */
+  sgrh_cat_tipos_contrato?: { tco_codigo: string } | null
   sgrh_empleados: {
     emp_fecha_ingreso_original: string | null
     /** Todos los contratos del empleado, para armar la relación laboral. */
@@ -76,6 +78,7 @@ export type HistorialTerminadoRow = HistorialLiquidacionRow & {
 
 export const SELECT_HISTORIAL_LIQUIDACION = `lab_id, lab_empleado_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_motivo_salida_id,
    lab_salario_base, lab_salario_real,
+   sgrh_cat_tipos_contrato ( tco_codigo ),
    sgrh_empleados ( emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) ),
    sgrh_liquidaciones ( liq_id )`
 
@@ -223,17 +226,21 @@ export async function calcularBasesLiquidacion(
       ? historial.lab_salario_real!
       : (historial.lab_salario_base ?? 0)
 
+  // Quincena de ingreso o de salida a medias: cuenta por lo trabajado.
+  const rango = inicioRelacion ? { inicio: inicioRelacion, fin: fechaSalida } : null
   const promedio = promedioDiarioSinSubsidios(
     quincenas,
     claveSalida,
     QUINCENAS_PROMEDIO_LIQUIDACION,
-    salarioContrato
+    salarioContrato,
+    rango
   )
   const promedioVacaciones = promedioDiarioSinSubsidios(
     quincenas,
     claveSalida,
     QUINCENAS_PROMEDIO_VACACIONES,
-    salarioContrato
+    salarioContrato,
+    rango
   )
 
   const cicloAnio = anioCicloAguinaldo(mesSalida, anioSalida)
@@ -264,8 +271,12 @@ export async function calcularBasesLiquidacion(
       fechaIngreso,
       ingresoOriginal,
       inicioRelacion,
+      // Desde el inicio de ESTA relación laboral: tras un reingreso, la
+      // relación anterior ya se liquidó y su tiempo no se vuelve a pagar
+      // (auditoría 2, hallazgo 13). Antes se medía desde el ingreso original
+      // de la ficha, aunque fuera de antes de esa liquidación.
       antiguedad: calcularAntiguedad(
-        parseFechaLocal(fechaIngreso),
+        parseFechaLocal(inicioRelacion || fechaIngreso),
         parseFechaLocal(diaSiguiente(fechaSalida))
       ),
       salarioContrato,
@@ -437,6 +448,26 @@ export interface HorasBancoPendientes {
   movimientos: { bhmId: number; horas: number; monto: number }[]
   horas: number
   monto: number
+  /**
+   * Movimientos que ya se habían pagado a una quincena que esta liquidación
+   * cubre como salario pendiente: esa fila no se paga nunca por planilla, así
+   * que el monto (el que se pagó) entra al finiquito (auditoría 2, fallo 4).
+   */
+  absorbidos: { bhmId: number; horas: number; monto: number; quincena: string }[]
+}
+
+interface MovimientoAbsorbidoRow {
+  bhm_id: number
+  bhm_horas: number
+  bhm_monto_pagado: number | null
+  sgrh_nomina_detalle: {
+    ndt_pagado: boolean
+    sgrh_nomina_periodo: {
+      npe_periodo_anio: number
+      npe_periodo_mes: number
+      npe_quincena: number
+    } | null
+  } | null
 }
 
 /**
@@ -447,12 +478,14 @@ export interface HorasBancoPendientes {
  */
 export async function horasDeBancoPendientes(
   supabase: SupabaseServerClient,
-  labIds: number[]
+  labIds: number[],
+  /** Quincenas (claveQuincenal) que la liquidación paga como salario pendiente. */
+  quincenasCubiertas: ReadonlySet<number> = new Set()
 ): Promise<{ ok: true; data: HorasBancoPendientes } | { ok: false }> {
-  const vacio = { movimientos: [], horas: 0, monto: 0 }
+  const vacio = { movimientos: [], horas: 0, monto: 0, absorbidos: [] }
   if (labIds.length === 0) return { ok: true, data: vacio }
 
-  const [movimientos, concepto] = await Promise.all([
+  const [movimientos, concepto, pagados] = await Promise.all([
     supabase
       .from('sgrh_banco_horas_movimientos')
       .select('bhm_id, bhm_horas, bhm_salario_por_hora')
@@ -465,8 +498,42 @@ export async function horasDeBancoPendientes(
       .select('con_porcentaje')
       .eq('con_codigo', 'HORAS_EXTRA')
       .maybeSingle<{ con_porcentaje: number | null }>(),
+    quincenasCubiertas.size > 0
+      ? supabase
+          .from('sgrh_banco_horas_movimientos')
+          .select(
+            `bhm_id, bhm_horas, bhm_monto_pagado,
+             sgrh_nomina_detalle!sgrh_banco_horas_movimientos_bhm_nomina_detalle_pago_id_fkey (
+               ndt_pagado, sgrh_nomina_periodo ( npe_periodo_anio, npe_periodo_mes, npe_quincena )
+             )`
+          )
+          .in('bhm_historial_laboral_id', labIds)
+          .eq('bhm_estado', 'pagado')
+          .is('bhm_liquidacion_id', null)
+          .not('bhm_nomina_detalle_pago_id', 'is', null)
+          .order('bhm_id')
+          .returns<MovimientoAbsorbidoRow[]>()
+      : Promise.resolve({ data: [] as MovimientoAbsorbidoRow[], error: null }),
   ])
-  if (movimientos.error || concepto.error) return { ok: false }
+  if (movimientos.error || concepto.error || pagados.error) return { ok: false }
+
+  const absorbidos = (Array.isArray(pagados.data) ? pagados.data : []).flatMap((m) => {
+    const fila = m.sgrh_nomina_detalle
+    const p = fila?.sgrh_nomina_periodo
+    if (!fila || fila.ndt_pagado || !p) return []
+    if (
+      !quincenasCubiertas.has(claveQuincenal(p.npe_periodo_anio, p.npe_periodo_mes, p.npe_quincena))
+    )
+      return []
+    return [
+      {
+        bhmId: m.bhm_id,
+        horas: Number(m.bhm_horas),
+        monto: Number(m.bhm_monto_pagado ?? 0),
+        quincena: periodoLabel(p.npe_periodo_mes, p.npe_periodo_anio, p.npe_quincena),
+      },
+    ]
+  })
 
   const factor = factorHorasExtra(concepto.data?.con_porcentaje ?? null)
   const lista = (Array.isArray(movimientos.data) ? movimientos.data : []).map((m) => ({
@@ -484,6 +551,7 @@ export async function horasDeBancoPendientes(
       movimientos: lista,
       horas: lista.reduce((t, m) => t + m.horas, 0),
       monto: lista.reduce((t, m) => Math.round((t + m.monto) * 100) / 100, 0),
+      absorbidos,
     },
   }
 }

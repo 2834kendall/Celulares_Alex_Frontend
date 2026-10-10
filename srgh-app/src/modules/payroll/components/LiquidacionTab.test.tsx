@@ -47,6 +47,8 @@ const CONTRATOS: ContratoPorLiquidarItem[] = [
       generaPreaviso: false,
       notaLegal: null,
     },
+
+    tipoContrato: { codigo: 'INDEF', nombre: 'Contrato por Tiempo Indefinido' },
   },
   {
     historialLaboralId: 8,
@@ -60,6 +62,8 @@ const CONTRATOS: ContratoPorLiquidarItem[] = [
       generaPreaviso: true,
       notaLegal: null,
     },
+
+    tipoContrato: { codigo: 'INDEF', nombre: 'Contrato por Tiempo Indefinido' },
   },
 ]
 
@@ -77,6 +81,10 @@ const CALCULO: LiquidacionCalculada = {
   preaviso: 0,
   diasCesantia: 0,
   cesantia: 0,
+  notaPreaviso: 'no aplica por el motivo de salida (Renuncia Voluntaria)',
+  notaCesantia: 'no aplica por el motivo de salida (Renuncia Voluntaria)',
+  diasIndemnizacionPlazoFijo: 0,
+  indemnizacionPlazoFijo: 0,
   total: 300000,
   deduccionesObreras: 21660,
   neto: 278340,
@@ -148,7 +156,12 @@ describe('<LiquidacionTab /> — contrato terminado desde el perfil', () => {
 
     await waitFor(() =>
       expect(mockProcesar).toHaveBeenCalledWith(
-        { historialLaboralId: 5, diasVacacionesPendientes: 0, cesantiaPactada: null },
+        {
+          historialLaboralId: 5,
+          diasVacacionesPendientes: 0,
+          cesantiaPactada: null,
+          plazoSeisMesesOMas: null,
+        },
         { soloCalcular: true }
       )
     )
@@ -190,7 +203,12 @@ describe('<LiquidacionTab /> — contrato terminado desde el perfil', () => {
 
     await waitFor(() =>
       expect(mockProcesar).toHaveBeenLastCalledWith(
-        { historialLaboralId: 5, diasVacacionesPendientes: 0, cesantiaPactada: null },
+        {
+          historialLaboralId: 5,
+          diasVacacionesPendientes: 0,
+          cesantiaPactada: null,
+          plazoSeisMesesOMas: null,
+        },
         { netoEsperado: 278340 }
       )
     )
@@ -247,6 +265,7 @@ describe('<LiquidacionTab /> — mutuo acuerdo', () => {
       generaPreaviso: false,
       notaLegal: null,
     },
+    tipoContrato: { codigo: 'INDEF', nombre: 'Contrato por Tiempo Indefinido' },
   }
 
   it('solo en mutuo acuerdo pregunta si se pactó la cesantía', () => {
@@ -279,10 +298,71 @@ describe('<LiquidacionTab /> — mutuo acuerdo', () => {
 
     await waitFor(() =>
       expect(mockProcesar).toHaveBeenCalledWith(
-        { historialLaboralId: 9, diasVacacionesPendientes: 0, cesantiaPactada: 'no' },
+        {
+          historialLaboralId: 9,
+          diasVacacionesPendientes: 0,
+          cesantiaPactada: 'no',
+          plazoSeisMesesOMas: null,
+        },
         { soloCalcular: true }
       )
     )
     expect(await screen.findByText('stop')).toBeInTheDocument()
+  })
+})
+
+// Auditoría 2: contrato a plazo fijo terminado por el patrono (Art. 31).
+describe('<LiquidacionTab /> — contrato a plazo fijo', () => {
+  const PLAZO_FIJO: ContratoPorLiquidarItem = {
+    historialLaboralId: 12,
+    nombre: 'Beto Vargas',
+    cedula: '4-4444-4444',
+    fechaSalida: '2026-09-25',
+    motivo: {
+      codigo: 'DES001',
+      nombre: 'Despido con Responsabilidad Patronal',
+      generaCesantia: true,
+      generaPreaviso: true,
+      notaLegal: null,
+    },
+    tipoContrato: { codigo: 'PLAZO_FIJO', nombre: 'Contrato a Plazo Fijo' },
+  }
+
+  it('avisa que va la indemnización del Art. 31 y pide el plazo pactado', async () => {
+    const user = userEvent.setup()
+    mockProcesar.mockResolvedValue({ ok: false, error: 'stop' })
+    searchString = 'empleado=12'
+    renderTab([...CONTRATOS, PLAZO_FIJO])
+
+    expect(screen.getByText(/indemnización del Art. 31/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+    expect(
+      await screen.findByText('Indicá si el contrato se pactó por seis meses o más.')
+    ).toBeInTheDocument()
+    expect(mockProcesar).not.toHaveBeenCalled()
+
+    await user.click(screen.getByLabelText('Sí, seis meses o más'))
+    await user.click(screen.getByRole('button', { name: 'Calcular liquidación' }))
+
+    await waitFor(() =>
+      expect(mockProcesar).toHaveBeenCalledWith(
+        {
+          historialLaboralId: 12,
+          diasVacacionesPendientes: 0,
+          cesantiaPactada: null,
+          plazoSeisMesesOMas: 'si',
+        },
+        { soloCalcular: true }
+      )
+    )
+  })
+
+  it('un indefinido despedido no pregunta el plazo', () => {
+    searchString = 'empleado=8'
+    renderTab([...CONTRATOS, PLAZO_FIJO])
+
+    expect(
+      screen.queryByText('¿El contrato se pactó por seis meses o más?')
+    ).not.toBeInTheDocument()
   })
 })

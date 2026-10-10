@@ -7,8 +7,11 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import {
   diaComercialDeSalida,
   MOTIVO_MUTUO_ACUERDO,
+  TIPOS_CONTRATO_ART_31,
   calcularLiquidacion,
+  diasCalendarioInclusive,
   diasSalarioPendiente,
+  notaRubroSinDias,
 } from '@/modules/payroll/lib/liquidacion'
 import { esConceptoDelTrabajador } from '@/modules/payroll/lib/planilla'
 import {
@@ -37,6 +40,7 @@ export type ProcesarLiquidacionResult =
 interface MotivoRow {
   mot_id: number
   mot_codigo: string
+  mot_nombre: string
   mot_genera_cesantia: boolean
   mot_genera_preaviso: boolean
 }
@@ -123,7 +127,7 @@ export async function procesarLiquidacion(
 
   const { data: motivo, error: errMotivo } = await supabase
     .from('sgrh_cat_motivos_salida')
-    .select('mot_id, mot_codigo, mot_genera_cesantia, mot_genera_preaviso')
+    .select('mot_id, mot_codigo, mot_nombre, mot_genera_cesantia, mot_genera_preaviso')
     .eq('mot_id', historial.lab_motivo_salida_id)
     .maybeSingle<MotivoRow>()
 
@@ -145,6 +149,17 @@ export async function procesarLiquidacion(
     }
   }
   const generaCesantia = esMutuoAcuerdo ? data.cesantiaPactada === 'si' : motivo.mot_genera_cesantia
+
+  const tipoContrato = historial.sgrh_cat_tipos_contrato?.tco_codigo ?? null
+  const plazoFijoArt31 =
+    tipoContrato !== null && TIPOS_CONTRATO_ART_31.has(tipoContrato) && motivo.mot_genera_preaviso
+  if (plazoFijoArt31 && !data.plazoSeisMesesOMas) {
+    return {
+      ok: false,
+      error:
+        'Es un contrato a plazo fijo terminado por el patrono: indicá si se pactó por seis meses o más.',
+    }
+  }
 
   const basesResult = await calcularBasesLiquidacion(
     supabase,
@@ -261,6 +276,10 @@ export async function procesarLiquidacion(
     advertencias.push(
       'El empleado no tiene fecha de ingreso original registrada, así que la antigüedad se midió desde el inicio de este contrato. Si tuvo contratos anteriores, la cesantía y el preaviso quedan cortos: cargá la fecha en su ficha y volvé a calcular.'
     )
+  } else if (bases.inicioRelacion && bases.inicioRelacion > bases.ingresoOriginal) {
+    advertencias.push(
+      `La antigüedad se midió desde el reingreso (${bases.inicioRelacion}): la relación anterior ya se liquidó y ese tiempo no se vuelve a contar.`
+    )
   } else if (bases.ingresoOriginal !== historial.lab_fecha_inicio) {
     advertencias.push(
       `La antigüedad se midió desde el ingreso a la empresa (${bases.ingresoOriginal}), no desde el inicio de este contrato (${historial.lab_fecha_inicio}).`
@@ -282,13 +301,32 @@ export async function procesarLiquidacion(
     )
   }
 
+  // Contrato a plazo fijo (u obra determinada) que el patrono termina sin
+  // justa causa: no lleva preaviso ni cesantía (son del contrato por tiempo
+  // indefinido) sino la indemnización del Art. 31 CT. Antes se liquidaba como
+  // indefinido (auditoría 2, riesgo "plazo fijo"). "Sin justa causa" = un
+  // motivo que genera preaviso (despido con responsabilidad, reducción de
+  // personal, cierre…); si el plazo se cumplió, el motivo es "Fin de
+  // contrato a plazo fijo", que no genera nada.
+  const plazoFijo = plazoFijoArt31
+    ? {
+        diasTrabajados: diasCalendarioInclusive(historial.lab_fecha_inicio, fechaSalida),
+        seisMesesOMas: data.plazoSeisMesesOMas === 'si',
+      }
+    : null
+  if (plazoFijo) {
+    advertencias.push(
+      `${historial.sgrh_cat_tipos_contrato?.tco_codigo === 'OBRA_DET' ? 'Contrato por obra determinada' : 'Contrato a plazo fijo'} terminado por el patrono: en vez de preaviso y cesantía se paga la indemnización del Art. 31 del Código de Trabajo, un día de salario por cada siete días trabajados (${plazoFijo.diasTrabajados} días), con un mínimo de 3 días${plazoFijo.seisMesesOMas ? ' y, por haberse pactado por seis meses o más, de 22 días' : ''}. El trabajador puede reclamar además daños y perjuicios por el plazo que faltaba; eso lo fija un juez y no está en este cálculo.`
+    )
+  }
+
   const avisoAnterior = await avisoAguinaldoAnterior(supabase, bases.cicloAnterior)
   if (avisoAnterior) advertencias.push(avisoAnterior)
 
   // Horas extra que seguían pendientes en el banco de horas: después de la
   // salida no hay quincena donde pagarlas, así que van en el finiquito
   // (auditoría, hallazgo 4). La RPC las deja pagadas por esta liquidación.
-  const banco = await horasDeBancoPendientes(supabase, bases.labIds)
+  const banco = await horasDeBancoPendientes(supabase, bases.labIds, clavesEnLiquidacion)
   if (!banco.ok) {
     return {
       ok: false,
@@ -300,9 +338,23 @@ export async function procesarLiquidacion(
       `Se pagan ${formatHoras(banco.data.horas)} h extra que seguían pendientes en el banco de horas (${formatCRC(banco.data.monto)}). Esos movimientos quedan pagados por esta liquidación.`
     )
   }
+  // Horas del banco que ya se habían pagado a una quincena que esta
+  // liquidación cubre: esa fila no se paga por planilla, así que sin esto la
+  // plata no salía por ningún lado (auditoría 2, fallo 4).
+  const absorbidos = banco.data.absorbidos
+  const horasAbsorbidas = absorbidos.reduce((t, m) => t + m.horas, 0)
+  const montoAbsorbido = absorbidos.reduce((t, m) => Math.round((t + m.monto) * 100) / 100, 0)
+  if (absorbidos.length > 0) {
+    advertencias.push(
+      `Se pagan también ${formatHoras(horasAbsorbidas)} h extra del banco de horas (${formatCRC(montoAbsorbido)}) que se habían sumado a ${[...new Set(absorbidos.map((m) => m.quincena))].join(' y ')}: esa quincena va en esta liquidación como salario pendiente y no se paga por planilla.`
+    )
+  }
 
   const resultado = calcularLiquidacion({
-    horasExtraBanco: { horas: banco.data.horas, monto: banco.data.monto },
+    horasExtraBanco: {
+      horas: banco.data.horas + horasAbsorbidas,
+      monto: Math.round((banco.data.monto + montoAbsorbido) * 100) / 100,
+    },
     salarioDiario,
     salarioDiarioVacaciones: bases.promedioVacaciones.salarioDiario,
     diasTrabajadosMesActual,
@@ -314,6 +366,23 @@ export async function procesarLiquidacion(
     generaCesantia,
     generaPreaviso: motivo.mot_genera_preaviso,
     porcentajeDeduccionObrera,
+    plazoFijo,
+  })
+
+  const notaPreaviso = notaRubroSinDias({
+    rubro: 'preaviso',
+    dias: resultado.diasPreaviso,
+    plazoFijo: plazoFijo !== null,
+    generaPorMotivo: motivo.mot_genera_preaviso,
+    motivoNombre: motivo.mot_nombre,
+  })
+  const notaCesantia = notaRubroSinDias({
+    rubro: 'cesantia',
+    dias: resultado.diasCesantia,
+    plazoFijo: plazoFijo !== null,
+    generaPorMotivo: generaCesantia || esMutuoAcuerdo,
+    motivoNombre: motivo.mot_nombre,
+    mutuoAcuerdoSinCesantia: esMutuoAcuerdo && data.cesantiaPactada !== 'si',
   })
 
   const desglose = {
@@ -329,6 +398,10 @@ export async function procesarLiquidacion(
     preaviso: resultado.preaviso,
     diasCesantia: resultado.diasCesantia,
     cesantia: resultado.cesantia,
+    notaPreaviso,
+    notaCesantia,
+    diasIndemnizacionPlazoFijo: resultado.diasIndemnizacionPlazoFijo,
+    indemnizacionPlazoFijo: resultado.indemnizacionPlazoFijo,
     total: resultado.total,
     deduccionesObreras: resultado.deduccionesObreras,
     neto: resultado.neto,
@@ -369,13 +442,20 @@ export async function procesarLiquidacion(
       liq_preaviso: resultado.preaviso,
       liq_dias_cesantia: resultado.diasCesantia,
       liq_cesantia: resultado.cesantia,
+      liq_nota_preaviso: notaPreaviso,
+      liq_nota_cesantia: notaCesantia,
+      liq_dias_indemnizacion_plazo_fijo: resultado.diasIndemnizacionPlazoFijo,
+      liq_indemnizacion_plazo_fijo: resultado.indemnizacionPlazoFijo,
       liq_total: resultado.total,
       liq_deducciones_obreras: resultado.deduccionesObreras,
       liq_neto: resultado.neto,
       liq_observaciones: advertencias.length > 0 ? advertencias.join('\n') : null,
       // La RPC deja estos movimientos pagados por la liquidación, en la misma
       // transacción. Si alguno ya no está pendiente, no guarda nada.
-      banco_horas: banco.data.movimientos.map((m) => ({ bhm_id: m.bhmId, monto: m.monto })),
+      banco_horas: [
+        ...banco.data.movimientos.map((m) => ({ bhm_id: m.bhmId, monto: m.monto })),
+        ...absorbidos.map((m) => ({ bhm_id: m.bhmId, monto: m.monto, absorbido: true })),
+      ],
       resuelto_por_id: (claims.app_metadata as { usr_id?: number })?.usr_id ?? null,
     },
   })

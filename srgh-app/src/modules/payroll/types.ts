@@ -133,6 +133,12 @@ export interface DetalleNominaItem {
   ajusteEsperado: number | null
   /** Día por día de la quincena, para explicar de dónde sale el total. */
   dias: DiaCalculado[]
+  /**
+   * Horas que la asistencia de hoy pasa a extra por superar el tope semanal
+   * de la jornada (Art. 136 CT). Solo viene si hay. Explica por qué el día a
+   * día no suma lo mismo que el total.
+   */
+  horasExtraPorTopeSemanal?: number
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
   incapacidad: IncapacidadItem | null
   /**
@@ -165,6 +171,11 @@ export interface IncapacidadItem {
   diasCcss: number
   porcentajePagoEmpleador: number
   monto: number
+  /**
+   * Tipo de la ausencia (tau_nombre: "Incapacidad por Maternidad"…), para el
+   * rótulo del comprobante. null si no se pudo leer: queda el genérico.
+   */
+  tipoNombre?: string | null
 }
 
 export interface PeriodoDetalle {
@@ -529,6 +540,13 @@ export interface ContratoPorLiquidarItem {
     generaPreaviso: boolean
     notaLegal: string | null
   } | null
+  /**
+   * Tipo de contrato (tco_codigo). Un contrato a plazo fijo o por obra
+   * determinada terminado por el patrono lleva la indemnización del Art. 31
+   * en vez de preaviso y cesantía, y pide decir si se pactó por seis meses o
+   * más. Null si no se pudo leer.
+   */
+  tipoContrato: { codigo: string; nombre: string } | null
 }
 
 // La fecha de salida y el motivo ya no se capturan acá: salen del contrato,
@@ -545,6 +563,13 @@ export const procesarLiquidacionSchema = z.object({
    * catálogo y esto se ignora.
    */
   cesantiaPactada: z.enum(['si', 'no']).nullish(),
+  /**
+   * Solo en un contrato a plazo fijo u obra determinada que el patrono
+   * termina (Art. 31 CT): si se pactó por seis meses o más (o la obra debía
+   * durar eso). Cambia el mínimo de la indemnización de 3 a 22 días. El
+   * sistema no guarda el plazo pactado, así que lo dice quien liquida.
+   */
+  plazoSeisMesesOMas: z.enum(['si', 'no']).nullish(),
 })
 
 export type ProcesarLiquidacionInput = z.infer<typeof procesarLiquidacionSchema>
@@ -574,6 +599,15 @@ export interface DesgloseLiquidacion {
   preaviso: number
   diasCesantia: number
   cesantia: number
+  /**
+   * Por qué el preaviso o la cesantía quedaron en 0 días (ver
+   * notaRubroSinDias). null si tienen días o en liquidaciones viejas sin nota.
+   */
+  notaPreaviso: string | null
+  notaCesantia: string | null
+  /** Indemnización del Art. 31 CT (contrato a plazo fijo roto sin justa causa). */
+  diasIndemnizacionPlazoFijo: number
+  indemnizacionPlazoFijo: number
   /** Bruto: suma de todos los rubros. */
   total: number
   /** Cuota obrera sobre salario pendiente, vacaciones y horas extra. Preaviso, cesantía y aguinaldo no cotizan. */
@@ -720,6 +754,8 @@ export interface BancoHorasItem {
   createdAt: string
   /** Nota de quien lo resolvió (ver compensarBancoHoras). */
   observaciones: string | null
+  /** Liquidación que pagó estas horas: no se pueden devolver al banco. */
+  liquidacionId?: number | null
   /**
    * Pendiente de alguien que ya se liquidó: una liquidación anterior al
    * arreglo de la auditoría dejó estas horas fuera. No se pueden pagar por

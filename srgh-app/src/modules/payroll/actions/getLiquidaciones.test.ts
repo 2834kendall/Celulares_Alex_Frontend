@@ -116,6 +116,10 @@ describe('getLiquidaciones (server action)', () => {
             preaviso: 500000,
             diasCesantia: 42,
             cesantia: 700000,
+            notaPreaviso: null,
+            notaCesantia: null,
+            diasIndemnizacionPlazoFijo: 0,
+            indemnizacionPlazoFijo: 0,
             total: 1837400,
             deduccionesObreras: 32490,
             neto: 1804910,
@@ -201,5 +205,47 @@ describe('getLiquidaciones (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data[0]).toMatchObject({ pagado: true, pagoId: 40, fechaPago: '2026-09-02' })
+  })
+
+  // Auditoría 2, hallazgo 10: el 0 se explica. Con la nota guardada se usa
+  // esa; en una liquidación vieja sin nota, si el motivo no genera el rubro,
+  // se dice.
+  it('explica por qué el preaviso o la cesantía quedaron en 0 días', async () => {
+    mockSupabase([
+      {
+        liq_id: 2,
+        liq_fecha_salida: '2026-07-15',
+        liq_total: 100,
+        liq_neto: 100,
+        liq_pagado: false,
+        liq_fecha_pago: null,
+        liq_created_at: '2026-07-15T10:00:00',
+        ...RUBROS,
+        liq_dias_preaviso: 0,
+        liq_preaviso: 0,
+        liq_dias_cesantia: 0,
+        liq_cesantia: 0,
+        liq_nota_preaviso: 'menos de 3 meses de antigüedad (Arts. 28 y 29)',
+        liq_nota_cesantia: null,
+        sgrh_cat_motivos_salida: {
+          mot_nombre: 'Renuncia Voluntaria',
+          mot_genera_preaviso: false,
+          mot_genera_cesantia: false,
+        },
+        sgrh_historial_laboral: null,
+      },
+    ])
+
+    const result = await getLiquidaciones()
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data[0].desglose.notaPreaviso).toBe(
+        'menos de 3 meses de antigüedad (Arts. 28 y 29)'
+      )
+      expect(result.data[0].desglose.notaCesantia).toBe(
+        'no aplica por el motivo de salida (Renuncia Voluntaria)'
+      )
+    }
   })
 })

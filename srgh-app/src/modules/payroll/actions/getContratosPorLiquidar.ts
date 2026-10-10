@@ -21,6 +21,7 @@ interface ContratoTerminadoRow {
     /** Los otros contratos del empleado: ver tieneContratoPosterior. */
     sgrh_historial_laboral?: { lab_id: number; lab_fecha_inicio: string }[] | null
   } | null
+  sgrh_cat_tipos_contrato?: { tco_codigo: string; tco_nombre: string } | null
   sgrh_cat_motivos_salida: {
     mot_codigo: string
     mot_nombre: string
@@ -77,6 +78,7 @@ export async function getContratosPorLiquidar(): Promise<GetContratosPorLiquidar
           sgrh_historial_laboral ( lab_id, lab_fecha_inicio )
         ),
         sgrh_cat_motivos_salida ( mot_codigo, mot_nombre, mot_genera_cesantia, mot_genera_preaviso, mot_nota_legal ),
+        sgrh_cat_tipos_contrato ( tco_codigo, tco_nombre ),
         sgrh_liquidaciones ( liq_id )
       `
       )
@@ -114,6 +116,12 @@ export async function getContratosPorLiquidar(): Promise<GetContratosPorLiquidar
               generaCesantia: motivo.mot_genera_cesantia,
               generaPreaviso: motivo.mot_genera_preaviso,
               notaLegal: motivo.mot_nota_legal,
+            }
+          : null,
+        tipoContrato: row.sgrh_cat_tipos_contrato
+          ? {
+              codigo: row.sgrh_cat_tipos_contrato.tco_codigo,
+              nombre: row.sgrh_cat_tipos_contrato.tco_nombre,
             }
           : null,
       }

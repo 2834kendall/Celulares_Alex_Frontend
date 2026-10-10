@@ -11,6 +11,7 @@ import {
   diasEnComun,
   diasHabilesEnComun,
   inicioDeLaRelacion,
+  pesoQuincena,
   promedioDiarioSinSubsidios,
   proponerVacaciones,
   type AusenciaSubsidio,
@@ -165,6 +166,37 @@ describe('aguinaldoDelCiclo', () => {
 
     expect(a.monto).toBe(430000)
     expect(a.maternidad).toBe(1720000)
+  })
+
+  // Auditoría 2, hallazgo 8: con la quincena de licencia en borrador (fila sin
+  // pagar), el aguinaldo perdía la licencia y la recuperaba al pagarla.
+  it('la licencia de una quincena en borrador cuenta igual; su bruto todavía no', () => {
+    // Junio Q2 en licencia, con fila en borrador de ₡0.
+    const quincenas = ciclo(2026).map((x) =>
+      x.fechaInicio === '2026-06-16' ? { ...x, bruto: 0, pagado: false } : x
+    )
+    const a = aguinaldoDelCiclo({
+      quincenas: computarQuincenas(quincenas, [MATERNIDAD('2026-06-16', '2026-06-30')]),
+      anio: 2026,
+      inicioRelacion: '2020-01-15',
+    })
+
+    expect(a.monto).toBe(430000)
+    expect(a.maternidad).toBe(215000)
+    expect(a.sinPagar).toEqual(['2026-6-Q2'])
+  })
+
+  it('un borrador sin licencia sigue fuera de la suma', () => {
+    const quincenas = ciclo(2026).map((x) =>
+      x.fechaInicio === '2026-06-16' ? { ...x, pagado: false } : x
+    )
+    const a = aguinaldoDelCiclo({
+      quincenas: computarQuincenas(quincenas, []),
+      anio: 2026,
+      inicioRelacion: '2020-01-15',
+    })
+
+    expect(a.sumaSalarios).toBe(23 * 215000)
   })
 
   it('una incapacidad por enfermedad sí baja el aguinaldo: solo cuenta lo pagado como salario', () => {
@@ -349,5 +381,28 @@ describe('completarQuincenasDeLicencia', () => {
     )
 
     expect(r).toHaveLength(2)
+  })
+})
+
+describe('pesoQuincena (auditoría 2, fallo 3)', () => {
+  const Q2_JULIO = { fechaInicio: '2026-07-16', fechaFin: '2026-07-31' }
+  const Q1_OCTUBRE = { fechaInicio: '2026-10-01', fechaFin: '2026-10-15' }
+
+  it('entró el último día de julio: un día de 15', () => {
+    expect(pesoQuincena(Q2_JULIO, { inicio: '2026-07-31', fin: '2026-12-31' })).toBeCloseTo(1 / 15)
+  })
+
+  it('salió el 5 de octubre: cinco días', () => {
+    expect(pesoQuincena(Q1_OCTUBRE, { inicio: '2026-01-01', fin: '2026-10-05' })).toBeCloseTo(
+      5 / 15
+    )
+  })
+
+  it('una quincena entera dentro del contrato pesa 1, aunque tenga 16 días', () => {
+    expect(pesoQuincena(Q2_JULIO, { inicio: '2026-01-01', fin: '2026-12-31' })).toBe(1)
+  })
+
+  it('sin rango, completa', () => {
+    expect(pesoQuincena(Q2_JULIO, null)).toBe(1)
   })
 })

@@ -147,8 +147,8 @@ export default async function ComprobanteExtraordinarioPage({
           )}
           {pago.tipo === 'liquidacion' && (
             <p className="mt-1 text-[11px] text-slate-400">
-              Preaviso y cesantía son indemnizaciones y el aguinaldo está exento: no llevan cuota
-              obrera.
+              Preaviso, cesantía y la indemnización por contrato a plazo fijo son indemnizaciones, y
+              el aguinaldo está exento: no llevan cuota obrera.
             </p>
           )}
           {pago.tipo === 'aguinaldo' && (

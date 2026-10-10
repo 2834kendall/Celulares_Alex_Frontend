@@ -1,12 +1,28 @@
 import { formatCRC } from '@/modules/payroll/lib/format'
 import type { DesgloseLiquidacion } from '@/modules/payroll/types'
 
-function ResultadoLinea({ label, valor, dias }: { label: string; valor: number; dias?: number }) {
+function ResultadoLinea({
+  label,
+  valor,
+  dias,
+  nota,
+}: {
+  label: string
+  valor: number
+  dias?: number
+  /** Por qué quedó en 0 días (ver notaRubroSinDias). */
+  nota?: string | null
+}) {
   return (
-    <div className="flex items-center justify-between py-1 text-xs">
+    <div className="flex items-center justify-between gap-3 py-1 text-xs">
       <span className="text-slate-600">
         {label}
-        {dias !== undefined && <span className="text-slate-400"> ({dias} días)</span>}
+        {dias !== undefined && (
+          <span className="text-slate-400">
+            {' '}
+            ({dias} días{nota ? `: ${nota}` : ''})
+          </span>
+        )}
       </span>
       <span className="tabular-nums font-medium text-slate-800">{formatCRC(valor)}</span>
     </div>
@@ -70,16 +86,33 @@ export function DesgloseLiquidacionView({
           valor={datos.horasExtraBanco}
         />
       )}
-      <ResultadoLinea label="Preaviso" valor={datos.preaviso} dias={datos.diasPreaviso} />
-      <ResultadoLinea label="Cesantía" valor={datos.cesantia} dias={datos.diasCesantia} />
+      <ResultadoLinea
+        label="Preaviso"
+        valor={datos.preaviso}
+        dias={datos.diasPreaviso}
+        nota={datos.notaPreaviso}
+      />
+      <ResultadoLinea
+        label="Cesantía"
+        valor={datos.cesantia}
+        dias={datos.diasCesantia}
+        nota={datos.notaCesantia}
+      />
+      {datos.indemnizacionPlazoFijo > 0 && (
+        <ResultadoLinea
+          label="Indemnización por contrato a plazo fijo (Art. 31)"
+          valor={datos.indemnizacionPlazoFijo}
+          dias={datos.diasIndemnizacionPlazoFijo}
+        />
+      )}
       <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs text-slate-600">
         <span>Total bruto</span>
         <span className="tabular-nums font-medium">{formatCRC(datos.total)}</span>
       </div>
       {/*
         Solo cotiza lo que es salario: pendiente, vacaciones y horas extra del
-        banco. Preaviso y cesantía son indemnizaciones; el aguinaldo está
-        exento.
+        banco. Preaviso, cesantía y la indemnización del Art. 31 son
+        indemnizaciones; el aguinaldo está exento.
       */}
       <div className="flex items-center justify-between py-1 text-xs text-slate-600">
         <span>

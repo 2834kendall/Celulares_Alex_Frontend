@@ -120,6 +120,45 @@ describe('pagarLiquidacion (server action)', () => {
     expect(lineas.some((l) => l.concepto.includes('vacaciones y horas extra'))).toBe(true)
   })
 
+  // Auditoría 2: el comprobante dice por qué un rubro va en 0 días, y trae la
+  // indemnización del Art. 31 de un contrato a plazo fijo.
+  it('el comprobante explica el 0 y trae la indemnización del Art. 31', async () => {
+    const client = mockSupabase({
+      sgrh_liquidaciones: [
+        {
+          data: {
+            ...LIQUIDACION,
+            liq_dias_preaviso: 0,
+            liq_preaviso: 0,
+            liq_nota_preaviso: 'no aplica a un contrato a plazo fijo terminado por el patrono',
+            liq_dias_indemnizacion_plazo_fijo: 22,
+            liq_indemnizacion_plazo_fijo: 220000,
+          },
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+    })
+
+    await pagarLiquidacion(100)
+
+    const lineas = llamadaA(client, 'sgrh_pagos_extraordinarios', 'insert')?.pex_lineas as {
+      concepto: string
+      dias: number | null
+      monto: number
+    }[]
+    expect(lineas.map((l) => l.concepto)).toContain(
+      'Preaviso: no aplica a un contrato a plazo fijo terminado por el patrono'
+    )
+    expect(
+      lineas.find((l) => l.concepto === 'Indemnización por contrato a plazo fijo (Art. 31)')
+    ).toEqual({
+      concepto: 'Indemnización por contrato a plazo fijo (Art. 31)',
+      dias: 22,
+      monto: 220000,
+    })
+  })
+
   it('sin horas del banco no agrega esa línea', async () => {
     const client = mockSupabase()
 

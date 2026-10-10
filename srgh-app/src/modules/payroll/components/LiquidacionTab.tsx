@@ -15,7 +15,7 @@ import {
 } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
 import { DesgloseLiquidacionView } from './DesgloseLiquidacionView'
-import { MOTIVO_MUTUO_ACUERDO } from '@/modules/payroll/lib/liquidacion'
+import { MOTIVO_MUTUO_ACUERDO, TIPOS_CONTRATO_ART_31 } from '@/modules/payroll/lib/liquidacion'
 import { procesarLiquidacion } from '@/modules/payroll/actions/procesarLiquidacion'
 import { proponerVacacionesLiquidacion } from '@/modules/payroll/actions/proponerVacacionesLiquidacion'
 import type { VacacionesPropuestas } from '@/modules/payroll/lib/derechos'
@@ -94,12 +94,14 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
       historialLaboralId: contratoPreseleccionado(searchParams.get('empleado'), contratos),
       diasVacacionesPendientes: 0,
       cesantiaPactada: null,
+      plazoSeisMesesOMas: null,
     },
   })
 
   const contratoElegidoId = watch('historialLaboralId')
   const diasVacaciones = watch('diasVacacionesPendientes')
   const cesantiaPactada = watch('cesantiaPactada')
+  const plazoSeisMesesOMas = watch('plazoSeisMesesOMas')
 
   // Si cambia cualquier dato después de calcular, la vista previa ya no es
   // la de esos datos: se descarta y hay que volver a calcular.
@@ -108,13 +110,19 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
       previa &&
       (previa.valores.historialLaboralId !== contratoElegidoId ||
         previa.valores.diasVacacionesPendientes !== diasVacaciones ||
-        (previa.valores.cesantiaPactada ?? null) !== (cesantiaPactada ?? null))
+        (previa.valores.cesantiaPactada ?? null) !== (cesantiaPactada ?? null) ||
+        (previa.valores.plazoSeisMesesOMas ?? null) !== (plazoSeisMesesOMas ?? null))
         ? null
         : previa
     )
-  }, [contratoElegidoId, diasVacaciones, cesantiaPactada])
+  }, [contratoElegidoId, diasVacaciones, cesantiaPactada, plazoSeisMesesOMas])
   const contratoElegido = contratos.find((c) => c.historialLaboralId === contratoElegidoId)
   const esMutuoAcuerdo = contratoElegido?.motivo?.codigo === MOTIVO_MUTUO_ACUERDO
+  // Contrato a plazo fijo (u obra determinada) terminado por el patrono: Art. 31.
+  const esPlazoFijoArt31 =
+    !!contratoElegido?.tipoContrato &&
+    TIPOS_CONTRATO_ART_31.has(contratoElegido.tipoContrato.codigo) &&
+    contratoElegido.motivo?.generaPreaviso === true
 
   // Con un contrato elegido, el sistema propone los días de vacaciones (1 por
   // mes laborado menos los tomados en Ausencias) y los pone en el campo.
@@ -204,7 +212,12 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
     toast.success('Liquidación guardada. Pagala desde el historial cuando se entregue.')
     // Sin el historialLaboralId explícito, reset() volvería al preseleccionado
     // de la URL: el contrato que se acaba de liquidar.
-    reset({ historialLaboralId: undefined, diasVacacionesPendientes: 0, cesantiaPactada: null })
+    reset({
+      historialLaboralId: undefined,
+      diasVacacionesPendientes: 0,
+      cesantiaPactada: null,
+      plazoSeisMesesOMas: null,
+    })
     setPropuesta(null)
     router.refresh()
   }
@@ -230,11 +243,18 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
               setError('cesantiaPactada', { message: 'Indicá si se pactó pagar cesantía.' })
               return
             }
+            if (esPlazoFijoArt31 && !values.plazoSeisMesesOMas) {
+              setError('plazoSeisMesesOMas', {
+                message: 'Indicá si el contrato se pactó por seis meses o más.',
+              })
+              return
+            }
             // Fuera del mutuo acuerdo la cesantía la dice el catálogo: una
             // respuesta que quedó marcada de otro contrato no viaja.
             void calcular({
               ...values,
               cesantiaPactada: esMutuoAcuerdo ? values.cesantiaPactada : null,
+              plazoSeisMesesOMas: esPlazoFijoArt31 ? values.plazoSeisMesesOMas : null,
             })
           })}
           className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
@@ -296,6 +316,14 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
                   {contratoElegido.motivo.notaLegal && ` ${contratoElegido.motivo.notaLegal}`}
                 </p>
               )}
+              {esPlazoFijoArt31 && (
+                <p className="col-span-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-800">
+                  {contratoElegido.tipoContrato?.nombre}: por ser terminado por el patrono no lleva
+                  preaviso ni cesantía, sino la indemnización del Art. 31 del Código de Trabajo (un
+                  día de salario por cada siete trabajados; mínimo 3 días, o 22 si se pactó por seis
+                  meses o más).
+                </p>
+              )}
             </dl>
           )}
 
@@ -328,6 +356,40 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
               </p>
               {errors.cesantiaPactada && (
                 <p className="mt-1 text-[11px] text-rose-600">{errors.cesantiaPactada.message}</p>
+              )}
+            </fieldset>
+          )}
+
+          {esPlazoFijoArt31 && (
+            <fieldset>
+              <legend className={LABEL}>¿El contrato se pactó por seis meses o más?</legend>
+              <div className="flex gap-4 text-xs text-slate-700">
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    value="si"
+                    disabled={guardando || calculando}
+                    {...register('plazoSeisMesesOMas')}
+                  />
+                  Sí, seis meses o más
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    value="no"
+                    disabled={guardando || calculando}
+                    {...register('plazoSeisMesesOMas')}
+                  />
+                  Menos de seis meses
+                </label>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Si la obra por su naturaleza debía durar seis meses o más, también es «sí».
+              </p>
+              {errors.plazoSeisMesesOMas && (
+                <p className="mt-1 text-[11px] text-rose-600">
+                  {errors.plazoSeisMesesOMas.message}
+                </p>
               )}
             </fieldset>
           )}

@@ -25,10 +25,18 @@ interface LiquidacionRow {
   liq_preaviso: number
   liq_dias_cesantia: number
   liq_cesantia: number
+  liq_nota_preaviso: string | null
+  liq_nota_cesantia: string | null
+  liq_dias_indemnizacion_plazo_fijo: number | null
+  liq_indemnizacion_plazo_fijo: number | null
   liq_deducciones_obreras: number
   liq_observaciones: string | null
   sgrh_pagos_extraordinarios: { pex_id: number; pex_fecha_pago: string }[] | null
-  sgrh_cat_motivos_salida: { mot_nombre: string } | null
+  sgrh_cat_motivos_salida: {
+    mot_nombre: string
+    mot_genera_preaviso: boolean
+    mot_genera_cesantia: boolean
+  } | null
   sgrh_historial_laboral: {
     sgrh_empleados: {
       emp_nombre: string
@@ -37,6 +45,15 @@ interface LiquidacionRow {
       emp_numero_identificacion: string
     } | null
   } | null
+}
+
+function notaSiElMotivoNoGenera(
+  dias: number,
+  genera: boolean | undefined,
+  motivoNombre: string | undefined
+): string | null {
+  if (dias > 0 || genera !== false || !motivoNombre) return null
+  return `no aplica por el motivo de salida (${motivoNombre})`
 }
 
 export type GetLiquidacionesResult =
@@ -76,10 +93,14 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       liq_preaviso,
       liq_dias_cesantia,
       liq_cesantia,
+      liq_nota_preaviso,
+      liq_nota_cesantia,
+      liq_dias_indemnizacion_plazo_fijo,
+      liq_indemnizacion_plazo_fijo,
       liq_deducciones_obreras,
       liq_observaciones,
       sgrh_pagos_extraordinarios ( pex_id, pex_fecha_pago ),
-      sgrh_cat_motivos_salida ( mot_nombre ),
+      sgrh_cat_motivos_salida ( mot_nombre, mot_genera_preaviso, mot_genera_cesantia ),
       sgrh_historial_laboral (
         sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
       )
@@ -134,6 +155,24 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
         preaviso: Number(row.liq_preaviso),
         diasCesantia: Number(row.liq_dias_cesantia),
         cesantia: Number(row.liq_cesantia),
+        // Las liquidaciones de antes de guardar la nota: si el motivo no
+        // genera el rubro, se dice; otro caso no se puede reconstruir.
+        notaPreaviso:
+          row.liq_nota_preaviso ??
+          notaSiElMotivoNoGenera(
+            Number(row.liq_dias_preaviso),
+            row.sgrh_cat_motivos_salida?.mot_genera_preaviso,
+            row.sgrh_cat_motivos_salida?.mot_nombre
+          ),
+        notaCesantia:
+          row.liq_nota_cesantia ??
+          notaSiElMotivoNoGenera(
+            Number(row.liq_dias_cesantia),
+            row.sgrh_cat_motivos_salida?.mot_genera_cesantia,
+            row.sgrh_cat_motivos_salida?.mot_nombre
+          ),
+        diasIndemnizacionPlazoFijo: Number(row.liq_dias_indemnizacion_plazo_fijo ?? 0),
+        indemnizacionPlazoFijo: Number(row.liq_indemnizacion_plazo_fijo ?? 0),
         total: Number(row.liq_total),
         deduccionesObreras: Number(row.liq_deducciones_obreras ?? 0),
         neto: Number(row.liq_neto ?? row.liq_total),
