@@ -8,12 +8,14 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Lock,
   Maximize2,
   Minimize2,
   PartyPopper,
   UserRound,
 } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { CARD } from '@/components/ui/styles'
 import { cn } from '@/lib/utils/cn'
 import { BirthdayCake } from '@/modules/dashboard/components/BirthdayCake'
@@ -266,14 +268,17 @@ export function BirthdaysPanel({
 
         <div key={String(expanded)} className="dash-swap min-w-0">
           {!canSee ? (
-            <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-              Tu rol no tiene acceso a la ficha de los colaboradores, así que los cumpleaños no se
-              muestran aquí.
-            </p>
+            <EmptyState
+              size="sm"
+              icon={Lock}
+              title="Tu rol no tiene acceso a la ficha de los colaboradores, así que los cumpleaños no se muestran aquí."
+            />
           ) : birthdays.length === 0 ? (
-            <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-              Todavía no hay fechas de nacimiento cargadas en los expedientes.
-            </p>
+            <EmptyState
+              size="sm"
+              icon={Cake}
+              title="Todavía no hay fechas de nacimiento cargadas en los expedientes."
+            />
           ) : (
             <>
               {today.length > 0 && activeView === 'upcoming' && (
@@ -361,9 +366,12 @@ export function BirthdaysPanel({
               )}
 
               {rows.length === 0 ? (
-                <p className="dash-enter rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                  Nadie cumple años en {MONTHS_LONG[month - 1]}.
-                </p>
+                <EmptyState
+                  size="sm"
+                  className="dash-enter"
+                  icon={Cake}
+                  title={`Nadie cumple años en ${MONTHS_LONG[month - 1]}.`}
+                />
               ) : (
                 /* Keyed by the filter: switching it replays the staggered
                    entrance of the rows. */

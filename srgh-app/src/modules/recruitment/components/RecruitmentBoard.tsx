@@ -65,7 +65,10 @@ export function RecruitmentBoard({
   function renderColumna(fase: 1 | 2 | 3) {
     const items = porFase[fase]
     if (items.length === 0) {
-      return <EmptyState icon={FASES[fase - 1].icon} title="Sin postulaciones en esta fase." />
+      // Compacto: puede haber varias columnas vacías a la vez.
+      return (
+        <EmptyState size="sm" icon={FASES[fase - 1].icon} title="Sin postulaciones en esta fase." />
+      )
     }
     return (
       <div className="space-y-2">

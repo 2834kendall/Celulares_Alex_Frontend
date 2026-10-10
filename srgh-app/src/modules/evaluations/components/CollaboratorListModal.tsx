@@ -35,7 +35,7 @@ export function CollaboratorListModal({
   return (
     <Modal title={title} subtitle={subtitle} onClose={onClose}>
       {collaborators.length === 0 ? (
-        <EmptyState icon={UserRound} title={emptyMessage} />
+        <EmptyState size="sm" icon={UserRound} title={emptyMessage} />
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-200">
           <ul className="divide-y divide-slate-100">

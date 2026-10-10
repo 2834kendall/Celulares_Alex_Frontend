@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from 'react'
 import { ClipboardCheck } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Avatar } from '@/components/ui/Avatar'
 import { Badge } from '@/components/ui/Badge'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
@@ -29,9 +30,12 @@ export function EvaluationsWidget({
   return (
     <WidgetCard icon={ClipboardCheck} title="Evaluaciones" href="/evaluations" step={step}>
       {total === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          No hay colaboradores con contrato vigente para evaluar.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={ClipboardCheck}
+          title="No hay colaboradores con contrato vigente para evaluar."
+        />
       ) : (
         <>
           <div className="mt-4 flex flex-wrap items-end gap-x-3 gap-y-1">

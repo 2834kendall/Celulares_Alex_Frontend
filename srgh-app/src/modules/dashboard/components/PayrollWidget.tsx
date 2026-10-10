@@ -3,6 +3,7 @@
 import { useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Banknote, TriangleAlert } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import {
   estadoBadgeTone,
@@ -39,9 +40,12 @@ export function PayrollWidget({
   return (
     <WidgetCard icon={Banknote} title="Nómina" href="/payroll" step={step} className={className}>
       {!current ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          No hay periodos pendientes de pago.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={Banknote}
+          title="No hay periodos pendientes de pago."
+        />
       ) : (
         <>
           <div className="mt-4 flex items-center gap-3">

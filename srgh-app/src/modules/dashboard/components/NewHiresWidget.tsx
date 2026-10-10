@@ -1,6 +1,7 @@
 'use client'
 
 import { UserPlus } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Avatar } from '@/components/ui/Avatar'
 import { CountUp } from '@/modules/dashboard/components/CountUp'
 import { TeamSpot } from '@/modules/dashboard/components/Spots'
@@ -20,9 +21,12 @@ export function NewHiresWidget({
   return (
     <WidgetCard icon={UserPlus} title="Nuevos ingresos" href="/employees" step={step}>
       {hires.length === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          Nadie se unió a la empresa en los últimos 60 días.
-        </p>
+        <EmptyState
+          size="sm"
+          className="mt-4"
+          icon={UserPlus}
+          title="Nadie se unió a la empresa en los últimos 60 días."
+        />
       ) : (
         <>
           <div className="mt-4 flex items-center gap-3">
