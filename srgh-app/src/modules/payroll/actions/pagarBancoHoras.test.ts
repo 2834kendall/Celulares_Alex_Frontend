@@ -15,8 +15,24 @@ const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 
 const OK = { data: null, error: null }
-/** El UPDATE de montos (solo si la fila sigue sin pagar) devuelve la fila que tocó. */
-const FILA_ACTUALIZADA = { data: [{ ndt_id: 50 }], error: null }
+/** El bruto de la fila destino, leído justo antes de calcular. */
+const FILA_ACTUALIZADA = { data: { ndt_salario_bruto: 100000 }, error: null }
+
+/** Lo que se mandó a guardar_calculo_detalle. */
+function guardadoDe(client: { rpc: { mock: { calls: unknown[][] } } }) {
+  const llamada = client.rpc.mock.calls.find((c) => c[0] === 'guardar_calculo_detalle')
+  return llamada?.[1] as
+    | {
+        p_ndt_id: number
+        p_bruto_anterior: number
+        p_calculo: {
+          bruto: number
+          ingresos: { con_id: number; monto: number }[]
+          deducciones_lineas: { con_id: number; monto: number }[]
+        }
+      }
+    | undefined
+}
 /** La reserva del movimiento (UPDATE … WHERE pendiente) devuelve la fila que tomó. */
 const RESERVADO = { data: [{ bhm_id: 1 }], error: null }
 
@@ -68,14 +84,21 @@ const HORAS_EXTRA_CONCEPTO = {
 }
 
 function mockSupabase(
-  responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
+  responses: Record<
+    string,
+    { data: unknown; error: unknown } | { data: unknown; error: unknown }[]
+  >,
+  guardado: { data: unknown; error: unknown } = { data: null, error: null }
 ) {
-  const client = createSupabaseClientMock({
-    // ¿La quincena destino ya va en una liquidación? Por defecto no.
-    sgrh_historial_laboral: { data: [], error: null },
-    sgrh_liquidaciones: { data: [], error: null },
-    ...responses,
-  })
+  const client = createSupabaseClientMock(
+    {
+      // ¿La quincena destino ya va en una liquidación? Por defecto no.
+      sgrh_historial_laboral: { data: [], error: null },
+      sgrh_liquidaciones: { data: [], error: null },
+      ...responses,
+    },
+    { rpcResponses: { guardar_calculo_detalle: guardado } }
+  )
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -188,38 +211,57 @@ describe('pagarBancoHoras (server action)', () => {
     expect(updates.map((u) => u.bhm_estado)).toEqual(['pagado', 'pendiente'])
   })
 
-  // Si falla después de escribir los montos de la fila, parte del pago ya
-  // está en la planilla: devolver el movimiento a pendiente permitía pagarlo
-  // otra vez encima.
-  it('si el pago queda a medias en la planilla, el movimiento no vuelve a pendiente', async () => {
-    const client = mockSupabase({
-      sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, RESERVADO, OK],
-      sgrh_nomina_detalle: [{ data: [DETALLE_BORRADOR], error: null }, FILA_ACTUALIZADA],
-      sgrh_cat_conceptos_nomina: [
-        { data: CONCEPTOS_ACTIVOS, error: null },
-        { data: HORAS_EXTRA_CONCEPTO, error: null },
-      ],
-      sgrh_nomina_linea_ingreso: [
-        {
+  // Auditoría 2, riesgo de lectura y escritura: totales y líneas se guardan
+  // juntos y solo si la fila no cambió desde que se leyó. Si otro pago la
+  // cambió en el medio, no se guarda nada y el movimiento vuelve a pendiente.
+  it('si otro pago cambió la fila en el medio, no guarda y devuelve el movimiento a pendiente', async () => {
+    const client = mockSupabase(
+      {
+        sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, RESERVADO, OK],
+        sgrh_nomina_detalle: [{ data: [DETALLE_BORRADOR], error: null }, FILA_ACTUALIZADA],
+        sgrh_cat_conceptos_nomina: [
+          { data: CONCEPTOS_ACTIVOS, error: null },
+          { data: HORAS_EXTRA_CONCEPTO, error: null },
+        ],
+        sgrh_nomina_linea_ingreso: {
           data: [{ ing_monto: 100000, sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' } }],
           error: null,
         },
-        { data: [], error: null },
-        { data: null, error: { message: 'boom' } },
-      ],
-      sgrh_nomina_linea_patronal: { data: null, error: null },
-      sgrh_nomina_linea_deduccion: [OK, OK],
-    })
+        sgrh_nomina_linea_deduccion: { data: [], error: null },
+      },
+      {
+        data: null,
+        error: {
+          code: '55000',
+          message:
+            'La fila cambió mientras se guardaba (otro pago o una edición al mismo tiempo). No se tocó nada: volvé a intentarlo.',
+        },
+      }
+    )
 
     const result = await pagarBancoHoras({ bhmId: 1, monto: 30000 })
 
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain('quedó a medias')
+    if (!result.ok) expect(result.error).toContain('La fila cambió mientras se guardaba')
+    // Se guardó con el bruto leído antes de calcular.
+    expect(guardadoDe(client)).toMatchObject({ p_ndt_id: 50, p_bruto_anterior: 100000 })
     const estados = client.from.mock.results
       .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_banco_horas_movimientos')
       .flatMap((r) => (r.value as { update: { mock: { calls: unknown[][] } } }).update.mock.calls)
       .map((c) => (c[0] as { bhm_estado: string }).bhm_estado)
-    expect(estados).toEqual(['pagado'])
+    expect(estados).toEqual(['pagado', 'pendiente'])
+    // Ninguna escritura suelta en la fila ni en sus líneas.
+    const escrituras = client.from.mock.results
+      .filter((_, i) => String(client.from.mock.calls[i][0]).startsWith('sgrh_nomina_'))
+      .flatMap((r) => {
+        const b = r.value as {
+          insert: { mock: { calls: unknown[] } }
+          delete: { mock: { calls: unknown[] } }
+          update: { mock: { calls: unknown[] } }
+        }
+        return [...b.insert.mock.calls, ...b.delete.mock.calls, ...b.update.mock.calls]
+      })
+    expect(escrituras).toEqual([])
   })
 
   // Dos personas pagando el mismo movimiento a la vez: la segunda ya no lo
@@ -342,21 +384,13 @@ describe('pagarBancoHoras (server action)', () => {
 
     expect(result.ok).toBe(true)
 
-    const filasInsertadas = client.from.mock.results
-      .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_linea_deduccion')
-      .flatMap((r) => {
-        const insert = r.value.insert as { mock: { calls: unknown[][] } }
-        return insert.mock.calls.flatMap((args) => args[0] as Record<string, unknown>[])
-      })
+    const deducciones = guardadoDe(client)!.p_calculo.deducciones_lineas
 
     // El prestamo sigue ahi con su monto intacto...
-    expect(filasInsertadas).toContainEqual(
-      expect.objectContaining({ ded_concepto_id: 7, ded_monto: 20000 })
-    )
+    expect(deducciones).toContainEqual(expect.objectContaining({ con_id: 7, monto: 20000 }))
     // ...y la CCSS se recalculo sobre el bruto nuevo (100000 + 30000) * 10,83%
-    expect(filasInsertadas).toContainEqual(
-      expect.objectContaining({ ded_concepto_id: 6, ded_monto: 14079 })
-    )
+    expect(deducciones).toContainEqual(expect.objectContaining({ con_id: 6, monto: 14079 }))
+    expect(guardadoDe(client)!.p_calculo.bruto).toBe(130000)
   })
 
   describe('quincena destino', () => {
@@ -388,22 +422,53 @@ describe('pagarBancoHoras (server action)', () => {
       sgrh_nomina_linea_deduccion: [OK, OK],
     }
 
-    /** ndt_id de la fila a la que se le sumaron las horas (el UPDATE de montos). */
+    /** ndt_id de la fila a la que se le sumaron las horas (guardar_calculo_detalle). */
     function filaPagada(client: ReturnType<typeof mockSupabase>) {
-      const llamadas = client.from.mock.results
-        .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_detalle')
-        .map(
-          (r) =>
-            r.value as {
-              update: { mock: { calls: unknown[][] } }
-              eq: { mock: { calls: unknown[][] } }
-            }
-        )
-        .filter((b) => b.update.mock.calls.length > 0)
-      return llamadas.flatMap((b) =>
-        b.eq.mock.calls.filter((c) => c[0] === 'ndt_id').map((c) => c[1])
-      )
+      return (client.rpc.mock.calls as unknown[][])
+        .filter((c) => c[0] === 'guardar_calculo_detalle')
+        .map((c) => (c[1] as { p_ndt_id: number }).p_ndt_id)
     }
+
+    // Auditoría 2, fallo 4: iba siempre a la quincena abierta más reciente,
+    // aunque la de origen siguiera abierta.
+    it('va a la quincena donde se trabajaron las horas si sigue abierta', async () => {
+      const ABIERTA_RECIENTE = { ...PAGADA_RECIENTE, ndt_pagado: false }
+      const client = mockSupabase({
+        sgrh_banco_horas_movimientos: [
+          { data: { ...MOVIMIENTO_PENDIENTE, bhm_nomina_detalle_id: 50 }, error: null },
+          RESERVADO,
+        ],
+        sgrh_nomina_detalle: [
+          { data: [ABIERTA_RECIENTE, DETALLE_BORRADOR], error: null },
+          FILA_ACTUALIZADA,
+        ],
+        ...EXITO,
+      })
+
+      const result = await pagarBancoHoras({ bhmId: 1, monto: 30000 })
+
+      expect(result).toEqual({ ok: true, periodoLabel: 'Julio 2026 · 1ª quincena' })
+      expect(filaPagada(client)).toEqual([50])
+    })
+
+    it('si la de origen ya se pagó, va a la abierta más reciente', async () => {
+      const ABIERTA_RECIENTE = { ...PAGADA_RECIENTE, ndt_pagado: false }
+      const client = mockSupabase({
+        sgrh_banco_horas_movimientos: [
+          { data: { ...MOVIMIENTO_PENDIENTE, bhm_nomina_detalle_id: 40 }, error: null },
+          RESERVADO,
+        ],
+        sgrh_nomina_detalle: [
+          { data: [DETALLE_BORRADOR, ABIERTA_RECIENTE], error: null },
+          FILA_ACTUALIZADA,
+        ],
+        ...EXITO,
+      })
+
+      await pagarBancoHoras({ bhmId: 1, monto: 30000 })
+
+      expect(filaPagada(client)).toEqual([60])
+    })
 
     it('salta una fila ya pagada de un periodo en borrador y usa la quincena sin pagar', async () => {
       const client = mockSupabase({
@@ -467,15 +532,26 @@ describe('pagarBancoHoras (server action)', () => {
     })
 
     it('si alguien marcó la fila pagada mientras tanto, no la toca y devuelve el movimiento a pendiente', async () => {
-      const client = mockSupabase({
-        sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PENDIENTE, error: null }, RESERVADO, OK],
-        // El UPDATE con ndt_pagado = false no encuentra la fila.
-        sgrh_nomina_detalle: [
-          { data: [DETALLE_BORRADOR], error: null },
-          { data: [], error: null },
-        ],
-        ...EXITO,
-      })
+      const client = mockSupabase(
+        {
+          sgrh_banco_horas_movimientos: [
+            { data: MOVIMIENTO_PENDIENTE, error: null },
+            RESERVADO,
+            OK,
+          ],
+          sgrh_nomina_detalle: [{ data: [DETALLE_BORRADOR], error: null }, FILA_ACTUALIZADA],
+          ...EXITO,
+        },
+        // La función encuentra la fila ya pagada (la bloquea y la revisa).
+        {
+          data: null,
+          error: {
+            code: '23514',
+            message:
+              'Esa quincena ya está marcada como pagada, así que no se le pueden cambiar los montos. No se tocó nada.',
+          },
+        }
+      )
 
       const result = await pagarBancoHoras({ bhmId: 1, monto: 30000 })
 

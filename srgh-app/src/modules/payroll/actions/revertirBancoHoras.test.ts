@@ -169,16 +169,23 @@ describe('revertirBancoHoras (server action)', () => {
 
     expect(result).toEqual({ ok: true })
 
+    // Totales y líneas se guardan juntos (guardar_calculo_detalle).
+    const llamada = (client.rpc.mock.calls as unknown[][]).find(
+      (c) => c[0] === 'guardar_calculo_detalle'
+    )
+    const calculo = (llamada?.[1] as { p_calculo: Record<string, unknown> }).p_calculo as {
+      ingresos: { con_id: number }[]
+      deducciones_lineas: { con_id: number; monto: number }[]
+    }
     // La línea de HORAS_EXTRA desaparece: 30000 - 30000 = 0.
-    const ingresos = filasInsertadas(client, 'sgrh_nomina_linea_ingreso')
-    expect(ingresos.some((f) => f.ing_concepto_id === 4)).toBe(false)
-    expect(ingresos).toContainEqual(expect.objectContaining({ ing_concepto_id: 1 }))
+    expect(calculo.ingresos.some((f) => f.con_id === 4)).toBe(false)
+    expect(calculo.ingresos).toContainEqual(expect.objectContaining({ con_id: 1 }))
 
     // Y la CCSS obrera vuelve a calcularse sobre el bruto sin las extra:
     // 100000 * 10,83% = 10830. Si no se recalculara, el empleado seguiría
     // pagando la CCSS de un ingreso que ya no recibe.
-    expect(filasInsertadas(client, 'sgrh_nomina_linea_deduccion')).toContainEqual(
-      expect.objectContaining({ ded_concepto_id: 6, ded_monto: 10830 })
+    expect(calculo.deducciones_lineas).toContainEqual(
+      expect.objectContaining({ con_id: 6, monto: 10830 })
     )
 
     // El movimiento queda limpio: sin monto, sin periodo y sin quién lo resolvió.

@@ -61,6 +61,11 @@ function NotasMovimiento({ item }: { item: BancoHorasItem }) {
           liquidación y no se pueden pagar por planilla.
         </span>
       )}
+      {item.liquidacionId && (
+        <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+          Pagadas en la liquidación n.° {item.liquidacionId}: no se pueden devolver al banco.
+        </span>
+      )}
       {item.observaciones && (
         <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
           Nota: {item.observaciones}
@@ -220,7 +225,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                   ))}
                 </dl>
 
-                {canWrite && tab === 'historial' && (
+                {canWrite && tab === 'historial' && !item.liquidacionId && (
                   <div className="flex items-center border-t border-slate-100 pt-3">
                     <button
                       type="button"
@@ -312,19 +317,21 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                   {canWrite && tab === 'historial' && (
                     <td className="px-3 py-2">
                       <div className="flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={() => handleRevertir(item)}
-                          disabled={submittingId === item.id}
-                          title="Devuelve las horas al banco y, si se habían pagado, saca el monto de esa quincena"
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-amber-300 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:opacity-60"
-                        >
-                          {submittingId === item.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            'Devolver al banco'
-                          )}
-                        </button>
+                        {item.liquidacionId ? null : (
+                          <button
+                            type="button"
+                            onClick={() => handleRevertir(item)}
+                            disabled={submittingId === item.id}
+                            title="Devuelve las horas al banco y, si se habían pagado, saca el monto de esa quincena"
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-amber-300 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:opacity-60"
+                          >
+                            {submittingId === item.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              'Devolver al banco'
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                   )}

@@ -24,6 +24,8 @@ interface MovimientoRow extends MovimientoConLiquidaciones {
   bhm_id: number
   bhm_historial_laboral_id: number
   bhm_estado: string
+  /** Fila donde se generaron las horas. */
+  bhm_nomina_detalle_id: number
 }
 
 interface DetalleBorradorRow {
@@ -65,7 +67,9 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
 
   const { data: movimiento, error: errMovimiento } = await supabase
     .from('sgrh_banco_horas_movimientos')
-    .select(`bhm_id, bhm_historial_laboral_id, bhm_estado, ${SELECT_LIQUIDACION_DEL_MOVIMIENTO}`)
+    .select(
+      `bhm_id, bhm_historial_laboral_id, bhm_estado, bhm_nomina_detalle_id, ${SELECT_LIQUIDACION_DEL_MOVIMIENTO}`
+    )
     .eq('bhm_id', parsed.data.bhmId)
     .maybeSingle<MovimientoRow>()
 
@@ -118,13 +122,20 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
   // pagadas: sumarle las horas a una de esas cambiaba un comprobante emitido
   // por plata que nunca se transfería. Lo mismo con una fila cuyo salario ya
   // va en una liquidación: no se puede marcar pagada, y el monto se perdía.
+  //
+  // Primero la quincena donde se trabajaron las horas, si sigue abierta: es
+  // donde corresponden (auditoría 2, fallo 4). Si ya se pagó, la más reciente
+  // sin pagar, como antes.
   const abiertas = (detalles ?? [])
     .filter((d) => d.sgrh_nomina_periodo?.npe_estado === 'borrador' && !d.ndt_pagado)
-    .sort((a, b) =>
-      (b.sgrh_nomina_periodo?.npe_fecha_inicio_periodo ?? '').localeCompare(
+    .sort((a, b) => {
+      const origenA = a.ndt_id === movimiento.bhm_nomina_detalle_id ? 0 : 1
+      const origenB = b.ndt_id === movimiento.bhm_nomina_detalle_id ? 0 : 1
+      if (origenA !== origenB) return origenA - origenB
+      return (b.sgrh_nomina_periodo?.npe_fecha_inicio_periodo ?? '').localeCompare(
         a.sgrh_nomina_periodo?.npe_fecha_inicio_periodo ?? ''
       )
-    )
+    })
 
   let detalleDestino: DetalleBorradorRow | undefined
   for (const candidato of abiertas) {

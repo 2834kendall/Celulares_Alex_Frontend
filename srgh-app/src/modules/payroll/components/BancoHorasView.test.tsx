@@ -98,3 +98,27 @@ describe('<BancoHorasView /> horas que una liquidación dejó fuera', () => {
     expect(tabla().getByText('Nota: Se le pagó por fuera.')).toBeInTheDocument()
   })
 })
+
+describe('<BancoHorasView /> horas pagadas en una liquidación', () => {
+  it('no ofrece devolverlas al banco y dice en qué liquidación se pagaron', async () => {
+    const user = userEvent.setup()
+    render(
+      <BancoHorasView
+        pendientes={[]}
+        historial={[
+          mov({ id: 3, estado: 'pagado', montoPagado: 1312.5, liquidacionId: 6 }),
+          mov({ id: 4, empleadoNombre: 'Ana Mora 2', estado: 'pagado', montoPagado: 500 }),
+        ]}
+        canWrite
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /Historial/ }))
+
+    expect(screen.getAllByText(/Pagadas en la liquidación n\.° 6/).length).toBeGreaterThan(0)
+    // Solo la que se pagó por planilla se puede devolver (tabla y tarjeta).
+    expect(screen.getAllByRole('button', { name: 'Devolver al banco' })).toHaveLength(2)
+    const fila = tabla().getByText('Ana Mora', { exact: true }).closest('tr')!
+    expect(within(fila).queryByRole('button', { name: 'Devolver al banco' })).toBeNull()
+  })
+})

@@ -19,6 +19,7 @@ interface MovimientoRow {
   bhm_fecha_resolucion: string | null
   bhm_created_at: string
   bhm_observaciones: string | null
+  bhm_liquidacion_id: number | null
   sgrh_historial_laboral: {
     lab_fecha_inicio: string
     sgrh_empleados: {
@@ -85,6 +86,7 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
       bhm_fecha_resolucion,
       bhm_created_at,
       bhm_observaciones,
+      bhm_liquidacion_id,
       sgrh_historial_laboral (
         lab_fecha_inicio,
         sgrh_empleados (
@@ -139,6 +141,7 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
       fechaResolucion: row.bhm_fecha_resolucion,
       createdAt: row.bhm_created_at,
       observaciones: row.bhm_observaciones ?? null,
+      liquidacionId: row.bhm_liquidacion_id ?? null,
       // Solo importa mientras siga pendiente: horas que una liquidación vieja
       // dejó fuera y ya no se pueden pagar por planilla.
       liquidadoSinIncluir:
