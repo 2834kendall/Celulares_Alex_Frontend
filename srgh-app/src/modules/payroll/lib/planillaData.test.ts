@@ -15,6 +15,9 @@ const FILAS = [
     ndt_horas_ordinarias_diurnas: 88,
     ndt_horas_extra_al_50: null,
     ndt_salario_por_hora: 2500,
+    // Las marcas dijeron lo mismo que se paga.
+    ndt_horas_asistencia: 88,
+    ndt_horas_extra_asistencia: 0,
   },
   {
     ndt_id: 22,
@@ -23,6 +26,9 @@ const FILAS = [
     ndt_horas_ordinarias_diurnas: 96,
     ndt_horas_extra_al_50: 2,
     ndt_salario_por_hora: 2400,
+    // Alguien las corrigió: las marcas decían 90 h.
+    ndt_horas_asistencia: 90,
+    ndt_horas_extra_asistencia: 2,
   },
 ]
 
@@ -56,6 +62,7 @@ describe('getFilasGuardadas', () => {
       horasExtra: 0,
       salarioPorHora: 2500,
       montos: { BASE: 220000, COMISION: 50000, PRESTAMO: 20000, CCSS_OBRERA: 29245 },
+      horasAjustadas: false,
     })
     expect(r.data.get(10)).toEqual({
       pagado: true,
@@ -63,6 +70,7 @@ describe('getFilasGuardadas', () => {
       horasExtra: 2,
       salarioPorHora: 2400,
       montos: { BASE: 240000 },
+      horasAjustadas: true,
     })
   })
 

@@ -335,6 +335,8 @@ describe('uploadPlanilla (server action)', () => {
             horasExtra: 0,
             horasAcreditadas: 0,
             diasAcreditadosSinHorario: 0,
+            horasAcreditadasAusencias: 0,
+            diasAcreditadosAusenciasSinHorario: 0,
             diasJustificados: 0,
             periodoCubiertoPorAusencias: false,
             horasProgramadasTotales: 96,
@@ -538,7 +540,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 20 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -590,6 +592,104 @@ describe('uploadPlanilla (server action)', () => {
     })
   })
 
+  // Auditoría 2, riesgo: la actualización no exigía que la fila siguiera sin
+  // pagar. Si alguien la marca pagada mientras se sube el archivo, queda como
+  // se pagó y se nombra.
+  it('si la fila se pagó mientras se subía el archivo, no se reescribe', async () => {
+    const client = mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_detalle: [
+        {
+          data: [
+            {
+              ndt_id: 20,
+              ndt_historial_laboral_id: 70,
+              ndt_horas_ordinarias_diurnas: 88,
+              ndt_horas_extra_al_50: 0,
+              ndt_salario_por_hora: 0,
+              ndt_salario_bruto: 100000,
+              ndt_total_deducciones_obreras: 10830,
+              ndt_salario_neto: 89170,
+            },
+          ],
+          error: null,
+        },
+        // El UPDATE (… AND ndt_pagado = false) no encuentra la fila.
+        { data: [], error: null },
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 20,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      rows: [fila('CHG', { BASE: 300000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          labId: 70,
+          cedula: 'CHG',
+          nombre: 'Cambio',
+          salarioBaseMensual: 600000,
+          salarioRealMensual: null,
+          horasSemanales: 48,
+        },
+      ],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toEqual({
+      ok: true,
+      empleados: 1,
+      nuevos: 0,
+      actualizados: 0,
+      sinCambios: 0,
+      eliminados: 0,
+      pagadasSinTocar: ['Cambio'],
+      enLiquidacionSinTocar: [],
+    })
+    const escrituras = client.from.mock.results
+      .filter((_, i) => String(client.from.mock.calls[i][0]).startsWith('sgrh_nomina_linea_'))
+      .flatMap((r) => {
+        const b = r.value as {
+          insert: { mock: { calls: unknown[] } }
+          delete: { mock: { calls: unknown[] } }
+        }
+        return [...b.insert.mock.calls, ...b.delete.mock.calls]
+      })
+    expect(escrituras).toEqual([])
+    // El UPDATE pide que siga sin pagar.
+    const update = client.from.mock.results
+      .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_detalle')
+      .map(
+        (r) =>
+          r.value as {
+            update: { mock: { calls: unknown[] } }
+            eq: { mock: { calls: unknown[][] } }
+          }
+      )
+      .find((b) => b.update.mock.calls.length > 0)
+    expect(update?.eq.mock.calls).toContainEqual(['ndt_pagado', false])
+  })
+
   // Una fila pagada tiene comprobante y aguinaldo acumulado con su bruto: un
   // archivo con otros datos no la reescribe, y se avisa con el nombre.
   it('una fila ya pagada con otros datos en el archivo no se toca y se nombra', async () => {
@@ -613,7 +713,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 20 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -685,7 +785,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 30 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -770,7 +870,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 10 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -860,7 +960,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 10 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -938,7 +1038,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 10 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -1083,7 +1183,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 10 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -1161,7 +1261,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 10 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -1263,7 +1363,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 10 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {
@@ -1524,6 +1624,108 @@ describe('uploadPlanilla (server action)', () => {
     })
   })
 
+  // Auditoría 2, fallo 5: alguien cargado sin horario quedaba con una fila en
+  // ₡0 que no se puede pagar; en un periodo vencido tampoco se podía sacar
+  // por Excel, y el periodo no cerraba nunca.
+  describe('fila vacía (₡0, sin horas) en un periodo vencido', () => {
+    const PERIODO_VENCIDO = {
+      ...PERIODO_BORRADOR,
+      npe_fecha_inicio_periodo: '2026-08-01',
+      npe_fecha_fin_periodo: '2026-08-15',
+    }
+    const FILA_ANA = {
+      ndt_id: 10,
+      ndt_historial_laboral_id: 55,
+      ndt_pagado: false,
+      ndt_horas_ordinarias_diurnas: 88,
+      ndt_horas_extra_al_50: 0,
+      ndt_salario_por_hora: 0,
+      ndt_salario_bruto: 100000,
+      ndt_total_deducciones_obreras: 10830,
+      ndt_salario_neto: 89170,
+    }
+    const FILA_VACIA = {
+      ndt_id: 30,
+      ndt_historial_laboral_id: 77,
+      ndt_pagado: false,
+      ndt_horas_ordinarias_diurnas: 0,
+      ndt_horas_extra_al_50: 0,
+      ndt_salario_por_hora: 0,
+      ndt_salario_bruto: 0,
+      ndt_total_deducciones_obreras: 0,
+      ndt_salario_neto: 0,
+      ndt_dias_incapacidad_empleador: 0,
+    }
+
+    function escenario(filaQueSale: Record<string, unknown>) {
+      const client = mockSupabase({
+        sgrh_nomina_periodo: { data: PERIODO_VENCIDO, error: null },
+        sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+        sgrh_nomina_detalle: [{ data: [FILA_ANA, filaQueSale], error: null }, OK],
+        sgrh_nomina_linea_ingreso: [
+          {
+            data: [
+              {
+                ing_nomina_detalle_id: 10,
+                ing_monto: 100000,
+                sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+              },
+            ],
+            error: null,
+          },
+          OK,
+        ],
+        sgrh_nomina_linea_patronal: { data: null, error: null },
+        sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
+      })
+      mockParsePlanillaWorkbook.mockResolvedValue({
+        rows: [fila('KEEP', { BASE: 100000 })],
+        errors: [],
+      })
+      mockGetEmpleadosActivos.mockResolvedValue({
+        ok: true,
+        data: [
+          {
+            labId: 55,
+            cedula: 'KEEP',
+            nombre: 'Ana',
+            salarioBaseMensual: 200000,
+            salarioRealMensual: null,
+            horasSemanales: 48,
+          },
+        ],
+      })
+      return client
+    }
+
+    it('se puede sacar: no hay nada que pagarle', async () => {
+      const client = escenario(FILA_VACIA)
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result).toMatchObject({ ok: true, eliminados: 1 })
+      expect(client.rpc).toHaveBeenCalledWith('eliminar_filas_planilla', { p_ndt_ids: [30] })
+    })
+
+    it('con días de incapacidad a cargo del patrono sigue protegida', async () => {
+      escenario({ ...FILA_VACIA, ndt_dias_incapacidad_empleador: 3 })
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('periodo que ya venció')
+    })
+
+    it('con horas pero en ₡0 sigue protegida: se le debe algo', async () => {
+      escenario({ ...FILA_VACIA, ndt_horas_ordinarias_diurnas: 40 })
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('periodo que ya venció')
+    })
+  })
+
   // Regresion que costaba plata: al liquidar el banco de horas se le mete al
   // periodo una linea de HORAS_EXTRA, un concepto DESACTIVADO y que por eso
   // no es columna del Excel. La subida recalculaba solo con los conceptos
@@ -1562,7 +1764,7 @@ describe('uploadPlanilla (server action)', () => {
           ],
           error: null,
         },
-        OK,
+        { data: [{ ndt_id: 20 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: [
         {

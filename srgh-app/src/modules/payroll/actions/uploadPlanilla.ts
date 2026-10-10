@@ -38,6 +38,8 @@ import {
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
+import { filaSinNadaQuePagar } from '@/modules/payroll/lib/filaSinNadaQuePagar'
+import { aplicarAusenciasAFilasNuevas } from '@/modules/payroll/lib/ausenciaNominaSync'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 import { filasConHorasDeBancoResueltas } from '@/modules/payroll/lib/dependenciasDetalle'
 
@@ -82,6 +84,7 @@ interface DetalleExistenteRow {
   ndt_total_cargas_patronales: number
   ndt_horas_asistencia: number | null
   ndt_horas_extra_asistencia: number | null
+  ndt_dias_incapacidad_empleador: number | null
 }
 
 interface LineaIngresoExistenteRow {
@@ -208,7 +211,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
     .select(
-      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje'
+      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje, con_rebaja_salario'
     )
     .eq('con_activo', true)
     .returns<ConceptoPlanillaColumna[]>()
@@ -373,7 +376,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const { data: detallesPrevios, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
-      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto, ndt_total_cargas_patronales, ndt_horas_asistencia, ndt_horas_extra_asistencia'
+      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto, ndt_total_cargas_patronales, ndt_horas_asistencia, ndt_horas_extra_asistencia, ndt_dias_incapacidad_empleador'
     )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
@@ -599,9 +602,13 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // es la única forma de cerrarlo.
   const saldadasEnLiquidacion = vencido ? cubiertasPorLiquidacion : new Set<number>()
 
+  // Otra excepción: una fila sin nada que pagar (cargada sin horario ni
+  // marcas). No es una deuda, y sin poder sacarla el periodo vencido no se
+  // cerraba nunca (auditoría 2, fallo 5).
   const protegidos = salieronDelExcel.filter(
     (d: DetalleExistenteRow) =>
-      d.ndt_pagado || (vencido && !saldadasEnLiquidacion.has(d.ndt_historial_laboral_id))
+      d.ndt_pagado ||
+      (vencido && !saldadasEnLiquidacion.has(d.ndt_historial_laboral_id) && !filaSinNadaQuePagar(d))
   )
 
   if (protegidos.length > 0) {
@@ -674,6 +681,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   }
 
   // 8. Actualizar los que cambiaron: totales recalculados + líneas desde cero
+  let actualizados = 0
   for (const { row, ndtId, totales } of filasActualizar) {
     const {
       salarioBruto,
@@ -684,7 +692,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       lineasPatronales,
     } = totales
 
-    const { error: errUpdate } = await supabase
+    const { data: actualizada, error: errUpdate } = await supabase
       .from('sgrh_nomina_detalle')
       .update({
         ndt_salario_bruto: salarioBruto,
@@ -697,9 +705,22 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ...fotoDe(porCedula.get(row.cedula)!.labId, row, valoresPreviosPorNdt.get(ndtId) ?? null),
       })
       .eq('ndt_id', ndtId)
+      // Solo si sigue sin pagar: alguien pudo marcarla pagada mientras se
+      // subía el archivo, y una fila pagada tiene comprobante emitido
+      // (auditoría 2, riesgo de lectura y escritura).
+      .eq('ndt_pagado', false)
+      .select('ndt_id')
+      .returns<{ ndt_id: number }[]>()
     if (errUpdate) {
       return { ok: false, error: 'No se pudieron actualizar los montos de la planilla.' }
     }
+    if (!Array.isArray(actualizada) || actualizada.length === 0) {
+      // Se pagó en el medio: queda como se pagó, igual que las que ya venían
+      // pagadas.
+      pagadasSinTocar.push(porCedula.get(row.cedula)!.nombre)
+      continue
+    }
+    actualizados += 1
 
     // reemplazarLineasDetalle borra y reinserta, conservando los metadatos de
     // las deducciones (de qué beneficio vienen, si son voluntarias).
@@ -809,6 +830,17 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         return { ok: false, error: errBanco }
       }
     }
+
+    // Incapacidades y licencias registradas antes de que existiera la fila
+    // (auditoría 2, fallo 2).
+    const ausencias = await aplicarAusenciasAFilasNuevas(
+      supabase,
+      insertados.map((d) => ({ ndtId: d.ndt_id, labId: d.ndt_historial_laboral_id })),
+      { inicio: periodo.npe_fecha_inicio_periodo, fin: periodo.npe_fecha_fin_periodo }
+    )
+    if (!ausencias.ok) {
+      return { ok: false, error: `La planilla se guardó, pero: ${ausencias.error}` }
+    }
   }
 
   revalidatePath('/payroll')
@@ -818,7 +850,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     ok: true,
     empleados: rows.length,
     nuevos: filasNuevas.length,
-    actualizados: filasActualizar.length,
+    actualizados,
     sinCambios,
     eliminados: ndtIdsEliminar.length,
     pagadasSinTocar,

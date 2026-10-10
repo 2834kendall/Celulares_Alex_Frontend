@@ -4,6 +4,7 @@
 import 'server-only'
 import type { createClient } from '@/lib/supabase/server'
 import type { FilaGuardadaPlantilla } from './planillaExcel'
+import { origenHoras } from './horasOrigen'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -150,6 +151,8 @@ interface FilaGuardadaRow {
   ndt_horas_ordinarias_diurnas: number
   ndt_horas_extra_al_50: number | null
   ndt_salario_por_hora: number
+  ndt_horas_asistencia?: number | null
+  ndt_horas_extra_asistencia?: number | null
 }
 
 interface LineaGuardadaRow {
@@ -178,7 +181,7 @@ export async function getFilasGuardadas(
   const { data: filas, error } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
-      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora'
+      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_horas_asistencia, ndt_horas_extra_asistencia'
     )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<FilaGuardadaRow[]>()
@@ -193,6 +196,14 @@ export async function getFilasGuardadas(
       horasExtra: f.ndt_horas_extra_al_50 ?? 0,
       salarioPorHora: f.ndt_salario_por_hora,
       montos: {},
+      horasAjustadas:
+        origenHoras(
+          { horas: f.ndt_horas_ordinarias_diurnas, horasExtra: f.ndt_horas_extra_al_50 ?? 0 },
+          {
+            horas: f.ndt_horas_asistencia ?? null,
+            horasExtra: f.ndt_horas_extra_asistencia ?? null,
+          }
+        ) === 'ajustadas',
     }
     porLab.set(f.ndt_historial_laboral_id, fila)
     porNdt.set(f.ndt_id, fila)

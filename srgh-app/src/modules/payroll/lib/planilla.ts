@@ -59,6 +59,27 @@ export interface ConceptoCalculo {
   con_afecta_base_ccss: boolean
   con_tipo_calculo: string
   con_porcentaje: number | null
+  /**
+   * true = la deducción es salario que no se ganó (ausencia sin goce): baja
+   * el salario bruto en vez de restarse del neto, así que también baja la
+   * CCSS y el aguinaldo (auditoría 2, hallazgo 6). Solo tiene efecto en un
+   * concepto 'monto_manual_deduccion'. Opcional: si falta, es una deducción
+   * normal.
+   */
+  con_rebaja_salario?: boolean | null
+}
+
+/**
+ * ¿Esta deducción rebaja el salario (ausencia sin goce) en vez de restarse
+ * del neto? Ver ConceptoCalculo.con_rebaja_salario.
+ */
+export function esRebajoDeSalario(concepto: {
+  con_tipo_calculo: string
+  con_rebaja_salario?: boolean | null
+}): boolean {
+  return (
+    concepto.con_tipo_calculo === 'monto_manual_deduccion' && concepto.con_rebaja_salario === true
+  )
 }
 
 /**
@@ -179,6 +200,11 @@ export interface LineaCalculada {
   monto: number
   /** true = se suma (ingreso); false = se resta (deducción). */
   esIngreso: boolean
+  /**
+   * Deducción que rebaja el salario (ausencia sin goce): ya está restada del
+   * bruto, así que NO forma parte del total de deducciones.
+   */
+  esRebajoSalario?: boolean
   /** Ingreso que no es salario: se suma después de las deducciones (viáticos). */
   esNoSalarial?: boolean
   /** Solo presentes en deducciones tipo porcentaje (para ded_porcentaje_aplicado / ded_base_calculo). */
@@ -235,7 +261,8 @@ export interface TotalesPorConceptos {
  * catálogo (en vez de una lista fija de campos).
  *
  * El orden importa y es el del recibo:
- *   salario base + comisión + …          → salario bruto (base de CCSS y aguinaldo)
+ *   salario base + comisión + …
+ *   − ausencia sin goce                  → salario bruto (base de CCSS y aguinaldo)
  *   − CCSS obrera, préstamos, …          → total de deducciones
  *   + viáticos                           → salario neto
  *
@@ -297,12 +324,34 @@ export function calcularPlanillaPorConceptos(
     }
   }
 
+  // Ausencia sin goce: son días que no se pagan, así que salen del salario
+  // (y con eso de la CCSS y del aguinaldo), igual que cuando la ausencia
+  // llega por la asistencia. Antes era una deducción más y solo bajaba el
+  // neto (auditoría 2, hallazgo 6). No se puede rebajar más salario del que
+  // hay: el exceso no se aplica.
+  for (const concepto of aplicables) {
+    if (!esRebajoDeSalario(concepto)) continue
+    const pedido = round2(input.montos[concepto.con_codigo] ?? 0)
+    const monto = round2(Math.min(pedido, Math.max(0, bruto)))
+    if (!(monto > 0)) continue
+    lineas.push({
+      con_id: concepto.con_id,
+      con_codigo: concepto.con_codigo,
+      monto,
+      esIngreso: false,
+      esRebajoSalario: true,
+    })
+    bruto = round2(bruto - monto)
+    baseCcss = round2(Math.max(0, baseCcss - monto))
+  }
+
   bruto = round2(bruto)
   baseCcss = round2(baseCcss)
   noSalarial = round2(noSalarial)
   let deducciones = 0
 
   for (const concepto of aplicables) {
+    if (esRebajoDeSalario(concepto)) continue
     if (concepto.con_tipo_calculo === 'monto_manual_deduccion') {
       const monto = round2(input.montos[concepto.con_codigo] ?? 0)
       if (monto > 0) {
@@ -417,6 +466,9 @@ export function firmaCatalogo(conceptos: ConceptoPlanillaColumna[]): string {
         // aunque los viáticos hubieran dejado de ser salario en el medio.
         c.con_afecta_salario_bruto ? 'S' : 'N',
         c.con_afecta_base_ccss ? 'C' : 'N',
+        // Solo cuando está: así no cambia la huella de los catálogos que no
+        // tienen ningún rebajo de salario.
+        ...(esRebajoDeSalario(c) ? ['R'] : []),
       ].join(':')
     )
     .join('|')

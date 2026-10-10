@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   agruparConceptosPlanilla,
   calcularPlanillaPorConceptos,
+  firmaCatalogo,
   hayConceptoSalarioBase,
   parsePlanillaRow,
   sameRowValues,
@@ -677,5 +678,107 @@ describe('hayConceptoSalarioBase', () => {
       calcularPlanillaPorConceptos([{ ...BASE_OK, con_afecta_salario_bruto: false }], input)
         .salarioBruto
     ).toBe(0)
+  })
+})
+
+// Auditoría 2, hallazgo 6. Decisión del cliente: la ausencia sin goce cargada
+// por Excel o a mano rebaja el salario, igual que por la asistencia.
+describe('ausencia sin goce (deducción que rebaja el salario)', () => {
+  const BASE = {
+    con_id: 1,
+    con_codigo: 'BASE',
+    con_tipo: 'ingreso',
+    con_afecta_salario_bruto: true,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_ingreso',
+    con_porcentaje: null,
+  }
+  const PRESTAMO = {
+    con_id: 3,
+    con_codigo: 'PRESTAMO',
+    con_tipo: 'deduccion',
+    // Así queda un concepto creado desde el formulario: la bandera viene
+    // tildada. No debe convertir el préstamo en rebajo de salario.
+    con_afecta_salario_bruto: true,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'monto_manual_deduccion',
+    con_porcentaje: null,
+  }
+  const SIN_GOCE = {
+    con_id: 16,
+    con_codigo: 'DED006',
+    con_tipo: 'deduccion',
+    con_afecta_salario_bruto: false,
+    con_afecta_base_ccss: false,
+    con_tipo_calculo: 'monto_manual_deduccion',
+    con_porcentaje: null,
+    con_rebaja_salario: true,
+  }
+  const CCSS = {
+    con_id: 26,
+    con_codigo: 'CCSS_OBRERA',
+    con_tipo: 'deduccion',
+    con_afecta_salario_bruto: false,
+    con_afecta_base_ccss: true,
+    con_tipo_calculo: 'porcentaje_deduccion_bruto',
+    con_porcentaje: 10.83,
+  }
+  const entrada = (montos: Record<string, number>) => ({
+    montos,
+    horasTrabajadas: 0,
+    horasExtra: 0,
+    salarioPorHora: 0,
+  })
+
+  it('baja el bruto y la CCSS; no se resta otra vez del neto', () => {
+    const r = calcularPlanillaPorConceptos(
+      [BASE, PRESTAMO, SIN_GOCE, CCSS],
+      entrada({ BASE: 200000, DED006: 40000, PRESTAMO: 10000 })
+    )
+
+    expect(r.salarioBruto).toBe(160000)
+    expect(r.baseCcss).toBe(160000)
+    // CCSS 10,83 % de 160.000 + préstamo.
+    expect(r.totalDeducciones).toBe(17328 + 10000)
+    expect(r.salarioNeto).toBe(160000 - 17328 - 10000)
+    expect(r.lineas.find((l) => l.con_codigo === 'DED006')).toEqual({
+      con_id: 16,
+      con_codigo: 'DED006',
+      monto: 40000,
+      esIngreso: false,
+      esRebajoSalario: true,
+    })
+  })
+
+  it('no rebaja más salario del que hay', () => {
+    const r = calcularPlanillaPorConceptos(
+      [BASE, SIN_GOCE, CCSS],
+      entrada({ BASE: 100000, DED006: 150000 })
+    )
+
+    expect(r.salarioBruto).toBe(0)
+    expect(r.totalDeducciones).toBe(0)
+    expect(r.salarioNeto).toBe(0)
+    expect(r.lineas.find((l) => l.con_codigo === 'DED006')?.monto).toBe(100000)
+  })
+
+  it('sin la marca es una deducción normal (solo baja el neto)', () => {
+    const r = calcularPlanillaPorConceptos(
+      [BASE, { ...SIN_GOCE, con_rebaja_salario: false }, CCSS],
+      entrada({ BASE: 200000, DED006: 40000 })
+    )
+
+    expect(r.salarioBruto).toBe(200000)
+    expect(r.totalDeducciones).toBe(21660 + 40000)
+  })
+
+  it('la huella del catálogo cambia con la marca, y no cambia para catálogos sin ella', () => {
+    const conMarca = { ...SIN_GOCE, con_nombre: 'Ausencia sin goce' }
+    const sinMarca = { ...conMarca, con_rebaja_salario: false }
+    const sinCampo = { ...conMarca }
+    delete (sinCampo as { con_rebaja_salario?: boolean }).con_rebaja_salario
+
+    expect(firmaCatalogo([conMarca])).not.toBe(firmaCatalogo([sinMarca]))
+    expect(firmaCatalogo([sinMarca])).toBe(firmaCatalogo([sinCampo]))
   })
 })

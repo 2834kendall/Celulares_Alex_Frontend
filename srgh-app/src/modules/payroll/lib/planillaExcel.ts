@@ -13,6 +13,7 @@ import ExcelJS from 'exceljs'
 import {
   CODIGO_AJUSTE,
   CODIGO_SALARIO_BASE,
+  esRebajoDeSalario,
   agruparConceptosPlanilla,
   firmaCatalogo,
   parsePlanillaRow,
@@ -99,6 +100,13 @@ export interface FilaGuardadaPlantilla {
   salarioPorHora: number
   /** Monto por código de concepto manual (BASE, AJUSTE, COMISION, PRESTAMO…). */
   montos: Record<string, number>
+  /**
+   * Las horas guardadas no son las que dijeron las marcas: alguien las
+   * corrigió (origenHoras = 'ajustadas'). La plantilla las trae tal cual, con
+   * su salario; si trajera las de las marcas, subir el archivo sin tocarlo
+   * borraba la corrección (auditoría 2, hallazgo 7: 40 h → 0).
+   */
+  horasAjustadas?: boolean
 }
 
 /**
@@ -263,19 +271,23 @@ export async function buildPlanillaTemplate(
 
     // Una fila ya pagada va tal cual se pagó: la subida no la cambia (tiene
     // comprobante emitido), y traerla recalculada solo generaba el aviso de
-    // "pagadas sin tocar" en cada subida.
-    const pagada = guardado?.pagado === true ? guardado : null
+    // "pagadas sin tocar" en cada subida. Una con horas corregidas a mano,
+    // también: esa corrección es una decisión de alguien (hallazgo 7).
+    const conservada =
+      guardado?.pagado === true || guardado?.horasAjustadas === true ? guardado : null
     const montoGuardado = (codigo: string) => guardado?.montos[codigo] ?? 0
 
-    row.getCell(colHoras).value = pagada ? pagada.horas : prellenado.horas
-    row.getCell(colHorasExtra).value = pagada ? pagada.horasExtra : prellenado.horasExtra
-    row.getCell(colSalarioHora).value = pagada ? pagada.salarioPorHora : prellenado.salarioPorHora
+    row.getCell(colHoras).value = conservada ? conservada.horas : prellenado.horas
+    row.getCell(colHorasExtra).value = conservada ? conservada.horasExtra : prellenado.horasExtra
+    row.getCell(colSalarioHora).value = conservada
+      ? conservada.salarioPorHora
+      : prellenado.salarioPorHora
     row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
 
-    const base = pagada
+    const base = conservada
       ? montoGuardado(CODIGO_SALARIO_BASE)
       : baseDeLaPlantilla(prellenado.base, guardado, contrato, lecturaEmp, info.quincena)
-    const ajuste = pagada ? montoGuardado(CODIGO_AJUSTE) : prellenado.ajuste
+    const ajuste = conservada ? montoGuardado(CODIGO_AJUSTE) : prellenado.ajuste
 
     ingresoManual.forEach((c, i) => {
       row.getCell(colIngresoInicio + i).value =
@@ -341,9 +353,19 @@ export async function buildPlanillaTemplate(
       .filter((x) => !esSalario(x.c))
       .map((x) => celda(x.col))
 
-    row.getCell(colTotalBruto).value = { formula: suma(refsBruto, bancoPagado) }
+    // La ausencia sin goce rebaja el salario: sale del bruto y de la base de
+    // la CCSS, no del neto (auditoría 2, hallazgo 6). Igual que el motor, el
+    // bruto no baja de 0.
+    const refsRebajo = deduccionManual
+      .map((c, i) => ({ c, col: colDeduccionManualInicio + i }))
+      .filter((x) => esRebajoDeSalario(x.c))
+      .map((x) => celda(x.col))
+    const menosRebajo = (formula: string) =>
+      refsRebajo.length > 0 ? `MAX(0,${formula}-${suma(refsRebajo)})` : formula
 
-    const baseCcss = suma(refsCcss, bancoPagado)
+    row.getCell(colTotalBruto).value = { formula: menosRebajo(suma(refsBruto, bancoPagado)) }
+
+    const baseCcss = menosRebajo(suma(refsCcss, bancoPagado))
     deduccionPorcentual.forEach((c, i) => {
       const col = colDeduccionPctInicio + i
       // `*10.83/100` y no `*0.1083`: 10.83 / 100 en JavaScript es
@@ -351,8 +373,14 @@ export async function buildPlanillaTemplate(
       row.getCell(col).value = { formula: `${baseCcss}*${c.con_porcentaje ?? 0}/100` }
     })
 
+    // El rebajo de salario ya se restó del bruto: no se resta otra vez.
     const sumandosDeducciones = [
-      rango(colDeduccionManualInicio, deduccionManual.length),
+      ...(refsRebajo.length > 0
+        ? deduccionManual
+            .map((c, i) => ({ c, col: colDeduccionManualInicio + i }))
+            .filter((x) => !esRebajoDeSalario(x.c))
+            .map((x) => celda(x.col))
+        : [rango(colDeduccionManualInicio, deduccionManual.length)]),
       rango(colDeduccionPctInicio, deduccionPorcentual.length),
     ].filter((r): r is string => r !== null)
     row.getCell(colTotalDeducciones).value = {

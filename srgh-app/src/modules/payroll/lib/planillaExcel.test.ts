@@ -179,6 +179,41 @@ describe('buildPlanillaTemplate con la fila ya guardada en el periodo', () => {
       })
     ).toEqual([80, 2, 2400, 250000, 10000, 0])
   })
+
+  // Auditoría 2, hallazgo 7: subir la plantilla recién bajada, sin tocarla,
+  // dejaba en 0 las horas que alguien había corregido a mano (40 h → 0).
+  it('una fila con horas corregidas a mano trae esas horas y su salario', async () => {
+    expect(
+      await filaAna({
+        ...ANA,
+        horas: { lectura: lectura(0, 96), diasPorRevisar: 0 },
+        guardado: {
+          pagado: false,
+          horas: 40,
+          horasExtra: 0,
+          salarioPorHora: 2500,
+          montos: { BASE: 125000, COMISION: 5000 },
+          horasAjustadas: true,
+        },
+      })
+    ).toEqual([40, 0, 2500, 125000, 5000, 0])
+  })
+
+  it('sin la corrección, las horas son las de las marcas', async () => {
+    const [horas] = await filaAna({
+      ...ANA,
+      horas: { lectura: lectura(0, 96), diasPorRevisar: 0 },
+      guardado: {
+        pagado: false,
+        horas: 40,
+        horasExtra: 0,
+        salarioPorHora: 2500,
+        montos: { BASE: 125000 },
+        horasAjustadas: false,
+      },
+    })
+    expect(horas).toBe(0)
+  })
 })
 
 describe('vista previa de totales en la plantilla (auditoría, hallazgo 6)', () => {
@@ -254,6 +289,42 @@ describe('vista previa de totales en la plantilla (auditoría, hallazgo 6)', () 
 
     expect(f.bruto).toBe(`SUM(${f.base},${f.comision},26400)`)
     expect(f.ccss).toBe(`SUM(${f.base},${f.comision},26400)*10.83/100`)
+  })
+
+  // Auditoría 2, hallazgo 6: la ausencia sin goce rebaja el salario.
+  it('la ausencia sin goce sale del bruto y de la CCSS, no del neto', async () => {
+    const SIN_GOCE: ConceptoPlanillaColumna = {
+      con_id: 16,
+      con_codigo: 'DED006',
+      con_nombre: 'Ausencia sin goce',
+      con_tipo: 'deduccion',
+      con_afecta_salario_bruto: false,
+      con_afecta_base_ccss: false,
+      con_tipo_calculo: 'monto_manual_deduccion',
+      con_porcentaje: null,
+      con_rebaja_salario: true,
+    }
+    const buffer = await buildPlanillaTemplate(INFO, [EMPLEADOS[0]], [...SIN_HORAS_EXTRA, SIN_GOCE])
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const ws = wb.getWorksheet('Planilla')!
+    const col = (label: string) => {
+      let n = -1
+      ws.getRow(4).eachCell((c, i) => {
+        if (String(c.value).startsWith(label)) n = i
+      })
+      return n
+    }
+    const celda = (label: string) => `${String.fromCharCode(64 + col(label))}5`
+    const f = (label: string) =>
+      (ws.getRow(5).getCell(col(label)).value as { formula: string }).formula
+    const suma = `SUM(${celda('Salario base')},${celda('Comisión')})`
+
+    expect(f('Total bruto')).toBe(`MAX(0,${suma}-SUM(${celda('Ausencia sin goce')}))`)
+    expect(f('Rebajo CCSS')).toBe(`MAX(0,${suma}-SUM(${celda('Ausencia sin goce')}))*10.83/100`)
+    expect(f('Total deducciones')).toBe(
+      `SUM(${celda('Préstamo')},${celda('Rebajo CCSS')}:${celda('Rebajo CCSS')})`
+    )
   })
 })
 
