@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ForgotPasswordForm } from './ForgotPasswordForm'
 import { requestPasswordReset } from '@/modules/auth/actions/requestPasswordReset'
@@ -126,5 +126,25 @@ describe('<ForgotPasswordForm />', () => {
 
     resolveRequest({ ok: true })
     expect(await screen.findByText('Revise su correo')).toBeInTheDocument()
+  })
+
+  it('tras un intento fallido la escena se repone al rato', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+
+    try {
+      const { container } = render(<ForgotPasswordForm />)
+      const scene = container.querySelector('.login-scene')
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+      await user.click(screen.getByRole('button', { name: /enviar enlace de recuperación/i }))
+
+      await waitFor(() => expect(scene).toHaveAttribute('data-mood', 'error'))
+      // Vuelve a reaccionar al campo enfocado: el formulario lleva el foco al
+      // correo invalido.
+      act(() => vi.advanceTimersByTime(1600))
+      expect(scene).toHaveAttribute('data-mood', 'watching')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
