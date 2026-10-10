@@ -127,7 +127,8 @@ export const SETTINGS_TREE: SettingsTree = {
         {
           id: 'stages',
           label: 'Etapas de selección',
-          description: 'El orden de las etapas define el embudo del proceso de selección.',
+          description:
+            'Las columnas del tablero de Reclutamiento: nombre, color y orden del proceso.',
           href: '/settings/recruitment/stages',
           keywords: ['embudo', 'proceso de seleccion', 'etapa', 'pipeline'],
           visible: catalogWriters,
