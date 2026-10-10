@@ -1,4 +1,5 @@
 import { Settings } from 'lucide-react'
+import { FADE } from '@/components/layout/NavLinks'
 import { cn } from '@/lib/utils/cn'
 
 interface SettingsModeHeaderProps {
@@ -6,6 +7,8 @@ interface SettingsModeHeaderProps {
   empresaNombre: string
   /** Tamaño del drawer móvil (más compacto que el sidebar de escritorio). */
   compact?: boolean
+  /** Riel de íconos: queda solo el engranaje, el texto se desvanece. */
+  collapsed?: boolean
 }
 
 /**
@@ -15,7 +18,11 @@ interface SettingsModeHeaderProps {
  * color de acento): sin ese cambio no se notaba que el menú ya no era el
  * principal. El fondo lo pone el contenedor (bg-brand-700).
  */
-export function SettingsModeHeader({ empresaNombre, compact = false }: SettingsModeHeaderProps) {
+export function SettingsModeHeader({
+  empresaNombre,
+  compact = false,
+  collapsed = false,
+}: SettingsModeHeaderProps) {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
       <span
@@ -26,7 +33,7 @@ export function SettingsModeHeader({ empresaNombre, compact = false }: SettingsM
       >
         <Settings className={compact ? 'h-4 w-4' : 'h-5 w-5'} aria-hidden="true" />
       </span>
-      <div className="min-w-0 leading-tight">
+      <div className={cn('min-w-0 leading-tight', FADE, collapsed && 'opacity-0')}>
         <p
           className={cn(
             'whitespace-nowrap font-extrabold tracking-tight text-white',

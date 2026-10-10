@@ -6,11 +6,10 @@ import { TopbarBrand } from './TopbarBrand'
 
 const EMPRESA = 'TecnoCel'
 
-function renderBrand(props: { collapsed?: boolean; canCollapse?: boolean; onToggle?: () => void }) {
+function renderBrand(props: { collapsed?: boolean; onToggle?: () => void }) {
   return render(
     <TopbarBrand
       collapsed={props.collapsed ?? false}
-      canCollapse={props.canCollapse ?? true}
       onToggle={props.onToggle ?? vi.fn()}
       logoUrl={null}
       empresaNombre={EMPRESA}
@@ -25,7 +24,6 @@ function StatefulBrand() {
   return (
     <TopbarBrand
       collapsed={collapsed}
-      canCollapse
       onToggle={() => setCollapsed((v) => !v)}
       logoUrl={null}
       empresaNombre={EMPRESA}
@@ -54,13 +52,6 @@ describe('TopbarBrand', () => {
     // Sin nombre ni sucursal: en 76px solo entra el logo (la inicial).
     expect(screen.queryByText(EMPRESA)).not.toBeInTheDocument()
     expect(button).toHaveTextContent(EMPRESA.charAt(0))
-  })
-
-  it('canCollapse=false no ofrece el botón (modo configuración)', () => {
-    renderBrand({ canCollapse: false })
-
-    expect(screen.getByText(EMPRESA)).toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
   it('el botón llama a onToggle', async () => {

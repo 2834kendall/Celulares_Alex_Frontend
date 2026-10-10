@@ -199,4 +199,28 @@ describe('<Sidebar />', () => {
     await userEvent.click(screen.getByRole('button', { name: /buscar ajuste/i }))
     expect(openSearch).toHaveBeenCalledTimes(1)
   })
+
+  it('el modo configuración también se reduce al riel, con tooltips', () => {
+    mockUsePathname.mockReturnValue('/settings/general')
+    const { container } = renderSidebar({ collapsed: true })
+
+    expect(container.querySelector('aside')?.className).toContain('w-[76px]')
+    // La cabecera deja solo el engranaje: el texto sigue en el DOM, transparente.
+    expect(screen.getByText('Configuración').parentElement).toHaveClass('opacity-0')
+
+    fireEvent.pointerOver(screen.getByRole('button', { name: /buscar ajuste/i }), {
+      pointerType: 'mouse',
+    })
+    expect(document.querySelector('[data-rail-tooltip]')).toHaveTextContent(
+      'Buscar ajuste (Ctrl K)'
+    )
+  })
+
+  it('expandido, el modo configuración no lleva tooltips', () => {
+    mockUsePathname.mockReturnValue('/settings/general')
+    const { container } = renderSidebar()
+
+    expect(container.querySelector('aside')?.className).toContain('w-64')
+    expect(screen.getByRole('link', { name: 'General' })).not.toHaveAttribute('data-tooltip')
+  })
 })

@@ -105,9 +105,6 @@ export function AppShell({
   // Modo configuración (SGRH-92): en /settings… el menú lateral pasa a ser el
   // de Configuración y se habilita el buscador de ajustes (Ctrl+K).
   const settingsMode = isSettingsPath(pathname)
-  // El menu de Configuración no se reduce a iconos: en ese modo el sidebar
-  // queda expandido, sin tocar la preferencia del usuario para el resto.
-  const railCollapsed = !sidebarOpen && !settingsMode
 
   // Destino de "← Volver": la última pantalla fuera de Configuración. Con la
   // query incluida, para volver a la misma pestaña (ej. ?tab=usuarios).
@@ -179,8 +176,7 @@ export function AppShell({
 
         <TopbarBrand
           className="hidden md:flex"
-          collapsed={railCollapsed}
-          canCollapse={!settingsMode}
+          collapsed={!sidebarOpen}
           onToggle={() => setSidebarOpen((v) => !v)}
           logoUrl={logoUrl}
           empresaNombre={empresaNombre}
@@ -278,7 +274,7 @@ export function AppShell({
         <Sidebar
           permisos={permisos}
           empresaNombre={empresaNombre}
-          collapsed={railCollapsed}
+          collapsed={!sidebarOpen}
           onOpenSettingsSearch={() => setSettingsSearchOpen(true)}
         />
         {/* Una sola instancia: el drawer y el sidebar pueden estar montados a la vez */}

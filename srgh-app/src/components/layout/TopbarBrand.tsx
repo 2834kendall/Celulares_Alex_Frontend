@@ -23,8 +23,6 @@ const COLLAPSE_BUTTON =
 interface TopbarBrandProps {
   /** El sidebar esta en modo riel (76px). */
   collapsed: boolean
-  /** Sin toggle (modo configuracion: el sidebar queda siempre expandido). */
-  canCollapse: boolean
   onToggle: () => void
   logoUrl: string | null
   empresaNombre: string
@@ -49,7 +47,6 @@ interface TopbarBrandProps {
  */
 export function TopbarBrand({
   collapsed,
-  canCollapse,
   onToggle,
   logoUrl,
   empresaNombre,
@@ -115,19 +112,17 @@ export function TopbarBrand({
             empresaNombre={empresaNombre}
             sucursalNombre={sucursalNombre}
           />
-          {canCollapse && (
-            <button
-              ref={toggleRef}
-              type="button"
-              onClick={handleToggle}
-              aria-label="Contraer menú lateral"
-              aria-expanded
-              aria-controls={SIDEBAR_ID}
-              className={COLLAPSE_BUTTON}
-            >
-              <PanelLeftClose className="h-5 w-5" aria-hidden="true" />
-            </button>
-          )}
+          <button
+            ref={toggleRef}
+            type="button"
+            onClick={handleToggle}
+            aria-label="Contraer menú lateral"
+            aria-expanded
+            aria-controls={SIDEBAR_ID}
+            className={COLLAPSE_BUTTON}
+          >
+            <PanelLeftClose className="h-5 w-5" aria-hidden="true" />
+          </button>
         </div>
       )}
     </div>

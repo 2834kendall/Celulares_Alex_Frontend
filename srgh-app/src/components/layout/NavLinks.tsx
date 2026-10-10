@@ -74,7 +74,30 @@ interface NavLinksProps {
   collapsed?: boolean
 }
 
-const FADE = 'motion-safe:transition-opacity motion-safe:duration-200'
+/** Fundido de las etiquetas al entrar y salir del riel. */
+export const FADE = 'motion-safe:transition-opacity motion-safe:duration-200'
+
+/**
+ * Rotulo de un grupo del menu. En el riel se cambia por una linea, con la
+ * misma altura en los dos estados: los items no se mueven en vertical.
+ */
+export function NavGroupHeading({ label, collapsed }: { label: string; collapsed: boolean }) {
+  return (
+    <div className="relative flex h-5 items-center overflow-hidden">
+      <p className={cn(NAV_GROUP_LABEL, 'whitespace-nowrap', FADE, collapsed && 'opacity-0')}>
+        {label}
+      </p>
+      <span
+        aria-hidden="true"
+        className={cn(
+          'absolute inset-x-2 top-1/2 h-px bg-[var(--sidebar-border)]',
+          FADE,
+          collapsed ? 'opacity-100' : 'opacity-0'
+        )}
+      />
+    </div>
+  )
+}
 
 /**
  * Lista de enlaces de navegacion filtrada por permisos y agrupada
@@ -97,25 +120,7 @@ export function NavLinks({ permisos, onNavigate, collapsed = false }: NavLinksPr
     <nav aria-label="Menú principal" className="flex flex-col gap-4">
       {visibleNavSections(permisos).map(({ group, zonas }) => (
         <div key={group?.id ?? 'root'} className="flex flex-col gap-1">
-          {group && (
-            // Misma altura en los dos estados: los items no se mueven en
-            // vertical cuando el rotulo se cambia por la linea.
-            <div className="relative flex h-5 items-center overflow-hidden">
-              <p
-                className={cn(NAV_GROUP_LABEL, 'whitespace-nowrap', FADE, collapsed && 'opacity-0')}
-              >
-                {group.label}
-              </p>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'absolute inset-x-2 top-1/2 h-px bg-[var(--sidebar-border)]',
-                  FADE,
-                  collapsed ? 'opacity-100' : 'opacity-0'
-                )}
-              />
-            </div>
-          )}
+          {group && <NavGroupHeading label={group.label} collapsed={collapsed} />}
           {zonas.map(({ key, href, label }) => {
             const Icon = NAV_ICONS[key] ?? LayoutDashboard
             const active = pathname === href || pathname.startsWith(`${href}/`)

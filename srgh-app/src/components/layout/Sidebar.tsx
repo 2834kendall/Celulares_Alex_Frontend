@@ -36,9 +36,15 @@ interface SidebarProps {
  * clases que la columna de la barra superior (ver sidebarLayout.ts).
  *
  * En /settings… entra en "modo configuración" (SGRH-92): el menú principal se
- * reemplaza por el de Configuración, con "← Volver". Ese menu es un arbol con
- * buscador que no se reduce a iconos, asi que el AppShell nunca lo colapsa.
+ * reemplaza por el de Configuración, con "← Volver". Se reduce al riel igual
+ * que el principal: la cabecera deja solo el engranaje, el buscador queda como
+ * lupa y cada módulo abre sus subpáginas en un panel (ver SettingsSidebarNav).
  */
+
+/* Scroller del menu, comun a los dos modos. `overflow-x-hidden`: sin el,
+   aparece una barra horizontal mientras el ancho se anima. `px-[18px]` pone
+   los iconos del riel en x = 38, el centro de sus 76px. */
+const RAIL_SCROLL = 'overflow-x-hidden overflow-y-auto px-[18px] py-4'
 export function Sidebar({
   permisos,
   empresaNombre,
@@ -57,29 +63,32 @@ export function Sidebar({
       )}
     >
       {settingsMode ? (
-        // Ancho fijo interno para que el contenido no se deforme
-        <div className="flex h-full w-64 flex-col">
+        <div className="flex h-full flex-col">
           {/* Modo configuración: cabecera en el color de acento y el menú entra
-              deslizándose, para que se note que ya no es el menú principal. */}
-          <div className="border-b border-brand-800 bg-brand-700 px-5 py-5">
-            <SettingsModeHeader empresaNombre={empresaNombre} />
+              deslizándose, para que se note que ya no es el menú principal.
+              Con `px-[18px]` el engranaje queda en el eje de los íconos. */}
+          <div className="overflow-hidden border-b border-brand-800 bg-brand-700 px-[18px] py-5 whitespace-nowrap">
+            <SettingsModeHeader empresaNombre={empresaNombre} collapsed={collapsed} />
           </div>
-          <div className="flex-1 overflow-y-auto p-3">
+          <RailTooltipArea
+            enabled={collapsed}
+            className={cn('min-h-0 flex-1', RAIL_SCROLL, collapsed && '[scrollbar-width:none]')}
+          >
             <div className="animate-slide-in-left">
-              <SettingsSidebarNav permisos={permisos} onOpenSearch={onOpenSettingsSearch} />
+              <SettingsSidebarNav
+                permisos={permisos}
+                collapsed={collapsed}
+                onOpenSearch={onOpenSettingsSearch}
+              />
             </div>
-          </div>
+          </RailTooltipArea>
         </div>
       ) : (
         <RailTooltipArea
           enabled={collapsed}
-          // `overflow-x-hidden`: sin el, aparece una barra horizontal mientras
-          // el ancho se anima. En el riel se oculta la barra vertical: en
-          // Windows ocupa ancho y descentraria los iconos (el scroll sigue).
-          className={cn(
-            'h-full overflow-x-hidden overflow-y-auto px-[18px] py-4',
-            collapsed && '[scrollbar-width:none]'
-          )}
+          // En el riel se oculta la barra vertical: en Windows ocupa ancho y
+          // descentraria los iconos (el scroll sigue).
+          className={cn('h-full', RAIL_SCROLL, collapsed && '[scrollbar-width:none]')}
         >
           <NavLinks permisos={permisos} collapsed={collapsed} />
         </RailTooltipArea>

@@ -55,6 +55,8 @@ export function RailTooltipArea({ enabled, className, children }: RailTooltipAre
   return (
     <div
       ref={areaRef}
+      // Lo busca RailFlyout para abrir su panel junto al borde del riel.
+      data-rail-area=""
       className={className}
       // En tactil no hay "pasar por encima": el tooltip quedaria pegado al
       // ultimo icono tocado.
