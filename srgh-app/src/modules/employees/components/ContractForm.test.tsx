@@ -5,7 +5,7 @@ import { ContractForm } from './ContractForm'
 import type { CrearHistorialLaboralInput } from '@/modules/employees/types'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
-/** Hoy en hora de Costa Rica, como lo pinta el trigger de DateField. */
+/** Hoy en hora de Costa Rica, como lo muestra el campo de fecha. */
 function hoyComoSeVe() {
   const [anio, mes, dia] = todayInCostaRica().split('-')
   return `${dia}/${mes}/${anio}`
@@ -141,8 +141,6 @@ describe('<ContractForm />', () => {
       <ContractForm modo="crear" catalogos={CATALOGOS} onCancel={vi.fn()} onSubmit={vi.fn()} />
     )
 
-    expect(screen.getByRole('button', { name: 'Inicio del contrato' })).toHaveTextContent(
-      hoyComoSeVe()
-    )
+    expect(screen.getByRole('combobox', { name: 'Inicio del contrato' })).toHaveValue(hoyComoSeVe())
   })
 })
