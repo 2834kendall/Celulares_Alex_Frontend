@@ -1,90 +1,244 @@
 import { describe, expect, it } from 'vitest'
 import {
+  diaComercialDeSalida,
+  DIAS_CESANTIA_POR_ANIO,
+  aniosReconocidosCesantia,
   anioCicloAguinaldo,
+  quincenaPagadaEnLiquidacion,
   calcularAguinaldo,
+  calcularAntiguedad,
   calcularDiasCesantia,
   calcularDiasPreaviso,
   calcularLiquidacion,
   calcularMesesAntiguedad,
+  calcularSalarioDiario,
+  diasSalarioPendiente,
+  calcularDiasIndemnizacionPlazoFijo,
+  diasCalendarioInclusive,
+  notaRubroSinDias,
 } from './liquidacion'
 
-describe('calcularMesesAntiguedad', () => {
+describe('calcularAntiguedad', () => {
   it('cuenta meses completos, sin adelantar si no se cumple el día del mes', () => {
-    // 3 años y 6 meses exactos
+    // 15 ene 2022 → 15 jul 2025 = 42 meses justos
     expect(calcularMesesAntiguedad(new Date(2022, 0, 15), new Date(2025, 6, 15))).toBe(42)
-    // un día antes del aniversario mensual: no cuenta ese mes
+    // un día antes del aniversario mensual: 41
     expect(calcularMesesAntiguedad(new Date(2022, 0, 15), new Date(2025, 6, 14))).toBe(41)
   })
 
   it('nunca da negativo (fecha de salida antes que la de ingreso)', () => {
-    expect(calcularMesesAntiguedad(new Date(2025, 0, 1), new Date(2024, 0, 1))).toBe(0)
+    expect(calcularAntiguedad(new Date(2025, 0, 1), new Date(2024, 0, 1))).toEqual({
+      meses: 0,
+      diasSobrantes: 0,
+    })
+  })
+
+  // "Fracción superior a seis meses" es estricto. Con meses enteros, seis
+  // meses y veinte días se leía como seis justos y no redondeaba el año.
+  it('devuelve los días sueltos después del último mes completo', () => {
+    // 10 ene 2020 → 30 jul 2021: 18 meses y 20 días
+    expect(calcularAntiguedad(new Date(2020, 0, 10), new Date(2021, 6, 30))).toEqual({
+      meses: 18,
+      diasSobrantes: 20,
+    })
+    expect(calcularAntiguedad(new Date(2020, 0, 10), new Date(2021, 6, 10))).toEqual({
+      meses: 18,
+      diasSobrantes: 0,
+    })
   })
 })
 
-describe('calcularDiasCesantia', () => {
+describe('aniosReconocidosCesantia', () => {
+  it('años completos, más uno si la fracción pasa de seis meses', () => {
+    expect(aniosReconocidosCesantia(48)).toBe(4) // 4 años justos
+    expect(aniosReconocidosCesantia(53)).toBe(4) // 4 años 5 meses
+    expect(aniosReconocidosCesantia(56)).toBe(5) // 4 años 8 meses
+  })
+
+  it('seis meses justos no redondean; seis meses y un día, sí', () => {
+    expect(aniosReconocidosCesantia(54, 0)).toBe(4)
+    expect(aniosReconocidosCesantia(54, 1)).toBe(5)
+  })
+})
+
+describe('calcularDiasCesantia (Art. 29 CT)', () => {
+  it('la tabla tiene las 13 filas de la ley, y baja después del año 9', () => {
+    expect(DIAS_CESANTIA_POR_ANIO).toEqual([
+      19.5, 20, 20.5, 21, 21.24, 21.5, 22, 22, 22, 21.5, 21, 20.5, 20,
+    ])
+  })
+
   it('menos de 3 meses: no genera cesantía', () => {
     expect(calcularDiasCesantia(0)).toBe(0)
     expect(calcularDiasCesantia(2)).toBe(0)
   })
 
-  it('de 3 a 6 meses: 7 días fijos', () => {
+  // Inciso a): "no menor de tres meses ni mayor de seis". Seis justos entra.
+  it('de 3 a 6 meses inclusive: 7 días', () => {
     expect(calcularDiasCesantia(3)).toBe(7)
     expect(calcularDiasCesantia(5)).toBe(7)
+    expect(calcularDiasCesantia(6, 0)).toBe(7)
   })
 
-  it('de 6 meses a 1 año: 14 días fijos', () => {
-    expect(calcularDiasCesantia(6)).toBe(14)
+  // Inciso b): "mayor de seis meses pero menor de un año".
+  it('de más de 6 meses a menos de 1 año: 14 días', () => {
+    expect(calcularDiasCesantia(6, 1)).toBe(14)
+    expect(calcularDiasCesantia(7)).toBe(14)
     expect(calcularDiasCesantia(11)).toBe(14)
   })
 
-  it('1 año exacto: 19.5 días (solo año 1)', () => {
+  it('1 año: 19,5 días', () => {
     expect(calcularDiasCesantia(12)).toBe(19.5)
   })
 
-  it('3 años exactos: suma años 1+2+3 = 60 días', () => {
-    expect(calcularDiasCesantia(36)).toBe(60)
+  // La lectura del Ministerio de Trabajo: la fila de la antigüedad total se
+  // multiplica por los años reconocidos. NO se suman las filas una a una
+  // (eso daba 60 para 3 años; la fila del año 3 por 3 años da 61,5).
+  it('3 años: fila del año 3 por 3 años = 61,5 días', () => {
+    expect(calcularDiasCesantia(36)).toBe(61.5)
   })
 
-  it('3 años y 7 meses: fracción > 6 meses redondea al año 4 completo (81 días)', () => {
-    expect(calcularDiasCesantia(43)).toBe(81)
+  it('3 años y 7 meses: la fracción pasa de seis meses → 4 años × 21 = 84', () => {
+    expect(calcularDiasCesantia(43)).toBe(84)
   })
 
-  it('3 años y 4 meses: fracción <= 6 meses NO redondea (se queda en 60 días)', () => {
-    expect(calcularDiasCesantia(40)).toBe(60)
+  it('3 años y 4 meses: la fracción no llega → 3 años × 20,5 = 61,5', () => {
+    expect(calcularDiasCesantia(40)).toBe(61.5)
   })
 
-  it('3 años y 6 meses exactos: no redondea (regla es "superior a seis meses")', () => {
-    expect(calcularDiasCesantia(42)).toBe(60)
+  // Ejemplo publicado por un despacho laboral: 4 años y 8 meses → 5 años.
+  it('4 años y 8 meses: 5 años reconocidos', () => {
+    expect(calcularDiasCesantia(56)).toBe(round(21.24 * 5))
   })
 
-  it('8 años exactos: tope de 167.74 días', () => {
-    expect(calcularDiasCesantia(96)).toBeCloseTo(167.74)
+  it('8 años: 22 × 8 = 176 días, el máximo que da la tabla', () => {
+    expect(calcularDiasCesantia(96)).toBe(176)
   })
 
-  it('15 años: se topa en 8 años (167.74 días), no sigue acumulando', () => {
-    expect(calcularDiasCesantia(180)).toBeCloseTo(167.74)
-    expect(calcularDiasCesantia(96)).toBe(calcularDiasCesantia(180))
+  // Ejemplo publicado (El Financiero, abogada laboralista): 10 años de
+  // antigüedad → 21,5 días por año, tope de 8 años → 172 días.
+  it('10 años: fila del año 10 (21,5) por el tope de 8 años = 172 días', () => {
+    expect(calcularDiasCesantia(120)).toBe(172)
+  })
+
+  // La tabla baja después del año 9: es como la escribió la Ley 7983, no un
+  // error. Con el tope de 8, 15 años cobran menos días que 9.
+  it('13 años o más: 20 × 8 = 160 días, y ya no cambia', () => {
+    expect(calcularDiasCesantia(156)).toBe(160)
+    expect(calcularDiasCesantia(300)).toBe(160)
+    expect(calcularDiasCesantia(108)).toBe(176) // 9 años: 22 × 8
   })
 })
 
-describe('calcularDiasPreaviso', () => {
+describe('calcularDiasPreaviso (Art. 28 CT)', () => {
   it('menos de 3 meses: no aplica', () => {
     expect(calcularDiasPreaviso(2)).toBe(0)
   })
 
-  it('de 3 a 6 meses: 7 días', () => {
+  it('de 3 a 6 meses inclusive: una semana', () => {
     expect(calcularDiasPreaviso(3)).toBe(7)
-    expect(calcularDiasPreaviso(5)).toBe(7)
+    expect(calcularDiasPreaviso(6, 0)).toBe(7)
   })
 
-  it('de 6 meses a 1 año: 15 días', () => {
-    expect(calcularDiasPreaviso(6)).toBe(15)
+  it('de más de 6 meses a menos de 1 año: 15 días', () => {
+    expect(calcularDiasPreaviso(6, 1)).toBe(15)
     expect(calcularDiasPreaviso(11)).toBe(15)
   })
 
-  it('1 año o más: 30 días, sin importar cuántos años (no sigue subiendo)', () => {
+  it('desde 1 año: un mes, sin importar cuántos años', () => {
     expect(calcularDiasPreaviso(12)).toBe(30)
     expect(calcularDiasPreaviso(240)).toBe(30)
+  })
+})
+
+describe('calcularSalarioDiario (Art. 30 CT)', () => {
+  // El bug que había: seis quincenas (tres meses) divididas entre 30 como si
+  // cada una fuera un mes → la mitad del salario diario, la mitad de la
+  // cesantía y del preaviso.
+  it('promedia las quincenas pagadas como meses (dos por mes) y divide entre 30', () => {
+    const doceQuincenas = Array(12).fill(350000) // ₡700.000 al mes, seis meses
+    const r = calcularSalarioDiario(doceQuincenas, 999999)
+    expect(r.origen).toBe('promedio')
+    expect(r.salarioDiario).toBeCloseTo(23333.33, 2)
+  })
+
+  it('con quincenas distintas promedia lo que de verdad se pagó', () => {
+    // 4 quincenas: 300k, 300k, 200k, 200k → ₡1.000.000 en 2 meses → 500k/mes
+    expect(calcularSalarioDiario([300000, 300000, 200000, 200000], 0).salarioDiario).toBeCloseTo(
+      500000 / 30,
+      6
+    )
+  })
+
+  it('con un número impar de quincenas sigue contando medio mes por quincena', () => {
+    // 3 quincenas de 300k = 900k en 1,5 meses → 600k/mes → 20.000 diario
+    expect(calcularSalarioDiario([300000, 300000, 300000], 0).salarioDiario).toBe(20000)
+  })
+
+  // Una sola quincena, encima parcial, daría un salario diario de fantasía.
+  it('con menos de dos quincenas pagadas cae al contrato y lo dice', () => {
+    const r = calcularSalarioDiario([22031.25], 470000)
+    expect(r.origen).toBe('contrato')
+    expect(r.salarioDiario).toBeCloseTo(470000 / 30, 6)
+    expect(calcularSalarioDiario([], 300000)).toEqual({ salarioDiario: 10000, origen: 'contrato' })
+  })
+
+  it('ignora quincenas en cero o inválidas', () => {
+    expect(calcularSalarioDiario([300000, 0, NaN, 300000], 0).salarioDiario).toBe(20000)
+  })
+})
+
+describe('diasSalarioPendiente', () => {
+  // Sale el 20 y la primera quincena ya se pagó: se deben del 16 al 20.
+  // Antes se pagaba del 1 al 20, la primera quincena dos veces.
+  it('descuenta la primera quincena si ya se pagó por planilla', () => {
+    expect(
+      diasSalarioPendiente({
+        diaSalida: 20,
+        primeraQuincenaPagada: true,
+        quincenaDeSalidaPagada: false,
+      })
+    ).toBe(5)
+  })
+
+  it('si la primera quincena no se pagó, se debe el mes desde el 1', () => {
+    expect(
+      diasSalarioPendiente({
+        diaSalida: 20,
+        primeraQuincenaPagada: false,
+        quincenaDeSalidaPagada: false,
+      })
+    ).toBe(20)
+  })
+
+  it('salida en la primera quincena: los días desde el 1', () => {
+    expect(
+      diasSalarioPendiente({
+        diaSalida: 10,
+        primeraQuincenaPagada: false,
+        quincenaDeSalidaPagada: false,
+      })
+    ).toBe(10)
+  })
+
+  it('si la quincena de salida ya se pagó, no hay salario pendiente', () => {
+    expect(
+      diasSalarioPendiente({
+        diaSalida: 20,
+        primeraQuincenaPagada: true,
+        quincenaDeSalidaPagada: true,
+      })
+    ).toBe(0)
+  })
+
+  it('el mes comercial tiene 30 días: el 31 cuenta como 30', () => {
+    expect(
+      diasSalarioPendiente({
+        diaSalida: 31,
+        primeraQuincenaPagada: true,
+        quincenaDeSalidaPagada: false,
+      })
+    ).toBe(15)
   })
 })
 
@@ -106,79 +260,340 @@ describe('anioCicloAguinaldo', () => {
 })
 
 describe('calcularLiquidacion', () => {
+  const BASE = {
+    salarioDiario: 20000,
+    diasTrabajadosMesActual: 5,
+    sumaSalariosBrutosCicloAguinaldo: 1200000,
+    diasVacacionesPendientes: 10,
+    mesesAntiguedad: 43, // 3 años 7 meses → 4 años reconocidos
+    porcentajeDeduccionObrera: 10.83,
+  }
+
   it('renuncia voluntaria: solo proporcionales, sin preaviso ni cesantía', () => {
-    const resultado = calcularLiquidacion({
-      salarioDiario: 20000,
-      diasTrabajadosMesActual: 15,
-      sumaSalariosBrutosCicloAguinaldo: 1200000,
-      diasVacacionesPendientes: 10,
-      mesesAntiguedad: 43, // 3 años 7 meses -> año 4 completo si aplicara cesantía
+    const r = calcularLiquidacion({ ...BASE, generaCesantia: false, generaPreaviso: false })
+
+    expect(r.salarioProporcional).toBe(100000) // 20000 × 5
+    // El salario pendiente también es salario del ciclo: entra al aguinaldo.
+    expect(r.aguinaldoProporcional).toBe(round((1200000 + 100000) / 12))
+    expect(r.vacacionesPagadas).toBe(200000) // 20000 × 10
+    expect(r.diasPreaviso).toBe(0)
+    expect(r.preaviso).toBe(0)
+    expect(r.diasCesantia).toBe(0)
+    expect(r.cesantia).toBe(0)
+    expect(r.total).toBe(round(100000 + 108333.33 + 200000))
+  })
+
+  // Auditoría, hallazgo 4: horas extra pendientes en el banco de horas al
+  // salir. Son salario: suman al total, cotizan y entran al aguinaldo.
+  it('paga las horas extra pendientes del banco de horas como salario', () => {
+    const sin = calcularLiquidacion({ ...BASE, generaCesantia: false, generaPreaviso: false })
+    const con = calcularLiquidacion({
+      ...BASE,
+      generaCesantia: false,
+      generaPreaviso: false,
+      horasExtraBanco: { horas: 5.5, monto: 26400 },
+    })
+
+    expect(con.horasExtraBanco).toBe(26400)
+    expect(con.aguinaldoProporcional).toBe(round((1200000 + 100000 + 26400) / 12))
+    expect(con.total).toBe(round(100000 + con.aguinaldoProporcional + 200000 + 26400))
+    expect(con.deduccionesObreras).toBe(round((100000 + 200000 + 26400) * 0.1083))
+    expect(con.lineas).toContainEqual({
+      concepto: 'Horas extra pendientes del banco de horas (5.5 h)',
+      dias: null,
+      monto: 26400,
+    })
+    // Sin horas pendientes, todo igual que antes y sin la línea.
+    expect(sin.horasExtraBanco).toBe(0)
+    expect(sin.lineas.some((l) => l.concepto.startsWith('Horas extra'))).toBe(false)
+  })
+
+  it('despido sin justa causa: preaviso de un mes y cesantía de 4 años × 21', () => {
+    const r = calcularLiquidacion({ ...BASE, generaCesantia: true, generaPreaviso: true })
+
+    expect(r.diasPreaviso).toBe(30)
+    expect(r.preaviso).toBe(600000)
+    expect(r.diasCesantia).toBe(84)
+    expect(r.cesantia).toBe(1680000)
+    expect(r.total).toBe(round(100000 + 108333.33 + 200000 + 600000 + 1680000))
+  })
+
+  // Solo cotiza lo que es salario. Cobrarle CCSS a la cesantía o al preaviso
+  // sería descontarle a la persona una indemnización que no cotiza; y no
+  // cobrársela al salario pendiente ni a las vacaciones dejaría a la empresa
+  // sin reportar salario a la Caja.
+  it('la cuota obrera se aplica solo al salario pendiente y a las vacaciones', () => {
+    const r = calcularLiquidacion({ ...BASE, generaCesantia: true, generaPreaviso: true })
+
+    expect(r.deduccionesObreras).toBe(round((100000 + 200000) * 0.1083)) // 32490
+    expect(r.neto).toBe(round(r.total - 32490))
+  })
+
+  it('sin porcentaje de deducción no descuenta nada', () => {
+    const r = calcularLiquidacion({
+      ...BASE,
+      porcentajeDeduccionObrera: undefined,
       generaCesantia: false,
       generaPreaviso: false,
     })
 
-    expect(resultado.salarioProporcional).toBe(300000) // 20000 * 15
-    expect(resultado.aguinaldoProporcional).toBe(100000) // 1200000 / 12
-    expect(resultado.vacacionesPagadas).toBe(200000) // 20000 * 10
-    expect(resultado.diasPreaviso).toBe(0)
-    expect(resultado.preaviso).toBe(0)
-    expect(resultado.diasCesantia).toBe(0)
-    expect(resultado.cesantia).toBe(0)
-    expect(resultado.total).toBe(600000)
+    expect(r.deduccionesObreras).toBe(0)
+    expect(r.neto).toBe(r.total)
   })
 
-  it('despido sin justa causa: incluye preaviso y cesantía completos', () => {
-    const resultado = calcularLiquidacion({
-      salarioDiario: 20000,
-      diasTrabajadosMesActual: 15,
-      sumaSalariosBrutosCicloAguinaldo: 1200000,
-      diasVacacionesPendientes: 10,
-      mesesAntiguedad: 43, // 3a7m -> redondea a 4 años -> 81 días cesantía
+  // Seis meses y un día de antigüedad: ya no son "de 3 a 6 meses".
+  it('usa los días sueltos para decidir el tramo de antigüedad', () => {
+    const justo = calcularLiquidacion({
+      ...BASE,
+      mesesAntiguedad: 6,
+      diasSobrantesAntiguedad: 0,
+      generaCesantia: true,
+      generaPreaviso: true,
+    })
+    const unDiaMas = calcularLiquidacion({
+      ...BASE,
+      mesesAntiguedad: 6,
+      diasSobrantesAntiguedad: 1,
       generaCesantia: true,
       generaPreaviso: true,
     })
 
-    expect(resultado.diasPreaviso).toBe(30)
-    expect(resultado.preaviso).toBe(600000) // 20000 * 30
-    expect(resultado.diasCesantia).toBe(81)
-    expect(resultado.cesantia).toBe(1620000) // 20000 * 81
-    expect(resultado.total).toBe(300000 + 100000 + 200000 + 600000 + 1620000)
-  })
-
-  it('despido con justa causa: igual que renuncia, sin preaviso ni cesantía', () => {
-    const resultado = calcularLiquidacion({
-      salarioDiario: 20000,
-      diasTrabajadosMesActual: 8,
-      sumaSalariosBrutosCicloAguinaldo: 600000,
-      diasVacacionesPendientes: 0,
-      mesesAntiguedad: 100,
-      generaCesantia: false,
-      generaPreaviso: false,
-    })
-
-    expect(resultado.preaviso).toBe(0)
-    expect(resultado.cesantia).toBe(0)
-    expect(resultado.total).toBe(resultado.salarioProporcional + resultado.aguinaldoProporcional)
+    expect(justo.diasCesantia).toBe(7)
+    expect(justo.diasPreaviso).toBe(7)
+    expect(unDiaMas.diasCesantia).toBe(14)
+    expect(unDiaMas.diasPreaviso).toBe(15)
   })
 
   it('lineas trae los 5 rubros en orden, con días donde aplica', () => {
-    const resultado = calcularLiquidacion({
-      salarioDiario: 10000,
-      diasTrabajadosMesActual: 5,
-      sumaSalariosBrutosCicloAguinaldo: 240000,
-      diasVacacionesPendientes: 3,
-      mesesAntiguedad: 12,
-      generaCesantia: true,
-      generaPreaviso: true,
-    })
+    const r = calcularLiquidacion({ ...BASE, generaCesantia: true, generaPreaviso: true })
 
-    expect(resultado.lineas.map((l) => l.concepto)).toEqual([
-      'Salario proporcional',
+    expect(r.lineas.map((l) => l.concepto)).toEqual([
+      'Salario pendiente',
       'Aguinaldo proporcional',
       'Vacaciones no disfrutadas',
       'Preaviso',
       'Cesantía',
     ])
-    expect(resultado.lineas[1].dias).toBeNull()
+    expect(r.lineas[0].dias).toBe(5)
+    expect(r.lineas[1].dias).toBeNull()
+  })
+
+  // Caso completo con números de una fuente publicada: 10 años, ₡700.000 al
+  // mes, despido sin justa causa. La cesantía tiene que dar ₡4.013.333,33.
+  it('reproduce el ejemplo publicado de 10 años a ₡700.000', () => {
+    const { salarioDiario } = calcularSalarioDiario(Array(12).fill(350000), 0)
+    const r = calcularLiquidacion({
+      salarioDiario,
+      diasTrabajadosMesActual: 0,
+      sumaSalariosBrutosCicloAguinaldo: 0,
+      diasVacacionesPendientes: 0,
+      mesesAntiguedad: 120,
+      generaCesantia: true,
+      generaPreaviso: true,
+    })
+
+    expect(salarioDiario).toBeCloseTo(23333.33, 2)
+    expect(r.diasCesantia).toBe(172)
+    expect(r.cesantia).toBe(4013333.33)
+    expect(r.preaviso).toBe(700000)
+  })
+})
+
+function round(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+describe('diaComercialDeSalida (mes de 30 días, como la planilla)', () => {
+  it.each([
+    ['2026-02-28', 30], // último día de febrero
+    ['2028-02-29', 30], // bisiesto
+    ['2028-02-28', 28], // en bisiesto el 28 no es fin de mes
+    ['2026-02-27', 27],
+    ['2026-01-31', 30],
+    ['2026-01-30', 30],
+    ['2026-04-30', 30],
+    ['2026-04-29', 29],
+    ['2026-03-15', 15],
+  ])('%s → %d', (fecha, esperado) => {
+    expect(diaComercialDeSalida(fecha)).toBe(esperado)
+  })
+
+  // Salida el 28 de febrero con la 1ª quincena pagada: 15 días, lo mismo que
+  // paga la planilla por la 2ª quincena. Antes eran 13.
+  it('salida a fin de febrero con la 1ª pagada: 15 días de salario pendiente', () => {
+    expect(
+      diasSalarioPendiente({
+        diaSalida: diaComercialDeSalida('2026-02-28'),
+        primeraQuincenaPagada: true,
+        quincenaDeSalidaPagada: false,
+      })
+    ).toBe(15)
+    expect(
+      diasSalarioPendiente({
+        diaSalida: diaComercialDeSalida('2026-02-28'),
+        primeraQuincenaPagada: false,
+        quincenaDeSalidaPagada: false,
+      })
+    ).toBe(30)
+  })
+})
+
+describe('quincenaPagadaEnLiquidacion', () => {
+  describe('salida a fin de febrero', () => {
+    const Q1 = { anio: 2026, mes: 2, quincena: 1 }
+    const Q2 = { anio: 2026, mes: 2, quincena: 2 }
+    const feb = (dias: number) => ({ fechaSalida: '2026-02-28', diasSalarioPendiente: dias })
+
+    it('con la 1ª pagada (15 días) solo cubre la 2ª', () => {
+      expect([
+        quincenaPagadaEnLiquidacion(feb(15), Q1),
+        quincenaPagadaEnLiquidacion(feb(15), Q2),
+      ]).toEqual([false, true])
+    })
+
+    it('una liquidación guardada con la regla anterior (13 días) se lee igual', () => {
+      expect([
+        quincenaPagadaEnLiquidacion(feb(13), Q1),
+        quincenaPagadaEnLiquidacion(feb(13), Q2),
+      ]).toEqual([false, true])
+    })
+
+    it('con las dos sin pagar (30 días, o 28 de antes) cubre las dos', () => {
+      expect(quincenaPagadaEnLiquidacion(feb(30), Q1)).toBe(true)
+      expect(quincenaPagadaEnLiquidacion(feb(28), Q1)).toBe(true)
+    })
+  })
+
+  const liq = (fechaSalida: string, diasSalarioPendiente: number) => ({
+    fechaSalida,
+    diasSalarioPendiente,
+  })
+
+  it('salida el 20: las dos quincenas del mes van en la liquidación', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 20), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(true)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2026, mes: 1, quincena: 2 })
+    ).toBe(true)
+  })
+
+  it('salida el 20 con la 1ª ya pagada al liquidar (5 días): la 1ª no, aunque la desmarquen', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(false)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2026, mes: 1, quincena: 2 })
+    ).toBe(true)
+  })
+
+  it('salida el 31: el día 31 no suma (tope 30), igual que diasSalarioPendiente', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-31', 30), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(true)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-31', 15), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(false)
+  })
+
+  it('salida el 10: solo la 1ª; la 2ª del mes no se trabajó', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-10', 10), { anio: 2026, mes: 1, quincena: 1 })
+    ).toBe(true)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-10', 10), { anio: 2026, mes: 1, quincena: 2 })
+    ).toBe(false)
+  })
+
+  it('otro mes o sin salario pendiente: no', () => {
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2025, mes: 12, quincena: 2 })
+    ).toBe(false)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 5), { anio: 2025, mes: 1, quincena: 2 })
+    ).toBe(false)
+    expect(
+      quincenaPagadaEnLiquidacion(liq('2026-01-20', 0), { anio: 2026, mes: 1, quincena: 2 })
+    ).toBe(false)
+  })
+})
+
+// Auditoría 2, fallo 3: pedro (₡233.333/mes) tenía un solo día pagado en su
+// quincena de ingreso. Contarla como completa bajaba el diario a ₡5.962,95.
+describe('calcularSalarioDiario con quincenas parciales', () => {
+  it('una quincena de un día pesa 1/15 y el diario sale el del salario', () => {
+    const diaUno = 233333 / 30
+    const r = calcularSalarioDiario([diaUno, 233333 / 2, 233333 / 2], 999999, [1 / 15, 1, 1])
+
+    expect(r.origen).toBe('promedio')
+    expect(r.salarioDiario).toBeCloseTo(233333 / 30, 6)
+  })
+
+  it('sin pesos todo cuenta completo, como antes', () => {
+    const r = calcularSalarioDiario([100000, 100000], 0)
+
+    expect(r.salarioDiario).toBeCloseTo(200000 / 30, 6)
+  })
+})
+
+describe('Art. 31: contrato a plazo fijo roto sin justa causa', () => {
+  it('un día por cada siete trabajados o fracción, mínimo 3', () => {
+    expect(calcularDiasIndemnizacionPlazoFijo(1, false)).toBe(3)
+    expect(calcularDiasIndemnizacionPlazoFijo(21, false)).toBe(3)
+    expect(calcularDiasIndemnizacionPlazoFijo(22, false)).toBe(4)
+    expect(calcularDiasIndemnizacionPlazoFijo(70, false)).toBe(10)
+    expect(calcularDiasIndemnizacionPlazoFijo(71, false)).toBe(11)
+  })
+
+  it('pactado por seis meses o más: mínimo 22 días', () => {
+    expect(calcularDiasIndemnizacionPlazoFijo(30, true)).toBe(22)
+    expect(calcularDiasIndemnizacionPlazoFijo(200, true)).toBe(29)
+  })
+
+  it('días calendario incluyendo los dos extremos', () => {
+    expect(diasCalendarioInclusive('2026-01-01', '2026-01-01')).toBe(1)
+    expect(diasCalendarioInclusive('2026-02-01', '2026-03-01')).toBe(29)
+  })
+
+  it('en el finiquito reemplaza al preaviso y la cesantía, y no cotiza', () => {
+    const r = calcularLiquidacion({
+      salarioDiario: 10000,
+      diasTrabajadosMesActual: 0,
+      sumaSalariosBrutosCicloAguinaldo: 0,
+      diasVacacionesPendientes: 0,
+      mesesAntiguedad: 24,
+      generaCesantia: true,
+      generaPreaviso: true,
+      porcentajeDeduccionObrera: 10.83,
+      plazoFijo: { diasTrabajados: 70, seisMesesOMas: false },
+    })
+
+    expect(r.diasPreaviso).toBe(0)
+    expect(r.diasCesantia).toBe(0)
+    expect(r.diasIndemnizacionPlazoFijo).toBe(10)
+    expect(r.indemnizacionPlazoFijo).toBe(100000)
+    expect(r.total).toBe(100000)
+    expect(r.deduccionesObreras).toBe(0)
+  })
+})
+
+describe('notaRubroSinDias (auditoría 2, hallazgo 10)', () => {
+  const base = { dias: 0, plazoFijo: false, generaPorMotivo: true, motivoNombre: 'Renuncia' }
+
+  it('con días no hay nota', () => {
+    expect(notaRubroSinDias({ ...base, rubro: 'preaviso', dias: 7 })).toBeNull()
+  })
+
+  it('explica el 0 según la causa', () => {
+    expect(notaRubroSinDias({ ...base, rubro: 'preaviso' })).toBe(
+      'menos de 3 meses de antigüedad (Arts. 28 y 29)'
+    )
+    expect(notaRubroSinDias({ ...base, rubro: 'preaviso', generaPorMotivo: false })).toBe(
+      'no aplica por el motivo de salida (Renuncia)'
+    )
+    expect(notaRubroSinDias({ ...base, rubro: 'cesantia', mutuoAcuerdoSinCesantia: true })).toBe(
+      'mutuo acuerdo sin cesantía pactada (Art. 86)'
+    )
+    expect(notaRubroSinDias({ ...base, rubro: 'cesantia', plazoFijo: true })).toContain('Art. 31')
   })
 })

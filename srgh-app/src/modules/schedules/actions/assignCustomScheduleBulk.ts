@@ -10,6 +10,7 @@ import {
   type AssignCustomScheduleBulkInput,
 } from '@/modules/schedules/types'
 import { upsertDayAssignment } from '@/modules/schedules/lib/dayAssignment'
+import { branchesBelongToEmpresa } from '@/modules/schedules/lib/validateBranches'
 
 export type AssignCustomScheduleBulkResult = { ok: true } | { ok: false; error: string }
 
@@ -23,7 +24,12 @@ export async function assignCustomScheduleBulk(
     return { ok: false, error: 'Datos de asignacion invalidos.' }
   }
 
-  await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const empresaId = (claims.app_metadata as { empresa_id?: number })?.empresa_id
+
+  if (!empresaId) {
+    return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
+  }
 
   const data = parsed.data
 
@@ -45,6 +51,10 @@ export async function assignCustomScheduleBulk(
   }
 
   const supabase = await createClient()
+
+  if (!(await branchesBelongToEmpresa(supabase, empresaId, [data.branchId]))) {
+    return { ok: false, error: 'La sucursal seleccionada no es válida para tu empresa.' }
+  }
 
   const results = await Promise.all(
     data.days.map(({ assignmentId, date }) =>

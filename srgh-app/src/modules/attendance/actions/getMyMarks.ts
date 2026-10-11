@@ -22,6 +22,8 @@ export interface MyAttendanceDay {
   /** "YYYY-MM-DD" */
   date: string
   entrada: MyAttendanceDayMark | null
+  inicioReceso: MyAttendanceDayMark | null
+  finReceso: MyAttendanceDayMark | null
   inicioAlmuerzo: MyAttendanceDayMark | null
   finAlmuerzo: MyAttendanceDayMark | null
   salida: MyAttendanceDayMark | null
@@ -88,6 +90,8 @@ export async function getMyMarks(): Promise<GetMyMarksResult> {
       return {
         date,
         entrada: markOf(journey.entrada),
+        inicioReceso: markOf(journey.inicioReceso),
+        finReceso: markOf(journey.finReceso),
         inicioAlmuerzo: markOf(journey.inicioAlmuerzo),
         finAlmuerzo: markOf(journey.finAlmuerzo),
         salida: markOf(journey.salida),

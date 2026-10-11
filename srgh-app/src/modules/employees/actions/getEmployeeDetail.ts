@@ -5,8 +5,9 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getStorageProvider } from '@/lib/storage'
 import { TTL_FOTO } from '@/lib/storage/containers'
+import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { Database } from '@/types/database.types'
-import type { EmpleadoDetalle } from '@/modules/employees/types'
+import type { ContratoDetalle, EmpleadoDetalle } from '@/modules/employees/types'
 
 type EmpleadoRow = Database['public']['Tables']['sgrh_empleados']['Row']
 type HistorialRow = Database['public']['Tables']['sgrh_historial_laboral']['Row']
@@ -34,12 +35,45 @@ type HistorialQueryRow = HistorialRow & {
   sgrh_sucursales: { suc_nombre: string } | null
   sgrh_cat_tipos_contrato: { tco_nombre: string } | null
   sgrh_cat_tipos_jornada: { tjo_nombre: string } | null
+  sgrh_cat_motivos_salida: { mot_nombre: string } | null
+  // liq_historial_laboral_id es UNIQUE, así que PostgREST puede devolverlo
+  // como objeto o como arreglo según detecte la relación (igual que en
+  // payroll/lib/derechosData.ts).
+  sgrh_liquidaciones: { liq_id: number } | { liq_id: number }[] | null
 }
 
 export type GetEmployeeDetailResult =
   { ok: true; data: EmpleadoDetalle } | { ok: false; error: string; notFound?: boolean }
 
-/** Ficha completa del empleado + su contrato vigente (si existe). */
+/** Aplana los catálogos embebidos de una fila de historial. */
+function toContrato(row: HistorialQueryRow): ContratoDetalle {
+  const {
+    sgrh_cat_puestos,
+    sgrh_sucursales,
+    sgrh_cat_tipos_contrato,
+    sgrh_cat_tipos_jornada,
+    sgrh_cat_motivos_salida,
+    sgrh_liquidaciones,
+    ...base
+  } = row
+
+  return {
+    ...base,
+    puesto_nombre: sgrh_cat_puestos?.pue_nombre ?? '—',
+    sucursal_nombre: sgrh_sucursales?.suc_nombre ?? '—',
+    tipo_contrato_nombre: sgrh_cat_tipos_contrato?.tco_nombre ?? '—',
+    tipo_jornada_nombre: sgrh_cat_tipos_jornada?.tjo_nombre ?? '—',
+    motivo_salida_nombre: sgrh_cat_motivos_salida?.mot_nombre ?? null,
+    liquidado: Array.isArray(sgrh_liquidaciones)
+      ? sgrh_liquidaciones.length > 0
+      : Boolean(sgrh_liquidaciones),
+    // Las dos se calculan después, y solo para el vigente.
+    en_planilla: false,
+    quincena_sin_pagar: false,
+  }
+}
+
+/** Ficha completa del empleado + todos sus contratos (vigente y cerrados). */
 export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetailResult> {
   if (!Number.isInteger(empId) || empId <= 0) {
     return { ok: false, error: 'Empleado no encontrado.', notFound: true }
@@ -54,10 +88,19 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
 
   const supabase = await createClient()
 
-  const { data: empleado, error: errEmpleado } = await supabase
-    .from('sgrh_empleados')
-    .select(
-      `
+  // Las tres lecturas son independientes (todas filtran por empId), así que
+  // van en paralelo: cada viaje a Supabase cuesta ~200 ms desde CR, y en
+  // serie la ficha tardaba el triple. El orden de los chequeos de error de
+  // abajo es el de antes.
+  const [
+    { data: empleado, error: errEmpleado },
+    { data: historial, error: errHistorial },
+    { data: datosPago, error: errPago },
+  ] = await Promise.all([
+    supabase
+      .from('sgrh_empleados')
+      .select(
+        `
       *,
       sgrh_cat_tipos_identificacion ( tid_nombre ),
       sgrh_direcciones (
@@ -68,9 +111,42 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
         )
       )
     `
-    )
-    .eq('emp_id', empId)
-    .maybeSingle<EmpleadoQueryRow>()
+      )
+      .eq('emp_id', empId)
+      .maybeSingle<EmpleadoQueryRow>(),
+    // Todos los contratos, no solo el vigente: los cerrados son el historial de
+    // contrataciones del tab Contrato. La RLS (historial_select) no filtra por
+    // lab_fecha_fin, así que el EMPLEADOS_READ de arriba ya alcanza para verlos.
+    supabase
+      .from('sgrh_historial_laboral')
+      .select(
+        `
+      *,
+      sgrh_cat_puestos ( pue_nombre ),
+      sgrh_sucursales ( suc_nombre ),
+      sgrh_cat_tipos_contrato ( tco_nombre ),
+      sgrh_cat_tipos_jornada ( tjo_nombre ),
+      sgrh_cat_motivos_salida ( mot_nombre ),
+      sgrh_liquidaciones ( liq_id )
+    `
+      )
+      .eq('lab_empleado_id', empId)
+      .eq('lab_empresa_id', empresaId)
+      .order('lab_fecha_inicio', { ascending: false })
+      .returns<HistorialQueryRow[]>(),
+    // La RLS de esta tabla decide el acceso: si el rol no tiene NOMINA_READ ni
+    // EMPLEADOS_WRITE (y no es el propio empleado), simplemente no hay fila.
+    supabase
+      .from('sgrh_empleado_datos_pago')
+      .select('edp_banco_id, edp_tipo_cuenta, edp_numero_cuenta, sgrh_cat_bancos ( ban_nombre )')
+      .eq('edp_empleado_id', empId)
+      .maybeSingle<{
+        edp_banco_id: number | null
+        edp_tipo_cuenta: string | null
+        edp_numero_cuenta: string | null
+        sgrh_cat_bancos: { ban_nombre: string } | null
+      }>(),
+  ])
 
   if (errEmpleado) {
     return { ok: false, error: 'No se pudo cargar el empleado.' }
@@ -80,53 +156,63 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     return { ok: false, error: 'Empleado no encontrado.', notFound: true }
   }
 
-  const { data: historial, error: errHistorial } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      `
-      *,
-      sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre ),
-      sgrh_cat_tipos_contrato ( tco_nombre ),
-      sgrh_cat_tipos_jornada ( tjo_nombre )
-    `
-    )
-    .eq('lab_empleado_id', empId)
-    .eq('lab_empresa_id', empresaId)
-    .is('lab_fecha_fin', null)
-    .maybeSingle<HistorialQueryRow>()
-
   if (errHistorial) {
-    return { ok: false, error: 'No se pudo cargar el contrato vigente.' }
+    return { ok: false, error: 'No se pudo cargar el historial de contratos.' }
   }
-
-  // La RLS de esta tabla decide el acceso: si el rol no tiene NOMINA_READ ni
-  // EMPLEADOS_WRITE (y no es el propio empleado), simplemente no hay fila.
-  const { data: datosPago, error: errPago } = await supabase
-    .from('sgrh_empleado_datos_pago')
-    .select('edp_banco_id, edp_tipo_cuenta, edp_numero_cuenta, sgrh_cat_bancos ( ban_nombre )')
-    .eq('edp_empleado_id', empId)
-    .maybeSingle<{
-      edp_banco_id: number | null
-      edp_tipo_cuenta: string | null
-      edp_numero_cuenta: string | null
-      sgrh_cat_bancos: { ban_nombre: string } | null
-    }>()
 
   if (errPago) {
     return { ok: false, error: 'No se pudieron cargar los datos de pago.' }
   }
 
-  // Una sola foto: getSignedUrl (no el batch). Si falla o no hay path, la
-  // ficha igual se muestra — Avatar cae a iniciales.
-  let fotoUrl: string | null = null
-  if (empleado.emp_foto_path) {
-    const signed = await getStorageProvider().getSignedUrl(
-      'FOTOS_EMPLEADO',
-      empleado.emp_foto_path,
-      TTL_FOTO
-    )
-    fotoUrl = signed.ok ? signed.data : null
+  const historialCompleto = (historial ?? []).map(toContrato)
+  // El vigente se deriva del mismo resultado en vez de pedirlo aparte. find()
+  // y no un .maybeSingle(): si por un bug quedaran dos contratos abiertos, la
+  // ficha se sigue mostrando (con el más reciente) en vez de romperse.
+  const historialActivo = historialCompleto.find((c) => c.lab_fecha_fin === null) ?? null
+
+  // Segunda tanda, también en paralelo: dependen de lo leído arriba pero no
+  // entre sí.
+  const [fotoUrl, estadoPlanilla, cuenta] = await Promise.all([
+    // Una sola foto: getSignedUrl (no el batch). Si falla o no hay path, la
+    // ficha igual se muestra — Avatar cae a iniciales.
+    empleado.emp_foto_path
+      ? getStorageProvider()
+          .getSignedUrl('FOTOS_EMPLEADO', empleado.emp_foto_path, TTL_FOTO)
+          .then((signed) => (signed.ok ? signed.data : null))
+      : Promise.resolve(null),
+    // Dos respuestas de un solo viaje (Supabase está en us-east-1: ~200 ms
+    // cada consulta), porque salen del mismo conjunto de filas:
+    //
+    //  - en_planilla: ya apareció en alguna planilla. Ya no bloquea la
+    //    edición —los períodos conservan sus montos por la foto del
+    //    contrato—, solo avisa desde cuándo aplica el cambio.
+    //  - quincena_sin_pagar: bloquea el cambio de SUCURSAL base, porque
+    //    moverla a medio pagar dejaría la fila en la planilla vieja y la
+    //    nueva la volvería a crear.
+    //
+    // Si la consulta falla se asume lo peor en los dos: mostrar un aviso de
+    // más o bloquear un campo son errores seguros; dejar cambiar la sucursal
+    // con una quincena abierta no lo es. La RPC lo vuelve a verificar igual.
+    historialActivo
+      ? supabase
+          .from('sgrh_nomina_detalle')
+          .select('ndt_pagado')
+          .eq('ndt_historial_laboral_id', historialActivo.lab_id)
+          .then(({ data, error }) =>
+            error || !data
+              ? { enPlanilla: true, sinPagar: true }
+              : {
+                  enPlanilla: data.length > 0,
+                  sinPagar: data.some((fila) => !fila.ndt_pagado),
+                }
+          )
+      : Promise.resolve({ enPlanilla: false, sinPagar: false }),
+    datosPago ? decryptField(datosPago.edp_numero_cuenta) : Promise.resolve(null),
+  ])
+
+  if (historialActivo) {
+    historialActivo.en_planilla = estadoPlanilla.enPlanilla
+    historialActivo.quincena_sin_pagar = estadoPlanilla.sinPagar
   }
 
   const { sgrh_cat_tipos_identificacion, sgrh_direcciones, ...empleadoBase } = empleado
@@ -145,22 +231,20 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
       }
     : null
 
-  let historialActivo: EmpleadoDetalle['historial_activo'] = null
-  if (historial) {
-    const {
-      sgrh_cat_puestos,
-      sgrh_sucursales,
-      sgrh_cat_tipos_contrato,
-      sgrh_cat_tipos_jornada,
-      ...historialBase
-    } = historial
+  // El número se guarda cifrado (AES-256-GCM), así que se descifra acá, en el
+  // servidor. Los tres estados de decryptField NO se aplanan: cuenta_ilegible
+  // distingue "no hay cuenta" de "hay una y no se pudo leer". Sin esa distinción
+  // el formulario de edición se pintaría vacío y el siguiente guardado
+  // sobrescribiría el ciphertext con null, borrando el dato para siempre.
+  let datosPagoDto: EmpleadoDetalle['datos_pago'] = null
 
-    historialActivo = {
-      ...historialBase,
-      puesto_nombre: sgrh_cat_puestos?.pue_nombre ?? '—',
-      sucursal_nombre: sgrh_sucursales?.suc_nombre ?? '—',
-      tipo_contrato_nombre: sgrh_cat_tipos_contrato?.tco_nombre ?? '—',
-      tipo_jornada_nombre: sgrh_cat_tipos_jornada?.tjo_nombre ?? '—',
+  if (datosPago && cuenta) {
+    datosPagoDto = {
+      edp_banco_id: datosPago.edp_banco_id,
+      edp_tipo_cuenta: datosPago.edp_tipo_cuenta,
+      edp_numero_cuenta: cuenta.ok ? cuenta.value : null,
+      cuenta_ilegible: !cuenta.ok,
+      banco_nombre: datosPago.sgrh_cat_bancos?.ban_nombre ?? null,
     }
   }
 
@@ -169,15 +253,9 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     tipo_identificacion_nombre: sgrh_cat_tipos_identificacion?.tid_nombre ?? '—',
     foto_url: fotoUrl,
     historial_activo: historialActivo,
+    historial_completo: historialCompleto,
     direccion,
-    datos_pago: datosPago
-      ? {
-          edp_banco_id: datosPago.edp_banco_id,
-          edp_tipo_cuenta: datosPago.edp_tipo_cuenta,
-          edp_numero_cuenta: datosPago.edp_numero_cuenta,
-          banco_nombre: datosPago.sgrh_cat_bancos?.ban_nombre ?? null,
-        }
-      : null,
+    datos_pago: datosPagoDto,
   }
 
   return { ok: true, data }

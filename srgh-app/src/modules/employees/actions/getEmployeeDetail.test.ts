@@ -3,16 +3,23 @@ import { getEmployeeDetail } from './getEmployeeDetail'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { getStorageProvider } from '@/lib/storage'
+import { decryptField } from '@/lib/crypto/fieldCrypto'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { StorageProvider } from '@/lib/storage/types'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 vi.mock('@/lib/storage', () => ({ getStorageProvider: vi.fn() }))
+// fieldCrypto importa 'server-only', que revienta fuera de Next.js (ver
+// planillaExcel.test.ts). El descifrado real se prueba en fieldCrypto.core.test.ts;
+// acá interesa cómo se propagan sus TRES estados al DTO.
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/crypto/fieldCrypto', () => ({ decryptField: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockGetStorageProvider = vi.mocked(getStorageProvider)
+const mockDecryptField = vi.mocked(decryptField)
 
 function mockProvider(overrides: Partial<StorageProvider> = {}) {
   const provider = {
@@ -42,16 +49,38 @@ const HISTORIAL_ROW = {
   lab_id: 5,
   lab_empleado_id: 10,
   lab_salario_base: 500000,
+  lab_fecha_inicio: '2024-02-01',
+  lab_fecha_fin: null,
   sgrh_cat_puestos: { pue_nombre: 'Cajera' },
   sgrh_sucursales: { suc_nombre: 'Central' },
   sgrh_cat_tipos_contrato: { tco_nombre: 'Indefinido' },
   sgrh_cat_tipos_jornada: { tjo_nombre: 'Diurna' },
+  sgrh_cat_motivos_salida: null,
+}
+
+/** El vigente todavía no aparece en ninguna planilla: la ventana de edición está abierta. */
+const SIN_PLANILLA = { data: [], error: null }
+
+/** Contrato anterior, ya cerrado por renuncia. */
+const HISTORIAL_CERRADO_ROW = {
+  lab_id: 4,
+  lab_empleado_id: 10,
+  lab_salario_base: 400000,
+  lab_fecha_inicio: '2022-03-01',
+  lab_fecha_fin: '2023-06-30',
+  sgrh_cat_puestos: { pue_nombre: 'Bodeguero' },
+  sgrh_sucursales: { suc_nombre: 'Norte' },
+  sgrh_cat_tipos_contrato: { tco_nombre: 'Plazo fijo' },
+  sgrh_cat_tipos_jornada: { tjo_nombre: 'Diurna' },
+  sgrh_cat_motivos_salida: { mot_nombre: 'Renuncia Voluntaria' },
 }
 
 describe('getEmployeeDetail (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue(CLAIMS)
+    // Por defecto la cuenta se descifra bien y devuelve lo que hay guardado.
+    mockDecryptField.mockImplementation(async (stored) => ({ ok: true, value: stored }))
   })
 
   it('rechaza ids inválidos sin tocar permisos ni DB', async () => {
@@ -67,6 +96,7 @@ describe('getEmployeeDetail (server action)', () => {
       createSupabaseClientMock({
         sgrh_empleados: { data: null, error: null },
         sgrh_historial_laboral: { data: null, error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
@@ -80,6 +110,7 @@ describe('getEmployeeDetail (server action)', () => {
       createSupabaseClientMock({
         sgrh_empleados: { data: null, error: { message: 'boom' } },
         sgrh_historial_laboral: { data: null, error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
@@ -92,7 +123,8 @@ describe('getEmployeeDetail (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
-        sgrh_historial_laboral: { data: HISTORIAL_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
+        sgrh_nomina_detalle: SIN_PLANILLA,
         sgrh_empleado_datos_pago: {
           data: {
             edp_banco_id: 3,
@@ -124,8 +156,45 @@ describe('getEmployeeDetail (server action)', () => {
       banco_nombre: 'BAC Credomatic',
       edp_tipo_cuenta: 'AHORRO',
       edp_numero_cuenta: 'CR02010200000000000001',
+      cuenta_ilegible: false,
     })
     expect(result.data).not.toHaveProperty('sgrh_cat_tipos_identificacion')
+    // El índice ciego es de uso interno: no puede salir en ningún DTO.
+    expect(result.data.datos_pago).not.toHaveProperty('edp_cuenta_hmac')
+  })
+
+  it('marca cuenta_ilegible cuando el número no se pudo descifrar', async () => {
+    mockDecryptField.mockResolvedValue({ ok: false })
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
+        sgrh_nomina_detalle: SIN_PLANILLA,
+        sgrh_empleado_datos_pago: {
+          data: {
+            edp_banco_id: 3,
+            edp_tipo_cuenta: 'AHORRO',
+            edp_numero_cuenta: 'v1:rota:rota',
+            sgrh_cat_bancos: { ban_nombre: 'BAC Credomatic' },
+          },
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    // La distinción es la que impide el borrado silencioso: si esto llegara
+    // como un datos_pago null cualquiera, el formulario se pintaría vacío y el
+    // siguiente guardado escribiría null encima del ciphertext.
+    expect(result.data.datos_pago).toMatchObject({
+      edp_numero_cuenta: null,
+      cuenta_ilegible: true,
+      banco_nombre: 'BAC Credomatic',
+    })
   })
 
   it('devuelve historial y datos de pago null cuando no existen (o la RLS los oculta)', async () => {
@@ -143,7 +212,138 @@ describe('getEmployeeDetail (server action)', () => {
     if (!result.ok) return
 
     expect(result.data.historial_activo).toBeNull()
+    expect(result.data.historial_completo).toEqual([])
     expect(result.data.datos_pago).toBeNull()
+  })
+
+  it('trae el vigente y los cerrados, con el motivo de salida resuelto', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW, HISTORIAL_CERRADO_ROW], error: null },
+        sgrh_nomina_detalle: SIN_PLANILLA,
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data.historial_completo).toHaveLength(2)
+    expect(result.data.historial_activo).toMatchObject({ lab_id: 5, motivo_salida_nombre: null })
+    expect(result.data.historial_completo[1]).toMatchObject({
+      lab_id: 4,
+      lab_fecha_fin: '2023-06-30',
+      puesto_nombre: 'Bodeguero',
+      motivo_salida_nombre: 'Renuncia Voluntaria',
+    })
+    // Los objetos crudos de los joins no se exponen.
+    expect(result.data.historial_completo[1]).not.toHaveProperty('sgrh_cat_motivos_salida')
+  })
+
+  // Las dos banderas de planilla del contrato vigente, de una sola consulta:
+  // en_planilla solo avisa desde cuándo aplica un cambio, y quincena_sin_pagar
+  // bloquea el cambio de sucursal base.
+  it.each([
+    ['sin planilla', SIN_PLANILLA, false, false],
+    [
+      'con todo pagado: avisa, pero la sucursal se puede mover',
+      { data: [{ ndt_pagado: true }, { ndt_pagado: true }], error: null },
+      true,
+      false,
+    ],
+    [
+      'con una quincena sin pagar: la sucursal queda bloqueada',
+      { data: [{ ndt_pagado: true }, { ndt_pagado: false }], error: null },
+      true,
+      true,
+    ],
+    // Si la consulta falla se asume lo peor en las dos: un aviso de más o un
+    // campo bloqueado son errores seguros; dejar mover la sucursal con una
+    // quincena abierta, no.
+    [
+      'si la consulta falla, se asume lo peor',
+      { data: null, error: { message: 'boom' } },
+      true,
+      true,
+    ],
+  ])('banderas de planilla del vigente: %s', async (_caso, planilla, enPlanilla, sinPagar) => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
+        sgrh_nomina_detalle: planilla,
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.historial_activo?.en_planilla).toBe(enPlanilla)
+    expect(result.data.historial_activo?.quincena_sin_pagar).toBe(sinPagar)
+  })
+
+  // PostgREST puede devolver la liquidación embebida como objeto o como
+  // arreglo (liq_historial_laboral_id es UNIQUE).
+  it.each([
+    ['sin liquidación', null, false],
+    ['arreglo vacío', [], false],
+    ['objeto', { liq_id: 9 }, true],
+    ['arreglo', [{ liq_id: 9 }], true],
+  ])('liquidado de un contrato cerrado: %s', async (_caso, liquidaciones, esperado) => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: {
+          data: [{ ...HISTORIAL_CERRADO_ROW, sgrh_liquidaciones: liquidaciones }],
+          error: null,
+        },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.historial_completo[0].liquidado).toBe(esperado)
+    expect(result.data.historial_completo[0]).not.toHaveProperty('sgrh_liquidaciones')
+  })
+
+  it('con solo contratos cerrados no hay vigente pero sí historial', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_CERRADO_ROW], error: null },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data.historial_activo).toBeNull()
+    expect(result.data.historial_completo).toHaveLength(1)
+  })
+
+  it('devuelve error si falla la carga del historial', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo cargar el historial de contratos.' })
   })
 
   it('sin emp_foto_path no llama al proveedor y foto_url es null', async () => {

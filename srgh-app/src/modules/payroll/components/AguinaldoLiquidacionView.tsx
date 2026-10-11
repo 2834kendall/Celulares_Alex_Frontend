@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { FileX2, Gift } from 'lucide-react'
+import { Tabs, type TabDefinition } from '@/components/ui/Tabs'
 import type {
   AguinaldoItem,
-  EmpleadoActivoItem,
+  ContratoPorLiquidarItem,
   LiquidacionListItem,
-  MotivoSalidaRow,
 } from '@/modules/payroll/types'
 import { AguinaldoTab } from './AguinaldoTab'
 import { LiquidacionTab } from './LiquidacionTab'
@@ -13,65 +13,79 @@ import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 
 interface AguinaldoLiquidacionViewProps {
   anio: number
+  anioActual: number
+  cicloCerrado: boolean
+  puedeLeerAusencias: boolean
   aguinaldos: AguinaldoItem[]
   canWrite: boolean
-  empleadosActivos: EmpleadoActivoItem[]
-  motivos: MotivoSalidaRow[]
+  contratosPorLiquidar: ContratoPorLiquidarItem[]
   liquidaciones: LiquidacionListItem[]
+  /** Aguinaldos del año anterior sin pagar (ver AguinaldoTab). */
+  pendientesAnterior?: { anio: number; cantidad: number; monto: number } | null
+  /**
+   * Si el envío de comprobantes por correo está configurado (SMTP). Solo
+   * cambia el texto de la confirmación del pago: el envío lo decide el servidor.
+   */
+  correoConfigurado?: boolean
 }
 
-const TABS = [
-  { id: 'aguinaldo', label: 'Aguinaldo' },
-  { id: 'liquidacion', label: 'Liquidación' },
-] as const
+type TabId = 'aguinaldo' | 'liquidacion'
 
-type TabId = (typeof TABS)[number]['id']
-
+/**
+ * Usa el Tabs compartido (sincronizado con `?tab=`) en vez de un estado
+ * local: es lo que permite enlazar directo a `?tab=liquidacion` — lo hace el
+ * tab Contrato del perfil del empleado.
+ */
 export function AguinaldoLiquidacionView({
   anio,
+  anioActual,
+  cicloCerrado,
+  puedeLeerAusencias,
   aguinaldos,
   canWrite,
-  empleadosActivos,
-  motivos,
+  contratosPorLiquidar,
   liquidaciones,
+  pendientesAnterior = null,
+  correoConfigurado = false,
 }: AguinaldoLiquidacionViewProps) {
-  const [tab, setTab] = useState<TabId>('aguinaldo')
+  const tabs: TabDefinition<TabId>[] = [
+    {
+      id: 'aguinaldo',
+      label: 'Aguinaldo',
+      icon: Gift,
+      content: (
+        <AguinaldoTab
+          anio={anio}
+          anioActual={anioActual}
+          items={aguinaldos}
+          canWrite={canWrite}
+          cicloCerrado={cicloCerrado}
+          puedeLeerAusencias={puedeLeerAusencias}
+          pendientesAnterior={pendientesAnterior}
+          correoConfigurado={correoConfigurado}
+        />
+      ),
+    },
+    {
+      id: 'liquidacion',
+      label: 'Liquidación',
+      icon: FileX2,
+      content: canWrite ? (
+        <LiquidacionTab
+          contratos={contratosPorLiquidar}
+          historial={liquidaciones}
+          correoConfigurado={correoConfigurado}
+        />
+      ) : (
+        <div className="space-y-4">
+          <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
+            No tenés permiso para procesar liquidaciones.
+          </p>
+          <LiquidacionesHistorial items={liquidaciones} canWrite={false} />
+        </div>
+      ),
+    },
+  ]
 
-  return (
-    <div className="space-y-3">
-      <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`rounded-lg px-3 py-1.5 transition ${
-              tab === t.id
-                ? 'bg-white text-brand-700 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'aguinaldo' && <AguinaldoTab anio={anio} items={aguinaldos} canWrite={canWrite} />}
-      {tab === 'liquidacion' &&
-        (canWrite ? (
-          <LiquidacionTab
-            empleados={empleadosActivos}
-            motivos={motivos}
-            historial={liquidaciones}
-          />
-        ) : (
-          <div className="space-y-4">
-            <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-              No tenés permiso para procesar liquidaciones.
-            </p>
-            <LiquidacionesHistorial items={liquidaciones} />
-          </div>
-        ))}
-    </div>
-  )
+  return <Tabs idPrefix="aguinaldo-liquidacion" ariaLabel="Aguinaldo y liquidación" tabs={tabs} />
 }

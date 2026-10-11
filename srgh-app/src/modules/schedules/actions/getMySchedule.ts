@@ -8,7 +8,9 @@ import { hoursBetween } from '@/modules/schedules/lib/hours'
 import type { SgrhJwtClaims } from '@/types/auth'
 
 interface ScheduleJoin {
+  hor_id: number
   hor_nombre: string
+  hor_color: string | null
   hor_hora_entrada: string
   hor_hora_salida: string
   hor_hora_inicio_almuerzo: string
@@ -17,11 +19,17 @@ interface ScheduleJoin {
   hor_hora_fin_break: string | null
 }
 
+interface BranchJoin {
+  suc_nombre: string
+}
+
 interface AssignmentRow {
   prg_fecha: string
   prg_es_dia_libre: boolean
   prg_es_feriado: boolean
   prg_observaciones: string | null
+  prg_sucursal_id: number
+  sgrh_sucursales: BranchJoin | null
   sgrh_cat_horarios: ScheduleJoin | null
   prg_hora_entrada_custom: string | null
   prg_hora_salida_custom: string | null
@@ -35,25 +43,24 @@ export interface MyDayAssignment {
   date: string
   isDayOff: boolean
   isHoliday: boolean
+  scheduleId: number | null
   scheduleName: string | null
+  // Color a medida de la plantilla, o null si usa el color por rotacion.
+  scheduleColor: string | null
+  isCustom: boolean
   startTime: string | null
   endTime: string | null
   hours: number
   observaciones: string | null
+  // Sucursal donde trabaja ese dia; null si no tiene asignacion.
+  branchName: string | null
 }
 
 export type GetMyScheduleResult =
   | { ok: true; weekDates: string[]; days: MyDayAssignment[]; weeklyTotal: number }
   | { ok: false; error: string }
 
-/**
- * El horario de la semana, pero SOLO el del propio empleado — a diferencia
- * de `getWeeklySchedule` (la matriz de gestion, que ve toda una sucursal),
- * esta consulta filtra explicitamente por `emp_id` del JWT ademas de confiar
- * en RLS: `sgrh_programacion_semanal` ya deja pasar las filas propias sin
- * ningun permiso (rama `prg_empleado_id = get_emp_id()`), y este filtro es
- * una segunda capa, no la unica.
- */
+// Horario semanal filtrado al propio empleado (emp_id del JWT), no toda la sucursal.
 export async function getMySchedule(weekStartISO: string): Promise<GetMyScheduleResult> {
   const claims = await requirePermission(PERMISOS.MI_HORARIO_READ)
   const meta = (claims.app_metadata ?? {}) as Partial<SgrhJwtClaims>
@@ -77,7 +84,9 @@ export async function getMySchedule(weekStartISO: string): Promise<GetMySchedule
       prg_es_dia_libre,
       prg_es_feriado,
       prg_observaciones,
-      sgrh_cat_horarios ( hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo, hor_hora_inicio_break, hor_hora_fin_break ),
+      prg_sucursal_id,
+      sgrh_sucursales ( suc_nombre ),
+      sgrh_cat_horarios ( hor_id, hor_nombre, hor_color, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo, hor_hora_inicio_break, hor_hora_fin_break ),
       prg_hora_entrada_custom,
       prg_hora_salida_custom,
       prg_hora_inicio_almuerzo_custom,
@@ -106,11 +115,15 @@ export async function getMySchedule(weekStartISO: string): Promise<GetMySchedule
         date,
         isDayOff: false,
         isHoliday: false,
+        scheduleId: null,
         scheduleName: null,
+        scheduleColor: null,
+        isCustom: false,
         startTime: null,
         endTime: null,
         hours: 0,
         observaciones: null,
+        branchName: null,
       }
     }
 
@@ -147,13 +160,17 @@ export async function getMySchedule(weekStartISO: string): Promise<GetMySchedule
       date,
       isDayOff: assignment.prg_es_dia_libre,
       isHoliday: assignment.prg_es_feriado,
+      scheduleId: schedule?.hor_id ?? null,
       scheduleName: schedule?.hor_nombre ?? null,
+      scheduleColor: schedule?.hor_color ?? null,
+      isCustom,
       startTime: isCustom
         ? assignment.prg_hora_entrada_custom
         : (schedule?.hor_hora_entrada ?? null),
       endTime: isCustom ? assignment.prg_hora_salida_custom : (schedule?.hor_hora_salida ?? null),
       hours,
       observaciones: assignment.prg_observaciones,
+      branchName: assignment.sgrh_sucursales?.suc_nombre ?? null,
     }
   })
 

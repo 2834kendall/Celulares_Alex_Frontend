@@ -1,19 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, Briefcase, Cake, Camera, Pencil } from 'lucide-react'
+import { Cake, Camera, Pencil } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
+import { PageHeader } from '@/components/ui/PageHeader'
 import type {
   CatalogoItem,
   DocumentoEmpleado,
   EmpleadoDetalle,
+  MotivoSalidaItem,
   TerritorioCatalogo,
 } from '@/modules/employees/types'
 import {
   esCumpleanosHoy,
-  formatCRC,
   formatCumpleanos,
   formatDate,
   fullName,
@@ -24,12 +24,13 @@ import { formatIbanGroups } from '@/modules/employees/lib/iban'
 import { EmployeeForm } from './EmployeeForm'
 import { EmployeePhotoModal } from './EmployeePhotoModal'
 import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
+import { EmployeeContractSection } from './EmployeeContractSection'
+import { EmployeeContractActions } from './EmployeeContractActions'
+import type { ContractCatalogs } from './ContractFields'
 import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
+import { InfoItem, SectionCard } from '@/components/ui/ProfileSection'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { META_LABEL } from '@/components/ui/styles'
-import { ICON_CONTROL_BASE, ICON_CONTROL_TONES } from '@/components/ui/IconButton'
-import { cn } from '@/lib/utils/cn'
 
 interface EmployeeDetailProps {
   empleado: EmpleadoDetalle
@@ -44,44 +45,13 @@ interface EmployeeDetailProps {
   tiposDocumento?: CatalogoItem[]
   canWriteDocs?: boolean
   documentosError?: string | null
-}
-
-function InfoItem({
-  label,
-  value,
-  wrap = false,
-  badge = null,
-}: {
-  /** Casi siempre texto; el campo de Cumpleaños le suma un icono. */
-  label: React.ReactNode
-  value: string
-  /** Para textos largos (señas exactas): envuelve en vez de recortar. */
-  wrap?: boolean
-  /** Pastilla al lado de la etiqueta (hoy: el aviso de cumpleaños). */
-  badge?: React.ReactNode
-}) {
-  return (
-    <div className="min-w-0">
-      <dt className={cn(META_LABEL, badge ? 'flex items-center gap-1.5' : undefined)}>
-        {label}
-        {badge}
-      </dt>
-      <dd
-        className={`text-sm text-slate-800 ${wrap ? 'whitespace-pre-line break-words' : 'truncate'}`}
-      >
-        {value}
-      </dd>
-    </div>
-  )
-}
-
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-      <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-600">{title}</h2>
-      {children}
-    </section>
-  )
+  /** NOMINA_WRITE: muestra el enlace a liquidación en el tab Contrato. */
+  canLiquidar?: boolean
+  /** HISTORIAL_WRITE: crear, editar, terminar y revertir contratos. */
+  canEditContrato?: boolean
+  /** Catálogos del formulario de contrato; solo llegan con canEditContrato. */
+  catalogosContrato?: ContractCatalogs
+  motivosSalida?: MotivoSalidaItem[]
 }
 
 export function EmployeeDetail({
@@ -94,6 +64,10 @@ export function EmployeeDetail({
   tiposDocumento = [],
   canWriteDocs = false,
   documentosError = null,
+  canLiquidar = false,
+  canEditContrato = false,
+  catalogosContrato,
+  motivosSalida,
 }: EmployeeDetailProps) {
   const [editing, setEditing] = useState(false)
   const [editingPhoto, setEditingPhoto] = useState(false)
@@ -174,7 +148,7 @@ export function EmployeeDetail({
               />
               <InfoItem label="Nacionalidad" value={empleado.emp_nacionalidad} />
               <InfoItem
-                label="Fecha de ingreso"
+                label="Ingreso a la empresa"
                 value={formatDate(empleado.emp_fecha_ingreso_original)}
               />
               <InfoItem
@@ -227,41 +201,45 @@ export function EmployeeDetail({
                     : '—'
                 }
               />
+              {/* Tres estados, no dos: 'No se pudo descifrar' NO es '—'. Un
+                  guión haría creer que el empleado nunca cargó su cuenta, y es
+                  justo lo que llevaría a alguien a "corregirla" guardando el
+                  formulario en blanco encima del dato cifrado. */}
               <InfoItem
                 label="Número de cuenta"
                 value={
-                  empleado.datos_pago?.edp_numero_cuenta
-                    ? formatIbanGroups(empleado.datos_pago.edp_numero_cuenta)
-                    : '—'
+                  empleado.datos_pago?.cuenta_ilegible
+                    ? 'No se pudo descifrar'
+                    : empleado.datos_pago?.edp_numero_cuenta
+                      ? formatIbanGroups(empleado.datos_pago.edp_numero_cuenta)
+                      : '—'
                 }
               />
             </dl>
           </SectionCard>
-
-          <SectionCard title="Contrato vigente">
-            {historial ? (
-              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <InfoItem label="Puesto" value={historial.puesto_nombre} />
-                <InfoItem label="Sucursal" value={historial.sucursal_nombre} />
-                <InfoItem label="Tipo de contrato" value={historial.tipo_contrato_nombre} />
-                <InfoItem label="Jornada" value={historial.tipo_jornada_nombre} />
-                <InfoItem label="Fecha de inicio" value={formatDate(historial.lab_fecha_inicio)} />
-                <InfoItem label="Salario base" value={formatCRC(historial.lab_salario_base)} />
-                <InfoItem label="Salario real" value={formatCRC(historial.lab_salario_real)} />
-              </dl>
-            ) : (
-              <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                <p>
-                  Este empleado no tiene un contrato vigente en la empresa. El historial de
-                  contratos se gestionará desde la futura sección de contratación.
-                </p>
-              </div>
-            )}
-          </SectionCard>
         </>
       )}
     </div>
+  )
+
+  // El contrato tiene su propio tab. Datos de pago se quedan en Perfil a
+  // propósito: tienen RLS propia (NOMINA_READ / EMPLEADOS_WRITE) y moverlos
+  // mezclaría dos criterios de visibilidad en la misma pestaña.
+  const contratoContent = (
+    <EmployeeContractSection
+      contratos={empleado.historial_completo}
+      veLiquidaciones={canLiquidar || canEditContrato}
+      acciones={
+        <EmployeeContractActions
+          empId={empleado.emp_id}
+          contratos={empleado.historial_completo}
+          canLiquidar={canLiquidar}
+          canEditContrato={canEditContrato}
+          catalogos={catalogosContrato}
+          motivos={motivosSalida}
+        />
+      }
+    />
   )
 
   // Los documentos viven en su propio tab: CRUD independiente del modo edición
@@ -280,15 +258,11 @@ export function EmployeeDetail({
 
   return (
     <div className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Link
-            href="/employees"
-            aria-label="Volver al listado"
-            className={cn(ICON_CONTROL_BASE, ICON_CONTROL_TONES.slate, 'shrink-0')}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+      <PageHeader
+        title={nombreCompleto}
+        backHref="/employees"
+        backLabel="Volver al listado"
+        leading={
           <div className="relative shrink-0">
             <Avatar size="xl" fotoUrl={empleado.foto_url} nombre={nombreCompleto} />
             {/* Simétrico con el resto de la ficha: nada es editable fuera de
@@ -304,29 +278,38 @@ export function EmployeeDetail({
               </button>
             )}
           </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-bold text-slate-900">{nombreCompleto}</h1>
-            <p className="text-xs text-slate-500">
+        }
+        description={
+          <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
               {empleado.tipo_identificacion_nombre} · {empleado.emp_numero_identificacion}
-            </p>
-          </div>
-          <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              historial ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-            }`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {historial ? 'Activo' : 'Sin contrato vigente'}
+            </span>
+            <span
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                historial ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {historial ? 'Activo' : 'Sin contrato vigente'}
+            </span>
           </span>
-        </div>
-        {canWrite && !editing && enPerfil && (
-          <Button onClick={() => setEditing(true)} className="shrink-0">
-            <Pencil className="h-3.5 w-3.5" /> Editar
-          </Button>
-        )}
-      </div>
+        }
+        actions={
+          canWrite &&
+          !editing &&
+          enPerfil && (
+            <Button onClick={() => setEditing(true)} className="shrink-0">
+              <Pencil className="h-3.5 w-3.5" /> Editar
+            </Button>
+          )
+        }
+      />
 
-      <EmployeeProfileTabs perfilContent={perfilContent} documentosContent={documentosContent} />
+      <EmployeeProfileTabs
+        perfilContent={perfilContent}
+        contratoContent={contratoContent}
+        documentosContent={documentosContent}
+      />
 
       {editingPhoto && (
         <EmployeePhotoModal

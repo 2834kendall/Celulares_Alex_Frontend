@@ -26,6 +26,7 @@ const baseInput: AssignDayInput = {
 function mockSupabaseSuccess() {
   mockCreateClient.mockResolvedValue(
     createSupabaseClientMock({
+      sgrh_sucursales: { data: [{ suc_id: 3 }], error: null },
       sgrh_programacion_semanal: { data: null, error: null },
     }) as unknown as Awaited<ReturnType<typeof createClient>>
   )
@@ -34,9 +35,34 @@ function mockSupabaseSuccess() {
 describe('assignDaySchedule (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequirePermission.mockResolvedValue(
-      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  it('falla si no se pudo determinar la empresa del usuario', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {},
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+
+    const result = await assignDaySchedule({ ...baseInput, scheduleId: 4 })
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo determinar la empresa del usuario.' })
+  })
+
+  it('rechaza una sucursal de otra empresa', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_sucursales: { data: [], error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
+
+    const result = await assignDaySchedule({ ...baseInput, scheduleId: 4 })
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'La sucursal seleccionada no es válida para tu empresa.',
+    })
   })
 
   it('rechaza una fecha con formato invalido sin llamar a requirePermission', async () => {
@@ -132,6 +158,7 @@ describe('assignDaySchedule (server action)', () => {
 
   it('actualiza (update) cuando ya existe un assignmentId', async () => {
     const client = createSupabaseClientMock({
+      sgrh_sucursales: { data: [{ suc_id: 3 }], error: null },
       sgrh_programacion_semanal: { data: null, error: null },
     })
     mockCreateClient.mockResolvedValue(
@@ -146,6 +173,7 @@ describe('assignDaySchedule (server action)', () => {
   it('devuelve error generico si supabase falla al guardar', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
+        sgrh_sucursales: { data: [{ suc_id: 3 }], error: null },
         sgrh_programacion_semanal: { data: null, error: { message: 'boom' } },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )

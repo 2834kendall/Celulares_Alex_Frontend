@@ -6,15 +6,16 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { editarAsignacionSchema, type EditarAsignacionInput } from '@/modules/users/types'
+import { syncUserSucursales } from '@/modules/users/lib/syncUserSucursales'
 
 export type UpdateUserAssignmentResult = { ok: true } | { ok: false; error: string }
 
 /**
- * Edita rol/sucursal (fila uer) y el vínculo con el empleado. Los permisos del
- * JWT se calculan al login, así que el cambio de rol aplica en el PRÓXIMO
- * inicio de sesión del afectado (la UI lo avisa). No hay UNIQUE en
- * (usuario, empresa) y el hook JWT lee con LIMIT 1: siempre se actualiza la
- * fila existente, nunca se inserta una segunda.
+ * Edita rol/sucursales (filas uer) y el vínculo con el empleado. Los
+ * permisos del JWT se calculan al login, así que el cambio de rol aplica en
+ * el PRÓXIMO inicio de sesión del afectado (la UI lo avisa). Un usuario a
+ * cargo de varias sucursales tiene varias filas uer activas — el diff
+ * (insertar/actualizar/borrar) lo hace syncUserSucursales.
  */
 export async function updateUserAssignment(
   usrId: number,
@@ -39,27 +40,29 @@ export async function updateUserAssignment(
   const admin = createAdminClient()
 
   // La fila uer de la empresa del JWT es también el guard cross-tenant: un
-  // usuario de otra empresa simplemente no tiene asignación aquí.
+  // usuario de otra empresa simplemente no tiene asignación aquí. Solo
+  // interesa que EXISTA alguna (un usuario multi-sucursal tiene varias): con
+  // el limit(1) alcanza y se evita el error de maybeSingle() con >1 fila.
   const { data: asignacion, error: uerReadError } = await admin
     .from('sgrh_usuarios_empresa_rol')
     .select('uer_id')
     .eq('uer_usuario_id', usrId)
     .eq('uer_empresa_id', empresaId)
+    .limit(1)
     .maybeSingle()
 
   if (uerReadError || !asignacion) {
     return { ok: false, error: 'Usuario no encontrado.' }
   }
 
-  if (parsed.data.sucursal_id) {
-    const { data: sucursal, error: sucError } = await admin
+  if (parsed.data.sucursal_ids.length > 0) {
+    const { data: sucursales, error: sucError } = await admin
       .from('sgrh_sucursales')
       .select('suc_id')
-      .eq('suc_id', parsed.data.sucursal_id)
+      .in('suc_id', parsed.data.sucursal_ids)
       .eq('suc_empresa_id', empresaId)
-      .maybeSingle()
 
-    if (sucError || !sucursal) {
+    if (sucError || (sucursales ?? []).length !== parsed.data.sucursal_ids.length) {
       return { ok: false, error: 'La sucursal seleccionada no es válida para tu empresa.' }
     }
   }
@@ -95,13 +98,13 @@ export async function updateUserAssignment(
     }
   }
 
-  const { error: uerUpdateError } = await admin
-    .from('sgrh_usuarios_empresa_rol')
-    .update({
-      uer_rol_id: parsed.data.rol_id,
-      uer_sucursal_id: parsed.data.sucursal_id ?? null,
-    })
-    .eq('uer_id', asignacion.uer_id)
+  const { error: uerUpdateError } = await syncUserSucursales({
+    admin,
+    usrId,
+    empresaId,
+    rolId: parsed.data.rol_id,
+    sucursalIds: parsed.data.sucursal_ids,
+  })
 
   if (uerUpdateError) {
     return { ok: false, error: 'No se pudo actualizar la asignación del usuario.' }

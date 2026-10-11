@@ -8,6 +8,9 @@
 
 import { z } from 'zod'
 import type { Database } from '@/types/database.types'
+import { rangoQuincena } from '@/modules/payroll/lib/fechas'
+import type { OrigenHoras } from '@/modules/payroll/lib/horasOrigen'
+import type { DiaCalculado } from '@/modules/payroll/lib/horasPeriodo'
 
 // ─── Aliases de tipos Supabase ────────────────────────────────────────────────
 
@@ -28,8 +31,9 @@ export interface CatalogoItem {
  * Solo 2: mientras falte pagarle a algún empleado es 'borrador' (editable:
  * se puede subir Excel, editar montos a mano); pasa a 'pagado' solo, sin
  * botón, en cuanto TODOS los empleados del periodo quedan marcados como
- * pagados (ver sincronizarEstadoPeriodo en marcarDetallePagado.ts). Si se
- * desmarca a alguien, vuelve a 'borrador'.
+ * pagados (ver sincronizarEstadoPeriodo en estadoPeriodoData.ts; una fila
+ * cuyo salario ya pagó una liquidación cuenta como resuelta). Si se desmarca
+ * a alguien, vuelve a 'borrador'.
  */
 export type PeriodoEstado = 'borrador' | 'pagado'
 
@@ -41,6 +45,8 @@ export interface PeriodoListItem {
   fechaInicio: string | null
   fechaFin: string | null
   estado: string
+  /** Derivado: el periodo ya terminó y todavía no está pagado. No se guarda. */
+  atrasado: boolean
   fechaPago: string | null
   sucursalNombre: string
   totalEmpleados: number
@@ -57,7 +63,19 @@ export interface DetalleNominaItem {
   historialLaboralId: number
   empleadoNombre: string
   empleadoCedula: string
+  /**
+   * Correo personal del empleado (emp_email_personal): adonde se le manda el
+   * comprobante en PDF al marcar el pago. Null si no tiene uno registrado.
+   */
+  empleadoEmail: string | null
+  /** Solo lo que es salario. Es la base del aguinaldo y de la cesantía. */
   salarioBruto: number
+  /**
+   * Lo que se paga pero no es salario (viáticos): va después de las
+   * deducciones, no cotiza y no hace aguinaldo. Ya está incluido en
+   * salarioNeto; se expone aparte para poder mostrar el desglose.
+   */
+  totalNoSalarial: number
   totalDeducciones: number
   /** Parte de totalDeducciones calculada como % del bruto (ej. CCSS obrera). */
   deduccionPorcentual: number
@@ -67,15 +85,83 @@ export interface DetalleNominaItem {
   salarioNeto: number
   pagado: boolean
   fechaPago: string | null
+  /**
+   * La liquidación (liq_id) que ya paga el salario de esta fila como salario
+   * pendiente del mes de salida. Esa fila no se paga por planilla (sería
+   * pagarla dos veces) y cuenta como resuelta para cerrar el periodo. Null en
+   * las demás.
+   */
+  liquidacionQueLaPaga: number | null
+  /** Código impreso en el comprobante (sgrh_comprobantes_pago). Null mientras el pago no se haya marcado. */
+  codigoVerificacion: string | null
+  /**
+   * Días del periodo con marcas de asistencia incompletas. Mientras haya
+   * alguno, las horas calculadas están cortas y el pago queda bloqueado
+   * (marcarDetallePagado lo re-verifica).
+   */
+  diasPorRevisar: { fecha: string; problema: string }[]
   montosPorConcepto: Record<string, number>
   horasTrabajadas: number
+  /** Horas por encima de la jornada programada, guardadas en ndt_horas_extra_al_50. */
+  horasExtra: number
   salarioPorHora: number
+  /**
+   * Si las horas que se pagan son las que dijeron las marcas, si alguien las
+   * corrigió, o si no hay foto contra la cual compararlas (ver
+   * lib/horasOrigen.ts).
+   */
+  horasOrigen: OrigenHoras
+  /** Lo que dijeron las marcas cuando se armó la planilla. Null = no se pudo leer. */
+  horasAsistencia: number | null
+  horasExtraAsistencia: number | null
+  /** Cuándo se tomó esa foto ('YYYY-MM-DD HH:mm:ss' local). */
+  horasLeidasEn: string | null
+  /** Cuándo alguien dejó horas distintas a las de la asistencia. */
+  horasAjustadasEn: string | null
+  /**
+   * true cuando las marcas dicen hoy algo distinto de lo que decían al armar
+   * la planilla: alguien corrigió una marca después. La planilla quedó vieja.
+   */
+  marcasCambiaron: boolean
+  /** Lo que dicen las marcas AHORA. Null si el periodo no tiene fechas. */
+  horasAsistenciaAhora: { horas: number; horasExtra: number } | null
+  /**
+   * El salario guardado quedó viejo: el BASE lo puso el sistema con otra
+   * regla, o el AJUSTE no es el que da la regla de hoy (ver
+   * evaluarBaseGuardado). Se corrige con "Recalcular desde asistencia";
+   * mientras tanto no se deja marcar el pago.
+   */
+  baseDesactualizado: boolean
+  /** Lo que daría el BASE hoy, para mostrarlo. null si no hay con qué calcularlo. */
+  baseEsperado: number | null
+  /** Lo que daría el AJUSTE hoy. null si no hay con qué calcularlo. */
+  ajusteEsperado: number | null
+  /** Día por día de la quincena, para explicar de dónde sale el total. */
+  dias: DiaCalculado[]
+  /**
+   * Horas que la asistencia de hoy pasa a extra por superar el tope semanal
+   * de la jornada (Art. 136 CT). Solo viene si hay. Explica por qué el día a
+   * día no suma lo mismo que el total.
+   */
+  horasExtraPorTopeSemanal?: number
   /** Solo si el empleado tuvo una incapacidad por enfermedad que cae en este periodo. */
   incapacidad: IncapacidadItem | null
-  /** Cuenta IBAN para la transferencia (sgrh_empleado_datos_pago.edp_numero_cuenta). Null si el empleado no tiene datos de pago cargados. */
+  /**
+   * Plata que sale por esta persona en este periodo: salario neto + lo que la
+   * empresa paga de incapacidad.
+   *
+   * Existe para que la pantalla del periodo y el comprobante impriman EL
+   * MISMO número. El comprobante ya sumaba la incapacidad al final ("Total a
+   * pagar") mientras la planilla mostraba solo el neto, así que los dos
+   * papeles del mismo pago no cuadraban entre sí.
+   */
+  totalAPagar: number
+  /** Cuenta IBAN para la transferencia, ya DESCIFRADA (sgrh_empleado_datos_pago.edp_numero_cuenta). Null si el empleado no tiene datos de pago cargados, o si los tiene pero no se pudieron descifrar — ver cuentaIlegible. */
   numeroCuenta: string | null
   /** Nombre del banco de esa cuenta (sgrh_cat_bancos.ban_nombre). Null si no hay cuenta o el banco no está definido. */
   bancoNombre: string | null
+  /** true cuando el empleado SÍ tiene cuenta registrada pero no se pudo descifrar. Distinto de "no cargó datos de pago", y hay que mostrarlo distinto: quien arma la transferencia necesita saber que el problema es técnico y no una omisión del empleado. */
+  cuentaIlegible: boolean
 }
 
 /**
@@ -90,6 +176,11 @@ export interface IncapacidadItem {
   diasCcss: number
   porcentajePagoEmpleador: number
   monto: number
+  /**
+   * Tipo de la ausencia (tau_nombre: "Incapacidad por Maternidad"…), para el
+   * rótulo del comprobante. null si no se pudo leer: queda el genérico.
+   */
+  tipoNombre?: string | null
 }
 
 export interface PeriodoDetalle {
@@ -100,6 +191,8 @@ export interface PeriodoDetalle {
   fechaInicio: string | null
   fechaFin: string | null
   estado: string
+  /** Derivado: el periodo ya terminó y todavía no está pagado. No se guarda. */
+  atrasado: boolean
   fechaPago: string | null
   observaciones: string | null
   sucursalNombre: string
@@ -111,6 +204,25 @@ export interface PeriodoDetalle {
 // RLS lo re-verifica en el insert (npe_empresa_id = get_empresa_id()).
 
 const anioActual = new Date().getFullYear()
+
+const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Fecha del periodo: 'YYYY-MM-DD' o vacía.
+ *
+ * Las dos fechas se llenan solas a partir del mes y la quincena, pero quedan
+ * editables y se pueden borrar (la columna es nullable en la base). El campo
+ * vacío llega como '' desde el formulario y como null desde el servidor; las
+ * dos formas se normalizan a null antes de validar el formato, si no un campo
+ * borrado fallaría por "formato inválido" en vez de contarse como vacío.
+ */
+function fechaPeriodoOpcional(mensaje: string) {
+  return z
+    .string()
+    .nullable()
+    .transform((value) => (value === '' ? null : value))
+    .refine((value) => value === null || FORMATO_FECHA.test(value), { message: mensaje })
+}
 
 export const crearPeriodoSchema = z
   .object({
@@ -137,13 +249,12 @@ export const crearPeriodoSchema = z
       .min(1, 'Quincena inválida')
       .max(2, 'Quincena inválida'),
 
-    npe_fecha_inicio_periodo: z
-      .string({ error: 'La fecha de inicio es obligatoria' })
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de inicio inválida'),
-
-    npe_fecha_fin_periodo: z
-      .string({ error: 'La fecha de fin es obligatoria' })
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de fin inválida'),
+    // Las dos fechas se llenan solas a partir del mes y la quincena, pero
+    // quedan editables y se pueden dejar en blanco (la columna es nullable en
+    // la base). Un periodo sin fechas no puede cruzar las marcas de
+    // asistencia: el formulario lo avisa antes de guardar.
+    npe_fecha_inicio_periodo: fechaPeriodoOpcional('La fecha de inicio no es válida'),
+    npe_fecha_fin_periodo: fechaPeriodoOpcional('La fecha de fin no es válida'),
 
     // Igual que con_formula_base: se valida en el navegador (string) y otra
     // vez en el servidor con el valor ya transformado (puede llegar null
@@ -155,9 +266,52 @@ export const crearPeriodoSchema = z
       .nullable()
       .transform((value) => (value === '' ? null : value)),
   })
-  .refine((data) => data.npe_fecha_fin_periodo >= data.npe_fecha_inicio_periodo, {
-    message: 'La fecha de fin debe ser posterior o igual a la de inicio',
-    path: ['npe_fecha_fin_periodo'],
+  // Las fechas son opcionales, pero si están tienen que ser coherentes. Esto
+  // corre también en el servidor: antes nadie revisaba que tuvieran que ver
+  // con el mes y la quincena elegidos, así que se podía guardar
+  // "Julio · 1ª quincena" con fechas de septiembre. Como de esas fechas salen
+  // las horas de asistencia del periodo, la planilla quedaba calculada sobre
+  // otro rango sin que nada avisara.
+  .superRefine((data, ctx) => {
+    const { npe_fecha_inicio_periodo: inicio, npe_fecha_fin_periodo: fin } = data
+
+    if (inicio === null && fin === null) return
+
+    if (inicio === null || fin === null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Poné las dos fechas o dejá las dos en blanco.',
+        path: [inicio === null ? 'npe_fecha_inicio_periodo' : 'npe_fecha_fin_periodo'],
+      })
+      return
+    }
+
+    if (fin < inicio) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'La fecha de fin debe ser posterior o igual a la de inicio',
+        path: ['npe_fecha_fin_periodo'],
+      })
+      return
+    }
+
+    const rango = rangoQuincena(data.npe_periodo_mes, data.npe_periodo_anio, data.npe_quincena)
+    if (!rango) return
+
+    if (inicio < rango.inicio || inicio > rango.fin) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Esa fecha queda fuera de la quincena elegida (del ${rango.inicio} al ${rango.fin}).`,
+        path: ['npe_fecha_inicio_periodo'],
+      })
+    }
+    if (fin < rango.inicio || fin > rango.fin) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Esa fecha queda fuera de la quincena elegida (del ${rango.inicio} al ${rango.fin}).`,
+        path: ['npe_fecha_fin_periodo'],
+      })
+    }
   })
 
 export type CrearPeriodoInput = z.infer<typeof crearPeriodoSchema>
@@ -185,6 +339,9 @@ export type ConceptoTipo = (typeof CONCEPTO_TIPOS)[number]
  *  - monto_manual_ingreso:       el usuario escribe el monto; suma al bruto (ej. Comisión).
  *  - monto_manual_deduccion:     el usuario escribe el monto; resta del neto (ej. préstamo).
  *  - porcentaje_deduccion_bruto: con_porcentaje % del salario bruto; se resta (ej. CCSS obrera).
+ *  - porcentaje_patronal_bruto:  con_porcentaje % del salario bruto, pero lo paga la EMPRESA
+ *                                encima del salario (ej. CCSS patronal). No se le rebaja a
+ *                                nadie y no cambia el neto: es el costo real de la planilla.
  *  - horas_extra_automatico:     el sistema lo calcula solo a partir de las horas trabajadas
  *                                que superen el tope normal (ver TOPE_HORAS_NORMALES_QUINCENAL
  *                                en lib/planilla.ts), multiplicadas por el salario por hora y
@@ -194,13 +351,15 @@ export const TIPOS_CALCULO_CONCEPTO = [
   'monto_manual_ingreso',
   'monto_manual_deduccion',
   'porcentaje_deduccion_bruto',
+  'porcentaje_patronal_bruto',
   'horas_extra_automatico',
 ] as const
 export type TipoCalculoConcepto = (typeof TIPOS_CALCULO_CONCEPTO)[number]
 
-/** con_porcentaje es obligatorio solo para estos dos tipos; en los demás debe quedar null. */
+/** con_porcentaje es obligatorio solo para estos tipos; en los demás debe quedar null. */
 const TIPOS_CON_PORCENTAJE = new Set<TipoCalculoConcepto>([
   'porcentaje_deduccion_bruto',
+  'porcentaje_patronal_bruto',
   'horas_extra_automatico',
 ])
 
@@ -242,7 +401,9 @@ export const conceptoNominaSchema = z
       .max(500, 'El porcentaje es demasiado alto')
       .nullable(),
 
-    con_afecta_salario_bruto: z.boolean().default(false),
+    // true por defecto: lo normal es que un ingreso sea salario. Lo que se
+    // marca aparte es la excepción (viáticos), no al revés.
+    con_afecta_salario_bruto: z.boolean().default(true),
     con_afecta_base_ccss: z.boolean().default(true),
 
     // Este campo se valida en dos momentos: en el navegador (el input de
@@ -266,12 +427,39 @@ export const conceptoNominaSchema = z
         : data.con_porcentaje === null,
     {
       message:
-        'El porcentaje es obligatorio para "% del bruto" y "horas extra automático", y debe quedar vacío en los demás tipos.',
+        'El porcentaje es obligatorio para los tipos "% del bruto" y "horas extra automático", y debe quedar vacío en los demás tipos.',
       path: ['con_porcentaje'],
     }
   )
 
 export type ConceptoNominaInput = z.infer<typeof conceptoNominaSchema>
+
+/**
+ * Desde que existe el banco de horas, el excedente sobre el tope quincenal ya
+ * no se paga solo en la planilla: queda pendiente en
+ * sgrh_banco_horas_movimientos y el encargado decide si pagarlo (a 1,5×) o
+ * compensarlo. Por eso HORAS_EXTRA nace inactivo en el seed 04_nomina.sql.
+ *
+ * Un concepto ACTIVO de tipo 'horas_extra_automatico' rompe ese acuerdo: las
+ * mismas horas por encima del tope se pagarían en el bruto de la quincena
+ * (calcularPlanillaPorConceptos) y ademas quedarían pendientes en el banco
+ * para pagarse una segunda vez (sincronizarMovimientoBancoHoras). Nada lo
+ * impedía: la pantalla de conceptos deja elegir ese tipo y marcar "activo".
+ *
+ * La fila del catálogo sí tiene que poder existir —pagarBancoHoras busca
+ * HORAS_EXTRA por código para armar el ingreso al liquidar horas pendientes—,
+ * así que lo que se bloquea es activarla, no crearla.
+ */
+export const ERROR_CONCEPTO_HORAS_EXTRA_ACTIVO =
+  'Las horas extra ya no se pagan directamente en la planilla: lo que pasa del tope queda pendiente en el banco de horas, donde se decide si se paga o se compensa. Si activás este concepto, esas horas se pagarían dos veces. Guardalo como inactivo.'
+
+/** true si guardar este concepto dejaría activo un cálculo de horas extra automáticas. */
+export function conceptoDuplicariaHorasExtra(input: {
+  con_tipo_calculo: string
+  con_activo: boolean
+}): boolean {
+  return input.con_activo && input.con_tipo_calculo === 'horas_extra_automatico'
+}
 
 type _ConceptoNominaAlineado =
   ConceptoNominaInput extends Omit<ConceptoNominaInsert, 'con_id'> ? true : never
@@ -296,6 +484,10 @@ export const editarDetalleSchema = z.object({
     999,
     'Revisa las horas trabajadas'
   ),
+  horasExtra: montoNoNegativo('Las horas extra son obligatorias').max(
+    999,
+    'Revisa las horas extra'
+  ),
   salarioPorHora: montoNoNegativo('El salario por hora es obligatorio'),
 })
 
@@ -306,48 +498,138 @@ export type EditarDetalleInput = z.infer<typeof editarDetalleSchema>
 // acumula automáticamente (ver marcarDetallePagado) y solo se "cobra" una
 // vez al año; la liquidación es un evento único por salida de empleado.
 
-export type MotivoSalidaRow = Database['public']['Tables']['sgrh_cat_motivos_salida']['Row']
-
 export interface AguinaldoItem {
   historialLaboralId: number
   empleadoNombre: string
   empleadoCedula: string
+  /** Correo personal del empleado: adonde se le manda el comprobante al pagar. Null si no tiene. */
+  empleadoEmail: string | null
   anio: number
-  montoAcumulado: number
+  /**
+   * Aguinaldo del ciclo: salario de las quincenas pagadas (con la licencia de
+   * maternidad al 100 %) ÷ 12. Si ya se pagó, el monto que se pagó.
+   */
+  monto: number
+  /** Parte del salario del ciclo que vino de la licencia de maternidad. */
+  maternidad: number
+  /** Tiene el mes continuo que exige la ley al 30 de noviembre. */
+  elegible: boolean
+  /** Quincenas del ciclo que no se han pagado: no entraron en el monto. */
+  quincenasSinPagar: string[]
+  /** Ausencias aprobadas cuyo tipo no se pudo leer: no se sabe si son maternidad. */
+  ausenciasSinTipo: number
+  /** Trabajó en una sucursal que el usuario no ve: el monto sale de menos. */
+  sucursalesOcultas: boolean
   pagado: boolean
   fechaPago: string | null
+  /** Pago con comprobante. Null si se marcó pagado con el botón viejo. */
+  pagoId: number | null
+  /** El contrato ya terminó (salió después de que cerró el ciclo). */
+  fechaSalida: string | null
 }
 
-export interface EmpleadoActivoItem {
+/**
+ * Contrato ya terminado desde el perfil del empleado (SGRH-90) que todavía
+ * no se liquidó. La fecha y el motivo los registró RRHH al terminarlo: la
+ * liquidación los muestra pero no los cambia.
+ */
+export interface ContratoPorLiquidarItem {
   historialLaboralId: number
   nombre: string
   cedula: string
+  /** Último día trabajado (lab_fecha_fin). */
+  fechaSalida: string
+  motivo: {
+    /** mot_codigo: MUT001 (mutuo acuerdo) pide decidir la cesantía al liquidar. */
+    codigo: string
+    nombre: string
+    generaCesantia: boolean
+    generaPreaviso: boolean
+    notaLegal: string | null
+  } | null
+  /**
+   * Tipo de contrato (tco_codigo). Un contrato a plazo fijo o por obra
+   * determinada terminado por el patrono lleva la indemnización del Art. 31
+   * en vez de preaviso y cesantía, y pide decir si se pactó por seis meses o
+   * más. Null si no se pudo leer.
+   */
+  tipoContrato: { codigo: string; nombre: string } | null
 }
 
+// La fecha de salida y el motivo ya no se capturan acá: salen del contrato,
+// que RRHH terminó desde el perfil (SGRH-90).
 export const procesarLiquidacionSchema = z.object({
-  historialLaboralId: z.number({ error: 'Elegí un empleado' }).int().positive(),
-  fechaSalida: z
-    .string({ error: 'La fecha de salida es obligatoria' })
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
-  motivoSalidaId: z.number({ error: 'Elegí un motivo de salida' }).int().positive(),
+  historialLaboralId: z.number({ error: 'Elegí un contrato' }).int().positive(),
   diasVacacionesPendientes: z
     .number({ error: 'Los días de vacaciones son obligatorios' })
     .min(0, 'No puede ser negativo')
     .max(365, 'Revisá los días de vacaciones'),
+  /**
+   * Solo en mutuo acuerdo (MOTIVO_MUTUO_ACUERDO): si las partes pactaron
+   * pagar cesantía. Lo decide quien liquida; en los demás motivos manda el
+   * catálogo y esto se ignora.
+   */
+  cesantiaPactada: z.enum(['si', 'no']).nullish(),
+  /**
+   * Solo en un contrato a plazo fijo u obra determinada que el patrono
+   * termina (Art. 31 CT): si se pactó por seis meses o más (o la obra debía
+   * durar eso). Cambia el mínimo de la indemnización de 3 a 22 días. El
+   * sistema no guarda el plazo pactado, así que lo dice quien liquida.
+   */
+  plazoSeisMesesOMas: z.enum(['si', 'no']).nullish(),
 })
 
 export type ProcesarLiquidacionInput = z.infer<typeof procesarLiquidacionSchema>
 
-export interface LiquidacionCalculada {
-  liqId: number
+/**
+ * Rubros de una liquidación: lo que se muestra en la vista previa, al
+ * guardarla y en el historial antes de pagarla.
+ */
+export interface DesgloseLiquidacion {
+  /** Promedio de los últimos seis meses ÷ 30 (Art. 30 CT), o el contrato si no hubo con qué. */
+  salarioDiario: number
+  /**
+   * Promedio de la última cincuentena ÷ 30 (Art. 157 CT): con esto se pagan
+   * las vacaciones. null en liquidaciones guardadas antes de esa columna.
+   */
+  salarioDiarioVacaciones: number | null
+  /** Días de vacaciones que se liquidaron. */
+  diasVacaciones: number
+  /** Días del mes de salida que no se habían pagado por planilla. */
+  diasSalarioPendiente: number
   salarioProporcional: number
   aguinaldoProporcional: number
   vacacionesPagadas: number
+  /** Horas extra que seguían pendientes en el banco de horas, pagadas acá. */
+  horasExtraBanco: number
   diasPreaviso: number
   preaviso: number
   diasCesantia: number
   cesantia: number
+  /**
+   * Por qué el preaviso o la cesantía quedaron en 0 días (ver
+   * notaRubroSinDias). null si tienen días o en liquidaciones viejas sin nota.
+   */
+  notaPreaviso: string | null
+  notaCesantia: string | null
+  /** Indemnización del Art. 31 CT (contrato a plazo fijo roto sin justa causa). */
+  diasIndemnizacionPlazoFijo: number
+  indemnizacionPlazoFijo: number
+  /** Bruto: suma de todos los rubros. */
   total: number
+  /** Cuota obrera sobre salario pendiente, vacaciones y horas extra. Preaviso, cesantía y aguinaldo no cotizan. */
+  deduccionesObreras: number
+  /** total − deduccionesObreras. Es lo que se le entrega a la persona. */
+  neto: number
+  /** Cosas que el cálculo no pudo resolver solo y alguien tiene que mirar. */
+  advertencias: string[]
+}
+
+/** Resultado de procesarLiquidacion. */
+export interface LiquidacionCalculada extends DesgloseLiquidacion {
+  /** null en la vista previa: todavía no se guardó. */
+  liqId: number | null
+  salarioDiarioVacaciones: number
 }
 
 /** Una fila del historial de liquidaciones ya generadas (sección de solo lectura). */
@@ -355,11 +637,53 @@ export interface LiquidacionListItem {
   liqId: number
   empleadoNombre: string
   empleadoCedula: string
+  /** Correo personal del empleado: adonde se le manda el comprobante al pagar. Null si no tiene. */
+  empleadoEmail: string | null
   fechaSalida: string
   motivoNombre: string
+  /** Bruto. */
   total: number
+  /** Lo que se le entregó a la persona: bruto menos cuota obrera. */
+  neto: number
   pagado: boolean
+  /** Pago con comprobante. Null si todavía no se pagó. */
+  pagoId: number | null
+  fechaPago: string | null
   createdAt: string
+  /** Rubros guardados, para revisarlos antes de pagar. */
+  desglose: DesgloseLiquidacion
+}
+
+/** Una línea del comprobante de un pago de aguinaldo o liquidación. */
+export interface LineaPagoExtraordinario {
+  concepto: string
+  dias: number | null
+  monto: number
+  /** Dato que explica el cálculo, no un rubro que se suma. */
+  informativo?: boolean
+  /** Rebaja (cuota obrera). */
+  deduccion?: boolean
+}
+
+/** Un pago de aguinaldo o liquidación, para su comprobante. */
+export interface PagoExtraordinario {
+  id: number
+  tipo: 'aguinaldo' | 'liquidacion'
+  empleadoNombre: string
+  empleadoCedula: string
+  /** Correo personal del empleado: adonde se le manda el comprobante al pagar. Null si no tiene. */
+  empleadoEmail: string | null
+  anioAguinaldo: number | null
+  liquidacionId: number | null
+  fechaSalida: string | null
+  motivoSalida: string | null
+  montoBruto: number
+  deducciones: number
+  montoNeto: number
+  lineas: LineaPagoExtraordinario[]
+  fechaPago: string
+  codigoVerificacion: string
+  observaciones: string | null
 }
 
 // ─── Incapacidades ────────────────────────────────────────────────────────
@@ -404,6 +728,8 @@ export type RegistrarIncapacidadResult =
       periodosActualizados: PeriodoAfectadoIncapacidad[]
       /** Días de la incapacidad que cayeron en periodos que todavía no existen. */
       diasSinPeriodo: number
+      /** Periodos ya pagados que no se tocaron, con los días que les faltaron. */
+      periodosPagadosOmitidos: PeriodoAfectadoIncapacidad[]
     }
   | { ok: false; error: string }
 
@@ -425,12 +751,28 @@ export interface BancoHorasItem {
   periodoOrigenLabel: string
   horas: number
   salarioPorHora: number
-  /** Monto sugerido = horas × salario por hora × 1.5, para prellenar el pago. */
+  /** Monto sugerido = horas × salario por hora × factor, para prellenar el pago. */
   montoSugerido: number
+  /**
+   * Multiplicador con el que se calculó el sugerido, sacado del porcentaje del
+   * concepto HORAS_EXTRA del catálogo (150 → 1,5). Se expone para poder
+   * mostrarlo: "sugerido (1,5×)" sale de acá y no de un número en el código.
+   */
+  factorSugerido: number
   estado: EstadoBancoHoras
   montoPagado: number | null
   fechaResolucion: string | null
   createdAt: string
+  /** Nota de quien lo resolvió (ver compensarBancoHoras). */
+  observaciones: string | null
+  /** Liquidación que pagó estas horas: no se pueden devolver al banco. */
+  liquidacionId?: number | null
+  /**
+   * Pendiente de alguien que ya se liquidó: una liquidación anterior al
+   * arreglo de la auditoría dejó estas horas fuera. No se pueden pagar por
+   * planilla; se registran como compensadas con una nota.
+   */
+  liquidadoSinIncluir: { liqId: number; fechaSalida: string } | null
 }
 
 export const pagarBancoHorasSchema = z.object({

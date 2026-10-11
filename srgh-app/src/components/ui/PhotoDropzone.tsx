@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ImagePlus, X } from 'lucide-react'
+import type { StorageContainer } from '@/lib/storage/types'
 import { validateUpload } from '@/lib/storage/validation'
 import { uploadValidationMessage } from '@/modules/storage/lib/storageErrors'
 
@@ -15,7 +16,22 @@ interface PhotoDropzoneProps {
   onClear: () => void
   disabled?: boolean
   className?: string
+  /**
+   * Contenedor contra el que se pre-valida (tamaño y tipos). Default: foto de
+   * empleado. El logo de la empresa usa LOGO_EMPRESA (2 MB).
+   */
+  container?: ImageContainer
+  /**
+   * `circle` para personas (recorta la foto); `square` para logos (la imagen
+   * entra entera, sin recortar, sobre fondo blanco).
+   */
+  shape?: 'circle' | 'square'
+  /** Nombre accesible del área: qué se está subiendo. */
+  label?: string
 }
+
+/** Contenedores de imagen que este uploader sabe pre-validar. */
+type ImageContainer = Extract<StorageContainer, 'FOTOS_EMPLEADO' | 'LOGO_EMPRESA'>
 
 const ACCEPTED_TYPES = 'image/jpeg,image/png,image/webp'
 
@@ -32,6 +48,9 @@ export function PhotoDropzone({
   onClear,
   disabled = false,
   className = '',
+  container = 'FOTOS_EMPLEADO',
+  shape = 'circle',
+  label = 'Subir foto del colaborador',
 }: PhotoDropzoneProps) {
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -55,9 +74,9 @@ export function PhotoDropzone({
   async function validateAndSelect(candidate: File) {
     setError(null)
     const bytes = new Uint8Array(await candidate.arrayBuffer())
-    const result = validateUpload(bytes, 'FOTOS_EMPLEADO')
+    const result = validateUpload(bytes, container)
     if (!result.ok) {
-      setError(uploadValidationMessage(result.error, 'FOTOS_EMPLEADO'))
+      setError(uploadValidationMessage(result.error, container))
       return
     }
     onSelect(candidate)
@@ -110,7 +129,7 @@ export function PhotoDropzone({
         role="button"
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled}
-        aria-label="Subir foto del colaborador"
+        aria-label={label}
         onClick={openPicker}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -126,18 +145,20 @@ export function PhotoDropzone({
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-dashed outline-none transition ${
+        className={`relative flex h-32 w-32 items-center justify-center overflow-hidden ${
+          shape === 'circle' ? 'rounded-full' : 'rounded-2xl'
+        } border-2 border-dashed outline-none transition ${
           dragging
             ? 'border-brand-500 bg-brand-50'
-            : 'border-slate-300 bg-slate-50 hover:border-slate-400'
+            : `border-slate-300 ${displayUrl && shape === 'square' ? 'bg-white' : 'bg-slate-50'} hover:border-slate-400`
         } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
       >
         {displayUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- object URL local o URL firmada, no un asset del build.
           <img
             src={displayUrl}
-            alt="Vista previa de la foto"
-            className="h-full w-full object-cover"
+            alt="Vista previa"
+            className={`h-full w-full ${shape === 'circle' ? 'object-cover' : 'object-contain p-2'}`}
           />
         ) : (
           <div className="flex flex-col items-center gap-1 px-2 text-center text-slate-400">

@@ -1,6 +1,6 @@
 'use client'
 
-import { deriveFrameTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
+import { deriveBrandTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
 import { APP_SHELL_ROOT_ID } from '@/components/layout/AppShell'
 
 /**
@@ -22,7 +22,7 @@ export function previewShellColors(colorAcento: string, colorSidebar: string) {
   const root = document.getElementById(APP_SHELL_ROOT_ID)
   if (!root) return
   const tokens = {
-    ...deriveFrameTokens(colorAcento),
+    ...deriveBrandTokens(colorAcento),
     ...deriveSidebarTokens(colorSidebar),
     '--page-bg': derivePageBackground(colorSidebar),
   }

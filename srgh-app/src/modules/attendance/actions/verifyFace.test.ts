@@ -1,16 +1,30 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { verifyFace } from './verifyFace'
 import { createClient } from '@/lib/supabase/server'
-import { requirePermission } from '@/lib/auth/require-permission'
+import { requireAnyPermission as requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
-import { encryptVector } from '@/modules/attendance/lib/face/faceCrypto'
+import { encryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
+import type { LivenessProof } from '@/modules/attendance/lib/face/livenessProof'
 import { verifyFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 import { FACE_EMBEDDING_DIM } from '@/modules/attendance/lib/face/model'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
-vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
+
+// Programacion, contratos y rostros se leen con el cliente admin (la cuenta
+// KIOSCO no puede leer esas tablas). El admin del test delega en el mismo
+// cliente simulado que devuelve createClient.
+let clienteActual: { from: (tabla: string) => unknown } | null = null
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({ from: (tabla: string) => clienteActual!.from(tabla) }),
+}))
+
+function setClient(client: unknown) {
+  clienteActual = client as { from: (tabla: string) => unknown }
+  mockCreateClient.mockResolvedValue(client as Awaited<ReturnType<typeof createClient>>)
+}
 const mockRequirePermission = vi.mocked(requirePermission)
 
 const KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)))
@@ -28,8 +42,27 @@ function vecAtDistance(d: number): number[] {
 
 const PROBE = vecAtDistance(0)
 
-async function encryptedProbe() {
-  return encryptVector(PROBE, KEY)
+const LIVE: LivenessProof = { method: 'textura', score: 0.98, samples: 6 }
+
+async function encryptedProbe(liveness: unknown = LIVE) {
+  return encryptFacePayload({ vector: PROBE, liveness }, KEY)
+}
+
+/**
+ * Los candidatos del reconocimiento salen de quien tiene turno HOY en la
+ * sucursal del kiosco, no de quien la tiene en su contrato.
+ */
+const PROGRAMACION = {
+  data: [10, 11].map((prg_empleado_id) => ({
+    prg_historial_laboral_id: prg_empleado_id - 9,
+    prg_empleado_id,
+    prg_sucursal_id: 100,
+    prg_es_dia_libre: false,
+    prg_es_feriado: false,
+    prg_hora_entrada_custom: null,
+    sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+  })),
+  error: null,
 }
 
 const HISTORIAL = {
@@ -81,9 +114,9 @@ describe('verifyFace (server action)', () => {
   })
 
   it('falla si el kiosco no tiene sucursal asignada', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: null }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [], error: null },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
@@ -92,10 +125,39 @@ describe('verifyFace (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'Este kiosco no tiene una sucursal asignada.' })
   })
 
+  it('cae al PIN si hoy no hay nadie con turno en esta sucursal', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
+    })
+    setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
+
+    const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
+
+    expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_empleado')
+  })
+
+  it('acota los candidatos a la sucursal del dia', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
+    })
+    setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
+
+    await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
+
+    const programacionCall = client.from.mock.results.find(
+      (_r, i) => client.from.mock.calls[i][0] === 'sgrh_programacion_semanal'
+    )!.value
+    expect(programacionCall.in).toHaveBeenCalledWith('prg_sucursal_id', [100])
+  })
+
   it('MATCH de alta confianza con vector identico, con ticket firmado valido', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],
@@ -115,9 +177,10 @@ describe('verifyFace (server action)', () => {
   })
 
   it('MATCH con tolerancia en la banda 0.4-0.5 (luz/angulo)', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.45) }],
@@ -134,9 +197,10 @@ describe('verifyFace (server action)', () => {
   })
 
   it('REQUIRE_PIN en la zona de incertidumbre 0.5-0.6', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.55) }],
@@ -152,7 +216,8 @@ describe('verifyFace (server action)', () => {
 
   it('DENIED sobre 0.6 y guarda el log de auditoria', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: PROGRAMACION,
       sgrh_historial_laboral: HISTORIAL,
       sgrh_biometria_empleado: {
         data: [{ bio_empleado_id: 11, bio_vector: vecAtDistance(0.8) }],
@@ -160,9 +225,7 @@ describe('verifyFace (server action)', () => {
       },
       sgrh_biometria_auditoria: { data: null, error: null },
     })
-    mockCreateClient.mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+    setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: 'tablet-1' })
 
@@ -183,13 +246,12 @@ describe('verifyFace (server action)', () => {
 
   it('sin vectores enrolados responde REQUIRE_PIN sin tocar la auditoria', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: PROGRAMACION,
       sgrh_historial_laboral: HISTORIAL,
       sgrh_biometria_empleado: { data: [], error: null },
     })
-    mockCreateClient.mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+    setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
@@ -198,9 +260,10 @@ describe('verifyFace (server action)', () => {
   })
 
   it('elige al empleado mas cercano cuando hay varios enrolados', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [
@@ -221,9 +284,10 @@ describe('verifyFace (server action)', () => {
   })
 
   it('ignora vectores corruptos o de otra dimension sin romperse', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: {
           data: [
@@ -241,9 +305,10 @@ describe('verifyFace (server action)', () => {
   })
 
   it('devuelve error generico si falla la carga de vectores', async () => {
-    mockCreateClient.mockResolvedValue(
+    setClient(
       createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
         sgrh_historial_laboral: HISTORIAL,
         sgrh_biometria_empleado: { data: null, error: { message: 'boom' } },
       }) as unknown as Awaited<ReturnType<typeof createClient>>
@@ -252,5 +317,92 @@ describe('verifyFace (server action)', () => {
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los datos biometricos.' })
+  })
+
+  /**
+   * SGRH-80. Estas pruebas son la red que evita que la prueba de vida vuelva a
+   * quedar desconectada sin que nadie lo note: no verifican que el chequeo
+   * FUNCIONE (de eso se encarga antispoof.test.ts) sino que este EXIGIDO. La
+   * ausencia de esa distincion fue lo que dejo pasar la regresion anterior.
+   */
+  describe('exigencia de prueba de vida', () => {
+    function conVectorCoincidente() {
+      setClient(
+        createSupabaseClientMock({
+          sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+          sgrh_programacion_semanal: PROGRAMACION,
+          sgrh_historial_laboral: HISTORIAL,
+          sgrh_biometria_empleado: {
+            data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],
+            error: null,
+          },
+        }) as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+    }
+
+    it('no emite ticket si el payload no trae prueba de vida', async () => {
+      conVectorCoincidente()
+
+      // Vector identico al enrolado: sin la guarda de vida esto seria un MATCH
+      // de confianza alta. Es exactamente el caso de la foto.
+      const sinPrueba = await encryptFacePayload({ vector: PROBE } as never, KEY)
+      const result = await verifyFace({ vector: sinPrueba, dispositivoId: null })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('no emite ticket si la prueba de vida viene nula', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({
+        vector: await encryptedProbe(null),
+        dispositivoId: null,
+      })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('rechaza una prueba de vida con metodo desconocido', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({
+        vector: await encryptedProbe({ method: 'inventado', ratio: 1, motion: 1 }),
+        dispositivoId: null,
+      })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('rechaza un puntaje fuera del rango 0..1', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({
+        vector: await encryptedProbe({ method: 'textura', score: 1.5, samples: 6 }),
+        dispositivoId: null,
+      })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('rechaza una prueba sin muestras que la respalden', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({
+        vector: await encryptedProbe({ method: 'textura', score: 0.99, samples: 0 }),
+        dispositivoId: null,
+      })
+
+      expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    })
+
+    it('emite ticket valido cuando la prueba de vida esta presente', async () => {
+      conVectorCoincidente()
+
+      const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok || result.status !== 'MATCH') throw new Error('esperaba MATCH')
+      await expect(verifyFaceTicket(result.ticket, 10, TICKET_SECRET)).resolves.toBe(true)
+    })
   })
 })

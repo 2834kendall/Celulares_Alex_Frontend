@@ -61,7 +61,7 @@ describe('<EmployeePhotoModal />', () => {
     expect(screen.getByRole('button', { name: /quitar foto/i })).toBeInTheDocument()
   })
 
-  it('elegir una foto habilita Guardar; al guardar llama setEmployeePhoto, refresca y cierra', async () => {
+  it('elegir una foto habilita Guardar; al guardar llama setEmployeePhoto y cierra', async () => {
     mockSetEmployeePhoto.mockResolvedValue({ ok: true, path: '1/empleados/10/x.jpg' })
     const onClose = vi.fn()
     const user = userEvent.setup()
@@ -79,7 +79,7 @@ describe('<EmployeePhotoModal />', () => {
     expect(empId).toBe(10)
     expect(formData.get('file')).toBeInstanceOf(File)
     expect(mockToastSuccess).toHaveBeenCalledWith('Foto actualizada.')
-    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(refresh).not.toHaveBeenCalled()
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -122,7 +122,7 @@ describe('<EmployeePhotoModal />', () => {
       expect(mockRemoveEmployeePhoto).toHaveBeenCalledWith(10)
     })
     expect(mockToastSuccess).toHaveBeenCalledWith('Foto eliminada.')
-    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(refresh).not.toHaveBeenCalled()
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 

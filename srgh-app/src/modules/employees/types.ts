@@ -73,16 +73,15 @@ export const crearEmpleadoSchema = z.object({
     .string({ error: 'La fecha de ingreso es obligatoria' })
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
 
-  emp_fecha_nacimiento: emptyToNull(
-    z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
-      .nullable()
-      .optional()
-  ),
+  // Obligatorios en el alta; en la edición no (ver editarEmpleadoSchema). La
+  // columna sigue siendo nullable: la obligatoriedad vive solo acá.
+  emp_fecha_nacimiento: z
+    .string({ error: 'La fecha de nacimiento es obligatoria' })
+    .min(1, 'La fecha de nacimiento es obligatoria')
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
 
   // Valores alineados al CHECK de la DB: emp_genero IN ('M','F','O').
-  emp_genero: emptyToNull(z.enum(['M', 'F', 'O']).nullable().optional()),
+  emp_genero: z.enum(['M', 'F', 'O'], { error: 'El género es obligatorio' }),
 
   emp_nacionalidad: z.preprocess(
     (value) => (value === '' ? undefined : value),
@@ -124,10 +123,21 @@ export type CrearEmpleadoInput = z.infer<typeof crearEmpleadoSchema>
 
 // ─── Schema de edición de empleado ───────────────────────────────────────────
 // Todos los campos son opcionales porque la edición puede ser parcial.
+//
+// Fecha de nacimiento y género vuelven a su forma opcional (vacío → null): son
+// obligatorios en el alta, pero hay fichas anteriores sin ellos, y exigirlos
+// acá bloquearía cualquier otro cambio sobre esas fichas hasta completarlos.
 
-export const editarEmpleadoSchema = crearEmpleadoSchema.partial() satisfies z.ZodType<
-  Omit<EmpleadoUpdate, 'emp_id' | 'emp_created_at' | 'emp_rostro_hash'>
->
+export const editarEmpleadoSchema = crearEmpleadoSchema.partial().extend({
+  emp_fecha_nacimiento: emptyToNull(
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
+      .nullable()
+      .optional()
+  ),
+  emp_genero: emptyToNull(z.enum(['M', 'F', 'O']).nullable().optional()),
+}) satisfies z.ZodType<Omit<EmpleadoUpdate, 'emp_id' | 'emp_created_at' | 'emp_rostro_hash'>>
 
 export type EditarEmpleadoInput = z.infer<typeof editarEmpleadoSchema>
 
@@ -197,10 +207,24 @@ export const datosPagoSchema = z
       })
     }
     // Que el IBAN pertenezca al banco elegido se verifica en el servidor
-    // (updateEmployee y la RPC), que es quien conoce sgrh_cat_bancos.ban_codigo.
-  }) satisfies z.ZodType<Omit<DatosPagoInsert, 'edp_id' | 'edp_empleado_id' | 'edp_created_at'>>
+    // (validateDatosPago), que es quien conoce sgrh_cat_bancos.ban_codigo.
+    //
+    // edp_cuenta_hmac queda fuera del schema a propósito: lo calcula el servidor
+    // a partir del número ya normalizado. Si viniera del formulario, el cliente
+    // podría desalinearlo del ciphertext y envenenar la detección de duplicados.
+  }) satisfies z.ZodType<
+  Omit<DatosPagoInsert, 'edp_id' | 'edp_empleado_id' | 'edp_created_at' | 'edp_cuenta_hmac'>
+>
 
 export type DatosPagoInput = z.infer<typeof datosPagoSchema>
+
+// El número de cuenta se guarda cifrado, así que la base no puede tener un
+// UNIQUE sobre él; la detección de cuentas repetidas se hace comparando el
+// índice ciego (HMAC) en validateDatosPago. Como una cuenta compartida es
+// legítima (cónyuges, por ejemplo) la detección no bloquea: devuelve
+// requiereConfirmacion, la UI pregunta, y el reenvío llega con este flag en
+// true. Vive fuera de datosPagoSchema porque no es una columna de la tabla.
+const confirmarCuentaDuplicada = z.boolean().optional()
 
 // ─── Schema de dirección ─────────────────────────────────────────────────────
 // Vive en sgrh_direcciones, tabla genérica compartida con empresas y sucursales.
@@ -240,6 +264,7 @@ export const editarFichaEmpleadoSchema = z.object({
   // Obligatoria: si se abre el formulario, se guarda una dirección válida.
   direccion: direccionSchema,
   datos_pago: datosPagoSchema.optional(),
+  confirmar_cuenta_duplicada: confirmarCuentaDuplicada,
 })
 
 export type EditarFichaEmpleadoInput = z.infer<typeof editarFichaEmpleadoSchema>
@@ -295,6 +320,52 @@ export const crearHistorialLaboralSchema = z.object({
 
 export type CrearHistorialLaboralInput = z.infer<typeof crearHistorialLaboralSchema>
 
+// ─── Schemas del CRUD de contratos (SGRH-90) ─────────────────────────────────
+// La lógica vive en las RPC (crear_contrato, editar_contrato,
+// terminar_contrato): estos schemas solo filtran input basura antes de ir a
+// la base.
+
+// Lo único que no se edita es la FECHA DE INICIO: moverla dejaría las marcas,
+// los turnos y el contrato anterior apuntando a un período que ya no existe.
+// Se elige al crear el contrato y ahí se queda.
+//
+// El resto se corrige siempre, haya pasado por planilla o no: los períodos ya
+// calculados conservan sus montos gracias a la foto del contrato en
+// sgrh_nomina_detalle.
+//
+// La sucursal SÍ está acá, y no es un traslado: desde SGRH-84 la sucursal del
+// contrato es la sucursal BASE (en qué planilla se paga y quién ve el
+// expediente), mientras que dónde trabaja la persona cada día lo decide
+// prg_sucursal_id en la programación semanal. Cambiar la base no mueve la
+// historia — marcas, turnos, períodos y evaluaciones llevan su propia
+// sucursal. La RPC la rechaza si hay una quincena sin pagar.
+export const editarContratoSchema = crearHistorialLaboralSchema.omit({
+  lab_fecha_inicio: true,
+})
+
+export type EditarContratoInput = z.infer<typeof editarContratoSchema>
+
+export const terminarContratoSchema = z.object({
+  // Último día trabajado. Puede ser futura (preaviso): la RPC la deja
+  // programada y la persona sigue vigente hasta ese día.
+  lab_fecha_fin: z
+    .string({ error: 'El último día de trabajo es obligatorio' })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
+
+  lab_motivo_salida_id: z
+    .number({ error: 'El motivo de salida es obligatorio' })
+    .int()
+    .positive('Seleccione un motivo de salida válido'),
+
+  lab_recontratable: z.boolean(),
+
+  lab_observaciones_salida: emptyToNull(
+    z.string().max(300, 'Máximo 300 caracteres').nullable().optional()
+  ),
+})
+
+export type TerminarContratoInput = z.infer<typeof terminarContratoSchema>
+
 // ─── Schema de creación de usuario del sistema (paso 3 del onboarding) ───────
 // El alta real la hace supabase.auth.admin.inviteUserByEmail; aquí solo se
 // validan los datos que el administrador captura en el wizard.
@@ -319,13 +390,27 @@ export type CrearUsuarioEmpleadoInput = z.infer<typeof crearUsuarioEmpleadoSchem
 // Combina empleado + contratación (+ usuario opcional) en un único formulario
 // de alta. El paso de usuario solo aplica si el administrador lo activa.
 
-export const onboardingEmpleadoSchema = z.object({
-  empleado: crearEmpleadoSchema,
-  direccion: direccionSchema,
-  contratacion: crearHistorialLaboralSchema,
-  datos_pago: datosPagoSchema.optional(),
-  usuario: crearUsuarioEmpleadoSchema.optional(),
-})
+export const onboardingEmpleadoSchema = z
+  .object({
+    empleado: crearEmpleadoSchema,
+    direccion: direccionSchema,
+    contratacion: crearHistorialLaboralSchema,
+    datos_pago: datosPagoSchema.optional(),
+    usuario: crearUsuarioEmpleadoSchema.optional(),
+    confirmar_cuenta_duplicada: confirmarCuentaDuplicada,
+  })
+  // La misma regla que aplican las RPC crear_contrato y editar_contrato: un
+  // contrato no puede empezar antes de que la persona entre a la empresa.
+  // Las fechas van como 'YYYY-MM-DD', así que se comparan como texto.
+  .superRefine((data, ctx) => {
+    if (data.contratacion.lab_fecha_inicio < data.empleado.emp_fecha_ingreso_original) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['contratacion', 'lab_fecha_inicio'],
+        message: 'El contrato no puede empezar antes del ingreso a la empresa',
+      })
+    }
+  })
 
 export type OnboardingEmpleadoInput = z.infer<typeof onboardingEmpleadoSchema>
 
@@ -335,6 +420,13 @@ export type OnboardingEmpleadoInput = z.infer<typeof onboardingEmpleadoSchema>
 export interface CatalogoItem {
   id: number
   nombre: string
+}
+
+/** Motivo de salida, con lo que el formulario de terminar muestra de cada uno. */
+export interface MotivoSalidaItem extends CatalogoItem {
+  generaCesantia: boolean
+  generaPreaviso: boolean
+  notaLegal: string | null
 }
 
 // ─── View Model — Catálogo territorial ───────────────────────────────────────
@@ -386,24 +478,50 @@ export type EmpleadoListItem = Pick<
 // ─── View Model — Detalle de empleado ────────────────────────────────────────
 // DTO para la página de perfil /employees/[id].
 
+/** Un contrato (fila de sgrh_historial_laboral) con sus catálogos resueltos. */
+export type ContratoDetalle = HistorialLaboralRow & {
+  puesto_nombre: string
+  sucursal_nombre: string
+  tipo_contrato_nombre: string
+  tipo_jornada_nombre: string
+  // null en el vigente sin terminación, y en uno cerrado sin motivo registrado.
+  motivo_salida_nombre: string | null
+  // Tiene fila en sgrh_liquidaciones. false también para quien no tiene
+  // NOMINA_READ (la RLS oculta la liquidación): la UI solo lo usa con permisos
+  // que la ven.
+  liquidado: boolean
+  // Ya aparece en alguna planilla. Ya NO cierra la ventana de edición (los
+  // períodos conservan sus montos por la foto del contrato); solo sirve para
+  // avisar desde cuándo aplica el cambio. Se calcula para el vigente; en los
+  // cerrados es siempre false.
+  en_planilla: boolean
+  // Tiene una fila de planilla sin pagar. Bloquea SOLO el cambio de sucursal
+  // base: moverla a medio pagar dejaría la fila en la planilla de la sucursal
+  // vieja y la nueva la volvería a crear. Igual que en_planilla, solo el
+  // vigente.
+  quincena_sin_pagar: boolean
+}
+
 export type EmpleadoDetalle = EmpleadoRow & {
   tipo_identificacion_nombre: string
   // URL firmada (SGRH-67) de emp_foto_path, null sin foto. Avatar cae a
   // iniciales si es null o si el firmado falló.
   foto_url: string | null
-  historial_activo:
-    | (HistorialLaboralRow & {
-        puesto_nombre: string
-        sucursal_nombre: string
-        tipo_contrato_nombre: string
-        tipo_jornada_nombre: string
-      })
-    | null
+  historial_activo: ContratoDetalle | null
+  // Todos los contratos del empleado en la empresa, del más reciente al más
+  // antiguo, vigente incluido. Los cerrados son el historial de contrataciones.
+  historial_completo: ContratoDetalle[]
   // null cuando el empleado no tiene datos de pago registrados O cuando el rol
   // del usuario no alcanza para verlos (la RLS de la tabla oculta las filas).
+  //
+  // edp_numero_cuenta llega DESCIFRADO. Ojo con cuenta_ilegible: distingue "no
+  // hay cuenta registrada" de "hay una cuenta cifrada que no se pudo descifrar".
+  // Son estados distintos y colapsarlos pierde datos — un formulario en blanco
+  // que se guarda escribe null encima del ciphertext, irreversible.
   datos_pago:
     | (Pick<DatosPagoRow, 'edp_banco_id' | 'edp_tipo_cuenta' | 'edp_numero_cuenta'> & {
         banco_nombre: string | null
+        cuenta_ilegible: boolean
       })
     | null
   // null solo para empleados creados antes de que el formulario capturara
@@ -486,4 +604,37 @@ export interface DocumentoPendiente {
   key: string
   file: File
   metadata: DocumentoMetadataInput
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo de puestos (se administra desde Configuración → Empleados, SGRH-92)
+// ---------------------------------------------------------------------------
+
+export type PuestoRow = Database['public']['Tables']['sgrh_cat_puestos']['Row']
+
+const optionalPositiveSalary = z
+  .string()
+  .optional()
+  .refine(
+    (val) =>
+      val === undefined || val.trim() === '' || (Number.isFinite(Number(val)) && Number(val) > 0),
+    { message: 'Debe ser un numero positivo.' }
+  )
+
+export const puestoSchema = z.object({
+  pue_nombre: z
+    .string('El nombre es requerido.')
+    .trim()
+    .min(2, 'El nombre es requerido.')
+    .max(150, 'Maximo 150 caracteres.'),
+  pue_descripcion: z.string().trim().max(500, 'Maximo 500 caracteres.').optional(),
+  pue_salario_minimo_referencia: optionalPositiveSalary,
+  pue_activo: z.boolean().default(true),
+})
+
+export type PuestoInput = z.input<typeof puestoSchema>
+
+/** Convierte el input string (o vacio) al numero nullable que espera la base. */
+export function parseOptionalSalary(value: string | undefined): number | null {
+  return value === undefined || value.trim() === '' ? null : Number(value)
 }

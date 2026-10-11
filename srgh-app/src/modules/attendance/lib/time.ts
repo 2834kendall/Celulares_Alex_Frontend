@@ -41,6 +41,14 @@ export function formatInCostaRica(date: Date): string {
   return `${year}-${month}-${day} ${hour}:${minute}:${second}`
 }
 
+/**
+ * Instante (epoch ms) de una hora de pared de Costa Rica "YYYY-MM-DD HH:mm:ss".
+ * El desfase es siempre -06:00 (Costa Rica no tiene horario de verano).
+ */
+export function costaRicaWallTimeToEpochMs(fechaHora: string): number {
+  return Date.parse(`${fechaHora.replace(' ', 'T')}-06:00`)
+}
+
 /** El "ahora" de Costa Rica, listo para insertarse en mar_fecha_hora. */
 export function nowInCostaRica(): string {
   return formatInCostaRica(new Date())
@@ -121,4 +129,24 @@ export function monthBoundsInCostaRica(dateISO: string): { start: string; end: s
     start: `${yearStr}-${monthStr}-01`,
     end: `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`,
   }
+}
+
+/**
+ * Una cantidad de minutos escrita para leerse: "45 min", "1 h", "12 h 8 min".
+ *
+ * Pasada la hora, los minutos sueltos dejan de decir algo: "+728 min" hay que
+ * dividirlo mentalmente para entender que son doce horas. Con `compacta` se
+ * abrevia ("12 h 8 m") para los chips de la tabla, donde el ancho manda.
+ */
+export function formatMinutes(minutes: number, compacta = false): string {
+  const total = Math.abs(minutes)
+
+  if (total < 60) return `${total} ${compacta ? 'm' : 'min'}`
+
+  const horas = Math.floor(total / 60)
+  const resto = total % 60
+
+  if (resto === 0) return `${horas} h`
+
+  return `${horas} h ${resto} ${compacta ? 'm' : 'min'}`
 }

@@ -20,6 +20,11 @@ const baseProps = {
   initialDate: '2026-01-05',
   initialStartTime: '08:00',
   initialEndTime: '17:00',
+  sucursales: [
+    { id: 100, nombre: 'Sucursal Central' },
+    { id: 200, nombre: 'Sucursal Norte' },
+  ],
+  initialBranchId: 100,
   onClose: vi.fn(),
   onConfirm: vi.fn(),
 }
@@ -70,7 +75,27 @@ describe('<CustomHoursModal />', () => {
       breakStart: null,
       breakEnd: null,
       applyToDates: ['2026-01-05'],
+      branchId: 100,
     })
+  })
+
+  it('envia la sucursal elegida en el selector', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined)
+    render(<CustomHoursModal {...baseProps} onConfirm={onConfirm} />)
+
+    await userEvent.selectOptions(
+      screen.getByLabelText('Sucursal (aplica a todos los días marcados)'),
+      '200'
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ branchId: 200 }))
+  })
+
+  it('no muestra el selector de sucursal si solo hay una', () => {
+    render(<CustomHoursModal {...baseProps} sucursales={[baseProps.sucursales[0]]} />)
+
+    expect(screen.queryByLabelText('Sucursal (aplica a todos los días marcados)')).toBeNull()
   })
 
   it('envia los valores de almuerzo cuando el periodo esta activado', async () => {

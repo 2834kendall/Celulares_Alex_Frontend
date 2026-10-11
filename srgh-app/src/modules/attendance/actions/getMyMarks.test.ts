@@ -78,6 +78,8 @@ describe('getMyMarks (server action)', () => {
     expect(result.data[0]).toEqual({
       date: DATE,
       entrada: { time: '08:05' },
+      inicioReceso: null,
+      finReceso: null,
       inicioAlmuerzo: null,
       finAlmuerzo: null,
       salida: null,
@@ -85,6 +87,8 @@ describe('getMyMarks (server action)', () => {
     expect(result.data[1]).toEqual({
       date: '2026-07-20',
       entrada: { time: '08:00' },
+      inicioReceso: null,
+      finReceso: null,
       inicioAlmuerzo: null,
       finAlmuerzo: null,
       salida: { time: '17:00' },
@@ -115,6 +119,8 @@ describe('getMyMarks (server action)', () => {
     expect(result.data[0]).toEqual({
       date: '2026-07-20',
       entrada: { time: '08:00' },
+      inicioReceso: null,
+      finReceso: null,
       inicioAlmuerzo: null,
       finAlmuerzo: null,
       salida: { time: '17:00' },

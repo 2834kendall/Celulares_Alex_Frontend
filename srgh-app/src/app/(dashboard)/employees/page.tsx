@@ -53,13 +53,20 @@ export default async function EmployeesPage() {
     canManageUsers ? loadUsersTab() : Promise.resolve(null),
   ])
 
+  const header = <EmployeesHeader canWrite={canWrite} canAccessRecruitment={canAccessRecruitment} />
+
   if (!employeesResult.ok) {
-    return <Alert size="md">{employeesResult.error}</Alert>
+    return (
+      <div className="min-w-0 space-y-4">
+        {header}
+        <Alert size="md">{employeesResult.error}</Alert>
+      </div>
+    )
   }
 
   return (
     <div className="min-w-0 space-y-4">
-      <EmployeesHeader canWrite={canWrite} canAccessRecruitment={canAccessRecruitment} />
+      {header}
       <EmployeeTabs
         empleadosContent={<EmployeesList employees={employeesResult.data} canWrite={canWrite} />}
         usuariosContent={usuariosContent}

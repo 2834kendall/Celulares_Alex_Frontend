@@ -1,14 +1,21 @@
 'use client'
 
-import { useId } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { useId, useRef } from 'react'
+import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { useDialog } from '@/hooks/useDialog'
 import { Button } from '@/components/ui/Button'
 
 interface ConfirmDialogProps {
   title: string
   message: string
   confirmLabel?: string
+  /**
+   * 'danger' (por defecto) para borrar o deshacer; 'primary' para confirmar
+   * una acción que no destruye nada (ej. registrar un pago), que en rojo se
+   * leía como un error.
+   */
+  tone?: 'danger' | 'primary'
   onCancel: () => void
   onConfirm: () => void
 }
@@ -25,12 +32,16 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = 'Eliminar',
+  tone = 'danger',
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
   useBodyScrollLock()
   const titleId = useId()
   const messageId = useId()
+  const panelRef = useRef<HTMLDivElement>(null)
+  // Escape = Cancelar: nunca confirma una accion destructiva por teclado.
+  useDialog(panelRef, onCancel)
 
   return (
     <div
@@ -40,11 +51,21 @@ export function ConfirmDialog({
       aria-labelledby={titleId}
       aria-describedby={messageId}
     >
-      <div className="animate-fade-in w-full max-w-[19rem] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/5">
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="animate-fade-in w-full max-w-[19rem] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/5 outline-none"
+      >
         <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-          </div>
+          {tone === 'danger' ? (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            </div>
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            </div>
+          )}
           <div className="min-w-0">
             <h3 id={titleId} className="text-sm font-bold text-slate-900">
               {title}
@@ -60,7 +81,7 @@ export function ConfirmDialog({
           <Button variant="secondary" size="md" onClick={onCancel} autoFocus>
             Cancelar
           </Button>
-          <Button variant="danger" size="md" onClick={onConfirm}>
+          <Button variant={tone} size="md" onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </div>

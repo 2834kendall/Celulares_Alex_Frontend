@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { buildPlanillaTemplate } from '@/modules/payroll/lib/planillaExcel'
-import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
+import { getEmpleadosActivos, getFilasGuardadas } from '@/modules/payroll/lib/planillaData'
+import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import type { ConceptoPlanillaColumna } from '@/modules/payroll/lib/planilla'
 
@@ -13,6 +14,8 @@ interface PeriodoRow {
   npe_periodo_anio: number
   npe_quincena: number
   npe_sucursal_id: number
+  npe_fecha_inicio_periodo: string | null
+  npe_fecha_fin_periodo: string | null
   sgrh_sucursales: { suc_nombre: string | null } | null
 }
 
@@ -42,6 +45,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       npe_periodo_anio,
       npe_quincena,
       npe_sucursal_id,
+      npe_fecha_inicio_periodo,
+      npe_fecha_fin_periodo,
       sgrh_sucursales ( suc_nombre )
     `
     )
@@ -55,7 +60,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'El periodo no existe o no es visible.' }, { status: 404 })
   }
 
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id)
+  // Incluye a quien ya tiene fila en el periodo aunque su contrato haya
+  // terminado después: si no, su fila trababa la subida (ver getEmpleadosActivos).
+  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+    periodoId,
+    finPeriodo: periodo.npe_fecha_fin_periodo,
+  })
   if (!empleadosResult.ok) {
     return NextResponse.json({ error: empleadosResult.error }, { status: 500 })
   }
@@ -73,7 +83,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   // o deducción) se convierte en una columna editable de la plantilla.
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
-    .select('con_id, con_codigo, con_nombre, con_tipo_calculo, con_porcentaje')
+    .select(
+      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje, con_rebaja_salario'
+    )
     .eq('con_activo', true)
     .returns<ConceptoPlanillaColumna[]>()
 
@@ -93,6 +105,40 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     )
   }
 
+  // Horas reales de la quincena, a partir de las marcas del kiosco. Si el
+  // periodo no tiene fechas o la lectura falla, la plantilla sale igual pero
+  // en ₡0 (sin horas programadas el cumplimiento es 0): dejar al encargado sin
+  // planilla seria peor, y el cero salta a la vista al revisarla.
+  const conFechas = periodo.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo
+  const horasResult = conFechas
+    ? await getHorasDelPeriodo(supabase, {
+        historialLaboralIds: empleadosResult.data.map((e) => e.labId),
+        fechaInicio: periodo.npe_fecha_inicio_periodo!,
+        fechaFin: periodo.npe_fecha_fin_periodo!,
+      })
+    : null
+
+  const horasPorLab = horasResult?.ok ? horasResult.data : null
+
+  // Lo que ya está guardado en el periodo: comisiones, préstamos y BASE
+  // corregidos a mano vuelven en la plantilla en vez de venir en 0.
+  const guardadas = await getFilasGuardadas(supabase, periodoId)
+  if (!guardadas.ok) {
+    return NextResponse.json({ error: guardadas.error }, { status: 500 })
+  }
+
+  const empleados = empleadosResult.data.map((empleado) => {
+    const totales = horasPorLab?.get(empleado.labId)
+    const guardado = guardadas.data.get(empleado.labId)
+    return {
+      ...empleado,
+      ...(guardado ? { guardado } : {}),
+      ...(totales
+        ? { horas: { lectura: totales, diasPorRevisar: totales.diasQueBloquean.length } }
+        : {}),
+    }
+  })
+
   const titulo = `Planilla — ${periodoLabel(
     periodo.npe_periodo_mes,
     periodo.npe_periodo_anio,
@@ -100,7 +146,20 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   )}`
   const subtitulo = `Sucursal: ${periodo.sgrh_sucursales?.suc_nombre ?? '—'} · Montos por quincena en colones`
 
-  const buffer = await buildPlanillaTemplate({ titulo, subtitulo }, empleadosResult.data, conceptos)
+  const buffer = await buildPlanillaTemplate(
+    {
+      titulo,
+      subtitulo,
+      periodoId,
+      quincena: {
+        anio: periodo.npe_periodo_anio,
+        mes: periodo.npe_periodo_mes,
+        quincena: periodo.npe_quincena,
+      },
+    },
+    empleados,
+    conceptos
+  )
 
   const filename = `planilla-${periodo.npe_periodo_anio}-${String(periodo.npe_periodo_mes).padStart(2, '0')}-q${periodo.npe_quincena}.xlsx`
 

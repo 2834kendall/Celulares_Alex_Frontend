@@ -45,6 +45,21 @@ Si cambian los permisos de un rol en la base de datos, el usuario debe cerrar se
 
 Completar `.env.local` con las keys de Supabase Dashboard → Settings → API.
 
+Para que el comprobante de pago se le envíe por correo al empleado al marcar su pago,
+agregar también la cuenta de correo de la empresa (sin esto el pago se marca igual,
+pero no se envía nada):
+
+```bash
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=465
+   SMTP_USER=planillas@empresa.com
+   SMTP_PASS=contraseña-de-aplicacion
+   SMTP_FROM="Celulares Alex <planillas@empresa.com>"
+```
+
+Con Gmail, `SMTP_PASS` es una contraseña de aplicación (Cuenta de Google → Seguridad →
+Verificación en dos pasos → Contraseñas de aplicaciones), no la contraseña de la cuenta.
+
 4. (Opcional) Regenerar tipos de la base de datos si hubo cambios de schema:
 
 ```bash

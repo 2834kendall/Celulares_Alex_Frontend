@@ -3,7 +3,6 @@ import {
   averageScore,
   classifyScore,
   formatPeriod,
-  initialsOf,
   parseNotes,
   scoreColor,
   scoreTint,
@@ -93,12 +92,5 @@ describe('serializeNotes / parseNotes', () => {
 describe('formatPeriod', () => {
   it('une el rango de fechas evaluado', () => {
     expect(formatPeriod('2026-06-01', '2026-06-30')).toBe('2026-06-01 a 2026-06-30')
-  })
-})
-
-describe('initialsOf', () => {
-  it('toma las iniciales de los dos primeros nombres', () => {
-    expect(initialsOf('Carlos Madrigal Chaves')).toBe('CM')
-    expect(initialsOf('valeria')).toBe('V')
   })
 })

@@ -20,39 +20,65 @@ describe('getSucursalActual', () => {
     vi.clearAllMocks()
   })
 
-  it('devuelve null sin consultar si no hay usr_id', async () => {
-    expect(await getSucursalActual(null)).toBeNull()
-    expect(await getSucursalActual(undefined)).toBeNull()
+  it('devuelve vacio sin consultar si no hay usr_id', async () => {
+    expect(await getSucursalActual(null)).toEqual([])
+    expect(await getSucursalActual(undefined)).toEqual([])
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 
-  it('devuelve el nombre de la sucursal asignada', async () => {
+  it('devuelve el nombre de la unica sucursal asignada', async () => {
     mockAsignacion({
-      data: { uer_sucursal_id: 2, sgrh_sucursales: { suc_nombre: 'PZ2' } },
+      data: [{ uer_sucursal_id: 2, sgrh_sucursales: { suc_nombre: 'PZ2' } }],
       error: null,
     })
 
-    expect(await getSucursalActual(10)).toBe('PZ2')
+    expect(await getSucursalActual(10)).toEqual(['PZ2'])
   })
 
-  it('devuelve null cuando el usuario no tiene sucursal fija (p. ej. ADMIN)', async () => {
+  it('devuelve los nombres de varias sucursales asignadas', async () => {
     mockAsignacion({
-      data: { uer_sucursal_id: null, sgrh_sucursales: null },
+      data: [
+        { uer_sucursal_id: 2, sgrh_sucursales: { suc_nombre: 'PZ2' } },
+        { uer_sucursal_id: 3, sgrh_sucursales: { suc_nombre: 'Escazu' } },
+      ],
       error: null,
     })
 
-    expect(await getSucursalActual(10)).toBeNull()
+    expect(await getSucursalActual(10)).toEqual(['PZ2', 'Escazu'])
   })
 
-  it('devuelve null si la consulta falla', async () => {
+  it('devuelve vacio cuando el usuario no tiene sucursal fija (p. ej. ADMIN)', async () => {
+    mockAsignacion({
+      data: [{ uer_sucursal_id: null, sgrh_sucursales: null }],
+      error: null,
+    })
+
+    expect(await getSucursalActual(10)).toEqual([])
+  })
+
+  it('devuelve vacio si CUALQUIER fila activa opera a nivel empresa', async () => {
+    // Sin restriccion prevalece: no tiene sentido mostrar "sucursal A" si esa
+    // misma fila tambien ve toda la empresa por otra asignacion.
+    mockAsignacion({
+      data: [
+        { uer_sucursal_id: 2, sgrh_sucursales: { suc_nombre: 'PZ2' } },
+        { uer_sucursal_id: null, sgrh_sucursales: null },
+      ],
+      error: null,
+    })
+
+    expect(await getSucursalActual(10)).toEqual([])
+  })
+
+  it('devuelve vacio si la consulta falla', async () => {
     mockAsignacion({ data: null, error: { message: 'boom' } })
 
-    expect(await getSucursalActual(10)).toBeNull()
+    expect(await getSucursalActual(10)).toEqual([])
   })
 
-  it('devuelve null si no hay asignación activa', async () => {
-    mockAsignacion({ data: null, error: null })
+  it('devuelve vacio si no hay asignacion activa', async () => {
+    mockAsignacion({ data: [], error: null })
 
-    expect(await getSucursalActual(10)).toBeNull()
+    expect(await getSucursalActual(10)).toEqual([])
   })
 })

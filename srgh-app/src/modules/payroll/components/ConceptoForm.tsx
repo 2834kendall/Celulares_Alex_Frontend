@@ -36,13 +36,29 @@ const TIPO_CALCULO_LABELS: Record<TipoCalculoConcepto, string> = {
   monto_manual_ingreso: 'Monto manual — suma al bruto (ej. Comisión)',
   monto_manual_deduccion: 'Monto manual — resta del neto (ej. préstamo)',
   porcentaje_deduccion_bruto: '% del salario bruto — se resta (ej. CCSS obrera)',
+  porcentaje_patronal_bruto: '% del salario bruto — lo paga la empresa (ej. CCSS patronal)',
   horas_extra_automatico: 'Horas extra automáticas (el sistema las calcula)',
 }
 
 const TIPOS_CON_PORCENTAJE = new Set<TipoCalculoConcepto>([
   'porcentaje_deduccion_bruto',
+  'porcentaje_patronal_bruto',
   'horas_extra_automatico',
 ])
+
+const PORCENTAJE_PLACEHOLDER: Partial<Record<TipoCalculoConcepto, string>> = {
+  porcentaje_deduccion_bruto: 'ej. 10.83',
+  porcentaje_patronal_bruto: 'ej. 14.83',
+  horas_extra_automatico: 'ej. 150 (tiempo y medio)',
+}
+
+const PORCENTAJE_AYUDA: Partial<Record<TipoCalculoConcepto, string>> = {
+  porcentaje_deduccion_bruto: 'Porcentaje del salario bruto que se le rebaja al trabajador.',
+  porcentaje_patronal_bruto:
+    'Porcentaje del salario bruto que paga la empresa por encima del salario. No se le rebaja a nadie y no cambia el salario neto: sirve para saber cuánto cuesta realmente la planilla.',
+  horas_extra_automatico:
+    'Multiplicador sobre el salario por hora de las horas que superen el tope normal (100% = una vez, 150% = tiempo y medio).',
+}
 
 export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
@@ -88,7 +104,11 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
           con_tipo: 'ingreso',
           con_tipo_calculo: 'monto_manual_ingreso',
           con_porcentaje: null,
-          con_afecta_salario_bruto: false,
+          // Un ingreso nuevo es salario mientras no se diga lo contrario: lo
+          // raro es el viático. Con el valor anterior (false) un bono creado
+          // desde acá se pagaba después de las deducciones y no contaba para
+          // el aguinaldo, sin que nadie lo hubiera pedido.
+          con_afecta_salario_bruto: true,
           con_afecta_base_ccss: true,
           con_formula_base: '',
           con_activo: true,
@@ -202,41 +222,44 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
             aria-invalid={!!errors.con_porcentaje}
             {...register('con_porcentaje', { valueAsNumber: true })}
             className={INPUT}
-            placeholder={
-              tipoCalculo === 'porcentaje_deduccion_bruto'
-                ? 'ej. 10.83'
-                : 'ej. 150 (tiempo y medio)'
-            }
+            placeholder={PORCENTAJE_PLACEHOLDER[tipoCalculo] ?? ''}
           />
-          <p className="mt-1 text-[11px] text-slate-400">
-            {tipoCalculo === 'porcentaje_deduccion_bruto'
-              ? 'Porcentaje del salario bruto que se resta.'
-              : 'Multiplicador sobre el salario por hora de las horas que superen el tope normal (100% = una vez, 150% = tiempo y medio).'}
-          </p>
+          <p className="mt-1 text-[11px] text-slate-400">{PORCENTAJE_AYUDA[tipoCalculo] ?? ''}</p>
           {errors.con_porcentaje && <p className={FIELD_ERROR}>{errors.con_porcentaje.message}</p>}
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
-          <input
-            type="checkbox"
-            disabled={isSubmitting}
-            {...register('con_afecta_salario_bruto')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-          />
-          Afecta el salario bruto
-        </label>
+        <div>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+            <input
+              type="checkbox"
+              disabled={isSubmitting}
+              {...register('con_afecta_salario_bruto')}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            Afecta el salario bruto
+          </label>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Destildalo solo si no es salario (viáticos): se paga después de las deducciones y no
+            cuenta para el aguinaldo ni la cesantía.
+          </p>
+        </div>
 
-        <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
-          <input
-            type="checkbox"
-            disabled={isSubmitting}
-            {...register('con_afecta_base_ccss')}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-          />
-          Afecta la base de CCSS
-        </label>
+        <div>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+            <input
+              type="checkbox"
+              disabled={isSubmitting}
+              {...register('con_afecta_base_ccss')}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            Afecta la base de CCSS
+          </label>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Si está tildado, el monto entra en la base sobre la que se calcula el rebajo de la CCSS.
+          </p>
+        </div>
       </div>
 
       {isEditing && (

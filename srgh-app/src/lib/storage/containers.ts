@@ -36,6 +36,29 @@ export const CONTAINERS: Readonly<Record<StorageContainer, ContainerConfig>> = {
       'image/png': 'png',
     },
   },
+  // Documentos del candidato (SGRH-61): CV, cédula, referencias, títulos.
+  // Mismos límites que DOCUMENTOS_EMPLEADO, mismo motivo (sin SVG, sin
+  // inline — solo descarga forzada).
+  CV_CANDIDATO: {
+    bucket: 'cv-candidatos',
+    maxBytes: 10 * 1024 * 1024,
+    allowedMimeTypes: {
+      'application/pdf': 'pdf',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+    },
+  },
+  // Logo de la empresa (SGRH-92): se muestra en el menú de toda la app, así
+  // que imágenes chicas. Sin SVG, como en todo contenedor.
+  LOGO_EMPRESA: {
+    bucket: 'logos-empresa',
+    maxBytes: 2 * 1024 * 1024,
+    allowedMimeTypes: {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+    },
+  },
 } as const
 
 // ─── TTL de URLs firmadas (segundos) — decisión consciente, no números sueltos ─

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { ProfileInfo } from '@/modules/auth/components/ProfileInfo'
 import { getMyMarks } from '@/modules/attendance/actions/getMyMarks'
 import { MyAttendanceHistory } from '@/modules/attendance/components/MyAttendanceHistory'
@@ -19,6 +20,11 @@ export default async function ProfilePage() {
 
   return (
     <div className="space-y-6">
+      {/* Mismo ancho que las dos tarjetas (centradas en max-w-2xl), para que el
+          titulo arranque alineado con ellas y no pegado al borde del contenido. */}
+      <div className="mx-auto max-w-2xl">
+        <PageHeader title="Mi perfil" />
+      </div>
       <ProfileInfo
         email={typeof claims?.email === 'string' ? claims.email : 'Usuario autenticado'}
         rol={typeof meta.rol === 'string' ? meta.rol : null}

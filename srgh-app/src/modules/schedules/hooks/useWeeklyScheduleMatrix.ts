@@ -113,7 +113,7 @@ export function useWeeklyScheduleMatrix({
     const result = await assignCustomScheduleBulk({
       employmentHistoryId: row.employmentHistoryId,
       employeeId: row.employeeId,
-      branchId: row.branchId,
+      branchId: values.branchId,
       days,
       customStartTime: values.startTime,
       customEndTime: values.endTime,
@@ -125,6 +125,46 @@ export function useWeeklyScheduleMatrix({
 
     setSavingCell(null)
     setCustomModalFor(null)
+
+    if (!result.ok) {
+      setServerError(result.error)
+    }
+  }
+
+  // Cambia solo la sucursal de una celda ya asignada, conservando el horario actual.
+  async function handleBranchChange(
+    row: EmployeeWeekRowWithAusencia,
+    assignment: DayAssignmentWithAusencia,
+    branchId: number
+  ) {
+    // Sin asignacion aun no hay sucursal que cambiar; el dia usa la de casa.
+    if (!canWrite || !assignment.assignmentId || branchId === assignment.branchId) {
+      return
+    }
+
+    setServerError(null)
+    const cellKey = `${row.employmentHistoryId}-${assignment.date}`
+    setSavingCell(cellKey)
+
+    const isCustom = Boolean(assignment.customStartTime && assignment.customEndTime)
+
+    const result = await assignDaySchedule({
+      assignmentId: assignment.assignmentId,
+      employmentHistoryId: row.employmentHistoryId,
+      employeeId: row.employeeId,
+      branchId,
+      date: assignment.date,
+      scheduleId: assignment.isDayOff || isCustom ? null : assignment.scheduleId,
+      isDayOff: assignment.isDayOff,
+      customStartTime: isCustom ? assignment.customStartTime : undefined,
+      customEndTime: isCustom ? assignment.customEndTime : undefined,
+      customLunchStart: isCustom ? assignment.customLunchStart : undefined,
+      customLunchEnd: isCustom ? assignment.customLunchEnd : undefined,
+      customBreakStart: isCustom ? assignment.customBreakStart : undefined,
+      customBreakEnd: isCustom ? assignment.customBreakEnd : undefined,
+    })
+
+    setSavingCell(null)
 
     if (!result.ok) {
       setServerError(result.error)
@@ -178,7 +218,11 @@ export function useWeeklyScheduleMatrix({
       assignmentId: assignment.assignmentId,
       employmentHistoryId: row.employmentHistoryId,
       employeeId: row.employeeId,
-      branchId: row.branchId,
+      // La sucursal DEL DÍA, no la de casa: cambiarle el horario a un día
+      // que se movió a otra sucursal (cubrir un turno) lo devolvía a la de
+      // casa sin avisar, y el kiosco donde iba a trabajar ya no lo dejaba
+      // marcar. Un día sin fila ya trae la sucursal de casa.
+      branchId: assignment.branchId,
       date: assignment.date,
       scheduleId,
       isDayOff: isFreeDay,
@@ -202,5 +246,6 @@ export function useWeeklyScheduleMatrix({
     closeCustomModal,
     handleCustomConfirm,
     handleAssignmentChange,
+    handleBranchChange,
   }
 }

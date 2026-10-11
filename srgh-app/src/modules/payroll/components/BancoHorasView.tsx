@@ -8,8 +8,11 @@ import type { BancoHorasItem } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
 import { pagarBancoHoras } from '@/modules/payroll/actions/pagarBancoHoras'
 import { compensarBancoHoras } from '@/modules/payroll/actions/compensarBancoHoras'
+import { revertirBancoHoras } from '@/modules/payroll/actions/revertirBancoHoras'
 import { PagarBancoHorasModal } from './PagarBancoHorasModal'
+import { CompensarHorasLiquidadoModal } from './CompensarHorasLiquidadoModal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { EmptyState } from '@/components/ui/EmptyState'
 import {
   META_LABEL,
   TABLE_HEAD,
@@ -45,6 +48,34 @@ const ESTADO_LABEL: Record<BancoHorasItem['estado'], string> = {
   compensado: 'Compensado',
 }
 
+/**
+ * Debajo del nombre: por qué unas horas de alguien ya liquidado no se pueden
+ * pagar, y la nota con que se cerró un movimiento.
+ */
+function NotasMovimiento({ item }: { item: BancoHorasItem }) {
+  return (
+    <>
+      {item.liquidadoSinIncluir && (
+        <span className="mt-0.5 block text-[11px] font-normal text-amber-700">
+          Ya se liquidó (n.° {item.liquidadoSinIncluir.liqId}, salida del{' '}
+          {formatDate(item.liquidadoSinIncluir.fechaSalida)}): estas horas quedaron fuera de su
+          liquidación y no se pueden pagar por planilla.
+        </span>
+      )}
+      {item.liquidacionId && (
+        <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+          Pagadas en la liquidación n.° {item.liquidacionId}: no se pueden devolver al banco.
+        </span>
+      )}
+      {item.observaciones && (
+        <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+          Nota: {item.observaciones}
+        </span>
+      )}
+    </>
+  )
+}
+
 export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasViewProps) {
   const router = useRouter()
   const [tab, setTab] = useState<TabId>('pendientes')
@@ -70,10 +101,10 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
     router.refresh()
   }
 
-  async function handleConfirmarCompensacion() {
+  async function handleConfirmarCompensacion(nota?: string) {
     if (!itemACompensar) return
     setSubmittingId(itemACompensar.id)
-    const result = await compensarBancoHoras(itemACompensar.id)
+    const result = await compensarBancoHoras(itemACompensar.id, nota ?? null)
     setSubmittingId(null)
 
     if (!result.ok) {
@@ -83,6 +114,21 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
 
     toast.success(`Horas de ${itemACompensar.empleadoNombre} marcadas como compensadas.`)
     setItemACompensar(null)
+    router.refresh()
+  }
+
+  /** Devuelve las horas al banco: el arrepentimiento antes de pagar. */
+  async function handleRevertir(item: BancoHorasItem) {
+    setSubmittingId(item.id)
+    const result = await revertirBancoHoras(item.id)
+    setSubmittingId(null)
+
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+
+    toast.success(`Las horas de ${item.empleadoNombre} volvieron a quedar pendientes.`)
     router.refresh()
   }
 
@@ -96,7 +142,8 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
           Cuando un empleado trabaja más de las horas normales de la quincena, esas horas de más
           quedan pendientes acá (ya no se pagan solas en la misma planilla). Podés pagarlas —se
           agregan al periodo actual en borrador del empleado, con CCSS incluido— o compensarlas como
-          registro.
+          registro. Si te arrepentís, desde el historial podés devolverlas al banco mientras esa
+          quincena siga sin pagarse.
         </p>
       </div>
 
@@ -118,11 +165,14 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
       </div>
 
       {items.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-          {tab === 'pendientes'
-            ? 'No hay horas pendientes por resolver.'
-            : 'Todavía no hay movimientos pagados ni compensados.'}
-        </p>
+        <EmptyState
+          icon={Clock}
+          title={
+            tab === 'pendientes'
+              ? 'No hay horas pendientes por resolver.'
+              : 'Todavía no hay movimientos pagados ni compensados.'
+          }
+        />
       ) : (
         <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
           {/*
@@ -145,6 +195,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                     <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">
                       {item.empleadoCedula}
                     </p>
+                    <NotasMovimiento item={item} />
                   </div>
                   <Badge tone={ESTADO_TONE[item.estado]} size="xs">
                     {ESTADO_LABEL[item.estado]}
@@ -178,6 +229,23 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                   ))}
                 </dl>
 
+                {canWrite && tab === 'historial' && !item.liquidacionId && (
+                  <div className="flex items-center border-t border-slate-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => handleRevertir(item)}
+                      disabled={submittingId === item.id}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-amber-300 hover:text-amber-700 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:opacity-60"
+                    >
+                      {submittingId === item.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        'Devolver al banco'
+                      )}
+                    </button>
+                  </div>
+                )}
+
                 {canWrite && tab === 'pendientes' && (
                   <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
                     <button
@@ -186,20 +254,22 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                       disabled={submittingId === item.id}
                       className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60"
                     >
-                      Compensar
+                      {item.liquidadoSinIncluir ? 'Compensar con nota' : 'Compensar'}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setItemAPagar(item)}
-                      disabled={submittingId === item.id}
-                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
-                    >
-                      {submittingId === item.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        'Pagar'
-                      )}
-                    </button>
+                    {!item.liquidadoSinIncluir && (
+                      <button
+                        type="button"
+                        onClick={() => setItemAPagar(item)}
+                        disabled={submittingId === item.id}
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
+                      >
+                        {submittingId === item.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          'Pagar'
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
               </li>
@@ -221,13 +291,16 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                     <th className={TABLE_TH}>Fecha</th>
                   </>
                 )}
-                {canWrite && tab === 'pendientes' && <th className={TABLE_TH} />}
+                {canWrite && <th className={TABLE_TH} />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td className={TABLE_TD_STRONG}>{item.empleadoNombre}</td>
+                  <td className={TABLE_TD_STRONG}>
+                    {item.empleadoNombre}
+                    <NotasMovimiento item={item} />
+                  </td>
                   <td className={TABLE_TD}>{item.empleadoCedula}</td>
                   <td className={TABLE_TD}>{item.periodoOrigenLabel}</td>
                   <td className={TABLE_TD_NUM}>{item.horas}</td>
@@ -245,6 +318,27 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                       <td className={TABLE_TD}>{formatDate(item.fechaResolucion?.slice(0, 10))}</td>
                     </>
                   )}
+                  {canWrite && tab === 'historial' && (
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end">
+                        {item.liquidacionId ? null : (
+                          <button
+                            type="button"
+                            onClick={() => handleRevertir(item)}
+                            disabled={submittingId === item.id}
+                            title="Devuelve las horas al banco y, si se habían pagado, saca el monto de esa quincena"
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-amber-300 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:opacity-60"
+                          >
+                            {submittingId === item.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              'Devolver al banco'
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
                   {canWrite && tab === 'pendientes' && (
                     <td className="px-3 py-2">
                       <div className="flex items-center justify-end gap-2">
@@ -254,20 +348,22 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                           disabled={submittingId === item.id}
                           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60"
                         >
-                          Compensar
+                          {item.liquidadoSinIncluir ? 'Compensar con nota' : 'Compensar'}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setItemAPagar(item)}
-                          disabled={submittingId === item.id}
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
-                        >
-                          {submittingId === item.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            'Pagar'
-                          )}
-                        </button>
+                        {!item.liquidadoSinIncluir && (
+                          <button
+                            type="button"
+                            onClick={() => setItemAPagar(item)}
+                            disabled={submittingId === item.id}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
+                          >
+                            {submittingId === item.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              'Pagar'
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                   )}
@@ -287,13 +383,22 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
         />
       )}
 
-      {itemACompensar && (
+      {itemACompensar?.liquidadoSinIncluir && (
+        <CompensarHorasLiquidadoModal
+          item={{ ...itemACompensar, liquidadoSinIncluir: itemACompensar.liquidadoSinIncluir }}
+          submitting={submittingId === itemACompensar.id}
+          onCancel={() => setItemACompensar(null)}
+          onConfirm={(nota) => void handleConfirmarCompensacion(nota)}
+        />
+      )}
+
+      {itemACompensar && !itemACompensar.liquidadoSinIncluir && (
         <ConfirmDialog
           title={`Compensar horas de ${itemACompensar.empleadoNombre}`}
           message={`Se registran ${itemACompensar.horas} horas como compensadas (tiempo libre dado, sin pago). No afecta ningún cálculo de planilla — es solo un registro.`}
           confirmLabel="Compensar"
           onCancel={() => setItemACompensar(null)}
-          onConfirm={handleConfirmarCompensacion}
+          onConfirm={() => void handleConfirmarCompensacion()}
         />
       )}
     </div>

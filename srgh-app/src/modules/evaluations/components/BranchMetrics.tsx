@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import type { BranchOption, CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
 import { averageScore, LOW_PERFORMANCE_THRESHOLD } from '@/modules/evaluations/lib/scoring'
-import { usePagination } from '@/modules/evaluations/hooks/usePagination'
+import { usePagination } from '@/hooks/usePagination'
 import { CollaboratorListModal } from './CollaboratorListModal'
 import { Modal } from '@/components/ui/Modal'
 import { Pagination } from '@/components/ui/Pagination'
@@ -24,6 +24,7 @@ import { ScoreBadge } from './ScoreBadge'
 import { ScoreBar } from './ScoreBar'
 import { ScoreCell } from './ScoreCell'
 import { CARD, META_LABEL, TABLE_HEAD, TABLE_WRAP } from '@/components/ui/styles'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 type OpenModal = 'promedios' | 'pendientes' | 'bajo' | null
 
@@ -136,7 +137,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
         >
           <div className="flex items-center justify-between gap-2">
             <p className={META_LABEL}>Promedio de la sucursal</p>
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
               <Award className="h-3.5 w-3.5" />
             </span>
           </div>
@@ -289,12 +290,11 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
           <p className="ml-auto text-[10px] font-medium text-slate-400">Escala 0–10</p>
         </div>
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-400 ring-1 ring-slate-200">
-              <UserRound className="h-4 w-4" />
-            </div>
-            <p className="text-xs text-slate-500">No hay colaboradores activos en esta sucursal.</p>
-          </div>
+          <EmptyState
+            framed={false}
+            icon={UserRound}
+            title="No hay colaboradores activos en esta sucursal."
+          />
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -386,7 +386,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
             <ul className="divide-y divide-slate-100">
               {branchAverages.map((b) => (
                 <li key={b.id} className="flex items-center gap-3 px-3 py-2">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
                     <Building2 className="h-3.5 w-3.5" />
                   </span>
                   <span className="min-w-0 flex-1">

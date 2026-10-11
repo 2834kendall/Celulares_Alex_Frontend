@@ -10,9 +10,15 @@ import { SucursalSwitcher } from '@/components/layout/SucursalSwitcher'
 import type { SucursalConApariencia } from '@/lib/empresa/list-sucursales'
 import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
-import { deriveFrameTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
-import { tituloDeRuta } from '@/lib/permissions/zones'
-import { BRAND } from '@/lib/brand'
+import { CompanyIdentity } from '@/components/layout/CompanyIdentity'
+import { TopbarBrand } from '@/components/layout/TopbarBrand'
+import { deriveBrandTokens, derivePageBackground, deriveSidebarTokens } from '@/lib/utils/color'
+import { FormatoHoraProvider } from '@/lib/time/FormatoHoraContext'
+import { FORMATO_HORA_DEFAULT, type FormatoHora } from '@/lib/time/formatoHora'
+import { SettingsModeHeader } from '@/modules/settings/components/SettingsModeHeader'
+import { SettingsSidebarNav } from '@/modules/settings/components/SettingsSidebarNav'
+import { SettingsSearch } from '@/modules/settings/components/SettingsSearch'
+import { isSettingsPath, rememberReturnPath } from '@/modules/settings/lib/returnPath'
 
 interface AppShellProps {
   permisos: string[]
@@ -20,6 +26,8 @@ interface AppShellProps {
   rol: string | null
   /** Nombre real de la empresa (cargado server-side desde sgrh_empresas). */
   empresaNombre: string
+  /** URL firmada del logo de la empresa, o null para mostrar la inicial. */
+  logoUrl?: string | null
   /** Sucursal asignada al usuario, o null si no tiene una fija (p.ej. ADMIN). */
   sucursalNombre: string | null
   /** Color de acento de la sucursal (hex), o null para usar el default del sistema. */
@@ -30,6 +38,8 @@ interface AppShellProps {
   sucursales?: SucursalConApariencia[]
   /** Sucursal actualmente en preview (ver SucursalSwitcher), o null. */
   sucursalPreviewId?: number | null
+  /** Formato de hora de la empresa (Configuración → General). Solo presentación. */
+  formatoHora?: FormatoHora
   children: React.ReactNode
 }
 
@@ -67,10 +77,10 @@ function BurgerIcon({ open }: { open: boolean }) {
 
 /**
  * Cascaron responsive del dashboard.
- * La barra superior ocupa todo el ancho, con la hamburguesa FIJA en la
- * esquina superior izquierda — no se mueve al abrir/cerrar el sidebar.
- * - Escritorio: la hamburguesa colapsa/expande el sidebar (con animacion de ancho)
- * - Movil: la hamburguesa abre el drawer lateral
+ * - Escritorio: la empresa ocupa la columna izquierda de la barra superior,
+ *   del mismo ancho que el sidebar; su boton colapsa el sidebar a un riel de
+ *   iconos (y el logo del riel lo vuelve a expandir).
+ * - Movil: la hamburguesa abre el drawer lateral.
  * La seguridad ya paso en el layout (server); esto es solo presentacion.
  */
 export function AppShell({
@@ -78,23 +88,34 @@ export function AppShell({
   email,
   rol,
   empresaNombre,
+  logoUrl = null,
   sucursalNombre,
   colorAcento,
   colorSidebar,
   sucursales = [],
   sucursalPreviewId = null,
+  formatoHora = FORMATO_HORA_DEFAULT,
   children,
 }: AppShellProps) {
   const pathname = usePathname()
-  const [sidebarOpen, setSidebarOpen] = useState(true) // escritorio
+  const [sidebarOpen, setSidebarOpen] = useState(true) // escritorio: false = riel de iconos
   const [drawerOpen, setDrawerOpen] = useState(false) // movil
+  const [settingsSearchOpen, setSettingsSearchOpen] = useState(false)
 
-  const titulo = tituloDeRuta(pathname)
+  // Modo configuración (SGRH-92): en /settings… el menú lateral pasa a ser el
+  // de Configuración y se habilita el buscador de ajustes (Ctrl+K).
+  const settingsMode = isSettingsPath(pathname)
+
+  // Destino de "← Volver": la última pantalla fuera de Configuración. Con la
+  // query incluida, para volver a la misma pestaña (ej. ?tab=usuarios).
+  useEffect(() => {
+    rememberReturnPath(`${window.location.pathname}${window.location.search}`)
+  }, [pathname])
 
   // Estilo de apariencia por sucursal: si no personalizo un color, no se
   // sobrescribe nada y gana el default declarado en globals.css.
   const shellStyle = {
-    ...(colorAcento ? deriveFrameTokens(colorAcento) : {}),
+    ...(colorAcento ? deriveBrandTokens(colorAcento) : {}),
     ...(colorSidebar ? deriveSidebarTokens(colorSidebar) : {}),
     ...(colorSidebar ? { '--page-bg': derivePageBackground(colorSidebar) } : {}),
   } as React.CSSProperties
@@ -122,44 +143,47 @@ export function AppShell({
       className="flex min-h-screen flex-col bg-[var(--page-bg)] text-slate-900"
       style={shellStyle}
     >
-      {/* Barra superior de ancho completo — la hamburguesa vive siempre en la esquina */}
-      <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-3 md:px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          {/* Hamburguesa movil: abre el drawer */}
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Abrir menu"
-            // El icono mide 16x20, asi que con p-2.5 el boton quedaba en
-            // 36x40: por debajo de los 44px de WCAG 2.5.5, y es el control
-            // MAS usado de toda la app en un telefono. El minimo solo aplica
-            // con dedo, asi que en escritorio el boton no cambia de tamaño.
-            className="inline-flex items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[var(--sidebar-text)] transition hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] md:hidden"
-          >
-            <BurgerIcon open={drawerOpen} />
-          </button>
-          {/* Hamburguesa escritorio: colapsa/expande el sidebar */}
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((v) => !v)}
-            aria-label={sidebarOpen ? 'Ocultar menu lateral' : 'Mostrar menu lateral'}
-            aria-expanded={sidebarOpen}
-            className="hidden items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[var(--sidebar-text)] transition hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] md:inline-flex"
-          >
-            <BurgerIcon open={sidebarOpen} />
-          </button>
+      {/*
+        Barra superior de ancho completo. A la izquierda va la empresa: en
+        escritorio, en una columna del mismo ancho que el sidebar (ver
+        TopbarBrand), con el boton de colapsar; en movil, compacta junto a la
+        hamburguesa. Ya no muestra el titulo de la ruta: lo pone el
+        encabezado de cada pagina (PageHeader).
+      */}
+      <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-3 md:pr-4 md:pl-0">
+        {/* Hamburguesa movil: abre el drawer */}
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Abrir menú"
+          // El icono mide 16x20, asi que con p-2.5 el boton quedaba en
+          // 36x40: por debajo de los 44px de WCAG 2.5.5, y es el control
+          // MAS usado de toda la app en un telefono. El minimo solo aplica
+          // con dedo, asi que en escritorio el boton no cambia de tamaño.
+          className="inline-flex shrink-0 items-center justify-center rounded-lg p-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[var(--sidebar-text)] transition hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] md:hidden"
+        >
+          <BurgerIcon open={drawerOpen} />
+        </button>
 
-          <div className="min-w-0 leading-tight">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
-              {BRAND.sistema}
-            </p>
-            <h1 className="truncate text-base font-extrabold tracking-tight text-[var(--sidebar-text-strong)] md:text-lg">
-              {titulo}
-            </h1>
-          </div>
-        </div>
+        <CompanyIdentity
+          className="md:hidden"
+          size="sm"
+          compact
+          logoUrl={logoUrl}
+          empresaNombre={empresaNombre}
+          sucursalNombre={sucursalNombre}
+        />
 
-        <div className="flex shrink-0 items-center gap-3">
+        <TopbarBrand
+          className="hidden md:flex"
+          collapsed={!sidebarOpen}
+          onToggle={() => setSidebarOpen((v) => !v)}
+          logoUrl={logoUrl}
+          empresaNombre={empresaNombre}
+          sucursalNombre={sucursalNombre}
+        />
+
+        <div className="ml-auto flex shrink-0 items-center gap-3">
           <SucursalSwitcher sucursales={sucursales} sucursalPreviewId={sucursalPreviewId} />
           <UserMenu email={email} rol={rol} />
         </div>
@@ -174,20 +198,22 @@ export function AppShell({
             onClick={() => setDrawerOpen(false)}
           />
           <div className="animate-slide-in-left relative flex h-full w-72 max-w-[80vw] flex-col bg-[var(--sidebar-bg)] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[var(--sidebar-border)] px-4 py-4">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-frame-700 text-xs font-black text-white">
-                  {empresaNombre.charAt(0)}
-                </span>
-                <div className="leading-tight">
-                  <p className="text-sm font-extrabold text-[var(--sidebar-text-strong)]">
-                    {empresaNombre}
-                  </p>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
-                    {sucursalNombre ?? BRAND.sistema}
-                  </p>
-                </div>
-              </div>
+            <div
+              className={cn(
+                'flex items-center justify-between border-b px-4 py-4',
+                settingsMode ? 'border-brand-800 bg-brand-700' : 'border-[var(--sidebar-border)]'
+              )}
+            >
+              {settingsMode ? (
+                <SettingsModeHeader empresaNombre={empresaNombre} compact />
+              ) : (
+                <CompanyIdentity
+                  size="sm"
+                  logoUrl={logoUrl}
+                  empresaNombre={empresaNombre}
+                  sucursalNombre={sucursalNombre}
+                />
+              )}
               {/*
                 No usa <IconButton tone="slate">: sus tonos son fijos
                 (`slate-100`/`slate-900`) y `cn()` no resuelve conflictos de
@@ -203,7 +229,9 @@ export function AppShell({
                 aria-label="Cerrar menu"
                 className={cn(
                   ICON_CONTROL_BASE,
-                  'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-frame-500/60'
+                  settingsMode
+                    ? 'text-white hover:bg-white/15 focus-visible:ring-white/70'
+                    : 'text-[var(--sidebar-text)] hover:bg-black/5 hover:text-[var(--sidebar-text-strong)] focus-visible:ring-brand-500/60'
                 )}
               >
                 <X className="h-5 w-5" />
@@ -224,7 +252,18 @@ export function AppShell({
             />
 
             <div className="flex-1 overflow-y-auto p-3">
-              <NavLinks permisos={permisos} onNavigate={() => setDrawerOpen(false)} />
+              {settingsMode ? (
+                <SettingsSidebarNav
+                  permisos={permisos}
+                  onNavigate={() => setDrawerOpen(false)}
+                  onOpenSearch={() => {
+                    setDrawerOpen(false)
+                    setSettingsSearchOpen(true)
+                  }}
+                />
+              ) : (
+                <NavLinks permisos={permisos} onNavigate={() => setDrawerOpen(false)} />
+              )}
             </div>
           </div>
         </div>
@@ -235,12 +274,20 @@ export function AppShell({
         <Sidebar
           permisos={permisos}
           empresaNombre={empresaNombre}
-          sucursalNombre={sucursalNombre}
-          open={sidebarOpen}
+          collapsed={!sidebarOpen}
+          onOpenSettingsSearch={() => setSettingsSearchOpen(true)}
         />
+        {/* Una sola instancia: el drawer y el sidebar pueden estar montados a la vez */}
+        {settingsMode && (
+          <SettingsSearch
+            permisos={permisos}
+            open={settingsSearchOpen}
+            onOpenChange={setSettingsSearchOpen}
+          />
+        )}
         {/* key={pathname}: reinicia la animacion de entrada en cada navegacion */}
         <main key={pathname} className="animate-page min-w-0 flex-1 p-4 md:p-6">
-          {children}
+          <FormatoHoraProvider formato={formatoHora}>{children}</FormatoHoraProvider>
         </main>
       </div>
     </div>

@@ -21,6 +21,7 @@ import { DateField } from '@/components/ui/DatePickerButton'
 import { SelectMenu } from '@/components/ui/SelectMenu'
 import { INPUT, LABEL, SPINNER, TABLE_WRAP } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface AbsencesPanelProps {
   employees: EmployeeOption[]
@@ -295,9 +296,11 @@ export function AbsencesPanel({
         )}
 
         {ausencias.length === 0 ? (
-          <p className="px-4 py-6 text-center text-xs text-slate-500">
-            No hay incapacidades ni periodos de lactancia registrados para esta semana.
-          </p>
+          <EmptyState
+            framed={false}
+            icon={CalendarHeart}
+            title="No hay incapacidades ni periodos de lactancia registrados para esta semana."
+          />
         ) : (
           <ul className="divide-y divide-slate-100">
             {ausencias.map((a) => (

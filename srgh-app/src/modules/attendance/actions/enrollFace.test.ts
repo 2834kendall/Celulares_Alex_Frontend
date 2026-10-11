@@ -4,7 +4,8 @@ import { getFaceEnrollment } from './getFaceEnrollment'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
-import { encryptVector } from '@/modules/attendance/lib/face/faceCrypto'
+import { encryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
+import type { LivenessProof } from '@/modules/attendance/lib/face/livenessProof'
 import { FACE_EMBEDDING_DIM, FACE_MODEL_ID } from '@/modules/attendance/lib/face/model'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
@@ -24,6 +25,12 @@ const RAW_VECTOR = (() => {
   v[1] = 4
   return v
 })()
+
+const LIVE: LivenessProof = { method: 'textura', score: 0.98, samples: 6 }
+
+async function encryptedEnrollment(liveness: unknown = LIVE) {
+  return encryptFacePayload({ vector: RAW_VECTOR, liveness }, KEY)
+}
 
 describe('enrollFace (server action)', () => {
   beforeEach(() => {
@@ -52,7 +59,7 @@ describe('enrollFace (server action)', () => {
 
     const result = await enrollFace({
       employeeId: 10,
-      vector: await encryptVector(RAW_VECTOR, KEY),
+      vector: await encryptedEnrollment(),
     })
 
     expect(result).toEqual({
@@ -70,7 +77,7 @@ describe('enrollFace (server action)', () => {
 
     const result = await enrollFace({
       employeeId: 10,
-      vector: await encryptVector(RAW_VECTOR, KEY),
+      vector: await encryptedEnrollment(),
     })
 
     expect(result).toEqual({ ok: false, error: 'El empleado no tiene un contrato activo.' })
@@ -87,7 +94,7 @@ describe('enrollFace (server action)', () => {
 
     const result = await enrollFace({
       employeeId: 10,
-      vector: await encryptVector(RAW_VECTOR, KEY),
+      vector: await encryptedEnrollment(),
     })
 
     expect(result).toEqual({ ok: true })
@@ -125,10 +132,60 @@ describe('enrollFace (server action)', () => {
 
     const result = await enrollFace({
       employeeId: 10,
-      vector: await encryptVector(RAW_VECTOR, KEY),
+      vector: await encryptedEnrollment(),
     })
 
     expect(result).toEqual({ ok: false, error: 'No se pudo guardar el registro facial.' })
+  })
+
+  /**
+   * SGRH-80. El enrolamiento exige el mismo nivel de prueba de vida que el
+   * kiosco: un vector registrado desde una fotografia no caduca y deja a esa
+   * persona suplantable de forma permanente.
+   */
+  describe('exigencia de prueba de vida', () => {
+    function conContratoActivo() {
+      mockCreateClient.mockResolvedValue(
+        createSupabaseClientMock({
+          sgrh_historial_laboral: { data: { lab_id: 7 }, error: null },
+          sgrh_biometria_empleado: { data: null, error: null },
+        }) as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+    }
+
+    it('rechaza un enrolamiento sin prueba de vida', async () => {
+      conContratoActivo()
+
+      const sinPrueba = await encryptFacePayload({ vector: RAW_VECTOR } as never, KEY)
+      const result = await enrollFace({ employeeId: 10, vector: sinPrueba })
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'No se pudo confirmar que haya una persona real frente a la camara.',
+      })
+    })
+
+    it('rechaza una prueba de vida malformada', async () => {
+      conContratoActivo()
+
+      const result = await enrollFace({
+        employeeId: 10,
+        vector: await encryptedEnrollment({ method: 'planaridad', ratio: 'alto', motion: 1 }),
+      })
+
+      expect(result.ok).toBe(false)
+    })
+
+    it('acepta el enrolamiento con prueba de vida valida', async () => {
+      conContratoActivo()
+
+      const result = await enrollFace({
+        employeeId: 10,
+        vector: await encryptedEnrollment(),
+      })
+
+      expect(result).toEqual({ ok: true })
+    })
   })
 })
 

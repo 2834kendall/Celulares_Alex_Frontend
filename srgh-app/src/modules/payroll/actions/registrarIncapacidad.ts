@@ -82,6 +82,27 @@ export async function registrarIncapacidad(
     }
   }
 
+  // Misma regla que createAusencia: una ausencia por día. Una incapacidad
+  // encima de unas vacaciones pagaba los mismos días dos veces (base completo
+  // por las vacaciones y, además, la parte del patrono de la incapacidad).
+  const { data: traslapadas, error: errTraslape } = await supabase
+    .from('sgrh_ausencias')
+    .select('aus_id')
+    .eq('aus_historial_laboral_id', data.historialLaboralId)
+    .lte('aus_fecha_inicio', data.fechaFin)
+    .gte('aus_fecha_fin', data.fechaInicio)
+
+  if (errTraslape) {
+    return { ok: false, error: 'No se pudo validar el traslape de fechas.' }
+  }
+  if (traslapadas && traslapadas.length > 0) {
+    return {
+      ok: false,
+      error:
+        'El empleado ya tiene una ausencia registrada que se traslapa con esas fechas. Corregila en Ausencias antes de registrar la incapacidad.',
+    }
+  }
+
   const { error: errInsert } = await supabase.from('sgrh_ausencias').insert({
     aus_historial_laboral_id: data.historialLaboralId,
     aus_tipo_ausencia_id: tipoAusencia.tau_id,
@@ -102,6 +123,7 @@ export async function registrarIncapacidad(
     fechaInicio: data.fechaInicio,
     fechaFin: data.fechaFin,
     topeMensualEmpleador: tipoAusencia.tau_paga_empleador_dias,
+    esSubsidio: true,
   })
 
   if (!sync.ok) {
@@ -119,5 +141,6 @@ export async function registrarIncapacidad(
     ok: true,
     periodosActualizados: sync.periodosActualizados,
     diasSinPeriodo: sync.diasSinPeriodo,
+    periodosPagadosOmitidos: sync.periodosPagadosOmitidos ?? [],
   }
 }

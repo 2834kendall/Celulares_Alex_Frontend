@@ -65,6 +65,9 @@ describe('getPeriodos (server action)', () => {
           fechaInicio: '2026-07-01',
           fechaFin: '2026-07-15',
           estado: 'borrador',
+          // El periodo termino el 2026-07-15 y sigue en borrador: la accion lo
+          // marca como atrasado (derivado, no viene de la base).
+          atrasado: true,
           fechaPago: null,
           sucursalNombre: 'Central',
           totalEmpleados: 4,

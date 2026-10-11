@@ -4,23 +4,35 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularPlanillaPorConceptos, type ConceptoCalculo } from '@/modules/payroll/lib/planilla'
+import { aplicarHorasExtraEnDetalle } from '@/modules/payroll/lib/horasExtraDetalle'
 import { periodoLabel } from '@/modules/payroll/lib/format'
+import { ahoraLocal } from '@/modules/payroll/lib/fechas'
+import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
+import {
+  SELECT_LIQUIDACION_DEL_MOVIMIENTO,
+  liquidacionQueDejoElMovimiento,
+  type MovimientoConLiquidaciones,
+} from '@/modules/payroll/lib/bancoHorasLiquidado'
+import { formatDate } from '@/modules/payroll/lib/format'
 import {
   pagarBancoHorasSchema,
   type PagarBancoHorasInput,
   type PagarBancoHorasResult,
 } from '@/modules/payroll/types'
 
-interface MovimientoRow {
+interface MovimientoRow extends MovimientoConLiquidaciones {
   bhm_id: number
   bhm_historial_laboral_id: number
   bhm_estado: string
+  /** Fila donde se generaron las horas. */
+  bhm_nomina_detalle_id: number
 }
 
 interface DetalleBorradorRow {
   ndt_id: number
+  ndt_pagado: boolean
   ndt_horas_ordinarias_diurnas: number
+  ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
   ndt_nomina_periodo_id: number
   sgrh_nomina_periodo: {
@@ -30,11 +42,6 @@ interface DetalleBorradorRow {
     npe_quincena: number
     npe_fecha_inicio_periodo: string | null
   } | null
-}
-
-interface LineaIngresoRow {
-  ing_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
 }
 
 /**
@@ -54,12 +61,15 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     return { ok: false, error: 'Datos inválidos.' }
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
+  const usuarioId = (claims.app_metadata as { usr_id?: number })?.usr_id ?? null
   const supabase = await createClient()
 
   const { data: movimiento, error: errMovimiento } = await supabase
     .from('sgrh_banco_horas_movimientos')
-    .select('bhm_id, bhm_historial_laboral_id, bhm_estado')
+    .select(
+      `bhm_id, bhm_historial_laboral_id, bhm_estado, bhm_nomina_detalle_id, ${SELECT_LIQUIDACION_DEL_MOVIMIENTO}`
+    )
     .eq('bhm_id', parsed.data.bhmId)
     .maybeSingle<MovimientoRow>()
 
@@ -73,13 +83,26 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     return { ok: false, error: 'Este movimiento ya fue resuelto (pagado o compensado).' }
   }
 
+  // Horas que una liquidación vieja dejó fuera: la persona ya no tiene
+  // quincenas abiertas. Antes caía en "no tiene ninguna quincena sin pagar",
+  // que no explicaba nada.
+  const liquidacion = liquidacionQueDejoElMovimiento(movimiento)
+  if (liquidacion) {
+    return {
+      ok: false,
+      error: `Este empleado ya se liquidó (liquidación n.° ${liquidacion.liqId}, salida del ${formatDate(liquidacion.fechaSalida)}) y estas horas quedaron fuera de esa liquidación: ya no se pueden pagar por planilla. Si se le pagaron por fuera, marcalas como compensadas con una nota.`,
+    }
+  }
+
   // Periodo en borrador más reciente del empleado, donde se va a aplicar el pago.
   const { data: detalles, error: errDetalles } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
       `
       ndt_id,
+      ndt_pagado,
       ndt_horas_ordinarias_diurnas,
+      ndt_horas_extra_al_50,
       ndt_salario_por_hora,
       ndt_nomina_periodo_id,
       sgrh_nomina_periodo (
@@ -94,150 +117,123 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
     return { ok: false, error: 'No se pudo cargar la planilla del empleado.' }
   }
 
-  const enBorrador = (detalles ?? [])
-    .filter((d) => d.sgrh_nomina_periodo?.npe_estado === 'borrador')
-    .sort((a, b) =>
-      (b.sgrh_nomina_periodo?.npe_fecha_inicio_periodo ?? '').localeCompare(
+  // Solo una fila que todavía se va a pagar por planilla. Un periodo sigue en
+  // 'borrador' mientras le falte alguien, así que puede tener filas ya
+  // pagadas: sumarle las horas a una de esas cambiaba un comprobante emitido
+  // por plata que nunca se transfería. Lo mismo con una fila cuyo salario ya
+  // va en una liquidación: no se puede marcar pagada, y el monto se perdía.
+  //
+  // Primero la quincena donde se trabajaron las horas, si sigue abierta: es
+  // donde corresponden (auditoría 2, fallo 4). Si ya se pagó, la más reciente
+  // sin pagar, como antes.
+  const abiertas = (detalles ?? [])
+    .filter((d) => d.sgrh_nomina_periodo?.npe_estado === 'borrador' && !d.ndt_pagado)
+    .sort((a, b) => {
+      const origenA = a.ndt_id === movimiento.bhm_nomina_detalle_id ? 0 : 1
+      const origenB = b.ndt_id === movimiento.bhm_nomina_detalle_id ? 0 : 1
+      if (origenA !== origenB) return origenA - origenB
+      return (b.sgrh_nomina_periodo?.npe_fecha_inicio_periodo ?? '').localeCompare(
         a.sgrh_nomina_periodo?.npe_fecha_inicio_periodo ?? ''
       )
+    })
+
+  let detalleDestino: DetalleBorradorRow | undefined
+  for (const candidato of abiertas) {
+    const periodo = candidato.sgrh_nomina_periodo!
+    const cubiertas = await liquidacionesQueCubren(
+      supabase,
+      [movimiento.bhm_historial_laboral_id],
+      {
+        anio: periodo.npe_periodo_anio,
+        mes: periodo.npe_periodo_mes,
+        quincena: periodo.npe_quincena,
+      }
     )
-  const detalleDestino = enBorrador[0]
+    if (!cubiertas.ok) {
+      return { ok: false, error: 'No se pudo verificar si el empleado ya fue liquidado.' }
+    }
+    if (!cubiertas.data.has(movimiento.bhm_historial_laboral_id)) {
+      detalleDestino = candidato
+      break
+    }
+  }
 
   if (!detalleDestino) {
     return {
       ok: false,
       error:
-        'Este empleado no tiene ningún periodo en borrador ahora mismo. Creá o abrí un periodo antes de pagarle estas horas.',
+        'Este empleado no tiene ninguna quincena sin pagar en un periodo abierto. Creá o abrí un periodo donde todavía no se le haya pagado antes de pagarle estas horas.',
     }
   }
 
-  // Conceptos activos (para recalcular todo el detalle) + HORAS_EXTRA del
-  // catálogo (aunque esté inactivo), forzado a monto manual solo para esta operación.
-  const [{ data: conceptosActivos, error: errConceptos }, { data: horasExtraConcepto }] =
-    await Promise.all([
-      supabase
-        .from('sgrh_cat_conceptos_nomina')
-        .select('con_id, con_codigo, con_tipo_calculo, con_porcentaje')
-        .eq('con_activo', true)
-        .returns<ConceptoCalculo[]>(),
-      supabase
-        .from('sgrh_cat_conceptos_nomina')
-        .select('con_id, con_codigo, con_tipo_calculo, con_porcentaje')
-        .eq('con_codigo', 'HORAS_EXTRA')
-        .maybeSingle<ConceptoCalculo>(),
-    ])
-
-  if (errConceptos) {
-    return { ok: false, error: 'No se pudo cargar el catálogo de conceptos de nómina.' }
-  }
-  if (!horasExtraConcepto) {
-    return {
-      ok: false,
-      error:
-        'No se encontró el concepto "HORAS_EXTRA" en el catálogo. Es necesario para registrar el pago.',
-    }
-  }
-
-  const conceptosParaCalculo: ConceptoCalculo[] = [
-    ...(conceptosActivos ?? []),
-    { ...horasExtraConcepto, con_tipo_calculo: 'monto_manual_ingreso' },
-  ]
-
-  // Montos ya guardados en el periodo destino, para no perderlos al recalcular.
-  const { data: lineasActuales, error: errLineas } = await supabase
-    .from('sgrh_nomina_linea_ingreso')
-    .select('ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
-    .eq('ing_nomina_detalle_id', detalleDestino.ndt_id)
-    .returns<LineaIngresoRow[]>()
-
-  if (errLineas) {
-    return { ok: false, error: 'No se pudo cargar el detalle del periodo destino.' }
-  }
-
-  const montos: Record<string, number> = {}
-  for (const linea of lineasActuales ?? []) {
-    const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
-    if (!codigo) continue
-    montos[codigo] = linea.ing_monto
-  }
-  // Se suma al monto de HORAS_EXTRA que ya hubiera en ese periodo (por si se
-  // le paga banco de horas más de una vez al mismo periodo en borrador).
-  montos.HORAS_EXTRA = (montos.HORAS_EXTRA ?? 0) + parsed.data.monto
-
-  const { salarioBruto, totalDeducciones, salarioNeto, lineas } = calcularPlanillaPorConceptos(
-    conceptosParaCalculo,
-    {
-      montos,
-      horasTrabajadas: detalleDestino.ndt_horas_ordinarias_diurnas,
-      salarioPorHora: detalleDestino.ndt_salario_por_hora,
-    }
-  )
-
-  const { error: errUpdate } = await supabase
-    .from('sgrh_nomina_detalle')
-    .update({
-      ndt_salario_bruto: salarioBruto,
-      ndt_total_deducciones_obreras: totalDeducciones,
-      ndt_salario_neto: salarioNeto,
-    })
-    .eq('ndt_id', detalleDestino.ndt_id)
-  if (errUpdate) {
-    return { ok: false, error: 'No se pudieron actualizar los montos del periodo destino.' }
-  }
-
-  const { error: errDelIngreso } = await supabase
-    .from('sgrh_nomina_linea_ingreso')
-    .delete()
-    .eq('ing_nomina_detalle_id', detalleDestino.ndt_id)
-  const { error: errDelDeduccion } = await supabase
-    .from('sgrh_nomina_linea_deduccion')
-    .delete()
-    .eq('ded_nomina_detalle_id', detalleDestino.ndt_id)
-  if (errDelIngreso || errDelDeduccion) {
-    return { ok: false, error: 'No se pudieron actualizar las líneas del periodo destino.' }
-  }
-
-  const ingresos = lineas
-    .filter((l) => l.esIngreso)
-    .map((l) => ({
-      ing_nomina_detalle_id: detalleDestino.ndt_id,
-      ing_concepto_id: l.con_id,
-      ing_monto: l.monto,
-    }))
-  if (ingresos.length > 0) {
-    const { error } = await supabase.from('sgrh_nomina_linea_ingreso').insert(ingresos)
-    if (error) return { ok: false, error: 'No se pudieron guardar las líneas de ingreso.' }
-  }
-
-  const deducciones = lineas
-    .filter((l) => !l.esIngreso)
-    .map((l) => ({
-      ded_nomina_detalle_id: detalleDestino.ndt_id,
-      ded_concepto_id: l.con_id,
-      ded_monto: l.monto,
-      ded_porcentaje_aplicado: l.porcentajeAplicado ?? null,
-      ded_base_calculo: l.baseCalculo ?? null,
-    }))
-  if (deducciones.length > 0) {
-    const { error } = await supabase.from('sgrh_nomina_linea_deduccion').insert(deducciones)
-    if (error) return { ok: false, error: 'No se pudieron guardar las líneas de deducción.' }
-  }
-
-  const { error: errResolver } = await supabase
+  // Primero se RESERVA el movimiento: pasa a 'pagado' solo si sigue
+  // 'pendiente'. Antes se sumaba el monto a la planilla y recién después se
+  // marcaba, sin volver a mirar el estado: dos personas pagando el mismo
+  // movimiento a la vez sumaban las horas extra dos veces.
+  const { data: reservado, error: errResolver } = await supabase
     .from('sgrh_banco_horas_movimientos')
     .update({
       bhm_estado: 'pagado',
       bhm_monto_pagado: parsed.data.monto,
       bhm_nomina_detalle_pago_id: detalleDestino.ndt_id,
-      bhm_fecha_resolucion: new Date().toISOString(),
+      // La columna existía y nunca se escribía: no quedaba quién había
+      // resuelto el movimiento.
+      bhm_resuelto_por_id: usuarioId,
+      // ahoraLocal y no toISOString: la columna es `timestamp without time
+      // zone`, así que guarda la hora tal cual se la manda. Con toISOString en
+      // Costa Rica (UTC-6) todo quedaba seis horas adelantado.
+      bhm_fecha_resolucion: ahoraLocal(),
     })
     .eq('bhm_id', parsed.data.bhmId)
+    .eq('bhm_estado', 'pendiente')
+    .select('bhm_id')
+    .returns<{ bhm_id: number }[]>()
   if (errResolver) {
+    return { ok: false, error: 'No se pudo marcar el movimiento como pagado. No se pagó nada.' }
+  }
+  if (!reservado || reservado.length === 0) {
+    return { ok: false, error: 'Este movimiento ya fue resuelto (pagado o compensado).' }
+  }
+
+  // Sumar el monto al detalle destino y recalcular la fila entera. Lo
+  // comparte con revertirBancoHoras, que hace lo mismo con signo contrario.
+  const { error: errAplicar, aMedias } = await aplicarHorasExtraEnDetalle(
+    supabase,
+    detalleDestino,
+    parsed.data.monto
+  )
+  if (errAplicar && aMedias) {
+    // Los montos de la fila ya se escribieron y las líneas no: el movimiento
+    // queda pagado apuntando a esa fila. Devolverlo a pendiente dejaba que un
+    // reintento sumara el monto otra vez sobre lo que ya había entrado.
     return {
       ok: false,
-      error:
-        'Se pagó el monto en la planilla, pero no se pudo marcar el movimiento como pagado. Avisá para revisarlo a mano.',
+      error: `${errAplicar} El pago quedó a medias en la planilla de ${periodoLabel(
+        detalleDestino.sgrh_nomina_periodo!.npe_periodo_mes,
+        detalleDestino.sgrh_nomina_periodo!.npe_periodo_anio,
+        detalleDestino.sgrh_nomina_periodo!.npe_quincena
+      )}: el movimiento se dejó como pagado para que no se sume dos veces. Revisá ese detalle antes de seguir.`,
     }
+  }
+  if (errAplicar) {
+    // No llegó a la planilla: el movimiento vuelve a quedar pendiente.
+    const { error: errDeshacer } = await supabase
+      .from('sgrh_banco_horas_movimientos')
+      .update({
+        bhm_estado: 'pendiente',
+        bhm_monto_pagado: null,
+        bhm_nomina_detalle_pago_id: null,
+        bhm_resuelto_por_id: null,
+        bhm_fecha_resolucion: null,
+      })
+      .eq('bhm_id', parsed.data.bhmId)
+    if (errDeshacer) {
+      return {
+        ok: false,
+        error: `${errAplicar} Además el movimiento quedó marcado como pagado sin estarlo: avisá para revisarlo a mano.`,
+      }
+    }
+    return { ok: false, error: errAplicar }
   }
 
   const label = periodoLabel(

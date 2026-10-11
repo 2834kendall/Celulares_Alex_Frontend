@@ -11,16 +11,39 @@
 import 'server-only'
 import ExcelJS from 'exceljs'
 import {
-  TOPE_HORAS_NORMALES_QUINCENAL,
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  esRebajoDeSalario,
   agruparConceptosPlanilla,
+  firmaCatalogo,
   parsePlanillaRow,
   type ConceptoPlanillaColumna,
   type PlanillaRowError,
   type PlanillaRowInput,
   type RawCell,
 } from './planilla'
+import {
+  basesDelSistema,
+  esBaseDelSistema,
+  prellenarDesdeAsistencia,
+  type ContratoPago,
+  type HorasDeAsistencia,
+  type QuincenaRef,
+} from './prellenadoAsistencia'
+import { lecturaUtilizable } from './horasPeriodo'
+import { round2 } from './numeros'
 
 const SHEET_NAME = 'Planilla'
+
+// Hoja oculta con la procedencia del archivo: de qué periodo salió y con qué
+// catálogo se armó. Sin esto, la subida no puede distinguir "el usuario borró
+// una columna" de "este concepto se creó después de descargar la plantilla",
+// y ante la duda contaba 0 en silencio.
+const META_SHEET_NAME = '_sgrh'
+const META_VERSION = 1
+const META_LABEL_VERSION = 'version'
+const META_LABEL_PERIODO = 'periodoId'
+const META_LABEL_CATALOGO = 'catalogo'
 const HEADER_ROW = 4
 const MONEY_FORMAT = '#,##0.00'
 const HOURS_FORMAT = '0.00'
@@ -31,21 +54,99 @@ const COLOR_CALCULADO_FILL = 'FFF1F5F9'
 const LABEL_CEDULA = 'Cédula'
 const LABEL_EMPLEADO = 'Empleado'
 const LABEL_HORAS = 'Horas trabajadas'
+const LABEL_HORAS_EXTRA = 'Horas extra'
 const LABEL_SALARIO_HORA = 'Salario por hora'
 const LABEL_TOTAL_BRUTO = 'Total bruto'
 const LABEL_TOTAL_DEDUCCIONES = 'Total deducciones'
 const LABEL_TOTAL_NETO = 'Total neto'
+const LABEL_REVISAR = 'Días por revisar'
 
 export interface EmpleadoPlantilla {
   cedula: string
   nombre: string
-  /** Salario base mensual del contrato; en la plantilla se prellena la mitad (quincena). */
+  /** Salario base mensual del contrato: base ÷ 30 por día de la quincena. */
   salarioBaseMensual: number
+  /** Salario real mensual: el objetivo de la quincena es la mitad. */
+  salarioRealMensual?: number | null
+  /**
+   * Horas semanales de la jornada pactada. De acá sale el valor de la hora
+   * (ver lib/jornada.ts); null cae a la jornada ordinaria diurna.
+   */
+  horasSemanales?: number | null
+  /**
+   * Lo que dicen las marcas del kiosco para la quincena. Ausente cuando el
+   * periodo no tiene fechas o no se pudieron leer: por regla el cumplimiento
+   * es 0 y la fila sale en ₡0 para que se revise.
+   */
+  horas?: {
+    lectura: HorasDeAsistencia
+    /** Días programados con marcas incompletas; hay que corregirlos antes de pagar. */
+    diasPorRevisar: number
+  }
+  /**
+   * La fila que el empleado YA tiene en este periodo, si tiene. Sin esto la
+   * plantilla traía en 0 todo monto manual que no fuera BASE o AJUSTE: bajarla
+   * y subirla (lo que pide el aviso de "las marcas cambiaron") borraba
+   * comisiones, préstamos y el BASE corregido a mano de todas las filas.
+   */
+  guardado?: FilaGuardadaPlantilla
+}
+
+/** Lo guardado en la fila del periodo, en la forma que usa la plantilla. */
+export interface FilaGuardadaPlantilla {
+  pagado: boolean
+  horas: number
+  horasExtra: number
+  salarioPorHora: number
+  /** Monto por código de concepto manual (BASE, AJUSTE, COMISION, PRESTAMO…). */
+  montos: Record<string, number>
+  /**
+   * Las horas guardadas no son las que dijeron las marcas: alguien las
+   * corrigió (origenHoras = 'ajustadas'). La plantilla las trae tal cual, con
+   * su salario; si trajera las de las marcas, subir el archivo sin tocarlo
+   * borraba la corrección (auditoría 2, hallazgo 7: 40 h → 0).
+   */
+  horasAjustadas?: boolean
+}
+
+/**
+ * BASE que va en la plantilla para una fila sin pagar.
+ *
+ * El que prellenó el sistema se rehace con las marcas de hoy (para eso se
+ * vuelve a bajar la plantilla). Uno corregido a mano se respeta, con el mismo
+ * criterio que la subida (baseParaHorasEditadas): si no coincide con ninguna
+ * regla del sistema, es una decisión de alguien. Sin marcas utilizables no
+ * hay con qué recalcular, así que queda lo guardado.
+ */
+function baseDeLaPlantilla(
+  prellenado: number,
+  guardado: FilaGuardadaPlantilla | undefined,
+  contrato: ContratoPago,
+  lectura: HorasDeAsistencia | null,
+  quincena: QuincenaRef
+): number {
+  const base = guardado?.montos[CODIGO_SALARIO_BASE] ?? 0
+  if (!guardado || !(base > 0)) return prellenado
+  if (!lecturaUtilizable(lectura)) return base
+  const candidatos = [
+    prellenado,
+    ...basesDelSistema(
+      contrato,
+      { horas: guardado.horas, horasExtra: guardado.horasExtra },
+      lectura,
+      quincena
+    ),
+  ]
+  return esBaseDelSistema(base, candidatos) ? prellenado : base
 }
 
 export interface PlantillaInfo {
   titulo: string
   subtitulo: string
+  /** Periodo al que pertenece la plantilla; se sella en la hoja oculta. */
+  periodoId: number
+  /** Qué quincena es: define los días de salario base (ver diasDeLaQuincena). */
+  quincena: QuincenaRef
 }
 
 /** Convierte un índice de columna 1-based a su letra de Excel (1 → A, 27 → AA). */
@@ -76,6 +177,16 @@ export async function buildPlanillaTemplate(
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet(SHEET_NAME)
 
+  // Sello de procedencia. 'veryHidden' para que no se pueda mostrar desde la
+  // interfaz de Excel: no es información que el usuario deba tocar.
+  const meta = wb.addWorksheet(META_SHEET_NAME, { state: 'veryHidden' })
+  meta.getCell('A1').value = META_LABEL_VERSION
+  meta.getCell('B1').value = META_VERSION
+  meta.getCell('A2').value = META_LABEL_PERIODO
+  meta.getCell('B2').value = info.periodoId
+  meta.getCell('A3').value = META_LABEL_CATALOGO
+  meta.getCell('B3').value = firmaCatalogo(conceptos)
+
   const { ingresoManual, deduccionManual, horasExtra, deduccionPorcentual } =
     agruparConceptosPlanilla(conceptos)
 
@@ -83,10 +194,16 @@ export async function buildPlanillaTemplate(
     { label: LABEL_CEDULA, editable: false },
     { label: LABEL_EMPLEADO, editable: false },
     { label: LABEL_HORAS, editable: true },
+    { label: LABEL_HORAS_EXTRA, editable: true },
     { label: LABEL_SALARIO_HORA, editable: true },
-    ...ingresoManual.map((c) => ({ label: c.con_nombre, editable: true })),
+    // El ajuste va en gris: lo recalcula el servidor al subir el archivo.
+    ...ingresoManual.map((c) => ({
+      label: c.con_nombre,
+      editable: c.con_codigo !== CODIGO_AJUSTE,
+    })),
     ...deduccionManual.map((c) => ({ label: c.con_nombre, editable: true })),
     ...horasExtra.map((c) => ({ label: `${c.con_nombre} (calculado)`, editable: false })),
+    { label: LABEL_REVISAR, editable: false },
     { label: LABEL_TOTAL_BRUTO, editable: false },
     ...deduccionPorcentual.map((c) => ({
       label: `${c.con_nombre} (${c.con_porcentaje ?? 0}%, calculado)`,
@@ -98,11 +215,13 @@ export async function buildPlanillaTemplate(
 
   const colCedula = 1
   const colHoras = 3
-  const colSalarioHora = 4
-  const colIngresoInicio = 5
+  const colHorasExtra = 4
+  const colSalarioHora = 5
+  const colIngresoInicio = 6
   const colDeduccionManualInicio = colIngresoInicio + ingresoManual.length
   const colHorasExtraInicio = colDeduccionManualInicio + deduccionManual.length
-  const colTotalBruto = colHorasExtraInicio + horasExtra.length
+  const colRevisar = colHorasExtraInicio + horasExtra.length
+  const colTotalBruto = colRevisar + 1
   const colDeduccionPctInicio = colTotalBruto + 1
   const colTotalDeducciones = colDeduccionPctInicio + deduccionPorcentual.length
   const colTotalNeto = colTotalDeducciones + 1
@@ -112,7 +231,7 @@ export async function buildPlanillaTemplate(
   ws.getCell('A2').value = info.subtitulo
   ws.getCell('A2').font = { color: { argb: 'FF64748B' }, size: 10 }
   ws.getCell('A3').value =
-    'Edita solo las columnas azules (montos, horas y salario por hora). No cambies la cédula ni agregues columnas — las columnas grises se calculan solas.'
+    'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues columnas — las columnas grises se calculan solas.'
   ws.getCell('A3').font = { color: { argb: 'FFB45309' }, size: 10 }
 
   const headerRow = ws.getRow(HEADER_ROW)
@@ -134,27 +253,69 @@ export async function buildPlanillaTemplate(
     const row = ws.getRow(rowNumber)
     row.getCell(colCedula).value = emp.cedula
     row.getCell(2).value = emp.nombre
-    row.getCell(colHoras).value = TOPE_HORAS_NORMALES_QUINCENAL
-    row.getCell(colSalarioHora).value =
-      Math.round((emp.salarioBaseMensual / 2 / TOPE_HORAS_NORMALES_QUINCENAL) * 100) / 100
+    // La misma cuenta que usa "cargar empleados desde asistencia", compartida
+    // en lib/prellenadoAsistencia.ts: si cada camino tuviera la suya, armar la
+    // planilla por el archivo o por el botón daría montos distintos para la
+    // misma quincena.
+    //
+    // Es un prellenado, no una imposición: el encargado revisa el archivo antes
+    // de subirlo.
+    const contrato: ContratoPago = {
+      salarioBaseMensual: emp.salarioBaseMensual,
+      salarioRealMensual: emp.salarioRealMensual ?? null,
+      horasSemanales: emp.horasSemanales ?? null,
+    }
+    const lecturaEmp = emp.horas?.lectura ?? null
+    const prellenado = prellenarDesdeAsistencia(contrato, lecturaEmp, info.quincena)
+    const guardado = emp.guardado
+
+    // Una fila ya pagada va tal cual se pagó: la subida no la cambia (tiene
+    // comprobante emitido), y traerla recalculada solo generaba el aviso de
+    // "pagadas sin tocar" en cada subida. Una con horas corregidas a mano,
+    // también: esa corrección es una decisión de alguien (hallazgo 7).
+    const conservada =
+      guardado?.pagado === true || guardado?.horasAjustadas === true ? guardado : null
+    const montoGuardado = (codigo: string) => guardado?.montos[codigo] ?? 0
+
+    row.getCell(colHoras).value = conservada ? conservada.horas : prellenado.horas
+    row.getCell(colHorasExtra).value = conservada ? conservada.horasExtra : prellenado.horasExtra
+    row.getCell(colSalarioHora).value = conservada
+      ? conservada.salarioPorHora
+      : prellenado.salarioPorHora
+    row.getCell(colRevisar).value = emp.horas?.diasPorRevisar ?? 0
+
+    const base = conservada
+      ? montoGuardado(CODIGO_SALARIO_BASE)
+      : baseDeLaPlantilla(prellenado.base, guardado, contrato, lecturaEmp, info.quincena)
+    const ajuste = conservada ? montoGuardado(CODIGO_AJUSTE) : prellenado.ajuste
 
     ingresoManual.forEach((c, i) => {
-      const monto =
-        c.con_codigo === 'BASE' ? Math.round((emp.salarioBaseMensual / 2) * 100) / 100 : 0
-      row.getCell(colIngresoInicio + i).value = monto
+      row.getCell(colIngresoInicio + i).value =
+        c.con_codigo === CODIGO_SALARIO_BASE
+          ? base
+          : c.con_codigo === CODIGO_AJUSTE
+            ? ajuste
+            : montoGuardado(c.con_codigo)
+      if (c.con_codigo === CODIGO_AJUSTE) {
+        row.getCell(colIngresoInicio + i).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLOR_CALCULADO_FILL },
+        }
+      }
     })
-    deduccionManual.forEach((_, i) => {
-      row.getCell(colDeduccionManualInicio + i).value = 0
+    deduccionManual.forEach((c, i) => {
+      row.getCell(colDeduccionManualInicio + i).value = montoGuardado(c.con_codigo)
     })
 
-    const letraHoras = columnLetter(colHoras)
+    const letraHorasExtra = columnLetter(colHorasExtra)
     const letraSalarioHora = columnLetter(colSalarioHora)
 
     horasExtra.forEach((c, i) => {
       const col = colHorasExtraInicio + i
       const factor = (c.con_porcentaje ?? 0) / 100
       row.getCell(col).value = {
-        formula: `MAX(0,${letraHoras}${rowNumber}-${TOPE_HORAS_NORMALES_QUINCENAL})*${letraSalarioHora}${rowNumber}*${factor}`,
+        formula: `${letraHorasExtra}${rowNumber}*${letraSalarioHora}${rowNumber}*${factor}`,
       }
     })
 
@@ -163,38 +324,89 @@ export async function buildPlanillaTemplate(
         ? `${columnLetter(inicio)}${rowNumber}:${columnLetter(inicio + cantidad - 1)}${rowNumber}`
         : null
 
-    const sumandosBruto = [
-      rango(colIngresoInicio, ingresoManual.length),
-      rango(colHorasExtraInicio, horasExtra.length),
-    ].filter((r): r is string => r !== null)
-    row.getCell(colTotalBruto).value = {
-      formula: sumandosBruto.length > 0 ? `SUM(${sumandosBruto.join(',')})` : '0',
+    // Vista previa con las mismas reglas que el servidor
+    // (calcularPlanillaPorConceptos), para que el archivo no induzca a error
+    // (auditoría, hallazgo 6):
+    //  - un ingreso que no es salario (con_afecta_salario_bruto = false, ej.
+    //    Aguinaldo o Viáticos) no va al bruto ni a la CCSS: se suma al neto;
+    //  - la CCSS se calcula sobre lo que cotiza (con_afecta_base_ccss), no
+    //    sobre todo el bruto;
+    //  - el pago de banco de horas ya guardado en la fila (HORAS_EXTRA, que no
+    //    es columna) sí es salario y cotiza.
+    // El servidor recalcula todo al subir; esto es solo lo que se ve.
+    const celda = (col: number) => `${columnLetter(col)}${rowNumber}`
+    const ingresosConColumna = [
+      ...ingresoManual.map((c, i) => ({ c, col: colIngresoInicio + i })),
+      ...horasExtra.map((c, i) => ({ c, col: colHorasExtraInicio + i })),
+    ]
+    const esSalario = (c: ConceptoPlanillaColumna) => c.con_afecta_salario_bruto !== false
+    const cotiza = (c: ConceptoPlanillaColumna) => esSalario(c) && c.con_afecta_base_ccss !== false
+    const tieneColumnaHorasExtra = ingresosConColumna.some((x) => x.c.con_codigo === 'HORAS_EXTRA')
+    const bancoPagado = tieneColumnaHorasExtra ? 0 : round2(guardado?.montos.HORAS_EXTRA ?? 0)
+    const suma = (refs: string[], extra = 0) => {
+      const partes = [...refs, ...(extra !== 0 ? [String(extra)] : [])]
+      return partes.length > 0 ? `SUM(${partes.join(',')})` : '0'
     }
+    const refsBruto = ingresosConColumna.filter((x) => esSalario(x.c)).map((x) => celda(x.col))
+    const refsCcss = ingresosConColumna.filter((x) => cotiza(x.c)).map((x) => celda(x.col))
+    const refsNoSalarial = ingresosConColumna
+      .filter((x) => !esSalario(x.c))
+      .map((x) => celda(x.col))
 
-    const letraBruto = columnLetter(colTotalBruto)
+    // La ausencia sin goce rebaja el salario: sale del bruto y de la base de
+    // la CCSS, no del neto (auditoría 2, hallazgo 6). Igual que el motor, el
+    // bruto no baja de 0.
+    const refsRebajo = deduccionManual
+      .map((c, i) => ({ c, col: colDeduccionManualInicio + i }))
+      .filter((x) => esRebajoDeSalario(x.c))
+      .map((x) => celda(x.col))
+    const menosRebajo = (formula: string) =>
+      refsRebajo.length > 0 ? `MAX(0,${formula}-${suma(refsRebajo)})` : formula
+
+    row.getCell(colTotalBruto).value = { formula: menosRebajo(suma(refsBruto, bancoPagado)) }
+
+    const baseCcss = menosRebajo(suma(refsCcss, bancoPagado))
     deduccionPorcentual.forEach((c, i) => {
       const col = colDeduccionPctInicio + i
-      const factor = (c.con_porcentaje ?? 0) / 100
-      row.getCell(col).value = { formula: `${letraBruto}${rowNumber}*${factor}` }
+      // `*10.83/100` y no `*0.1083`: 10.83 / 100 en JavaScript es
+      // 0.10830000000000001, y eso quedaba escrito en la fórmula.
+      row.getCell(col).value = { formula: `${baseCcss}*${c.con_porcentaje ?? 0}/100` }
     })
 
+    // El rebajo de salario ya se restó del bruto: no se resta otra vez.
     const sumandosDeducciones = [
-      rango(colDeduccionManualInicio, deduccionManual.length),
+      ...(refsRebajo.length > 0
+        ? deduccionManual
+            .map((c, i) => ({ c, col: colDeduccionManualInicio + i }))
+            .filter((x) => !esRebajoDeSalario(x.c))
+            .map((x) => celda(x.col))
+        : [rango(colDeduccionManualInicio, deduccionManual.length)]),
       rango(colDeduccionPctInicio, deduccionPorcentual.length),
     ].filter((r): r is string => r !== null)
     row.getCell(colTotalDeducciones).value = {
       formula: sumandosDeducciones.length > 0 ? `SUM(${sumandosDeducciones.join(',')})` : '0',
     }
 
+    const letraBruto = columnLetter(colTotalBruto)
     const letraDeducciones = columnLetter(colTotalDeducciones)
     row.getCell(colTotalNeto).value = {
-      formula: `${letraBruto}${rowNumber}-${letraDeducciones}${rowNumber}`,
+      formula:
+        `${letraBruto}${rowNumber}-${letraDeducciones}${rowNumber}` +
+        (refsNoSalarial.length > 0 ? `+${suma(refsNoSalarial)}` : ''),
     }
 
     for (let col = colSalarioHora; col <= colTotalNeto; col += 1) {
       row.getCell(col).numFmt = MONEY_FORMAT
     }
     row.getCell(colHoras).numFmt = HOURS_FORMAT
+    row.getCell(colHorasExtra).numFmt = HOURS_FORMAT
+    // "Días por revisar" es un conteo, no plata: el formato de moneda que se
+    // aplica al bloque de arriba lo mostraría como "2.00".
+    row.getCell(colRevisar).numFmt = '0'
+
+    if ((emp.horas?.diasPorRevisar ?? 0) > 0) {
+      row.getCell(colRevisar).font = { bold: true, color: { argb: 'FFB91C1C' } }
+    }
 
     for (let col = colHorasExtraInicio; col <= colTotalNeto; col += 1) {
       row.getCell(col).fill = {
@@ -271,16 +483,57 @@ function locateColumn(headerRow: ExcelJS.Row, label: string, maxCol: number): nu
 }
 
 /**
+ * Verifica que el archivo sea la plantilla que este sistema genero, para este
+ * periodo, y con el catalogo que esta vigente ahora. Devuelve el error a
+ * reportar, o null si todo cuadra.
+ */
+function validarProcedencia(
+  wb: ExcelJS.Workbook,
+  conceptos: ConceptoPlanillaColumna[],
+  periodoId: number
+): PlanillaRowError | null {
+  const meta = wb.getWorksheet(META_SHEET_NAME)
+
+  if (!meta || cellValue(meta.getCell('B1')) !== META_VERSION) {
+    return {
+      fila: 0,
+      mensaje:
+        'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descarga la plantilla de este periodo y vuelve a intentar.',
+    }
+  }
+
+  const periodoDelArchivo = Number(cellValue(meta.getCell('B2')))
+  if (periodoDelArchivo !== periodoId) {
+    return {
+      fila: 0,
+      mensaje: `Esta plantilla es del periodo ${periodoDelArchivo}, no del que estás subiendo. Descarga la plantilla de este periodo.`,
+    }
+  }
+
+  const catalogoDelArchivo = String(cellValue(meta.getCell('B3')) ?? '')
+  if (catalogoDelArchivo !== firmaCatalogo(conceptos)) {
+    return {
+      fila: 0,
+      mensaje:
+        'Los conceptos de nómina cambiaron desde que se descargó esta plantilla, así que sus columnas ya no corresponden. Descarga la plantilla de nuevo y vuelve a llenarla.',
+    }
+  }
+
+  return null
+}
+
+/**
  * Lee el Excel subido y devuelve filas normalizadas + errores por fila.
  * `conceptos` debe ser la lista de conceptos activos del catálogo (la misma
  * que se usó para generar la plantilla) — a partir de ella se ubican las
- * columnas de monto manual por el nombre del concepto. Si un concepto ya no
- * tiene columna en el archivo (por ejemplo, se creó después de descargar la
- * plantilla), su monto cuenta como 0 para esa fila.
+ * columnas de monto manual por el nombre del concepto. Si al archivo le falta
+ * cualquiera de esas columnas se rechaza entero: contarlas como 0 era
+ * justamente la forma silenciosa de perder plata que esto viene a evitar.
  */
 export async function parsePlanillaWorkbook(
   buffer: ArrayBuffer,
-  conceptos: ConceptoPlanillaColumna[]
+  conceptos: ConceptoPlanillaColumna[],
+  periodoId: number
 ): Promise<ParsePlanillaResult> {
   const wb = new ExcelJS.Workbook()
 
@@ -299,9 +552,15 @@ export async function parsePlanillaWorkbook(
     }
   }
 
-  const ws = wb.getWorksheet(SHEET_NAME) ?? wb.worksheets[0]
+  const ws =
+    wb.getWorksheet(SHEET_NAME) ?? wb.worksheets.find((hoja) => hoja.name !== META_SHEET_NAME)
   if (!ws) {
     return { rows: [], errors: [{ fila: 0, mensaje: 'El archivo no tiene hojas legibles.' }] }
+  }
+
+  const errorArchivo = validarProcedencia(wb, conceptos, periodoId)
+  if (errorArchivo) {
+    return { rows: [], errors: [errorArchivo] }
   }
 
   const { ingresoManual, deduccionManual } = agruparConceptosPlanilla(conceptos)
@@ -311,8 +570,9 @@ export async function parsePlanillaWorkbook(
   const headerRow = ws.getRow(headerRowNumber)
   const maxCol = Math.max(ws.columnCount, headerRow.actualCellCount, columnasMontoDef.length + 20)
 
-  const colCedula = locateColumn(headerRow, LABEL_CEDULA, maxCol) ?? 1
+  const colCedula = locateColumn(headerRow, LABEL_CEDULA, maxCol)
   const colHoras = locateColumn(headerRow, LABEL_HORAS, maxCol)
+  const colHorasExtra = locateColumn(headerRow, LABEL_HORAS_EXTRA, maxCol)
   const colSalarioHora = locateColumn(headerRow, LABEL_SALARIO_HORA, maxCol)
 
   const columnasMonto = columnasMontoDef.map((c) => ({
@@ -320,6 +580,39 @@ export async function parsePlanillaWorkbook(
     etiqueta: c.con_nombre,
     columna: locateColumn(headerRow, c.con_nombre, maxCol),
   }))
+
+  // Una columna que no aparece NO es un 0: es un archivo que no corresponde.
+  // Antes se leía como vacío y la planilla se guardaba con ese concepto en
+  // cero, o — si lo que faltaba era "Horas trabajadas" — con toda la sucursal
+  // en 0 horas, sin un solo mensaje de error.
+  //
+  // Las tres columnas fijas se comprueban en la misma condición para que
+  // TypeScript las estreche a `number` en el resto de la función.
+  if (
+    colCedula === null ||
+    colHoras === null ||
+    colHorasExtra === null ||
+    colSalarioHora === null ||
+    columnasMonto.some((c) => c.columna === null)
+  ) {
+    const faltantes = [
+      colCedula === null ? LABEL_CEDULA : null,
+      colHoras === null ? LABEL_HORAS : null,
+      colHorasExtra === null ? LABEL_HORAS_EXTRA : null,
+      colSalarioHora === null ? LABEL_SALARIO_HORA : null,
+      ...columnasMonto.filter((c) => c.columna === null).map((c) => c.etiqueta),
+    ].filter((etiqueta): etiqueta is string => etiqueta !== null)
+
+    return {
+      rows: [],
+      errors: [
+        {
+          fila: headerRowNumber,
+          mensaje: `Al archivo le faltan columnas obligatorias: ${faltantes.join(', ')}. No cambies ni borres los encabezados; descarga la plantilla de nuevo si hace falta.`,
+        },
+      ],
+    }
+  }
 
   const rows: PlanillaRowInput[] = []
   const errors: PlanillaRowError[] = []
@@ -331,14 +624,16 @@ export async function parsePlanillaWorkbook(
     const montosCrudos = columnasMonto.map(({ codigo, etiqueta, columna }) => ({
       codigo,
       etiqueta,
-      valor: columna !== null ? cellValue(row.getCell(columna)) : null,
+      // El guard de arriba ya garantiza que ninguna quedó en null.
+      valor: cellValue(row.getCell(columna!)),
     }))
 
     const result = parsePlanillaRow(
       rowNumber,
       cellValue(row.getCell(colCedula)),
-      colHoras !== null ? cellValue(row.getCell(colHoras)) : null,
-      colSalarioHora !== null ? cellValue(row.getCell(colSalarioHora)) : null,
+      cellValue(row.getCell(colHoras)),
+      cellValue(row.getCell(colHorasExtra)),
+      cellValue(row.getCell(colSalarioHora)),
       montosCrudos
     )
 

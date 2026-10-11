@@ -10,6 +10,11 @@ export interface TabDefinition<T extends string> {
   icon: LucideIcon
   content: React.ReactNode
   /**
+   * Texto para pantallas angostas. Sin el, tres pestañas de nombre largo no
+   * entran en un celular y hay que deslizarlas para descubrir la ultima.
+   */
+  shortLabel?: string
+  /**
    * Saca el boton del grupo de pestanas y lo pinta como accion primaria,
    * manteniendo el cableado ARIA (lo usa "Nueva evaluacion").
    */
@@ -32,7 +37,7 @@ interface TabsProps<T extends string> {
 // la app que no acusaba recibo, y en tactil —donde no hay hover— el usuario
 // se queda sin ninguna señal hasta que la pagina termina de navegar.
 const TAB_BUTTON =
-  'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition outline-none active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2'
+  'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition outline-none active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2'
 
 const STANDALONE_BUTTON =
   'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:shadow-md active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2'
@@ -115,7 +120,8 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
             <Icon className="h-3 w-3" aria-hidden="true" />
           </span>
         )}
-        <span>{label}</span>
+        <span className="@sm:hidden">{tab.shortLabel ?? label}</span>
+        <span className="hidden @sm:inline">{label}</span>
       </button>
     )
   }
@@ -130,15 +136,17 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
       {/*
         Centrado en angosto, a la izquierda desde @sm. Un tablist de 2-4
         pildoras pegado al borde izquierdo con medio celular vacio al lado
-        se leia como mal alineado, no como una decision de diseño — y con
-        cuatro pestañas que envuelven a dos filas (horarios), cada fila
-        quedaba con un largo distinto sin ningun eje que las una.
+        se leia como mal alineado, no como una decision de diseño.
       */}
       <div className="flex flex-col items-center gap-2 @sm:flex-row @sm:flex-wrap @sm:items-center">
         <div
           role="tablist"
           aria-label={ariaLabel}
-          className="inline-flex flex-wrap justify-center gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1"
+          // Una sola fila SIEMPRE, y si no caben se desliza de lado. Al
+          // envolver, la segunda fila quedaba con una sola pestaña centrada
+          // bajo las otras dos y se leia como un error de maquetado. El
+          // scroll queda dentro de la pildora: no mueve la pagina.
+          className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/80 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden @sm:inline-flex"
         >
           {grouped.map(renderTab)}
         </div>

@@ -4,6 +4,7 @@ import { getMySchedule } from '@/modules/schedules/actions/getMySchedule'
 import { currentMondayISO, isValidISODate } from '@/modules/schedules/lib/week'
 import { MyScheduleView } from '@/modules/schedules/components/MyScheduleView'
 import { Alert } from '@/components/ui/Alert'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 interface MySchedulePageProps {
   searchParams?:
@@ -24,16 +25,19 @@ export default async function MySchedulePage({ searchParams }: MySchedulePagePro
 
   const result = await getMySchedule(weekStartISO)
 
-  if (!result.ok) {
-    return <Alert size="md">{result.error}</Alert>
-  }
-
   return (
-    <MyScheduleView
-      weekStartISO={weekStartISO}
-      weekDates={result.weekDates}
-      days={result.days}
-      weeklyTotal={result.weeklyTotal}
-    />
+    <div className="min-w-0 space-y-4">
+      <PageHeader title="Mi horario" />
+      {result.ok ? (
+        <MyScheduleView
+          weekStartISO={weekStartISO}
+          weekDates={result.weekDates}
+          days={result.days}
+          weeklyTotal={result.weeklyTotal}
+        />
+      ) : (
+        <Alert size="md">{result.error}</Alert>
+      )}
+    </div>
   )
 }

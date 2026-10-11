@@ -28,9 +28,11 @@ describe('checkMonthlyInfractions (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'No se pudo determinar la empresa del usuario.' })
   })
 
-  it('no hace nada si no hay colaboradores activos', async () => {
+  it('no hace nada si nadie tiene programacion este mes', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
+      sgrh_programacion_semanal: { data: [], error: null },
       sgrh_historial_laboral: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
@@ -40,24 +42,22 @@ describe('checkMonthlyInfractions (server action)', () => {
     const result = await checkMonthlyInfractions()
 
     expect(result).toEqual({ ok: true })
-    expect(client.from).not.toHaveBeenCalledWith('sgrh_sucursales')
+    expect(client.from).not.toHaveBeenCalledWith('sgrh_marcas_asistencia')
   })
 
   it('inserta una advertencia cuando un empleado supera el limite de tardias', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 2 }],
-        error: null,
-      },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: {
         data: [
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-01',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -66,6 +66,7 @@ describe('checkMonthlyInfractions (server action)', () => {
           },
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-02',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -74,6 +75,7 @@ describe('checkMonthlyInfractions (server action)', () => {
           },
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-03',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -132,19 +134,17 @@ describe('checkMonthlyInfractions (server action)', () => {
 
   it('no inserta una segunda advertencia si ya se aviso este mes', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 2 }],
-        error: null,
-      },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_programacion_semanal: {
         data: [
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-01',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -177,21 +177,30 @@ describe('checkMonthlyInfractions (server action)', () => {
     expect(notifBuilders[0].insert).not.toHaveBeenCalled()
   })
 
-  it('no advierte a un empleado dentro de la tolerancia', async () => {
+  it('no advierte a quien llega antes del primer tipo de tardia del catalogo', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 10 }],
+      sgrh_cat_tipos_tardia: {
+        data: [
+          {
+            tta_id: 1,
+            tta_nombre: 'Tarde',
+            tta_desde_minutos: 11,
+            tta_cuenta_advertencia: true,
+            tta_color: null,
+          },
+        ],
         error: null,
       },
       sgrh_programacion_semanal: {
         data: [
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-01',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -228,19 +237,28 @@ describe('checkMonthlyInfractions (server action)', () => {
     // marca nunca calza con prg_fecha y el empleado se ve como "ausente"
     // ese dia aunque si marco a tiempo, disparando una advertencia falsa.
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: {
-        data: [{ suc_id: 100, suc_tolerancia_tardia_minutos: 10 }],
+      sgrh_cat_tipos_tardia: {
+        data: [
+          {
+            tta_id: 1,
+            tta_nombre: 'Tarde',
+            tta_desde_minutos: 11,
+            tta_cuenta_advertencia: true,
+            tta_color: null,
+          },
+        ],
         error: null,
       },
       sgrh_programacion_semanal: {
         data: [
           {
             prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
             prg_fecha: '2026-07-01',
             prg_es_dia_libre: false,
             prg_es_feriado: false,
@@ -276,14 +294,27 @@ describe('checkMonthlyInfractions (server action)', () => {
 
   it('devuelve error generico si falla alguna de las consultas del mes', async () => {
     const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: { uer_sucursal_id: 100 }, error: null },
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_historial_laboral: {
         data: [{ lab_id: 1, lab_empleado_id: 10, lab_sucursal_id: 100 }],
         error: null,
       },
-      sgrh_sucursales: { data: null, error: { message: 'boom' } },
-      sgrh_programacion_semanal: { data: [], error: null },
-      sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
+      sgrh_programacion_semanal: {
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
+            prg_fecha: '2026-07-01',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            sgrh_cat_horarios: { hor_hora_entrada: '08:00:00' },
+          },
+        ],
+        error: null,
+      },
+      sgrh_marcas_asistencia: { data: null, error: { message: 'boom' } },
       sgrh_ausencias: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(

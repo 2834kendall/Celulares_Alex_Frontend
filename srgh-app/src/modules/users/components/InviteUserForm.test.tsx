@@ -78,18 +78,34 @@ describe('<InviteUserForm />', () => {
 
     await chooseSelectMenuOption(user, 'Empleado vinculado (opcional)', 'Luis Rojas')
     await chooseSelectMenuOption(user, 'Rol *', 'Empleado')
-    await chooseSelectMenuOption(user, 'Sucursal (opcional)', 'Central')
+    await user.click(screen.getByRole('checkbox', { name: 'Central' }))
     await user.click(screen.getByRole('button', { name: /enviar invitación/i }))
 
     await waitFor(() => {
       expect(mockInviteUser).toHaveBeenCalledWith({
         email: 'luis.rojas@mail.com',
         rol_id: 4,
-        sucursal_id: 2,
+        sucursal_ids: [2],
         empleado_id: 11,
       })
     })
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('por defecto invita a nivel empresa (sin sucursales marcadas)', async () => {
+    mockInviteUser.mockResolvedValue({ ok: true, usrId: 7 })
+    const user = userEvent.setup()
+    renderForm()
+
+    expect(screen.getByRole('checkbox', { name: 'Todas las sucursales' })).toBeChecked()
+
+    await chooseSelectMenuOption(user, 'Empleado vinculado (opcional)', 'Luis Rojas')
+    await chooseSelectMenuOption(user, 'Rol *', 'Empleado')
+    await user.click(screen.getByRole('button', { name: /enviar invitación/i }))
+
+    await waitFor(() => {
+      expect(mockInviteUser).toHaveBeenCalledWith(expect.objectContaining({ sucursal_ids: [] }))
+    })
   })
 
   it('precarga empleado y email desde el banner', () => {

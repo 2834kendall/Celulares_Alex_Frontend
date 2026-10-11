@@ -13,7 +13,7 @@ import {
   type UsuarioListItem,
 } from '@/modules/users/types'
 import { updateUserAssignment } from '@/modules/users/actions/updateUserAssignment'
-import { Labeled } from './fields'
+import { Labeled, SucursalesField } from './fields'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { SPINNER } from '@/components/ui/styles'
@@ -63,7 +63,7 @@ export function EditUserDialog({
     resolver: zodResolver(editarAsignacionSchema) as Resolver<EditarAsignacionInput>,
     defaultValues: {
       rol_id: usuario.rol_id,
-      sucursal_id: usuario.sucursal_id,
+      sucursal_ids: usuario.sucursales.map((sucursal) => sucursal.id),
       empleado_id: usuario.empleado_id,
     },
   })
@@ -98,33 +98,22 @@ export function EditUserDialog({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Labeled label="Rol *" error={errors.rol_id?.message}>
-            <ControlledSelectMenu
-              control={control}
-              name="rol_id"
-              parse={parseNumber}
-              invalid={Boolean(errors.rol_id)}
-              options={roles.map((rol) => ({ value: String(rol.id), label: rol.nombre }))}
-            />
-          </Labeled>
+        <Labeled label="Rol *" error={errors.rol_id?.message}>
+          <ControlledSelectMenu
+            control={control}
+            name="rol_id"
+            parse={parseNumber}
+            invalid={Boolean(errors.rol_id)}
+            options={roles.map((rol) => ({ value: String(rol.id), label: rol.nombre }))}
+          />
+        </Labeled>
 
-          <Labeled label="Sucursal (opcional)" error={errors.sucursal_id?.message}>
-            <ControlledSelectMenu
-              control={control}
-              name="sucursal_id"
-              parse={parseOptionalNumber}
-              invalid={Boolean(errors.sucursal_id)}
-              options={[
-                { value: '', label: 'Todas las sucursales' },
-                ...sucursales.map((sucursal) => ({
-                  value: String(sucursal.id),
-                  label: sucursal.nombre,
-                })),
-              ]}
-            />
-          </Labeled>
-        </div>
+        <SucursalesField
+          control={control}
+          name="sucursal_ids"
+          sucursales={sucursales}
+          error={errors.sucursal_ids?.message as string | undefined}
+        />
 
         <Labeled label="Empleado vinculado (opcional)" error={errors.empleado_id?.message}>
           <ControlledSelectMenu

@@ -92,17 +92,50 @@ export const TABLE_WRAP =
   'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)]'
 
 /**
- * Scroller horizontal interno.
+ * Scroller de la tabla: horizontal y vertical, con altura acotada.
  *
- * Ninguna tabla del proyecto tiene version de tarjetas para movil: este scroll
- * es lo unico que impide que la tabla rompa el layout en pantallas chicas.
+ * La altura es lo que hace que al scrollear sobre una tabla larga se mueva
+ * LA TABLA y no la pagina entera, con el encabezado quedandose fijo arriba
+ * (ver TABLE_TH). Sin el tope, la tabla crece indefinida, el scroll lo toma
+ * el documento y los nombres de columna se van de pantalla — que es lo que
+ * se sentia "raro de usar".
+ *
+ * OJO — no se puede tener scroll horizontal aca y ADEMAS un encabezado
+ * pegado al viewport: en cuanto `overflow-x` deja de ser `visible`, el
+ * navegador computa `overflow-y: auto` solo y este div pasa a ser el
+ * contenedor de scroll de sus hijos sticky. Se probo `overflow-y: clip` y
+ * `visible`: la spec los fuerza a `hidden`/`auto`. Por eso el encabezado se
+ * ancla a ESTE contenedor (top-0) y no a la barra superior de la app.
+ *
+ * El tope descuenta la barra superior (4rem) mas el encabezado de pagina,
+ * las pestañas y la barra de filtros que suele haber encima de una tabla.
  */
-export const TABLE_SCROLL = 'overflow-x-auto'
+export const TABLE_SCROLL = 'max-h-[calc(100dvh-13rem)] overflow-auto'
 
-export const TABLE_HEAD = 'bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500'
-export const TABLE_TH = 'px-3 py-2 text-left font-semibold'
-export const TABLE_TH_RIGHT = 'px-3 py-2 text-right font-semibold'
-export const TABLE_TH_CENTER = 'px-3 py-2 text-center font-semibold'
+/**
+ * Envoltorio de la tabla de escritorio: oculta en pantallas angostas (ahi
+ * cada lista muestra tarjetas en su lugar) y con el scroller aplicado.
+ *
+ * Existe porque esta misma cadena estaba escrita a mano en 11 componentes,
+ * y las tablas que no la usaban se quedaban sin encabezado fijo sin que
+ * nadie lo notara.
+ */
+export const TABLE_DESKTOP_WRAP = `hidden @3xl:block ${TABLE_SCROLL}`
+
+/**
+ * Encabezado de tabla. El fondo es OPACO a proposito: con el encabezado
+ * pegado (ver TABLE_TH) un fondo translucido deja ver las filas pasando por
+ * debajo.
+ */
+export const TABLE_HEAD = 'text-[10px] uppercase tracking-wide text-slate-500'
+/*
+ * El sticky va en cada `th` y no en el `thead`: Safari no posiciona
+ * `thead`/`tr` sticky, solo las celdas. Por eso cada celda lleva ademas su
+ * propio fondo, que en un `th` transparente dejaria ver las filas al pasar.
+ */
+export const TABLE_TH = 'sticky top-0 z-10 bg-slate-50 px-3 py-2 text-left font-semibold'
+export const TABLE_TH_RIGHT = 'sticky top-0 z-10 bg-slate-50 px-3 py-2 text-right font-semibold'
+export const TABLE_TH_CENTER = 'sticky top-0 z-10 bg-slate-50 px-3 py-2 text-center font-semibold'
 export const TABLE_TD = 'px-3 py-2 text-slate-600'
 export const TABLE_TD_STRONG = 'px-3 py-2 font-medium text-slate-800'
 /** Celda numerica: `tabular-nums` alinea los digitos entre filas. */

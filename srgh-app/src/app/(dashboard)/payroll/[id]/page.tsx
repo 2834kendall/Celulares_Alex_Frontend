@@ -4,8 +4,9 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
 import { getConceptos } from '@/modules/payroll/actions/getConceptos'
 import { PeriodoDetail } from '@/modules/payroll/components/PeriodoDetail'
+import { configSmtp } from '@/lib/correo/smtp'
 import { PlanillaImport } from '@/modules/payroll/components/PlanillaImport'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 
 interface PeriodoDetailPageProps {
@@ -33,12 +34,19 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
     if (detailResult.notFound) {
       notFound()
     }
-    return <Alert size="md">{detailResult.error}</Alert>
+    return (
+      <PageError title="Detalle del periodo" backHref="/payroll" backLabel="Volver al listado">
+        {detailResult.error}
+      </PageError>
+    )
   }
 
   const conceptosManuales = (conceptosResult.ok ? conceptosResult.data : []).filter(
     (c) =>
       c.con_activo &&
+      // Mismo criterio que el motor de calculo (esConceptoDelTrabajador): una
+      // carga patronal no se edita en la planilla del trabajador.
+      c.con_tipo !== 'patronal' &&
       (c.con_tipo_calculo === 'monto_manual_ingreso' ||
         c.con_tipo_calculo === 'monto_manual_deduccion')
   )
@@ -60,6 +68,7 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
         periodo={detailResult.data}
         canWrite={canWrite}
         conceptosManuales={conceptosManuales}
+        correoConfigurado={configSmtp() !== null}
       />
     </div>
   )

@@ -53,7 +53,7 @@ export async function signFaceTicket(
 /**
  * true solo si la firma es valida, el ticket no expiro y pertenece a ESTE
  * empleado. Cualquier malformacion devuelve false (nunca lanza): un ticket
- * invalido no es un error del sistema, es una marca que se degrada a MANUAL.
+ * invalido no es un error del sistema: es una marca que se rechaza.
  */
 export async function verifyFaceTicket(
   ticket: string,

@@ -81,3 +81,75 @@ export async function decryptVector(
 
   return Array.from(new Float32Array(plain))
 }
+
+/**
+ * Payload facial completo: el embedding MAS la prueba de vida que lo respalda.
+ *
+ * Van juntos bajo el mismo sello GCM a proposito — ver livenessProof.ts: si la
+ * prueba viajara como un campo aparte se podria acompanar el vector de una
+ * foto con la prueba de vida de otra captura. Aca no se pueden separar sin
+ * romper la autenticacion.
+ *
+ * Se serializa como JSON y no como Float32Array porque ahora lleva dos cosas
+ * de forma distinta. El costo es tamano (unos 3 KB en base64 contra 700 bytes)
+ * y a cambio el vector conserva la precision de doble que entrego el modelo,
+ * en vez de pasar por un redondeo a simple.
+ */
+export interface FacePayload<TLiveness = unknown> {
+  vector: number[]
+  liveness: TLiveness
+}
+
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
+
+/** Cifra el vector junto con su prueba de vida. */
+export async function encryptFacePayload<TLiveness>(
+  payload: FacePayload<TLiveness>,
+  keyBase64: string
+): Promise<EncryptedVector> {
+  const key = await importAesKey(keyBase64)
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
+  const plain = encoder.encode(JSON.stringify(payload))
+
+  const cipher = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv as BufferSource },
+    key,
+    plain as BufferSource
+  )
+
+  return { iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(cipher)) }
+}
+
+/**
+ * Descifra el payload facial. Lanza si la llave no calza, el payload fue
+ * alterado, o el contenido no tiene la forma esperada — el llamador decide
+ * como traducir eso a un error de usuario.
+ */
+export async function decryptFacePayload(
+  payload: EncryptedVector,
+  keyBase64: string
+): Promise<FacePayload> {
+  const key = await importAesKey(keyBase64)
+  const iv = base64ToBytes(payload.iv)
+  const data = base64ToBytes(payload.data)
+
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: iv as BufferSource },
+    key,
+    data as BufferSource
+  )
+
+  const parsed: unknown = JSON.parse(decoder.decode(plain))
+
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    !Array.isArray((parsed as FacePayload).vector) ||
+    !(parsed as FacePayload).vector.every((x) => typeof x === 'number' && Number.isFinite(x))
+  ) {
+    throw new Error('El payload facial no tiene la forma esperada.')
+  }
+
+  return parsed as FacePayload
+}

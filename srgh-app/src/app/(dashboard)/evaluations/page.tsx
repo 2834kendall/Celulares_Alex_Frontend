@@ -8,7 +8,8 @@ import { EvaluationTabs } from '@/modules/evaluations/components/EvaluationTabs'
 import { IndividualView } from '@/modules/evaluations/components/IndividualView'
 import { NewEvaluationSection } from '@/modules/evaluations/components/NewEvaluationSection'
 import { RubrosManager } from '@/modules/evaluations/components/RubrosManager'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 export default async function EvaluationsPage() {
   const claims = await requireAnyPermission(ACCESO_EVALUACIONES)
@@ -19,11 +20,11 @@ export default async function EvaluationsPage() {
   const [overviewResult, rubrosResult] = await Promise.all([getEvaluationsOverview(), getRubros()])
 
   if (!overviewResult.ok) {
-    return <Alert size="md">{overviewResult.error}</Alert>
+    return <PageError title="Evaluaciones">{overviewResult.error}</PageError>
   }
 
   if (!rubrosResult.ok) {
-    return <Alert size="md">{rubrosResult.error}</Alert>
+    return <PageError title="Evaluaciones">{rubrosResult.error}</PageError>
   }
 
   const { collaborators, branches } = overviewResult
@@ -31,6 +32,7 @@ export default async function EvaluationsPage() {
 
   return (
     <div className="min-w-0 space-y-4">
+      <PageHeader title="Evaluaciones" />
       <EvaluationTabs
         canWrite={canWrite}
         metricasContent={

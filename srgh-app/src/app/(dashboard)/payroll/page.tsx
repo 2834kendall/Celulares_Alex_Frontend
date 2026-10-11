@@ -5,6 +5,7 @@ import { ModulePlaceholder } from '@/components/ui/ModulePlaceholder'
 import { getPeriodos } from '@/modules/payroll/actions/getPeriodos'
 import { PayrollHeader } from '@/modules/payroll/components/PayrollHeader'
 import { PeriodosList } from '@/modules/payroll/components/PeriodosList'
+import { BuscarComprobante } from '@/modules/payroll/components/BuscarComprobante'
 import { Alert } from '@/components/ui/Alert'
 
 export default async function PayrollPage() {
@@ -19,7 +20,7 @@ export default async function PayrollPage() {
   if (!canRead) {
     return (
       <ModulePlaceholder
-        title="Nomina"
+        title="Nómina"
         description="Aquí podrás consultar tus comprobantes de pago. Disponible próximamente."
       />
     )
@@ -27,14 +28,15 @@ export default async function PayrollPage() {
 
   const periodosResult = await getPeriodos()
 
-  if (!periodosResult.ok) {
-    return <Alert size="md">{periodosResult.error}</Alert>
-  }
-
   return (
     <div className="min-w-0 space-y-4">
       <PayrollHeader canWrite={canWrite} canManageConceptos={canManageConceptos} />
-      <PeriodosList periodos={periodosResult.data} />
+      <BuscarComprobante />
+      {periodosResult.ok ? (
+        <PeriodosList periodos={periodosResult.data} canWrite={canWrite} />
+      ) : (
+        <Alert size="md">{periodosResult.error}</Alert>
+      )}
     </div>
   )
 }

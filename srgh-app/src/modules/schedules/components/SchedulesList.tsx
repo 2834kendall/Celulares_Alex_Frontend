@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import type { ScheduleRow } from '@/modules/schedules/types'
 import { deleteSchedule } from '@/modules/schedules/actions/deleteSchedule'
-import { stripSeconds } from '@/modules/schedules/lib/time'
+import { useFormatHora } from '@/lib/time/FormatoHoraContext'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import {
   META_LABEL,
+  TABLE_DESKTOP_WRAP,
   TABLE_HEAD,
   TABLE_TD,
   TABLE_TD_NUM,
@@ -50,6 +51,7 @@ interface SchedulesListProps {
 }
 
 export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesListProps) {
+  const { hora, rango } = useFormatHora()
   const {
     editing,
     setEditing,
@@ -65,12 +67,16 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
   const activeCount = schedules.filter((s) => s.hor_activo).length
 
   const [nameFilter, setNameFilter] = useState('')
+  const [soloActivas, setSoloActivas] = useState(false)
 
   const filteredSchedules = useMemo(() => {
     const query = normalizeSearchText(nameFilter.trim())
-    if (!query) return schedules
-    return schedules.filter((s) => normalizeSearchText(s.hor_nombre).includes(query))
-  }, [schedules, nameFilter])
+    return schedules.filter(
+      (s) =>
+        (!soloActivas || s.hor_activo) &&
+        (!query || normalizeSearchText(s.hor_nombre).includes(query))
+    )
+  }, [schedules, nameFilter, soloActivas])
 
   const {
     page,
@@ -87,13 +93,21 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
   return (
     <div className="@container space-y-4">
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
-        <StatCard icon={ListChecks} label="Total plantillas" value={total} hoverable />
+        {/* Las tarjetas filtran el listado; tocar "Activas" otra vez lo quita. */}
+        <StatCard
+          icon={ListChecks}
+          label="Total plantillas"
+          value={total}
+          active={!soloActivas}
+          onClick={() => setSoloActivas(false)}
+        />
         <StatCard
           icon={CheckCircle2}
           tone="emerald"
           label="Activas"
           value={activeCount}
-          hoverable
+          active={soloActivas}
+          onClick={() => setSoloActivas(!soloActivas)}
         />
         <Link
           href="?tab=jornadas"
@@ -179,9 +193,17 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
         />
       ) : filteredSchedules.length === 0 ? (
         <EmptyState
-          icon={Search}
-          title={`Ningún horario coincide con “${nameFilter}”`}
-          description="Prueba con otro nombre."
+          variant={nameFilter.trim() ? 'no-results' : 'empty'}
+          title={
+            nameFilter.trim()
+              ? `Ningún horario coincide con “${nameFilter}”`
+              : 'No hay plantillas activas'
+          }
+          description={
+            nameFilter.trim()
+              ? 'Prueba con otro nombre.'
+              : 'Toca “Total plantillas” para ver todas.'
+          }
         />
       ) : (
         <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
@@ -222,18 +244,18 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
                   {[
-                    { label: 'Entrada', valor: stripSeconds(schedule.hor_hora_entrada) },
-                    { label: 'Salida', valor: stripSeconds(schedule.hor_hora_salida) },
+                    { label: 'Entrada', valor: hora(schedule.hor_hora_entrada) ?? '—' },
+                    { label: 'Salida', valor: hora(schedule.hor_hora_salida) ?? '—' },
                     {
                       label: 'Almuerzo',
-                      valor: `${stripSeconds(schedule.hor_hora_inicio_almuerzo)} - ${stripSeconds(schedule.hor_hora_fin_almuerzo)}`,
+                      valor:
+                        rango(schedule.hor_hora_inicio_almuerzo, schedule.hor_hora_fin_almuerzo) ??
+                        '—',
                     },
                     {
                       label: 'Break',
                       valor:
-                        schedule.hor_hora_inicio_break && schedule.hor_hora_fin_break
-                          ? `${stripSeconds(schedule.hor_hora_inicio_break)} - ${stripSeconds(schedule.hor_hora_fin_break)}`
-                          : '—',
+                        rango(schedule.hor_hora_inicio_break, schedule.hor_hora_fin_break) ?? '—',
                     },
                   ].map(({ label, valor }) => (
                     <div key={label} className="min-w-0">
@@ -266,7 +288,7 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
             ))}
           </ul>
 
-          <div className="hidden @3xl:block @3xl:overflow-x-auto">
+          <div className={TABLE_DESKTOP_WRAP}>
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -290,16 +312,14 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
                   >
                     <td className={TABLE_TD_STRONG}>{schedule.hor_nombre}</td>
                     <td className={TABLE_TD}>{shiftTypeName(schedule.hor_tipo_jornada_id)}</td>
-                    <td className={TABLE_TD_NUM}>{stripSeconds(schedule.hor_hora_entrada)}</td>
-                    <td className={TABLE_TD_NUM}>{stripSeconds(schedule.hor_hora_salida)}</td>
+                    <td className={TABLE_TD_NUM}>{hora(schedule.hor_hora_entrada) ?? '—'}</td>
+                    <td className={TABLE_TD_NUM}>{hora(schedule.hor_hora_salida) ?? '—'}</td>
                     <td className={TABLE_TD_NUM}>
-                      {stripSeconds(schedule.hor_hora_inicio_almuerzo)} -{' '}
-                      {stripSeconds(schedule.hor_hora_fin_almuerzo)}
+                      {rango(schedule.hor_hora_inicio_almuerzo, schedule.hor_hora_fin_almuerzo) ??
+                        '—'}
                     </td>
                     <td className={TABLE_TD_NUM}>
-                      {schedule.hor_hora_inicio_break && schedule.hor_hora_fin_break
-                        ? `${stripSeconds(schedule.hor_hora_inicio_break)} - ${stripSeconds(schedule.hor_hora_fin_break)}`
-                        : '—'}
+                      {rango(schedule.hor_hora_inicio_break, schedule.hor_hora_fin_break) ?? '—'}
                     </td>
                     <td className="px-3 py-2">
                       <span

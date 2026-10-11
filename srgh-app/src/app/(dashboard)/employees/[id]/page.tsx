@@ -5,12 +5,17 @@ import { getEmployeeDetail } from '@/modules/employees/actions/getEmployeeDetail
 import { getEmployeeDocuments } from '@/modules/employees/actions/getEmployeeDocuments'
 import {
   getBancos,
+  getMotivosSalida,
+  getPuestos,
+  getSucursales,
   getTerritorio,
+  getTiposContrato,
   getTiposDocumento,
   getTiposIdentificacion,
+  getTiposJornada,
 } from '@/modules/employees/actions/getCatalogs'
 import { EmployeeDetail } from '@/modules/employees/components/EmployeeDetail'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 
 interface EmployeeDetailPageProps {
   params: Promise<{ id: string }>
@@ -29,6 +34,11 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
   const canWrite = permisos.includes(PERMISOS.EMPLEADOS_WRITE)
   const canReadDocs = permisos.includes(PERMISOS.DOCUMENTOS_READ)
   const canWriteDocs = permisos.includes(PERMISOS.DOCUMENTOS_WRITE)
+  // Mismo criterio que PayrollHeader: sin NOMINA_WRITE la pantalla de
+  // liquidación no deja procesar, así que el enlace no se ofrece.
+  const canLiquidar = permisos.includes(PERMISOS.NOMINA_WRITE)
+  // SGRH-90: crear, editar, terminar y revertir contratos.
+  const canEditContrato = permisos.includes(PERMISOS.HISTORIAL_WRITE)
 
   const [
     detailResult,
@@ -37,6 +47,7 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
     territorioResult,
     documentosResult,
     tiposDocumentoResult,
+    catalogosContratoResult,
   ] = await Promise.all([
     getEmployeeDetail(empId),
     getTiposIdentificacion(),
@@ -46,25 +57,44 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
     // llamarlas redirigiría la página entera a /unauthorized.
     canReadDocs ? getEmployeeDocuments(empId) : Promise.resolve(null),
     canReadDocs ? getTiposDocumento() : Promise.resolve(null),
+    // Los formularios de contrato solo se muestran con HISTORIAL_WRITE: sin
+    // él no hace falta pedir estos cinco catálogos.
+    canEditContrato
+      ? Promise.all([
+          getPuestos(),
+          getSucursales(),
+          getTiposContrato(),
+          getTiposJornada(),
+          getMotivosSalida(),
+        ])
+      : Promise.resolve(null),
   ])
+
+  // Sin datos no hay nombre que mostrar: el error lleva un titulo generico y
+  // la flecha de volver, para no dejar la pantalla sin salida.
+  const errorView = (message: string) => (
+    <PageError title="Ficha del empleado" backHref="/employees" backLabel="Volver al listado">
+      {message}
+    </PageError>
+  )
 
   if (!detailResult.ok) {
     if (detailResult.notFound) {
       notFound()
     }
-    return <Alert size="md">{detailResult.error}</Alert>
+    return errorView(detailResult.error)
   }
 
   if (!tiposIdentificacionResult.ok) {
-    return <Alert size="md">{tiposIdentificacionResult.error}</Alert>
+    return errorView(tiposIdentificacionResult.error)
   }
 
   if (!bancosResult.ok) {
-    return <Alert size="md">{bancosResult.error}</Alert>
+    return errorView(bancosResult.error)
   }
 
   if (!territorioResult.ok) {
-    return <Alert size="md">{territorioResult.error}</Alert>
+    return errorView(territorioResult.error)
   }
 
   // A diferencia de los catálogos base, un fallo en documentos NO tumba la
@@ -72,6 +102,23 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
   const documentosError = documentosResult && !documentosResult.ok ? documentosResult.error : null
   const documentos = documentosResult?.ok ? documentosResult.data : canReadDocs ? [] : null
   const tiposDocumento = tiposDocumentoResult?.ok ? tiposDocumentoResult.data : []
+
+  // Un catálogo de contrato que falla no tumba el perfil: se muestra igual,
+  // solo sin los botones de contrato (sin catálogos no hay formulario útil).
+  let catalogosContrato
+  let motivosSalida
+  if (catalogosContratoResult) {
+    const [puestos, sucursales, tiposContrato, tiposJornada, motivos] = catalogosContratoResult
+    if (puestos.ok && sucursales.ok && tiposContrato.ok && tiposJornada.ok && motivos.ok) {
+      catalogosContrato = {
+        puestos: puestos.data,
+        sucursales: sucursales.data,
+        tiposContrato: tiposContrato.data,
+        tiposJornada: tiposJornada.data,
+      }
+      motivosSalida = motivos.data
+    }
+  }
 
   return (
     <EmployeeDetail
@@ -84,6 +131,10 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
       tiposDocumento={tiposDocumento}
       canWriteDocs={canWriteDocs}
       documentosError={documentosError}
+      canLiquidar={canLiquidar}
+      canEditContrato={canEditContrato && catalogosContrato !== undefined}
+      catalogosContrato={catalogosContrato}
+      motivosSalida={motivosSalida}
     />
   )
 }

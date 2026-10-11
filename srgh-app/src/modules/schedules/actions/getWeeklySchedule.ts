@@ -5,12 +5,14 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import { hoursBetween } from '@/modules/schedules/lib/hours'
+import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 
 interface EmployeeJoin {
   emp_id: number
   emp_nombre: string
   emp_apellido_1: string
   emp_apellido_2: string | null
+  emp_foto_path: string | null
 }
 
 interface PositionJoin {
@@ -48,6 +50,8 @@ interface AssignmentRow {
   prg_fecha: string
   prg_es_dia_libre: boolean
   prg_horario_id: number | null
+  prg_sucursal_id: number
+  sgrh_sucursales: BranchJoin | null
   sgrh_cat_horarios: ScheduleJoin | null
   prg_hora_entrada_custom: string | null
   prg_hora_salida_custom: string | null
@@ -66,6 +70,9 @@ export interface DayAssignment {
   endTime: string | null
   isDayOff: boolean
   hours: number
+  // Sucursal real del dia, puede diferir de la de casa del empleado.
+  branchId: number
+  branchName: string | null
   customStartTime?: string | null
   customEndTime?: string | null
   customLunchStart?: string | null
@@ -77,16 +84,25 @@ export interface DayAssignment {
 export interface EmployeeWeekRow {
   employmentHistoryId: number
   employeeId: number
+  // Sucursal de casa (contrato), default de dias sin asignacion propia.
   branchId: number
   branchName: string | null
   fullName: string
+  /** URL firmada de la foto, o null si no tiene (el Avatar cae a iniciales). */
+  fotoUrl: string | null
   position: string | null
   days: DayAssignment[]
   weeklyTotal: number
 }
 
+export interface SucursalOption {
+  id: number
+  nombre: string
+}
+
 export type GetWeeklyScheduleResult =
-  { ok: true; weekDates: string[]; data: EmployeeWeekRow[] } | { ok: false; error: string }
+  | { ok: true; weekDates: string[]; data: EmployeeWeekRow[]; sucursales: SucursalOption[] }
+  | { ok: false; error: string }
 
 export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeeklyScheduleResult> {
   // RLS policies on sgrh_programacion_semanal require ASISTENCIA_READ.
@@ -100,38 +116,67 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
   const weekDates = getWeekDates(weekStartISO)
   const supabase = await createClient()
 
-  const { data: employmentHistory, error: errHistory } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      `
+  // Colaboradores y sucursales no dependen entre si: van en paralelo (cada
+  // viaje a Supabase cuesta ~200 ms desde CR).
+  const [
+    { data: employmentHistory, error: errHistory },
+    { data: sucursalesRows, error: errSucursales },
+  ] = await Promise.all([
+    supabase
+      .from('sgrh_historial_laboral')
+      .select(
+        `
       lab_id,
       lab_empleado_id,
       lab_sucursal_id,
-      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2 ),
+      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_foto_path ),
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_id, suc_nombre )
     `
-    )
-    .eq('lab_empresa_id', empresaId)
-    .is('lab_fecha_fin', null)
-    .returns<EmploymentHistoryRow[]>()
+      )
+      .eq('lab_empresa_id', empresaId)
+      .is('lab_fecha_fin', null)
+      .returns<EmploymentHistoryRow[]>(),
+    // Catalogo completo de sucursales de la empresa (no solo las de casa de los empleados).
+    supabase
+      .from('sgrh_sucursales')
+      .select('suc_id, suc_nombre')
+      .eq('suc_empresa_id', empresaId)
+      .eq('suc_activa', true)
+      .order('suc_nombre', { ascending: true })
+      .returns<BranchJoin[]>(),
+  ])
 
   if (errHistory) {
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
   }
 
+  if (errSucursales) {
+    return { ok: false, error: 'No se pudieron cargar las sucursales.' }
+  }
+
+  const sucursales: SucursalOption[] = sucursalesRows.map((s) => ({
+    id: s.suc_id,
+    nombre: s.suc_nombre,
+  }))
+
   const employmentHistoryIds = employmentHistory.map((h) => h.lab_id)
 
-  const { data: assignments, error: errAssignments } = employmentHistoryIds.length
-    ? await supabase
-        .from('sgrh_programacion_semanal')
-        .select(
-          `
+  // La programacion y las fotos dependen de los colaboradores, no entre si.
+  // Una sola firma para toda la matriz (ver signEmployeePhotos).
+  const [{ data: assignments, error: errAssignments }, fotoUrls] = await Promise.all([
+    employmentHistoryIds.length
+      ? supabase
+          .from('sgrh_programacion_semanal')
+          .select(
+            `
           prg_id,
           prg_historial_laboral_id,
           prg_fecha,
           prg_es_dia_libre,
           prg_horario_id,
+          prg_sucursal_id,
+          sgrh_sucursales ( suc_id, suc_nombre ),
           sgrh_cat_horarios ( hor_id, hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo, hor_hora_inicio_break, hor_hora_fin_break ),
             prg_hora_entrada_custom,
             prg_hora_salida_custom,
@@ -141,12 +186,14 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
             prg_hora_fin_break_custom
 
         `
-        )
-        .in('prg_historial_laboral_id', employmentHistoryIds)
-        .gte('prg_fecha', weekDates[0])
-        .lte('prg_fecha', weekDates[6])
-        .returns<AssignmentRow[]>()
-    : { data: [] as AssignmentRow[], error: null }
+          )
+          .in('prg_historial_laboral_id', employmentHistoryIds)
+          .gte('prg_fecha', weekDates[0])
+          .lte('prg_fecha', weekDates[6])
+          .returns<AssignmentRow[]>()
+      : Promise.resolve({ data: [] as AssignmentRow[], error: null }),
+    signEmployeePhotos(employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)),
+  ])
 
   if (errAssignments) {
     return { ok: false, error: 'No se pudo cargar la programacion semanal.' }
@@ -180,6 +227,9 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
           endTime: null,
           isDayOff: false,
           hours: 0,
+          // Sin fila propia: el dia usa la sucursal de casa.
+          branchId: h.lab_sucursal_id,
+          branchName: h.sgrh_sucursales?.suc_nombre ?? null,
         }
       }
 
@@ -230,6 +280,8 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
         customBreakEnd: assignment.prg_hora_fin_break_custom,
         isDayOff: assignment.prg_es_dia_libre,
         hours,
+        branchId: assignment.prg_sucursal_id,
+        branchName: assignment.sgrh_sucursales?.suc_nombre ?? null,
       }
     })
 
@@ -239,11 +291,13 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       branchId: h.lab_sucursal_id,
       branchName: h.sgrh_sucursales?.suc_nombre ?? null,
       fullName,
+      // emp_foto_path nunca cruza al cliente: solo la URL firmada opaca.
+      fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,
       position: position?.pue_nombre ?? null,
       days,
       weeklyTotal,
     }
   })
 
-  return { ok: true, weekDates, data }
+  return { ok: true, weekDates, data, sucursales }
 }

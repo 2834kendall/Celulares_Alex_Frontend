@@ -3,7 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { decryptVector } from '@/modules/attendance/lib/face/faceCrypto'
+import { decryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
+import { isLivenessProof } from '@/modules/attendance/lib/face/livenessProof'
 import { FACE_EMBEDDING_DIM, FACE_MODEL_ID } from '@/modules/attendance/lib/face/model'
 import { enrollFaceSchema, type EnrollFaceInput } from '@/modules/attendance/types'
 
@@ -16,6 +17,12 @@ export type EnrollFaceResult = { ok: true } | { ok: false; error: string }
  * cifrado igual que en la verificacion; aca se descifra y se upserta TAL
  * CUAL (sin normalizar: la distancia euclidea de dlib necesita la magnitud
  * original del descriptor — ver faceMath.ts).
+ *
+ * EXIGE PRUEBA DE VIDA, al mismo nivel que el kiosco (SGRH-80). Antes de eso
+ * se podia REGISTRAR a una persona a partir de una fotografia, y un
+ * enrolamiento envenenado no caduca: deja a ese colaborador suplantable de
+ * forma permanente y es mucho mas dificil de detectar despues que una marca
+ * fraudulenta suelta.
  */
 export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResult> {
   const parsed = enrollFaceSchema.safeParse(input)
@@ -37,14 +44,24 @@ export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResu
   }
 
   let vector: number[]
+  let liveness: unknown
   try {
-    vector = await decryptVector(parsed.data.vector, vectorKey)
+    const payload = await decryptFacePayload(parsed.data.vector, vectorKey)
+    vector = payload.vector
+    liveness = payload.liveness
   } catch {
     return { ok: false, error: 'No se pudo procesar el rostro capturado.' }
   }
 
   if (vector.length !== FACE_EMBEDDING_DIM) {
     return { ok: false, error: 'No se pudo procesar el rostro capturado.' }
+  }
+
+  if (!isLivenessProof(liveness)) {
+    return {
+      ok: false,
+      error: 'No se pudo confirmar que haya una persona real frente a la camara.',
+    }
   }
 
   const supabase = await createClient()

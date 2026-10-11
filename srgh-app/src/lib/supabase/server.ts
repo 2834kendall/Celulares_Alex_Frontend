@@ -1,9 +1,17 @@
+import { cache } from 'react'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { Database } from '@/types/database.types'
 import { env } from '@/lib/env'
+import { timedFetch } from './timedFetch'
 
-export async function createClient() {
+/**
+ * Un cliente por request: `cache` lo memoiza mientras dura el render, así que
+ * el layout, la página y los guards de cada acción comparten la misma
+ * instancia. Fuera de un render (tests, route handlers) `cache` no memoiza y
+ * cada llamada crea uno nuevo, como antes.
+ */
+export const createClient = cache(async () => {
   const cookieStore = await cookies()
 
   return createServerClient<Database>(
@@ -26,6 +34,7 @@ export async function createClient() {
           }
         },
       },
+      global: timedFetch ? { fetch: timedFetch } : undefined,
     }
   )
-}
+})

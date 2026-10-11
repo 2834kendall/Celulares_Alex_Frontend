@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Search, SearchX, UserCheck, UserPlus, UserX, Users } from 'lucide-react'
+import { Search, UserCheck, UserPlus, UserX, Users } from 'lucide-react'
 import type { EmpleadoListItem } from '@/modules/employees/types'
 import { useEmployeeFilters, type EstadoFiltro } from '@/modules/employees/hooks/useEmployeeFilters'
 import { formatDate, fullName } from '@/modules/employees/lib/format'
@@ -11,6 +11,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import {
   META_LABEL,
+  TABLE_DESKTOP_WRAP,
   TABLE_HEAD,
   TABLE_ROW_CLICKABLE,
   TABLE_TD,
@@ -68,20 +69,32 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
     // ser muy distinto. Mismo criterio que asistencia.
     <div className="@container space-y-4">
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
-        <StatCard icon={Users} label="Total empleados" value={total} hoverable />
+        {/*
+          Cada tarjeta filtra por lo que cuenta, con el mismo estado que el
+          selector de abajo; tocar la tarjeta activa vuelve a "todos".
+        */}
+        <StatCard
+          icon={Users}
+          label="Total empleados"
+          value={total}
+          active={estado === 'todos'}
+          onClick={() => setEstado('todos')}
+        />
         <StatCard
           icon={UserCheck}
           tone="emerald"
           label="Con contrato vigente"
           value={activos}
-          hoverable
+          active={estado === 'activos'}
+          onClick={() => setEstado(estado === 'activos' ? 'todos' : 'activos')}
         />
         <StatCard
           icon={UserX}
           tone="rose"
           label="Sin contrato vigente"
           value={total - activos}
-          hoverable
+          active={estado === 'inactivos'}
+          onClick={() => setEstado(estado === 'inactivos' ? 'todos' : 'inactivos')}
         />
       </div>
 
@@ -143,7 +156,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={SearchX}
+          variant="no-results"
           title="Sin resultados"
           description="Ningún empleado coincide con la búsqueda o los filtros seleccionados."
         />
@@ -204,7 +217,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
             ))}
           </ul>
 
-          <div className="hidden @3xl:block @3xl:overflow-x-auto">
+          <div className={TABLE_DESKTOP_WRAP}>
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -212,7 +225,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
                   <th className={TABLE_TH}>Puesto</th>
                   <th className={TABLE_TH}>Sucursal</th>
                   <th className={TABLE_TH}>Tipo de contrato</th>
-                  <th className={TABLE_TH}>Inicio de contrato</th>
+                  <th className={TABLE_TH}>Inicio del contrato</th>
                   <th className={TABLE_TH}>Estado</th>
                 </tr>
               </thead>

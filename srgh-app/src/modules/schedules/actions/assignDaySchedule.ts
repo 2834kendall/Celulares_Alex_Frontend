@@ -10,6 +10,7 @@ import {
   type AssignDayInput,
 } from '@/modules/schedules/types'
 import { upsertDayAssignment } from '@/modules/schedules/lib/dayAssignment'
+import { branchesBelongToEmpresa } from '@/modules/schedules/lib/validateBranches'
 
 export type AssignDayResult = { ok: true } | { ok: false; error: string }
 
@@ -21,7 +22,12 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
   }
 
   // RLS policies on sgrh_programacion_semanal require ASISTENCIA_WRITE.
-  await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
+  const empresaId = (claims.app_metadata as { empresa_id?: number })?.empresa_id
+
+  if (!empresaId) {
+    return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
+  }
 
   const data = parsed.data
   const isCustom = Boolean(data.customStartTime && data.customEndTime)
@@ -52,6 +58,10 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
   }
 
   const supabase = await createClient()
+
+  if (!(await branchesBelongToEmpresa(supabase, empresaId, [data.branchId]))) {
+    return { ok: false, error: 'La sucursal seleccionada no es válida para tu empresa.' }
+  }
 
   const payload = {
     prg_empleado_id: data.employeeId,

@@ -3,8 +3,22 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { calcularMontoIncapacidad } from '@/modules/payroll/lib/incapacidad'
+import { montoIncapacidadEnVivo } from '@/modules/payroll/lib/incapacidad'
+import { round2 } from '@/modules/payroll/lib/numeros'
+import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
+import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
+import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
+import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
+import type { DiaCalculado, TotalesPeriodo } from '@/modules/payroll/lib/horasPeriodo'
+import { contratoDeLaFila, evaluarBaseGuardado } from '@/modules/payroll/lib/prellenadoAsistencia'
+import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  esRebajoDeSalario,
+} from '@/modules/payroll/lib/planilla'
+import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
+import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 
 interface PeriodoRow {
   npe_id: number
@@ -29,17 +43,32 @@ interface DetalleRow {
   ndt_pagado: boolean
   ndt_fecha_pago: string | null
   ndt_horas_ordinarias_diurnas: number
+  ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
   ndt_dias_incapacidad_empleador: number
+  ndt_monto_incapacidad?: number | null
+  ndt_porcentaje_incapacidad?: number | null
+  ndt_salario_base_contrato: number | null
+  ndt_salario_real_contrato: number | null
+  ndt_horas_semanales_contrato: number | null
   ndt_dias_incapacidad_ccss: number
+  ndt_horas_asistencia: number | null
+  ndt_horas_extra_asistencia: number | null
+  ndt_horas_leidas_en: string | null
+  ndt_horas_ajustadas_en: string | null
   sgrh_historial_laboral: {
+    lab_fecha_inicio?: string | null
+    lab_fecha_fin?: string | null
     lab_salario_base: number
+    lab_salario_real: number | null
+    sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
     sgrh_empleados: {
       emp_id: number
       emp_nombre: string
       emp_apellido_1: string
       emp_apellido_2: string | null
       emp_numero_identificacion: string | null
+      emp_email_personal: string | null
     } | null
   } | null
 }
@@ -54,16 +83,25 @@ interface TipoAusenciaRow {
   tau_porcentaje_pago_empleador: number
 }
 
+interface ComprobanteRow {
+  com_nomina_detalle_id: number
+  com_codigo_verificacion: string
+}
+
 interface LineaIngresoRow {
   ing_nomina_detalle_id: number
   ing_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+  sgrh_cat_conceptos_nomina: { con_codigo: string; con_afecta_salario_bruto: boolean } | null
 }
 
 interface LineaDeduccionRow {
   ded_nomina_detalle_id: number
   ded_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string; con_tipo_calculo: string } | null
+  sgrh_cat_conceptos_nomina: {
+    con_codigo: string
+    con_tipo_calculo: string
+    con_rebaja_salario?: boolean | null
+  } | null
 }
 
 export type GetPeriodoDetailResult =
@@ -123,12 +161,26 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_pagado,
       ndt_fecha_pago,
       ndt_horas_ordinarias_diurnas,
+      ndt_horas_extra_al_50,
       ndt_salario_por_hora,
       ndt_dias_incapacidad_empleador,
+      ndt_monto_incapacidad,
+      ndt_porcentaje_incapacidad,
       ndt_dias_incapacidad_ccss,
+      ndt_salario_base_contrato,
+      ndt_salario_real_contrato,
+      ndt_horas_semanales_contrato,
+      ndt_horas_asistencia,
+      ndt_horas_extra_asistencia,
+      ndt_horas_leidas_en,
+      ndt_horas_ajustadas_en,
       sgrh_historial_laboral (
+        lab_fecha_inicio,
+        lab_fecha_fin,
         lab_salario_base,
-        sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
+        lab_salario_real,
+        sgrh_cat_tipos_jornada ( tjo_horas_max_semanales ),
+        sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal )
       )
     `
       )
@@ -156,22 +208,87 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // y los montos crudos quedan vacíos — no se bloquea toda la pantalla.
   const idsDetalle = (detalles ?? []).map((d: DetalleRow) => d.ndt_id)
   const montosPorNdt = new Map<number, Record<string, number>>()
+  // Código del comprobante ya emitido (sgrh_comprobantes_pago). Solo existe
+  // para los detalles marcados como pagados; es lo que hace verificable el
+  // papel que se le entrega al empleado.
+  const codigoPorNdt = new Map<number, string>()
+  // Días con marcas incompletas por contrato. Es informativo acá: quien
+  // decide es marcarDetallePagado, que lo vuelve a consultar. Si la lectura
+  // falla no se bloquea la pantalla — se muestra la planilla igual.
+  const revisarPorLab = new Map<number, { fecha: string; problema: string }[]>()
+  // Lo que dicen las marcas AHORA, para compararlo contra la foto que se
+  // guardó al armar la planilla. Si no coinciden, alguien corrigió una marca
+  // después y la planilla quedó vieja.
+  const asistenciaAhoraPorLab = new Map<number, { horas: number; horasExtra: number }>()
+  // Día por día, para poder responder "¿de dónde salió este número?" sin
+  // tener que ir a la pantalla de asistencia a reconstruirlo a mano.
+  const diasPorLab = new Map<number, DiaCalculado[]>()
+  // La lectura completa, para saber si el BASE guardado sigue correspondiendo
+  // (ver evaluarBaseGuardado).
+  const totalesPorLab = new Map<number, TotalesPeriodo>()
+  if (
+    (detalles ?? []).length > 0 &&
+    periodo.npe_fecha_inicio_periodo &&
+    periodo.npe_fecha_fin_periodo
+  ) {
+    const horas = await getHorasDelPeriodo(supabase, {
+      historialLaboralIds: (detalles ?? []).map((d: DetalleRow) => d.ndt_historial_laboral_id),
+      fechaInicio: periodo.npe_fecha_inicio_periodo,
+      fechaFin: periodo.npe_fecha_fin_periodo,
+    })
+
+    if (horas.ok) {
+      for (const [labId, totales] of horas.data) {
+        if (totales.diasConProblema.length > 0) {
+          revisarPorLab.set(labId, totales.diasConProblema)
+        }
+        // Una lectura sin horas programadas son ceros que no significan nada
+        // (ver lecturaUtilizable). Publicarla ponía a todos "las marcas dicen
+        // 0 h": bloqueaba los pagos y ofrecía un botón "traer 0 h" que borraba
+        // las horas buenas.
+        if (lecturaUtilizable(totales)) {
+          asistenciaAhoraPorLab.set(labId, {
+            horas: totales.horasOrdinarias,
+            horasExtra: totales.horasExtra,
+          })
+        }
+        diasPorLab.set(labId, totales.dias)
+        totalesPorLab.set(labId, totales)
+      }
+    }
+  }
   // Desglose de "Deducciones" en dos totales, por cómo se calculan:
   //  - porcentual: % del salario bruto (ej. CCSS obrera) — con_tipo_calculo = porcentaje_deduccion_bruto
   //  - manual: monto fijo que el patrono decide (ej. préstamo) — con_tipo_calculo = monto_manual_deduccion
   const deduccionesPorNdt = new Map<number, { porcentual: number; manual: number }>()
+  // Ingresos que no son salario (viáticos): se pagan después de las
+  // deducciones. Se suman desde las líneas y no desde una columna del detalle
+  // porque el dato de si un concepto es salario vive en el catálogo.
+  const noSalarialPorNdt = new Map<number, number>()
 
   if (idsDetalle.length > 0) {
+    const { data: comprobantes } = await supabase
+      .from('sgrh_comprobantes_pago')
+      .select('com_nomina_detalle_id, com_codigo_verificacion')
+      .in('com_nomina_detalle_id', idsDetalle)
+      .returns<ComprobanteRow[]>()
+
+    for (const comprobante of comprobantes ?? []) {
+      codigoPorNdt.set(comprobante.com_nomina_detalle_id, comprobante.com_codigo_verificacion)
+    }
+
     const [{ data: lineasIngreso }, { data: lineasDeduccion }] = await Promise.all([
       supabase
         .from('sgrh_nomina_linea_ingreso')
-        .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .select(
+          'ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_afecta_salario_bruto )'
+        )
         .in('ing_nomina_detalle_id', idsDetalle)
         .returns<LineaIngresoRow[]>(),
       supabase
         .from('sgrh_nomina_linea_deduccion')
         .select(
-          'ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_tipo_calculo )'
+          'ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_tipo_calculo, con_rebaja_salario )'
         )
         .in('ded_nomina_detalle_id', idsDetalle)
         .returns<LineaDeduccionRow[]>(),
@@ -183,6 +300,13 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       const montos = montosPorNdt.get(linea.ing_nomina_detalle_id) ?? {}
       montos[codigo] = linea.ing_monto
       montosPorNdt.set(linea.ing_nomina_detalle_id, montos)
+
+      if (linea.sgrh_cat_conceptos_nomina?.con_afecta_salario_bruto === false) {
+        noSalarialPorNdt.set(
+          linea.ing_nomina_detalle_id,
+          (noSalarialPorNdt.get(linea.ing_nomina_detalle_id) ?? 0) + linea.ing_monto
+        )
+      }
     }
     for (const linea of lineasDeduccion ?? []) {
       const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
@@ -190,6 +314,12 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       const montos = montosPorNdt.get(linea.ded_nomina_detalle_id) ?? {}
       montos[codigo] = linea.ded_monto
       montosPorNdt.set(linea.ded_nomina_detalle_id, montos)
+
+      // La ausencia sin goce ya se restó del bruto: no es una deducción del
+      // neto y no va en esas columnas (auditoría 2, hallazgo 6).
+      if (linea.sgrh_cat_conceptos_nomina && esRebajoDeSalario(linea.sgrh_cat_conceptos_nomina)) {
+        continue
+      }
 
       const acumulado = deduccionesPorNdt.get(linea.ded_nomina_detalle_id) ?? {
         porcentual: 0,
@@ -201,6 +331,79 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
         acumulado.manual += linea.ded_monto
       }
       deduccionesPorNdt.set(linea.ded_nomina_detalle_id, acumulado)
+    }
+  }
+
+  // De qué ausencia son los días de subsidio de cada fila (incapacidad por
+  // enfermedad, maternidad, paternidad…). El comprobante decía siempre
+  // "Incapacidad por enfermedad", también en una licencia de maternidad
+  // (auditoría 2, hallazgo 9). Informativo: si la lectura falla, queda el
+  // rótulo genérico.
+  const tipoSubsidioPorLab = new Map<number, string>()
+  const labsConSubsidio = (detalles ?? [])
+    .filter(
+      (d: DetalleRow) => d.ndt_dias_incapacidad_empleador > 0 || d.ndt_dias_incapacidad_ccss > 0
+    )
+    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
+  if (
+    labsConSubsidio.length > 0 &&
+    periodo.npe_fecha_inicio_periodo &&
+    periodo.npe_fecha_fin_periodo
+  ) {
+    const { data: ausencias, error: errAusencias } = await supabase
+      .from('sgrh_ausencias')
+      .select(
+        'aus_historial_laboral_id, aus_fecha_inicio, sgrh_cat_tipos_ausencia ( tau_nombre, tau_requiere_documento_ccss )'
+      )
+      .in('aus_historial_laboral_id', labsConSubsidio)
+      .eq('aus_estado', 'aprobada')
+      .lte('aus_fecha_inicio', periodo.npe_fecha_fin_periodo)
+      .gte('aus_fecha_fin', periodo.npe_fecha_inicio_periodo)
+      .order('aus_fecha_inicio', { ascending: true })
+      .returns<
+        {
+          aus_historial_laboral_id: number
+          aus_fecha_inicio: string
+          sgrh_cat_tipos_ausencia: {
+            tau_nombre: string
+            tau_requiere_documento_ccss: boolean
+          } | null
+        }[]
+      >()
+    if (!errAusencias && Array.isArray(ausencias)) {
+      const nombresPorLab = new Map<number, string[]>()
+      for (const a of ausencias) {
+        const tipo = a.sgrh_cat_tipos_ausencia
+        if (!tipo?.tau_requiere_documento_ccss) continue
+        const nombres = nombresPorLab.get(a.aus_historial_laboral_id) ?? []
+        if (!nombres.includes(tipo.tau_nombre)) nombres.push(tipo.tau_nombre)
+        nombresPorLab.set(a.aus_historial_laboral_id, nombres)
+      }
+      for (const [labId, nombres] of nombresPorLab) {
+        tipoSubsidioPorLab.set(labId, nombres.join(' y '))
+      }
+    }
+  }
+
+  // Filas impagas cuyo salario ya va en una liquidación (salario pendiente
+  // del mes de salida): no se pagan por planilla. Informativo: si la lectura
+  // falla se muestran como pendientes, igual que antes.
+  const liquidacionPorLab = new Map<number, number>()
+  const labsImpagos = (detalles ?? [])
+    .filter((d: DetalleRow) => !d.ndt_pagado)
+    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
+  if (labsImpagos.length > 0) {
+    try {
+      const cubiertas = await liquidacionesQueCubren(supabase, labsImpagos, {
+        anio: periodo.npe_periodo_anio,
+        mes: periodo.npe_periodo_mes,
+        quincena: periodo.npe_quincena,
+      })
+      if (cubiertas.ok) {
+        for (const [labId, liq] of cubiertas.data) liquidacionPorLab.set(labId, liq.liqId)
+      }
+    } catch (err) {
+      console.error('getPeriodoDetail: no se pudieron leer las liquidaciones', err)
     }
   }
 
@@ -216,7 +419,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   )
   const datosPagoPorEmpleado = new Map<
     number,
-    { numeroCuenta: string | null; bancoNombre: string | null }
+    { numeroCuenta: string | null; bancoNombre: string | null; cuentaIlegible: boolean }
   >()
   if (empIds.length > 0) {
     const { data: datosPago } = await supabase
@@ -225,12 +428,25 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       .in('edp_empleado_id', empIds)
       .returns<DatosPagoRow[]>()
 
-    for (const row of datosPago ?? []) {
+    // La cuenta se guarda cifrada: se descifra acá, una por empleado del
+    // período. La llave se importa una sola vez (fieldCrypto.core memoiza el
+    // CryptoKey), así que el lote no paga un importKey por fila.
+    //
+    // cuentaIlegible se propaga en vez de aplanarse a null: quien arma la
+    // transferencia tiene que poder distinguir "no cargó datos de pago" de
+    // "tiene cuenta pero no se pudo leer" — son problemas distintos.
+    const cuentas = await Promise.all(
+      (datosPago ?? []).map((row) => decryptField(row.edp_numero_cuenta))
+    )
+
+    ;(datosPago ?? []).forEach((row, i) => {
+      const cuenta = cuentas[i]
       datosPagoPorEmpleado.set(row.edp_empleado_id, {
-        numeroCuenta: row.edp_numero_cuenta,
+        numeroCuenta: cuenta.ok ? cuenta.value : null,
         bancoNombre: row.sgrh_cat_bancos?.ban_nombre ?? null,
+        cuentaIlegible: !cuenta.ok,
       })
-    }
+    })
   }
 
   const items: DetalleNominaItem[] = (detalles ?? []).map((row: DetalleRow) => {
@@ -243,32 +459,103 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
 
     const deducciones = deduccionesPorNdt.get(row.ndt_id) ?? { porcentual: 0, manual: 0 }
 
+    // Días de la quincena antes del ingreso (o después de la salida): no son
+    // un problema de marcas, la persona todavía no trabajaba ahí. Se mostraban
+    // como "sin programar" en "ver días" (auditoría 2, hallazgo 12). Solo es
+    // la pantalla: el cálculo de las horas no cambia.
+    const inicioContrato = row.sgrh_historial_laboral?.lab_fecha_inicio ?? null
+    const finContrato = row.sgrh_historial_laboral?.lab_fecha_fin ?? null
+    const fueraDelContrato = (fecha: string) =>
+      (inicioContrato !== null && fecha < inicioContrato) ||
+      (finContrato !== null && fecha > finContrato)
+
+    // El contrato con que se calculó ESTA fila, no el de hoy: desde que el
+    // contrato vigente se puede editar en cualquier momento, leerlo en vivo
+    // haría que corregir un salario moviera los montos de un período ya
+    // armado. Sin foto (filas viejas) cae al contrato en vivo.
+    const contratoFila = contratoDeLaFila(row, {
+      salarioBaseMensual: row.sgrh_historial_laboral?.lab_salario_base ?? 0,
+      salarioRealMensual: row.sgrh_historial_laboral?.lab_salario_real ?? null,
+      horasSemanales:
+        row.sgrh_historial_laboral?.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
+    })
+
     let incapacidad: IncapacidadItem | null = null
-    if (
-      (row.ndt_dias_incapacidad_empleador > 0 || row.ndt_dias_incapacidad_ccss > 0) &&
-      tipoAusencia
-    ) {
-      const salarioDiario = (row.sgrh_historial_laboral?.lab_salario_base ?? 0) / 30
+    const tieneIncapacidad =
+      row.ndt_dias_incapacidad_empleador > 0 || row.ndt_dias_incapacidad_ccss > 0
+    const congelado = row.ndt_monto_incapacidad
+    if (tieneIncapacidad && congelado !== null && congelado !== undefined) {
+      // Fila pagada: el monto se guardó al marcar el pago (ver
+      // marcarDetallePagado) y el comprobante no cambia aunque después cambie
+      // el salario o el porcentaje del catálogo.
+      incapacidad = {
+        diasEmpleador: row.ndt_dias_incapacidad_empleador,
+        diasCcss: row.ndt_dias_incapacidad_ccss,
+        porcentajePagoEmpleador:
+          row.ndt_porcentaje_incapacidad ?? tipoAusencia?.tau_porcentaje_pago_empleador ?? 0,
+        monto: Number(congelado),
+        tipoNombre: tipoSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? null,
+      }
+    } else if (tieneIncapacidad && tipoAusencia) {
+      // Sin pagar (o pagada antes de que se guardara el monto): en vivo.
       incapacidad = {
         diasEmpleador: row.ndt_dias_incapacidad_empleador,
         diasCcss: row.ndt_dias_incapacidad_ccss,
         porcentajePagoEmpleador: tipoAusencia.tau_porcentaje_pago_empleador,
-        monto: calcularMontoIncapacidad(
+        monto: montoIncapacidadEnVivo(
           row.ndt_dias_incapacidad_empleador,
-          salarioDiario,
+          contratoFila,
           tipoAusencia.tau_porcentaje_pago_empleador
         ),
+        tipoNombre: tipoSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? null,
       }
     }
 
     const datosPago = empleado ? datosPagoPorEmpleado.get(empleado.emp_id) : undefined
+
+    // De dónde salieron las horas de esta fila y si siguen al día. Las dos
+    // respuestas salen de comparar números, no de una bandera guardada (ver
+    // lib/horasOrigen.ts).
+    const foto = {
+      horas: row.ndt_horas_asistencia ?? null,
+      horasExtra: row.ndt_horas_extra_asistencia ?? null,
+    }
+    const guardadas = {
+      horas: row.ndt_horas_ordinarias_diurnas,
+      horasExtra: row.ndt_horas_extra_al_50 ?? 0,
+    }
+    const asistenciaAhora = asistenciaAhoraPorLab.get(row.ndt_historial_laboral_id) ?? null
+
+    // Un BASE que puso el sistema y que hoy daría otro monto sin que cambien
+    // las horas: ausencias o feriados aprobados después de armar la fila. Solo
+    // importa mientras no esté pagada; lo pagado no se toca.
+    const montosFila = montosPorNdt.get(row.ndt_id) ?? {}
+    const evaluacionBase = row.ndt_pagado
+      ? { desactualizado: false, esperado: null, ajusteEsperado: null }
+      : evaluarBaseGuardado({
+          baseGuardado: montosFila[CODIGO_SALARIO_BASE] ?? 0,
+          ajusteGuardado: montosFila[CODIGO_AJUSTE] ?? 0,
+          // La foto del contrato, pero la asistencia DE HOY: lo que esto tiene
+          // que seguir detectando es que cambiaron las horas, no que alguien
+          // corrigió el salario para el período que viene.
+          contrato: contratoFila,
+          guardadas,
+          lectura: totalesPorLab.get(row.ndt_historial_laboral_id) ?? null,
+          quincena: {
+            anio: periodo.npe_periodo_anio,
+            mes: periodo.npe_periodo_mes,
+            quincena: periodo.npe_quincena,
+          },
+        })
 
     return {
       id: row.ndt_id,
       historialLaboralId: row.ndt_historial_laboral_id,
       empleadoNombre: nombre,
       empleadoCedula: empleado?.emp_numero_identificacion ?? '—',
+      empleadoEmail: empleado?.emp_email_personal?.trim() || null,
       salarioBruto: row.ndt_salario_bruto,
+      totalNoSalarial: noSalarialPorNdt.get(row.ndt_id) ?? 0,
       totalDeducciones: row.ndt_total_deducciones_obreras,
       deduccionPorcentual: deducciones.porcentual,
       deduccionManual: deducciones.manual,
@@ -276,12 +563,41 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       salarioNeto: row.ndt_salario_neto,
       pagado: row.ndt_pagado,
       fechaPago: row.ndt_fecha_pago,
+      liquidacionQueLaPaga: row.ndt_pagado
+        ? null
+        : (liquidacionPorLab.get(row.ndt_historial_laboral_id) ?? null),
+      codigoVerificacion: codigoPorNdt.get(row.ndt_id) ?? null,
+      diasPorRevisar: (revisarPorLab.get(row.ndt_historial_laboral_id) ?? []).filter(
+        (r) => !fueraDelContrato(r.fecha)
+      ),
       montosPorConcepto: montosPorNdt.get(row.ndt_id) ?? {},
       horasTrabajadas: row.ndt_horas_ordinarias_diurnas,
+      horasExtra: row.ndt_horas_extra_al_50 ?? 0,
       salarioPorHora: row.ndt_salario_por_hora,
+      horasOrigen: origenHoras(guardadas, foto),
+      horasAsistencia: foto.horas,
+      horasExtraAsistencia: foto.horasExtra,
+      horasLeidasEn: row.ndt_horas_leidas_en ?? null,
+      horasAjustadasEn: row.ndt_horas_ajustadas_en ?? null,
+      marcasCambiaron: asistenciaAhora ? marcasCambiaron(foto, asistenciaAhora) : false,
+      horasAsistenciaAhora: asistenciaAhora,
+      baseDesactualizado: evaluacionBase.desactualizado,
+      baseEsperado: evaluacionBase.esperado,
+      ajusteEsperado: evaluacionBase.ajusteEsperado,
+      ...((totalesPorLab.get(row.ndt_historial_laboral_id)?.horasExtraPorTopeSemanal ?? 0) > 0
+        ? {
+            horasExtraPorTopeSemanal: totalesPorLab.get(row.ndt_historial_laboral_id)!
+              .horasExtraPorTopeSemanal,
+          }
+        : {}),
+      dias: (diasPorLab.get(row.ndt_historial_laboral_id) ?? []).map((dia) =>
+        fueraDelContrato(dia.fecha) ? { ...dia, problema: null, fueraDelContrato: true } : dia
+      ),
       incapacidad,
+      totalAPagar: round2(row.ndt_salario_neto + (incapacidad?.monto ?? 0)),
       numeroCuenta: datosPago?.numeroCuenta ?? null,
       bancoNombre: datosPago?.bancoNombre ?? null,
+      cuentaIlegible: datosPago?.cuentaIlegible ?? false,
     }
   })
 
@@ -295,6 +611,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       fechaInicio: periodo.npe_fecha_inicio_periodo,
       fechaFin: periodo.npe_fecha_fin_periodo,
       estado: periodo.npe_estado,
+      atrasado: periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo),
       fechaPago: periodo.npe_fecha_pago,
       observaciones: periodo.npe_observaciones,
       sucursalNombre: periodo.sgrh_sucursales?.suc_nombre ?? '—',

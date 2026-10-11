@@ -1,1 +1,16 @@
+# Solo formato y lint sobre lo staged: tiene que ser barato porque corre en
+# CADA commit. Los tests y el typecheck viven en pre-push (ver .husky/pre-push).
+#
+# Motivo del reparto, con mediciones locales sobre 8 archivos:
+#   prettier          ~1.0 s
+#   eslint --fix      ~5-6 s
+#   vitest related    ~8 s en el mejor caso y ~30-33 s al tocar un archivo muy
+#                     importado (SelectMenu, catalog de permisos): vitest paga
+#                     ~8 s fijos de arranque y despues escala con la cantidad
+#                     de tests relacionados.
+#
+# Con los tests aca, un commit costaba entre 16 y 40 s segun que archivo se
+# tocara — de ahi la sensacion de que "a veces" se ponia lento. Se commitea
+# muchas veces por push, asi que ese costo se paga una y otra vez para
+# verificar lo mismo.
 cd srgh-app && pnpm lint-staged

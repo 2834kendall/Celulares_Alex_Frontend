@@ -19,6 +19,7 @@ export const MESES = [
 
 export const ESTADO_LABELS: Record<string, string> = {
   borrador: 'Borrador',
+  atrasado: 'Atrasado',
   pagado: 'Pagado',
 }
 
@@ -30,6 +31,7 @@ export const ESTADO_LABELS: Record<string, string> = {
  */
 const ESTADO_BADGE_TONES: Record<string, BadgeTone> = {
   borrador: 'amber',
+  atrasado: 'rose',
   pagado: 'emerald',
 }
 
@@ -37,8 +39,34 @@ export function estadoLabel(estado: string) {
   return ESTADO_LABELS[estado] ?? estado
 }
 
+/**
+ * Estado que se le muestra al usuario. 'atrasado' no existe en la base: se
+ * deriva de que el periodo ya terminó y todavía no está pagado (ver
+ * lib/estadoPeriodo.ts). El estado guardado se deja intacto a propósito —
+ * varias pantallas dependen de `estado === 'borrador'` para permitir editar,
+ * y un periodo atrasado justamente hay que poder editarlo y pagarlo.
+ */
+export function estadoVisible(estado: string, atrasado: boolean): string {
+  return atrasado ? 'atrasado' : estado
+}
+
 export function estadoBadgeTone(estado: string): BadgeTone {
   return ESTADO_BADGE_TONES[estado] ?? 'slate'
+}
+
+/**
+ * El aguinaldo se nombra por el año en que se paga, como se dice en Costa
+ * Rica: el "aguinaldo 2026" es el de diciembre de 2026 y cubre de diciembre de
+ * 2025 a noviembre de 2026. Antes la pantalla decía "Ciclo 2025-2026" y los
+ * avisos "aguinaldo 2025" o "ciclo 2025" para cosas distintas.
+ */
+export function nombreAguinaldo(anio: number): string {
+  return `Aguinaldo ${anio}`
+}
+
+/** 'dic 2025 – nov 2026': lo que cubre el aguinaldo de `anio`. */
+export function rangoAguinaldo(anio: number): string {
+  return `dic ${anio - 1} – nov ${anio}`
 }
 
 /** 'Enero 2026 · 1ª quincena' — encabezado legible del periodo. */
@@ -61,6 +89,16 @@ export function formatCRC(amount: number | null | undefined) {
 }
 
 /** Agrupa de 4 en 4 para lectura: 'CR05015202001026284066' → 'CR05 0152 0200 1026 2840 66'. */
+/**
+ * Horas para mostrar: "8" si es entero, "7.5" si no. Mismo criterio que
+ * formatHoursValue en la pantalla de horarios — las horas trabajadas casi
+ * siempre caen en enteros o medias horas, y "8.00" solo agrega ruido.
+ */
+export function formatHoras(horas: number | null | undefined) {
+  const valor = horas ?? 0
+  return Number.isInteger(valor) ? String(valor) : valor.toFixed(2).replace(/0$/, '')
+}
+
 export function formatIban(numeroCuenta: string | null | undefined) {
   if (!numeroCuenta) return null
   return numeroCuenta.replace(/(.{4})/g, '$1 ').trim()

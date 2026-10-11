@@ -11,6 +11,12 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // Solo lo usa scripts/encrypt-payment-data.ts, que corre con
+    // `node --experimental-strip-types`: Node no resuelve extensiones, hay que
+    // escribir el .ts. Es lo que permite que ese script importe lib/crypto en
+    // vez de duplicar la criptografía. Seguro con noEmit: habilita la sintaxis,
+    // no obliga a nadie a usarla.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [

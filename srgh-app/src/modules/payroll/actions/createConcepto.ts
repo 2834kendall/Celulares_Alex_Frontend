@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { conceptoNominaSchema, type ConceptoNominaInput } from '@/modules/payroll/types'
+import {
+  ERROR_CONCEPTO_HORAS_EXTRA_ACTIVO,
+  conceptoDuplicariaHorasExtra,
+  conceptoNominaSchema,
+  type ConceptoNominaInput,
+} from '@/modules/payroll/types'
 
 export type CreateConceptoResult = { ok: true; id: number } | { ok: false; error: string }
 
@@ -12,6 +17,10 @@ export async function createConcepto(input: ConceptoNominaInput): Promise<Create
   const parsed = conceptoNominaSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: 'Datos del concepto inválidos.' }
+  }
+
+  if (conceptoDuplicariaHorasExtra(parsed.data)) {
+    return { ok: false, error: ERROR_CONCEPTO_HORAS_EXTRA_ACTIVO }
   }
 
   await requirePermission(PERMISOS.CATALOGOS_WRITE)

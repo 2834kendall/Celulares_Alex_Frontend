@@ -33,6 +33,8 @@ function makeAssignment(overrides: Partial<DayAssignment> = {}): DayAssignment {
     endTime: null,
     isDayOff: false,
     hours: 0,
+    branchId: 100,
+    branchName: 'Sucursal Central',
     ...overrides,
   }
 }
@@ -44,6 +46,7 @@ function makeRow(overrides: Partial<EmployeeWeekRow> = {}): EmployeeWeekRow {
     branchId: 100,
     branchName: 'Sucursal Central',
     fullName: 'Ana Perez',
+    fotoUrl: null,
     position: 'Cajera',
     days: [makeAssignment()],
     weeklyTotal: 0,
@@ -259,6 +262,43 @@ describe('useWeeklyScheduleMatrix', () => {
       )
     })
 
+    it('conserva la sucursal del dia al cambiarle el horario (turno cubierto en otra sucursal)', async () => {
+      mockAssignDaySchedule.mockResolvedValue({ ok: true })
+      const row = makeRow({
+        branchId: 100,
+        days: [makeAssignment({ assignmentId: 7, scheduleId: 4, branchId: 200 })],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '5')
+      )
+
+      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+        expect.objectContaining({ assignmentId: 7, scheduleId: 5, branchId: 200 })
+      )
+    })
+
+    it('un dia sin asignar manda la sucursal que trae la celda (la de casa)', async () => {
+      mockAssignDaySchedule.mockResolvedValue({ ok: true })
+      const row = makeRow({ branchId: 100, days: [makeAssignment({ branchId: 100 })] })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleAssignmentChange(transformedRow, transformedRow.days[0], '4')
+      )
+
+      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+        expect.objectContaining({ assignmentId: null, branchId: 100 })
+      )
+    })
+
     it('guarda savingCell mientras la peticion esta pendiente', async () => {
       let resolveAssign!: (value: { ok: true }) => void
       mockAssignDaySchedule.mockReturnValue(
@@ -302,6 +342,128 @@ describe('useWeeklyScheduleMatrix', () => {
     })
   })
 
+  describe('handleBranchChange', () => {
+    it('no hace nada si canWrite es false', async () => {
+      const row = makeRow({
+        days: [makeAssignment({ assignmentId: 7, scheduleId: 4, branchId: 100 })],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: false })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleBranchChange(transformedRow, transformedRow.days[0], 200)
+      )
+
+      expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+    })
+
+    it('no hace nada en un dia sin asignacion (nada cuya sucursal cambiar)', async () => {
+      const row = makeRow()
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleBranchChange(transformedRow, transformedRow.days[0], 200)
+      )
+
+      expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+    })
+
+    it('no hace nada si se elige la misma sucursal que ya tenia', async () => {
+      const row = makeRow({
+        days: [makeAssignment({ assignmentId: 7, scheduleId: 4, branchId: 100 })],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleBranchChange(transformedRow, transformedRow.days[0], 100)
+      )
+
+      expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+    })
+
+    it('conserva el horario asignado y cambia solo la sucursal', async () => {
+      mockAssignDaySchedule.mockResolvedValue({ ok: true })
+      const row = makeRow({
+        days: [makeAssignment({ assignmentId: 7, scheduleId: 4, branchId: 100 })],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleBranchChange(transformedRow, transformedRow.days[0], 200)
+      )
+
+      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assignmentId: 7,
+          branchId: 200,
+          scheduleId: 4,
+          isDayOff: false,
+        })
+      )
+      expect(result.current.savingCell).toBeNull()
+      expect(result.current.serverError).toBeNull()
+    })
+
+    it('conserva las horas personalizadas al cambiar la sucursal de un dia "Personalizado"', async () => {
+      mockAssignDaySchedule.mockResolvedValue({ ok: true })
+      const row = makeRow({
+        days: [
+          makeAssignment({
+            assignmentId: 7,
+            branchId: 100,
+            customStartTime: '09:00',
+            customEndTime: '18:00',
+          }),
+        ],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleBranchChange(transformedRow, transformedRow.days[0], 200)
+      )
+
+      expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+        expect.objectContaining({
+          branchId: 200,
+          scheduleId: null,
+          customStartTime: '09:00',
+          customEndTime: '18:00',
+        })
+      )
+    })
+
+    it('expone el error del servidor cuando la action falla', async () => {
+      mockAssignDaySchedule.mockResolvedValue({ ok: false, error: 'No se pudo guardar.' })
+      const row = makeRow({
+        days: [makeAssignment({ assignmentId: 7, scheduleId: 4, branchId: 100 })],
+      })
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [row], schedules: [], canWrite: true })
+      )
+      const transformedRow = result.current.rows[0]
+
+      await act(() =>
+        result.current.handleBranchChange(transformedRow, transformedRow.days[0], 200)
+      )
+
+      expect(result.current.serverError).toBe('No se pudo guardar.')
+    })
+  })
+
   describe('handleCustomConfirm', () => {
     it('no hace nada si no hay modal abierto', async () => {
       const { result } = renderHook(() =>
@@ -317,6 +479,7 @@ describe('useWeeklyScheduleMatrix', () => {
           breakStart: null,
           breakEnd: null,
           applyToDates: [],
+          branchId: 100,
         })
       )
 
@@ -342,11 +505,13 @@ describe('useWeeklyScheduleMatrix', () => {
           breakStart: null,
           breakEnd: null,
           applyToDates: [transformedRow.days[0].date],
+          branchId: 100,
         })
       )
 
       expect(mockAssignCustomScheduleBulk).toHaveBeenCalledWith(
         expect.objectContaining({
+          branchId: 100,
           customStartTime: '09:00',
           customEndTime: '18:00',
           customLunchStart: '12:00',
@@ -377,6 +542,7 @@ describe('useWeeklyScheduleMatrix', () => {
           breakStart: null,
           breakEnd: null,
           applyToDates: [],
+          branchId: 100,
         })
       )
 
@@ -406,6 +572,7 @@ describe('useWeeklyScheduleMatrix', () => {
           breakStart: null,
           breakEnd: null,
           applyToDates: [transformedRow.days[0].date],
+          branchId: 100,
         })
       )
 

@@ -1,0 +1,238 @@
+import { describe, expect, it, vi } from 'vitest'
+import {
+  SELECT_CONTRATO,
+  aContrato,
+  cargarAusencias,
+  cargarQuincenas,
+  contratosFueraDeAlcance,
+  puedeLeerAusencias,
+  sucursalesVisibles,
+} from './derechosData'
+import { createSupabaseClientMock } from '@/test/supabaseMock'
+import type { createClient } from '@/lib/supabase/server'
+
+vi.mock('server-only', () => ({}))
+
+type Respuesta = { data: unknown; error: unknown }
+
+function cliente(r: Record<string, Respuesta | Respuesta[]>) {
+  return createSupabaseClientMock(r) as unknown as Awaited<ReturnType<typeof createClient>> & {
+    from: ReturnType<typeof vi.fn>
+  }
+}
+
+function fila(i: number) {
+  return {
+    ndt_id: i,
+    ndt_historial_laboral_id: 1,
+    ndt_salario_bruto: 100,
+    ndt_pagado: true,
+    ndt_salario_base_contrato: null,
+    ndt_salario_real_contrato: null,
+    sgrh_nomina_periodo: {
+      npe_periodo_mes: 1,
+      npe_periodo_anio: 2000 + Math.floor(i / 24),
+      npe_quincena: 1,
+      npe_fecha_inicio_periodo: null,
+      npe_fecha_fin_periodo: null,
+    },
+  }
+}
+
+const CONTRATO = {
+  labId: 1,
+  fechaInicio: '2000-01-01',
+  fechaFin: null,
+  salarioMensual: 200,
+  liquidado: false,
+}
+
+describe('cargarQuincenas', () => {
+  // Supabase corta en 1000 filas sin avisar: sin paginar, lo que pasaba de
+  // mil nunca llegaba al aguinaldo.
+  it('lee por páginas: con 1005 quincenas llegan las 1005', async () => {
+    const supabase = cliente({
+      sgrh_nomina_detalle: [
+        { data: Array.from({ length: 1000 }, (_, i) => fila(i)), error: null },
+        { data: Array.from({ length: 5 }, (_, i) => fila(1000 + i)), error: null },
+      ],
+    })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.get(1)).toHaveLength(1005)
+    expect(supabase.from).toHaveBeenCalledTimes(2)
+  })
+
+  it('usa las fechas del periodo, o las de la quincena si el periodo no las tiene', async () => {
+    const supabase = cliente({
+      sgrh_nomina_detalle: {
+        data: [
+          {
+            ...fila(1),
+            sgrh_nomina_periodo: {
+              npe_periodo_mes: 2,
+              npe_periodo_anio: 2026,
+              npe_quincena: 2,
+              npe_fecha_inicio_periodo: null,
+              npe_fecha_fin_periodo: null,
+            },
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.get(1)![0]).toMatchObject({
+      fechaInicio: '2026-02-16',
+      fechaFin: '2026-02-28',
+      salarioMensualContrato: 200,
+      etiqueta: 'Febrero 2026 · 2ª quincena',
+    })
+  })
+
+  it('un error de lectura no se traga: devuelve error', async () => {
+    const supabase = cliente({ sgrh_nomina_detalle: { data: null, error: { message: 'x' } } })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(false)
+  })
+})
+
+// Desde que el contrato vigente se puede editar en cualquier momento, usar su
+// salario de HOY para una quincena pasada movía hacia atrás el promedio de la
+// liquidación y el recargo de una licencia de maternidad.
+describe('cargarQuincenas — el salario de cada quincena', () => {
+  it('usa la foto de cada fila, no el salario actual del contrato', async () => {
+    const supabase = cliente({
+      sgrh_nomina_detalle: {
+        data: [
+          { ...fila(1), ndt_salario_base_contrato: 300, ndt_salario_real_contrato: 320 },
+          { ...fila(2), ndt_salario_base_contrato: 400, ndt_salario_real_contrato: 450 },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.get(1)?.map((q) => q.salarioMensualContrato)).toEqual([320, 450])
+  })
+
+  // Misma regla que aContrato: manda el real y, si no hay, el base.
+  it('sin salario real en la foto usa el base de la foto', async () => {
+    const supabase = cliente({
+      sgrh_nomina_detalle: {
+        data: [{ ...fila(1), ndt_salario_base_contrato: 300, ndt_salario_real_contrato: null }],
+        error: null,
+      },
+    })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.get(1)?.[0]?.salarioMensualContrato).toBe(300)
+  })
+
+  it('sin foto cae al salario del contrato, como antes', async () => {
+    const supabase = cliente({
+      sgrh_nomina_detalle: { data: [fila(1)], error: null },
+    })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.get(1)?.[0]?.salarioMensualContrato).toBe(200)
+  })
+})
+
+describe('cargarAusencias', () => {
+  it('clasifica: subsidio (maternidad o no), vacaciones, y cuenta las que no tienen tipo', async () => {
+    const tipo = (codigo: string, ccss: boolean, vac: boolean) => ({
+      tau_codigo: codigo,
+      tau_requiere_documento_ccss: ccss,
+      tau_descuenta_vacaciones: vac,
+    })
+    const fila = (id: number, t: unknown) => ({
+      aus_id: id,
+      aus_historial_laboral_id: 1,
+      aus_fecha_inicio: '2026-01-05',
+      aus_fecha_fin: '2026-01-06',
+      sgrh_cat_tipos_ausencia: t,
+    })
+    const supabase = cliente({
+      sgrh_ausencias: {
+        data: [
+          fila(1, tipo('INC_MAT', true, false)),
+          fila(2, tipo('INC_ENF', true, false)),
+          fila(3, tipo('VAC', false, true)),
+          fila(4, tipo('PERM_CG', false, false)),
+          fila(5, null),
+        ],
+        error: null,
+      },
+    })
+
+    const result = await cargarAusencias(supabase, [1])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const a = result.data.get(1)!
+    expect(a.subsidios.map((s) => s.esMaternidad)).toEqual([true, false])
+    expect(a.vacaciones).toHaveLength(1)
+    expect(a.sinTipo).toBe(1)
+  })
+})
+
+describe('puedeLeerAusencias', () => {
+  it('lee el permiso del JWT', () => {
+    expect(puedeLeerAusencias({ app_metadata: { permisos: ['AUSENCIAS_READ'] } })).toBe(true)
+    expect(puedeLeerAusencias({ app_metadata: { permisos: [] } })).toBe(false)
+    expect(puedeLeerAusencias({})).toBe(false)
+  })
+})
+
+describe('alcance por sucursal', () => {
+  it('sucursalesVisibles: null = toda la empresa; si no, las del JWT', () => {
+    expect(sucursalesVisibles({ app_metadata: { sucursal_ids: null } })).toBeNull()
+    expect(sucursalesVisibles({ app_metadata: {} })).toBeNull()
+    expect(sucursalesVisibles({})).toBeNull()
+    expect(sucursalesVisibles({ app_metadata: { sucursal_ids: [2, 3] } })).toEqual([2, 3])
+  })
+
+  it('pide y guarda la sucursal de cada contrato', () => {
+    expect(SELECT_CONTRATO).toContain('lab_sucursal_id')
+    expect(
+      aContrato({
+        lab_id: 7,
+        lab_sucursal_id: 2,
+        lab_fecha_inicio: '2020-01-01',
+        lab_fecha_fin: null,
+        lab_salario_base: 1,
+        lab_salario_real: 1,
+        sgrh_liquidaciones: null,
+      }).sucursalId
+    ).toBe(2)
+  })
+
+  it('contratosFueraDeAlcance: un traslado desde una sucursal que no se ve', () => {
+    const a = { ...CONTRATO, labId: 1, sucursalId: 1 }
+    const b = { ...CONTRATO, labId: 2, sucursalId: 2 }
+
+    expect(contratosFueraDeAlcance([a, b], null)).toBe(false)
+    expect(contratosFueraDeAlcance([a, b], [1, 2])).toBe(false)
+    expect(contratosFueraDeAlcance([b], [2])).toBe(false)
+    expect(contratosFueraDeAlcance([a, b], [2])).toBe(true)
+  })
+})

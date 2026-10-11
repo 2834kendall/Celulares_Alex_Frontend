@@ -3,13 +3,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 
 interface EmployeeJoin {
   emp_id: number
   emp_nombre: string
   emp_apellido_1: string
   emp_apellido_2: string | null
-  emp_fecha_nacimiento: string | null
 }
 
 interface HistorialRow {
@@ -19,8 +19,6 @@ interface HistorialRow {
 export interface ActiveEmployeeOption {
   employeeId: number
   fullName: string
-  /** Solo para validar el PIN de respaldo — nunca se muestra en el kiosco. */
-  birthDateISO: string | null
 }
 
 export type GetActiveEmployeesResult =
@@ -42,7 +40,7 @@ export async function getActiveEmployees(): Promise<GetActiveEmployeesResult> {
   const meta = claims.app_metadata as {
     usr_id?: number
     empresa_id?: number
-    sucursal_id?: number | null
+    sucursal_ids?: number[] | null
   }
 
   if (!meta.empresa_id) {
@@ -60,21 +58,13 @@ export async function getActiveEmployees(): Promise<GetActiveEmployeesResult> {
   // No debilita el alcance: la RLS de uer_select solo deja leer la asignacion
   // PROPIA, y si tampoco por ahi aparece una sucursal se sigue cortando — en
   // un dispositivo fisicamente expuesto nunca se cae a "toda la empresa".
-  let sucursalId = meta.sucursal_id ?? null
+  let sucursalIds = meta.sucursal_ids ?? null
 
-  if (sucursalId === null && meta.usr_id) {
-    const { data: asignacion } = await supabase
-      .from('sgrh_usuarios_empresa_rol')
-      .select('uer_sucursal_id')
-      .eq('uer_usuario_id', meta.usr_id)
-      .eq('uer_activo', true)
-      .limit(1)
-      .maybeSingle<{ uer_sucursal_id: number | null }>()
-
-    sucursalId = asignacion?.uer_sucursal_id ?? null
+  if (!sucursalIds && meta.usr_id) {
+    sucursalIds = await getUsuarioSucursalScope(supabase, meta.usr_id)
   }
 
-  if (sucursalId === null) {
+  if (!sucursalIds || sucursalIds.length === 0) {
     return { ok: false, error: 'Este kiosco no tiene una sucursal asignada.' }
   }
 
@@ -82,11 +72,11 @@ export async function getActiveEmployees(): Promise<GetActiveEmployeesResult> {
     .from('sgrh_historial_laboral')
     .select(
       `
-      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_fecha_nacimiento )
+      sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2 )
     `
     )
     .eq('lab_empresa_id', meta.empresa_id)
-    .eq('lab_sucursal_id', sucursalId)
+    .in('lab_sucursal_id', sucursalIds)
     .is('lab_fecha_fin', null)
     .returns<HistorialRow[]>()
 
@@ -105,7 +95,6 @@ export async function getActiveEmployees(): Promise<GetActiveEmployeesResult> {
     options.push({
       employeeId: employee.emp_id,
       fullName: `${employee.emp_nombre} ${employee.emp_apellido_1}${employee.emp_apellido_2 ? ' ' + employee.emp_apellido_2 : ''}`,
-      birthDateISO: employee.emp_fecha_nacimiento,
     })
   }
 

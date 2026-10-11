@@ -1,4 +1,5 @@
 import { Alert } from '@/components/ui/Alert'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { ACCESO_ASISTENCIA } from '@/lib/permissions/zones'
@@ -8,6 +9,8 @@ import { checkMonthlyInfractions } from '@/modules/attendance/actions/checkMonth
 import { AttendanceTabs } from '@/modules/attendance/components/AttendanceTabs'
 import { DailyAttendanceTable } from '@/modules/attendance/components/DailyAttendanceTable'
 import { MonthlySummaryTable } from '@/modules/attendance/components/MonthlySummaryTable'
+import { PendingJustifications } from '@/modules/attendance/components/PendingJustifications'
+import { buildJustificationQueue } from '@/modules/attendance/lib/pendingJustifications'
 import {
   isValidISODate,
   monthBoundsInCostaRica,
@@ -22,13 +25,19 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const claims = await requireAnyPermission(ACCESO_ASISTENCIA)
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canReadDashboard = permisos.includes(PERMISOS.ASISTENCIA_READ)
+  // La barra superior ya no muestra el titulo de la ruta: el encabezado va en
+  // todas las ramas, incluida la de error, o la pantalla queda sin titulo.
+  const header = <PageHeader title="Asistencia" />
 
   if (!canReadDashboard) {
     return (
-      <Alert tone="info" size="md">
-        Tu rol no tiene permiso para ver el panel de asistencia de la sucursal. Tu historial
-        personal de marcas estara disponible en tu perfil.
-      </Alert>
+      <div className="min-w-0 space-y-4">
+        {header}
+        <Alert tone="info" size="md">
+          Tu rol no tiene permiso para ver el panel de asistencia de la sucursal. Tu historial
+          personal de marcas estara disponible en tu perfil.
+        </Alert>
+      </div>
     )
   }
 
@@ -65,5 +74,35 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
     <Alert size="md">{monthlyResult.error}</Alert>
   )
 
-  return <AttendanceTabs diarioContent={diarioContent} resumenContent={resumenContent} />
+  // Justificar una tardia exige ASISTENCIA_WRITE; una ausencia, registrar una
+  // ausencia aprobada (AUSENCIAS_APPROVE). Sin ninguno, no hay pestaña.
+  const canJustifyAbsences = permisos.includes(PERMISOS.AUSENCIAS_APPROVE)
+  const canJustify = canWrite || canJustifyAbsences
+
+  const justificarContent = !canJustify ? undefined : monthlyResult.ok ? (
+    <PendingJustifications
+      monthISO={monthISO}
+      rows={monthlyResult.data}
+      canWrite={canWrite}
+      canJustifyAbsences={canJustifyAbsences}
+    />
+  ) : (
+    <Alert size="md">{monthlyResult.error}</Alert>
+  )
+
+  const pendingCount = monthlyResult.ok
+    ? buildJustificationQueue(monthlyResult.data).pending.length
+    : 0
+
+  return (
+    <div className="min-w-0 space-y-4">
+      {header}
+      <AttendanceTabs
+        diarioContent={diarioContent}
+        resumenContent={resumenContent}
+        justificarContent={justificarContent}
+        pendingCount={pendingCount}
+      />
+    </div>
+  )
 }

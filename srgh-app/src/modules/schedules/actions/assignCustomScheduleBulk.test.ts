@@ -32,9 +32,34 @@ const baseInput: AssignCustomScheduleBulkInput = {
 describe('assignCustomScheduleBulk (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequirePermission.mockResolvedValue(
-      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  it('falla si no se pudo determinar la empresa del usuario', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {},
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+
+    const result = await assignCustomScheduleBulk(baseInput)
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo determinar la empresa del usuario.' })
+  })
+
+  it('rechaza una sucursal de otra empresa', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_sucursales: { data: [], error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
     )
+
+    const result = await assignCustomScheduleBulk(baseInput)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'La sucursal seleccionada no es válida para tu empresa.',
+    })
   })
 
   it('rechaza una lista vacia de dias sin llamar a requirePermission', async () => {
@@ -59,6 +84,7 @@ describe('assignCustomScheduleBulk (server action)', () => {
 
   it('guarda todos los dias marcados y revalida la ruta en exito', async () => {
     const client = createSupabaseClientMock({
+      sgrh_sucursales: { data: [{ suc_id: 3 }], error: null },
       sgrh_programacion_semanal: { data: null, error: null },
     })
     mockCreateClient.mockResolvedValue(
@@ -68,12 +94,14 @@ describe('assignCustomScheduleBulk (server action)', () => {
     const result = await assignCustomScheduleBulk(baseInput)
 
     expect(result).toEqual({ ok: true })
-    expect(client.from).toHaveBeenCalledTimes(2)
+    // sucursales (validacion) + 2 dias
+    expect(client.from).toHaveBeenCalledTimes(3)
     expect(revalidatePath).toHaveBeenCalledWith('/schedule')
   })
 
   it('devuelve error si alguno de los dias falla al guardar', async () => {
     const client = createSupabaseClientMock({
+      sgrh_sucursales: { data: [{ suc_id: 3 }], error: null },
       sgrh_programacion_semanal: [
         { data: null, error: null },
         { data: null, error: { message: 'boom' } },

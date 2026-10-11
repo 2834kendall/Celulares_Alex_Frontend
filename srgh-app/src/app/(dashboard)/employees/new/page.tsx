@@ -12,7 +12,7 @@ import {
   getTiposJornada,
 } from '@/modules/employees/actions/getCatalogs'
 import { EmployeeWizard } from '@/modules/employees/components/EmployeeWizard'
-import { Alert } from '@/components/ui/Alert'
+import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 
 export default async function NewEmployeePage() {
@@ -54,17 +54,23 @@ export default async function NewEmployeePage() {
     bancosResult,
     territorioResult,
   ]
+  const errorView = (message: string) => (
+    <PageError title="Nuevo empleado" backHref="/employees" backLabel="Volver al listado">
+      {message}
+    </PageError>
+  )
+
   const failed = results.find((result) => !result.ok)
   if (failed && !failed.ok) {
-    return <Alert size="md">{failed.error}</Alert>
+    return errorView(failed.error)
   }
 
   if (rolesResult && !rolesResult.ok) {
-    return <Alert size="md">{rolesResult.error}</Alert>
+    return errorView(rolesResult.error)
   }
 
   if (tiposDocumentoResult && !tiposDocumentoResult.ok) {
-    return <Alert size="md">{tiposDocumentoResult.error}</Alert>
+    return errorView(tiposDocumentoResult.error)
   }
 
   return (
@@ -73,7 +79,7 @@ export default async function NewEmployeePage() {
         backHref="/employees"
         backLabel="Volver al listado"
         title="Nuevo empleado"
-        description="Alta en cuatro pasos: información principal, datos de nómina, documentos y cuenta de usuario."
+        description="Alta en cuatro pasos: datos, nómina, documentos y acceso."
       />
 
       <EmployeeWizard

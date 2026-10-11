@@ -1,21 +1,29 @@
 'use client'
 
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import {
   AlertTriangle,
   Baby,
+  Building2,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
+  Copy,
   HeartPulse,
   Loader2,
   Pencil,
   Plus,
   RotateCcw,
   Users,
+  Wand2,
+  X,
 } from 'lucide-react'
-import type { EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
-import type { ScheduleRow } from '@/modules/schedules/types'
+import type { EmployeeWeekRow, SucursalOption } from '@/modules/schedules/actions/getWeeklySchedule'
+import { getScheduleSuggestion } from '@/modules/schedules/actions/getScheduleSuggestion'
+import { pasteWeeklySchedule } from '@/modules/schedules/actions/pasteWeeklySchedule'
+import type { PasteWeeklyScheduleInput, ScheduleRow } from '@/modules/schedules/types'
 import {
   WEEKDAY_NAMES,
   currentMondayISO,
@@ -24,6 +32,14 @@ import {
   toISODate,
 } from '@/modules/schedules/lib/week'
 import { stripSeconds } from '@/modules/schedules/lib/time'
+import {
+  NEUTRAL_STRIPE,
+  SCHEDULE_PALETTE,
+  customSchedulePalette,
+  hatchStyle,
+  paletteForSchedule,
+  type CellPalette,
+} from '@/modules/schedules/lib/cellPalette'
 import { useWeekNavigation } from '@/modules/schedules/hooks/useWeekNavigation'
 import {
   useWeeklyScheduleMatrix,
@@ -31,19 +47,84 @@ import {
   type EmployeeWeekRowWithAusencia,
 } from '@/modules/schedules/hooks/useWeeklyScheduleMatrix'
 import { usePagination } from '@/hooks/usePagination'
+import { Avatar } from '@/components/ui/Avatar'
+import { formatHoursValue } from '@/modules/schedules/lib/hours'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchSelect } from '@/components/ui/SearchSelect'
+import { SelectMenu, type SelectMenuOption } from '@/components/ui/SelectMenu'
 import { META_LABEL } from '@/components/ui/styles'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
 import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
 import { IconButton } from '@/components/ui/IconButton'
 import { DatePopover } from '@/components/ui/DatePickerButton'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useFormatHora } from '@/lib/time/FormatoHoraContext'
+
+type PasteEmployeeInput = PasteWeeklyScheduleInput['employees'][number]
+type PasteDayInput = PasteEmployeeInput['days'][number]
+
+interface ClipboardDay {
+  scheduleId: number | null
+  isDayOff: boolean
+  customStartTime: string | null
+  customEndTime: string | null
+  customLunchStart: string | null
+  customLunchEnd: string | null
+  customBreakStart: string | null
+  customBreakEnd: string | null
+  // Sucursal real del dia copiado, para que "pegar" respete la rotacion.
+  branchId: number
+}
+
+interface ScheduleClipboard {
+  sourceWeekStartISO: string
+  byEmployment: Record<number, ClipboardDay[]>
+}
+
+// Forma minima que necesita applySource; branchId es opcional porque la
+// sugerencia no opina de sucursal (cae a la de casa del destino).
+interface SourceDay {
+  scheduleId: number | null
+  isDayOff: boolean
+  branchId?: number
+  customStartTime?: string | null
+  customEndTime?: string | null
+  customLunchStart?: string | null
+  customLunchEnd?: string | null
+  customBreakStart?: string | null
+  customBreakEnd?: string | null
+}
+
+const CLIPBOARD_STORAGE_KEY = 'sgrh_schedule_week_clipboard'
+
+function loadClipboard(): ScheduleClipboard | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(CLIPBOARD_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<ScheduleClipboard> | null
+    if (!parsed || typeof parsed.sourceWeekStartISO !== 'string' || !parsed.byEmployment) {
+      return null
+    }
+    return parsed as ScheduleClipboard
+  } catch {
+    return null
+  }
+}
+
+function saveClipboard(clipboard: ScheduleClipboard) {
+  try {
+    window.localStorage.setItem(CLIPBOARD_STORAGE_KEY, JSON.stringify(clipboard))
+  } catch {
+    // Modo privado o cuota llena: perder el portapapeles no debe romper la matriz.
+  }
+}
 
 interface WeeklyScheduleMatrixProps {
   weekStartISO: string
   weekDates: string[]
   rows: EmployeeWeekRow[]
+  sucursales: SucursalOption[]
   schedules: ScheduleRow[]
   canWrite: boolean
   ausencias?: AusenciaOverlayEntry[]
@@ -52,33 +133,6 @@ interface WeeklyScheduleMatrixProps {
 /** Neutro frio de la cabecera y del riel fijo de colaboradores. */
 const RAIL_BG = '#F7F8FA'
 
-interface CellPalette {
-  fill: string
-  border: string
-  stripe: string
-}
-
-/**
- * Cada horario recibe un color estable segun su hor_id para distinguir turnos
- * de un vistazo. Todos los tonos viven en la misma banda de luminosidad y baja
- * saturacion para que la matriz se lea como un conjunto y no como un arcoiris.
- * `stripe` es el tono del rayado diagonal que marca los dias de descanso.
- *
- * La lavanda y el rosa palo quedan fuera de la rotacion: estan reservados a
- * "Personalizado" y a las ausencias.
- */
-const SCHEDULE_PALETTE: CellPalette[] = [
-  { fill: '#E7EEFC', border: '#C5D3EB', stripe: '#D7E3F6' }, // azul bruma
-  { fill: '#FBEDDC', border: '#EDD5B4', stripe: '#F5E2CA' }, // durazno
-  { fill: '#DFF2E7', border: '#B8DCC7', stripe: '#CEEADA' }, // menta
-  { fill: '#F9F1D0', border: '#E6D8A2', stripe: '#F1E8BE' }, // amarillo
-  { fill: '#DEF0F5', border: '#B4D9E3', stripe: '#CDE7EE' }, // aqua
-  { fill: '#F1EBE2', border: '#D6C9B6', stripe: '#E6DDCF' }, // arena
-]
-
-const CUSTOM_PALETTE: CellPalette = { fill: '#EDEAFC', border: '#D0C8EE', stripe: '#E1DCF6' }
-const NEUTRAL_STRIPE = '#E2E8F0'
-
 /**
  * Ausencias en rosa palo apagado: mismo nivel de luminosidad que el resto de
  * la paleta, sin el rojo de alerta que competia con los horarios.
@@ -86,21 +140,19 @@ const NEUTRAL_STRIPE = '#E2E8F0'
 const ABSENCE_PALETTE = { fill: '#F8EBEF', border: '#E6CDD5', text: '#856874', icon: '#BC9BA6' }
 const LACTANCIA_TEXT = '#8B6A7C'
 
-function paletteFor(assignment: DayAssignmentWithAusencia): CellPalette | null {
-  if (assignment.customStartTime) return CUSTOM_PALETTE
-  if (assignment.scheduleId == null) return null
-  return SCHEDULE_PALETTE[assignment.scheduleId % SCHEDULE_PALETTE.length]
-}
-
-/** Rayado diagonal "/" al estilo de los dias no laborables del calendario. */
-function hatchStyle(color: string): CSSProperties {
-  return {
-    backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 5px, transparent 5px 11px)`,
-  }
+function paletteFor(
+  assignment: DayAssignmentWithAusencia,
+  colorById: Map<number, string>
+): CellPalette | null {
+  return paletteForSchedule({
+    scheduleId: assignment.scheduleId,
+    isCustom: Boolean(assignment.customStartTime),
+    manualColor: assignment.scheduleId != null ? colorById.get(assignment.scheduleId) : null,
+  })
 }
 
 /** El descanso se raya con el color del horario que mas repite el colaborador. */
-function rowStripeColor(row: EmployeeWeekRowWithAusencia) {
+function rowStripeColor(row: EmployeeWeekRowWithAusencia, colorById: Map<number, string>) {
   const counts = new Map<number, number>()
   for (const day of row.days) {
     if (day.scheduleId != null) counts.set(day.scheduleId, (counts.get(day.scheduleId) ?? 0) + 1)
@@ -115,9 +167,27 @@ function rowStripeColor(row: EmployeeWeekRowWithAusencia) {
     }
   }
 
-  return dominant == null
-    ? NEUTRAL_STRIPE
-    : SCHEDULE_PALETTE[dominant % SCHEDULE_PALETTE.length].stripe
+  if (dominant == null) return NEUTRAL_STRIPE
+  const manualColor = colorById.get(dominant)
+  if (manualColor) return customSchedulePalette(manualColor).stripe
+  return SCHEDULE_PALETTE[dominant % SCHEDULE_PALETTE.length].stripe
+}
+
+// Un dia bloqueado por ausencia no cuenta como hueco: sin horario = no puede marcar.
+function hasScheduleGap(row: EmployeeWeekRowWithAusencia): boolean {
+  return row.days.some((day) => {
+    const isBlocked = Boolean(day.ausencia && !day.ausencia.isIntraday)
+    return day.assignmentId === null && !isBlocked
+  })
+}
+
+// Insignia junto al nombre cuando el colaborador tiene algun dia sin horario.
+function GapIndicator() {
+  return (
+    <span title="Tiene días sin horario asignado esta semana" className="shrink-0">
+      <AlertTriangle className="h-3 w-3 text-amber-500" aria-hidden="true" />
+    </span>
+  )
 }
 
 function dayNumber(dateISO: string) {
@@ -144,20 +214,8 @@ function formatWeekRange(startISO: string, endISO: string) {
 }
 
 /** Integers with no decimals, fractions with one (7.5 must not show as 8). */
-function formatHoursValue(hours: number) {
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
-}
-
 function formatHours(hours: number) {
   return `${formatHoursValue(hours)} Hrs`
-}
-
-function initialsOf(fullName: string) {
-  return fullName
-    .split(' ')
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join('')
 }
 
 function assignmentLabel(assignment: DayAssignmentWithAusencia) {
@@ -166,27 +224,41 @@ function assignmentLabel(assignment: DayAssignmentWithAusencia) {
   return assignment.scheduleName ?? 'Sin asignar'
 }
 
-function timeRange(assignment: DayAssignmentWithAusencia) {
+/**
+ * Rango del turno para PINTAR en la celda. Recibe el formateador de la
+ * empresa (12h/24h) en vez de usar stripSeconds: stripSeconds devuelve el
+ * "HH:MM" que exigen los inputs del modal de horas personalizadas (más
+ * abajo, initialStartTime & co.) y eso tiene que seguir en 24h.
+ */
+function timeRange(
+  assignment: DayAssignmentWithAusencia,
+  rango: (inicio: string | null | undefined, fin: string | null | undefined) => string | null
+) {
   const start = assignment.customStartTime ?? assignment.startTime
   const end = assignment.customEndTime ?? assignment.endTime
-  if (!start || !end) return null
-  return `${stripSeconds(start)} - ${stripSeconds(end)}`
+  return rango(start, end)
 }
 
-function AssignmentOptions({ scheduleOptions }: { scheduleOptions: ScheduleRow[] }) {
-  return (
-    <>
-      <option value="">Asignar horario</option>
-      <option value="__free__">Descanso</option>
-      <option value="__custom__">Personalizado</option>
-      {scheduleOptions.map((schedule) => (
-        <option key={schedule.hor_id} value={schedule.hor_id}>
-          {schedule.hor_nombre}
-        </option>
-      ))}
-    </>
-  )
+function assignmentOptions(scheduleOptions: ScheduleRow[]): SelectMenuOption[] {
+  return [
+    { value: '', label: 'Asignar horario' },
+    { value: '__free__', label: 'Descanso' },
+    { value: '__custom__', label: 'Personalizado' },
+    ...scheduleOptions.map((schedule) => ({
+      value: String(schedule.hor_id),
+      label: schedule.hor_nombre,
+    })),
+  ]
 }
+
+/*
+ * Los dos selectores de la celda (horario y sucursal) son un SelectMenu
+ * invisible que la cubre: el clic en cualquier punto abre la lista, y la
+ * lista es la de la aplicacion. Antes eran <select> nativos transparentes,
+ * cuya lista la dibuja el sistema operativo y no acepta estilos.
+ */
+const CELL_MENU = '!absolute inset-0'
+const CELL_TRIGGER = 'block h-full w-full opacity-0 outline-none'
 
 interface ScheduleCellProps {
   row: EmployeeWeekRowWithAusencia
@@ -196,13 +268,68 @@ interface ScheduleCellProps {
   canWrite: boolean
   isSaving: boolean
   scheduleOptions: ScheduleRow[]
+  sucursales: SucursalOption[]
   currentValue: string
+  colorById: Map<number, string>
   onChange: (value: string) => void
   onEditCustom: () => void
+  onBranchChange: (branchId: number) => void
+}
+
+// Franja al pie de la celda para ver/cambiar la sucursal de ese dia (menu transparente superpuesto).
+function BranchBar({
+  assignment,
+  employeeName,
+  dayLabel,
+  sucursales,
+  canWrite,
+  isSaving,
+  borderColor,
+  onBranchChange,
+}: {
+  assignment: DayAssignmentWithAusencia
+  employeeName: string
+  dayLabel: string
+  sucursales: SucursalOption[]
+  canWrite: boolean
+  isSaving: boolean
+  // Mismo tono que el borde de la tarjeta, para que la franja no se vea gris ajena.
+  borderColor: string
+  onBranchChange: (branchId: number) => void
+}) {
+  if (!canWrite || !assignment.assignmentId || sucursales.length < 2) {
+    return null
+  }
+
+  return (
+    <div
+      className="pointer-events-auto relative flex shrink-0 items-center justify-center gap-1 px-1.5 py-1"
+      style={{ borderTop: `1px solid ${borderColor}` }}
+      title={assignment.branchName ?? undefined}
+    >
+      <Building2 className="h-2.5 w-2.5 shrink-0 text-slate-500" />
+      <span className="min-w-0 truncate text-[9.5px] font-semibold leading-none text-slate-600">
+        {assignment.branchName ?? 'Sin sucursal'}
+      </span>
+      <SelectMenu
+        size="sm"
+        className={CELL_MENU}
+        triggerClassName={`${CELL_TRIGGER} cursor-pointer disabled:cursor-not-allowed`}
+        options={sucursales.map((sucursal) => ({
+          value: String(sucursal.id),
+          label: sucursal.nombre,
+        }))}
+        value={String(assignment.branchId)}
+        disabled={isSaving}
+        onChange={(value) => onBranchChange(Number(value))}
+        ariaLabel={`Sucursal de ${employeeName} el ${dayLabel}`}
+      />
+    </div>
+  )
 }
 
 /**
- * Celda de la matriz. El select nativo se superpone transparente sobre toda la
+ * Celda de la matriz. El selector se superpone transparente sobre toda la
  * celda para que un clic en cualquier punto abra la lista de horarios sin
  * perder el teclado ni el nombre accesible del control.
  */
@@ -214,15 +341,19 @@ function ScheduleCell({
   canWrite,
   isSaving,
   scheduleOptions,
+  sucursales,
   currentValue,
+  colorById,
   onChange,
   onEditCustom,
+  onBranchChange,
 }: ScheduleCellProps) {
   const ausencia = assignment.ausencia
   const isBlocked = Boolean(ausencia && !ausencia.isIntraday)
   const isDisabled = !canWrite || isSaving || isBlocked
-  const palette = paletteFor(assignment)
-  const range = timeRange(assignment)
+  const palette = paletteFor(assignment, colorById)
+  const { rango } = useFormatHora()
+  const range = timeRange(assignment, rango)
 
   const content = isBlocked ? (
     <div
@@ -243,45 +374,58 @@ function ScheduleCell({
     </div>
   ) : palette ? (
     <div
-      className="flex flex-1 flex-col items-center justify-center gap-px rounded-lg border px-1.5 py-1.5 text-center"
+      className="flex flex-1 flex-col overflow-hidden rounded-lg border text-center"
       style={{ backgroundColor: palette.fill, borderColor: palette.border }}
     >
-      <p className="line-clamp-2 text-[11px] font-bold leading-[1.25] text-slate-800">
-        {assignmentLabel(assignment)}
-      </p>
-      {range && (
-        <p className="whitespace-nowrap text-[11px] leading-[1.3] tabular-nums text-slate-600">
-          {range}
+      <div className="flex flex-1 flex-col items-center justify-center gap-px px-1.5 py-1.5">
+        <p className="line-clamp-2 text-[11px] font-bold leading-[1.25] text-slate-800">
+          {assignmentLabel(assignment)}
         </p>
-      )}
-      {(assignment.customStartTime || ausencia?.isIntraday || isSaving) && (
-        <div className="mt-0.5 flex items-center gap-1">
-          {assignment.customStartTime && canWrite && (
-            <button
-              type="button"
-              onClick={onEditCustom}
-              aria-label="Editar horas"
-              className="pointer-events-auto rounded-full p-0.5 outline-none transition hover:bg-white/70 focus-visible:ring-2 focus-visible:ring-violet-500/60"
-            >
-              <Pencil className="h-2.5 w-2.5 text-violet-500" />
-            </button>
-          )}
-          {ausencia?.isIntraday && (
-            <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-white/75 px-1.5 py-px text-[9px] font-bold"
-              style={{ color: LACTANCIA_TEXT }}
-            >
-              <Baby className="h-2.5 w-2.5" /> Lactancia
-            </span>
-          )}
-          {isSaving && <Loader2 className="h-2.5 w-2.5 animate-spin text-slate-500" />}
-        </div>
-      )}
+        {range && (
+          // Sin whitespace-nowrap: en 12h el rango casi duplica su largo y
+          // la celda (una de 7 por fila) no lo contenía. En 24h sigue
+          // entrando en una línea. Mismo criterio que MyScheduleView.
+          <p className="text-[11px] leading-[1.3] tabular-nums text-slate-600">{range}</p>
+        )}
+        {(assignment.customStartTime || ausencia?.isIntraday || isSaving) && (
+          <div className="mt-0.5 flex items-center gap-1">
+            {assignment.customStartTime && canWrite && (
+              <button
+                type="button"
+                onClick={onEditCustom}
+                aria-label="Editar horas"
+                className="pointer-events-auto rounded-full p-0.5 outline-none transition hover:bg-white/70 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+              >
+                <Pencil className="h-2.5 w-2.5 text-brand-600" />
+              </button>
+            )}
+            {ausencia?.isIntraday && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded-full bg-white/75 px-1.5 py-px text-[9px] font-bold"
+                style={{ color: LACTANCIA_TEXT }}
+              >
+                <Baby className="h-2.5 w-2.5" /> Lactancia
+              </span>
+            )}
+            {isSaving && <Loader2 className="h-2.5 w-2.5 animate-spin text-slate-500" />}
+          </div>
+        )}
+      </div>
+      <BranchBar
+        assignment={assignment}
+        employeeName={row.fullName}
+        dayLabel={WEEKDAY_NAMES[dayIndex]}
+        sucursales={sucursales}
+        canWrite={canWrite}
+        isSaving={isSaving}
+        borderColor={palette.border}
+        onBranchChange={onBranchChange}
+      />
     </div>
   ) : (
     <div className="flex flex-1 items-center justify-center gap-1 rounded-lg">
       {canWrite ? (
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800 text-white opacity-0 shadow-md transition group-hover/cell:opacity-100 peer-focus-visible:opacity-100">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700 text-white opacity-0 shadow-md transition group-hover/cell:opacity-100 group-has-[button:focus-visible]/cell:opacity-100">
           <Plus className="h-3.5 w-3.5" />
         </span>
       ) : (
@@ -297,17 +441,16 @@ function ScheduleCell({
       className="group/cell relative flex h-full min-h-[58px] flex-col"
     >
       {canWrite && (
-        <select
-          className={`peer absolute inset-0 z-0 h-full w-full appearance-none bg-transparent opacity-0 outline-none ${
-            isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'
-          }`}
+        <SelectMenu
+          size="sm"
+          className={`${CELL_MENU} z-0`}
+          triggerClassName={`${CELL_TRIGGER} ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+          options={assignmentOptions(scheduleOptions)}
           value={currentValue}
           disabled={isDisabled}
-          onChange={(event) => onChange(event.target.value)}
-          aria-label={`Asignar horario para ${row.fullName} el ${WEEKDAY_NAMES[dayIndex]}`}
-        >
-          <AssignmentOptions scheduleOptions={scheduleOptions} />
-        </select>
+          onChange={onChange}
+          ariaLabel={`Asignar horario para ${row.fullName} el ${WEEKDAY_NAMES[dayIndex]}`}
+        />
       )}
       <div className="pointer-events-none relative z-10 flex flex-1 flex-col">{content}</div>
     </div>
@@ -318,11 +461,21 @@ export function WeeklyScheduleMatrix({
   weekStartISO,
   weekDates,
   rows,
+  sucursales,
   schedules,
   canWrite,
   ausencias,
 }: WeeklyScheduleMatrixProps) {
   const { isNavigating, goToWeekStart } = useWeekNavigation(weekStartISO)
+
+  const colorById = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const schedule of schedules) {
+      if (schedule.hor_color) map.set(schedule.hor_id, schedule.hor_color)
+    }
+    return map
+  }, [schedules])
+
   const {
     rows: scheduleRows,
     scheduleOptions,
@@ -334,11 +487,15 @@ export function WeeklyScheduleMatrix({
     closeCustomModal,
     handleCustomConfirm,
     handleAssignmentChange,
+    handleBranchChange,
   } = useWeeklyScheduleMatrix({ rows, schedules, canWrite, ausencias })
 
   const [branchFilter, setBranchFilter] = useState<'all' | number>('all')
   const [employeeFilter, setEmployeeFilter] = useState<'all' | number>('all')
   const [selectedDayIndexes, setSelectedDayIndexes] = useState<number[]>([])
+  const [clipboard, setClipboard] = useState<ScheduleClipboard | null>(() => loadClipboard())
+  const [isPasting, setIsPasting] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
 
   const branchOptions = useMemo(() => {
     const map = new Map<number, string>()
@@ -368,7 +525,7 @@ export function WeeklyScheduleMatrix({
     [branchFilteredRows]
   )
 
-  const filteredRows = useMemo(
+  const employeeAndBranchFilteredRows = useMemo(
     () =>
       employeeFilter === 'all'
         ? branchFilteredRows
@@ -376,8 +533,42 @@ export function WeeklyScheduleMatrix({
     [branchFilteredRows, employeeFilter]
   )
 
-  /** Cambiar de sucursal reinicia el colaborador: el anterior puede no pertenecer a ella. */
-  function handleBranchChange(value: string) {
+  // Colaboradores con algun dia sin horario, tras los filtros de sucursal/colaborador.
+  const employeesWithGaps = useMemo(
+    () => employeeAndBranchFilteredRows.filter(hasScheduleGap),
+    [employeeAndBranchFilteredRows]
+  )
+
+  const gapNamesPreview = useMemo(() => {
+    const names = employeesWithGaps.map((row) => row.fullName)
+    return names.length <= 3
+      ? names.join(', ')
+      : `${names.slice(0, 3).join(', ')} y ${names.length - 3} más`
+  }, [employeesWithGaps])
+
+  const [showOnlyGaps, setShowOnlyGaps] = useState(false)
+  const [gapAlertDismissed, setGapAlertDismissed] = useState(false)
+
+  // Resetea el filtro/descarte al cambiar de semana (ajuste en render, no efecto).
+  const [prevWeekStartISO, setPrevWeekStartISO] = useState(weekStartISO)
+  if (weekStartISO !== prevWeekStartISO) {
+    setPrevWeekStartISO(weekStartISO)
+    setShowOnlyGaps(false)
+    setGapAlertDismissed(false)
+  }
+
+  // Se apaga solo si ya no quedan huecos, para no mostrar una lista vacia.
+  const isShowingOnlyGaps = showOnlyGaps && employeesWithGaps.length > 0
+
+  const filteredRows = isShowingOnlyGaps ? employeesWithGaps : employeeAndBranchFilteredRows
+
+  function dismissGapAlert() {
+    setShowOnlyGaps(false)
+    setGapAlertDismissed(true)
+  }
+
+  // Cambiar de sucursal reinicia el colaborador seleccionado.
+  function handleBranchFilterChange(value: string) {
     setBranchFilter(value === 'all' ? 'all' : Number(value))
     setEmployeeFilter('all')
   }
@@ -406,10 +597,155 @@ export function WeeklyScheduleMatrix({
     paginatedItems: paginatedRows,
     goToPreviousPage,
     goToNextPage,
-  } = usePagination(filteredRows, 6)
+  } = usePagination(filteredRows, 10)
 
   const isCurrentWeek = weekStartISO === currentMondayISO()
   const todayISO = toISODate(new Date())
+
+  /** Copia el horario de la semana que se esta viendo (respeta filtro de sucursal/colaborador). */
+  function handleCopyWeek() {
+    if (filteredRows.length === 0) {
+      toast.error('No hay colaboradores para copiar en esta vista.')
+      return
+    }
+
+    const byEmployment: Record<number, ClipboardDay[]> = {}
+    for (const row of filteredRows) {
+      byEmployment[row.employmentHistoryId] = row.days.map((day) => ({
+        scheduleId: day.scheduleId,
+        isDayOff: day.isDayOff,
+        customStartTime: day.customStartTime ?? null,
+        customEndTime: day.customEndTime ?? null,
+        customLunchStart: day.customLunchStart ?? null,
+        customLunchEnd: day.customLunchEnd ?? null,
+        customBreakStart: day.customBreakStart ?? null,
+        customBreakEnd: day.customBreakEnd ?? null,
+        branchId: day.branchId,
+      }))
+    }
+
+    const next: ScheduleClipboard = { sourceWeekStartISO: weekStartISO, byEmployment }
+    setClipboard(next)
+    saveClipboard(next)
+    toast.success(
+      `Semana copiada (${filteredRows.length} colaborador${filteredRows.length === 1 ? '' : 'es'}).`
+    )
+  }
+
+  /**
+   * Arma, para cada colaborador visible, los dias a escribir a partir de una
+   * fuente por colaborador+dia-de-semana (lo copiado, o lo sugerido) —
+   * saltando los dias bloqueados por ausencia y los colaboradores sin fuente,
+   * y los pasa a `pasteWeeklySchedule` en una sola llamada.
+   */
+  async function applySource(
+    sourceByEmployment: Record<number, (SourceDay | null)[] | undefined>,
+    noSourceMessage: string,
+    successMessage: string
+  ) {
+    const employees: PasteEmployeeInput[] = []
+
+    for (const row of filteredRows) {
+      const source = sourceByEmployment[row.employmentHistoryId]
+      if (!source) continue
+
+      const days: PasteDayInput[] = []
+      for (let i = 0; i < 7; i++) {
+        const sourceDay = source[i]
+        if (!sourceDay) continue
+
+        const destDay = row.days[i]
+        const isBlocked = Boolean(destDay.ausencia && !destDay.ausencia.isIntraday)
+        if (isBlocked) continue
+
+        days.push({
+          assignmentId: destDay.assignmentId,
+          date: destDay.date,
+          // La sugerencia no opina de sucursal: cae a la de casa del destino.
+          branchId: sourceDay.branchId ?? row.branchId,
+          scheduleId: sourceDay.scheduleId,
+          isDayOff: sourceDay.isDayOff,
+          customStartTime: sourceDay.customStartTime ?? null,
+          customEndTime: sourceDay.customEndTime ?? null,
+          customLunchStart: sourceDay.customLunchStart ?? null,
+          customLunchEnd: sourceDay.customLunchEnd ?? null,
+          customBreakStart: sourceDay.customBreakStart ?? null,
+          customBreakEnd: sourceDay.customBreakEnd ?? null,
+        })
+      }
+
+      if (days.length > 0) {
+        employees.push({
+          employmentHistoryId: row.employmentHistoryId,
+          employeeId: row.employeeId,
+          days,
+        })
+      }
+    }
+
+    if (employees.length === 0) {
+      toast.error(noSourceMessage)
+      return false
+    }
+
+    const result = await pasteWeeklySchedule({ employees })
+
+    if (!result.ok) {
+      toast.error(result.error)
+      return false
+    }
+
+    toast.success(successMessage)
+    return true
+  }
+
+  /** Pega en la semana visible lo copiado de otra (o de la misma) semana. */
+  async function handlePasteWeek() {
+    if (!canWrite || isPasting) return
+
+    if (!clipboard) {
+      toast.error('No hay ningun horario copiado.')
+      return
+    }
+
+    setIsPasting(true)
+    await applySource(
+      clipboard.byEmployment,
+      'No hay dias disponibles para pegar en esta vista.',
+      'Horario pegado.'
+    )
+    setIsPasting(false)
+  }
+
+  /** Sugiere, por colaborador y dia, el turno que mas se repite en su historial previo a esta semana. */
+  async function handleGenerateSuggestion() {
+    if (!canWrite || isGenerating) return
+
+    if (filteredRows.length === 0) {
+      toast.error('No hay colaboradores para generar un horario.')
+      return
+    }
+
+    setIsGenerating(true)
+
+    const result = await getScheduleSuggestion(
+      filteredRows.map((row) => row.employmentHistoryId),
+      weekStartISO
+    )
+
+    if (!result.ok) {
+      toast.error(result.error)
+      setIsGenerating(false)
+      return
+    }
+
+    await applySource(
+      result.byEmployment,
+      'No hay suficiente historial para sugerir un horario.',
+      'Horario sugerido aplicado.'
+    )
+    setIsGenerating(false)
+  }
 
   return (
     <div className="min-w-0 space-y-3">
@@ -477,6 +813,51 @@ export function WeeklyScheduleMatrix({
               </IconButton>
             </div>
 
+            {canWrite && (
+              <div
+                className="inline-flex items-center rounded-full border border-slate-200 p-0.5"
+                style={{ backgroundColor: RAIL_BG }}
+              >
+                <IconButton
+                  onClick={handleCopyWeek}
+                  aria-label="Copiar el horario de esta vista"
+                  title="Copiar horario"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </IconButton>
+
+                <IconButton
+                  onClick={handlePasteWeek}
+                  disabled={!clipboard || isPasting}
+                  aria-label="Pegar el horario copiado en esta vista"
+                  title={
+                    clipboard
+                      ? 'Pegar horario copiado'
+                      : 'Copia un horario primero para poder pegarlo'
+                  }
+                >
+                  {isPasting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ClipboardPaste className="h-3.5 w-3.5" />
+                  )}
+                </IconButton>
+
+                <IconButton
+                  onClick={handleGenerateSuggestion}
+                  disabled={isGenerating}
+                  aria-label="Generar horario sugerido segun el historial"
+                  title="Generar horario sugerido segun el historial"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" />
+                  )}
+                </IconButton>
+              </div>
+            )}
+
             {/*
               Ya estando en la semana actual el boton no se apaga como si
               estuviera roto: pierde el borde y queda como una etiqueta discreta.
@@ -500,6 +881,39 @@ export function WeeklyScheduleMatrix({
           </div>
         )}
 
+        {employeesWithGaps.length > 0 && !gapAlertDismissed && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <button
+              type="button"
+              onClick={() => setShowOnlyGaps((prev) => !prev)}
+              className="flex-1 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
+            >
+              <span className="font-semibold underline decoration-amber-400 decoration-dotted underline-offset-2">
+                {employeesWithGaps.length} colaborador{employeesWithGaps.length === 1 ? '' : 'es'}{' '}
+                sin horario asignado esta semana
+              </span>
+              {isShowingOnlyGaps ? (
+                <> — mostrando solo a ellos, clic para ver a todos otra vez.</>
+              ) : (
+                <>
+                  : no podrán marcar asistencia esos días ({gapNamesPreview}). Clic para filtrar la
+                  lista.
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={dismissGapAlert}
+              aria-label="Descartar este aviso"
+              title="Ya lo vi, no avisar más esta semana"
+              className="shrink-0 rounded-full p-0.5 text-amber-600 outline-none transition hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500/60"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/*
           Rediseño completo de esta barra: antes cada filtro era
           "Etiqueta: [caja]" en linea, que en movil forzaba a las cajas de
@@ -516,7 +930,7 @@ export function WeeklyScheduleMatrix({
               ariaLabel="Filtrar por sucursal"
               className="mt-1 w-full"
               value={branchFilter === 'all' ? 'all' : String(branchFilter)}
-              onChange={handleBranchChange}
+              onChange={handleBranchFilterChange}
               options={[
                 { value: 'all', label: 'Todas las sucursales' },
                 ...branchOptions.map((b) => ({ value: String(b.id), label: b.name })),
@@ -559,9 +973,9 @@ export function WeeklyScheduleMatrix({
                     type="button"
                     onClick={() => toggleDayIndex(index)}
                     aria-pressed={active}
-                    className={`rounded-lg py-2 text-[10px] font-semibold outline-none transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-slate-400/50 pointer-coarse:min-h-11 ${
+                    className={`rounded-lg py-2 text-[10px] font-semibold outline-none transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 pointer-coarse:min-h-11 ${
                       active
-                        ? 'bg-slate-800 text-white'
+                        ? 'bg-brand-700 text-white'
                         : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                     }`}
                   >
@@ -595,7 +1009,7 @@ export function WeeklyScheduleMatrix({
             <MatrixEmptyState hasUnfilteredRows={scheduleRows.length > 0} />
           ) : (
             paginatedRows.map((row) => {
-              const stripe = rowStripeColor(row)
+              const stripe = rowStripeColor(row, colorById)
 
               return (
                 <div
@@ -603,11 +1017,12 @@ export function WeeklyScheduleMatrix({
                   className="rounded-2xl border border-slate-200/80 bg-white p-3"
                 >
                   <div className="flex items-center gap-2.5 border-b border-slate-100 pb-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-bold text-white">
-                      {initialsOf(row.fullName)}
-                    </div>
+                    <Avatar size="md" fotoUrl={row.fotoUrl} nombre={row.fullName} />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-slate-800">{row.fullName}</p>
+                      <p className="flex items-center gap-1 truncate text-sm font-bold text-slate-800">
+                        <span className="truncate">{row.fullName}</span>
+                        {hasScheduleGap(row) && <GapIndicator />}
+                      </p>
                       <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                         <span className="truncate">{row.position ?? 'Sin puesto asignado'}</span>
                         <span className="text-slate-300">|</span>
@@ -644,9 +1059,14 @@ export function WeeklyScheduleMatrix({
                               savingCell === `${row.employmentHistoryId}-${assignment.date}`
                             }
                             scheduleOptions={scheduleOptions}
+                            sucursales={sucursales}
                             currentValue={getAssignmentValue(assignment)}
+                            colorById={colorById}
                             onChange={(value) => handleAssignmentChange(row, assignment, value)}
                             onEditCustom={() => openCustomModal(row, assignment)}
+                            onBranchChange={(branchId) =>
+                              handleBranchChange(row, assignment, branchId)
+                            }
                           />
                         </div>
                       )
@@ -700,7 +1120,7 @@ export function WeeklyScheduleMatrix({
                   </tr>
                 ) : (
                   paginatedRows.map((row) => {
-                    const stripe = rowStripeColor(row)
+                    const stripe = rowStripeColor(row, colorById)
 
                     return (
                       <tr key={row.employmentHistoryId} className="h-px">
@@ -709,12 +1129,16 @@ export function WeeklyScheduleMatrix({
                           style={{ backgroundColor: RAIL_BG }}
                         >
                           <div className="flex items-center gap-2">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[9.5px] font-bold text-white ring-2 ring-white">
-                              {initialsOf(row.fullName)}
-                            </div>
+                            <Avatar
+                              size="xs"
+                              fotoUrl={row.fotoUrl}
+                              nombre={row.fullName}
+                              className="ring-2 ring-white"
+                            />
                             <div className="min-w-0">
-                              <p className="truncate text-[12px] font-bold text-slate-800">
-                                {row.fullName}
+                              <p className="flex items-center gap-1 truncate text-[12px] font-bold text-slate-800">
+                                <span className="truncate">{row.fullName}</span>
+                                {hasScheduleGap(row) && <GapIndicator />}
                               </p>
                               <p className="mt-px flex items-center gap-1 text-[10px] text-slate-400">
                                 <span className="truncate">
@@ -747,9 +1171,14 @@ export function WeeklyScheduleMatrix({
                                   savingCell === `${row.employmentHistoryId}-${assignment.date}`
                                 }
                                 scheduleOptions={scheduleOptions}
+                                sucursales={sucursales}
                                 currentValue={getAssignmentValue(assignment)}
+                                colorById={colorById}
                                 onChange={(value) => handleAssignmentChange(row, assignment, value)}
                                 onEditCustom={() => openCustomModal(row, assignment)}
+                                onBranchChange={(branchId) =>
+                                  handleBranchChange(row, assignment, branchId)
+                                }
                               />
                             </td>
                           )
@@ -787,6 +1216,8 @@ export function WeeklyScheduleMatrix({
             initialLunchEnd={stripSeconds(customModalFor.assignment.customLunchEnd)}
             initialBreakStart={stripSeconds(customModalFor.assignment.customBreakStart)}
             initialBreakEnd={stripSeconds(customModalFor.assignment.customBreakEnd)}
+            sucursales={sucursales}
+            initialBranchId={customModalFor.assignment.branchId}
             onClose={closeCustomModal}
             onConfirm={handleCustomConfirm}
           />
@@ -799,7 +1230,8 @@ export function WeeklyScheduleMatrix({
 function MatrixEmptyState({ hasUnfilteredRows = false }: { hasUnfilteredRows?: boolean }) {
   return (
     <EmptyState
-      icon={Users}
+      variant={hasUnfilteredRows ? 'no-results' : 'empty'}
+      icon={hasUnfilteredRows ? undefined : Users}
       title={
         hasUnfilteredRows
           ? 'Ningún colaborador coincide con los filtros'

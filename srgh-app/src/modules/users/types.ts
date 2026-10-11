@@ -19,7 +19,10 @@ const rolId = z
   .int()
   .positive('Seleccione un rol válido')
 
-const sucursalId = z.number().int().positive('Seleccione una sucursal válida').nullable().optional()
+// Vacío = el usuario opera a nivel empresa (equivalente al viejo sucursal_id
+// null); uno o más ids = restringido a esas sucursales (gerente/supervisor a
+// cargo de varias).
+const sucursalIds = z.array(z.number().int().positive('Sucursal inválida.')).default([])
 
 // Los selects opcionales entregan '' o NaN cuando no hay elección; ambos
 // significan "sin vínculo" y se normalizan a null antes de validar.
@@ -38,11 +41,11 @@ const empleadoId = z.preprocess(
 export const invitarUsuarioSchema = z.object({
   email: emailNormalizado,
   rol_id: rolId,
-  sucursal_id: sucursalId,
+  sucursal_ids: sucursalIds,
   empleado_id: empleadoId,
 })
 
-export type InvitarUsuarioInput = z.infer<typeof invitarUsuarioSchema>
+export type InvitarUsuarioInput = z.input<typeof invitarUsuarioSchema>
 
 // ─── Schema de edición de asignación ─────────────────────────────────────────
 // Edita la fila uer EXISTENTE (rol/sucursal) y el vínculo con el empleado.
@@ -50,11 +53,11 @@ export type InvitarUsuarioInput = z.infer<typeof invitarUsuarioSchema>
 
 export const editarAsignacionSchema = z.object({
   rol_id: rolId,
-  sucursal_id: sucursalId,
+  sucursal_ids: sucursalIds,
   empleado_id: empleadoId,
 })
 
-export type EditarAsignacionInput = z.infer<typeof editarAsignacionSchema>
+export type EditarAsignacionInput = z.input<typeof editarAsignacionSchema>
 
 // ─── View Model — Listado de usuarios ────────────────────────────────────────
 // El estado cruza ambas fuentes de verdad: 'desactivado' sale de NUESTROS
@@ -70,8 +73,8 @@ export interface UsuarioListItem {
   empleado_nombre: string | null
   rol_id: number
   rol_nombre: string
-  sucursal_id: number | null
-  sucursal_nombre: string | null
+  /** Vacío = el usuario opera a nivel empresa (ve todas las sucursales). */
+  sucursales: { id: number; nombre: string }[]
   estado: UsuarioEstado
   ultimo_acceso: string | null
 }

@@ -17,6 +17,7 @@ import { AddressFields, BankingFields, PersonalDataFields } from './EmployeeFiel
 import { Button } from '@/components/ui/Button'
 import { SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 type FichaGenero = EditarFichaEmpleadoInput['empleado']['emp_genero']
 type PagoTipoCuenta = NonNullable<EditarFichaEmpleadoInput['datos_pago']>['edp_tipo_cuenta']
@@ -40,6 +41,14 @@ export function EmployeeForm({
   onCancel,
 }: EmployeeFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
+  // Guardado en espera de que el usuario confirme una cuenta repetida.
+  const [duplicado, setDuplicado] = useState<{
+    mensaje: string
+    values: EditarFichaEmpleadoInput
+  } | null>(null)
+  // El reintento tras confirmar no pasa por handleSubmit, así que isSubmitting
+  // no lo cubre y el botón quedaría habilitado durante el guardado.
+  const [reintentando, setReintentando] = useState(false)
 
   const methods = useForm<EditarFichaEmpleadoInput>({
     // z.preprocess vuelve `unknown` el lado input del schema; el formulario
@@ -81,17 +90,49 @@ export function EmployeeForm({
     formState: { isSubmitting },
   } = methods
 
-  async function onSubmit(values: EditarFichaEmpleadoInput) {
+  async function guardar(values: EditarFichaEmpleadoInput, confirmado = false) {
     setServerError(null)
 
-    const result = await updateEmployee(empleado.emp_id, values)
+    const result = await updateEmployee(empleado.emp_id, {
+      ...values,
+      confirmar_cuenta_duplicada: confirmado,
+    })
+
     if (!result.ok) {
+      // La cuenta ya existe en otro empleado. No es un error: puede ser
+      // legítimo (una cuenta compartida), así que se pregunta en vez de
+      // bloquear, y el reenvío lleva el flag de confirmación.
+      if (result.requiereConfirmacion) {
+        setDuplicado({ mensaje: result.error, values })
+        return
+      }
       setServerError(result.error)
       return
     }
 
-    toast.success('Cambios guardados correctamente.')
+    // Guardó, pero conservó una cuenta que no se pudo descifrar en vez de
+    // borrarla. Va como warning y no como success: el usuario tiene que saber
+    // que ese campo quedó sin actualizar.
+    if (result.warning) toast.warning(result.warning)
+    else toast.success('Cambios guardados correctamente.')
+
     onSuccess?.()
+  }
+
+  async function onSubmit(values: EditarFichaEmpleadoInput) {
+    await guardar(values)
+  }
+
+  async function confirmarDuplicado() {
+    if (!duplicado) return
+    const { values } = duplicado
+    setDuplicado(null)
+    setReintentando(true)
+    try {
+      await guardar(values, true)
+    } finally {
+      setReintentando(false)
+    }
   }
 
   return (
@@ -119,6 +160,16 @@ export function EmployeeForm({
           <h3 className="text-xs font-bold uppercase tracking-wide text-slate-600">
             Datos de pago
           </h3>
+          {/* El campo queda editable a propósito: escribir un número nuevo es
+              justamente cómo se repara la fila. Lo que no puede pasar es que el
+              usuario crea que está vacía porque no hay cuenta — dejarla en
+              blanco NO la borra, el servidor conserva la anterior. */}
+          {empleado.datos_pago?.cuenta_ilegible && (
+            <Alert tone="warning">
+              No se pudo descifrar la cuenta guardada. Escribí el número de nuevo para reemplazarla;
+              si lo dejás vacío, se conserva la anterior.
+            </Alert>
+          )}
           <BankingFields basePath="datos_pago." bancos={bancos} />
         </section>
 
@@ -132,12 +183,22 @@ export function EmployeeForm({
               Cancelar
             </button>
           )}
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className={SPINNER} />}
+          <Button type="submit" disabled={isSubmitting || reintentando}>
+            {(isSubmitting || reintentando) && <Loader2 className={SPINNER} />}
             Guardar cambios
           </Button>
         </div>
       </form>
+
+      {duplicado && (
+        <ConfirmDialog
+          title="Cuenta bancaria repetida"
+          message={duplicado.mensaje}
+          confirmLabel="Guardar de todos modos"
+          onCancel={() => setDuplicado(null)}
+          onConfirm={confirmarDuplicado}
+        />
+      )}
     </FormProvider>
   )
 }

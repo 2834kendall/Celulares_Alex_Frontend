@@ -70,4 +70,37 @@ describe('createConcepto (server action)', () => {
 
     expect(result.ok).toBe(false)
   })
+  // Regresion: el excedente sobre el tope quincenal lo administra el banco de
+  // horas. Un concepto activo de horas extra automaticas pagaria esas mismas
+  // horas dos veces: en el bruto de la quincena y despues al liquidar el
+  // pendiente del banco. La pantalla de conceptos dejaba activarlo sin aviso.
+  it('no deja crear un concepto de horas extra automáticas activo', async () => {
+    mockInsert({ data: { con_id: 9 }, error: null })
+
+    const result = await createConcepto({
+      ...INPUT,
+      con_codigo: 'HORAS_EXTRA_2',
+      con_tipo_calculo: 'horas_extra_automatico',
+      con_porcentaje: 150,
+      con_activo: true,
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('dos veces')
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
+  it('sí deja crearlo inactivo (pagarBancoHoras necesita la fila del catálogo)', async () => {
+    mockInsert({ data: { con_id: 9 }, error: null })
+
+    const result = await createConcepto({
+      ...INPUT,
+      con_codigo: 'HORAS_EXTRA_2',
+      con_tipo_calculo: 'horas_extra_automatico',
+      con_porcentaje: 150,
+      con_activo: false,
+    })
+
+    expect(result).toEqual({ ok: true, id: 9 })
+  })
 })

@@ -193,3 +193,28 @@ describe('<EmployeesList />', () => {
     }
   })
 })
+
+describe('<EmployeesList /> tarjetas de filtro', () => {
+  it('"Sin contrato vigente" filtra y tocarla otra vez vuelve a todos', async () => {
+    render(<EmployeesList employees={EMPLOYEES} canWrite />)
+    const sinContrato = screen.getByRole('button', { name: /Sin contrato vigente/ })
+
+    await userEvent.click(sinContrato)
+    expect(sinContrato).toHaveAttribute('aria-pressed', 'true')
+    expect(tabla().getByText(/Luis/)).toBeInTheDocument()
+    expect(tabla().queryByText(/Ana/)).not.toBeInTheDocument()
+
+    await userEvent.click(sinContrato)
+    expect(sinContrato).toHaveAttribute('aria-pressed', 'false')
+    expect(tabla().getByText(/Ana/)).toBeInTheDocument()
+  })
+
+  it('"Con contrato vigente" deja solo a los activos', async () => {
+    render(<EmployeesList employees={EMPLOYEES} canWrite />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Con contrato vigente/ }))
+
+    expect(tabla().getByText(/Ana/)).toBeInTheDocument()
+    expect(tabla().queryByText(/Luis/)).not.toBeInTheDocument()
+  })
+})

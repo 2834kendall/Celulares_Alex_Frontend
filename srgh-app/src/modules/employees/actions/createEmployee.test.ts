@@ -5,6 +5,8 @@ import { inviteUser } from '@/modules/users/actions/inviteUser'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { validateDatosPago } from '@/modules/employees/lib/validateDatosPago'
+import { encryptField } from '@/lib/crypto/fieldCrypto'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { OnboardingEmpleadoInput } from '@/modules/employees/types'
 
@@ -12,11 +14,21 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/modules/users/actions/inviteUser', () => ({ inviteUser: vi.fn() }))
+// Ambos importan 'server-only', que revienta fuera de Next.js (ver
+// planillaExcel.test.ts). El cifrado real se prueba en fieldCrypto.core.test.ts
+// y la validación en validateDatosPago.test.ts; acá interesa el cableado.
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/crypto/fieldCrypto', () => ({
+  encryptField: vi.fn(async (valor: string) => `enc:${valor}`),
+}))
+vi.mock('@/modules/employees/lib/validateDatosPago', () => ({ validateDatosPago: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockInviteUser = vi.mocked(inviteUser)
+const mockValidateDatosPago = vi.mocked(validateDatosPago)
+const mockEncryptField = vi.mocked(encryptField)
 
 const CLAIMS_FULL = {
   app_metadata: { empresa_id: 1, permisos: ['EMPLEADOS_WRITE', 'USUARIOS_WRITE'] },
@@ -29,6 +41,8 @@ const VALID_INPUT: OnboardingEmpleadoInput = {
     emp_tipo_identificacion_id: 1,
     emp_numero_identificacion: '1-1111-1111',
     emp_fecha_ingreso_original: '2024-01-01',
+    emp_fecha_nacimiento: '1990-05-10',
+    emp_genero: 'F',
     emp_nacionalidad: 'Costarricense',
   },
   direccion: {
@@ -58,6 +72,8 @@ describe('createEmployee (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue(CLAIMS_FULL)
+    mockValidateDatosPago.mockResolvedValue({ ok: true, hmac: null })
+    mockEncryptField.mockImplementation(async (valor: string) => `enc:${valor}`)
   })
 
   it('rechaza input inválido antes de tocar permisos o DB', async () => {
@@ -106,6 +122,86 @@ describe('createEmployee (server action)', () => {
     })
     expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.EMPLEADOS_WRITE)
     expect(mockRevalidatePath).toHaveBeenCalledWith('/employees')
+  })
+
+  it('cifra el número de cuenta y adjunta el índice antes de llamar la RPC', async () => {
+    mockValidateDatosPago.mockResolvedValue({ ok: true, hmac: 'hmac-de-la-cuenta' })
+    const client = mockRpc({ data: 10, error: null })
+
+    const result = await createEmployee({
+      ...VALID_INPUT,
+      datos_pago: {
+        edp_banco_id: 3,
+        edp_tipo_cuenta: 'AHORRO',
+        edp_numero_cuenta: 'CR02010200000000000001',
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    // A Postgres no puede llegar el número en claro por ningún camino.
+    expect(client.rpc).toHaveBeenCalledWith(
+      'crear_empleado_completo',
+      expect.objectContaining({
+        p_datos_pago: expect.objectContaining({
+          edp_numero_cuenta: 'enc:CR02010200000000000001',
+          edp_cuenta_hmac: 'hmac-de-la-cuenta',
+        }),
+      })
+    )
+  })
+
+  it('manda cuenta e índice en null cuando no hay número', async () => {
+    const client = mockRpc({ data: 10, error: null })
+
+    await createEmployee({ ...VALID_INPUT, datos_pago: { edp_banco_id: 3 } })
+
+    // Las dos columnas van juntas: el constraint edp_cuenta_hmac_pareado
+    // rechaza que una quede nula y la otra no.
+    expect(client.rpc).toHaveBeenCalledWith(
+      'crear_empleado_completo',
+      expect.objectContaining({
+        p_datos_pago: expect.objectContaining({
+          edp_numero_cuenta: null,
+          edp_cuenta_hmac: null,
+        }),
+      })
+    )
+    expect(mockEncryptField).not.toHaveBeenCalled()
+  })
+
+  it('pide confirmación si la cuenta ya está en otro empleado, sin crear nada', async () => {
+    mockValidateDatosPago.mockResolvedValue({
+      ok: false,
+      error: 'Esta cuenta ya está registrada para María Rodríguez.',
+      requiereConfirmacion: true,
+    })
+    const client = mockRpc({ data: 10, error: null })
+
+    const result = await createEmployee({
+      ...VALID_INPUT,
+      datos_pago: { edp_banco_id: 3, edp_numero_cuenta: 'CR02010200000000000001' },
+    })
+
+    expect(result).toMatchObject({ ok: false, requiereConfirmacion: true })
+    // La validación va ANTES de la RPC justamente para no dejar un empleado
+    // creado y fallar después por los datos de pago.
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('propaga la confirmación del usuario a la validación', async () => {
+    mockRpc({ data: 10, error: null })
+
+    await createEmployee({
+      ...VALID_INPUT,
+      datos_pago: { edp_banco_id: 3, edp_numero_cuenta: 'CR02010200000000000001' },
+      confirmar_cuenta_duplicada: true,
+    })
+
+    expect(mockValidateDatosPago).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ edp_banco_id: 3 }),
+      { confirmado: true }
+    )
   })
 
   it('mapea el error de identificación duplicada', async () => {
@@ -176,7 +272,16 @@ describe('createEmployee (server action)', () => {
     const result = await createEmployee({ ...VALID_INPUT, usuario: USUARIO })
 
     expect(result).toEqual({ ok: true, empId: 10, usuarioWarning: undefined })
-    expect(mockInviteUser).toHaveBeenCalledWith({ ...USUARIO, empleado_id: 10 })
+    expect(mockInviteUser).toHaveBeenCalledWith({ ...USUARIO, sucursal_ids: [], empleado_id: 10 })
+  })
+
+  it('convierte la sucursal unica del wizard en sucursal_ids al invitar', async () => {
+    mockInviteUser.mockResolvedValue({ ok: true, usrId: 7 })
+    mockRpc({ data: 10, error: null })
+
+    await createEmployee({ ...VALID_INPUT, usuario: { ...USUARIO, sucursal_id: 2 } })
+
+    expect(mockInviteUser).toHaveBeenCalledWith({ ...USUARIO, sucursal_ids: [2], empleado_id: 10 })
   })
 
   it('no revierte el alta si la invitación falla — devuelve warning', async () => {

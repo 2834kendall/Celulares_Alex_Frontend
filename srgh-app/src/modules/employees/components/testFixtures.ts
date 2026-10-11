@@ -1,4 +1,9 @@
-import type { CatalogoItem, EmpleadoDetalle, TerritorioCatalogo } from '@/modules/employees/types'
+import type {
+  CatalogoItem,
+  ContratoDetalle,
+  EmpleadoDetalle,
+  TerritorioCatalogo,
+} from '@/modules/employees/types'
 
 /** Fixtures compartidos por los tests de componentes del módulo. */
 
@@ -45,6 +50,7 @@ export const HISTORIAL_ACTIVO: NonNullable<EmpleadoDetalle['historial_activo']> 
   lab_tipo_jornada_id: 1,
   lab_fecha_inicio: '2024-02-01',
   lab_fecha_fin: null,
+  lab_fecha_fin_programada: null,
   lab_salario_base: 500000,
   lab_salario_real: 550000,
   lab_motivo_salida_id: null,
@@ -55,6 +61,28 @@ export const HISTORIAL_ACTIVO: NonNullable<EmpleadoDetalle['historial_activo']> 
   sucursal_nombre: 'Central',
   tipo_contrato_nombre: 'Indefinido',
   tipo_jornada_nombre: 'Diurna',
+  motivo_salida_nombre: null,
+  liquidado: false,
+  en_planilla: false,
+  quincena_sin_pagar: false,
+}
+
+/** Un contrato anterior, ya cerrado, del mismo empleado. */
+export const HISTORIAL_CERRADO: ContratoDetalle = {
+  ...HISTORIAL_ACTIVO,
+  lab_id: 4,
+  lab_sucursal_id: 1,
+  lab_fecha_inicio: '2022-03-01',
+  lab_fecha_fin: '2023-06-30',
+  lab_salario_base: 400000,
+  lab_salario_real: 400000,
+  lab_motivo_salida_id: 1,
+  puesto_nombre: 'Bodeguero',
+  sucursal_nombre: 'Norte',
+  motivo_salida_nombre: 'Renuncia Voluntaria',
+  // Un contrato anterior a otro vigente ya pasó por liquidación: crear el
+  // nuevo lo exige (ver crear_contrato).
+  liquidado: true,
 }
 
 export const EMPLEADO_DETALLE: EmpleadoDetalle = {
@@ -80,11 +108,13 @@ export const EMPLEADO_DETALLE: EmpleadoDetalle = {
   tipo_identificacion_nombre: 'Cédula nacional',
   foto_url: null,
   historial_activo: HISTORIAL_ACTIVO,
+  historial_completo: [HISTORIAL_ACTIVO],
   datos_pago: {
     edp_banco_id: 3,
     banco_nombre: 'BAC Credomatic',
     edp_tipo_cuenta: 'AHORRO',
     edp_numero_cuenta: null,
+    cuenta_ilegible: false,
   },
   direccion: {
     dir_distrito_id: 121,

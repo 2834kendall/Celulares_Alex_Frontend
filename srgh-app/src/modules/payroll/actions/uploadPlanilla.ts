@@ -5,36 +5,100 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
+  CODIGO_AJUSTE,
+  CODIGO_SALARIO_BASE,
+  ERROR_SIN_CONCEPTO_AJUSTE,
   agruparConceptosPlanilla,
   calcularPlanillaPorConceptos,
+  hayConceptoAjuste,
   sameRowValues,
   type ConceptoPlanillaColumna,
-  type LineaCalculada,
   type PlanillaRowInput,
 } from '@/modules/payroll/lib/planilla'
+import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
+import {
+  CAMPOS_CONCEPTO_DE_LINEA,
+  fusionarAjenas,
+  type ConceptoDeLinea,
+  type LineaAjena,
+} from '@/modules/payroll/lib/lineasAjenas'
+import { getFotoAsistencia } from '@/modules/payroll/lib/horasPeriodoData'
+import {
+  camposFotoAsistencia,
+  fotoUtilizable,
+  type FotoAsistencia,
+  type LecturaAsistencia,
+} from '@/modules/payroll/lib/horasOrigen'
+import { ahoraLocal, hoyLocal } from '@/modules/payroll/lib/fechas'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
+import {
+  baseParaHorasEditadas,
+  fotoDelContrato,
+  prellenarDesdeAsistencia,
+  type ContratoPago,
+} from '@/modules/payroll/lib/prellenadoAsistencia'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
+import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
+import { filaSinNadaQuePagar } from '@/modules/payroll/lib/filaSinNadaQuePagar'
+import { aplicarAusenciasAFilasNuevas } from '@/modules/payroll/lib/ausenciaNominaSync'
+import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
+import { filasConHorasDeBancoResueltas } from '@/modules/payroll/lib/dependenciasDetalle'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB: la planilla real pesa unos pocos KB
+
+/** Fila sin foto previa: la de un empleado que entra nuevo al periodo. */
+const SIN_FOTO: FotoAsistencia = { horas: null, horasExtra: null }
+
+/**
+ * Recalcula una fila del Excel SIN perder las líneas que el archivo no trae.
+ *
+ * El motor solo produce líneas de los conceptos que le pasan, y la subida le
+ * pasa los ACTIVOS. Una línea de un concepto inactivo —el caso real es
+ * HORAS_EXTRA, con el que se paga el banco de horas— no tenía cómo
+ * reproducirse y se perdía en cada subida (ver lib/lineasAjenas.ts).
+ */
+function calcularConAjenas(
+  conceptosActivos: ConceptoPlanillaColumna[],
+  row: PlanillaRowInput,
+  ajenas: LineaAjena[]
+) {
+  const { conceptos, montos } = fusionarAjenas(conceptosActivos, row.montos, ajenas)
+
+  return calcularPlanillaPorConceptos(conceptos, {
+    montos,
+    horasTrabajadas: row.horasTrabajadas,
+    horasExtra: row.horasExtra,
+    salarioPorHora: row.salarioPorHora,
+  })
+}
 
 interface DetalleExistenteRow {
   ndt_id: number
   ndt_historial_laboral_id: number
+  ndt_pagado: boolean
   ndt_horas_ordinarias_diurnas: number
+  ndt_horas_extra_al_50: number
   ndt_salario_por_hora: number
+  ndt_salario_bruto: number
+  ndt_total_deducciones_obreras: number
+  ndt_salario_neto: number
+  ndt_total_cargas_patronales: number
+  ndt_horas_asistencia: number | null
+  ndt_horas_extra_asistencia: number | null
+  ndt_dias_incapacidad_empleador: number | null
 }
 
 interface LineaIngresoExistenteRow {
   ing_nomina_detalle_id: number
   ing_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+  sgrh_cat_conceptos_nomina: ConceptoDeLinea | null
 }
 
 interface LineaDeduccionExistenteRow {
   ded_nomina_detalle_id: number
   ded_monto: number
-  sgrh_cat_conceptos_nomina: { con_codigo: string } | null
+  sgrh_cat_conceptos_nomina: ConceptoDeLinea | null
 }
 
 interface DetalleInsertadoRow {
@@ -42,11 +106,47 @@ interface DetalleInsertadoRow {
   ndt_historial_laboral_id: number
 }
 
+/**
+ * Los tres campos del contrato que usa el cálculo, recortados del empleado.
+ *
+ * Se recorta en vez de pasar el empleado entero porque el mismo objeto es lo
+ * que se guarda como foto en la fila (`fotoDelContrato`), y ahí no tiene nada
+ * que hacer el resto del expediente.
+ */
+function contratoDe(empleado: ContratoPago): ContratoPago {
+  return {
+    salarioBaseMensual: empleado.salarioBaseMensual,
+    salarioRealMensual: empleado.salarioRealMensual,
+    horasSemanales: empleado.horasSemanales,
+  }
+}
+
 /** Valores previos de una fila, en el mismo shape que PlanillaRowInput (sin cédula) para comparar con sameRowValues. */
 interface ValoresPrevios {
   horasTrabajadas: number
+  horasExtra: number
   salarioPorHora: number
   montos: Record<string, number>
+  /** Un detalle ya pagado no se reescribe por un cambio de marcas. */
+  pagado: boolean
+  /** Totales ya guardados, para detectar cambios que vienen del catálogo. */
+  totales: { bruto: number; deducciones: number; neto: number; patronales: number }
+  /** Foto de la asistencia guardada, para detectar marcas corregidas después. */
+  foto: FotoAsistencia
+  /**
+   * Líneas guardadas cuyo concepto NO es columna del Excel, con su monto.
+   *
+   * El caso real es el pago de horas del banco: se guarda como línea de
+   * HORAS_EXTRA, que nace inactivo en el catálogo y por eso no es columna de
+   * la plantilla. Como subir el Excel borra todas las líneas y las rehace
+   * desde lo que trae el archivo, ese pago desaparecía en silencio: el bruto
+   * bajaba y el movimiento del banco seguía diciendo "pagado" apuntando a una
+   * plata que ya no estaba.
+   *
+   * Se reinyectan al recálculo para que sobrevivan. Es lo mismo que ya hacía
+   * pagarBancoHoras al recalcular el periodo destino.
+   */
+  ajenas: { concepto: ConceptoDeLinea; monto: number; esIngreso: boolean }[]
 }
 
 export type UploadPlanillaResult =
@@ -57,6 +157,17 @@ export type UploadPlanillaResult =
       actualizados: number
       sinCambios: number
       eliminados: number
+      /**
+       * Empleados cuya fila ya estaba PAGADA y el archivo traía otra cosa: no
+       * se tocaron. Para corregirlas hay que desmarcar el pago primero.
+       */
+      pagadasSinTocar: string[]
+      /**
+       * Empleados cuyo salario de esta quincena ya va en una liquidación: su
+       * fila no se paga por planilla, así que tampoco se reescribe aunque el
+       * archivo traiga otros datos.
+       */
+      enLiquidacionSinTocar: string[]
     }
   | { ok: false; error: string }
 
@@ -88,13 +199,16 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return { ok: false, error: 'El archivo supera el límite de 2 MB.' }
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
+  const usuarioId = (claims.app_metadata as { usr_id?: number })?.usr_id ?? null
   const supabase = await createClient()
 
   // 1. El periodo debe existir (RLS: solo de la empresa del JWT) y estar en borrador
   const { data: periodo, error: errPeriodo } = await supabase
     .from('sgrh_nomina_periodo')
-    .select('npe_id, npe_estado, npe_sucursal_id')
+    .select(
+      'npe_id, npe_estado, npe_sucursal_id, npe_periodo_mes, npe_periodo_anio, npe_quincena, npe_fecha_inicio_periodo, npe_fecha_fin_periodo'
+    )
     .eq('npe_id', periodoId)
     .maybeSingle()
 
@@ -113,7 +227,9 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // columnas de monto manual buscar (por el nombre del concepto).
   const { data: conceptos, error: errConceptos } = await supabase
     .from('sgrh_cat_conceptos_nomina')
-    .select('con_id, con_codigo, con_nombre, con_tipo_calculo, con_porcentaje')
+    .select(
+      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje, con_rebaja_salario'
+    )
     .eq('con_activo', true)
     .returns<ConceptoPlanillaColumna[]>()
 
@@ -128,11 +244,21 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
   }
 
+  // El ajuste lo escribe el servidor en cada fila: sin su concepto activo esa
+  // diferencia no la recoge nadie y todos cobrarían solo el base.
+  if (!hayConceptoAjuste(conceptos)) {
+    return { ok: false, error: ERROR_SIN_CONCEPTO_AJUSTE }
+  }
+
   const { ingresoManual, deduccionManual } = agruparConceptosPlanilla(conceptos)
   const codigosManuales = [...ingresoManual, ...deduccionManual].map((c) => c.con_codigo)
 
   // 3. Leer y validar el Excel
-  const { rows, errors } = await parsePlanillaWorkbook(await file.arrayBuffer(), conceptos)
+  const { rows, errors } = await parsePlanillaWorkbook(
+    await file.arrayBuffer(),
+    conceptos,
+    periodoId
+  )
 
   if (errors.length > 0) {
     const detalle = errors
@@ -146,7 +272,12 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   }
 
   // 4. Resolver cédulas contra los contratos activos de la sucursal
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id)
+  // Incluye a quien ya tiene fila en el periodo aunque su contrato haya
+  // terminado después (ver getEmpleadosActivos).
+  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+    periodoId,
+    finPeriodo: periodo.npe_fecha_fin_periodo,
+  })
   if (!empleadosResult.ok) {
     return { ok: false, error: empleadosResult.error }
   }
@@ -156,14 +287,106 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   if (desconocidas.length > 0) {
     return {
       ok: false,
-      error: `Cédulas sin contrato activo en la sucursal: ${desconocidas.slice(0, 5).join(', ')}.`,
+      error: `Cédulas sin contrato activo en la sucursal para esta quincena (o que ingresaron después de que terminó): ${desconocidas.slice(0, 5).join(', ')}.`,
     }
+  }
+
+  // 4b. Lo que dicen las marcas de asistencia para este periodo. Es la foto
+  // que se guarda junto con cada fila: mandan las marcas, pero el Excel puede
+  // corregirlas y esa corrección tiene que quedar registrada (ver
+  // lib/horasOrigen.ts).
+  //
+  // Un periodo sin fechas se guarda sin foto: no hay marcas que leer, y "no se
+  // sabe" es la respuesta honesta. Una lectura que FALLA es otra cosa y corta
+  // la subida (ver abajo).
+  const lecturaAsistencia = await getFotoAsistencia(supabase, {
+    historialLaboralIds: empleadosResult.data.map((e) => e.labId),
+    fechaInicio: periodo.npe_fecha_inicio_periodo,
+    fechaFin: periodo.npe_fecha_fin_periodo,
+  })
+
+  // Desde que las marcas son la fuente de las horas, guardar una planilla sin
+  // poder leerlas deja las filas a medias: horas nuevas con una foto vieja,
+  // que es justamente el par con el que después se decide si alguien las
+  // corrigió y si el pago se bloquea. Un periodo SIN FECHAS es otra cosa (no
+  // hay marcas que leer) y sí se puede guardar.
+  if (lecturaAsistencia.estado === 'error') {
+    return {
+      ok: false,
+      error: 'No se pudieron leer las marcas de asistencia del periodo. Volvé a intentarlo.',
+    }
+  }
+
+  // El AJUSTE no se toma del archivo: se recalcula con las horas que trae cada
+  // fila y el cumplimiento de su horario (ver lib/prellenadoAsistencia.ts).
+  // En la plantilla va en gris y es solo informativo.
+  const quincena = {
+    anio: periodo.npe_periodo_anio,
+    mes: periodo.npe_periodo_mes,
+    quincena: periodo.npe_quincena,
+  }
+  for (const row of rows) {
+    const empleado = porCedula.get(row.cedula)!
+    const lectura =
+      lecturaAsistencia.estado === 'ok'
+        ? (lecturaAsistencia.totales.get(empleado.labId) ?? null)
+        : null
+    const fila = prellenarDesdeAsistencia(
+      contratoDe(empleado),
+      lectura
+        ? { ...lectura, horasOrdinarias: row.horasTrabajadas, horasExtra: row.horasExtra }
+        : null,
+      quincena
+    )
+    row.montos[CODIGO_AJUSTE] = fila.ajuste
+    // Si cambiaron las horas y el BASE es el que prellenó el sistema, sigue a
+    // las horas nuevas; uno corregido a mano se respeta.
+    row.montos[CODIGO_SALARIO_BASE] = baseParaHorasEditadas({
+      baseIngresado: row.montos[CODIGO_SALARIO_BASE] ?? 0,
+      contrato: contratoDe(empleado),
+      lectura,
+      horasPrevias: null,
+      horasNuevas: { horas: row.horasTrabajadas, horasExtra: row.horasExtra },
+      quincena,
+    }).base
+  }
+
+  const ahora = ahoraLocal()
+
+  /** Lo que dice la asistencia del empleado, o el motivo por el que no se sabe. */
+  const lecturaDe = (labId: number): LecturaAsistencia =>
+    lecturaAsistencia.estado === 'ok'
+      ? { estado: 'ok', datos: lecturaAsistencia.datos.get(labId) ?? null }
+      : { estado: 'sin_fechas' }
+
+  /**
+   * Las cinco columnas de la foto para la fila de un empleado, o {} cuando lo
+   * correcto es no tocarlas (ver camposFotoAsistencia).
+   */
+  const fotoDe = (labId: number, row: PlanillaRowInput, previo: ValoresPrevios | null) => {
+    const resultado = camposFotoAsistencia({
+      lectura: lecturaDe(labId),
+      guardadas: { horas: row.horasTrabajadas, horasExtra: row.horasExtra },
+      guardadasPrevias: previo
+        ? { horas: previo.horasTrabajadas, horasExtra: previo.horasExtra }
+        : null,
+      fotoPrevia: previo?.foto ?? SIN_FOTO,
+      usuarioId,
+      ahora,
+    })
+
+    // No escribir = las horas que llegan son las mismas de antes y las marcas
+    // ya dicen otra cosa. La fila se queda desactualizada y bloqueada, que es
+    // lo correcto: nadie corrigió nada todavía.
+    return resultado.escribir ? resultado.campos : {}
   }
 
   // 5. Planilla ya guardada en el periodo (para comparar, no para borrar de una vez)
   const { data: detallesPrevios, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
-    .select('ndt_id, ndt_historial_laboral_id, ndt_horas_ordinarias_diurnas, ndt_salario_por_hora')
+    .select(
+      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto, ndt_total_cargas_patronales, ndt_horas_asistencia, ndt_horas_extra_asistencia, ndt_dias_incapacidad_empleador'
+    )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
 
@@ -189,8 +412,21 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       for (const codigo of codigosManuales) montos[codigo] = 0
       valoresPreviosPorNdt.set(d.ndt_id, {
         horasTrabajadas: d.ndt_horas_ordinarias_diurnas,
+        horasExtra: d.ndt_horas_extra_al_50 ?? 0,
         salarioPorHora: d.ndt_salario_por_hora,
         montos,
+        pagado: d.ndt_pagado,
+        totales: {
+          bruto: d.ndt_salario_bruto,
+          deducciones: d.ndt_total_deducciones_obreras,
+          neto: d.ndt_salario_neto,
+          patronales: d.ndt_total_cargas_patronales ?? 0,
+        },
+        foto: {
+          horas: d.ndt_horas_asistencia ?? null,
+          horasExtra: d.ndt_horas_extra_asistencia ?? null,
+        },
+        ajenas: [],
       })
     }
 
@@ -200,12 +436,16 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     ] = await Promise.all([
       supabase
         .from('sgrh_nomina_linea_ingreso')
-        .select('ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .select(
+          `ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( ${CAMPOS_CONCEPTO_DE_LINEA} )`
+        )
         .in('ing_nomina_detalle_id', idsPrevios)
         .returns<LineaIngresoExistenteRow[]>(),
       supabase
         .from('sgrh_nomina_linea_deduccion')
-        .select('ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+        .select(
+          `ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( ${CAMPOS_CONCEPTO_DE_LINEA} )`
+        )
         .in('ded_nomina_detalle_id', idsPrevios)
         .returns<LineaDeduccionExistenteRow[]>(),
     ])
@@ -215,23 +455,62 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
 
     for (const linea of lineasIngresoPrevias ?? []) {
-      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+      const concepto = linea.sgrh_cat_conceptos_nomina
       const previo = valoresPreviosPorNdt.get(linea.ing_nomina_detalle_id)
-      if (!previo || !codigo || !(codigo in previo.montos)) continue
-      previo.montos[codigo] = linea.ing_monto
+      if (!previo || !concepto) continue
+
+      if (concepto.con_codigo in previo.montos) {
+        previo.montos[concepto.con_codigo] = linea.ing_monto
+        continue
+      }
+      previo.ajenas.push({ concepto, monto: linea.ing_monto, esIngreso: true })
     }
     for (const linea of lineasDeduccionPrevias ?? []) {
-      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+      const concepto = linea.sgrh_cat_conceptos_nomina
       const previo = valoresPreviosPorNdt.get(linea.ded_nomina_detalle_id)
-      if (!previo || !codigo || !(codigo in previo.montos)) continue
-      previo.montos[codigo] = linea.ded_monto
+      if (!previo || !concepto) continue
+
+      if (concepto.con_codigo in previo.montos) {
+        previo.montos[concepto.con_codigo] = linea.ded_monto
+        continue
+      }
+      // Las deducciones porcentuales (CCSS) las recalcula el motor sobre el
+      // bruto nuevo; arrastrar su monto viejo sería un error.
+      if (concepto.con_tipo_calculo === 'porcentaje_deduccion_bruto') continue
+
+      previo.ajenas.push({ concepto, monto: linea.ded_monto, esIngreso: false })
     }
+  }
+
+  // Filas impagas cuyo salario ya pagó una liquidación (salario pendiente
+  // del mes de salida). Se averigua una sola vez: sirve para no reescribirlas
+  // y para dejar sacarlas de un periodo vencido (paso 7).
+  const labsImpagosPrevios = (detallesPrevios ?? [])
+    .filter((d: DetalleExistenteRow) => !d.ndt_pagado)
+    .map((d: DetalleExistenteRow) => d.ndt_historial_laboral_id)
+  let cubiertasPorLiquidacion = new Set<number>()
+  if (labsImpagosPrevios.length > 0) {
+    const cubiertas = await liquidacionesQueCubren(supabase, labsImpagosPrevios, {
+      anio: periodo.npe_periodo_anio,
+      mes: periodo.npe_periodo_mes,
+      quincena: periodo.npe_quincena,
+    })
+    if (!cubiertas.ok) {
+      return { ok: false, error: 'No se pudo verificar las liquidaciones de los empleados.' }
+    }
+    cubiertasPorLiquidacion = new Set(cubiertas.data.keys())
   }
 
   // 6. Clasificar cada fila del Excel: nueva, sin cambios o actualizada
   const filasNuevas: PlanillaRowInput[] = []
-  const filasActualizar: { row: PlanillaRowInput; ndtId: number }[] = []
+  const filasActualizar: {
+    row: PlanillaRowInput
+    ndtId: number
+    totales: ReturnType<typeof calcularPlanillaPorConceptos>
+  }[] = []
   let sinCambios = 0
+  const pagadasSinTocar: string[] = []
+  const enLiquidacionSinTocar: string[] = []
 
   const labIdsEnExcel = new Set<number>()
   for (const row of rows) {
@@ -245,57 +524,164 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
 
     const previo = valoresPreviosPorNdt.get(ndtId)!
-    const valoresIguales = sameRowValues(
+    const mismoInput = sameRowValues(
       {
         horasTrabajadas: previo.horasTrabajadas,
+        horasExtra: previo.horasExtra,
         salarioPorHora: previo.salarioPorHora,
         montos: previo.montos,
       },
       {
         horasTrabajadas: row.horasTrabajadas,
+        horasExtra: row.horasExtra,
         salarioPorHora: row.salarioPorHora,
         montos: row.montos,
       }
     )
 
-    if (valoresIguales) {
+    const totales = calcularConAjenas(conceptos, row, previo.ajenas)
+
+    // "Sin cambios" tiene que mirar también el RESULTADO, no solo lo que el
+    // usuario escribió. Si entre una subida y otra cambió el catálogo (se
+    // corrigió el porcentaje de la CCSS, se desactivó un concepto), la fila
+    // llega idéntica pero su cálculo ya no lo es. Comparando solo los campos
+    // del Excel, esas filas se saltaban y se quedaban con el monto viejo: la
+    // única forma de forzar el recálculo era editarle algo a cada empleado.
+    const mismoResultado =
+      previo.totales.bruto === totales.salarioBruto &&
+      previo.totales.deducciones === totales.totalDeducciones &&
+      previo.totales.neto === totales.salarioNeto &&
+      previo.totales.patronales === totales.totalCargasPatronales
+
+    // Y tiene que mirar si la fila TIENE foto. Las que vienen de antes de que
+    // existiera no la tienen, y sin ella el sistema no puede decir si sus
+    // horas son las de las marcas ni avisar cuando cambian. Se vuelven a
+    // guardar una vez, aunque el Excel llegue idéntico, para que queden con la
+    // suya; de ahí en adelante ya no entran por acá.
+    //
+    // No hace falta forzar el guardado cuando la foto está pero las marcas
+    // cambiaron: esa fila queda bloqueada, y lo que la destraba es una
+    // plantilla nueva, que trae horas distintas y entra igual por mismoInput.
+    //
+    // Una fila YA PAGADA tampoco se reescribe. Su planilla es historia: tiene
+    // comprobante emitido y aguinaldo acumulado con ese bruto.
+    const lectura = lecturaDe(labId)
+    const asistencia = lectura.estado === 'ok' ? lectura.datos : null
+    const tieneFoto = asistencia === null || fotoUtilizable(previo.foto)
+
+    if (mismoInput && mismoResultado && (tieneFoto || previo.pagado)) {
       sinCambios += 1
+    } else if (previo.pagado) {
+      // Antes se reescribía igual: una plantilla bajada después de pagar
+      // (con las marcas de hoy, o con otras horas) le cambiaba el monto a una
+      // fila con comprobante emitido y aguinaldo ya acumulado con el bruto
+      // viejo. Se deja como está y se avisa.
+      pagadasSinTocar.push(porCedula.get(row.cedula)!.nombre)
+    } else if (cubiertasPorLiquidacion.has(labId)) {
+      // Su salario de esta quincena ya va en la liquidación: la fila no se
+      // paga por planilla ni se puede editar en pantalla. Antes el Excel la
+      // reescribía igual.
+      enLiquidacionSinTocar.push(porCedula.get(row.cedula)!.nombre)
     } else {
-      filasActualizar.push({ row, ndtId })
+      filasActualizar.push({ row, ndtId, totales })
     }
   }
 
   // Empleados que ya tenían planilla en el periodo pero salieron del Excel
-  const ndtIdsEliminar = (detallesPrevios ?? [])
-    .filter((d: DetalleExistenteRow) => !labIdsEnExcel.has(d.ndt_historial_laboral_id))
-    .map((d: DetalleExistenteRow) => d.ndt_id)
+  const salieronDelExcel = (detallesPrevios ?? []).filter(
+    (d: DetalleExistenteRow) => !labIdsEnExcel.has(d.ndt_historial_laboral_id)
+  )
+
+  // Hay dos filas que NO se pueden borrar así:
+  //
+  //  - Una ya PAGADA: borrarla elimina el registro del pago y su comprobante.
+  //  - Una impaga de un periodo YA VENCIDO: es lo más cerca que tiene el
+  //    sistema de un registro de deuda. Como el periodo impago se queda en
+  //    'borrador' para siempre, cualquier subida posterior la hacía
+  //    desaparecer sin dejar rastro de que a esa persona se le debía.
+  //
+  // En ambos casos se rechaza la subida entera en vez de borrar en silencio:
+  // sacar a alguien de un periodo en el que ya cobró, o al que se le debe, es
+  // una decisión que tiene que ser deliberada.
+  const vencido = periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo)
+
+  // Excepción a la deuda: una fila impaga cuyo salario ya se pagó en una
+  // liquidación (salario pendiente del mes de salida). No se le debe nada
+  // por planilla y marcarDetallePagado no la deja pagar: sacarla del periodo
+  // es la única forma de cerrarlo.
+  const saldadasEnLiquidacion = vencido ? cubiertasPorLiquidacion : new Set<number>()
+
+  // Otra excepción: una fila sin nada que pagar (cargada sin horario ni
+  // marcas). No es una deuda, y sin poder sacarla el periodo vencido no se
+  // cerraba nunca (auditoría 2, fallo 5).
+  const protegidos = salieronDelExcel.filter(
+    (d: DetalleExistenteRow) =>
+      d.ndt_pagado ||
+      (vencido && !saldadasEnLiquidacion.has(d.ndt_historial_laboral_id) && !filaSinNadaQuePagar(d))
+  )
+
+  if (protegidos.length > 0) {
+    const nombrePorLab = new Map(empleadosResult.data.map((e) => [e.labId, e.nombre]))
+    const nombres = protegidos
+      .map(
+        (d: DetalleExistenteRow) =>
+          nombrePorLab.get(d.ndt_historial_laboral_id) ?? `contrato ${d.ndt_historial_laboral_id}`
+      )
+      .slice(0, 5)
+      .join(', ')
+    const motivo = protegidos.some((d: DetalleExistenteRow) => d.ndt_pagado)
+      ? 'ya tienen el pago marcado'
+      : 'están sin pagar en un periodo que ya venció'
+
+    return {
+      ok: false,
+      error: `No se puede quitar de la planilla a empleados que ${motivo}: ${nombres}. Volvé a incluirlos en el archivo; si de verdad hay que sacarlos, primero desmarcá el pago o revisá el periodo.`,
+    }
+  }
+
+  const ndtIdsEliminar = salieronDelExcel.map((d: DetalleExistenteRow) => d.ndt_id)
 
   // 7. Eliminar lo que salió de la planilla
+  //
+  // Antes se borraban las líneas y después la fila. La fila de alguien con
+  // horas extra tiene su movimiento en el banco de horas apuntándola, así que
+  // el borrado de la fila fallaba por la llave foránea DESPUÉS de haber
+  // borrado las líneas: quedaba con su total y sin ninguna línea. Ahora se
+  // revisa primero y se borra todo en una transacción, como deletePeriodo.
   if (ndtIdsEliminar.length > 0) {
-    const tablasLineas = [
-      { tabla: 'sgrh_nomina_linea_ingreso', columna: 'ing_nomina_detalle_id' },
-      { tabla: 'sgrh_nomina_linea_deduccion', columna: 'ded_nomina_detalle_id' },
-      { tabla: 'sgrh_nomina_linea_patronal', columna: 'pat_nomina_detalle_id' },
-    ] as const
-
-    for (const { tabla, columna } of tablasLineas) {
-      const { error: errDelLineas } = await supabase
-        .from(tabla)
-        .delete()
-        .in(columna, ndtIdsEliminar)
-      if (errDelLineas) {
-        return {
-          ok: false,
-          error: 'No se pudieron eliminar los empleados que salieron de la planilla.',
-        }
+    const resueltas = await filasConHorasDeBancoResueltas(supabase, ndtIdsEliminar)
+    if (!resueltas.ok) {
+      return {
+        ok: false,
+        error: 'No se pudo revisar el banco de horas de los empleados que salieron de la planilla.',
+      }
+    }
+    if (resueltas.ndtIds.length > 0) {
+      const nombrePorLab = new Map(empleadosResult.data.map((e) => [e.labId, e.nombre]))
+      const nombres = salieronDelExcel
+        .filter((d: DetalleExistenteRow) => resueltas.ndtIds.includes(d.ndt_id))
+        .map(
+          (d: DetalleExistenteRow) =>
+            nombrePorLab.get(d.ndt_historial_laboral_id) ?? `contrato ${d.ndt_historial_laboral_id}`
+        )
+        .slice(0, 5)
+        .join(', ')
+      return {
+        ok: false,
+        error: `No se puede quitar de la planilla a ${nombres}: sus horas extra de esta quincena ya se pagaron o compensaron desde el banco de horas. Volvé a incluirlos en el archivo, o revertí ese movimiento primero.`,
       }
     }
 
-    const { error: errDelDetalle } = await supabase
-      .from('sgrh_nomina_detalle')
-      .delete()
-      .in('ndt_id', ndtIdsEliminar)
+    // Todo en una transacción (función eliminar_filas_planilla): o salen
+    // completas, o no sale ninguna.
+    const { error: errDelDetalle } = await supabase.rpc('eliminar_filas_planilla', {
+      p_ndt_ids: ndtIdsEliminar,
+    })
     if (errDelDetalle) {
+      if (['23514', '42501'].includes(errDelDetalle.code)) {
+        return { ok: false, error: errDelDetalle.message }
+      }
+      console.error('uploadPlanilla: error al sacar filas de la planilla', errDelDetalle)
       return {
         ok: false,
         error: 'No se pudieron eliminar los empleados que salieron de la planilla.',
@@ -304,43 +690,56 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   }
 
   // 8. Actualizar los que cambiaron: totales recalculados + líneas desde cero
-  for (const { row, ndtId } of filasActualizar) {
-    const { salarioBruto, totalDeducciones, salarioNeto, lineas } = calcularPlanillaPorConceptos(
-      conceptos,
-      {
-        montos: row.montos,
-        horasTrabajadas: row.horasTrabajadas,
-        salarioPorHora: row.salarioPorHora,
-      }
-    )
+  let actualizados = 0
+  for (const { row, ndtId, totales } of filasActualizar) {
+    const {
+      salarioBruto,
+      totalDeducciones,
+      salarioNeto,
+      totalCargasPatronales,
+      lineas,
+      lineasPatronales,
+    } = totales
 
-    const { error: errUpdate } = await supabase
+    const { data: actualizada, error: errUpdate } = await supabase
       .from('sgrh_nomina_detalle')
       .update({
         ndt_salario_bruto: salarioBruto,
         ndt_total_deducciones_obreras: totalDeducciones,
         ndt_salario_neto: salarioNeto,
+        ndt_total_cargas_patronales: totalCargasPatronales,
         ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
+        ndt_horas_extra_al_50: row.horasExtra,
         ndt_salario_por_hora: row.salarioPorHora,
+        ...fotoDelContrato(contratoDe(porCedula.get(row.cedula)!)),
+        ...fotoDe(porCedula.get(row.cedula)!.labId, row, valoresPreviosPorNdt.get(ndtId) ?? null),
       })
       .eq('ndt_id', ndtId)
+      // Solo si sigue sin pagar: alguien pudo marcarla pagada mientras se
+      // subía el archivo, y una fila pagada tiene comprobante emitido
+      // (auditoría 2, riesgo de lectura y escritura).
+      .eq('ndt_pagado', false)
+      .select('ndt_id')
+      .returns<{ ndt_id: number }[]>()
     if (errUpdate) {
       return { ok: false, error: 'No se pudieron actualizar los montos de la planilla.' }
     }
-
-    const { error: errDelIngreso } = await supabase
-      .from('sgrh_nomina_linea_ingreso')
-      .delete()
-      .eq('ing_nomina_detalle_id', ndtId)
-    const { error: errDelDeduccion } = await supabase
-      .from('sgrh_nomina_linea_deduccion')
-      .delete()
-      .eq('ded_nomina_detalle_id', ndtId)
-    if (errDelIngreso || errDelDeduccion) {
-      return { ok: false, error: 'No se pudieron actualizar las líneas de la planilla.' }
+    if (!Array.isArray(actualizada) || actualizada.length === 0) {
+      // Se pagó en el medio: queda como se pagó, igual que las que ya venían
+      // pagadas.
+      pagadasSinTocar.push(porCedula.get(row.cedula)!.nombre)
+      continue
     }
+    actualizados += 1
 
-    const { error: errLineas } = await insertarLineas(supabase, ndtId, lineas)
+    // reemplazarLineasDetalle borra y reinserta, conservando los metadatos de
+    // las deducciones (de qué beneficio vienen, si son voluntarias).
+    const { error: errLineas } = await reemplazarLineasDetalle(
+      supabase,
+      ndtId,
+      lineas,
+      lineasPatronales
+    )
     if (errLineas) {
       return { ok: false, error: errLineas }
     }
@@ -348,7 +747,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
       ndtId,
       historialLaboralId: porCedula.get(row.cedula)!.labId,
-      horasTrabajadas: row.horasTrabajadas,
+      horasExtra: row.horasExtra,
       salarioPorHora: row.salarioPorHora,
     })
     if (errBanco) {
@@ -358,13 +757,15 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
   // 9. Insertar los empleados nuevos
   if (filasNuevas.length > 0) {
-    const hoy = new Date().toISOString().slice(0, 10)
+    // Fecha de Costa Rica: toISOString daba el día siguiente desde las 18:00.
+    const hoy = hoyLocal()
     const totalesPorFila = new Map(
       filasNuevas.map((row) => [
         row.cedula,
         calcularPlanillaPorConceptos(conceptos, {
           montos: row.montos,
           horasTrabajadas: row.horasTrabajadas,
+          horasExtra: row.horasExtra,
           salarioPorHora: row.salarioPorHora,
         }),
       ])
@@ -377,11 +778,19 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ndt_historial_laboral_id: porCedula.get(row.cedula)!.labId,
         ndt_salario_bruto: totales.salarioBruto,
         ndt_total_deducciones_obreras: totales.totalDeducciones,
-        ndt_total_cargas_patronales: 0,
+        ndt_total_cargas_patronales: totales.totalCargasPatronales,
         ndt_salario_neto: totales.salarioNeto,
         ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
+        // Faltaba: las horas extra del Excel se usaban para el cálculo y para
+        // el banco de horas, pero no se guardaban en la fila. La pantalla del
+        // periodo las leía de acá, así que toda planilla armada por Excel
+        // mostraba "0 h extra" aunque el archivo trajera horas.
+        ndt_horas_extra_al_50: row.horasExtra,
         ndt_salario_por_hora: row.salarioPorHora,
         ndt_fecha_registro: hoy,
+        ...fotoDelContrato(contratoDe(porCedula.get(row.cedula)!)),
+        // Fila nueva: no hay nada anterior contra lo cual comparar.
+        ...fotoDe(porCedula.get(row.cedula)!.labId, row, null),
       }
     })
 
@@ -407,8 +816,13 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       const ndtId = ndtIdPorLabNuevo.get(labId)
       if (!ndtId) continue
 
-      const { lineas } = totalesPorFila.get(row.cedula)!
-      const { error: errLineas } = await insertarLineas(supabase, ndtId, lineas)
+      const { lineas, lineasPatronales } = totalesPorFila.get(row.cedula)!
+      const { error: errLineas } = await reemplazarLineasDetalle(
+        supabase,
+        ndtId,
+        lineas,
+        lineasPatronales
+      )
       if (errLineas) {
         return {
           ok: false,
@@ -420,12 +834,23 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
         ndtId,
         historialLaboralId: labId,
-        horasTrabajadas: row.horasTrabajadas,
+        horasExtra: row.horasExtra,
         salarioPorHora: row.salarioPorHora,
       })
       if (errBanco) {
         return { ok: false, error: errBanco }
       }
+    }
+
+    // Incapacidades y licencias registradas antes de que existiera la fila
+    // (auditoría 2, fallo 2).
+    const ausencias = await aplicarAusenciasAFilasNuevas(
+      supabase,
+      insertados.map((d) => ({ ndtId: d.ndt_id, labId: d.ndt_historial_laboral_id })),
+      { inicio: periodo.npe_fecha_inicio_periodo, fin: periodo.npe_fecha_fin_periodo }
+    )
+    if (!ausencias.ok) {
+      return { ok: false, error: `La planilla se guardó, pero: ${ausencias.error}` }
     }
   }
 
@@ -436,47 +861,10 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     ok: true,
     empleados: rows.length,
     nuevos: filasNuevas.length,
-    actualizados: filasActualizar.length,
+    actualizados,
     sinCambios,
     eliminados: ndtIdsEliminar.length,
+    pagadasSinTocar,
+    enLiquidacionSinTocar,
   }
-}
-
-/**
- * Inserta las líneas de ingreso y deducción calculadas para un ndt_id.
- * Compartido entre "actualizar" e "insertar nuevo" — misma forma que usa
- * updateDetalleManual.ts para la edición manual.
- */
-async function insertarLineas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  ndtId: number,
-  lineas: LineaCalculada[]
-): Promise<{ error: string | null }> {
-  const ingresos = lineas
-    .filter((l) => l.esIngreso)
-    .map((l) => ({
-      ing_nomina_detalle_id: ndtId,
-      ing_concepto_id: l.con_id,
-      ing_monto: l.monto,
-    }))
-  if (ingresos.length > 0) {
-    const { error } = await supabase.from('sgrh_nomina_linea_ingreso').insert(ingresos)
-    if (error) return { error: 'No se pudieron guardar las líneas de ingreso.' }
-  }
-
-  const deducciones = lineas
-    .filter((l) => !l.esIngreso)
-    .map((l) => ({
-      ded_nomina_detalle_id: ndtId,
-      ded_concepto_id: l.con_id,
-      ded_monto: l.monto,
-      ded_porcentaje_aplicado: l.porcentajeAplicado ?? null,
-      ded_base_calculo: l.baseCalculo ?? null,
-    }))
-  if (deducciones.length > 0) {
-    const { error } = await supabase.from('sgrh_nomina_linea_deduccion').insert(deducciones)
-    if (error) return { error: 'No se pudieron guardar las líneas de deducción.' }
-  }
-
-  return { error: null }
 }

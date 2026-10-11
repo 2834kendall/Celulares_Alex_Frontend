@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 
 interface PeriodoQueryRow {
@@ -63,6 +64,7 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
     fechaInicio: row.npe_fecha_inicio_periodo,
     fechaFin: row.npe_fecha_fin_periodo,
     estado: row.npe_estado,
+    atrasado: periodoAtrasado(row.npe_estado, row.npe_fecha_fin_periodo),
     fechaPago: row.npe_fecha_pago,
     sucursalNombre: row.sgrh_sucursales?.suc_nombre ?? '—',
     totalEmpleados: row.sgrh_nomina_detalle?.length ?? 0,

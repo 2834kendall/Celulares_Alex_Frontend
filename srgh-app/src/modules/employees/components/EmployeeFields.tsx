@@ -62,6 +62,8 @@ interface CatalogSelectProps {
   options: CatalogoItem[]
   disabled?: boolean
   placeholder?: string
+  /** Campo de búsqueda en la lista abierta, para catálogos largos. */
+  searchable?: boolean
   /**
    * Se ejecuta después de propagar el cambio a react-hook-form. Lo usan las
    * cascadas para limpiar los campos que dependen de este (ver AddressFields).
@@ -80,6 +82,7 @@ export function CatalogSelect({
   options,
   disabled,
   placeholder = 'Seleccionar…',
+  searchable,
   onAfterChange,
 }: CatalogSelectProps) {
   const {
@@ -94,6 +97,7 @@ export function CatalogSelect({
   return (
     <Labeled label={label} error={error}>
       <SelectMenu
+        searchable={searchable}
         value={
           field.value === null || field.value === undefined || Number.isNaN(field.value)
             ? ''
@@ -256,11 +260,20 @@ export function IbanInput({ name, invalid, disabled, mode = 'iban' }: IbanInputP
 
 interface PersonalDataFieldsProps extends FieldGroupProps {
   tiposIdentificacion: CatalogoItem[]
+  /**
+   * true en el alta (wizard): fecha de nacimiento y género son obligatorios.
+   * En la edición siguen siendo opcionales, porque hay fichas anteriores sin
+   * esos datos y exigirlos bloquearía cualquier otro cambio sobre ellas.
+   * Tiene que coincidir con el schema: crearEmpleadoSchema los exige y
+   * editarEmpleadoSchema no.
+   */
+  alta?: boolean
 }
 
 export function PersonalDataFields({
   basePath = '',
   tiposIdentificacion,
+  alta = false,
 }: PersonalDataFieldsProps) {
   const {
     register,
@@ -321,15 +334,21 @@ export function PersonalDataFields({
         />
       </Labeled>
 
-      <Labeled label="Fecha de ingreso *" error={err('emp_fecha_ingreso_original')}>
+      {/* No es la misma fecha que el inicio del contrato, y confundirlas ya
+          pasó: esta es la antigüedad de la PERSONA en la empresa y sobrevive
+          a los traslados y recontrataciones; la otra arranca UN contrato. */}
+      <Labeled label="Ingreso a la empresa *" error={err('emp_fecha_ingreso_original')}>
         <DateInput
           name={`${basePath}emp_fecha_ingreso_original`}
-          label="Fecha de ingreso"
+          label="Ingreso a la empresa"
           invalid={Boolean(err('emp_fecha_ingreso_original'))}
         />
       </Labeled>
 
-      <Labeled label="Fecha de nacimiento" error={err('emp_fecha_nacimiento')}>
+      <Labeled
+        label={alta ? 'Fecha de nacimiento *' : 'Fecha de nacimiento'}
+        error={err('emp_fecha_nacimiento')}
+      >
         <DateInput
           name={`${basePath}emp_fecha_nacimiento`}
           label="Fecha de nacimiento"
@@ -337,14 +356,15 @@ export function PersonalDataFields({
         />
       </Labeled>
 
-      <Labeled label="Género" error={err('emp_genero')}>
+      <Labeled label={alta ? 'Género *' : 'Género'} error={err('emp_genero')}>
         <ControlledSelectMenu
           control={control}
           name={`${basePath}emp_genero`}
           invalid={Boolean(err('emp_genero'))}
-          placeholder="Sin especificar"
+          placeholder={alta ? 'Seleccionar…' : 'Sin especificar'}
           options={[
-            { value: '', label: 'Sin especificar' },
+            // En el alta no hay "sin especificar": es obligatorio.
+            ...(alta ? [] : [{ value: '', label: 'Sin especificar' }]),
             ...Object.entries(GENERO_LABELS).map(([value, label]) => ({ value, label })),
           ]}
         />
@@ -443,10 +463,13 @@ export function BankingFields({ basePath = '', bancos }: BankingFieldsProps) {
 
   return (
     <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2 @2xl:grid-cols-3">
+      {/* Con buscador: el catálogo de bancos de CR es largo y se llega a él
+          sabiendo el nombre, no recorriéndolo. */}
       <CatalogSelect
         name={`${basePath}edp_banco_id`}
         label="Banco"
         options={bancos}
+        searchable
         placeholder="Sin especificar"
         onAfterChange={limpiarCuenta}
       />
@@ -488,6 +511,8 @@ interface LocalSelectProps {
   onChange: (value: number | null) => void
   disabled?: boolean
   placeholder?: string
+  /** Campo de búsqueda en la lista abierta, para catálogos largos. */
+  searchable?: boolean
 }
 
 /**
@@ -502,10 +527,12 @@ function LocalSelect({
   onChange,
   disabled,
   placeholder = 'Seleccionar…',
+  searchable,
 }: LocalSelectProps) {
   return (
     <Labeled label={label}>
       <SelectMenu
+        searchable={searchable}
         value={value === null ? '' : String(value)}
         disabled={disabled}
         onChange={(v) => onChange(v === '' ? null : Number(v))}
@@ -588,10 +615,14 @@ export function AddressFields({ basePath = '', territorio }: AddressFieldsProps)
         }}
       />
 
+      {/* Cantón (84) y distrito (492) llevan buscador; provincia son 7 y no
+          lo necesita. El catálogo ya viaja entero al cliente, así que filtrar
+          es en memoria y no agrega ningún round-trip. */}
       <LocalSelect
         label="Cantón *"
         options={cantonesVisibles}
         value={ubicacion.cantonId}
+        searchable
         disabled={ubicacion.provinciaId === null}
         placeholder={ubicacion.provinciaId === null ? 'Elige la provincia primero' : 'Seleccionar…'}
         onChange={(cantonId) => {
@@ -604,6 +635,7 @@ export function AddressFields({ basePath = '', territorio }: AddressFieldsProps)
         name={distritoField}
         label="Distrito *"
         options={distritosVisibles}
+        searchable
         disabled={ubicacion.cantonId === null}
         placeholder={ubicacion.cantonId === null ? 'Elige el cantón primero' : 'Seleccionar…'}
       />

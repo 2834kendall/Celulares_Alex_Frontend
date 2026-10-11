@@ -83,15 +83,29 @@ export async function getUsers(): Promise<GetUsersResult> {
 
   const authPorId = new Map(authData.users.map((user) => [user.id, user]))
 
-  const data: UsuarioListItem[] = (asignaciones ?? [])
-    .filter((fila) => fila.sgrh_usuarios !== null)
-    .map((fila) => {
-      const usuario = fila.sgrh_usuarios!
+  // Un usuario a cargo de varias sucursales aparece como varias filas uer
+  // (misma empresa, mismo rol, distinta sucursal): se agrupan por usr_id
+  // antes de armar la vista. rol_id y uer_activo son iguales en todas las
+  // filas de un mismo usuario (invariante de syncUserSucursales), así que
+  // alcanza con leerlos de la primera.
+  const filasPorUsuario = new Map<number, typeof asignaciones>()
+  for (const fila of asignaciones ?? []) {
+    if (!fila.sgrh_usuarios) continue
+    const usrId = fila.sgrh_usuarios.usr_id
+    const filas = filasPorUsuario.get(usrId) ?? []
+    filas.push(fila)
+    filasPorUsuario.set(usrId, filas)
+  }
+
+  const data: UsuarioListItem[] = Array.from(filasPorUsuario.values())
+    .map((filas) => {
+      const primera = filas[0]
+      const usuario = primera.sgrh_usuarios!
       const authUser = usuario.usr_auth_id ? authPorId.get(usuario.usr_auth_id) : undefined
       const ultimoAcceso = authUser?.last_sign_in_at ?? null
 
       let estado: UsuarioEstado
-      if (!usuario.usr_activo || !fila.uer_activo) {
+      if (!usuario.usr_activo || !primera.uer_activo) {
         estado = 'desactivado'
       } else if (!ultimoAcceso) {
         estado = 'pendiente'
@@ -106,15 +120,21 @@ export async function getUsers(): Promise<GetUsersResult> {
             .join(' ')
         : null
 
+      const sucursales = filas
+        .filter((fila) => fila.uer_sucursal_id !== null && fila.sgrh_sucursales)
+        .map((fila) => ({
+          id: fila.uer_sucursal_id as number,
+          nombre: fila.sgrh_sucursales!.suc_nombre ?? '—',
+        }))
+
       return {
         usr_id: usuario.usr_id,
         email: usuario.usr_email,
         empleado_id: usuario.usr_empleado_id,
         empleado_nombre: empleadoNombre,
-        rol_id: fila.uer_rol_id,
-        rol_nombre: fila.sgrh_cat_roles?.rol_nombre ?? '—',
-        sucursal_id: fila.uer_sucursal_id,
-        sucursal_nombre: fila.sgrh_sucursales?.suc_nombre ?? null,
+        rol_id: primera.uer_rol_id,
+        rol_nombre: primera.sgrh_cat_roles?.rol_nombre ?? '—',
+        sucursales,
         estado,
         ultimo_acceso: ultimoAcceso,
       }

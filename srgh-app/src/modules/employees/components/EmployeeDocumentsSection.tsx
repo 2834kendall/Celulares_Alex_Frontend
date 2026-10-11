@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -43,7 +42,6 @@ export function EmployeeDocumentsSection({
   canWrite,
   listError,
 }: EmployeeDocumentsSectionProps) {
-  const router = useRouter()
   const {
     editing,
     setEditing,
@@ -82,7 +80,6 @@ export function EmployeeDocumentsSection({
     }
     toast.success('Documento agregado.')
     setCola((current) => current.slice(1))
-    router.refresh()
   }
 
   function handleAddCancel() {
@@ -100,7 +97,6 @@ export function EmployeeDocumentsSection({
     }
     toast.success('Documento actualizado.')
     setEditing(null)
-    router.refresh()
   }
 
   async function handleDownload(key: string) {
@@ -116,7 +112,6 @@ export function EmployeeDocumentsSection({
     const result = await confirmDelete()
     if (!result.ok) return
     toast.success('Documento eliminado.')
-    router.refresh()
   }
 
   const items: DocumentoCardItem[] = documentos.map((doc) => ({

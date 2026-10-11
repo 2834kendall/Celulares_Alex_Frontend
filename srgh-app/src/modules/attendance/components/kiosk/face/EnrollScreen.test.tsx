@@ -20,8 +20,8 @@ vi.mock('./FaceScan', () => ({
 const mockEnrollFace = vi.mocked(enrollFace)
 
 const employees = [
-  { employeeId: 10, fullName: 'Ana Perez', birthDateISO: '1990-01-01' },
-  { employeeId: 20, fullName: 'Bruno Mora', birthDateISO: null },
+  { employeeId: 10, fullName: 'Ana Perez' },
+  { employeeId: 20, fullName: 'Bruno Mora' },
 ]
 
 const PAYLOAD = { iv: 'aXY=', data: 'ZGF0YQ==' }

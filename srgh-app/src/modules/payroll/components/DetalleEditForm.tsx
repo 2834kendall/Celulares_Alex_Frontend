@@ -11,6 +11,8 @@ import {
   type ConceptoNominaRow,
 } from '@/modules/payroll/types'
 import { updateDetalleManual } from '@/modules/payroll/actions/updateDetalleManual'
+import { CODIGO_AJUSTE, esRebajoDeSalario } from '@/modules/payroll/lib/planilla'
+import { formatCRC } from '@/modules/payroll/lib/format'
 import { Button } from '@/components/ui/Button'
 import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
@@ -58,11 +60,15 @@ const SECCION_ORDEN = ['ingreso', 'deduccion'] as const
  */
 export function DetalleEditForm({
   detalle,
-  conceptosManuales,
+  conceptosManuales: todosLosManuales,
   onSuccess,
   onCancel,
 }: DetalleEditFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
+  // El ajuste no se digita: el servidor lo recalcula al guardar con las horas
+  // y el cumplimiento del horario. Se muestra, pero no es un campo.
+  const conceptoAjuste = todosLosManuales.find((c) => c.con_codigo === CODIGO_AJUSTE) ?? null
+  const conceptosManuales = todosLosManuales.filter((c) => c.con_codigo !== CODIGO_AJUSTE)
 
   const {
     register,
@@ -75,6 +81,7 @@ export function DetalleEditForm({
         conceptosManuales.map((c) => [c.con_codigo, detalle.montosPorConcepto[c.con_codigo] ?? 0])
       ),
       horasTrabajadas: detalle.horasTrabajadas,
+      horasExtra: detalle.horasExtra,
       salarioPorHora: detalle.salarioPorHora,
     },
   })
@@ -150,6 +157,11 @@ export function DetalleEditForm({
                           className={`${INPUT} pl-6 pr-3`}
                         />
                       </div>
+                      {esRebajoDeSalario(concepto) && (
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          Rebaja el salario bruto: baja también la CCSS y el aguinaldo.
+                        </p>
+                      )}
                       {errors.montos?.[concepto.con_codigo] && (
                         <p className="mt-1 text-[11px] text-rose-600">
                           {errors.montos[concepto.con_codigo]?.message}
@@ -162,6 +174,15 @@ export function DetalleEditForm({
             )
           })}
         </div>
+      )}
+
+      {conceptoAjuste && (
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
+          <span className="font-semibold">{conceptoAjuste.con_nombre}:</span>{' '}
+          {formatCRC(detalle.montosPorConcepto[CODIGO_AJUSTE] ?? 0)}. Lo calcula el sistema al
+          guardar (salario real ÷ 2 menos la base de la quincena, según el cumplimiento del
+          horario); no se edita a mano.
+        </p>
       )}
 
       <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -195,6 +216,29 @@ export function DetalleEditForm({
             </div>
             {errors.horasTrabajadas && (
               <p className="mt-1 text-[11px] text-rose-600">{errors.horasTrabajadas.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className={LABEL} htmlFor={`horas-extra-${detalle.id}`}>
+              Horas extra
+            </label>
+            <div className="relative">
+              <input
+                id={`horas-extra-${detalle.id}`}
+                type="number"
+                step="0.01"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.horasExtra}
+                {...register('horasExtra', { valueAsNumber: true })}
+                className={`${INPUT} pl-3 pr-7`}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
+                h
+              </span>
+            </div>
+            {errors.horasExtra && (
+              <p className="mt-1 text-[11px] text-rose-600">{errors.horasExtra.message}</p>
             )}
           </div>
 

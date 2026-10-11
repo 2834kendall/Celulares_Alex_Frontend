@@ -348,6 +348,57 @@ GRANT EXECUTE ON FUNCTION public.tiene_permiso(text)                 TO authenti
 
 **Por qué no se devuelve a `anon`**: estos helpers forman parte del flujo autenticado y no deben estar disponibles para usuarios anónimos.
 
+### `GRANT EXECUTE` no alcanza para una función de `sgrh_private`: falta el `USAGE` del esquema
+
+Todo lo de arriba aplica a funciones de `public`, que es un esquema al que `authenticated` ya
+puede entrar. Para una función de `sgrh_private` hay un segundo privilegio, y es fácil pasarlo
+por alto porque el error no apunta a la función:
+
+```
+42501 permission denied for schema sgrh_private
+```
+
+Pasó al agregar `sgrh_private.tiene_quincena_sin_pagar()`: tenía su `GRANT EXECUTE` y la
+llamada seguía muriendo, porque sin `USAGE` sobre el esquema el rol no puede resolver nada
+dentro de él, por más privilegio que tenga el objeto.
+
+```sql
+GRANT USAGE ON SCHEMA sgrh_private TO authenticated;
+GRANT EXECUTE ON FUNCTION sgrh_private.mi_helper(integer) TO authenticated;
+```
+
+**Por qué no había aparecido antes**: hasta ese momento ninguna función de `sgrh_private`
+estaba pensada para que la invocara un usuario. `asignar_permisos` y
+`cerrar_contratos_programados` están revocadas de `authenticated` a propósito — las corre
+pg_cron o nadie —, así que el esquema nunca había necesitado el `USAGE`.
+
+**Por qué es seguro**: `sgrh_private` no tiene tablas ni vistas, así que el `USAGE` por sí
+solo no expone nada; cada objeto sigue necesitando su propio privilegio, y las dos funciones
+revocadas siguen denegadas.
+
+**Cómo detectarlo, porque nada más lo agarra**: `has_function_privilege('authenticated', …,
+'EXECUTE')` devuelve **true** — mira el grant de la función, no el del esquema — y los tests
+de la aplicación mockean Supabase. Solo aparece llamando la RPC con un usuario real:
+
+```sql
+BEGIN;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claims',
+  '{"app_metadata":{"empresa_id":5,"sucursal_ids":null,"permisos":["HISTORIAL_WRITE"]}}', true);
+SELECT public.mi_rpc(...);
+ROLLBACK;
+```
+
+Esa transacción con `ROLLBACK` es la forma de probar cualquier RPC con RLS sin ensuciar la
+base. Dos cuidados al medir dentro de ella: `postgres` se salta la RLS y `authenticated` no,
+así que comparar un «antes» tomado como postgres con un «después» como authenticated da
+falsos positivos; y **una escritura que la RLS filtra no da error** — afecta 0 filas y el test
+concluye que no hubo validación.
+
+**Cuándo preferir `public` con `SECURITY DEFINER`**: si la función la invocan las policies
+(como `sucursal_visible`), vive en `public` y se acepta el warning del linter. La ventaja de
+`sgrh_private` es que PostgREST no lo publica: no queda un endpoint `/rest/v1/rpc/…`.
+
 ---
 
 ## 5. Sistema de permisos dinámico
@@ -778,6 +829,59 @@ CREATE POLICY "historial_update" ON public.sgrh_historial_laboral
 CREATE POLICY "historial_delete" ON public.sgrh_historial_laboral
   FOR DELETE TO authenticated USING ((SELECT public.tiene_permiso('HISTORIAL_WRITE')) AND lab_empresa_id = (SELECT public.get_empresa_id()));
 ```
+
+---
+
+### Contratos — las reglas viven en las RPC, no en la UI
+
+El tab Contrato (crear / editar / terminar / revertir) pasa por cuatro RPC `SECURITY INVOKER`
+en `20260927120000_contratos_crud.sql`, todas con `HISTORIAL_WRITE` y serializadas por
+contrato con `pg_advisory_xact_lock` — no con `FOR UPDATE`: bajo RLS, `FOR UPDATE` exige la
+policy de UPDATE (`HISTORIAL_WRITE`) y quien liquida no la tiene.
+
+**Qué edita `editar_contrato` y qué no.** Solo el contrato vigente (`lab_fecha_fin IS NULL`) y
+sin una terminación registrada. Cambia puesto, sucursal base, tipo de contrato, jornada y los
+dos salarios. **No toca `lab_fecha_inicio`**: moverla dejaría marcas, turnos y el contrato
+anterior apuntando a un período que ya no existe. Tampoco las columnas de salida.
+
+**La sucursal del contrato NO es dónde trabaja la persona.** Desde SGRH-84 son dos columnas y
+confundirlas es el error fácil:
+
+| | significado | quién la mueve |
+|---|---|---|
+| `prg_sucursal_id` | dónde trabaja **ese día** | el gerente, celda por celda en la matriz semanal |
+| `lab_sucursal_id` | **en qué planilla se paga** y quién ve el expediente | RRHH, con `editar_contrato` |
+
+Las horas cubiertas en otra tienda ya se pagan en la planilla del contrato
+(`20261002120000_asistencia_nomina_otras_sucursales.sql`), así que mover la base **no** es
+trasladar a nadie y **no** reescribe la historia: marcas, turnos, períodos de planilla y
+evaluaciones llevan su propia sucursal y ninguna depende del contrato.
+
+> El `COMMENT ON TABLE` del baseline todavía dice que `lab_sucursal_id` nunca se edita en
+> sitio «porque reescribiría la historia». Era cierto **antes** de SGRH-84, cuando las dos
+> columnas valían siempre lo mismo. El `COMMENT ON COLUMN` vigente lo corrige.
+
+**Lo único que bloquea el cambio de sucursal: una quincena sin pagar.** Un período es por
+sucursal y elige a su gente por `lab_sucursal_id`, así que moverla a medio pagar dejaría la
+fila en la planilla vieja mientras la nueva la vuelve a crear — dos filas de la misma
+quincena. El guard es `sgrh_private.tiene_quincena_sin_pagar(lab_id)`, y es `SECURITY DEFINER`
+a propósito: un `EXISTS` dentro de la RPC pasaría por RLS, y `nomina_detalle_select` exige
+`NOMINA_READ`, así que un usuario con `HISTORIAL_WRITE` y sin permisos de nómina vería cero
+filas y el guard **fallaría abierto**. Solo se evalúa si la sucursal cambia: corregir un
+salario no espera a que se pague la quincena.
+
+**Editar un contrato que ya pasó por planilla sí se puede**, y el cambio aplica desde el
+período siguiente. Lo habilita la foto del contrato en cada fila de planilla
+(`ndt_salario_base_contrato`, `ndt_salario_real_contrato`, `ndt_horas_semanales_contrato`, con
+`NULL` = «usar el contrato en vivo»): sin ella la planilla leía el salario en vivo y editarlo
+alteraba cuentas ya hechas — la detección de «base desactualizado», el rechazo del pago, la
+incapacidad de una fila sin pagar, y el salario que la liquidación le asigna a cada quincena
+pasada. **Toda ruta nueva que cree o recalcule filas de `sgrh_nomina_detalle` tiene que
+escribir esa foto**, o la fila vuelve a seguir al contrato en vivo en silencio.
+
+**Preaviso**: un último día de hoy o futuro no toca `lab_fecha_fin` (la regla
+«vigente = `lab_fecha_fin IS NULL`» está en ~15 consultas y 3 policies); se guarda en
+`lab_fecha_fin_programada` y el job `cerrar-contratos-programados` lo aplica al día siguiente.
 
 ---
 

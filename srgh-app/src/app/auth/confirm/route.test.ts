@@ -73,4 +73,28 @@ describe('GET /auth/confirm', () => {
     const location = new URL(response.headers.get('location')!)
     expect(location.pathname).toBe('/activate-account')
   })
+
+  it('un enlace de recuperación vencido cae en /reset-password, no en la activación', async () => {
+    mockVerify({ message: 'expired' })
+
+    const response = await GET(request('?token_hash=viejo&type=recovery&next=/reset-password'))
+
+    // Cada flujo muestra su propio estado de enlace vencido: mandar todo a
+    // /activate-account dejaba a quien recupera su contraseña leyendo sobre
+    // invitaciones que nadie le envió.
+    const location = new URL(response.headers.get('location')!)
+    expect(location.pathname).toBe('/reset-password')
+  })
+
+  it('con token inválido tampoco respeta un next externo', async () => {
+    mockVerify({ message: 'expired' })
+
+    const response = await GET(
+      request('?token_hash=viejo&type=recovery&next=https://evil.example.com')
+    )
+
+    const location = new URL(response.headers.get('location')!)
+    expect(location.origin).toBe('http://localhost:3000')
+    expect(location.pathname).toBe('/activate-account')
+  })
 })

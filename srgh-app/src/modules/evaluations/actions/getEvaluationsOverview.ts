@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { ACCESO_EVALUACIONES } from '@/lib/permissions/zones'
 import { averageScore, parseNotes } from '@/modules/evaluations/lib/scoring'
+import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 import type { BranchOption, CollaboratorRow, EvaluationDetail } from '@/modules/evaluations/types'
 
 interface EmployeeJoin {
@@ -11,6 +12,7 @@ interface EmployeeJoin {
   emp_apellido_1: string
   emp_apellido_2: string | null
   emp_numero_identificacion: string
+  emp_foto_path: string | null
 }
 
 interface HistoryRow {
@@ -111,7 +113,7 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
         lab_id,
         lab_empleado_id,
         lab_sucursal_id,
-        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion ),
+        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_foto_path ),
         sgrh_cat_puestos ( pue_nombre ),
         sgrh_sucursales ( suc_id, suc_nombre )
       `
@@ -159,6 +161,12 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
     historyByLabId.set(row.eve_historial_laboral_id, list)
   }
 
+  // Una sola firma para toda la pantalla (ver signEmployeePhotos). Sin esto
+  // Evaluaciones mostraba iniciales aunque el colaborador tuviera foto.
+  const fotoUrls = await signEmployeePhotos(
+    (historyResult.data ?? []).map((h) => h.sgrh_empleados?.emp_foto_path)
+  )
+
   const collaborators: CollaboratorRow[] = (historyResult.data ?? [])
     .map((h) => {
       const employee = h.sgrh_empleados
@@ -172,6 +180,8 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
         empId: h.lab_empleado_id,
         fullName,
         idNumber: employee?.emp_numero_identificacion ?? '',
+        // emp_foto_path nunca cruza al cliente: solo la URL firmada opaca.
+        fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,
         position: h.sgrh_cat_puestos?.pue_nombre ?? null,
         branchId: h.lab_sucursal_id,
         branchName: h.sgrh_sucursales?.suc_nombre ?? 'Sin sucursal',

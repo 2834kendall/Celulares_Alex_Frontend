@@ -53,6 +53,8 @@ export interface CollaboratorRow {
   position: string | null
   branchId: number
   branchName: string
+  /** URL firmada de la foto, o null si no tiene (el Avatar cae a iniciales). */
+  fotoUrl: string | null
   /** Ultima evaluacion registrada (la vigente). */
   evaluation: EvaluationDetail | null
   /** Historico completo de evaluaciones, de la mas reciente a la mas antigua. */

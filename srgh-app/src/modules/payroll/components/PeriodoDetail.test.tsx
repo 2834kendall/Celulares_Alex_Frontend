@@ -1,0 +1,471 @@
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { PeriodoDetail } from './PeriodoDetail'
+import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla'
+import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
+import { reenviarComprobante } from '@/modules/payroll/actions/reenviarComprobante'
+import { toast } from 'sonner'
+import { formatCRC } from '@/modules/payroll/lib/format'
+import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => '/payroll/7',
+  useSearchParams: () => new URLSearchParams(),
+}))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
+// Server actions: acá no se ejecutan, solo se pinta la pantalla.
+vi.mock('@/modules/payroll/actions/marcarDetallePagado', () => ({ marcarDetallePagado: vi.fn() }))
+vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({ reenviarComprobante: vi.fn() }))
+vi.mock('@/modules/payroll/actions/refrescarHorasAsistencia', () => ({
+  refrescarHorasAsistencia: vi.fn(),
+}))
+vi.mock('@/modules/payroll/actions/recalcularPeriodoDesdeAsistencia', () => ({
+  recalcularPeriodoDesdeAsistencia: vi.fn(),
+}))
+vi.mock('@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia', () => ({
+  cargarEmpleadosDesdeAsistencia: vi.fn(),
+}))
+vi.mock('@/modules/payroll/actions/quitarFilaPlanilla', () => ({
+  quitarFilaPlanilla: vi.fn(),
+}))
+vi.mock('./DetalleEditForm', () => ({ DetalleEditForm: () => null }))
+vi.mock('./RegistrarIncapacidadForm', () => ({ RegistrarIncapacidadForm: () => null }))
+
+function fila(over: Partial<DetalleNominaItem>): DetalleNominaItem {
+  return {
+    id: 1,
+    historialLaboralId: 1,
+    empleadoNombre: 'Ana Mora',
+    empleadoCedula: '1-1111-1111',
+    empleadoEmail: 'ana@correo.com',
+    salarioBruto: 400000,
+    totalNoSalarial: 0,
+    totalDeducciones: 43320,
+    deduccionPorcentual: 43320,
+    deduccionManual: 0,
+    cargasPatronales: 100000,
+    salarioNeto: 356680,
+    pagado: false,
+    fechaPago: null,
+    liquidacionQueLaPaga: null,
+    codigoVerificacion: null,
+    diasPorRevisar: [],
+    montosPorConcepto: {},
+    horasTrabajadas: 88,
+    horasExtra: 0,
+    salarioPorHora: 2500,
+    horasOrigen: 'asistencia',
+    horasAsistencia: 88,
+    horasExtraAsistencia: 0,
+    horasLeidasEn: null,
+    horasAjustadasEn: null,
+    marcasCambiaron: false,
+    horasAsistenciaAhora: null,
+    baseDesactualizado: false,
+    baseEsperado: null,
+    ajusteEsperado: null,
+    dias: [],
+    incapacidad: null,
+    totalAPagar: 356680,
+    numeroCuenta: null,
+    bancoNombre: null,
+    cuentaIlegible: false,
+    ...over,
+  }
+}
+
+function periodo(detalles: DetalleNominaItem[], over: Partial<PeriodoDetalle> = {}) {
+  return {
+    id: 7,
+    mes: 9,
+    anio: 2026,
+    quincena: 1,
+    fechaInicio: '2026-09-01',
+    fechaFin: '2026-09-15',
+    estado: 'borrador',
+    atrasado: false,
+    fechaPago: null,
+    observaciones: null,
+    sucursalNombre: 'Norte',
+    detalles,
+    ...over,
+  } satisfies PeriodoDetalle
+}
+
+/** formatCRC usa espacio duro de miles; Testing Library lo normaliza a espacio común. */
+const monto = (n: number) => formatCRC(n).replace(/\s/g, ' ')
+
+const ANA = fila({ id: 1, historialLaboralId: 1, empleadoNombre: 'Ana Mora', totalAPagar: 356680 })
+// Fabián salió el 10/9: su quincena va en la liquidación n.° 55.
+const FABIAN = fila({
+  id: 2,
+  historialLaboralId: 2,
+  empleadoNombre: 'Fabián Rojas',
+  empleadoCedula: '2-2222-2222',
+  totalAPagar: 222222,
+  diasPorRevisar: [{ fecha: '2026-09-03', problema: 'sin_salida' }],
+  liquidacionQueLaPaga: 55,
+})
+
+describe('PeriodoDetail: filas que paga una liquidación', () => {
+  it('muestra la liquidación que la paga en vez del botón de pago', async () => {
+    render(<PeriodoDetail periodo={periodo([ANA, FABIAN])} canWrite conceptosManuales={[]} />)
+
+    expect(screen.getAllByText('En liquidación n.° 55').length).toBeGreaterThan(0)
+    expect(screen.getByText('1 fila(s) se pagan en una liquidación')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /se pagan en una liquidación/ }))
+    expect(screen.getByText(/Fabián Rojas: su salario de esta quincena va/)).toBeInTheDocument()
+  })
+
+  it('no suma la fila a lo que sale del banco por esta planilla', () => {
+    render(<PeriodoDetail periodo={periodo([ANA, FABIAN])} canWrite conceptosManuales={[]} />)
+
+    // El total del pie de la tabla: solo Ana.
+    expect(screen.getAllByText(monto(356680)).length).toBeGreaterThan(0)
+    expect(screen.queryByText(monto(356680 + 222222))).not.toBeInTheDocument()
+  })
+
+  it('sus marcas incompletas no traban el pago de los demás', () => {
+    render(<PeriodoDetail periodo={periodo([ANA, FABIAN])} canWrite conceptosManuales={[]} />)
+
+    expect(screen.queryByText(/con marcas de asistencia incompletas/)).not.toBeInTheDocument()
+  })
+
+  it('no ofrece editar los ingresos de la fila cubierta', () => {
+    render(<PeriodoDetail periodo={periodo([FABIAN])} canWrite conceptosManuales={[]} />)
+
+    expect(screen.queryByRole('button', { name: 'Editar ingresos' })).not.toBeInTheDocument()
+  })
+
+  it('sin liquidación, todo sigue como antes', () => {
+    render(
+      <PeriodoDetail
+        periodo={periodo([ANA, { ...FABIAN, liquidacionQueLaPaga: null }])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+
+    expect(screen.queryByText(/se pagan en una liquidación/)).not.toBeInTheDocument()
+    expect(screen.getByText(/con marcas de asistencia incompletas/)).toBeInTheDocument()
+    expect(screen.queryByText(/En liquidación n\.°/)).not.toBeInTheDocument()
+    expect(screen.getAllByText(monto(356680 + 222222)).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Editar ingresos' }).length).toBeGreaterThan(0)
+  })
+})
+
+const PAGADA = fila({
+  id: 3,
+  historialLaboralId: 3,
+  empleadoNombre: 'Carla Solís',
+  empleadoCedula: '3-3333-3333',
+  pagado: true,
+  fechaPago: '2026-09-15',
+  codigoVerificacion: 'ABCD-EFGH-JKMN',
+})
+const SIN_HORARIO = fila({
+  id: 4,
+  historialLaboralId: 4,
+  empleadoNombre: 'Diego Vargas',
+  empleadoCedula: '4-4444-4444',
+  diasPorRevisar: [{ fecha: '2026-09-06', problema: 'sin_horario' }],
+})
+
+describe('PeriodoDetail: avisos desplegables', () => {
+  it('arrancan cerrados: se ve el conteo y no la lista', () => {
+    render(<PeriodoDetail periodo={periodo([ANA, SIN_HORARIO])} canWrite conceptosManuales={[]} />)
+
+    const aviso = screen.getByRole('button', { name: /1 empleado\(s\) con días para revisar/ })
+    expect(aviso).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(/Marcas en días sin horario/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/06\/09\/2026/)).not.toBeInTheDocument()
+  })
+
+  it('se abren al tocarlos y se vuelven a cerrar', async () => {
+    render(<PeriodoDetail periodo={periodo([ANA, SIN_HORARIO])} canWrite conceptosManuales={[]} />)
+    const aviso = screen.getByRole('button', { name: /con días para revisar/ })
+
+    await userEvent.click(aviso)
+    expect(aviso).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText(/Marcas en días sin horario/)).toBeInTheDocument()
+    expect(screen.getByText(/06\/09\/2026/)).toBeInTheDocument()
+
+    await userEvent.click(aviso)
+    expect(aviso).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(/Marcas en días sin horario/)).not.toBeInTheDocument()
+  })
+
+  it('el aviso de marcas incompletas también es desplegable', async () => {
+    render(
+      <PeriodoDetail
+        periodo={periodo([ANA, { ...FABIAN, liquidacionQueLaPaga: null }])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+
+    expect(screen.queryByText(/el pago está bloqueado hasta corregir/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /marcas de asistencia incompletas/ }))
+    expect(screen.getByText(/el pago está bloqueado hasta corregir/)).toBeInTheDocument()
+  })
+})
+
+describe('PeriodoDetail: acciones de cada fila', () => {
+  /** La fila de la tabla de escritorio de ese empleado. */
+  function filaDe(nombre: string) {
+    return within(screen.getByRole('table')).getByText(nombre).closest('tr')!
+  }
+
+  it('el comprobante va en Acciones, no pegado al estado del pago', () => {
+    render(<PeriodoDetail periodo={periodo([PAGADA])} canWrite conceptosManuales={[]} />)
+    const celdas = filaDe('Carla Solís').cells
+    const pago = celdas[celdas.length - 2]
+    const acciones = celdas[celdas.length - 1]
+
+    expect(within(pago).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(acciones).getByRole('link', { name: 'Ver comprobante de pago' })).toHaveAttribute(
+      'href',
+      '/comprobante/7/3'
+    )
+  })
+
+  it('cada acción ocupa siempre el mismo lugar: la que no aplica deja su hueco', () => {
+    render(<PeriodoDetail periodo={periodo([ANA, PAGADA])} canWrite conceptosManuales={[]} />)
+    const ranuras = (nombre: string) => {
+      const celdas = filaDe(nombre).cells
+      return Array.from(celdas[celdas.length - 1].querySelector('div')!.children)
+    }
+
+    // Ana (pendiente): sin comprobante, con editar e incapacidad.
+    const ana = ranuras('Ana Mora')
+    expect(ana).toHaveLength(3)
+    expect(ana[0]).toHaveAttribute('aria-hidden', 'true')
+    expect(ana[1]).toHaveAccessibleName('Editar ingresos')
+    expect(ana[2]).toHaveAccessibleName('Registrar incapacidad')
+
+    // Carla (pagada): con comprobante, sin editar, con incapacidad.
+    const carla = ranuras('Carla Solís')
+    expect(carla).toHaveLength(3)
+    expect(carla[0]).toHaveAccessibleName('Ver comprobante de pago')
+    expect(carla[1]).toHaveAttribute('aria-hidden', 'true')
+    expect(carla[2]).toHaveAccessibleName('Registrar incapacidad')
+  })
+
+  it('los botones de solo icono dicen qué hacen al pasar el mouse', () => {
+    render(<PeriodoDetail periodo={periodo([ANA, PAGADA])} canWrite conceptosManuales={[]} />)
+    const tabla = within(screen.getByRole('table'))
+
+    expect(tabla.getByRole('button', { name: 'Editar ingresos' })).toHaveAttribute(
+      'title',
+      'Editar ingresos'
+    )
+    expect(tabla.getAllByRole('button', { name: 'Registrar incapacidad' })[0]).toHaveAttribute(
+      'title',
+      'Registrar incapacidad'
+    )
+    expect(tabla.getByRole('link', { name: 'Ver comprobante de pago' })).toHaveAttribute(
+      'title',
+      'Ver e imprimir comprobante de pago'
+    )
+  })
+
+  it('sin permiso de escritura igual se puede abrir el comprobante', () => {
+    render(<PeriodoDetail periodo={periodo([PAGADA])} canWrite={false} conceptosManuales={[]} />)
+
+    expect(
+      within(screen.getByRole('table')).getByRole('link', { name: 'Ver comprobante de pago' })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Registrar incapacidad' })).not.toBeInTheDocument()
+  })
+})
+
+// Auditoría 2, fallo 5: una fila cargada sin horario (₡0, sin horas) no se
+// puede pagar; sin poder quitarla, el periodo vencido no cerraba nunca.
+describe('PeriodoDetail: quitar una fila sin nada que pagar', () => {
+  const VACIA = fila({
+    id: 9,
+    historialLaboralId: 9,
+    empleadoNombre: 'Juan Vacío',
+    empleadoCedula: '9-9999-9999',
+    salarioBruto: 0,
+    totalDeducciones: 0,
+    deduccionPorcentual: 0,
+    cargasPatronales: 0,
+    salarioNeto: 0,
+    totalAPagar: 0,
+    horasTrabajadas: 0,
+    horasAsistencia: 0,
+  })
+
+  it('ofrece quitarla y, al confirmar, la quita', async () => {
+    vi.mocked(quitarFilaPlanilla).mockResolvedValue({ ok: true })
+    render(<PeriodoDetail periodo={periodo([ANA, VACIA])} canWrite conceptosManuales={[]} />)
+    const tabla = within(screen.getByRole('table'))
+
+    expect(tabla.getAllByRole('button', { name: 'Quitar de la planilla' })).toHaveLength(1)
+    await userEvent.click(tabla.getByRole('button', { name: 'Quitar de la planilla' }))
+    expect(screen.getByText('Quitar a Juan Vacío de la planilla')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Quitar' }))
+
+    expect(quitarFilaPlanilla).toHaveBeenCalledWith(9)
+  })
+
+  it('no se ofrece en una fila con horas, con incapacidad, pagada o sin permiso', () => {
+    const conHoras = fila({ ...VACIA, id: 10, empleadoNombre: 'Con Horas', horasTrabajadas: 8 })
+    const conIncapacidad = fila({
+      ...VACIA,
+      id: 11,
+      empleadoNombre: 'Con Incapacidad',
+      incapacidad: { diasEmpleador: 3, diasCcss: 0, porcentajePagoEmpleador: 50, monto: 1000 },
+    })
+    const { unmount } = render(
+      <PeriodoDetail
+        periodo={periodo([conHoras, conIncapacidad])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Quitar de la planilla' })).not.toBeInTheDocument()
+    unmount()
+
+    render(<PeriodoDetail periodo={periodo([VACIA])} canWrite={false} conceptosManuales={[]} />)
+    expect(screen.queryByRole('button', { name: 'Quitar de la planilla' })).not.toBeInTheDocument()
+  })
+})
+
+describe('PeriodoDetail: confirmar antes de pagar o desmarcar', () => {
+  /** El botón de estado de la fila en la tabla de escritorio. */
+  function botonEstado(nombre: 'Pendiente' | 'Pagado') {
+    return within(screen.getByRole('table')).getByRole('button', { name: nombre })
+  }
+
+  it('pagar pide confirmación y dice adónde se manda el comprobante', async () => {
+    vi.mocked(marcarDetallePagado).mockClear()
+    render(
+      <PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} correoConfigurado />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+
+    const dialogo = screen.getByRole('alertdialog', { name: '¿Desea pagarle a Ana Mora?' })
+    expect(dialogo).toHaveTextContent(
+      `Se registrará el pago de ${monto(356680)} a Ana Mora y se le enviará el comprobante en PDF a ana@correo.com.`
+    )
+    // Hasta confirmar no se marca nada.
+    expect(marcarDetallePagado).not.toHaveBeenCalled()
+  })
+
+  it('cancelar no marca el pago', async () => {
+    vi.mocked(marcarDetallePagado).mockClear()
+    render(
+      <PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} correoConfigurado />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(marcarDetallePagado).not.toHaveBeenCalled()
+  })
+
+  it('al confirmar marca el pago y avisa que el comprobante se envió', async () => {
+    vi.mocked(marcarDetallePagado).mockReset()
+    vi.mocked(marcarDetallePagado).mockResolvedValue({
+      ok: true,
+      correo: { estado: 'enviado', email: 'ana@correo.com' },
+    })
+    render(
+      <PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} correoConfigurado />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+    await userEvent.click(screen.getByRole('button', { name: 'Sí, pagar' }))
+
+    expect(marcarDetallePagado).toHaveBeenCalledWith(1, true)
+    expect(toast.success).toHaveBeenCalledWith(
+      'Pago registrado. Comprobante enviado a ana@correo.com.'
+    )
+  })
+
+  it('si el correo falla avisa, y "Reintentar" lo vuelve a mandar', async () => {
+    vi.mocked(marcarDetallePagado).mockResolvedValue({
+      ok: true,
+      correo: { estado: 'error', error: 'no se pudo conectar con el servidor de correo.' },
+    })
+    vi.mocked(reenviarComprobante).mockResolvedValue({
+      estado: 'enviado',
+      email: 'ana@correo.com',
+    })
+    vi.mocked(toast.warning).mockClear()
+    render(
+      <PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} correoConfigurado />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+    await userEvent.click(screen.getByRole('button', { name: 'Sí, pagar' }))
+
+    expect(toast.warning).toHaveBeenCalledTimes(1)
+    const [mensaje, opciones] = vi.mocked(toast.warning).mock.calls[0]
+    expect(mensaje).toBe(
+      'Pago registrado, pero el comprobante no se pudo enviar: no se pudo conectar con el servidor de correo.'
+    )
+    const accion = (opciones as { action: { label: string; onClick: () => void } }).action
+    expect(accion.label).toBe('Reintentar')
+
+    accion.onClick()
+    await vi.waitFor(() => expect(reenviarComprobante).toHaveBeenCalledWith(7, 1))
+    await vi.waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Pago registrado. Comprobante enviado a ana@correo.com.'
+      )
+    )
+  })
+
+  it('sin correo registrado, la confirmación lo dice antes de pagar', async () => {
+    const sinCorreo = fila({ ...ANA, empleadoEmail: null })
+    render(
+      <PeriodoDetail
+        periodo={periodo([sinCorreo])}
+        canWrite
+        conceptosManuales={[]}
+        correoConfigurado
+      />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      'No tiene correo registrado en su expediente, así que el comprobante no se le puede enviar: habrá que entregárselo impreso.'
+    )
+  })
+
+  it('sin el correo configurado, la confirmación no promete un envío', async () => {
+    render(<PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} />)
+
+    await userEvent.click(botonEstado('Pendiente'))
+
+    const dialogo = screen.getByRole('alertdialog')
+    expect(dialogo).toHaveTextContent('El envío de comprobantes por correo no está configurado')
+    expect(dialogo).not.toHaveTextContent('ana@correo.com')
+  })
+
+  it('volver a editar un pago pide confirmación y avisa que el comprobante deja de valer', async () => {
+    vi.mocked(marcarDetallePagado).mockReset()
+    vi.mocked(marcarDetallePagado).mockResolvedValue({ ok: true })
+    const pagada = fila({ ...ANA, pagado: true, codigoVerificacion: 'ABCD-EFGH-JKMN' })
+    render(<PeriodoDetail periodo={periodo([pagada])} canWrite conceptosManuales={[]} />)
+
+    await userEvent.click(botonEstado('Pagado'))
+
+    const dialogo = screen.getByRole('alertdialog', {
+      name: '¿Volver a editar el pago de Ana Mora?',
+    })
+    expect(dialogo).toHaveTextContent('(código ABCD-EFGH-JKMN) deja de valer')
+    expect(marcarDetallePagado).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Desmarcar pago' }))
+    expect(marcarDetallePagado).toHaveBeenCalledWith(1, false)
+  })
+})

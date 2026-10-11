@@ -6,8 +6,9 @@ import type { FaceLandmarker } from '@mediapipe/tasks-vision'
  * kiosco no depende de ningun CDN en runtime — si la tablet pierde internet
  * despues del primer load, el modelo ya esta en cache del navegador.
  *
- * runningMode VIDEO + blendshapes: los scores eyeBlinkLeft/eyeBlinkRight
- * alimentan la prueba de vida (liveness.ts).
+ * runningMode VIDEO: los landmarks alimentan el recorte del rostro, los
+ * controles de calidad (quality.ts) y el clasificador anti-spoofing
+ * (antispoof.ts).
  */
 
 const WASM_PATH = '/models/mediapipe-wasm'

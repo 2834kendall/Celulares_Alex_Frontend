@@ -3,13 +3,14 @@
 import { useState } from 'react'
 import { History, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import type { CollaboratorRow, EvaluationDetail, RubroRow } from '@/modules/evaluations/types'
-import { usePagination } from '@/modules/evaluations/hooks/usePagination'
+import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { EvaluationDetailModal } from './EvaluationDetailModal'
 import { ScoreBadge } from './ScoreBadge'
 import { cn } from '@/lib/utils/cn'
 import {
   META_LABEL,
+  TABLE_DESKTOP_WRAP,
   TABLE_HEAD,
   TABLE_ROW_CLICKABLE,
   TABLE_TD,
@@ -148,7 +149,7 @@ export function EvaluationHistory({ collaborator, rubros }: EvaluationHistoryPro
         })}
       </ul>
 
-      <div className="hidden @3xl:block @3xl:overflow-x-auto">
+      <div className={TABLE_DESKTOP_WRAP}>
         <table className="w-full text-xs">
           <thead className={TABLE_HEAD}>
             <tr>

@@ -220,6 +220,7 @@ describe('<EmployeeForm />', () => {
             banco_nombre: 'BAC Credomatic',
             edp_tipo_cuenta: 'AHORRO',
             edp_numero_cuenta: 'CR02010200000000000001',
+            cuenta_ilegible: false,
           },
         }}
         tiposIdentificacion={TIPOS_IDENTIFICACION}
@@ -248,6 +249,7 @@ describe('<EmployeeForm />', () => {
             banco_nombre: 'BAC Credomatic',
             edp_tipo_cuenta: 'AHORRO',
             edp_numero_cuenta: 'CR02010200000000000001',
+            cuenta_ilegible: false,
           },
         }}
         tiposIdentificacion={TIPOS_IDENTIFICACION}

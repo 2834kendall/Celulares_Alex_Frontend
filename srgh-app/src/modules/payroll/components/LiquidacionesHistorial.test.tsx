@@ -1,19 +1,60 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
+import { pagarLiquidacion } from '@/modules/payroll/actions/pagarLiquidacion'
+import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
+import { toast } from 'sonner'
+
+const refresh = vi.fn()
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
+vi.mock('@/modules/payroll/actions/pagarLiquidacion', () => ({ pagarLiquidacion: vi.fn() }))
+vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({
+  reenviarComprobanteExtraordinario: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
+
+const mockPagar = vi.mocked(pagarLiquidacion)
+
+const DESGLOSE: LiquidacionListItem['desglose'] = {
+  salarioDiario: 10000,
+  salarioDiarioVacaciones: 10000,
+  diasSalarioPendiente: 15,
+  salarioProporcional: 150000,
+  aguinaldoProporcional: 100000,
+  diasVacaciones: 5,
+  vacacionesPagadas: 50000,
+  horasExtraBanco: 0,
+  diasPreaviso: 0,
+  preaviso: 0,
+  diasCesantia: 0,
+  cesantia: 0,
+  notaPreaviso: 'no aplica por el motivo de salida (Renuncia Voluntaria)',
+  notaCesantia: 'no aplica por el motivo de salida (Renuncia Voluntaria)',
+  diasIndemnizacionPlazoFijo: 0,
+  indemnizacionPlazoFijo: 0,
+  total: 300000,
+  deduccionesObreras: 21660,
+  neto: 278340,
+  advertencias: ['Se liquidaron 5 día(s) de vacaciones; el sistema proponía 6.'],
+}
 
 function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem {
   return {
     liqId: 1,
     empleadoNombre: 'Ana Pérez',
     empleadoCedula: '1-2222-3333',
+    empleadoEmail: 'ana@correo.com',
     fechaSalida: '2026-07-15',
     motivoNombre: 'Renuncia',
     total: 300000,
+    neto: 300000,
     pagado: false,
+    pagoId: null,
+    fechaPago: null,
     createdAt: '2026-07-15T10:00:00',
+    desglose: DESGLOSE,
     ...overrides,
   }
 }
@@ -28,6 +69,10 @@ function tabla() {
 }
 
 describe('<LiquidacionesHistorial />', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('muestra un mensaje si todavía no hay liquidaciones', () => {
     render(<LiquidacionesHistorial items={[]} />)
 
@@ -65,5 +110,106 @@ describe('<LiquidacionesHistorial />', () => {
     await userEvent.click(screen.getByLabelText('Página siguiente'))
 
     expect(tabla().getByText('Empleado 9')).toBeInTheDocument()
+  })
+
+  it('sin permiso de escritura no ofrece pagar', () => {
+    render(<LiquidacionesHistorial items={[item()]} />)
+
+    expect(tabla().queryByRole('button', { name: 'Pagar' })).not.toBeInTheDocument()
+  })
+
+  it('Pagar pregunta antes, registra el pago de ESA liquidación y avisa del correo', async () => {
+    const user = userEvent.setup()
+    mockPagar.mockResolvedValue({
+      ok: true,
+      pagoId: 9,
+      correo: { estado: 'enviado', email: 'ana@correo.com' },
+    })
+    render(<LiquidacionesHistorial items={[item({ liqId: 5 })]} canWrite correoConfigurado />)
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    const dialogo = screen.getByRole('alertdialog', {
+      name: '¿Desea pagarle la liquidación a Ana Pérez?',
+    })
+    expect(dialogo).toHaveTextContent('se le enviará el comprobante en PDF a ana@correo.com')
+    expect(mockPagar).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Sí, pagar' }))
+
+    expect(mockPagar).toHaveBeenCalledWith(5)
+    expect(refresh).toHaveBeenCalled()
+    expect(toast.success).toHaveBeenCalledWith(
+      'Liquidación de Ana Pérez pagada. Comprobante enviado a ana@correo.com.'
+    )
+  })
+
+  it('si cancela la confirmación no paga', async () => {
+    const user = userEvent.setup()
+    render(<LiquidacionesHistorial items={[item()]} canWrite correoConfigurado />)
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(mockPagar).not.toHaveBeenCalled()
+  })
+
+  it('si el correo falla avisa y "Reintentar" vuelve a mandar ESE comprobante', async () => {
+    const user = userEvent.setup()
+    mockPagar.mockResolvedValue({
+      ok: true,
+      pagoId: 9,
+      correo: { estado: 'error', error: 'no se pudo conectar con el servidor de correo.' },
+    })
+    vi.mocked(reenviarComprobanteExtraordinario).mockResolvedValue({
+      estado: 'enviado',
+      email: 'ana@correo.com',
+    })
+    render(<LiquidacionesHistorial items={[item()]} canWrite correoConfigurado />)
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    await user.click(screen.getByRole('button', { name: 'Sí, pagar' }))
+
+    const [mensaje, opciones] = vi.mocked(toast.warning).mock.calls[0]
+    expect(mensaje).toBe(
+      'Liquidación de Ana Pérez pagada, pero el comprobante no se pudo enviar: no se pudo conectar con el servidor de correo.'
+    )
+    ;(opciones as unknown as { action: { onClick: () => void } }).action.onClick()
+    await vi.waitFor(() => expect(reenviarComprobanteExtraordinario).toHaveBeenCalledWith(9))
+  })
+
+  it('una liquidación pagada muestra el enlace a su comprobante', () => {
+    render(<LiquidacionesHistorial items={[item({ pagado: true, pagoId: 12 })]} canWrite />)
+
+    expect(tabla().getByRole('link', { name: /Comprobante/ })).toHaveAttribute(
+      'href',
+      '/comprobante/extraordinario/12'
+    )
+    expect(tabla().queryByRole('button', { name: 'Pagar' })).not.toBeInTheDocument()
+  })
+})
+
+describe('<LiquidacionesHistorial /> detalle', () => {
+  it('muestra los rubros guardados antes de pagar, y los oculta otra vez', async () => {
+    render(<LiquidacionesHistorial items={[item()]} canWrite />)
+    const boton = tabla().getByRole('button', { name: 'Ver detalle' })
+    expect(screen.queryByText('Vacaciones no disfrutadas')).not.toBeInTheDocument()
+
+    await userEvent.click(boton)
+
+    expect(boton).toHaveAttribute('aria-expanded', 'true')
+    const fila = tabla().getByText('Vacaciones no disfrutadas').closest('tr')!
+    expect(within(fila).getByText(/el sistema proponía 6/)).toBeInTheDocument()
+    expect(within(fila).getByText('Neto a entregar')).toBeInTheDocument()
+
+    await userEvent.click(tabla().getByRole('button', { name: 'Ocultar detalle' }))
+    expect(screen.queryByText('Vacaciones no disfrutadas')).not.toBeInTheDocument()
+  })
+
+  it('una pagada dice neto entregado', async () => {
+    render(<LiquidacionesHistorial items={[item({ pagado: true, pagoId: 9 })]} canWrite />)
+
+    await userEvent.click(tabla().getByRole('button', { name: 'Ver detalle' }))
+
+    expect(tabla().getByText('Neto entregado')).toBeInTheDocument()
   })
 })

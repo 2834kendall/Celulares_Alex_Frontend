@@ -16,7 +16,9 @@ import {
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
 import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
+import { linkPostulacionToEmployee } from '@/modules/recruitment/actions/linkPostulacionToEmployee'
 import { formatCRC, formatDate, fullName } from '@/modules/employees/lib/format'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 import { WizardStepper, type WizardStep } from './WizardStepper'
 import { EmployeeWizardStepPersonal } from './EmployeeWizardStepPersonal'
 import { EmployeeWizardStepNomina } from './EmployeeWizardStepNomina'
@@ -25,6 +27,7 @@ import { EmployeeWizardStepUsuario } from './EmployeeWizardStepUsuario'
 import { Button } from '@/components/ui/Button'
 import { META_LABEL, SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const STEPS: WizardStep[] = [
   { id: 'personal', label: 'Información principal' },
@@ -129,7 +132,7 @@ function OnboardingSummary({
         />
         <SummaryItem label="Identificación" value={empleado.emp_numero_identificacion} />
         <SummaryItem
-          label="Fecha de ingreso"
+          label="Ingreso a la empresa"
           value={formatDate(empleado.emp_fecha_ingreso_original)}
         />
         <SummaryItem label="Puesto" value={nombreDe(puestos, contratacion.lab_puesto_id)} />
@@ -142,7 +145,10 @@ function OnboardingSummary({
           label="Jornada"
           value={nombreDe(tiposJornada, contratacion.lab_tipo_jornada_id)}
         />
-        <SummaryItem label="Inicio de contrato" value={formatDate(contratacion.lab_fecha_inicio)} />
+        <SummaryItem
+          label="Inicio del contrato"
+          value={formatDate(contratacion.lab_fecha_inicio)}
+        />
         <SummaryItem label="Salario base" value={formatCRC(contratacion.lab_salario_base)} />
         <SummaryItem label="Salario real" value={formatCRC(contratacion.lab_salario_real)} />
         <div className="sm:col-span-2 lg:col-span-4">
@@ -160,6 +166,23 @@ function OnboardingSummary({
   )
 }
 
+/**
+ * Datos que trae precargados el flujo "Contratar" desde una postulación
+ * (SGRH-61) — solo lo que el candidato ya entregó. El resto del wizard se
+ * llena igual que un alta común.
+ */
+export interface EmployeeWizardPrefill {
+  emp_nombre: string
+  emp_apellido_1: string
+  emp_apellido_2: string | null
+  emp_tipo_identificacion_id: number | null
+  emp_numero_identificacion: string
+  emp_telefono: string | null
+  emp_email_personal: string | null
+  lab_puesto_id: number | null
+  lab_sucursal_id: number | null
+}
+
 interface EmployeeWizardProps {
   tiposIdentificacion: CatalogoItem[]
   puestos: CatalogoItem[]
@@ -172,6 +195,15 @@ interface EmployeeWizardProps {
   canManageDocs: boolean
   roles: CatalogoItem[]
   canInviteUser: boolean
+  /** Ver EmployeeWizardPrefill. Ausente en el alta común desde /employees/new. */
+  prefill?: EmployeeWizardPrefill
+  /**
+   * Presente solo cuando el wizard se abrió desde "Contratar" en una
+   * postulación: tras crear el empleado, cierra esa postulación como
+   * contratada y la enlaza (best-effort, no bloquea el alta — mismo
+   * criterio que la foto y los documentos).
+   */
+  postulacionId?: number
 }
 
 export function EmployeeWizard({
@@ -186,11 +218,21 @@ export function EmployeeWizard({
   canManageDocs,
   roles,
   canInviteUser,
+  prefill,
+  postulacionId,
 }: EmployeeWizardProps) {
   const router = useRouter()
   const [step, setStep] = useState(0)
   const [crearUsuario, setCrearUsuario] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  // Alta en espera de que el usuario confirme una cuenta bancaria repetida.
+  const [duplicado, setDuplicado] = useState<{
+    mensaje: string
+    values: OnboardingEmpleadoInput
+  } | null>(null)
+  // El reintento tras confirmar no pasa por handleSubmit, así que isSubmitting
+  // no lo cubre y los botones quedarían habilitados durante el alta.
+  const [reintentando, setReintentando] = useState(false)
   // Fuera de RHF: un File no viaja por el schema Zod ni por createEmployee
   // (que aún no tiene emp_id). Se sube en onSubmit, tras crear el empleado.
   const [foto, setFoto] = useState<File | null>(null)
@@ -203,15 +245,20 @@ export function EmployeeWizard({
     mode: 'onTouched',
     defaultValues: {
       empleado: {
-        emp_nombre: '',
-        emp_apellido_1: '',
-        emp_apellido_2: '',
-        emp_numero_identificacion: '',
-        emp_fecha_ingreso_original: '',
+        emp_nombre: prefill?.emp_nombre ?? '',
+        emp_apellido_1: prefill?.emp_apellido_1 ?? '',
+        emp_apellido_2: prefill?.emp_apellido_2 ?? '',
+        emp_tipo_identificacion_id: prefill?.emp_tipo_identificacion_id ?? undefined,
+        emp_numero_identificacion: prefill?.emp_numero_identificacion ?? '',
+        // Hoy por defecto: casi siempre se registra a alguien que entra ese
+        // día. En hora de Costa Rica (no la del servidor, que suele ir en UTC)
+        // para que el servidor y el navegador calculen la misma fecha. El
+        // inicio del contrato la hereda al pasar de paso (ver goNext).
+        emp_fecha_ingreso_original: todayInCostaRica(),
         emp_fecha_nacimiento: '',
         emp_nacionalidad: 'Costarricense',
-        emp_telefono: '',
-        emp_email_personal: '',
+        emp_telefono: prefill?.emp_telefono ?? '',
+        emp_email_personal: prefill?.emp_email_personal ?? '',
         emp_numero_asegurado_ccss: '',
         emp_nombre_contacto_emergencia: '',
         emp_telefono_emergencia: '',
@@ -220,6 +267,8 @@ export function EmployeeWizard({
         dir_senas_exactas: '',
       },
       contratacion: {
+        lab_puesto_id: prefill?.lab_puesto_id ?? undefined,
+        lab_sucursal_id: prefill?.lab_sucursal_id ?? undefined,
         lab_fecha_inicio: '',
       },
       datos_pago: {
@@ -233,6 +282,7 @@ export function EmployeeWizard({
     handleSubmit,
     trigger,
     setValue,
+    getValues,
     formState: { isSubmitting },
   } = methods
 
@@ -245,9 +295,21 @@ export function EmployeeWizard({
 
   async function goNext() {
     const valid = await trigger(STEP_FIELDS[step])
-    if (valid) {
-      setStep((current) => Math.min(current + 1, STEPS.length - 1))
+    if (!valid) return
+
+    // En un alta nueva el contrato arranca el mismo día que la persona entra
+    // a la empresa, así que pedir la fecha dos veces solo servía para que se
+    // confundieran. Se precarga y queda editable, para el caso de alguien que
+    // ya venía trabajando antes.
+    //
+    // Va acá y no en un efecto que observe la fecha de ingreso: un efecto
+    // correría también al volver al paso 1, y pisaría un inicio de contrato
+    // que el usuario ya hubiera ajustado a mano.
+    if (step === 0 && !getValues('contratacion.lab_fecha_inicio')) {
+      setValue('contratacion.lab_fecha_inicio', getValues('empleado.emp_fecha_ingreso_original'))
     }
+
+    setStep((current) => Math.min(current + 1, STEPS.length - 1))
   }
 
   function goBack() {
@@ -255,10 +317,33 @@ export function EmployeeWizard({
   }
 
   async function onSubmit(values: OnboardingEmpleadoInput) {
+    await crearEmpleado(values)
+  }
+
+  async function confirmarDuplicado() {
+    if (!duplicado) return
+    const { values } = duplicado
+    setDuplicado(null)
+    setReintentando(true)
+    try {
+      await crearEmpleado(values, true)
+    } finally {
+      setReintentando(false)
+    }
+  }
+
+  async function crearEmpleado(values: OnboardingEmpleadoInput, confirmado = false) {
     setServerError(null)
 
-    const result = await createEmployee(values)
+    const result = await createEmployee({ ...values, confirmar_cuenta_duplicada: confirmado })
     if (!result.ok) {
+      // La cuenta ya está registrada para otro empleado de la empresa. Puede
+      // ser legítimo (cuenta compartida), así que se pregunta en vez de
+      // bloquear — y el alta se reintenta entera con el flag.
+      if (result.requiereConfirmacion) {
+        setDuplicado({ mensaje: result.error, values })
+        return
+      }
       setServerError(result.error)
       return
     }
@@ -304,6 +389,15 @@ export function EmployeeWizard({
       toast.warning(
         `Empleado creado, pero no se pudieron subir: ${documentosFallidos.join(', ')}. Puedes agregarlos desde su perfil.`
       )
+    }
+
+    // Cierre de la postulación (SGRH-61): igual que la foto y los
+    // documentos, nunca bloquea el alta — el empleado ya existe.
+    if (postulacionId) {
+      const linkResult = await linkPostulacionToEmployee(postulacionId, result.empId)
+      if (!linkResult.ok) {
+        toast.warning(`Empleado creado, pero la postulación no se pudo cerrar: ${linkResult.error}`)
+      }
     }
 
     toast.success('Empleado creado correctamente.')
@@ -389,7 +483,7 @@ export function EmployeeWizard({
             <button
               type="button"
               onClick={goBack}
-              disabled={step === 0 || isSubmitting}
+              disabled={step === 0 || isSubmitting || reintentando}
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-40"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Anterior
@@ -399,8 +493,8 @@ export function EmployeeWizard({
                 el click de "Siguiente" mutaría a type=submit durante el evento
                 y el navegador enviaría el form al llegar al último paso. */}
             {isLastStep ? (
-              <Button key="submit" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
+              <Button key="submit" type="submit" disabled={isSubmitting || reintentando}>
+                {isSubmitting || reintentando ? (
                   <Loader2 className={SPINNER} />
                 ) : (
                   <UserPlus className="h-3.5 w-3.5" />
@@ -419,6 +513,16 @@ export function EmployeeWizard({
           </div>
         </form>
       </FormProvider>
+
+      {duplicado && (
+        <ConfirmDialog
+          title="Cuenta bancaria repetida"
+          message={duplicado.mensaje}
+          confirmLabel="Crear de todos modos"
+          onCancel={() => setDuplicado(null)}
+          onConfirm={confirmarDuplicado}
+        />
+      )}
     </div>
   )
 }

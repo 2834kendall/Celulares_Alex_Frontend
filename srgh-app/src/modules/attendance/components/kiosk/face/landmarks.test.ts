@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractBlinkScores, eyeTiltAngle, faceCropBox, firstFaceLandmarks } from './landmarks'
+import { eyeTiltAngle, faceCropBox, firstFaceLandmarks } from './landmarks'
 
 /** Arma un arreglo de landmarks con solo los ojos en los indices que usa eyeTiltAngle. */
 function withEyes(right: { x: number; y: number }, left: { x: number; y: number }) {
@@ -8,37 +8,6 @@ function withEyes(right: { x: number; y: number }, left: { x: number; y: number 
   landmarks[263] = left
   return landmarks
 }
-
-describe('extractBlinkScores', () => {
-  it('extrae los scores de parpadeo del primer rostro', () => {
-    const result = {
-      faceLandmarks: [[{ x: 0.5, y: 0.5 }]],
-      faceBlendshapes: [
-        {
-          categories: [
-            { categoryName: 'browDownLeft', score: 0.1 },
-            { categoryName: 'eyeBlinkLeft', score: 0.7 },
-            { categoryName: 'eyeBlinkRight', score: 0.65 },
-          ],
-        },
-      ],
-    }
-
-    expect(extractBlinkScores(result)).toEqual({ blinkLeft: 0.7, blinkRight: 0.65 })
-  })
-
-  it('devuelve null sin blendshapes (rostro no detectado)', () => {
-    expect(extractBlinkScores({ faceLandmarks: [], faceBlendshapes: [] })).toBeNull()
-  })
-
-  it('devuelve null si faltan las categorias de parpadeo', () => {
-    const result = {
-      faceLandmarks: [],
-      faceBlendshapes: [{ categories: [{ categoryName: 'jawOpen', score: 0.2 }] }],
-    }
-    expect(extractBlinkScores(result)).toBeNull()
-  })
-})
 
 describe('faceCropBox', () => {
   it('produce una caja cuadrada con margen alrededor del rostro', () => {
@@ -127,12 +96,11 @@ describe('firstFaceLandmarks', () => {
   it('devuelve los landmarks del primer rostro', () => {
     const result = {
       faceLandmarks: [[{ x: 0.1, y: 0.2 }]],
-      faceBlendshapes: [],
     }
     expect(firstFaceLandmarks(result)).toEqual([{ x: 0.1, y: 0.2 }])
   })
 
   it('devuelve null sin rostros', () => {
-    expect(firstFaceLandmarks({ faceLandmarks: [], faceBlendshapes: [] })).toBeNull()
+    expect(firstFaceLandmarks({ faceLandmarks: [] })).toBeNull()
   })
 })

@@ -1,0 +1,557 @@
+/**
+ * Lo que la liquidación necesita leer y precalcular antes de armar el
+ * finiquito. Lo comparten procesarLiquidacion (que guarda) y
+ * proponerVacacionesLiquidacion (que solo propone los días de vacaciones
+ * para el formulario): si cada uno leyera por su lado, la propuesta y lo que
+ * se guarda podrían no coincidir.
+ *
+ * Solo servidor; recibe el cliente ya creado para poder testearlo.
+ */
+
+import 'server-only'
+import type { createClient } from '@/lib/supabase/server'
+import { calcularAntiguedad, QUINCENAS_PROMEDIO_LIQUIDACION, type Antiguedad } from './liquidacion'
+import {
+  QUINCENAS_PROMEDIO_VACACIONES,
+  aguinaldoDelCiclo,
+  claveDeFecha,
+  claveQuincenal,
+  completarQuincenasDeLicencia,
+  computarQuincenas,
+  contratosDeLaRelacion,
+  cumpleMesMinimoAguinaldo,
+  diaSiguiente,
+  diasEnComun,
+  diasHabilesEnComun,
+  inicioDeLaRelacion,
+  promedioDiarioSinSubsidios,
+  proponerVacaciones,
+  sumarCiclo,
+  type ContratoDelEmpleado,
+  type PromedioSinSubsidios,
+  type QuincenaComputable,
+  type VacacionesPropuestas,
+} from './derechos'
+import {
+  ERROR_SUCURSAL_NO_VISIBLE,
+  SELECT_CONTRATO,
+  aContrato,
+  cargarAusencias,
+  contratosFueraDeAlcance,
+  cargarQuincenas,
+  juntarAusencias,
+  juntarQuincenas,
+  type ContratoRow,
+} from './derechosData'
+import { anioCicloAguinaldo, quincenaPagadaEnLiquidacion } from './liquidacion'
+import { parseFechaLocal } from './fechas'
+import { formatCRC, periodoLabel, rangoAguinaldo } from './format'
+import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from './bancoHoras'
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
+
+export interface HistorialLiquidacionRow {
+  lab_id: number
+  lab_empleado_id: number
+  lab_sucursal_id?: number | null
+  lab_fecha_inicio: string
+  lab_fecha_fin: string | null
+  lab_motivo_salida_id: number | null
+  lab_salario_base: number | null
+  lab_salario_real: number | null
+  /** Tipo de contrato: decide si aplica el Art. 31 (plazo fijo). */
+  sgrh_cat_tipos_contrato?: { tco_codigo: string } | null
+  sgrh_empleados: {
+    emp_fecha_ingreso_original: string | null
+    /** Todos los contratos del empleado, para armar la relación laboral. */
+    sgrh_historial_laboral?: ContratoRow[] | null
+  } | null
+  /** La liquidación de ESTE contrato, si ya la tiene. */
+  sgrh_liquidaciones: { liq_id: number } | { liq_id: number }[] | null
+}
+
+/** Un contrato que ya se puede liquidar: terminado, con su fecha de salida. */
+export type HistorialTerminadoRow = HistorialLiquidacionRow & {
+  lab_fecha_fin: string
+  lab_motivo_salida_id: number
+}
+
+export const SELECT_HISTORIAL_LIQUIDACION = `lab_id, lab_empleado_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_motivo_salida_id,
+   lab_salario_base, lab_salario_real,
+   sgrh_cat_tipos_contrato ( tco_codigo ),
+   sgrh_empleados ( emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) ),
+   sgrh_liquidaciones ( liq_id )`
+
+export type CargarHistorialResult =
+  { ok: true; data: HistorialTerminadoRow } | { ok: false; error: string }
+
+/**
+ * Lee el contrato a liquidar y verifica que se pueda: que exista, que RRHH ya
+ * lo haya terminado desde el perfil del empleado (SGRH-90) y que no esté
+ * liquidado. La fecha de salida y el motivo salen de acá, no del formulario:
+ * la liquidación no puede contradecir lo que registró RRHH.
+ */
+export async function cargarHistorialParaLiquidacion(
+  supabase: SupabaseServerClient,
+  historialLaboralId: number
+): Promise<CargarHistorialResult> {
+  const { data: historial, error } = await supabase
+    .from('sgrh_historial_laboral')
+    .select(SELECT_HISTORIAL_LIQUIDACION)
+    .eq('lab_id', historialLaboralId)
+    .maybeSingle<HistorialLiquidacionRow>()
+
+  if (error) return { ok: false, error: 'No se pudo cargar el historial laboral del empleado.' }
+  if (!historial) return { ok: false, error: 'El empleado no existe o no es visible.' }
+  if (!historial.lab_fecha_fin) {
+    return {
+      ok: false,
+      error: 'Este contrato sigue vigente: primero terminalo desde el perfil del empleado.',
+    }
+  }
+  if (!historial.lab_motivo_salida_id) {
+    return { ok: false, error: 'El contrato no tiene motivo de salida registrado.' }
+  }
+  const liq = historial.sgrh_liquidaciones
+  if (Array.isArray(liq) ? liq.length > 0 : Boolean(liq)) {
+    return { ok: false, error: 'Este contrato ya fue liquidado.' }
+  }
+  return {
+    ok: true,
+    data: {
+      ...historial,
+      lab_fecha_fin: historial.lab_fecha_fin,
+      lab_motivo_salida_id: historial.lab_motivo_salida_id,
+    },
+  }
+}
+
+export interface BasesLiquidacion {
+  /** Contratos de la relación laboral (ver contratosDeLaRelacion). */
+  labIds: number[]
+  /** Fecha desde la que se mide la antigüedad (cesantía y preaviso). */
+  fechaIngreso: string
+  ingresoOriginal: string | null
+  /** Inicio de esta relación laboral (aguinaldo mínimo y vacaciones). */
+  inicioRelacion: string
+  antiguedad: Antiguedad
+  salarioContrato: number
+  quincenas: QuincenaComputable[]
+  claveSalida: number
+  promedio: PromedioSinSubsidios
+  promedioVacaciones: PromedioSinSubsidios
+  /** Salario computable del ciclo de aguinaldo hasta la salida (sin el pendiente). */
+  sumaCicloAguinaldo: number
+  aguinaldoAplica: boolean
+  diasSalarioPendienteBase: { primeraQuincenaPagada: boolean; quincenaDeSalidaPagada: boolean }
+  vacaciones: VacacionesPropuestas
+  /** Ciclo de aguinaldo anterior, para avisar si no consta como pagado. */
+  cicloAnterior: { anio: number; monto: number; labIds: number[] }
+  sinPagar: QuincenaComputable[]
+  ausenciasSinTipo: number
+}
+
+export type BasesLiquidacionResult =
+  { ok: true; data: BasesLiquidacion } | { ok: false; error: string }
+
+/**
+ * Lee quincenas y ausencias de TODA la relación laboral (ver
+ * contratosDeLaRelacion) y calcula las bases de la liquidación.
+ *
+ * La fecha de salida es el ÚLTIMO día trabajado: se paga como salario
+ * pendiente y cuenta para la antigüedad. Por eso la antigüedad se mide hasta
+ * el día siguiente. Medirla hasta el mismo día le quitaba un día a todo el
+ * mundo, y en los bordes eso es plata: quien trabajó del 1 de enero al 31 de
+ * diciembre tiene un año (19,5 días de cesantía y un mes de preaviso), no
+ * once meses y treinta días (14 días y quince de preaviso).
+ */
+export async function calcularBasesLiquidacion(
+  supabase: SupabaseServerClient,
+  historial: HistorialLiquidacionRow,
+  fechaSalida: string,
+  /** sucursalesVisibles(claims): con qué sucursales puede leer el usuario. */
+  visibles: number[] | null
+): Promise<BasesLiquidacionResult> {
+  const ingresoOriginal = historial.sgrh_empleados?.emp_fecha_ingreso_original ?? null
+  const fechaIngreso = ingresoOriginal ?? historial.lab_fecha_inicio
+
+  const filasContrato = historial.sgrh_empleados?.sgrh_historial_laboral ?? []
+  const contratos: ContratoDelEmpleado[] = filasContrato.map(aContrato)
+  if (!contratos.some((c) => c.labId === historial.lab_id)) {
+    contratos.push(
+      aContrato({
+        lab_id: historial.lab_id,
+        lab_sucursal_id: historial.lab_sucursal_id,
+        lab_fecha_inicio: historial.lab_fecha_inicio,
+        lab_fecha_fin: historial.lab_fecha_fin,
+        lab_salario_base: historial.lab_salario_base,
+        lab_salario_real: historial.lab_salario_real,
+        sgrh_liquidaciones: null,
+      })
+    )
+  }
+  const relacion = contratosDeLaRelacion(historial.lab_id, contratos)
+  if (contratosFueraDeAlcance(relacion, visibles)) {
+    return { ok: false, error: ERROR_SUCURSAL_NO_VISIBLE }
+  }
+  const labIds = relacion.map((c) => c.labId)
+  const inicioRelacion = inicioDeLaRelacion(ingresoOriginal, historial.lab_id, contratos)
+
+  const quincenasResult = await cargarQuincenas(supabase, relacion)
+  if (!quincenasResult.ok) return { ok: false, error: quincenasResult.error }
+  const ausenciasResult = await cargarAusencias(supabase, labIds)
+  if (!ausenciasResult.ok) return { ok: false, error: ausenciasResult.error }
+
+  const ausencias = juntarAusencias(ausenciasResult.data, labIds)
+  const quincenas = computarQuincenas(
+    completarQuincenasDeLicencia(
+      juntarQuincenas(quincenasResult.data, labIds),
+      ausencias.subsidios,
+      relacion
+    ),
+    ausencias.subsidios
+  )
+
+  const claveSalida = claveDeFecha(fechaSalida)
+  const [anioSalida, mesSalida] = fechaSalida.split('-').map(Number)
+
+  // Salario del contrato, cuando no hay quincenas pagadas para promediar: el
+  // REAL, que es lo que paga la planilla (BASE + AJUSTE llegan a real ÷ 2 por
+  // quincena) y lo que usan el aguinaldo y las vacaciones (ver
+  // salarioMensualContrato en derechos.ts). Antes se tomaba el base, y a quien
+  // salía con menos de dos quincenas pagadas se le liquidaba de menos. El
+  // base solo cuando el real no está.
+  const salarioContrato =
+    (historial.lab_salario_real ?? 0) > 0
+      ? historial.lab_salario_real!
+      : (historial.lab_salario_base ?? 0)
+
+  // Quincena de ingreso o de salida a medias: cuenta por lo trabajado.
+  const rango = inicioRelacion ? { inicio: inicioRelacion, fin: fechaSalida } : null
+  const promedio = promedioDiarioSinSubsidios(
+    quincenas,
+    claveSalida,
+    QUINCENAS_PROMEDIO_LIQUIDACION,
+    salarioContrato,
+    rango
+  )
+  const promedioVacaciones = promedioDiarioSinSubsidios(
+    quincenas,
+    claveSalida,
+    QUINCENAS_PROMEDIO_VACACIONES,
+    salarioContrato,
+    rango
+  )
+
+  const cicloAnio = anioCicloAguinaldo(mesSalida, anioSalida)
+  const ciclo = sumarCiclo(quincenas, claveQuincenal(cicloAnio - 1, 12, 1), claveSalida)
+  const aguinaldoAplica =
+    inicioRelacion !== '' && cumpleMesMinimoAguinaldo(inicioRelacion, fechaSalida)
+
+  const anterior = aguinaldoDelCiclo({ quincenas, anio: cicloAnio - 1, inicioRelacion })
+
+  const clavePrimera = claveQuincenal(anioSalida, mesSalida, 1)
+  const pagadas = quincenas.filter((q) => q.pagado)
+
+  // Días de incapacidad (no maternidad) y de vacaciones tomadas, dentro de la relación.
+  const diasIncapacidad = ausencias.subsidios
+    .filter((s) => !s.esMaternidad)
+    .reduce(
+      (acc, s) => acc + diasEnComun(s.fechaInicio, s.fechaFin, inicioRelacion, fechaSalida),
+      0
+    )
+  const diasTomados = ausencias.vacaciones.reduce(
+    (acc, v) => acc + diasHabilesEnComun(v.fechaInicio, v.fechaFin, inicioRelacion, fechaSalida),
+    0
+  )
+
+  return {
+    ok: true,
+    data: {
+      fechaIngreso,
+      ingresoOriginal,
+      inicioRelacion,
+      // Desde el inicio de ESTA relación laboral: tras un reingreso, la
+      // relación anterior ya se liquidó y su tiempo no se vuelve a pagar
+      // (auditoría 2, hallazgo 13). Antes se medía desde el ingreso original
+      // de la ficha, aunque fuera de antes de esa liquidación.
+      antiguedad: calcularAntiguedad(
+        parseFechaLocal(inicioRelacion || fechaIngreso),
+        parseFechaLocal(diaSiguiente(fechaSalida))
+      ),
+      salarioContrato,
+      quincenas,
+      claveSalida,
+      promedio,
+      promedioVacaciones,
+      sumaCicloAguinaldo: ciclo.suma,
+      aguinaldoAplica,
+      diasSalarioPendienteBase: {
+        primeraQuincenaPagada: pagadas.some((q) => q.clave === clavePrimera),
+        quincenaDeSalidaPagada: pagadas.some((q) => q.clave === claveSalida),
+      },
+      vacaciones: proponerVacaciones({
+        ingreso: inicioRelacion,
+        ultimoDia: fechaSalida,
+        diasIncapacidad,
+        diasTomados,
+      }),
+      cicloAnterior: { anio: cicloAnio - 1, monto: anterior.monto, labIds },
+      labIds,
+      sinPagar: quincenas
+        .filter((q) => !q.pagado && q.clave <= claveSalida)
+        .sort((a, b) => a.clave - b.clave),
+      ausenciasSinTipo: ausencias.sinTipo,
+    },
+  }
+}
+
+/**
+ * ¿El aguinaldo del ciclo anterior consta como pagado? Se mira la provisión
+ * (lo que marcaba el botón viejo) y los pagos con comprobante. Si ninguno lo
+ * dice, se devuelve el aviso para la liquidación.
+ *
+ * No se suma solo al finiquito: si se pagó fuera del sistema, sumarlo lo
+ * pagaría dos veces, y una liquidación guardada no se puede corregir. Se
+ * avisa con el monto y se paga desde la pestaña Aguinaldo.
+ */
+export async function avisoAguinaldoAnterior(
+  supabase: SupabaseServerClient,
+  cicloAnterior: { anio: number; monto: number; labIds: number[] }
+): Promise<string | null> {
+  if (cicloAnterior.monto <= 0 || cicloAnterior.labIds.length === 0) return null
+
+  const [{ data: provisiones, error: errProv }, { data: pagos, error: errPagos }] =
+    await Promise.all([
+      supabase
+        .from('sgrh_provisiones_anuales')
+        .select('pra_historial_laboral_id, pra_aguinaldo_pagado')
+        .in('pra_historial_laboral_id', cicloAnterior.labIds)
+        .eq('pra_anio', cicloAnterior.anio)
+        .returns<{ pra_historial_laboral_id: number; pra_aguinaldo_pagado: boolean }[]>(),
+      supabase
+        .from('sgrh_pagos_extraordinarios')
+        .select('pex_id')
+        .in('pex_historial_laboral_id', cicloAnterior.labIds)
+        .eq('pex_tipo', 'aguinaldo')
+        .eq('pex_anio_aguinaldo', cicloAnterior.anio)
+        .returns<{ pex_id: number }[]>(),
+    ])
+
+  if (errProv || errPagos) {
+    return `No se pudo verificar si el aguinaldo ${cicloAnterior.anio} (${rangoAguinaldo(cicloAnterior.anio)}) ya se pagó. Revisalo en la pestaña Aguinaldo antes de entregar el finiquito.`
+  }
+  const pagado = (pagos ?? []).length > 0 || (provisiones ?? []).some((p) => p.pra_aguinaldo_pagado)
+  if (pagado) return null
+
+  return `El aguinaldo ${cicloAnterior.anio} (${rangoAguinaldo(cicloAnterior.anio)}, ${formatCRC(cicloAnterior.monto)}) no consta como pagado y NO está incluido en esta liquidación. Si no se le ha pagado, pagalo desde la pestaña Aguinaldo; si se pagó fuera del sistema, ignorá este aviso.`
+}
+
+/** Liquidación que ya pagó una quincena como salario pendiente. */
+export interface LiquidacionQueCubre {
+  liqId: number
+  fechaSalida: string
+  diasSalarioPendiente: number
+}
+
+interface LiquidacionCubreRow {
+  liq_id: number
+  liq_historial_laboral_id: number
+  liq_fecha_salida: string
+  liq_dias_trabajados_mes: number
+  sgrh_historial_laboral?: { lab_empleado_id: number } | null
+}
+
+const SELECT_LIQUIDACION_CUBRE =
+  'liq_id, liq_historial_laboral_id, liq_fecha_salida, liq_dias_trabajados_mes, sgrh_historial_laboral!inner ( lab_empleado_id )'
+
+/**
+ * Para cada contrato, la liquidación que ya le pagó `quincena` como salario
+ * pendiente (ver quincenaPagadaEnLiquidacion). Lo usan marcarDetallePagado,
+ * para no pagarla otra vez por planilla, y uploadPlanilla, para dejar sacar
+ * esa fila de un periodo vencido.
+ *
+ * Se busca por el contrato y también por el EMPLEADO: si hubo un traslado en
+ * el mes de salida, la quincena impaga del contrato anterior la pagó la
+ * liquidación del nuevo (el salario pendiente se calcula con toda la
+ * relación). Un contrato que empezó después de la salida (reingreso) no
+ * cuenta.
+ */
+export async function liquidacionesQueCubren(
+  supabase: SupabaseServerClient,
+  labIds: number[],
+  quincena: { anio: number; mes: number; quincena: number }
+): Promise<{ ok: true; data: Map<number, LiquidacionQueCubre> } | { ok: false }> {
+  const cubre = new Map<number, LiquidacionQueCubre>()
+  if (labIds.length === 0) return { ok: true, data: cubre }
+
+  const { data: contratos, error: errContratos } = await supabase
+    .from('sgrh_historial_laboral')
+    .select('lab_id, lab_empleado_id, lab_fecha_inicio')
+    .in('lab_id', labIds)
+    .returns<{ lab_id: number; lab_empleado_id: number; lab_fecha_inicio: string }[]>()
+  if (errContratos) return { ok: false }
+  const filas = Array.isArray(contratos) ? contratos : []
+  const empleados = [...new Set(filas.map((c) => c.lab_empleado_id))]
+
+  const [directas, delEmpleado] = await Promise.all([
+    supabase
+      .from('sgrh_liquidaciones')
+      .select(SELECT_LIQUIDACION_CUBRE)
+      .in('liq_historial_laboral_id', labIds)
+      .returns<LiquidacionCubreRow[]>(),
+    empleados.length > 0
+      ? supabase
+          .from('sgrh_liquidaciones')
+          .select(SELECT_LIQUIDACION_CUBRE)
+          .in('sgrh_historial_laboral.lab_empleado_id', empleados)
+          .returns<LiquidacionCubreRow[]>()
+      : Promise.resolve({ data: [] as LiquidacionCubreRow[], error: null }),
+  ])
+  if (directas.error || delEmpleado.error) return { ok: false }
+
+  const liquidaciones = [
+    ...(Array.isArray(directas.data) ? directas.data : []),
+    ...(Array.isArray(delEmpleado.data) ? delEmpleado.data : []),
+  ].filter((l) =>
+    quincenaPagadaEnLiquidacion(
+      { fechaSalida: l.liq_fecha_salida, diasSalarioPendiente: l.liq_dias_trabajados_mes },
+      quincena
+    )
+  )
+
+  const aCubre = (l: LiquidacionCubreRow): LiquidacionQueCubre => ({
+    liqId: l.liq_id,
+    fechaSalida: l.liq_fecha_salida,
+    diasSalarioPendiente: l.liq_dias_trabajados_mes,
+  })
+  for (const labId of labIds) {
+    const propia = liquidaciones.find((l) => l.liq_historial_laboral_id === labId)
+    if (propia) {
+      cubre.set(labId, aCubre(propia))
+      continue
+    }
+    const contrato = filas.find((c) => c.lab_id === labId)
+    if (!contrato) continue
+    const deLaRelacion = liquidaciones.find(
+      (l) =>
+        l.sgrh_historial_laboral?.lab_empleado_id === contrato.lab_empleado_id &&
+        contrato.lab_fecha_inicio <= l.liq_fecha_salida
+    )
+    if (deLaRelacion) cubre.set(labId, aCubre(deLaRelacion))
+  }
+  return { ok: true, data: cubre }
+}
+
+export interface HorasBancoPendientes {
+  /** Cada movimiento pendiente con el monto que se le paga (el sugerido). */
+  movimientos: { bhmId: number; horas: number; monto: number }[]
+  horas: number
+  monto: number
+  /**
+   * Movimientos que ya se habían pagado a una quincena que esta liquidación
+   * cubre como salario pendiente: esa fila no se paga nunca por planilla, así
+   * que el monto (el que se pagó) entra al finiquito (auditoría 2, fallo 4).
+   */
+  absorbidos: { bhmId: number; horas: number; monto: number; quincena: string }[]
+}
+
+interface MovimientoAbsorbidoRow {
+  bhm_id: number
+  bhm_horas: number
+  bhm_monto_pagado: number | null
+  sgrh_nomina_detalle: {
+    ndt_pagado: boolean
+    sgrh_nomina_periodo: {
+      npe_periodo_anio: number
+      npe_periodo_mes: number
+      npe_quincena: number
+    } | null
+  } | null
+}
+
+/**
+ * Horas extra que siguen pendientes en el banco de horas de la relación
+ * laboral (ni pagadas ni compensadas), con el mismo monto sugerido que
+ * muestra la pantalla del banco de horas: horas × valor hora × el factor del
+ * concepto HORAS_EXTRA del catálogo. Al liquidar se pagan en el finiquito.
+ */
+export async function horasDeBancoPendientes(
+  supabase: SupabaseServerClient,
+  labIds: number[],
+  /** Quincenas (claveQuincenal) que la liquidación paga como salario pendiente. */
+  quincenasCubiertas: ReadonlySet<number> = new Set()
+): Promise<{ ok: true; data: HorasBancoPendientes } | { ok: false }> {
+  const vacio = { movimientos: [], horas: 0, monto: 0, absorbidos: [] }
+  if (labIds.length === 0) return { ok: true, data: vacio }
+
+  const [movimientos, concepto, pagados] = await Promise.all([
+    supabase
+      .from('sgrh_banco_horas_movimientos')
+      .select('bhm_id, bhm_horas, bhm_salario_por_hora')
+      .in('bhm_historial_laboral_id', labIds)
+      .eq('bhm_estado', 'pendiente')
+      .order('bhm_id')
+      .returns<{ bhm_id: number; bhm_horas: number; bhm_salario_por_hora: number }[]>(),
+    supabase
+      .from('sgrh_cat_conceptos_nomina')
+      .select('con_porcentaje')
+      .eq('con_codigo', 'HORAS_EXTRA')
+      .maybeSingle<{ con_porcentaje: number | null }>(),
+    quincenasCubiertas.size > 0
+      ? supabase
+          .from('sgrh_banco_horas_movimientos')
+          .select(
+            `bhm_id, bhm_horas, bhm_monto_pagado,
+             sgrh_nomina_detalle!sgrh_banco_horas_movimientos_bhm_nomina_detalle_pago_id_fkey (
+               ndt_pagado, sgrh_nomina_periodo ( npe_periodo_anio, npe_periodo_mes, npe_quincena )
+             )`
+          )
+          .in('bhm_historial_laboral_id', labIds)
+          .eq('bhm_estado', 'pagado')
+          .is('bhm_liquidacion_id', null)
+          .not('bhm_nomina_detalle_pago_id', 'is', null)
+          .order('bhm_id')
+          .returns<MovimientoAbsorbidoRow[]>()
+      : Promise.resolve({ data: [] as MovimientoAbsorbidoRow[], error: null }),
+  ])
+  if (movimientos.error || concepto.error || pagados.error) return { ok: false }
+
+  const absorbidos = (Array.isArray(pagados.data) ? pagados.data : []).flatMap((m) => {
+    const fila = m.sgrh_nomina_detalle
+    const p = fila?.sgrh_nomina_periodo
+    if (!fila || fila.ndt_pagado || !p) return []
+    if (
+      !quincenasCubiertas.has(claveQuincenal(p.npe_periodo_anio, p.npe_periodo_mes, p.npe_quincena))
+    )
+      return []
+    return [
+      {
+        bhmId: m.bhm_id,
+        horas: Number(m.bhm_horas),
+        monto: Number(m.bhm_monto_pagado ?? 0),
+        quincena: periodoLabel(p.npe_periodo_mes, p.npe_periodo_anio, p.npe_quincena),
+      },
+    ]
+  })
+
+  const factor = factorHorasExtra(concepto.data?.con_porcentaje ?? null)
+  const lista = (Array.isArray(movimientos.data) ? movimientos.data : []).map((m) => ({
+    bhmId: m.bhm_id,
+    horas: Number(m.bhm_horas),
+    monto: calcularMontoSugeridoBancoHoras(
+      Number(m.bhm_horas),
+      Number(m.bhm_salario_por_hora),
+      factor
+    ),
+  }))
+  return {
+    ok: true,
+    data: {
+      movimientos: lista,
+      horas: lista.reduce((t, m) => t + m.horas, 0),
+      monto: lista.reduce((t, m) => Math.round((t + m.monto) * 100) / 100, 0),
+      absorbidos,
+    },
+  }
+}

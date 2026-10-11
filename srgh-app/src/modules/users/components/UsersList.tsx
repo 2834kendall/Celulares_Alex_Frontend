@@ -2,17 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  KeyRound,
-  Loader2,
-  Pencil,
-  Search,
-  SearchX,
-  Send,
-  UserCheck,
-  UserPlus,
-  UserX,
-} from 'lucide-react'
+import { KeyRound, Loader2, Pencil, Search, Send, UserCheck, UserPlus, UserX } from 'lucide-react'
 import type { CatalogoItem } from '@/modules/employees/types'
 import type { EmpleadoSinUsuario, UsuarioEstado, UsuarioListItem } from '@/modules/users/types'
 import { resendInvitation } from '@/modules/users/actions/resendInvitation'
@@ -27,6 +17,7 @@ import { Button } from '@/components/ui/Button'
 import { ICON_CONTROL_BASE, IconButton } from '@/components/ui/IconButton'
 import {
   META_LABEL,
+  TABLE_DESKTOP_WRAP,
   TABLE_HEAD,
   TABLE_ROW,
   TABLE_TD,
@@ -52,6 +43,13 @@ const FECHA_ACCESO = new Intl.DateTimeFormat('es-CR', {
 })
 
 type EstadoFiltro = 'todos' | UsuarioEstado
+
+/** Vacío = nivel empresa; una o más = la lista, separada por coma. */
+function nombreSucursales(usuario: UsuarioListItem): string {
+  return usuario.sucursales.length > 0
+    ? usuario.sucursales.map((sucursal) => sucursal.nombre).join(', ')
+    : 'Todas'
+}
 
 interface UsersListProps {
   usuarios: UsuarioListItem[]
@@ -227,7 +225,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={SearchX}
+          variant="no-results"
           title="Sin resultados"
           description="Ningún usuario coincide con la búsqueda o el filtro seleccionado."
         />
@@ -256,7 +254,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
                   {[
                     { label: 'Empleado', valor: usuario.empleado_nombre ?? '—' },
                     { label: 'Rol', valor: usuario.rol_nombre },
-                    { label: 'Sucursal', valor: usuario.sucursal_nombre ?? 'Todas' },
+                    { label: 'Sucursal', valor: nombreSucursales(usuario) },
                     {
                       label: 'Último acceso',
                       valor: usuario.ultimo_acceso
@@ -282,7 +280,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
             ))}
           </ul>
 
-          <div className="hidden @3xl:block @3xl:overflow-x-auto">
+          <div className={TABLE_DESKTOP_WRAP}>
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -304,7 +302,7 @@ export function UsersList({ usuarios, roles, sucursales, empleadosSinUsuario }: 
                       <td className={TABLE_TD_STRONG}>{usuario.email}</td>
                       <td className={TABLE_TD}>{usuario.empleado_nombre ?? '—'}</td>
                       <td className={TABLE_TD}>{usuario.rol_nombre}</td>
-                      <td className={TABLE_TD}>{usuario.sucursal_nombre ?? 'Todas'}</td>
+                      <td className={TABLE_TD}>{nombreSucursales(usuario)}</td>
                       <td className="px-3 py-2">
                         <EstadoBadge estado={usuario.estado} />
                       </td>

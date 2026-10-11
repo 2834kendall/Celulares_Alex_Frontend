@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Avatar, initialsOfEmail } from '@/components/ui/Avatar'
 import Link from 'next/link'
 import { UserRound } from 'lucide-react'
 import { LogoutButton } from '@/modules/auth/components/LogoutButton'
@@ -18,8 +19,6 @@ interface UserMenuProps {
 export function UserMenu({ email, rol }: UserMenuProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-
-  const initials = email.slice(0, 2).toUpperCase()
 
   // Cerrar con click fuera o con Escape
   useEffect(() => {
@@ -66,9 +65,9 @@ export function UserMenu({ email, rol }: UserMenuProps) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="Menu de usuario"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-frame-700 text-xs font-bold text-white transition hover:bg-frame-800 active:scale-95 focus:outline-none focus:ring-2 focus:ring-frame-500/50 focus:ring-offset-2"
+        className="shrink-0 rounded-full transition hover:brightness-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2"
       >
-        {initials}
+        <Avatar size="md" nombre={email} iniciales={initialsOfEmail(email)} />
       </button>
 
       {open && (

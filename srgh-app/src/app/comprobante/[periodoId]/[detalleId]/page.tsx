@@ -6,14 +6,13 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
 import { getConceptos } from '@/modules/payroll/actions/getConceptos'
-import { formatCRC, formatDate, periodoLabel } from '@/modules/payroll/lib/format'
+import { formatCRC, formatDate, formatHoras, periodoLabel } from '@/modules/payroll/lib/format'
+import { armarContenidoComprobante } from '@/modules/payroll/lib/comprobanteContenido'
 import { PrintComprobanteButton } from '@/modules/payroll/components/PrintComprobanteButton'
 
 interface ComprobantePageProps {
   params: Promise<{ periodoId: string; detalleId: string }>
 }
-
-const TIPOS_CALCULO_INGRESO = new Set(['monto_manual_ingreso', 'horas_extra_automatico'])
 
 function Linea({
   label,
@@ -65,40 +64,13 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
     notFound()
   }
 
-  const conceptoPorCodigo = new Map(
-    (conceptosResult.ok ? conceptosResult.data : []).map((c) => [c.con_codigo, c])
-  )
-
-  const lineasIngreso: { label: string; value: number }[] = []
-  const lineasDeduccion: { label: string; value: number }[] = []
-  const codigosMostrados = new Set<string>()
-
-  // Todos los conceptos de ingreso ACTIVOS del catálogo se muestran siempre,
-  // aunque el empleado no haya ganado nada ahí este periodo — así "0" queda
-  // explícito (ej. Feriado) en vez de que el rubro simplemente desaparezca.
-  for (const concepto of conceptosResult.ok ? conceptosResult.data : []) {
-    if (!concepto.con_activo || !TIPOS_CALCULO_INGRESO.has(concepto.con_tipo_calculo)) continue
-    lineasIngreso.push({
-      label: concepto.con_nombre,
-      value: detalle.montosPorConcepto[concepto.con_codigo] ?? 0,
-    })
-    codigosMostrados.add(concepto.con_codigo)
-  }
-
-  // Cualquier otro monto real guardado: deducciones (solo si tienen monto,
-  // no tiene sentido listar cada deducción posible en 0) y conceptos de
-  // ingreso ya desactivados del catálogo que igual quedaron pagados en este
-  // periodo (ej. un pago de banco de horas con HORAS_EXTRA).
-  for (const [codigo, monto] of Object.entries(detalle.montosPorConcepto)) {
-    if (codigosMostrados.has(codigo) || monto <= 0) continue
-    const concepto = conceptoPorCodigo.get(codigo)
-    const label = concepto?.con_nombre ?? codigo
-    if (concepto && TIPOS_CALCULO_INGRESO.has(concepto.con_tipo_calculo)) {
-      lineasIngreso.push({ label, value: monto })
-    } else {
-      lineasDeduccion.push({ label, value: monto })
-    }
-  }
+  // Mismas líneas que el PDF que se le manda por correo al empleado.
+  const {
+    ingresos: lineasIngreso,
+    noSalarial: lineasNoSalarial,
+    deducciones: lineasDeduccion,
+    subtotal,
+  } = armarContenidoComprobante(detalle, conceptosResult.ok ? conceptosResult.data : [])
 
   return (
     <div className="mx-auto min-h-screen max-w-2xl bg-slate-50 px-4 py-8 print:bg-white print:p-0">
@@ -153,6 +125,44 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
           </div>
         </div>
 
+        {/*
+          Las horas van impresas porque son de dónde sale el monto: sin ellas
+          el empleado recibe un número y no tiene con qué comprobarlo. Son las
+          mismas que calculó el periodo a partir de sus marcas de asistencia.
+        */}
+        <div className="grid grid-cols-3 gap-4 border-b border-slate-100 py-4 text-sm">
+          <div>
+            <p className="text-[11px] font-medium text-slate-400">Horas trabajadas</p>
+            <p className="font-semibold tabular-nums text-slate-900">
+              {formatHoras(detalle.horasTrabajadas)} h
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-slate-400">Horas extra</p>
+            <p className="font-semibold tabular-nums text-slate-900">
+              {detalle.horasExtra > 0 ? `${formatHoras(detalle.horasExtra)} h` : '—'}
+            </p>
+            {/*
+              Las horas extra no se pagan en la quincena: van al banco de
+              horas. Sin decirlo, el comprobante mostraba "6 h" que no estaban
+              en el bruto (auditoría 2, hallazgo 11).
+            */}
+            {detalle.horasExtra > 0 && (
+              <p className="mt-0.5 text-[10px] leading-tight text-slate-400">
+                {(detalle.montosPorConcepto.HORAS_EXTRA ?? 0) > 0
+                  ? 'Pagadas desde el banco de horas: el monto va en ingresos.'
+                  : 'En el banco de horas: no se pagan en este comprobante.'}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-slate-400">Valor de la hora</p>
+            <p className="font-semibold tabular-nums text-slate-900">
+              {formatCRC(detalle.salarioPorHora)}
+            </p>
+          </div>
+        </div>
+
         <div className="py-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
             Ingresos
@@ -161,7 +171,11 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
             <p className="text-xs text-slate-400">Sin ingresos registrados.</p>
           ) : (
             lineasIngreso.map((l) => (
-              <Linea key={l.label} label={l.label} value={formatCRC(l.value)} />
+              <Linea
+                key={l.label}
+                label={l.label}
+                value={l.value < 0 ? `− ${formatCRC(-l.value)}` : formatCRC(l.value)}
+              />
             ))
           )}
           <div className="my-2 border-t border-slate-100" />
@@ -184,16 +198,36 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
             strong
           />
 
+          {lineasNoSalarial.length > 0 && (
+            <>
+              <Linea label="Subtotal" value={formatCRC(subtotal)} />
+
+              <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Otros pagos
+              </p>
+              {lineasNoSalarial.map((l) => (
+                <Linea key={l.label} label={l.label} value={formatCRC(l.value)} />
+              ))}
+              <p className="mt-1 text-[11px] text-slate-400">
+                No son salario: no se les rebaja CCSS y no cuentan para el aguinaldo.
+              </p>
+            </>
+          )}
+
           <div className="my-2 border-t border-slate-100" />
-          <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-base font-extrabold text-emerald-800">
-            <span>Salario neto pagado</span>
-            <span className="tabular-nums">{formatCRC(detalle.salarioNeto)}</span>
-          </div>
+          {detalle.incapacidad ? (
+            <Linea label="Salario neto" value={formatCRC(detalle.salarioNeto)} strong />
+          ) : (
+            <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-base font-extrabold text-emerald-800">
+              <span>Salario neto pagado</span>
+              <span className="tabular-nums">{formatCRC(detalle.totalAPagar)}</span>
+            </div>
+          )}
 
           {detalle.incapacidad && (
             <>
               <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                Incapacidad por enfermedad
+                {detalle.incapacidad.tipoNombre ?? 'Incapacidad'}
               </p>
               <Linea
                 label={`Días pagados por la empresa (${detalle.incapacidad.porcentajePagoEmpleador}% del salario)`}
@@ -207,7 +241,7 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
               )}
               <div className="my-2 border-t border-slate-100" />
               <Linea
-                label="Monto de incapacidad"
+                label="Monto que paga la empresa"
                 value={formatCRC(detalle.incapacidad.monto)}
                 strong
               />
@@ -215,13 +249,20 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
               <div className="my-2 border-t border-slate-100" />
               <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-base font-extrabold text-emerald-800">
                 <span>Total a pagar</span>
-                <span className="tabular-nums">
-                  {formatCRC(detalle.salarioNeto + detalle.incapacidad.monto)}
-                </span>
+                <span className="tabular-nums">{formatCRC(detalle.totalAPagar)}</span>
               </div>
             </>
           )}
         </div>
+
+        {detalle.codigoVerificacion && (
+          <div className="mt-6 flex items-baseline justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+            <span>Código de verificación</span>
+            <span className="font-mono text-xs font-semibold tracking-wider text-slate-700">
+              {detalle.codigoVerificacion}
+            </span>
+          </div>
+        )}
 
         <div className="mt-10 grid grid-cols-2 gap-8 pt-4 text-center text-[11px] text-slate-500">
           <div>

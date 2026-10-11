@@ -15,6 +15,8 @@ describe('<MyAttendanceHistory />', () => {
       {
         date: '2026-07-25',
         entrada: { time: '08:04' },
+        inicioReceso: null,
+        finReceso: null,
         inicioAlmuerzo: null,
         finAlmuerzo: null,
         salida: null,
@@ -32,6 +34,8 @@ describe('<MyAttendanceHistory />', () => {
       {
         date: '2026-07-25',
         entrada: { time: '08:00' },
+        inicioReceso: null,
+        finReceso: null,
         inicioAlmuerzo: { time: '12:00' },
         finAlmuerzo: { time: '13:00' },
         salida: { time: '17:00' },

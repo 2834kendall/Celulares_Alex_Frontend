@@ -4,13 +4,14 @@ import { useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarCheck2, Star, X } from 'lucide-react'
 import type { CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
-import { usePagination } from '@/modules/evaluations/hooks/usePagination'
+import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { EvaluationForm } from './EvaluationForm'
 import { ScoreBadge } from './ScoreBadge'
 import { Button } from '@/components/ui/Button'
 import {
   META_LABEL,
+  TABLE_DESKTOP_WRAP,
   TABLE_HEAD,
   TABLE_ROW_CLICKABLE,
   TABLE_TD,
@@ -157,7 +158,7 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
               ))}
             </ul>
 
-            <div className="hidden @3xl:block @3xl:overflow-x-auto">
+            <div className={TABLE_DESKTOP_WRAP}>
               <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>

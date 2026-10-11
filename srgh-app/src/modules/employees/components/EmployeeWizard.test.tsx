@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { EmployeeWizard } from './EmployeeWizard'
+import { EmployeeWizard, type EmployeeWizardPrefill } from './EmployeeWizard'
 import { TERRITORIO } from './testFixtures'
 import { toast } from 'sonner'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
 import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
+import { linkPostulacionToEmployee } from '@/modules/recruitment/actions/linkPostulacionToEmployee'
 import { chooseSelectMenuOption } from '@/test/selectMenu'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 const push = vi.fn()
 
@@ -27,6 +29,10 @@ vi.mock('@/modules/employees/actions/addEmployeeDocument', () => ({
   addEmployeeDocument: vi.fn(),
 }))
 
+vi.mock('@/modules/recruitment/actions/linkPostulacionToEmployee', () => ({
+  linkPostulacionToEmployee: vi.fn(),
+}))
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))
@@ -34,6 +40,7 @@ vi.mock('sonner', () => ({
 const mockCreateEmployee = vi.mocked(createEmployee)
 const mockSetEmployeePhoto = vi.mocked(setEmployeePhoto)
 const mockAddEmployeeDocument = vi.mocked(addEmployeeDocument)
+const mockLinkPostulacionToEmployee = vi.mocked(linkPostulacionToEmployee)
 const mockToastWarning = vi.mocked(toast.warning)
 
 function jpegFile(name = 'foto.jpg'): File {
@@ -62,35 +69,52 @@ const CATALOGOS = {
 // del entorno, así que el valor esperado se calcula, no se hardcodea.
 const MILES_FORMAT = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 0 })
 
-function renderWizard(canInviteUser = true, canManageDocs = true) {
+function renderWizard(
+  canInviteUser = true,
+  canManageDocs = true,
+  extraProps: { prefill?: EmployeeWizardPrefill; postulacionId?: number } = {}
+) {
   return render(
-    <EmployeeWizard {...CATALOGOS} canInviteUser={canInviteUser} canManageDocs={canManageDocs} />
+    <EmployeeWizard
+      {...CATALOGOS}
+      canInviteUser={canInviteUser}
+      canManageDocs={canManageDocs}
+      {...extraProps}
+    />
   )
 }
 
 /**
- * Elige una fecha en el calendario del sistema.
- *
- * Ya no es un `<input type="date">` donde bastaba un fireEvent.change: es un
- * boton que abre un popover, asi que hay que abrirlo y tocar el dia. Se toma
- * el dia 1 del mes que ofrezca por defecto, que es suficiente para pasar la
- * validacion de "campo requerido" — el valor exacto no lo asertan estos
- * tests, solo que el formulario avance.
+ * Fechas fijas del alta. El contrato arranca DESPUES del ingreso, que es lo
+ * que exige `crear_empleado_completo`.
  */
-async function elegirFecha(user: UserEvent, label: string) {
-  await user.click(screen.getByRole('button', { name: label }))
-  const calendario = within(screen.getByRole('dialog', { name: label }))
-  // Se busca por el texto del dia y no por el nombre accesible, que trae el
-  // dia de la semana y cambia segun la fecha real de ejecucion. El 15 existe
-  // en todos los meses.
-  const dia15 = calendario.getAllByRole('button').find((b) => b.textContent?.trim() === '15')!
-  await user.click(dia15)
+const FECHA_INGRESO = '2026-08-15'
+const FECHA_NACIMIENTO = '1995-03-10'
+const FECHA_CONTRATO = '2026-08-20'
 
-  // Devuelve la fecha elegida para que las aserciones no hardcodeen un mes:
-  // el calendario abre en el mes CORRIENTE, asi que el valor cambia segun
-  // cuando se corran los tests.
-  const hoy = new Date()
-  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-15`
+/**
+ * Pone una fecha en un campo del sistema.
+ *
+ * Desde que `DateField` acepta escritura se teclean los ocho digitos en vez de
+ * abrir el calendario y buscar el dia. Son tres lineas en vez de seis, y sobre
+ * todo deja la fecha FIJA: antes el calendario abria en el mes corriente, asi
+ * que el valor que devolvia este helper cambiaba segun el dia en que se
+ * corrieran los tests.
+ */
+async function elegirFecha(user: UserEvent, label: string, iso = FECHA_INGRESO) {
+  const campo = screen.getByRole('combobox', { name: label })
+  const [anio, mes, dia] = iso.split('-')
+
+  await user.clear(campo)
+  await user.type(campo, `${dia}${mes}${anio}`)
+
+  return iso
+}
+
+/** '2026-09-15' → '15/09/2026', que es lo que pinta el trigger de DateField. */
+function comoSeVe(iso: string) {
+  const [year, month, day] = iso.split('-')
+  return `${day}/${month}/${year}`
 }
 
 async function fillStepPersonal(user: UserEvent) {
@@ -99,7 +123,10 @@ async function fillStepPersonal(user: UserEvent) {
   await user.type(screen.getByLabelText('Primer apellido *'), 'Mora')
   await chooseSelectMenuOption(user, 'Tipo de identificación *', 'Cédula nacional')
   await user.type(screen.getByLabelText('Número de identificación *'), '1-1111-1111')
-  fechaIngreso = await elegirFecha(user, 'Fecha de ingreso')
+  fechaIngreso = await elegirFecha(user, 'Ingreso a la empresa')
+  // Obligatorios en el alta (no en la edición).
+  await elegirFecha(user, 'Fecha de nacimiento', FECHA_NACIMIENTO)
+  await chooseSelectMenuOption(user, 'Género *', 'Femenino')
   await fillDireccion(user)
   return fechaIngreso
 }
@@ -117,7 +144,8 @@ async function fillStepNomina(user: UserEvent) {
   await chooseSelectMenuOption(user, 'Sucursal *', 'Central')
   await chooseSelectMenuOption(user, 'Tipo de contrato *', 'Indefinido')
   await chooseSelectMenuOption(user, 'Tipo de jornada *', 'Diurna')
-  await elegirFecha(user, 'Fecha de inicio')
+  // El inicio del contrato NO se digita: llega precargado con el ingreso a la
+  // empresa al avanzar del paso 1 (ver goNext en EmployeeWizard).
   await user.type(screen.getByLabelText('Salario base (₡) *'), '500000')
   await user.type(screen.getByLabelText('Salario real (₡) *'), '550000')
 }
@@ -138,6 +166,7 @@ async function goToStepUsuario(user: UserEvent) {
 describe('<EmployeeWizard />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockLinkPostulacionToEmployee.mockResolvedValue({ ok: true })
   })
 
   it('arranca en el paso 1 con el stepper visible', () => {
@@ -210,9 +239,123 @@ describe('<EmployeeWizard />', () => {
             lab_sucursal_id: 2,
             lab_salario_base: 500000,
             lab_salario_real: 550000,
+            // Nadie digitó esta fecha en el paso 2: la precarga del ingreso a
+            // la empresa llega intacta hasta la Server Action.
+            lab_fecha_inicio: fechaIngreso,
           }),
           usuario: undefined,
         })
+      )
+    })
+    expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  it('precarga el inicio del contrato con el ingreso a la empresa', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    const fechaIngreso = await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+
+    expect(screen.getByRole('combobox', { name: 'Inicio del contrato' })).toHaveValue(
+      comoSeVe(fechaIngreso)
+    )
+  })
+
+  it('no pisa un inicio de contrato ya ajustado a mano', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+
+    // Se corrige a mano porque este contrato arranca despues del ingreso: el
+    // dia 20 del mes en vez del 15 que quedo precargado.
+    const fechaContrato = await elegirFecha(user, 'Inicio del contrato', FECHA_CONTRATO)
+
+    // Volver al paso 1 y avanzar de nuevo no debe reponer la fecha de ingreso:
+    // la precarga solo aplica cuando el campo esta vacio.
+    await user.click(screen.getByRole('button', { name: /anterior/i }))
+    await screen.findByLabelText('Nombre *')
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+
+    expect(screen.getByRole('combobox', { name: 'Inicio del contrato' })).toHaveValue(
+      comoSeVe(fechaContrato)
+    )
+  })
+
+  it('no cierra ninguna postulación cuando no viene de "Contratar" (postulacionId ausente)', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/employees/10'))
+    expect(mockLinkPostulacionToEmployee).not.toHaveBeenCalled()
+  })
+
+  it('con postulacionId (flujo "Contratar"), cierra la postulación tras crear el empleado', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    const user = userEvent.setup()
+    renderWizard(true, true, {
+      postulacionId: 77,
+      prefill: {
+        emp_nombre: '',
+        emp_apellido_1: '',
+        emp_apellido_2: null,
+        emp_tipo_identificacion_id: null,
+        emp_numero_identificacion: '',
+        emp_telefono: '81234567',
+        emp_email_personal: 'ana@example.com',
+        lab_puesto_id: null,
+        lab_sucursal_id: null,
+      },
+    })
+
+    // El prefill solo siembra contacto/identificación; fillStepPersonal
+    // sigue completando el resto del paso 1 igual que en el alta común.
+    expect(screen.getByLabelText('Teléfono')).toHaveValue('81234567')
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(mockLinkPostulacionToEmployee).toHaveBeenCalledWith(77, 10)
+    })
+    expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  it('si cerrar la postulación falla, igual navega y avisa con un toast (no bloquea el alta)', async () => {
+    mockCreateEmployee.mockResolvedValue({ ok: true, empId: 10 })
+    mockLinkPostulacionToEmployee.mockResolvedValue({
+      ok: false,
+      error: 'La postulación ya no está en proceso.',
+    })
+    const user = userEvent.setup()
+    renderWizard(true, true, { postulacionId: 77 })
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+    await screen.findByLabelText('Puesto *')
+    await fillStepNomina(user)
+    await goToStepUsuario(user)
+    await user.click(screen.getByRole('button', { name: /crear empleado/i }))
+
+    await waitFor(() => {
+      expect(mockToastWarning).toHaveBeenCalledWith(
+        expect.stringContaining('la postulación no se pudo cerrar')
       )
     })
     expect(push).toHaveBeenCalledWith('/employees/10')
@@ -501,5 +644,24 @@ describe('<EmployeeWizard />', () => {
       expect(mockToastWarning).toHaveBeenCalledWith(expect.stringContaining('cedula'))
     })
     expect(push).toHaveBeenCalledWith('/employees/10')
+  })
+
+  // Casi siempre se registra a alguien que entra ese día: se ahorra un paso.
+  it('el ingreso a la empresa arranca en hoy', () => {
+    renderWizard()
+
+    expect(screen.getByRole('combobox', { name: 'Ingreso a la empresa' })).toHaveValue(
+      comoSeVe(todayInCostaRica())
+    )
+  })
+
+  it('exige fecha de nacimiento y género para avanzar', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    expect(await screen.findByText('La fecha de nacimiento es obligatoria')).toBeInTheDocument()
+    expect(screen.getByText('El género es obligatorio')).toBeInTheDocument()
   })
 })

@@ -9,7 +9,7 @@ import type { CatalogoItem } from '@/modules/employees/types'
 import { invitarUsuarioSchema, type InvitarUsuarioInput } from '@/modules/users/types'
 import type { EmpleadoSinUsuario } from '@/modules/users/types'
 import { inviteUser } from '@/modules/users/actions/inviteUser'
-import { INPUT_CLASSES, Labeled } from './fields'
+import { INPUT_CLASSES, Labeled, SucursalesField } from './fields'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { SPINNER } from '@/components/ui/styles'
@@ -51,7 +51,7 @@ export function InviteUserForm({
     resolver: zodResolver(invitarUsuarioSchema) as Resolver<InvitarUsuarioInput>,
     defaultValues: {
       email: prefill?.email_personal ?? '',
-      sucursal_id: null,
+      sucursal_ids: [],
       empleado_id: prefill?.emp_id ?? null,
     },
   })
@@ -116,33 +116,22 @@ export function InviteUserForm({
           />
         </Labeled>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Labeled label="Rol *" error={errors.rol_id?.message}>
-            <ControlledSelectMenu
-              control={control}
-              name="rol_id"
-              parse={parseNumber}
-              invalid={Boolean(errors.rol_id)}
-              options={roles.map((rol) => ({ value: String(rol.id), label: rol.nombre }))}
-            />
-          </Labeled>
+        <Labeled label="Rol *" error={errors.rol_id?.message}>
+          <ControlledSelectMenu
+            control={control}
+            name="rol_id"
+            parse={parseNumber}
+            invalid={Boolean(errors.rol_id)}
+            options={roles.map((rol) => ({ value: String(rol.id), label: rol.nombre }))}
+          />
+        </Labeled>
 
-          <Labeled label="Sucursal (opcional)" error={errors.sucursal_id?.message}>
-            <ControlledSelectMenu
-              control={control}
-              name="sucursal_id"
-              parse={parseOptionalNumber}
-              invalid={Boolean(errors.sucursal_id)}
-              options={[
-                { value: '', label: 'Todas las sucursales' },
-                ...sucursales.map((sucursal) => ({
-                  value: String(sucursal.id),
-                  label: sucursal.nombre,
-                })),
-              ]}
-            />
-          </Labeled>
-        </div>
+        <SucursalesField
+          control={control}
+          name="sucursal_ids"
+          sucursales={sucursales}
+          error={errors.sucursal_ids?.message as string | undefined}
+        />
 
         <div className="flex items-center justify-end gap-2 pt-1">
           <Button onClick={onClose} variant="secondary" size="md">

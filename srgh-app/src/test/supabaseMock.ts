@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 
-type QueryResult = { data: unknown; error: unknown }
+// count: lo que devuelve PostgREST con select(..., { count: 'exact', head: true }).
+type QueryResult = { data: unknown; error: unknown; count?: number | null }
 
 /**
  * Thenable query-builder stub: every chain method (select/insert/eq/order/...)
@@ -22,7 +23,9 @@ export function createSupabaseQueryMock(result: QueryResult) {
     gte: vi.fn(() => builder),
     lte: vi.fn(() => builder),
     is: vi.fn(() => builder),
+    or: vi.fn(() => builder),
     limit: vi.fn(() => builder),
+    range: vi.fn(() => builder),
     single: vi.fn(() => builder),
     maybeSingle: vi.fn(() => builder),
     returns: vi.fn(() => builder),

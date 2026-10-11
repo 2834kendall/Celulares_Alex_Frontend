@@ -4,15 +4,15 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { manualMarkSchema, type ManualMarkInput } from '@/modules/attendance/types'
+import { manualMarkSchema, marcaTipoSchema, type ManualMarkInput } from '@/modules/attendance/types'
+import { MARK_LABELS } from '@/modules/attendance/lib/marks'
 
 export type SaveManualMarkResult = { ok: true } | { ok: false; error: string }
 
-const MARK_LABEL: Record<string, string> = {
-  entrada: 'entrada',
-  salida: 'salida',
-  inicio_almuerzo: 'inicio de almuerzo',
-  fin_almuerzo: 'fin de almuerzo',
+/** Nombre de la marca en minuscula, para meterlo dentro de una oracion. */
+function markLabel(tipo: string): string {
+  const parsed = marcaTipoSchema.safeParse(tipo)
+  return parsed.success ? MARK_LABELS[parsed.data].toLowerCase() : tipo
 }
 
 /**
@@ -36,7 +36,7 @@ async function notifyEmployee(
     ntf_tipo_notificacion: 'informacion',
     ntf_canal: 'app',
     ntf_titulo: 'Marca de asistencia actualizada',
-    ntf_mensaje: `Un encargado ${accion} tu marca de ${MARK_LABEL[tipo] ?? tipo}.`,
+    ntf_mensaje: `Un encargado ${accion} tu marca de ${markLabel(tipo)}.`,
   })
 }
 
@@ -49,6 +49,14 @@ export async function saveManualMark(input: ManualMarkInput): Promise<SaveManual
 
   const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
   const meta = claims.app_metadata as { usr_id?: number; empresa_id?: number }
+
+  // Tarea del encargado, no del kiosco: la cuenta KIOSCO tiene
+  // ASISTENCIA_WRITE para registrar su marca, pero no ASISTENCIA_READ. Sin
+  // esta guarda, la sesion de la tablet podia invocar esta accion (SGRH-88).
+  const permisos = (claims.app_metadata as { permisos?: string[] }).permisos ?? []
+  if (!permisos.includes(PERMISOS.ASISTENCIA_READ)) {
+    return { ok: false, error: 'No tienes permiso para registrar marcas manuales.' }
+  }
 
   const { markId, employmentHistoryId, employeeId, sucursalId, tipo, fecha, hora, observacion } =
     parsed.data

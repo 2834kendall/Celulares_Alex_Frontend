@@ -5,6 +5,8 @@ import { registerKioskMark } from '@/modules/attendance/actions/registerKioskMar
 import { nowInCostaRica } from '@/modules/attendance/lib/time'
 import type { KioskMarkInput } from '@/modules/attendance/types'
 import {
+  discardQueuedMark,
+  getDiscardedMarks,
   getQueuedMarks,
   queueOfflineMark,
   removeQueuedMark,
@@ -37,6 +39,10 @@ export function useOfflineSync() {
   // en el efecto de abajo (deferido, ver nota del initialLoad).
   const [isOnline, setIsOnline] = useState(true)
   const [pendingCount, setPendingCount] = useState(0)
+  // Marcas que el servidor rechazo para siempre. No se reintentan: quedan
+  // archivadas y el kiosco las anuncia para que el encargado las corrija a
+  // mano desde el panel diario.
+  const [discardedCount, setDiscardedCount] = useState(0)
   const backoffRef = useRef(BASE_BACKOFF_MS)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const syncingRef = useRef(false)
@@ -51,6 +57,11 @@ export function useOfflineSync() {
     const marks = await getQueuedMarks()
     setPendingCount(marks.length)
     return marks
+  }, [])
+
+  const refreshDiscardedCount = useCallback(async () => {
+    const marks = await getDiscardedMarks()
+    setDiscardedCount(marks.length)
   }, [])
 
   const attemptSync = useCallback(async () => {
@@ -72,7 +83,7 @@ export function useOfflineSync() {
           tipo: mark.tipo,
           latitud: mark.latitud,
           longitud: mark.longitud,
-          pin: mark.pin,
+          ticketFacial: mark.ticketFacial,
           dispositivoId: mark.dispositivoId,
           // La hora capturada al encolar, no la de este intento de envio: es
           // lo que distingue "marco a las 8:00 y no habia red" de "marco a
@@ -82,9 +93,20 @@ export function useOfflineSync() {
 
         if (result.ok) {
           await removeQueuedMark(mark.id)
-        } else {
-          allSynced = false
+          continue
         }
+
+        // Un rechazo definitivo no mejora esperando: reintentarlo es un
+        // bucle infinito que ademas impide que la cola drene las marcas
+        // que si son validas. Se archiva con el motivo y se saca de en
+        // medio (ver discardQueuedMark).
+        if (result.definitivo) {
+          await discardQueuedMark(mark, result.error)
+          await refreshDiscardedCount()
+          continue
+        }
+
+        allSynced = false
       }
 
       const remaining = await refreshPendingCount()
@@ -105,7 +127,7 @@ export function useOfflineSync() {
     } finally {
       syncingRef.current = false
     }
-  }, [refreshPendingCount])
+  }, [refreshPendingCount, refreshDiscardedCount])
 
   useEffect(() => {
     attemptSyncRef.current = attemptSync
@@ -123,6 +145,7 @@ export function useOfflineSync() {
     const initialLoad = setTimeout(() => {
       setIsOnline(navigator.onLine)
       void refreshPendingCount()
+      void refreshDiscardedCount()
     }, 0)
 
     function handleOnline() {
@@ -143,7 +166,7 @@ export function useOfflineSync() {
       window.removeEventListener('offline', handleOffline)
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
-  }, [refreshPendingCount])
+  }, [refreshPendingCount, refreshDiscardedCount])
 
   const submitMark = useCallback(
     async (input: KioskMarkInput): Promise<SubmitMarkOutcome> => {
@@ -155,7 +178,7 @@ export function useOfflineSync() {
           fechaHora: nowInCostaRica(),
           latitud: input.latitud,
           longitud: input.longitud,
-          pin: input.pin,
+          ticketFacial: input.ticketFacial,
           dispositivoId: input.dispositivoId,
         })
         await refreshPendingCount()
@@ -177,5 +200,5 @@ export function useOfflineSync() {
     [isOnline, refreshPendingCount]
   )
 
-  return { isOnline, pendingCount, submitMark }
+  return { isOnline, pendingCount, discardedCount, submitMark }
 }

@@ -4,6 +4,8 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { useOfflineSync } from './useOfflineSync'
 import { registerKioskMark } from '@/modules/attendance/actions/registerKioskMark'
 import {
+  clearDiscardedMarks,
+  getDiscardedMarks,
   getQueuedMarks,
   queueOfflineMark,
   removeQueuedMark,
@@ -21,7 +23,7 @@ const input: KioskMarkInput = {
   tipo: 'entrada',
   latitud: null,
   longitud: null,
-  pin: null,
+  ticketFacial: '10.1.firma',
   dispositivoId: null,
 }
 
@@ -36,6 +38,7 @@ describe('useOfflineSync', () => {
     for (const m of await getQueuedMarks()) {
       await removeQueuedMark(m.id)
     }
+    await clearDiscardedMarks()
   })
 
   it('empieza en linea con cero pendientes', async () => {
@@ -119,7 +122,7 @@ describe('useOfflineSync', () => {
       fechaHora: '2026-08-14 08:00:00',
       latitud: null,
       longitud: null,
-      pin: null,
+      ticketFacial: '10.1.firma',
       dispositivoId: null,
     })
 
@@ -137,6 +140,69 @@ describe('useOfflineSync', () => {
       expect.objectContaining({ employeeId: 10, fechaHora: '2026-08-14 08:00:00' })
     )
     await waitFor(() => expect(result.current.pendingCount).toBe(0))
+  })
+
+  it('archiva y deja de reintentar una marca que el servidor rechaza para siempre', async () => {
+    await queueOfflineMark({
+      id: 'marca-sin-turno',
+      employeeId: 10,
+      tipo: 'entrada',
+      fechaHora: '2026-08-14 08:00:00',
+      latitud: null,
+      longitud: null,
+      ticketFacial: '10.1.firma',
+      dispositivoId: null,
+    })
+
+    mockRegisterKioskMark.mockResolvedValue({
+      ok: false,
+      error: 'No tienes turno asignado en esta sucursal para esta fecha.',
+      definitivo: true,
+    })
+
+    const { result } = renderHook(() => useOfflineSync())
+    await waitFor(() => expect(result.current.pendingCount).toBe(1))
+
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+    })
+
+    // Sale de la cola (no se reintenta cada 60s para siempre) pero queda
+    // registrada con el motivo, para que el encargado la corrija a mano.
+    await waitFor(() => expect(result.current.pendingCount).toBe(0))
+    await waitFor(() => expect(result.current.discardedCount).toBe(1))
+
+    const [descartada] = await getDiscardedMarks()
+    expect(descartada.id).toBe('marca-sin-turno')
+    expect(descartada.motivo).toContain('turno')
+  })
+
+  it('mantiene en la cola un fallo pasajero, que si conviene reintentar', async () => {
+    await queueOfflineMark({
+      id: 'marca-con-base-caida',
+      employeeId: 10,
+      tipo: 'entrada',
+      fechaHora: '2026-08-14 08:00:00',
+      latitud: null,
+      longitud: null,
+      ticketFacial: '10.1.firma',
+      dispositivoId: null,
+    })
+
+    // Sin `definitivo`: la base no respondio, puede responder en el proximo
+    // intento.
+    mockRegisterKioskMark.mockResolvedValue({ ok: false, error: 'No se pudo registrar la marca.' })
+
+    const { result } = renderHook(() => useOfflineSync())
+    await waitFor(() => expect(result.current.pendingCount).toBe(1))
+
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+    })
+
+    await waitFor(() => expect(mockRegisterKioskMark).toHaveBeenCalled())
+    expect(result.current.pendingCount).toBe(1)
+    expect(result.current.discardedCount).toBe(0)
   })
 
   it('la marca encolada guarda la hora en que se hizo, no un placeholder', async () => {

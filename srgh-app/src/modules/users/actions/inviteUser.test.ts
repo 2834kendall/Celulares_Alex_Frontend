@@ -20,11 +20,12 @@ const CLAIMS = { app_metadata: { empresa_id: 1 } } as unknown as Awaited<
 >
 
 // Invitación con empleado vinculado (flujo del onboarding y del banner).
-const USUARIO = { email: 'ana@empresa.com', rol_id: 4, sucursal_id: 2, empleado_id: 10 }
+const USUARIO = { email: 'ana@empresa.com', rol_id: 4, sucursal_ids: [2], empleado_id: 10 }
 
-// La validación de sucursal corre antes de invitar; la mayoría de tests
+// La validación de sucursales corre antes de invitar; la mayoría de tests
 // necesita este mock para llegar a los pasos posteriores.
-const SUCURSAL_OK = { data: { suc_id: 2 }, error: null }
+const SUCURSAL_OK = { data: [{ suc_id: 2 }], error: null }
+const OK = { data: null, error: null }
 
 // sgrh_usuarios se consulta dos veces cuando viene empleado: chequeo de
 // vínculo duplicado (null = libre) y update de vinculación tras invitar.
@@ -32,6 +33,9 @@ const USUARIOS_OK = [
   { data: null, error: null },
   { data: { usr_id: 7 }, error: null },
 ]
+
+// Sin asignación previa: syncUserSucursales lee, no encuentra nada, e inserta.
+const UER_SIN_ASIGNACION_PREVIA = { data: [], error: null }
 
 function mockAdmin(
   responses: Parameters<typeof createSupabaseAdminClientMock>[0],
@@ -46,6 +50,12 @@ function mockSession(responses: Parameters<typeof createSupabaseClientMock>[0]) 
   const client = createSupabaseClientMock(responses)
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
+}
+
+function llamadasA(admin: ReturnType<typeof mockAdmin>, tabla: string) {
+  return admin.from.mock.calls
+    .map((call, i) => (call[0] === tabla ? admin.from.mock.results[i].value : null))
+    .filter((v): v is NonNullable<typeof v> => v !== null)
 }
 
 describe('inviteUser (server action)', () => {
@@ -67,7 +77,7 @@ describe('inviteUser (server action)', () => {
     mockAdmin({
       sgrh_sucursales: SUCURSAL_OK,
       sgrh_usuarios: USUARIOS_OK,
-      sgrh_usuarios_empresa_rol: { data: null, error: null },
+      sgrh_usuarios_empresa_rol: [UER_SIN_ASIGNACION_PREVIA, OK],
     })
 
     await inviteUser(USUARIO)
@@ -77,7 +87,7 @@ describe('inviteUser (server action)', () => {
 
   it('rechaza una sucursal de otra empresa SIN enviar la invitación', async () => {
     const admin = mockAdmin({
-      sgrh_sucursales: { data: null, error: null },
+      sgrh_sucursales: { data: [], error: null },
     })
 
     const result = await inviteUser(USUARIO)
@@ -117,7 +127,7 @@ describe('inviteUser (server action)', () => {
   it('omite las validaciones de sucursal y empleado cuando no vienen', async () => {
     const admin = mockAdmin({
       sgrh_usuarios: { data: { usr_id: 7 }, error: null },
-      sgrh_usuarios_empresa_rol: { data: null, error: null },
+      sgrh_usuarios_empresa_rol: [UER_SIN_ASIGNACION_PREVIA, OK],
     })
 
     const result = await inviteUser({ email: 'ana@empresa.com', rol_id: 4 })
@@ -131,7 +141,7 @@ describe('inviteUser (server action)', () => {
     const admin = mockAdmin({
       sgrh_sucursales: SUCURSAL_OK,
       sgrh_usuarios: USUARIOS_OK,
-      sgrh_usuarios_empresa_rol: { data: null, error: null },
+      sgrh_usuarios_empresa_rol: [UER_SIN_ASIGNACION_PREVIA, OK],
     })
 
     const result = await inviteUser({ ...USUARIO, email: ' Ana@Empresa.COM ' })
@@ -189,7 +199,7 @@ describe('inviteUser (server action)', () => {
       sgrh_sucursales: SUCURSAL_OK,
       sgrh_usuarios: USUARIOS_OK,
       sgrh_usuarios_empresa_rol: [
-        { data: null, error: null },
+        { data: [], error: null },
         { data: null, error: { message: 'boom' } },
       ],
     })
@@ -206,7 +216,7 @@ describe('inviteUser (server action)', () => {
     const admin = mockAdmin({
       sgrh_sucursales: SUCURSAL_OK,
       sgrh_usuarios: USUARIOS_OK,
-      sgrh_usuarios_empresa_rol: { data: null, error: null },
+      sgrh_usuarios_empresa_rol: [UER_SIN_ASIGNACION_PREVIA, OK],
     })
 
     const result = await inviteUser(USUARIO)
@@ -214,40 +224,48 @@ describe('inviteUser (server action)', () => {
     expect(result).toEqual({ ok: true, usrId: 7 })
     expect(admin.auth.admin.inviteUserByEmail).toHaveBeenCalledWith('ana@empresa.com')
 
-    // from(): sucursales, usuarios (dup), usuarios (link), uer (read), uer (insert)
-    const linkBuilder = admin.from.mock.results[2].value
+    const linkBuilder = llamadasA(admin, 'sgrh_usuarios')[1]
     expect(linkBuilder.update).toHaveBeenCalledWith({ usr_empleado_id: 10, usr_activo: true })
 
-    const uerInsertBuilder = admin.from.mock.results[4].value
-    expect(uerInsertBuilder.insert).toHaveBeenCalledWith({
-      uer_usuario_id: 7,
-      uer_empresa_id: 1,
-      uer_rol_id: 4,
-      uer_sucursal_id: 2,
+    // uer: lectura (sin filas previas) + insert de la sucursal 2.
+    const uerInsertBuilder = llamadasA(admin, 'sgrh_usuarios_empresa_rol')[1]
+    expect(uerInsertBuilder.insert).toHaveBeenCalledWith([
+      { uer_usuario_id: 7, uer_empresa_id: 1, uer_rol_id: 4, uer_sucursal_id: 2, uer_activo: true },
+    ])
+  })
+
+  it('invita con varias sucursales: inserta una fila uer por cada una', async () => {
+    const admin = mockAdmin({
+      sgrh_sucursales: { data: [{ suc_id: 2 }, { suc_id: 3 }], error: null },
+      sgrh_usuarios: USUARIOS_OK,
+      sgrh_usuarios_empresa_rol: [UER_SIN_ASIGNACION_PREVIA, OK],
     })
+
+    const result = await inviteUser({ ...USUARIO, sucursal_ids: [2, 3] })
+
+    expect(result).toEqual({ ok: true, usrId: 7 })
+
+    const uerInsertBuilder = llamadasA(admin, 'sgrh_usuarios_empresa_rol')[1]
+    expect(uerInsertBuilder.insert).toHaveBeenCalledWith([
+      { uer_usuario_id: 7, uer_empresa_id: 1, uer_rol_id: 4, uer_sucursal_id: 2, uer_activo: true },
+      { uer_usuario_id: 7, uer_empresa_id: 1, uer_rol_id: 4, uer_sucursal_id: 3, uer_activo: true },
+    ])
   })
 
   it('actualiza la asignación existente en vez de insertar una segunda fila uer', async () => {
     const admin = mockAdmin({
       sgrh_sucursales: SUCURSAL_OK,
       sgrh_usuarios: USUARIOS_OK,
-      sgrh_usuarios_empresa_rol: [
-        { data: { uer_id: 55 }, error: null },
-        { data: null, error: null },
-      ],
+      sgrh_usuarios_empresa_rol: [{ data: [{ uer_id: 55, uer_sucursal_id: 2 }], error: null }, OK],
     })
 
     const result = await inviteUser(USUARIO)
 
     expect(result).toEqual({ ok: true, usrId: 7 })
 
-    const uerUpdateBuilder = admin.from.mock.results[4].value
-    expect(uerUpdateBuilder.update).toHaveBeenCalledWith({
-      uer_rol_id: 4,
-      uer_sucursal_id: 2,
-      uer_activo: true,
-    })
-    expect(uerUpdateBuilder.eq).toHaveBeenCalledWith('uer_id', 55)
+    const uerUpdateBuilder = llamadasA(admin, 'sgrh_usuarios_empresa_rol')[1]
+    expect(uerUpdateBuilder.update).toHaveBeenCalledWith({ uer_rol_id: 4 })
+    expect(uerUpdateBuilder.in).toHaveBeenCalledWith('uer_id', [55])
     expect(uerUpdateBuilder.insert).not.toHaveBeenCalled()
   })
 })
