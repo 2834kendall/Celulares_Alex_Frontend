@@ -27,6 +27,8 @@ function fila(i: number) {
     ndt_historial_laboral_id: 1,
     ndt_salario_bruto: 100,
     ndt_pagado: true,
+    ndt_salario_base_contrato: null,
+    ndt_salario_real_contrato: null,
     sgrh_nomina_periodo: {
       npe_periodo_mes: 1,
       npe_periodo_anio: 2000 + Math.floor(i / 24),
@@ -101,6 +103,57 @@ describe('cargarQuincenas', () => {
     const result = await cargarQuincenas(supabase, [CONTRATO])
 
     expect(result.ok).toBe(false)
+  })
+})
+
+// Desde que el contrato vigente se puede editar en cualquier momento, usar su
+// salario de HOY para una quincena pasada movía hacia atrás el promedio de la
+// liquidación y el recargo de una licencia de maternidad.
+describe('cargarQuincenas — el salario de cada quincena', () => {
+  it('usa la foto de cada fila, no el salario actual del contrato', async () => {
+    const supabase = cliente({
+      sgrh_nomina_detalle: {
+        data: [
+          { ...fila(1), ndt_salario_base_contrato: 300, ndt_salario_real_contrato: 320 },
+          { ...fila(2), ndt_salario_base_contrato: 400, ndt_salario_real_contrato: 450 },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.get(1)?.map((q) => q.salarioMensualContrato)).toEqual([320, 450])
+  })
+
+  // Misma regla que aContrato: manda el real y, si no hay, el base.
+  it('sin salario real en la foto usa el base de la foto', async () => {
+    const supabase = cliente({
+      sgrh_nomina_detalle: {
+        data: [{ ...fila(1), ndt_salario_base_contrato: 300, ndt_salario_real_contrato: null }],
+        error: null,
+      },
+    })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.get(1)?.[0]?.salarioMensualContrato).toBe(300)
+  })
+
+  it('sin foto cae al salario del contrato, como antes', async () => {
+    const supabase = cliente({
+      sgrh_nomina_detalle: { data: [fila(1)], error: null },
+    })
+
+    const result = await cargarQuincenas(supabase, [CONTRATO])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.get(1)?.[0]?.salarioMensualContrato).toBe(200)
   })
 })
 
