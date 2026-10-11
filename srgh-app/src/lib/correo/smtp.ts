@@ -38,7 +38,13 @@ export function configSmtp(
 ): ConfigSmtp | null {
   const host = env.SMTP_HOST?.trim()
   const user = env.SMTP_USER?.trim()
-  const pass = env.SMTP_PASS
+  // Google muestra la contraseña de aplicación en grupos ("abcd efgh ijkl
+  // mnop") y es fácil pegarla así. Nunca lleva espacios, así que en Gmail se
+  // quitan; en otro servidor la contraseña se respeta tal cual.
+  const pass =
+    host && /(^|\.)(gmail|googlemail)\.com$/i.test(host)
+      ? env.SMTP_PASS?.replace(/\s+/g, '')
+      : env.SMTP_PASS
   if (!host || !user || !pass) return null
 
   const port = Number(env.SMTP_PORT?.trim() || 465)

@@ -10,7 +10,7 @@ vi.mock('nodemailer', () => ({ default: { createTransport: (o: unknown) => creat
 const COMPLETA = {
   SMTP_HOST: 'smtp.gmail.com',
   SMTP_USER: 'planillas@empresa.com',
-  SMTP_PASS: 'clave de app',
+  SMTP_PASS: 'abcdefghijklmnop',
 }
 
 describe('configSmtp', () => {
@@ -27,7 +27,7 @@ describe('configSmtp', () => {
       port: 465,
       secure: true,
       user: 'planillas@empresa.com',
-      pass: 'clave de app',
+      pass: 'abcdefghijklmnop',
       from: 'planillas@empresa.com',
     })
   })
@@ -46,6 +46,17 @@ describe('configSmtp', () => {
     expect(
       configSmtp({ ...COMPLETA, SMTP_FROM: 'Celulares Alex <planillas@empresa.com>' })?.from
     ).toBe('Celulares Alex <planillas@empresa.com>')
+  })
+
+  it('en Gmail acepta la contraseña de aplicación pegada con espacios', () => {
+    expect(configSmtp({ ...COMPLETA, SMTP_PASS: 'abcd efgh ijkl mnop' })?.pass).toBe(
+      'abcdefghijklmnop'
+    )
+    // Otro servidor: la contraseña puede tener espacios de verdad.
+    expect(
+      configSmtp({ ...COMPLETA, SMTP_HOST: 'mail.empresa.cr', SMTP_PASS: 'clave con espacios' })
+        ?.pass
+    ).toBe('clave con espacios')
   })
 
   it('un puerto inválido no se toma como configurado', () => {
@@ -73,7 +84,7 @@ describe('enviarCorreo', () => {
         host: 'smtp.gmail.com',
         port: 465,
         secure: true,
-        auth: { user: 'planillas@empresa.com', pass: 'clave de app' },
+        auth: { user: 'planillas@empresa.com', pass: 'abcdefghijklmnop' },
         connectionTimeout: 10_000,
         socketTimeout: 20_000,
       })
