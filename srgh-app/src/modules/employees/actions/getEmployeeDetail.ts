@@ -67,7 +67,9 @@ function toContrato(row: HistorialQueryRow): ContratoDetalle {
     liquidado: Array.isArray(sgrh_liquidaciones)
       ? sgrh_liquidaciones.length > 0
       : Boolean(sgrh_liquidaciones),
+    // Las dos se calculan después, y solo para el vigente.
     en_planilla: false,
+    quincena_sin_pagar: false,
   }
 }
 
@@ -170,7 +172,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
 
   // Segunda tanda, también en paralelo: dependen de lo leído arriba pero no
   // entre sí.
-  const [fotoUrl, enPlanilla, cuenta] = await Promise.all([
+  const [fotoUrl, estadoPlanilla, cuenta] = await Promise.all([
     // Una sola foto: getSignedUrl (no el batch). Si falla o no hay path, la
     // ficha igual se muestra — Avatar cae a iniciales.
     empleado.emp_foto_path
@@ -178,22 +180,39 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
           .getSignedUrl('FOTOS_EMPLEADO', empleado.emp_foto_path, TTL_FOTO)
           .then((signed) => (signed.ok ? signed.data : null))
       : Promise.resolve(null),
-    // La ventana de edición: el vigente se puede corregir mientras no aparezca
-    // en ninguna planilla (la RPC editar_contrato lo vuelve a verificar). Si la
-    // consulta falla, se asume que sí aparece: esconder un botón es el error
-    // seguro, mostrar uno que la RPC va a rechazar no.
+    // Dos respuestas de un solo viaje (Supabase está en us-east-1: ~200 ms
+    // cada consulta), porque salen del mismo conjunto de filas:
+    //
+    //  - en_planilla: ya apareció en alguna planilla. Ya no bloquea la
+    //    edición —los períodos conservan sus montos por la foto del
+    //    contrato—, solo avisa desde cuándo aplica el cambio.
+    //  - quincena_sin_pagar: bloquea el cambio de SUCURSAL base, porque
+    //    moverla a medio pagar dejaría la fila en la planilla vieja y la
+    //    nueva la volvería a crear.
+    //
+    // Si la consulta falla se asume lo peor en los dos: mostrar un aviso de
+    // más o bloquear un campo son errores seguros; dejar cambiar la sucursal
+    // con una quincena abierta no lo es. La RPC lo vuelve a verificar igual.
     historialActivo
       ? supabase
           .from('sgrh_nomina_detalle')
-          .select('ndt_id', { count: 'exact', head: true })
+          .select('ndt_pagado')
           .eq('ndt_historial_laboral_id', historialActivo.lab_id)
-          .then(({ count, error }) => Boolean(error) || (count ?? 0) > 0)
-      : Promise.resolve(false),
+          .then(({ data, error }) =>
+            error || !data
+              ? { enPlanilla: true, sinPagar: true }
+              : {
+                  enPlanilla: data.length > 0,
+                  sinPagar: data.some((fila) => !fila.ndt_pagado),
+                }
+          )
+      : Promise.resolve({ enPlanilla: false, sinPagar: false }),
     datosPago ? decryptField(datosPago.edp_numero_cuenta) : Promise.resolve(null),
   ])
 
   if (historialActivo) {
-    historialActivo.en_planilla = enPlanilla
+    historialActivo.en_planilla = estadoPlanilla.enPlanilla
+    historialActivo.quincena_sin_pagar = estadoPlanilla.sinPagar
   }
 
   const { sgrh_cat_tipos_identificacion, sgrh_direcciones, ...empleadoBase } = empleado

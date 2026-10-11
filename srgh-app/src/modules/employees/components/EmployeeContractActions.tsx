@@ -18,6 +18,7 @@ import { revertContractTermination } from '@/modules/employees/actions/revertCon
 import { summarizeContracts } from '@/modules/employees/lib/contracts'
 import { formatDate } from '@/modules/employees/lib/format'
 import { Button, BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/utils/cn'
@@ -146,19 +147,16 @@ export function EmployeeContractActions({
           <FileX2 className="h-3.5 w-3.5" aria-hidden="true" />
           Terminar
         </Button>
-        {vigente.en_planilla ? (
-          <ConMotivo motivo="Ya pasó por planilla">
-            <Button disabled>
-              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-              Editar
-            </Button>
-          </ConMotivo>
-        ) : (
-          <Button onClick={() => abrir('editar')}>
-            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-            Editar
-          </Button>
-        )}
+        {/*
+          Editar ya no se bloquea por haber pasado por planilla: los períodos
+          ya calculados conservan sus montos (foto del contrato en
+          sgrh_nomina_detalle) y lo nuevo entra en el siguiente. El aviso del
+          diálogo lo explica.
+        */}
+        <Button onClick={() => abrir('editar')}>
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+          Editar
+        </Button>
       </>
     )
   } else if (!vigente) {
@@ -211,15 +209,33 @@ export function EmployeeContractActions({
 
       {dialogo === 'editar' && vigente && catalogos && (
         <Modal title="Editar contrato" subtitle={vigente.puesto_nombre} onClose={cerrarDialogo}>
+          {vigente.en_planilla && (
+            <Alert tone="info" size="md">
+              Este contrato ya pasó por planilla. Los cambios aplican desde el próximo período; los
+              que ya están calculados conservan sus montos. Si querés que apliquen al período
+              abierto, recalculalo desde Planilla.
+            </Alert>
+          )}
           <ContractForm
             modo="editar"
             catalogos={catalogos}
             sucursalNombre={vigente.sucursal_nombre}
+            fechaInicio={vigente.lab_fecha_inicio}
+            sucursalBloqueada={
+              vigente.quincena_sin_pagar
+                ? 'No se puede cambiar con una quincena sin pagar: terminá de pagarla en Planilla.'
+                : null
+            }
             defaultValues={{
               lab_puesto_id: vigente.lab_puesto_id,
+              // Desde que la sucursal se edita, tiene que venir precargada con
+              // la actual: un select vacío obliga a elegirla de nuevo en cada
+              // corrección de salario, y basta un descuido para mover la base
+              // sin querer. Además, bloqueada el campo no se renderiza y este
+              // valor es el que viaja, así que la RPC no detecta un cambio.
+              lab_sucursal_id: vigente.lab_sucursal_id,
               lab_tipo_contrato_id: vigente.lab_tipo_contrato_id,
               lab_tipo_jornada_id: vigente.lab_tipo_jornada_id,
-              lab_fecha_inicio: vigente.lab_fecha_inicio,
               lab_salario_base: vigente.lab_salario_base,
               lab_salario_real: vigente.lab_salario_real,
             }}

@@ -325,9 +325,23 @@ export type CrearHistorialLaboralInput = z.infer<typeof crearHistorialLaboralSch
 // terminar_contrato): estos schemas solo filtran input basura antes de ir a
 // la base.
 
-// La sucursal no se edita: cambiarla en sitio reescribiría la historia (un
-// traslado es un contrato nuevo). La RPC tampoco la toca aunque llegue.
-export const editarContratoSchema = crearHistorialLaboralSchema.omit({ lab_sucursal_id: true })
+// Lo único que no se edita es la FECHA DE INICIO: moverla dejaría las marcas,
+// los turnos y el contrato anterior apuntando a un período que ya no existe.
+// Se elige al crear el contrato y ahí se queda.
+//
+// El resto se corrige siempre, haya pasado por planilla o no: los períodos ya
+// calculados conservan sus montos gracias a la foto del contrato en
+// sgrh_nomina_detalle.
+//
+// La sucursal SÍ está acá, y no es un traslado: desde SGRH-84 la sucursal del
+// contrato es la sucursal BASE (en qué planilla se paga y quién ve el
+// expediente), mientras que dónde trabaja la persona cada día lo decide
+// prg_sucursal_id en la programación semanal. Cambiar la base no mueve la
+// historia — marcas, turnos, períodos y evaluaciones llevan su propia
+// sucursal. La RPC la rechaza si hay una quincena sin pagar.
+export const editarContratoSchema = crearHistorialLaboralSchema.omit({
+  lab_fecha_inicio: true,
+})
 
 export type EditarContratoInput = z.infer<typeof editarContratoSchema>
 
@@ -476,9 +490,16 @@ export type ContratoDetalle = HistorialLaboralRow & {
   // NOMINA_READ (la RLS oculta la liquidación): la UI solo lo usa con permisos
   // que la ven.
   liquidado: boolean
-  // Ya aparece en alguna planilla: cierra la ventana de edición. Solo se
-  // calcula para el vigente; en los cerrados es siempre false.
+  // Ya aparece en alguna planilla. Ya NO cierra la ventana de edición (los
+  // períodos conservan sus montos por la foto del contrato); solo sirve para
+  // avisar desde cuándo aplica el cambio. Se calcula para el vigente; en los
+  // cerrados es siempre false.
   en_planilla: boolean
+  // Tiene una fila de planilla sin pagar. Bloquea SOLO el cambio de sucursal
+  // base: moverla a medio pagar dejaría la fila en la planilla de la sucursal
+  // vieja y la nueva la volvería a crear. Igual que en_planilla, solo el
+  // vigente.
+  quincena_sin_pagar: boolean
 }
 
 export type EmpleadoDetalle = EmpleadoRow & {
