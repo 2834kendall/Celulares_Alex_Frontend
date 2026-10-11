@@ -11,13 +11,14 @@ import { RecruitmentBoard } from '@/modules/recruitment/components/RecruitmentBo
 import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 
-// Los criterios de puntaje NO se administran desde acá: viven en
-// Configuración → Criterios de selección, junto a Puestos y Tardías, que es
-// donde están los demás catálogos de la empresa.
+// Las COLUMNAS del tablero (las etapas del proceso) se administran acá mismo,
+// con CATALOGOS_WRITE. Los criterios de puntaje no: viven en Configuración →
+// Criterios de selección, junto a los demás catálogos de la empresa.
 export default async function RecruitmentPage() {
   const claims = await requireAnyPermission(ACCESO_RECLUTAMIENTO)
   const permisos = (claims.app_metadata as { permisos?: string[] })?.permisos ?? []
   const canWrite = permisos.includes(PERMISOS.RECLUTAMIENTO_WRITE)
+  const canManageStages = permisos.includes(PERMISOS.CATALOGOS_WRITE)
 
   const [boardResult, tiposIdentificacionResult, puestosResult, sucursalesResult] =
     await Promise.all([
@@ -40,10 +41,12 @@ export default async function RecruitmentPage() {
 
       <RecruitmentBoard
         postulaciones={boardResult.data}
+        stages={boardResult.stages}
         tiposIdentificacion={tiposIdentificacionResult.data}
         puestos={puestosResult.data}
         sucursales={sucursalesResult.data}
         canWrite={canWrite}
+        canManageStages={canManageStages}
       />
     </div>
   )

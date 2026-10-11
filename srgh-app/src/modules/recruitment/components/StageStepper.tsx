@@ -1,28 +1,28 @@
 'use client'
 
 import { Check } from 'lucide-react'
-import type { EtapaSeleccionItem } from '@/modules/recruitment/types'
-import { compareStages, sortStages } from '@/modules/recruitment/lib/stages'
+import type { EtapaActual, EtapaSeleccionItem } from '@/modules/recruitment/types'
+import { nextStage } from '@/modules/recruitment/lib/stages'
 import { cn } from '@/lib/utils/cn'
 
 interface StageStepperProps {
-  /** Etapas activas del catálogo (cualquier orden: se ordenan acá). */
+  /** Columnas del tablero (etapas activas), en orden. */
   stages: EtapaSeleccionItem[]
-  current: EtapaSeleccionItem | null
+  current: EtapaActual | null
 }
 
 /**
- * Barra de pasos del embudo: dónde está la postulación y qué falta.
+ * Barra de pasos del proceso: los mismos pasos, en el mismo orden, que las
+ * columnas del tablero. Las anteriores a la actual se marcan hechas; la
+ * actual, resaltada con su color; las siguientes, vacías.
  *
- * Reemplaza leer el historial completo para saber "en qué va". Las etapas
- * anteriores a la actual se marcan hechas; la actual, resaltada con su
- * color; las siguientes, vacías. La etapa actual puede no estar en el
- * catálogo (una etapa vieja ya desactivada): igual se nombra abajo, y las
- * del catálogo se ubican antes o después según el mismo orden del embudo.
+ * La etapa actual puede no ser una columna (una etapa que después se
+ * eliminó del tablero): igual se nombra abajo, sin marcar ningún paso.
  */
 export function StageStepper({ stages, current }: StageStepperProps) {
-  const ordered = sortStages(stages)
-  const next = ordered.find((s) => current === null || compareStages(s, current) > 0) ?? null
+  const ordered = [...stages].sort((a, b) => a.orden - b.orden)
+  const currentColumn = current ? (ordered.find((stage) => stage.id === current.id) ?? null) : null
+  const next = nextStage(ordered, currentColumn)
 
   if (ordered.length === 0 && !current) return null
 
@@ -31,8 +31,8 @@ export function StageStepper({ stages, current }: StageStepperProps) {
       {ordered.length > 0 && (
         <ol className="flex items-center" aria-label="Etapas del proceso">
           {ordered.map((stage, index) => {
-            const isCurrent = current?.id === stage.id
-            const done = current !== null && !isCurrent && compareStages(stage, current) < 0
+            const isCurrent = currentColumn?.id === stage.id
+            const done = currentColumn !== null && stage.orden < currentColumn.orden
             return (
               <li
                 key={stage.id}
@@ -77,7 +77,7 @@ export function StageStepper({ stages, current }: StageStepperProps) {
             Etapa actual: <span className="font-semibold text-slate-900">{current.nombre}</span>
           </>
         ) : (
-          <span className="font-semibold text-slate-900">Todavía sin etapas registradas</span>
+          <span className="font-semibold text-slate-900">Todavía sin etapa</span>
         )}
         {next && (
           <span className="text-slate-500">

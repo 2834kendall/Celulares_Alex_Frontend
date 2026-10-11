@@ -223,7 +223,7 @@ export default async function DashboardPage({
   const recruitment = isDemo
     ? DEMO_RECRUITMENT
     : boardResult?.ok
-      ? summarizeRecruitment(boardResult.data)
+      ? summarizeRecruitment(boardResult.data, boardResult.stages)
       : null
 
   const myWeek = isDemo ? demoMyWeek(todayIso) : myWeekResult?.ok ? myWeekResult : null

@@ -163,23 +163,23 @@ export const candidatoDocumentoMetadataSchema = z.object({
 
 export type CandidatoDocumentoMetadataInput = z.infer<typeof candidatoDocumentoMetadataSchema>
 
-// ─── Schema de avance de etapa ────────────────────────────────────────────────
-// Llama a la RPC registrar_etapa_postulacion. pet_responsable_id lo fija el
-// servidor desde el JWT (usr_id), nunca el cliente.
+// ─── Schema de movimiento entre columnas ─────────────────────────────────────
+// Mover una postulación a otra columna (etapa) del tablero. Llama a la RPC
+// registrar_etapa_postulacion.
+//
+// SGRH-96: ya no viaja `resultado` (aprobado/rechazado/pendiente). El propio
+// movimiento lo dice: si pasó a la columna siguiente, aprobó; si no sigue, se
+// descarta; si está pendiente, no se mueve. Tampoco viaja la fecha: la pone
+// el servidor (hoy, hora de Costa Rica), igual que el responsable (usr_id
+// del JWT) — ninguno de los dos es dato del cliente.
 
-export const avanzarEtapaSchema = z.object({
-  postulacionId: z.number().int().positive(),
-  etapaId: z.number({ error: 'Seleccione una etapa' }).int().positive(),
-  resultado: z.enum(['aprobado', 'rechazado', 'pendiente'], {
-    error: 'Seleccione un resultado',
-  }),
-  notas: emptyToNull(z.string().trim().max(300, 'Máximo 300 caracteres').nullable().optional()),
-  fecha: z
-    .string({ error: 'La fecha es obligatoria' })
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
+export const moveToStageSchema = z.object({
+  applicationId: z.number().int().positive(),
+  stageId: z.number({ error: 'Seleccione una etapa' }).int().positive(),
+  note: emptyToNull(z.string().trim().max(300, 'Máximo 300 caracteres').nullable().optional()),
 })
 
-export type AvanzarEtapaInput = z.infer<typeof avanzarEtapaSchema>
+export type MoveToStageInput = z.infer<typeof moveToStageSchema>
 
 // ─── Schema de descarte ───────────────────────────────────────────────────────
 
@@ -271,48 +271,67 @@ export type RubroSeleccionInput = z.infer<typeof rubroSeleccionSchema>
 
 // ─── View Model — Etapa del embudo ───────────────────────────────────────────
 
+// Una etapa activa del catálogo ES una columna del tablero (SGRH-96). Ya no
+// hay "fase": antes el tablero tenía tres columnas fijas con las etapas
+// adentro. Ver lib/stages.ts.
 export interface EtapaSeleccionItem {
   id: number
   nombre: string
+  /** Posición de la columna en el tablero: 0 = primera. */
   orden: number
-  fase: 1 | 2 | 3
-  /** Hex o null. Se usa en la tarjeta del tablero. */
+  /** Hex o null. Color del encabezado de la columna. */
   color: string | null
 }
 
-// ─── Etapa de selección: administración del catálogo ─────────────────────────
-// Las etapas las define cada empresa desde Configuración (SGRH-61): el seed
-// ya no siembra ninguna, porque las 20 que traía eran de un embudo genérico
-// que nadie validó contra el proceso real.
-
-export interface EtapaSeleccionRow extends EtapaSeleccionItem {
-  activo: boolean
+/** Una columna en la pantalla de administración (Configuración). */
+export interface StageColumnAdminItem extends EtapaSeleccionItem {
+  /** Postulaciones en proceso paradas hoy en la columna. */
+  cardCount: number
 }
 
-/** Las tres columnas del tablero. Toda etapa pertenece a exactamente una. */
-export const FASES_SELECCION = [
-  { value: 1, label: 'Postulados' },
-  { value: 2, label: 'En evaluación' },
-  { value: 3, label: 'Decisión' },
-] as const
+/**
+ * Una etapa desactivada: existe en el catálogo pero no es columna del
+ * tablero. Queda así cuando se "elimina" una columna por la que ya pasó
+ * algún candidato (su historial la referencia), o porque venía apagada del
+ * catálogo original.
+ */
+export interface InactiveStageItem {
+  id: number
+  nombre: string
+  color: string | null
+  /** Postulaciones en proceso que siguen paradas en ella ("Sin etapa" en el tablero). */
+  cardCount: number
+}
 
-export const etapaSeleccionSchema = z.object({
+/**
+ * Etapa en la que está parada una postulación. Puede NO ser una columna del
+ * tablero (una etapa vieja ya desactivada): por eso no trae posición — quien
+ * la necesite la busca por id entre las columnas activas.
+ */
+export interface EtapaActual {
+  id: number
+  nombre: string
+  color: string | null
+}
+
+// ─── Columna del tablero: alta y edición ─────────────────────────────────────
+// Las columnas se administran en el mismo tablero (crear, renombrar, color,
+// reordenar arrastrando, eliminar). El orden no se pide: una columna nueva
+// va al final y se acomoda arrastrándola.
+
+export const stageColumnSchema = z.object({
   nombre: z
     .string()
     .trim()
     .min(3, 'El nombre debe tener al menos 3 caracteres.')
     .max(80, 'El nombre no puede superar los 80 caracteres.'),
-  // Define en qué columna del tablero cae la postulación al llegar acá.
-  fase: z.union([z.literal(1), z.literal(2), z.literal(3)], {
-    error: 'Elegí a qué columna del tablero pertenece.',
-  }),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'El color debe ser un hex de 6 dígitos.')
     .nullable(),
 })
 
-export type EtapaSeleccionInput = z.infer<typeof etapaSeleccionSchema>
+export type StageColumnInput = z.infer<typeof stageColumnSchema>
 
 // ─── View Model — Criterio de puntaje ────────────────────────────────────────
 
@@ -400,7 +419,7 @@ export type PostulacionDetalle = Pick<
 > & {
   puestoNombre: string
   sucursalNombre: string | null
-  etapaActual: EtapaSeleccionItem | null
+  etapaActual: EtapaActual | null
   etapas: PostulacionEtapaItem[]
   puntajes: PuntajeCriterioItem[]
 }

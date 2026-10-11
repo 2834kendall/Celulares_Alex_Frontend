@@ -252,32 +252,49 @@ export function summarizePayroll(periodos: PeriodoListItem[], todayIso: string):
 export interface RecruitmentSummary {
   /** Applications still in process. */
   total: number
-  phases: { id: 1 | 2 | 3; label: string; count: number }[]
+  /** One entry per board column, in board order. `id` is the stage id. */
+  phases: { id: number; label: string; count: number }[]
   /** Latest to apply, newest first. */
   newest: { id: number; nombre: string; puesto: string }[]
 }
 
-/* Same three columns as the recruitment board. */
-const PHASE_LABELS: Record<1 | 2 | 3, string> = {
-  1: 'Postulados',
-  2: 'En evaluación',
-  3: 'Decisión',
-}
-
 const NEWEST_SHOWN = 3
 
-export function summarizeRecruitment(items: PostulacionBoardItem[]): RecruitmentSummary {
-  const counts: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 }
-  for (const item of items) counts[item.etapaFase] += 1
+/** Id of the synthetic "no stage" row: no real stage has id 0. */
+const UNPLACED_ID = 0
+
+/**
+ * Same columns as the recruitment board, in the same order: since SGRH-96
+ * every active stage is a column (the three fixed phases are gone). Empty
+ * columns are kept so the funnel reads the same here and on the board.
+ * Applications without a column (no stage yet, or a stage that was removed)
+ * get their own row only when there are any.
+ */
+export function summarizeRecruitment(
+  items: PostulacionBoardItem[],
+  stages: { id: number; nombre: string }[] = []
+): RecruitmentSummary {
+  const counts = new Map<number, number>(stages.map((stage) => [stage.id, 0]))
+  let unplaced = 0
+  for (const item of items) {
+    if (item.etapaId !== null && counts.has(item.etapaId)) {
+      counts.set(item.etapaId, (counts.get(item.etapaId) ?? 0) + 1)
+    } else {
+      unplaced += 1
+    }
+  }
 
   const newest = [...items]
     .sort((a, b) => b.fechaPostula.localeCompare(a.fechaPostula))
     .slice(0, NEWEST_SHOWN)
     .map((item) => ({ id: item.posId, nombre: item.candidatoNombre, puesto: item.puestoNombre }))
 
-  return {
-    total: items.length,
-    phases: ([1, 2, 3] as const).map((id) => ({ id, label: PHASE_LABELS[id], count: counts[id] })),
-    newest,
-  }
+  const phases = stages.map((stage) => ({
+    id: stage.id,
+    label: stage.nombre,
+    count: counts.get(stage.id) ?? 0,
+  }))
+  if (unplaced > 0) phases.push({ id: UNPLACED_ID, label: 'Sin etapa', count: unplaced })
+
+  return { total: items.length, phases, newest }
 }

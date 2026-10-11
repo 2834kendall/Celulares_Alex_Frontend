@@ -1,39 +1,54 @@
 /**
- * Orden del embudo de selección: primero la columna del tablero (fase 1
- * Postulados → 2 En evaluación → 3 Decisión) y, dentro de cada columna, el
- * orden que se configura con las flechas en Configuración → Etapas.
+ * Orden de las columnas del tablero de selección (SGRH-96).
  *
- * Es el mismo criterio para el selector de "Avanzar a", para la barra de
- * pasos de la ficha y para la validación del servidor (advanceStage), así
- * que "qué etapa viene después" no puede dar distinto en cada lugar.
+ * Cada etapa activa del catálogo ES una columna. Ya no existe el nivel
+ * intermedio de "fase" (Postulados / En evaluación / Decisión): el tablero
+ * mostraba tres columnas fijas con las etapas adentro como etiqueta, y mover
+ * a alguien de etapa muchas veces ni lo cambiaba de columna.
+ *
+ * La columna `eta_fase` sigue en la base y se usa SOLO como desempate
+ * histórico: mientras nadie reordene las columnas, se respeta el orden que
+ * tenían (fase y, dentro de ella, `eta_orden`), para que el tablero no
+ * amanezca revuelto. La primera vez que alguien reordena, la acción
+ * `reorderSelectionStages` renumera `eta_orden` y limpia `eta_fase`; de ahí
+ * en adelante manda solo `eta_orden`. Las etapas nuevas nacen sin fase y van
+ * al final. Así no hace falta ninguna migración.
  */
 
+export interface StageOrderRow {
+  eta_id: number
+  eta_orden: number
+  eta_fase: number | null
+}
+
+function compareStageRows(a: StageOrderRow, b: StageOrderRow): number {
+  // Sin fase = después de todas las que todavía la tienen.
+  const faseA = a.eta_fase ?? Number.MAX_SAFE_INTEGER
+  const faseB = b.eta_fase ?? Number.MAX_SAFE_INTEGER
+  return faseA - faseB || a.eta_orden - b.eta_orden || a.eta_id - b.eta_id
+}
+
+/** Filas del catálogo en el orden en que se muestran como columnas. */
+export function sortStageRows<T extends StageOrderRow>(rows: T[]): T[] {
+  return [...rows].sort(compareStageRows)
+}
+
+/** Columna ya ordenada: `orden` es su posición (0 = primera). */
 export interface StagePosition {
-  fase: number
+  id: number
   orden: number
 }
 
-export function compareStages(a: StagePosition, b: StagePosition): number {
-  return a.fase - b.fase || a.orden - b.orden
-}
-
-export function sortStages<T extends StagePosition>(stages: T[]): T[] {
-  return [...stages].sort(compareStages)
-}
-
-/**
- * ¿Se puede pasar de `current` a `target`? Solo hacia adelante: RRHH decidió
- * que una postulación no vuelve a una etapa anterior. Sin etapa actual
- * (postulación recién creada) cualquier etapa es válida.
- */
-export function isForward(current: StagePosition | null, target: StagePosition): boolean {
-  return current === null || compareStages(target, current) > 0
-}
-
-/** Etapas a las que se puede avanzar desde `current`, en orden del embudo. */
-export function stagesAfter<T extends StagePosition>(
+/** La columna que sigue a `current`, o la primera si todavía no tiene etapa. */
+export function nextStage<T extends StagePosition>(
   stages: T[],
   current: StagePosition | null
-): T[] {
-  return sortStages(stages).filter((stage) => isForward(current, stage))
+): T | null {
+  const ordered = [...stages].sort((a, b) => a.orden - b.orden)
+  if (current === null) return ordered[0] ?? null
+  const index = ordered.findIndex((stage) => stage.id === current.id)
+  // La etapa actual ya no es una columna (se desactivó): no hay "siguiente"
+  // que se pueda deducir, se ofrece la primera.
+  if (index < 0) return ordered[0] ?? null
+  return ordered[index + 1] ?? null
 }

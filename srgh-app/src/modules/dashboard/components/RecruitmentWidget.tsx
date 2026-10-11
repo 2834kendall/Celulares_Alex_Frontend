@@ -51,7 +51,7 @@ export function RecruitmentWidget({
             </p>
           </div>
 
-          {/* Magnitude across the three stages of the board: one hue, bars
+          {/* Magnitude across the columns of the board: one hue, bars
               from a shared baseline, every value labeled next to its bar. */}
           <ul className="mt-3 space-y-0.5" onPointerLeave={() => setHovered(null)}>
             {summary.phases.map((phase, index) => {

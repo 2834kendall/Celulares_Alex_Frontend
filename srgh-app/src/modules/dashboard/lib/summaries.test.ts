@@ -200,7 +200,7 @@ describe('summarizePayroll', () => {
   })
 })
 
-function postulacion(id: number, fase: 1 | 2 | 3, fecha: string): PostulacionBoardItem {
+function postulacion(id: number, etapaId: number | null, fecha: string): PostulacionBoardItem {
   return {
     posId: id,
     candidatoId: id,
@@ -209,23 +209,53 @@ function postulacion(id: number, fase: 1 | 2 | 3, fecha: string): PostulacionBoa
     sucursalNombre: null,
     fechaPostula: fecha,
     puntajePromedio: null,
-    etapaFase: fase,
+    etapaId,
     etapaNombre: null,
     etapaColor: null,
-  } as PostulacionBoardItem
+  }
 }
 
 describe('summarizeRecruitment', () => {
-  it('counts per phase, keeping the empty ones, and lists the newest first', () => {
-    const summary = summarizeRecruitment([
-      postulacion(1, 1, '2026-09-01'),
-      postulacion(2, 1, '2026-10-02'),
-      postulacion(3, 3, '2026-09-20'),
-    ])
+  // Board columns, in board order: every active stage is a column.
+  const stages = [
+    { id: 10, nombre: 'Recibido' },
+    { id: 20, nombre: 'Entrevista' },
+    { id: 30, nombre: 'Prueba práctica' },
+  ]
+
+  it('counts per column in board order, keeping the empty ones, and lists the newest first', () => {
+    const summary = summarizeRecruitment(
+      [
+        postulacion(1, 10, '2026-09-01'),
+        postulacion(2, 10, '2026-10-02'),
+        postulacion(3, 30, '2026-09-20'),
+      ],
+      stages
+    )
 
     expect(summary.total).toBe(3)
+    expect(summary.phases.map((phase) => phase.label)).toEqual([
+      'Recibido',
+      'Entrevista',
+      'Prueba práctica',
+    ])
     expect(summary.phases.map((phase) => phase.count)).toEqual([2, 0, 1])
     expect(summary.newest.map((item) => item.id)).toEqual([2, 3, 1])
+  })
+
+  it('applications without a column get their own "Sin etapa" row, only when there are any', () => {
+    const summary = summarizeRecruitment(
+      [
+        postulacion(1, 10, '2026-09-01'),
+        // No stage yet, and a stage that is no longer a column.
+        postulacion(2, null, '2026-09-02'),
+        postulacion(3, 99, '2026-09-03'),
+      ],
+      stages
+    )
+
+    expect(summary.phases.at(-1)).toEqual({ id: 0, label: 'Sin etapa', count: 2 })
+    expect(summarizeRecruitment([postulacion(1, 10, '2026-09-01')], stages).phases).toHaveLength(3)
   })
 })
 

@@ -4,27 +4,26 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { etapaSeleccionSchema, type EtapaSeleccionInput } from '@/modules/recruitment/types'
+import { duplicateStageNameError } from '@/modules/recruitment/lib/stageColumns'
+import { stageColumnSchema, type StageColumnInput } from '@/modules/recruitment/types'
 
 export type UpdateEtapaSeleccionResult = { ok: true } | { ok: false; error: string }
 
 /**
- * Editar la fase de una etapa MUEVE de columna a todas las postulaciones
- * que estén paradas en ella — es el efecto buscado (si "Entrevista con
- * jefatura" en realidad es parte de la decisión, el tablero debe reflejarlo
- * para todos), pero conviene saberlo antes de tocarla.
+ * Renombra una columna del tablero o le cambia el color. El orden no se toca
+ * acá: se cambia arrastrando el encabezado (reorderSelectionStages).
  */
 export async function updateEtapaSeleccion(
   etapaId: number,
-  input: EtapaSeleccionInput
+  input: StageColumnInput
 ): Promise<UpdateEtapaSeleccionResult> {
   if (!Number.isInteger(etapaId) || etapaId <= 0) {
-    return { ok: false, error: 'Etapa no encontrada.' }
+    return { ok: false, error: 'Columna no encontrada.' }
   }
 
-  const parsed = etapaSeleccionSchema.safeParse(input)
+  const parsed = stageColumnSchema.safeParse(input)
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de la etapa inválidos.' }
+    return { ok: false, error: 'Datos de la columna inválidos.' }
   }
 
   await requirePermission(PERMISOS.CATALOGOS_WRITE)
@@ -32,21 +31,17 @@ export async function updateEtapaSeleccion(
   const supabase = await createClient()
   const { error } = await supabase
     .from('sgrh_cat_etapas_seleccion')
-    .update({
-      eta_nombre: parsed.data.nombre,
-      eta_fase: parsed.data.fase,
-      eta_color: parsed.data.color,
-    })
+    .update({ eta_nombre: parsed.data.nombre, eta_color: parsed.data.color })
     .eq('eta_id', etapaId)
 
+  if (error?.code === '23505') {
+    return { ok: false, error: await duplicateStageNameError(supabase, parsed.data.nombre) }
+  }
   if (error) {
-    return {
-      ok: false,
-      error: 'No se pudo actualizar la etapa. Verifique que el nombre no esté repetido.',
-    }
+    return { ok: false, error: 'No se pudo actualizar la columna.' }
   }
 
-  revalidatePath('/settings')
   revalidatePath('/recruitment')
+  revalidatePath('/settings/recruitment/stages')
   return { ok: true }
 }
