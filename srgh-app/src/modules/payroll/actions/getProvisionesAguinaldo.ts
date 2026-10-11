@@ -50,6 +50,7 @@ export async function getProvisionesAguinaldo(
     historialLaboralId: a.labId,
     empleadoNombre: a.empleadoNombre,
     empleadoCedula: a.empleadoCedula,
+    empleadoEmail: a.empleadoEmail,
     anio,
     monto: a.montoPagado ?? a.calculo.monto,
     maternidad: a.calculo.maternidad,

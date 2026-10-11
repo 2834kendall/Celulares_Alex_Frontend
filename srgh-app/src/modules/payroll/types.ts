@@ -63,6 +63,11 @@ export interface DetalleNominaItem {
   historialLaboralId: number
   empleadoNombre: string
   empleadoCedula: string
+  /**
+   * Correo personal del empleado (emp_email_personal): adonde se le manda el
+   * comprobante en PDF al marcar el pago. Null si no tiene uno registrado.
+   */
+  empleadoEmail: string | null
   /** Solo lo que es salario. Es la base del aguinaldo y de la cesantía. */
   salarioBruto: number
   /**
@@ -497,6 +502,8 @@ export interface AguinaldoItem {
   historialLaboralId: number
   empleadoNombre: string
   empleadoCedula: string
+  /** Correo personal del empleado: adonde se le manda el comprobante al pagar. Null si no tiene. */
+  empleadoEmail: string | null
   anio: number
   /**
    * Aguinaldo del ciclo: salario de las quincenas pagadas (con la licencia de
@@ -630,6 +637,8 @@ export interface LiquidacionListItem {
   liqId: number
   empleadoNombre: string
   empleadoCedula: string
+  /** Correo personal del empleado: adonde se le manda el comprobante al pagar. Null si no tiene. */
+  empleadoEmail: string | null
   fechaSalida: string
   motivoNombre: string
   /** Bruto. */
@@ -662,6 +671,8 @@ export interface PagoExtraordinario {
   tipo: 'aguinaldo' | 'liquidacion'
   empleadoNombre: string
   empleadoCedula: string
+  /** Correo personal del empleado: adonde se le manda el comprobante al pagar. Null si no tiene. */
+  empleadoEmail: string | null
   anioAguinaldo: number | null
   liquidacionId: number | null
   fechaSalida: string | null

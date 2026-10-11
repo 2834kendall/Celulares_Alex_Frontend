@@ -5,7 +5,8 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { getPagoExtraordinario } from '@/modules/payroll/actions/getPagoExtraordinario'
-import { formatCRC, formatDate, nombreAguinaldo } from '@/modules/payroll/lib/format'
+import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
+import { armarComprobanteExtraordinario } from '@/modules/payroll/lib/comprobanteExtraordinarioContenido'
 import { PrintComprobanteButton } from '@/modules/payroll/components/PrintComprobanteButton'
 
 interface ComprobanteExtraordinarioPageProps {
@@ -56,20 +57,9 @@ export default async function ComprobanteExtraordinarioPage({
   if (!pagoResult.ok) notFound()
   const pago = pagoResult.data
 
-  const titulo =
-    pago.tipo === 'aguinaldo'
-      ? pago.anioAguinaldo
-        ? `Comprobante de pago del ${nombreAguinaldo(pago.anioAguinaldo).toLowerCase()}`
-        : 'Comprobante de pago de aguinaldo'
-      : 'Comprobante de liquidación'
-  const subtitulo =
-    pago.tipo === 'aguinaldo' && pago.anioAguinaldo
-      ? `Cubre del 1 de diciembre de ${pago.anioAguinaldo - 1} al 30 de noviembre de ${pago.anioAguinaldo}`
-      : `Salida: ${formatDate(pago.fechaSalida)}${pago.motivoSalida ? ` · ${pago.motivoSalida}` : ''}`
-
-  const rubros = pago.lineas.filter((l) => !l.informativo && !l.deduccion)
-  const informativas = pago.lineas.filter((l) => l.informativo)
-  const deducciones = pago.lineas.filter((l) => l.deduccion && l.monto > 0)
+  // Mismo contenido que el PDF que se le manda por correo al empleado.
+  const { titulo, subtitulo, informativas, rubros, deducciones, nota } =
+    armarComprobanteExtraordinario(pago)
 
   return (
     <div className="mx-auto min-h-screen max-w-2xl bg-slate-50 px-4 py-8 print:bg-white print:p-0">
@@ -112,7 +102,7 @@ export default async function ComprobanteExtraordinarioPage({
                 Cálculo
               </p>
               {informativas.map((l) => (
-                <Linea key={l.concepto} label={l.concepto} value={formatCRC(l.monto)} muted />
+                <Linea key={l.label} label={l.label} value={formatCRC(l.monto)} muted />
               ))}
               <div className="my-2 border-t border-slate-100" />
             </>
@@ -122,15 +112,7 @@ export default async function ComprobanteExtraordinarioPage({
             Rubros
           </p>
           {rubros.map((l) => (
-            <Linea
-              key={l.concepto}
-              label={
-                l.dias !== null && l.dias !== undefined
-                  ? `${l.concepto} (${l.dias} días)`
-                  : l.concepto
-              }
-              value={formatCRC(l.monto)}
-            />
+            <Linea key={l.label} label={l.label} value={formatCRC(l.monto)} />
           ))}
           <div className="my-2 border-t border-slate-100" />
           <Linea label="Total bruto" value={formatCRC(pago.montoBruto)} strong />
@@ -141,21 +123,11 @@ export default async function ComprobanteExtraordinarioPage({
                 Deducciones
               </p>
               {deducciones.map((l) => (
-                <Linea key={l.concepto} label={l.concepto} value={`− ${formatCRC(l.monto)}`} />
+                <Linea key={l.label} label={l.label} value={`− ${formatCRC(l.monto)}`} />
               ))}
             </>
           )}
-          {pago.tipo === 'liquidacion' && (
-            <p className="mt-1 text-[11px] text-slate-400">
-              Preaviso, cesantía y la indemnización por contrato a plazo fijo son indemnizaciones, y
-              el aguinaldo está exento: no llevan cuota obrera.
-            </p>
-          )}
-          {pago.tipo === 'aguinaldo' && (
-            <p className="mt-1 text-[11px] text-slate-400">
-              El aguinaldo no lleva cargas sociales ni impuesto sobre la renta (Ley 2412).
-            </p>
-          )}
+          <p className="mt-1 text-[11px] text-slate-400">{nota}</p>
 
           <div className="my-2 border-t border-slate-100" />
           <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-base font-extrabold text-emerald-800">

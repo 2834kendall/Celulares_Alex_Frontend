@@ -37,6 +37,27 @@ describe('<ConfirmDialog />', () => {
     expect(screen.getByRole('button', { name: 'Desactivar' })).toBeInTheDocument()
   })
 
+  it('por defecto el botón de confirmar es de acción destructiva', () => {
+    render(<ConfirmDialog title="t" message="m" onCancel={vi.fn()} onConfirm={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Eliminar' }).className).toContain('bg-rose-600')
+  })
+
+  it('con tone="primary" el botón de confirmar no se pinta de rojo', () => {
+    render(
+      <ConfirmDialog
+        title="t"
+        message="m"
+        confirmLabel="Sí, pagar"
+        tone="primary"
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />
+    )
+    const boton = screen.getByRole('button', { name: 'Sí, pagar' })
+    expect(boton.className).toContain('bg-brand-600')
+    expect(boton.className).not.toContain('bg-rose-600')
+  })
+
   it('llama a onCancel al hacer click en Cancelar', async () => {
     const onCancel = vi.fn()
     render(<ConfirmDialog title="t" message="m" onCancel={onCancel} onConfirm={vi.fn()} />)

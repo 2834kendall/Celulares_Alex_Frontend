@@ -7,14 +7,12 @@ import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
 import { getConceptos } from '@/modules/payroll/actions/getConceptos'
 import { formatCRC, formatDate, formatHoras, periodoLabel } from '@/modules/payroll/lib/format'
-import { esRebajoDeSalario } from '@/modules/payroll/lib/planilla'
+import { armarContenidoComprobante } from '@/modules/payroll/lib/comprobanteContenido'
 import { PrintComprobanteButton } from '@/modules/payroll/components/PrintComprobanteButton'
 
 interface ComprobantePageProps {
   params: Promise<{ periodoId: string; detalleId: string }>
 }
-
-const TIPOS_CALCULO_INGRESO = new Set(['monto_manual_ingreso', 'horas_extra_automatico'])
 
 function Linea({
   label,
@@ -66,69 +64,13 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
     notFound()
   }
 
-  const conceptoPorCodigo = new Map(
-    (conceptosResult.ok ? conceptosResult.data : []).map((c) => [c.con_codigo, c])
-  )
-
-  const lineasIngreso: { label: string; value: number }[] = []
-  // Lo que se paga pero no es salario (viáticos): va en su propio bloque,
-  // después de las deducciones, porque no cotiza ni cuenta para el aguinaldo.
-  const lineasNoSalarial: { label: string; value: number }[] = []
-  const lineasDeduccion: { label: string; value: number }[] = []
-  const codigosMostrados = new Set<string>()
-
-  /** Un ingreso va al bloque de salario o al de "otros pagos" según el catálogo. */
-  function agregarIngreso(
-    concepto: { con_afecta_salario_bruto: boolean } | undefined,
-    label: string,
-    value: number
-  ) {
-    if (concepto?.con_afecta_salario_bruto === false) {
-      // Los no salariales solo se listan si tienen monto: un "Viáticos ₡0" en
-      // cada comprobante es ruido, a diferencia de los rubros de salario.
-      if (value > 0) lineasNoSalarial.push({ label, value })
-      return
-    }
-    lineasIngreso.push({ label, value })
-  }
-
-  // Todos los conceptos de ingreso ACTIVOS del catálogo se muestran siempre,
-  // aunque el empleado no haya ganado nada ahí este periodo — así "0" queda
-  // explícito (ej. Feriado) en vez de que el rubro simplemente desaparezca.
-  for (const concepto of conceptosResult.ok ? conceptosResult.data : []) {
-    if (!concepto.con_activo || !TIPOS_CALCULO_INGRESO.has(concepto.con_tipo_calculo)) continue
-    agregarIngreso(
-      concepto,
-      concepto.con_nombre,
-      detalle.montosPorConcepto[concepto.con_codigo] ?? 0
-    )
-    codigosMostrados.add(concepto.con_codigo)
-  }
-
-  // Cualquier otro monto real guardado: deducciones (solo si tienen monto,
-  // no tiene sentido listar cada deducción posible en 0) y conceptos de
-  // ingreso ya desactivados del catálogo que igual quedaron pagados en este
-  // periodo (ej. un pago de banco de horas con HORAS_EXTRA).
-  for (const [codigo, monto] of Object.entries(detalle.montosPorConcepto)) {
-    if (codigosMostrados.has(codigo) || monto <= 0) continue
-    const concepto = conceptoPorCodigo.get(codigo)
-    const label = concepto?.con_nombre ?? codigo
-    // La ausencia sin goce rebaja el salario: va restando en el bloque del
-    // salario, para que ese bloque sume el bruto (auditoría 2, hallazgo 6).
-    if (concepto && esRebajoDeSalario(concepto)) {
-      lineasIngreso.push({ label, value: -monto })
-      continue
-    }
-    if (concepto && TIPOS_CALCULO_INGRESO.has(concepto.con_tipo_calculo)) {
-      agregarIngreso(concepto, label, monto)
-    } else {
-      lineasDeduccion.push({ label, value: monto })
-    }
-  }
-
-  // Bruto − deducciones, antes de sumar lo no salarial. Se muestra para que
-  // las tres líneas de arriba cuadren a la vista con el neto.
-  const subtotal = detalle.salarioBruto - detalle.totalDeducciones
+  // Mismas líneas que el PDF que se le manda por correo al empleado.
+  const {
+    ingresos: lineasIngreso,
+    noSalarial: lineasNoSalarial,
+    deducciones: lineasDeduccion,
+    subtotal,
+  } = armarContenidoComprobante(detalle, conceptosResult.ok ? conceptosResult.data : [])
 
   return (
     <div className="mx-auto min-h-screen max-w-2xl bg-slate-50 px-4 py-8 print:bg-white print:p-0">

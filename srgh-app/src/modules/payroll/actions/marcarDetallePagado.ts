@@ -10,6 +10,10 @@ import { sincronizarEstadoPeriodo } from '@/modules/payroll/lib/estadoPeriodoDat
 import { hoyLocal, rangoQuincena } from '@/modules/payroll/lib/fechas'
 import { montoIncapacidadEnVivo } from '@/modules/payroll/lib/incapacidad'
 import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
+import {
+  enviarComprobantePorCorreo,
+  type ResultadoEnvioComprobante,
+} from '@/modules/payroll/lib/envioComprobante'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import {
   MENSAJE_PROBLEMA,
@@ -54,7 +58,16 @@ interface DetalleActualRow {
   } | null
 }
 
-export type MarcarDetallePagadoResult = { ok: true } | { ok: false; error: string }
+export type MarcarDetallePagadoResult =
+  | {
+      ok: true
+      /**
+       * Solo al marcar un pago: qué pasó con el correo del comprobante. Si no
+       * se pudo enviar, el pago queda marcado igual.
+       */
+      correo?: ResultadoEnvioComprobante
+    }
+  | { ok: false; error: string }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -156,7 +169,12 @@ async function sincronizarComprobante(
     if (!error) return
     // 23505 = choque con el índice único del código. Cualquier otro error no
     // se arregla reintentando.
-    if (error.code !== '23505') return
+    if (error.code !== '23505') {
+      // Sin comprobante el pago no tiene código y no se encuentra con el
+      // buscador: que al menos quede registrado por qué.
+      console.error('[comprobante] no se pudo emitir el código de verificación', error)
+      return
+    }
   }
 }
 
@@ -735,8 +753,22 @@ export async function marcarDetallePagado(
 
   await sincronizarEstadoPeriodo(supabase, detalle.ndt_nomina_periodo_id)
 
+  // El comprobante se le manda al empleado apenas queda pagado. Va al final,
+  // con todo ya guardado: el PDF sale de lo que quedó en la base (código de
+  // verificación y fecha de pago incluidos) y un fallo del correo no deja el
+  // pago a medias.
+  let correo: ResultadoEnvioComprobante | undefined
+  if (pagado) {
+    try {
+      correo = await enviarComprobantePorCorreo(detalle.ndt_nomina_periodo_id, ndtId)
+    } catch (error) {
+      console.error('[comprobante] fallo inesperado al enviar el correo', error)
+      correo = { estado: 'error', error: 'ocurrió un error inesperado al enviarlo.' }
+    }
+  }
+
   revalidatePath('/payroll')
   revalidatePath(`/payroll/${detalle.ndt_nomina_periodo_id}`)
   revalidatePath('/payroll/aguinaldo-liquidacion')
-  return { ok: true }
+  return correo ? { ok: true, correo } : { ok: true }
 }

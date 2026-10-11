@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
 import { Check, Plus, X } from 'lucide-react'
 import { LABEL } from '@/components/ui/styles'
 
@@ -169,20 +169,7 @@ export function ColorPicker({
           </div>
         ))}
 
-        <label
-          className={`relative flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-300 bg-white text-slate-400 transition hover:border-brand-400 hover:text-brand-600 ${
-            disabled ? 'pointer-events-none opacity-50' : ''
-          }`}
-        >
-          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-          <span className="sr-only">Agregar color personalizado</span>
-          <input
-            type="color"
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            disabled={disabled}
-            onChange={(event) => addCustomColor(event.target.value)}
-          />
-        </label>
+        <CustomColorPopover disabled={disabled} onAdd={addCustomColor} />
       </div>
     </div>
   )
@@ -212,5 +199,180 @@ function Swatch({ selected, disabled, label, color, dashed, onClick }: SwatchPro
     >
       {selected && <Check className="h-3.5 w-3.5 text-slate-700" strokeWidth={3} />}
     </button>
+  )
+}
+
+type Hsv = { h: number; s: number; v: number }
+
+function hexToHsv(hex: string): Hsv {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  const max = Math.max(r, g, b)
+  const d = max - Math.min(r, g, b)
+  let h = 0
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h = (h * 60 + 360) % 360
+  }
+  return { h, s: max ? d / max : 0, v: max }
+}
+
+function hsvToHex({ h, s, v }: Hsv): string {
+  const f = (n: number) => {
+    const k = (n + h / 60) % 6
+    return v - v * s * Math.max(0, Math.min(k, 4 - k, 1))
+  }
+  return `#${[f(5), f(3), f(1)]
+    .map((c) =>
+      Math.round(c * 255)
+        .toString(16)
+        .padStart(2, '0')
+    )
+    .join('')}`
+}
+
+// Selector propio (no el <input type="color"> nativo) para que se vea y se comporte igual en Mac y Windows.
+function CustomColorPopover({
+  disabled,
+  onAdd,
+}: {
+  disabled?: boolean
+  onAdd: (hex: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [hsv, setHsv] = useState<Hsv>(() => hexToHsv('#7c9cf2'))
+  const [hexText, setHexText] = useState<string | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const areaRef = useRef<HTMLDivElement>(null)
+  const hex = hsvToHex(hsv)
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(event: globalThis.PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  function moveInArea(event: PointerEvent<HTMLDivElement>) {
+    const rect = areaRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const s = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+    const v = 1 - Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
+    setHexText(null)
+    setHsv((prev) => ({ ...prev, s, v }))
+  }
+
+  function commitHexText(text: string) {
+    const candidate = text.startsWith('#') ? text : `#${text}`
+    if (HEX_RE.test(candidate)) setHsv(hexToHsv(candidate))
+    setHexText(null)
+  }
+
+  function add() {
+    onAdd(hex)
+    setOpen(false)
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-label="Agregar color personalizado"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white text-slate-400 transition hover:border-brand-400 hover:text-brand-600 disabled:pointer-events-none disabled:opacity-50"
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-9 z-30 w-56 space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+          <div
+            ref={areaRef}
+            className="relative h-32 w-full cursor-crosshair touch-none select-none rounded-lg"
+            style={{
+              backgroundColor: hsvToHex({ h: hsv.h, s: 1, v: 1 }),
+              backgroundImage:
+                'linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)',
+            }}
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId)
+              moveInArea(event)
+            }}
+            onPointerMove={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) moveInArea(event)
+            }}
+          >
+            <span
+              className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow ring-1 ring-black/30"
+              style={{
+                left: `${hsv.s * 100}%`,
+                top: `${(1 - hsv.v) * 100}%`,
+                backgroundColor: hex,
+              }}
+            />
+          </div>
+
+          <input
+            type="range"
+            min={0}
+            max={359}
+            value={Math.round(hsv.h)}
+            aria-label="Tono"
+            onChange={(event) => {
+              setHexText(null)
+              setHsv((prev) => ({ ...prev, h: Number(event.target.value) }))
+            }}
+            className="h-3 w-full cursor-pointer appearance-none rounded-full"
+            style={{
+              background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
+            }}
+          />
+
+          <div className="flex items-center gap-2">
+            <span
+              className="h-8 w-8 shrink-0 rounded-full border border-black/10"
+              style={{ backgroundColor: hex }}
+            />
+            <input
+              type="text"
+              aria-label="Codigo hexadecimal"
+              maxLength={7}
+              value={hexText ?? hex}
+              onChange={(event) => setHexText(event.target.value)}
+              onBlur={(event) => commitHexText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  commitHexText(event.currentTarget.value)
+                }
+              }}
+              className="w-full min-w-0 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs uppercase"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={add}
+            className="w-full rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700"
+          >
+            Agregar color
+          </button>
+        </div>
+      )}
+    </div>
   )
 }

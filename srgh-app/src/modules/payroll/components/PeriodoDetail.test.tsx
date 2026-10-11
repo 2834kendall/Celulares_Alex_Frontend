@@ -3,6 +3,9 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PeriodoDetail } from './PeriodoDetail'
 import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla'
+import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
+import { reenviarComprobante } from '@/modules/payroll/actions/reenviarComprobante'
+import { toast } from 'sonner'
 import { formatCRC } from '@/modules/payroll/lib/format'
 import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
 
@@ -14,6 +17,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
 // Server actions: acá no se ejecutan, solo se pinta la pantalla.
 vi.mock('@/modules/payroll/actions/marcarDetallePagado', () => ({ marcarDetallePagado: vi.fn() }))
+vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({ reenviarComprobante: vi.fn() }))
 vi.mock('@/modules/payroll/actions/refrescarHorasAsistencia', () => ({
   refrescarHorasAsistencia: vi.fn(),
 }))
@@ -35,6 +39,7 @@ function fila(over: Partial<DetalleNominaItem>): DetalleNominaItem {
     historialLaboralId: 1,
     empleadoNombre: 'Ana Mora',
     empleadoCedula: '1-1111-1111',
+    empleadoEmail: 'ana@correo.com',
     salarioBruto: 400000,
     totalNoSalarial: 0,
     totalDeducciones: 43320,
@@ -327,5 +332,140 @@ describe('PeriodoDetail: quitar una fila sin nada que pagar', () => {
 
     render(<PeriodoDetail periodo={periodo([VACIA])} canWrite={false} conceptosManuales={[]} />)
     expect(screen.queryByRole('button', { name: 'Quitar de la planilla' })).not.toBeInTheDocument()
+  })
+})
+
+describe('PeriodoDetail: confirmar antes de pagar o desmarcar', () => {
+  /** El botón de estado de la fila en la tabla de escritorio. */
+  function botonEstado(nombre: 'Pendiente' | 'Pagado') {
+    return within(screen.getByRole('table')).getByRole('button', { name: nombre })
+  }
+
+  it('pagar pide confirmación y dice adónde se manda el comprobante', async () => {
+    vi.mocked(marcarDetallePagado).mockClear()
+    render(
+      <PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} correoConfigurado />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+
+    const dialogo = screen.getByRole('alertdialog', { name: '¿Desea pagarle a Ana Mora?' })
+    expect(dialogo).toHaveTextContent(
+      `Se registrará el pago de ${monto(356680)} a Ana Mora y se le enviará el comprobante en PDF a ana@correo.com.`
+    )
+    // Hasta confirmar no se marca nada.
+    expect(marcarDetallePagado).not.toHaveBeenCalled()
+  })
+
+  it('cancelar no marca el pago', async () => {
+    vi.mocked(marcarDetallePagado).mockClear()
+    render(
+      <PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} correoConfigurado />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(marcarDetallePagado).not.toHaveBeenCalled()
+  })
+
+  it('al confirmar marca el pago y avisa que el comprobante se envió', async () => {
+    vi.mocked(marcarDetallePagado).mockReset()
+    vi.mocked(marcarDetallePagado).mockResolvedValue({
+      ok: true,
+      correo: { estado: 'enviado', email: 'ana@correo.com' },
+    })
+    render(
+      <PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} correoConfigurado />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+    await userEvent.click(screen.getByRole('button', { name: 'Sí, pagar' }))
+
+    expect(marcarDetallePagado).toHaveBeenCalledWith(1, true)
+    expect(toast.success).toHaveBeenCalledWith(
+      'Pago registrado. Comprobante enviado a ana@correo.com.'
+    )
+  })
+
+  it('si el correo falla avisa, y "Reintentar" lo vuelve a mandar', async () => {
+    vi.mocked(marcarDetallePagado).mockResolvedValue({
+      ok: true,
+      correo: { estado: 'error', error: 'no se pudo conectar con el servidor de correo.' },
+    })
+    vi.mocked(reenviarComprobante).mockResolvedValue({
+      estado: 'enviado',
+      email: 'ana@correo.com',
+    })
+    vi.mocked(toast.warning).mockClear()
+    render(
+      <PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} correoConfigurado />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+    await userEvent.click(screen.getByRole('button', { name: 'Sí, pagar' }))
+
+    expect(toast.warning).toHaveBeenCalledTimes(1)
+    const [mensaje, opciones] = vi.mocked(toast.warning).mock.calls[0]
+    expect(mensaje).toBe(
+      'Pago registrado, pero el comprobante no se pudo enviar: no se pudo conectar con el servidor de correo.'
+    )
+    const accion = (opciones as { action: { label: string; onClick: () => void } }).action
+    expect(accion.label).toBe('Reintentar')
+
+    accion.onClick()
+    await vi.waitFor(() => expect(reenviarComprobante).toHaveBeenCalledWith(7, 1))
+    await vi.waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Pago registrado. Comprobante enviado a ana@correo.com.'
+      )
+    )
+  })
+
+  it('sin correo registrado, la confirmación lo dice antes de pagar', async () => {
+    const sinCorreo = fila({ ...ANA, empleadoEmail: null })
+    render(
+      <PeriodoDetail
+        periodo={periodo([sinCorreo])}
+        canWrite
+        conceptosManuales={[]}
+        correoConfigurado
+      />
+    )
+
+    await userEvent.click(botonEstado('Pendiente'))
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      'No tiene correo registrado en su expediente, así que el comprobante no se le puede enviar: habrá que entregárselo impreso.'
+    )
+  })
+
+  it('sin el correo configurado, la confirmación no promete un envío', async () => {
+    render(<PeriodoDetail periodo={periodo([ANA])} canWrite conceptosManuales={[]} />)
+
+    await userEvent.click(botonEstado('Pendiente'))
+
+    const dialogo = screen.getByRole('alertdialog')
+    expect(dialogo).toHaveTextContent('El envío de comprobantes por correo no está configurado')
+    expect(dialogo).not.toHaveTextContent('ana@correo.com')
+  })
+
+  it('volver a editar un pago pide confirmación y avisa que el comprobante deja de valer', async () => {
+    vi.mocked(marcarDetallePagado).mockReset()
+    vi.mocked(marcarDetallePagado).mockResolvedValue({ ok: true })
+    const pagada = fila({ ...ANA, pagado: true, codigoVerificacion: 'ABCD-EFGH-JKMN' })
+    render(<PeriodoDetail periodo={periodo([pagada])} canWrite conceptosManuales={[]} />)
+
+    await userEvent.click(botonEstado('Pagado'))
+
+    const dialogo = screen.getByRole('alertdialog', {
+      name: '¿Volver a editar el pago de Ana Mora?',
+    })
+    expect(dialogo).toHaveTextContent('(código ABCD-EFGH-JKMN) deja de valer')
+    expect(marcarDetallePagado).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Desmarcar pago' }))
+    expect(marcarDetallePagado).toHaveBeenCalledWith(1, false)
   })
 })

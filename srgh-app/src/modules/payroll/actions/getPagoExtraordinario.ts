@@ -23,6 +23,7 @@ interface PagoRow {
       emp_apellido_1: string
       emp_apellido_2: string | null
       emp_numero_identificacion: string
+      emp_email_personal?: string | null
     } | null
   } | null
   sgrh_liquidaciones: {
@@ -46,7 +47,7 @@ export async function getPagoExtraordinario(pagoId: number): Promise<GetPagoExtr
     .select(
       `pex_id, pex_tipo, pex_anio_aguinaldo, pex_liquidacion_id, pex_monto_bruto, pex_deducciones,
        pex_monto_neto, pex_lineas, pex_fecha_pago, pex_codigo_verificacion, pex_observaciones,
-       sgrh_historial_laboral ( sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion ) ),
+       sgrh_historial_laboral ( sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal ) ),
        sgrh_liquidaciones ( liq_fecha_salida, sgrh_cat_motivos_salida ( mot_nombre ) )`
     )
     .eq('pex_id', pagoId)
@@ -65,6 +66,7 @@ export async function getPagoExtraordinario(pagoId: number): Promise<GetPagoExtr
         ? [emp.emp_nombre, emp.emp_apellido_1, emp.emp_apellido_2].filter(Boolean).join(' ')
         : 'Empleado no disponible',
       empleadoCedula: emp?.emp_numero_identificacion ?? '—',
+      empleadoEmail: emp?.emp_email_personal?.trim() || null,
       anioAguinaldo: data.pex_anio_aguinaldo,
       liquidacionId: data.pex_liquidacion_id,
       fechaSalida: data.sgrh_liquidaciones?.liq_fecha_salida ?? null,
