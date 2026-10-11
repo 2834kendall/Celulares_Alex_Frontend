@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PeriodosList } from './PeriodosList'
 import type { PeriodoListItem } from '@/modules/payroll/types'
+import { deletePeriodo } from '@/modules/payroll/actions/deletePeriodo'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/modules/payroll/actions/deletePeriodo', () => ({ deletePeriodo: vi.fn() }))
@@ -102,5 +103,17 @@ describe('<PeriodosList /> tarjetas de filtro', () => {
       'title',
       'Eliminar periodo'
     )
+  })
+
+  it('al tocar eliminar pregunta si desea eliminar el periodo antes de borrarlo', async () => {
+    render(<PeriodosList periodos={[periodo(1)]} canWrite />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Eliminar Enero/ }))
+
+    expect(
+      screen.getByRole('alertdialog', { name: '¿Desea eliminar este periodo?' })
+    ).toBeInTheDocument()
+    expect(deletePeriodo).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Sí, eliminar' })).toBeInTheDocument()
   })
 })

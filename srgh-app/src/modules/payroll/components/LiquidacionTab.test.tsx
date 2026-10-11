@@ -8,6 +8,10 @@ import type { ContratoPorLiquidarItem, LiquidacionCalculada } from '@/modules/pa
 
 let searchString = ''
 
+// Server action del "Reintentar" del correo: acá no se ejecuta.
+vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({
+  reenviarComprobanteExtraordinario: vi.fn(),
+}))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/payroll/aguinaldo-liquidacion',

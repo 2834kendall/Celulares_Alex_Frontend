@@ -3,12 +3,17 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 import { pagarLiquidacion } from '@/modules/payroll/actions/pagarLiquidacion'
+import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
+import { toast } from 'sonner'
 
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
 vi.mock('@/modules/payroll/actions/pagarLiquidacion', () => ({ pagarLiquidacion: vi.fn() }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({
+  reenviarComprobanteExtraordinario: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
 
 const mockPagar = vi.mocked(pagarLiquidacion)
 
@@ -40,6 +45,7 @@ function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem
     liqId: 1,
     empleadoNombre: 'Ana Pérez',
     empleadoCedula: '1-2222-3333',
+    empleadoEmail: 'ana@correo.com',
     fechaSalida: '2026-07-15',
     motivoNombre: 'Renuncia',
     total: 300000,
@@ -112,26 +118,63 @@ describe('<LiquidacionesHistorial />', () => {
     expect(tabla().queryByRole('button', { name: 'Pagar' })).not.toBeInTheDocument()
   })
 
-  it('Pagar registra el pago de ESA liquidación y refresca la lista', async () => {
+  it('Pagar pregunta antes, registra el pago de ESA liquidación y avisa del correo', async () => {
     const user = userEvent.setup()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    mockPagar.mockResolvedValue({ ok: true, pagoId: 9 })
-    render(<LiquidacionesHistorial items={[item({ liqId: 5 })]} canWrite />)
+    mockPagar.mockResolvedValue({
+      ok: true,
+      pagoId: 9,
+      correo: { estado: 'enviado', email: 'ana@correo.com' },
+    })
+    render(<LiquidacionesHistorial items={[item({ liqId: 5 })]} canWrite correoConfigurado />)
 
     await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    const dialogo = screen.getByRole('alertdialog', {
+      name: '¿Desea pagarle la liquidación a Ana Pérez?',
+    })
+    expect(dialogo).toHaveTextContent('se le enviará el comprobante en PDF a ana@correo.com')
+    expect(mockPagar).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Sí, pagar' }))
 
     expect(mockPagar).toHaveBeenCalledWith(5)
     expect(refresh).toHaveBeenCalled()
+    expect(toast.success).toHaveBeenCalledWith(
+      'Liquidación de Ana Pérez pagada. Comprobante enviado a ana@correo.com.'
+    )
   })
 
   it('si cancela la confirmación no paga', async () => {
     const user = userEvent.setup()
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
-    render(<LiquidacionesHistorial items={[item()]} canWrite />)
+    render(<LiquidacionesHistorial items={[item()]} canWrite correoConfigurado />)
 
     await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
 
     expect(mockPagar).not.toHaveBeenCalled()
+  })
+
+  it('si el correo falla avisa y "Reintentar" vuelve a mandar ESE comprobante', async () => {
+    const user = userEvent.setup()
+    mockPagar.mockResolvedValue({
+      ok: true,
+      pagoId: 9,
+      correo: { estado: 'error', error: 'no se pudo conectar con el servidor de correo.' },
+    })
+    vi.mocked(reenviarComprobanteExtraordinario).mockResolvedValue({
+      estado: 'enviado',
+      email: 'ana@correo.com',
+    })
+    render(<LiquidacionesHistorial items={[item()]} canWrite correoConfigurado />)
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    await user.click(screen.getByRole('button', { name: 'Sí, pagar' }))
+
+    const [mensaje, opciones] = vi.mocked(toast.warning).mock.calls[0]
+    expect(mensaje).toBe(
+      'Liquidación de Ana Pérez pagada, pero el comprobante no se pudo enviar: no se pudo conectar con el servidor de correo.'
+    )
+    ;(opciones as unknown as { action: { onClick: () => void } }).action.onClick()
+    await vi.waitFor(() => expect(reenviarComprobanteExtraordinario).toHaveBeenCalledWith(9))
   })
 
   it('una liquidación pagada muestra el enlace a su comprobante', () => {
