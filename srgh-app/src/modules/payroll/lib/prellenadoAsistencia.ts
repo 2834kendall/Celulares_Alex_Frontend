@@ -106,6 +106,46 @@ export interface ContratoPago {
   horasSemanales: number | null
 }
 
+/** Las tres columnas de la foto del contrato en una fila de planilla. */
+export interface FotoContratoFila {
+  ndt_salario_base_contrato: number | null
+  ndt_salario_real_contrato: number | null
+  ndt_horas_semanales_contrato: number | null
+}
+
+/**
+ * El contrato con que se calculó una fila de planilla.
+ *
+ * Desde que el contrato vigente se puede editar en cualquier momento, leerlo en
+ * vivo para evaluar una fila ya calculada da el resultado equivocado: marcaría
+ * como desactualizada —y en el pago, rechazaría— cada fila de un período
+ * abierto solo porque alguien corrigió el salario, que justamente tiene que
+ * aplicar desde el período siguiente.
+ *
+ * La foto se escribe al crear o recalcular la fila. `null` es una fila anterior
+ * a esa columna: ahí se cae al contrato en vivo, que es como se comportaba
+ * antes. Misma convención que `ndt_monto_incapacidad`.
+ */
+export function contratoDeLaFila(fila: FotoContratoFila, enVivo: ContratoPago): ContratoPago {
+  const base = Number(fila.ndt_salario_base_contrato ?? 0)
+  if (!(base > 0)) return enVivo
+
+  return {
+    salarioBaseMensual: base,
+    salarioRealMensual: fila.ndt_salario_real_contrato,
+    horasSemanales: fila.ndt_horas_semanales_contrato,
+  }
+}
+
+/** La foto para guardar en la fila, a partir del contrato que se usó. */
+export function fotoDelContrato(contrato: ContratoPago): FotoContratoFila {
+  return {
+    ndt_salario_base_contrato: contrato.salarioBaseMensual,
+    ndt_salario_real_contrato: contrato.salarioRealMensual,
+    ndt_horas_semanales_contrato: contrato.horasSemanales,
+  }
+}
+
 export interface FilaPrellenada {
   horas: number
   horasExtra: number

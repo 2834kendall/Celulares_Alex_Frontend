@@ -4,6 +4,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
 import { getConceptos } from '@/modules/payroll/actions/getConceptos'
 import { PeriodoDetail } from '@/modules/payroll/components/PeriodoDetail'
+import { configSmtp } from '@/lib/correo/smtp'
 import { PlanillaImport } from '@/modules/payroll/components/PlanillaImport'
 import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -67,6 +68,7 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
         periodo={detailResult.data}
         canWrite={canWrite}
         conceptosManuales={conceptosManuales}
+        correoConfigurado={configSmtp() !== null}
       />
     </div>
   )

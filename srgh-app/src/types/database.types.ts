@@ -131,12 +131,12 @@ export type Database = {
           bhm_fecha_resolucion: string | null
           bhm_historial_laboral_id: number
           bhm_horas: number
-          bhm_liquidacion_id: number | null
-          bhm_observaciones: string | null
           bhm_id: number
+          bhm_liquidacion_id: number | null
           bhm_monto_pagado: number | null
           bhm_nomina_detalle_id: number
           bhm_nomina_detalle_pago_id: number | null
+          bhm_observaciones: string | null
           bhm_resuelto_por_id: number | null
           bhm_salario_por_hora: number
         }
@@ -146,12 +146,12 @@ export type Database = {
           bhm_fecha_resolucion?: string | null
           bhm_historial_laboral_id: number
           bhm_horas: number
-          bhm_liquidacion_id?: number | null
-          bhm_observaciones?: string | null
           bhm_id?: never
+          bhm_liquidacion_id?: number | null
           bhm_monto_pagado?: number | null
           bhm_nomina_detalle_id: number
           bhm_nomina_detalle_pago_id?: number | null
+          bhm_observaciones?: string | null
           bhm_resuelto_por_id?: number | null
           bhm_salario_por_hora?: number
         }
@@ -161,12 +161,12 @@ export type Database = {
           bhm_fecha_resolucion?: string | null
           bhm_historial_laboral_id?: number
           bhm_horas?: number
-          bhm_liquidacion_id?: number | null
-          bhm_observaciones?: string | null
           bhm_id?: never
+          bhm_liquidacion_id?: number | null
           bhm_monto_pagado?: number | null
           bhm_nomina_detalle_id?: number
           bhm_nomina_detalle_pago_id?: number | null
+          bhm_observaciones?: string | null
           bhm_resuelto_por_id?: number | null
           bhm_salario_por_hora?: number
         }
@@ -177,6 +177,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "sgrh_historial_laboral"
             referencedColumns: ["lab_id"]
+          },
+          {
+            foreignKeyName: "sgrh_banco_horas_movimientos_bhm_liquidacion_id_fkey"
+            columns: ["bhm_liquidacion_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_liquidaciones"
+            referencedColumns: ["liq_id"]
           },
           {
             foreignKeyName: "sgrh_banco_horas_movimientos_bhm_nomina_detalle_id_fkey"
@@ -1825,13 +1832,13 @@ export type Database = {
           liq_dias_preaviso: number
           liq_dias_trabajados_mes: number
           liq_dias_vacaciones_pendientes: number
-          liq_horas_extra_banco: number
-          liq_indemnizacion_plazo_fijo: number
           liq_dias_vacaciones_propuestos: number | null
           liq_fecha_pago: string | null
           liq_fecha_salida: string
           liq_historial_laboral_id: number
+          liq_horas_extra_banco: number
           liq_id: number
+          liq_indemnizacion_plazo_fijo: number
           liq_motivo_salida_id: number
           liq_neto: number
           liq_nota_cesantia: string | null
@@ -1855,13 +1862,13 @@ export type Database = {
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
           liq_dias_vacaciones_pendientes?: number
-          liq_horas_extra_banco?: number
-          liq_indemnizacion_plazo_fijo?: number
           liq_dias_vacaciones_propuestos?: number | null
           liq_fecha_pago?: string | null
           liq_fecha_salida: string
           liq_historial_laboral_id: number
+          liq_horas_extra_banco?: number
           liq_id?: never
+          liq_indemnizacion_plazo_fijo?: number
           liq_motivo_salida_id: number
           liq_neto?: number
           liq_nota_cesantia?: string | null
@@ -1885,13 +1892,13 @@ export type Database = {
           liq_dias_preaviso?: number
           liq_dias_trabajados_mes?: number
           liq_dias_vacaciones_pendientes?: number
-          liq_horas_extra_banco?: number
-          liq_indemnizacion_plazo_fijo?: number
           liq_dias_vacaciones_propuestos?: number | null
           liq_fecha_pago?: string | null
           liq_fecha_salida?: string
           liq_historial_laboral_id?: number
+          liq_horas_extra_banco?: number
           liq_id?: never
+          liq_indemnizacion_plazo_fijo?: number
           liq_motivo_salida_id?: number
           liq_neto?: number
           liq_nota_cesantia?: string | null
@@ -2017,8 +2024,6 @@ export type Database = {
           ndt_dias_ausencia_sin_goce: number
           ndt_dias_incapacidad_ccss: number
           ndt_dias_incapacidad_empleador: number
-          ndt_monto_incapacidad: number | null
-          ndt_porcentaje_incapacidad: number | null
           ndt_fecha_pago: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
@@ -2032,12 +2037,17 @@ export type Database = {
           ndt_horas_ordinarias_diurnas: number
           ndt_horas_ordinarias_mixtas: number
           ndt_horas_ordinarias_nocturnas: number
+          ndt_horas_semanales_contrato: number | null
           ndt_id: number
+          ndt_monto_incapacidad: number | null
           ndt_nomina_periodo_id: number
           ndt_pagado: boolean
+          ndt_porcentaje_incapacidad: number | null
+          ndt_salario_base_contrato: number | null
           ndt_salario_bruto: number
           ndt_salario_neto: number
           ndt_salario_por_hora: number
+          ndt_salario_real_contrato: number | null
           ndt_total_cargas_patronales: number
           ndt_total_deducciones_obreras: number
         }
@@ -2046,8 +2056,6 @@ export type Database = {
           ndt_dias_ausencia_sin_goce?: number
           ndt_dias_incapacidad_ccss?: number
           ndt_dias_incapacidad_empleador?: number
-          ndt_monto_incapacidad?: number | null
-          ndt_porcentaje_incapacidad?: number | null
           ndt_fecha_pago?: string | null
           ndt_fecha_registro: string
           ndt_historial_laboral_id: number
@@ -2061,12 +2069,17 @@ export type Database = {
           ndt_horas_ordinarias_diurnas?: number
           ndt_horas_ordinarias_mixtas?: number
           ndt_horas_ordinarias_nocturnas?: number
+          ndt_horas_semanales_contrato?: number | null
           ndt_id?: never
+          ndt_monto_incapacidad?: number | null
           ndt_nomina_periodo_id: number
           ndt_pagado?: boolean
+          ndt_porcentaje_incapacidad?: number | null
+          ndt_salario_base_contrato?: number | null
           ndt_salario_bruto?: number
           ndt_salario_neto?: number
           ndt_salario_por_hora?: number
+          ndt_salario_real_contrato?: number | null
           ndt_total_cargas_patronales?: number
           ndt_total_deducciones_obreras?: number
         }
@@ -2075,8 +2088,6 @@ export type Database = {
           ndt_dias_ausencia_sin_goce?: number
           ndt_dias_incapacidad_ccss?: number
           ndt_dias_incapacidad_empleador?: number
-          ndt_monto_incapacidad?: number | null
-          ndt_porcentaje_incapacidad?: number | null
           ndt_fecha_pago?: string | null
           ndt_fecha_registro?: string
           ndt_historial_laboral_id?: number
@@ -2090,23 +2101,21 @@ export type Database = {
           ndt_horas_ordinarias_diurnas?: number
           ndt_horas_ordinarias_mixtas?: number
           ndt_horas_ordinarias_nocturnas?: number
+          ndt_horas_semanales_contrato?: number | null
           ndt_id?: never
+          ndt_monto_incapacidad?: number | null
           ndt_nomina_periodo_id?: number
           ndt_pagado?: boolean
+          ndt_porcentaje_incapacidad?: number | null
+          ndt_salario_base_contrato?: number | null
           ndt_salario_bruto?: number
           ndt_salario_neto?: number
           ndt_salario_por_hora?: number
+          ndt_salario_real_contrato?: number | null
           ndt_total_cargas_patronales?: number
           ndt_total_deducciones_obreras?: number
         }
         Relationships: [
-          {
-            foreignKeyName: "sgrh_nom_det_horas_ajustadas_por_id_fkey"
-            columns: ["ndt_horas_ajustadas_por_id"]
-            isOneToOne: false
-            referencedRelation: "sgrh_usuarios"
-            referencedColumns: ["usr_id"]
-          },
           {
             foreignKeyName: "sgrh_nom_det_historial_laboral_id_fkey"
             columns: ["ndt_historial_laboral_id"]
@@ -3058,10 +3067,16 @@ export type Database = {
         Returns: number
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
-      eliminar_filas_planilla: { Args: { p_ndt_ids: number[] }; Returns: number }
-      eliminar_periodo_nomina: { Args: { p_npe_id: number }; Returns: undefined }
       editar_contrato: {
         Args: { p_contrato: Json; p_lab_id: number }
+        Returns: undefined
+      }
+      eliminar_filas_planilla: {
+        Args: { p_ndt_ids: number[] }
+        Returns: number
+      }
+      eliminar_periodo_nomina: {
+        Args: { p_npe_id: number }
         Returns: undefined
       }
       get_emp_id: { Args: never; Returns: number }

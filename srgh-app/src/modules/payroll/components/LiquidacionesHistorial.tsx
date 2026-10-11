@@ -8,6 +8,12 @@ import { toast } from 'sonner'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
 import { pagarLiquidacion } from '@/modules/payroll/actions/pagarLiquidacion'
+import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
+import {
+  avisarCorreoComprobante,
+  mensajeConfirmarPago,
+} from '@/modules/payroll/lib/avisoCorreoComprobante'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import {
@@ -26,6 +32,11 @@ interface LiquidacionesHistorialProps {
   items: LiquidacionListItem[]
   /** Muestra el botón Pagar (NOMINA_WRITE). */
   canWrite?: boolean
+  /**
+   * Si el envío de comprobantes por correo está configurado (SMTP). Solo
+   * cambia el texto de la confirmación del pago: el envío lo decide el servidor.
+   */
+  correoConfigurado?: boolean
 }
 
 function AccionLiquidacion({
@@ -87,7 +98,11 @@ function BotonDetalle({ abierto, onClick }: { abierto: boolean; onClick: () => v
  * Pagar registra el pago con su propio comprobante: no depende de ningún
  * periodo de planilla, porque la persona ya no trabaja.
  */
-export function LiquidacionesHistorial({ items, canWrite = false }: LiquidacionesHistorialProps) {
+export function LiquidacionesHistorial({
+  items,
+  canWrite = false,
+  correoConfigurado = false,
+}: LiquidacionesHistorialProps) {
   const router = useRouter()
   const [pagandoId, setPagandoId] = useState<number | null>(null)
   const [abiertoId, setAbiertoId] = useState<number | null>(null)
@@ -97,12 +112,15 @@ export function LiquidacionesHistorial({ items, canWrite = false }: Liquidacione
     8
   )
 
-  async function handlePagar(item: LiquidacionListItem) {
-    const ok = window.confirm(
-      `¿Pagar la liquidación de ${item.empleadoNombre} por ${formatCRC(item.neto)} netos? Queda registrada con su comprobante y no se puede deshacer desde acá.`
-    )
-    if (!ok) return
+  /** Liquidación a pagar: se confirma antes. */
+  const [confirmando, setConfirmando] = useState<LiquidacionListItem | null>(null)
 
+  function handlePagar(item: LiquidacionListItem) {
+    setConfirmando(item)
+  }
+
+  async function pagar(item: LiquidacionListItem) {
+    setConfirmando(null)
     setPagandoId(item.liqId)
     const result = await pagarLiquidacion(item.liqId)
     setPagandoId(null)
@@ -111,7 +129,14 @@ export function LiquidacionesHistorial({ items, canWrite = false }: Liquidacione
       toast.error(result.error)
       return
     }
-    toast.success(`Liquidación de ${item.empleadoNombre} pagada. El comprobante quedó en la lista.`)
+
+    const pagoId = result.pagoId
+    const prefijo = `Liquidación de ${item.empleadoNombre} pagada`
+    const avisar = (correo: Parameters<typeof avisarCorreoComprobante>[2]) =>
+      avisarCorreoComprobante(prefijo, item.empleadoNombre, correo, () => {
+        void reenviarComprobanteExtraordinario(pagoId).then(avisar)
+      })
+    avisar(result.correo)
     router.refresh()
   }
 
@@ -266,6 +291,21 @@ export function LiquidacionesHistorial({ items, canWrite = false }: Liquidacione
             onNext={goToNextPage}
           />
         </div>
+      )}
+
+      {confirmando && (
+        <ConfirmDialog
+          title={`¿Desea pagarle la liquidación a ${confirmando.empleadoNombre}?`}
+          message={`${mensajeConfirmarPago(
+            `Se registrará el pago de ${formatCRC(confirmando.neto)} netos`,
+            confirmando.empleadoEmail,
+            correoConfigurado
+          )} El pago no se puede deshacer desde acá.`}
+          confirmLabel="Sí, pagar"
+          tone="primary"
+          onCancel={() => setConfirmando(null)}
+          onConfirm={() => void pagar(confirmando)}
+        />
       )}
     </div>
   )

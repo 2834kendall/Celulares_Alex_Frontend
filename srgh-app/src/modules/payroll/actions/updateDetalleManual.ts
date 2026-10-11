@@ -15,6 +15,7 @@ import {
 } from '@/modules/payroll/lib/planilla'
 import {
   baseParaHorasEditadas,
+  fotoDelContrato,
   prellenarDesdeAsistencia,
 } from '@/modules/payroll/lib/prellenadoAsistencia'
 import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
@@ -275,6 +276,7 @@ export async function updateDetalleManual(
       ndt_horas_ordinarias_diurnas: parsed.data.horasTrabajadas,
       ndt_horas_extra_al_50: parsed.data.horasExtra,
       ndt_salario_por_hora: parsed.data.salarioPorHora,
+      ...fotoDelContrato(contratoPago),
       ...foto.campos,
     })
     .eq('ndt_id', ndtId)

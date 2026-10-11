@@ -1,10 +1,18 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { IconButton } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
 import { INPUT } from '@/components/ui/styles'
+import {
+  applyEdit,
+  applyMask,
+  digitsFromPaste,
+  formatShortDate,
+  onlyDigits,
+  parseShortDate,
+} from '@/lib/time/shortDate'
 
 /**
  * Selector de fecha con calendario propio.
@@ -52,18 +60,7 @@ function hoyLocal() {
   return aISO(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
 }
 
-/** "15/08/2026" para mostrar en el campo. Cadena vacia si no hay fecha. */
-function formatoCorto(dateISO: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return ''
-  const { y, m, d } = partes(dateISO)
-  return new Intl.DateTimeFormat('es-CR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(y, m, d))
-}
-
-interface PopoverProps {
+interface PopoverProps<E extends HTMLElement> {
   value: string
   onChange: (dateISO: string) => void
   todayISO?: string
@@ -77,13 +74,22 @@ interface PopoverProps {
    */
   minISO?: string
   maxISO?: string
-  /** El control que abre el panel. Recibe lo que necesita para cablearse. */
+  /**
+   * El control que abre el panel. Recibe lo que necesita para cablearse.
+   *
+   * El tipo del elemento es un parametro (`E`) porque el disparador no siempre
+   * es un boton: `DateField` lo monta sobre un `<input>`. Asi el ref viaja con
+   * su tipo exacto hasta cada disparador, sin casts y sin un callback — que el
+   * compilador de React marcaria como acceso a un ref durante el render.
+   */
   trigger: (props: {
-    ref: React.Ref<HTMLButtonElement>
+    ref: React.RefObject<E | null>
     onClick: () => void
     disabled: boolean
     'aria-expanded': boolean
     'aria-haspopup': 'dialog'
+    /** Id del panel, solo mientras esta abierto (patron combobox de ARIA). */
+    'aria-controls'?: string
   }) => React.ReactNode
 }
 
@@ -93,7 +99,7 @@ interface PopoverProps {
  * que necesitan uno propio (la pildora de rango semanal de Horarios) sin tener
  * que volver a un `<input type="date">` nativo.
  */
-export function DatePopover({
+export function DatePopover<E extends HTMLElement = HTMLButtonElement>({
   value,
   onChange,
   todayISO,
@@ -102,7 +108,7 @@ export function DatePopover({
   minISO,
   maxISO,
   trigger,
-}: PopoverProps) {
+}: PopoverProps<E>) {
   const fueraDeRango = (iso: string) =>
     Boolean((minISO && iso < minISO) || (maxISO && iso > maxISO))
   const [abierto, setAbierto] = useState(false)
@@ -125,9 +131,10 @@ export function DatePopover({
    */
   const [vista, setVista] = useState<'dias' | 'meses' | 'anios'>('dias')
   const contenedorRef = useRef<HTMLDivElement>(null)
-  const disparadorRef = useRef<HTMLButtonElement>(null)
+  const disparadorRef = useRef<E | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const panelId = useId()
 
   /**
    * Empuja el panel para que no se salga de la pantalla.
@@ -272,12 +279,14 @@ export function DatePopover({
         disabled,
         'aria-expanded': abierto,
         'aria-haspopup': 'dialog',
+        'aria-controls': abierto ? panelId : undefined,
       })}
 
       {abierto && (
         <div
           role="dialog"
           aria-label={label}
+          id={panelId}
           ref={panelRef}
           className="animate-menu-pop absolute left-0 top-full z-50 mt-2 w-[17.5rem] max-w-[calc(100vw-1rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
         >
@@ -507,7 +516,7 @@ interface DateFieldProps {
   onChange: (dateISO: string) => void
   todayISO?: string
   disabled?: boolean
-  /** Nombre accesible; tambien el texto del placeholder cuando no hay fecha. */
+  /** Nombre accesible del campo. */
   label: string
   id?: string
   invalid?: boolean
@@ -517,9 +526,19 @@ interface DateFieldProps {
 }
 
 /**
- * Disparador con forma de campo: reemplaza al `<input type="date">` dentro de
- * los formularios. Se ve como el resto de los campos (mismo token `INPUT`),
- * muestra la fecha en dd/mm/aaaa y abre el mismo calendario.
+ * Campo de fecha escribible, con calendario.
+ *
+ * Reemplaza al `<input type="date">` dentro de los formularios: se ve como el
+ * resto de los campos (mismo token `INPUT`), se teclea en dd/mm/aaaa y el
+ * icono abre el mismo calendario que el resto de los disparadores.
+ *
+ * El contrato hacia afuera NO cambia con la escritura: entra y sale la cadena
+ * ISO "YYYY-MM-DD", que es lo que guardan los esquemas de Zod, las server
+ * actions y la base. El dd/mm/aaaa es solo lo que ve la persona.
+ *
+ * La mascara es posicional y solo acepta digitos (las barras las pone el
+ * campo), con una excepcion: al PEGAR se reacomodan los segmentos, porque
+ * pegar "15/8/2026" en una mascara posicional produce "15/82/026".
  */
 export function DateField({
   value,
@@ -533,10 +552,148 @@ export function DateField({
   minISO,
   maxISO,
 }: DateFieldProps) {
-  const texto = formatoCorto(value)
+  const [texto, setTexto] = useState(() => formatShortDate(value))
+  const [valueAnterior, setValueAnterior] = useState(value)
+  const [aviso, setAviso] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const avisoId = useId()
+
+  /**
+   * Lo ultimo que este campo emitio, para distinguirlo de un cambio de
+   * afuera. Sin esta marca, emitir cadena vacia ante una fecha imposible
+   * rebota: el formulario actualiza `value`, la sincronizacion de abajo cree
+   * que el cambio vino de otra parte y borra el texto que la persona acaba de
+   * teclear, justo cuando necesita verlo para corregirlo.
+   *
+   * Va en estado y no en un ref porque se LEE durante el render, y el
+   * compilador de React prohibe leer un ref ahi — con razon: un ref no
+   * dispara el render en el que haria falta.
+   */
+  const [ultimoEmitido, setUltimoEmitido] = useState(value)
+
+  /**
+   * Posicion del caret contada en DIGITOS, no en caracteres: la mascara agrega
+   * y quita barras, asi que la posicion en caracteres no sobrevive al
+   * reformateo.
+   */
+  const caretEnDigitos = useRef<number | null>(null)
+
+  // `value` cambio desde AFUERA (el calendario, el boton "Hoy", un setValue
+  // del formulario): se repinta el texto. Es el patron de ajustar estado
+  // cuando cambia una prop, que evita el render de mas de un useEffect.
+  if (value !== valueAnterior) {
+    setValueAnterior(value)
+    if (value !== ultimoEmitido) {
+      setTexto(formatShortDate(value))
+      setAviso(null)
+    }
+  }
+
+  // Reubica el caret despues de que la mascara reescribio el valor. Sin esto,
+  // editar en medio de la cadena lo manda al final en cada tecla.
+  useLayoutEffect(() => {
+    const objetivo = caretEnDigitos.current
+    caretEnDigitos.current = null
+    const input = inputRef.current
+    if (objetivo === null || !input) return
+
+    let posicion = 0
+    let digitosVistos = 0
+    while (posicion < texto.length && digitosVistos < objetivo) {
+      if (/\d/.test(texto[posicion])) digitosVistos += 1
+      posicion += 1
+    }
+    // Si el caret quedo justo antes de una barra, se corre detras de ella:
+    // escribir ahi agregaria al grupo siguiente, que es lo que se espera.
+    while (posicion < texto.length && !/\d/.test(texto[posicion])) posicion += 1
+
+    input.setSelectionRange(posicion, posicion)
+  }, [texto])
+
+  function mensajeDeRango(iso: string) {
+    if (minISO && iso < minISO) return `Tiene que ser el ${formatShortDate(minISO)} o despues.`
+    if (maxISO && iso > maxISO) return `Tiene que ser el ${formatShortDate(maxISO)} o antes.`
+    return null
+  }
+
+  /**
+   * Decide que se emite al formulario y que mensaje se muestra.
+   *
+   * Lo importante: una fecha COMPLETA pero invalida emite cadena vacia, no
+   * "nada". Si se conservara el valor anterior, el formulario guardaria una
+   * fecha que la persona ya no tiene en pantalla — teclear 31/02/2026 encima
+   * de un 15/08/2026 guardaria el 15 de agosto sin que nadie se enterara.
+   *
+   * Una fecha fuera del rango permitido tampoco se emite, para que las dos
+   * formas de llenar el campo tengan las mismas reglas: el calendario ya pinta
+   * esos dias apagados y no deja elegirlos.
+   */
+  function resolver(valorTexto: string, alSalir: boolean) {
+    const fecha = parseShortDate(valorTexto)
+
+    if (fecha.state === 'empty') return { iso: '', mensaje: null }
+
+    if (fecha.state === 'incomplete') {
+      // Mientras se escribe no se molesta a nadie; al salir del campo si,
+      // porque ahi ya no hay nada que terminar de teclear.
+      return alSalir ? { iso: '', mensaje: 'Fecha incompleta.' } : { iso: null, mensaje: null }
+    }
+
+    if (fecha.state === 'impossible') return { iso: '', mensaje: 'Esa fecha no existe.' }
+
+    const problema = mensajeDeRango(fecha.iso)
+    return problema ? { iso: '', mensaje: problema } : { iso: fecha.iso, mensaje: null }
+  }
+
+  function aplicar(valorTexto: string, alSalir = false) {
+    setTexto(valorTexto)
+    const { iso, mensaje } = resolver(valorTexto, alSalir)
+    setAviso(mensaje)
+
+    if (iso !== null && iso !== value) {
+      setUltimoEmitido(iso)
+      onChange(iso)
+    }
+  }
+
+  function alEscribir(evento: React.ChangeEvent<HTMLInputElement>) {
+    const input = evento.target
+    inputRef.current = input
+    const crudo = input.value
+    const caret = input.selectionStart ?? crudo.length
+
+    caretEnDigitos.current = onlyDigits(crudo.slice(0, caret)).length
+    aplicar(applyEdit(texto, crudo))
+  }
+
+  function alPegar(evento: React.ClipboardEvent<HTMLInputElement>) {
+    const digitos = digitsFromPaste(evento.clipboardData.getData('text'))
+    // Un pegado que no se parece a una fecha se deja pasar al navegador: la
+    // mascara lo va a recortar y el mensaje va a decir que no existe, que es
+    // mas claro que tragarse el pegado en silencio.
+    if (digitos === '') return
+
+    evento.preventDefault()
+    inputRef.current = evento.currentTarget
+    caretEnDigitos.current = digitos.length
+    aplicar(applyMask(digitos))
+  }
+
+  function alTeclear(evento: React.KeyboardEvent<HTMLInputElement>, abrirPanel: () => void) {
+    if (evento.key === 'ArrowDown') {
+      evento.preventDefault()
+      abrirPanel()
+      return
+    }
+
+    // Enter envia el formulario sin pasar por blur, asi que el texto se
+    // resuelve aca mismo: si no, un campo a medio escribir se enviaria con el
+    // valor viejo. No se corta el evento — el submit sigue su camino.
+    if (evento.key === 'Enter') aplicar(texto, true)
+  }
 
   return (
-    <DatePopover
+    <DatePopover<HTMLInputElement>
       value={value}
       onChange={onChange}
       todayISO={todayISO}
@@ -544,25 +701,81 @@ export function DateField({
       label={label}
       minISO={minISO}
       maxISO={maxISO}
-      trigger={(props) => (
-        <button
-          {...props}
-          id={id}
-          type="button"
-          aria-label={label}
-          // Sin `aria-invalid`: no es un atributo valido sobre role="button",
-          // asi que el borde rojo se aplica por clase. El mensaje de error lo
-          // anuncia el `role="alert"` que ya rinde <Labeled> debajo.
-          className={cn(
-            INPUT,
-            'flex items-center justify-between gap-2 text-left',
-            !texto && 'text-slate-400',
-            invalid && 'border-rose-400 focus:ring-rose-400/20'
+      trigger={({
+        ref,
+        onClick,
+        disabled: bloqueado,
+        // Se desarman en vez de pasarlos con spread para que el linter de
+        // accesibilidad los VEA: `role="combobox"` exige aria-expanded y
+        // aria-controls, y detras de un spread no puede comprobarlo.
+        'aria-expanded': expandido,
+        'aria-haspopup': tipoDePopup,
+        'aria-controls': idDelPanel,
+      }) => (
+        <div className="relative">
+          {/*
+            El input va ANTES del boton del icono y no es casualidad: <Labeled>
+            envuelve el campo en un <label>, y un label apunta al primer
+            elemento etiquetable que contiene. Con el boton primero, hacer clic
+            en el texto de la etiqueta abriria el calendario en vez de enfocar
+            el campo.
+          */}
+          <input
+            ref={ref}
+            id={id}
+            type="text"
+            role="combobox"
+            aria-expanded={expandido}
+            aria-haspopup={tipoDePopup}
+            aria-controls={idDelPanel}
+            inputMode="numeric"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={label}
+            aria-invalid={invalid || undefined}
+            aria-describedby={aviso ? avisoId : undefined}
+            value={texto}
+            placeholder={placeholder}
+            disabled={bloqueado}
+            onChange={alEscribir}
+            onPaste={alPegar}
+            onBlur={() => aplicar(texto, true)}
+            onKeyDown={(evento) => alTeclear(evento, onClick)}
+            className={cn(INPUT, 'pr-10 tabular-nums')}
+          />
+
+          {/*
+            Fuera del orden de tabulacion: el campo ya es una sola parada de
+            teclado y el calendario se abre con la flecha abajo. Es el patron
+            combobox de ARIA.
+          */}
+          <button
+            type="button"
+            onClick={onClick}
+            disabled={bloqueado}
+            tabIndex={-1}
+            aria-label="Abrir calendario"
+            className="absolute right-0 top-0 flex h-full w-10 items-center justify-center rounded-r-xl text-slate-400 outline-none transition hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:text-slate-300"
+          >
+            <CalendarDays className="h-4 w-4" />
+          </button>
+
+          {/*
+            `aria-live` y no `role="alert"`: <Labeled> ya rinde un alert con el
+            error del formulario, y dos alertas compitiendo se anuncian mal.
+            Esto cubre lo que ninguna validacion de afuera puede ver — una
+            fecha que no existe nunca llega al esquema.
+          */}
+          {aviso && (
+            <p
+              id={avisoId}
+              aria-live="polite"
+              className="mt-1 text-[11px] font-medium text-rose-600"
+            >
+              {aviso}
+            </p>
           )}
-        >
-          <span className="truncate tabular-nums">{texto || placeholder}</span>
-          <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
-        </button>
+        </div>
       )}
     />
   )

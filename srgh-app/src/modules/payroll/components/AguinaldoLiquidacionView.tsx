@@ -22,6 +22,11 @@ interface AguinaldoLiquidacionViewProps {
   liquidaciones: LiquidacionListItem[]
   /** Aguinaldos del año anterior sin pagar (ver AguinaldoTab). */
   pendientesAnterior?: { anio: number; cantidad: number; monto: number } | null
+  /**
+   * Si el envío de comprobantes por correo está configurado (SMTP). Solo
+   * cambia el texto de la confirmación del pago: el envío lo decide el servidor.
+   */
+  correoConfigurado?: boolean
 }
 
 type TabId = 'aguinaldo' | 'liquidacion'
@@ -41,6 +46,7 @@ export function AguinaldoLiquidacionView({
   contratosPorLiquidar,
   liquidaciones,
   pendientesAnterior = null,
+  correoConfigurado = false,
 }: AguinaldoLiquidacionViewProps) {
   const tabs: TabDefinition<TabId>[] = [
     {
@@ -56,6 +62,7 @@ export function AguinaldoLiquidacionView({
           cicloCerrado={cicloCerrado}
           puedeLeerAusencias={puedeLeerAusencias}
           pendientesAnterior={pendientesAnterior}
+          correoConfigurado={correoConfigurado}
         />
       ),
     },
@@ -64,7 +71,11 @@ export function AguinaldoLiquidacionView({
       label: 'Liquidación',
       icon: FileX2,
       content: canWrite ? (
-        <LiquidacionTab contratos={contratosPorLiquidar} historial={liquidaciones} />
+        <LiquidacionTab
+          contratos={contratosPorLiquidar}
+          historial={liquidaciones}
+          correoConfigurado={correoConfigurado}
+        />
       ) : (
         <div className="space-y-4">
           <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">

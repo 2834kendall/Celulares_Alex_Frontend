@@ -289,12 +289,13 @@ export function PeriodosList({ periodos, canWrite = false }: PeriodosListProps) 
 
       {confirmingId !== null && (
         <ConfirmDialog
-          title="Eliminar periodo"
+          title="¿Desea eliminar este periodo?"
           message={
             periodoAEliminar
               ? `Se eliminará ${periodoLabel(periodoAEliminar.mes, periodoAEliminar.anio, periodoAEliminar.quincena)} con su planilla completa (${periodoAEliminar.totalEmpleados} empleado(s)). Las horas de banco que se hayan pagado en este periodo vuelven a quedar pendientes. Si algún pago ya está marcado, primero hay que desmarcarlo.`
               : 'Se eliminará el periodo con su planilla completa.'
           }
+          confirmLabel="Sí, eliminar"
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
         />

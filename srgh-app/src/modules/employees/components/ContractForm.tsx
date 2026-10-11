@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button'
 import { SPINNER } from '@/components/ui/styles'
 import { Alert } from '@/components/ui/Alert'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
+import { formatDate } from '@/modules/employees/lib/format'
 import { ContractFields, type ContractCatalogs } from './ContractFields'
 import { LABEL_CLASSES } from './EmployeeFields'
 
@@ -29,8 +30,17 @@ type ContractFormProps = ContractFormBaseProps &
     | { modo: 'crear'; onSubmit: (values: CrearHistorialLaboralInput) => void | Promise<void> }
     | {
         modo: 'editar'
-        /** La sucursal no se edita: se muestra como texto. */
+        /** La fecha de inicio no se edita (ISO): se muestra como texto. */
+        fechaInicio: string
+        /** Nombre de la sucursal actual, para cuando no se puede cambiar. */
         sucursalNombre: string
+        /**
+         * Motivo por el que la sucursal NO se puede cambiar, o null si sí.
+         * Hoy el único motivo es una quincena sin pagar: moverla ahí dejaría
+         * la fila en la planilla de la sucursal vieja y la nueva la volvería
+         * a crear.
+         */
+        sucursalBloqueada: string | null
         onSubmit: (values: EditarContratoInput) => void | Promise<void>
       }
   )
@@ -38,8 +48,13 @@ type ContractFormProps = ContractFormBaseProps &
 /**
  * Formulario puro de un contrato: NO llama ninguna Server Action, el padre
  * decide qué hacer con los valores validados (mismo contrato que
- * DocumentMetadataForm). En modo "editar" no existe el campo de sucursal:
- * cambiarla en sitio sería un traslado encubierto.
+ * DocumentMetadataForm).
+ *
+ * En modo "editar" la fecha de inicio no es un campo —se muestra como texto—
+ * porque moverla dejaría las marcas, los turnos y el contrato anterior
+ * apuntando a un período que ya no existe. La sucursal sí se edita (es la
+ * sucursal BASE, no dónde trabaja la persona cada día), salvo cuando llega
+ * `sucursalBloqueada`.
  *
  * Sin "Enter para enviar" a propósito: acá Enter también elige una opción en
  * los selects y en el calendario, y mandaría el formulario a medio llenar.
@@ -86,13 +101,26 @@ export function ContractForm(props: ContractFormProps) {
         )}
 
         {props.modo === 'editar' && (
-          <div>
-            <span className={LABEL_CLASSES}>Sucursal</span>
-            <p className="text-sm text-slate-700">{props.sucursalNombre}</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <span className={LABEL_CLASSES}>Inicio del contrato</span>
+              <p className="text-sm text-slate-700">{formatDate(props.fechaInicio)}</p>
+            </div>
+            {props.sucursalBloqueada !== null && (
+              <div>
+                <span className={LABEL_CLASSES}>Sucursal</span>
+                <p className="text-sm text-slate-700">{props.sucursalNombre}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">{props.sucursalBloqueada}</p>
+              </div>
+            )}
           </div>
         )}
 
-        <ContractFields {...catalogos} mostrarSucursal={props.modo === 'crear'} />
+        <ContractFields
+          {...catalogos}
+          mostrarSucursal={props.modo === 'crear' || props.sucursalBloqueada === null}
+          mostrarFechaInicio={props.modo === 'crear'}
+        />
 
         <div className="flex items-center justify-end gap-2 pt-1">
           <Button onClick={onCancel} disabled={isSubmitting} variant="secondary" size="md">

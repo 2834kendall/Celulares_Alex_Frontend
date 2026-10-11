@@ -3,12 +3,17 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AguinaldoTab } from './AguinaldoTab'
 import { pagarAguinaldo } from '@/modules/payroll/actions/pagarAguinaldo'
+import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
 import type { AguinaldoItem } from '@/modules/payroll/types'
+import { toast } from 'sonner'
 
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
 vi.mock('@/modules/payroll/actions/pagarAguinaldo', () => ({ pagarAguinaldo: vi.fn() }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({
+  reenviarComprobanteExtraordinario: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
 
 const mockPagar = vi.mocked(pagarAguinaldo)
 
@@ -17,6 +22,7 @@ function item(over: Partial<AguinaldoItem> = {}): AguinaldoItem {
     historialLaboralId: 1,
     empleadoNombre: 'Ana Pérez',
     empleadoCedula: '1-2222-3333',
+    empleadoEmail: 'ana@correo.com',
     anio: 2026,
     monto: 430000,
     maternidad: 0,
@@ -58,14 +64,78 @@ describe('<AguinaldoTab />', () => {
 
   it('con el ciclo cerrado y todo en orden, deja pagar y paga ESE empleado y ciclo', async () => {
     const user = userEvent.setup()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    mockPagar.mockResolvedValue({ ok: true, pagoId: 7 })
-    renderTab([item({ historialLaboralId: 4 })])
+    mockPagar.mockResolvedValue({
+      ok: true,
+      pagoId: 7,
+      correo: { estado: 'enviado', email: 'ana@correo.com' },
+    })
+    renderTab([item({ historialLaboralId: 4 })], { correoConfigurado: true })
 
     await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    // Antes de pagar pregunta, y dice adónde va el comprobante.
+    const dialogo = screen.getByRole('alertdialog', {
+      name: '¿Desea pagarle el aguinaldo a Ana Pérez?',
+    })
+    expect(dialogo).toHaveTextContent('se le enviará el comprobante en PDF a ana@correo.com')
+    expect(mockPagar).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Sí, pagar' }))
 
     expect(mockPagar).toHaveBeenCalledWith(4, 2026)
     expect(refresh).toHaveBeenCalled()
+    expect(toast.success).toHaveBeenCalledWith(
+      'Aguinaldo de Ana Pérez pagado. Comprobante enviado a ana@correo.com.'
+    )
+  })
+
+  it('si cancela la confirmación no paga', async () => {
+    const user = userEvent.setup()
+    renderTab([item()], { correoConfigurado: true })
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(mockPagar).not.toHaveBeenCalled()
+  })
+
+  it('sin correo registrado lo avisa antes de pagar', async () => {
+    const user = userEvent.setup()
+    renderTab([item({ empleadoEmail: null })], { correoConfigurado: true })
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      'No tiene correo registrado en su expediente'
+    )
+  })
+
+  it('si el correo falla avisa y "Reintentar" vuelve a mandar ESE comprobante', async () => {
+    const user = userEvent.setup()
+    mockPagar.mockResolvedValue({
+      ok: true,
+      pagoId: 7,
+      correo: { estado: 'error', error: 'no se pudo conectar con el servidor de correo.' },
+    })
+    vi.mocked(reenviarComprobanteExtraordinario).mockResolvedValue({
+      estado: 'enviado',
+      email: 'ana@correo.com',
+    })
+    renderTab([item()], { correoConfigurado: true })
+
+    await user.click(tabla().getByRole('button', { name: 'Pagar' }))
+    await user.click(screen.getByRole('button', { name: 'Sí, pagar' }))
+
+    const [mensaje, opciones] = vi.mocked(toast.warning).mock.calls[0]
+    expect(mensaje).toBe(
+      'Aguinaldo de Ana Pérez pagado, pero el comprobante no se pudo enviar: no se pudo conectar con el servidor de correo.'
+    )
+    ;(opciones as unknown as { action: { onClick: () => void } }).action.onClick()
+    await vi.waitFor(() => expect(reenviarComprobanteExtraordinario).toHaveBeenCalledWith(7))
+    await vi.waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Aguinaldo de Ana Pérez pagado. Comprobante enviado a ana@correo.com.'
+      )
+    )
   })
 
   it('con el ciclo abierto no deja pagar y dice "En curso"', () => {

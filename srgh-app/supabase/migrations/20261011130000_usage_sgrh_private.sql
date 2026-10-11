@@ -1,0 +1,36 @@
+-- USAGE sobre sgrh_private para authenticated.
+--
+-- Arregla un corte introducido por 20261011120000: ahí se creó
+-- sgrh_private.tiene_quincena_sin_pagar() con su GRANT EXECUTE, y editar_contrato
+-- la llama. Pero el GRANT de una función no alcanza si el rol no tiene USAGE
+-- sobre el ESQUEMA que la contiene: sin él, cualquier llamada muere con
+--
+--   42501 permission denied for schema sgrh_private
+--
+-- y eso rompía editar_contrato por completo —toda edición de contrato, no solo
+-- un cambio de sucursal— para cualquier usuario autenticado.
+--
+-- Por qué no se había notado antes: mi función es la PRIMERA de sgrh_private
+-- pensada para que la invoque un usuario. Las otras dos
+-- (asignar_permisos, cerrar_contratos_programados) están revocadas de
+-- authenticated a propósito —las corre pg_cron o nadie—, así que el esquema
+-- nunca necesitó USAGE.
+--
+-- Por qué no se cae solo del lado de TypeScript: has_function_privilege()
+-- devuelve true (mira el grant de la función, no el del esquema), y los tests
+-- mockean Supabase, así que esto solo aparece llamando a la RPC con un usuario
+-- real. Se encontró simulando el JWT en una transacción con ROLLBACK.
+--
+-- Es seguro: sgrh_private no tiene ninguna tabla ni vista (verificado), así
+-- que USAGE por sí solo no expone nada, y las dos funciones revocadas siguen
+-- denegadas. La ventaja de dejar la función acá en vez de moverla a public
+-- —como public.sucursal_visible— es que PostgREST no publica sgrh_private: no
+-- queda un endpoint /rest/v1/rpc/tiene_quincena_sin_pagar.
+--
+-- La línea también está en 20261011120000 para que ese archivo quede correcto
+-- por sí mismo en un entorno nuevo; acá va aparte porque esa migración ya
+-- estaba aplicada y `db push` no vuelve a mirarla.
+--
+-- Idempotente.
+
+GRANT USAGE ON SCHEMA sgrh_private TO authenticated;

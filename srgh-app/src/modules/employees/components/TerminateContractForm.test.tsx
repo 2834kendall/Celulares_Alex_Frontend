@@ -23,14 +23,23 @@ const MOTIVOS: MotivoSalidaItem[] = [
   },
 ]
 
-/** Elige el día 15 del mes que abre el calendario (el corriente). */
+/**
+ * Teclea el último día de trabajo.
+ *
+ * El campo ya acepta escritura, asi que se tipean los ocho digitos en vez de
+ * abrir el calendario y buscar el dia. La fecha queda fija: antes el
+ * calendario abria en el mes corriente y el valor cambiaba segun el dia en
+ * que se corrieran los tests.
+ */
+const ULTIMO_DIA = '2026-09-15'
+
 async function elegirUltimoDia(user: UserEvent) {
-  await user.click(screen.getByRole('button', { name: 'Último día de trabajo' }))
-  const calendario = within(screen.getByRole('dialog', { name: 'Último día de trabajo' }))
-  const celda = calendario.getAllByRole('button').find((b) => b.textContent?.trim() === '15')!
-  await user.click(celda)
-  const hoy = new Date()
-  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-15`
+  const campo = screen.getByRole('combobox', { name: 'Último día de trabajo' })
+  // Hay que vaciarlo antes: el campo arranca precargado con hoy, y la mascara
+  // corta en ocho digitos, asi que teclear encima no cambiaria nada.
+  await user.clear(campo)
+  await user.type(campo, '15092026')
+  return ULTIMO_DIA
 }
 
 describe('terminationConfirmMessage', () => {
