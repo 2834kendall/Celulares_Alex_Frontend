@@ -13,6 +13,12 @@ import {
   rangoAguinaldo,
 } from '@/modules/payroll/lib/format'
 import { pagarAguinaldo } from '@/modules/payroll/actions/pagarAguinaldo'
+import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
+import {
+  avisarCorreoComprobante,
+  mensajeConfirmarPago,
+} from '@/modules/payroll/lib/avisoCorreoComprobante'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   META_LABEL,
   TABLE_HEAD,
@@ -40,6 +46,11 @@ interface AguinaldoTabProps {
    * en ₡0) y los atrasados quedaban escondidos en el otro botón.
    */
   pendientesAnterior?: { anio: number; cantidad: number; monto: number } | null
+  /**
+   * Si el envío de comprobantes por correo está configurado (SMTP). Solo
+   * cambia el texto de la confirmación del pago: el envío lo decide el servidor.
+   */
+  correoConfigurado?: boolean
 }
 
 type Estado = { label: string; tone: BadgeTone }
@@ -135,6 +146,7 @@ export function AguinaldoTab({
   cicloCerrado,
   puedeLeerAusencias,
   pendientesAnterior = null,
+  correoConfigurado = false,
 }: AguinaldoTabProps) {
   const router = useRouter()
   const [pagandoId, setPagandoId] = useState<number | null>(null)
@@ -153,12 +165,15 @@ export function AguinaldoTab({
     )
   }
 
-  async function handlePagar(item: AguinaldoItem) {
-    const ok = window.confirm(
-      `¿Pagar el aguinaldo de ${item.empleadoNombre} por ${formatCRC(item.monto)}? Queda registrado con su comprobante y no se puede deshacer desde acá.`
-    )
-    if (!ok) return
+  /** Aguinaldo a pagar: se confirma antes. */
+  const [confirmando, setConfirmando] = useState<AguinaldoItem | null>(null)
 
+  function handlePagar(item: AguinaldoItem) {
+    setConfirmando(item)
+  }
+
+  async function pagar(item: AguinaldoItem) {
+    setConfirmando(null)
     setPagandoId(item.historialLaboralId)
     const result = await pagarAguinaldo(item.historialLaboralId, item.anio)
     setPagandoId(null)
@@ -168,7 +183,13 @@ export function AguinaldoTab({
       return
     }
 
-    toast.success(`Aguinaldo de ${item.empleadoNombre} pagado. El comprobante quedó en la lista.`)
+    const pagoId = result.pagoId
+    const prefijo = `Aguinaldo de ${item.empleadoNombre} pagado`
+    const avisar = (correo: Parameters<typeof avisarCorreoComprobante>[2]) =>
+      avisarCorreoComprobante(prefijo, item.empleadoNombre, correo, () => {
+        void reenviarComprobanteExtraordinario(pagoId).then(avisar)
+      })
+    avisar(result.correo)
     router.refresh()
   }
 
@@ -350,6 +371,21 @@ export function AguinaldoTab({
             </tbody>
           </table>
         </div>
+      )}
+
+      {confirmando && (
+        <ConfirmDialog
+          title={`¿Desea pagarle el aguinaldo a ${confirmando.empleadoNombre}?`}
+          message={`${mensajeConfirmarPago(
+            `Se registrará el pago de ${formatCRC(confirmando.monto)}`,
+            confirmando.empleadoEmail,
+            correoConfigurado
+          )} El pago no se puede deshacer desde acá.`}
+          confirmLabel="Sí, pagar"
+          tone="primary"
+          onCancel={() => setConfirmando(null)}
+          onConfirm={() => void pagar(confirmando)}
+        />
       )}
     </div>
   )

@@ -4,6 +4,7 @@ import { getProvisionesAguinaldo } from '@/modules/payroll/actions/getProvisione
 import { getContratosPorLiquidar } from '@/modules/payroll/actions/getContratosPorLiquidar'
 import { getLiquidaciones } from '@/modules/payroll/actions/getLiquidaciones'
 import { AguinaldoLiquidacionView } from '@/modules/payroll/components/AguinaldoLiquidacionView'
+import { configSmtp } from '@/lib/correo/smtp'
 import { PageError } from '@/components/ui/PageError'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
@@ -88,6 +89,7 @@ export default async function AguinaldoLiquidacionPage({
         contratosPorLiquidar={contratosResult.data}
         liquidaciones={liquidacionesResult.data}
         pendientesAnterior={pendientesAnterior}
+        correoConfigurado={configSmtp() !== null}
       />
     </div>
   )

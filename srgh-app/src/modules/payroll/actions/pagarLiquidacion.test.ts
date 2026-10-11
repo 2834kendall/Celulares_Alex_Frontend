@@ -3,14 +3,22 @@ import { pagarLiquidacion } from './pagarLiquidacion'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { enviarComprobanteExtraordinarioPorCorreo } from '@/modules/payroll/lib/envioComprobante'
 
 vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+// El correo tiene sus propios tests (lib/envioComprobante.test.ts): acá solo
+// importa que se pida al pagar y que su resultado vuelva a la pantalla.
+vi.mock('@/modules/payroll/lib/envioComprobante', () => ({
+  enviarComprobanteExtraordinarioPorCorreo: vi.fn(),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
+const mockEnviar = vi.mocked(enviarComprobanteExtraordinarioPorCorreo)
+const CORREO = { estado: 'enviado', email: 'ana@correo.com' } as const
 
 type Respuesta = { data: unknown; error: unknown }
 
@@ -60,6 +68,7 @@ function llamadaA(client: ReturnType<typeof mockSupabase>, tabla: string, metodo
 describe('pagarLiquidacion (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockEnviar.mockResolvedValue(CORREO)
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 0, 25, 9, 0, 0))
     mockRequirePermission.mockResolvedValue(
@@ -76,7 +85,7 @@ describe('pagarLiquidacion (server action)', () => {
 
     const result = await pagarLiquidacion(100)
 
-    expect(result).toEqual({ ok: true, pagoId: 31 })
+    expect(result).toEqual({ ok: true, pagoId: 31, correo: CORREO })
     const pago = llamadaA(client, 'sgrh_pagos_extraordinarios', 'insert')
     expect(pago).toMatchObject({
       pex_tipo: 'liquidacion',
@@ -170,6 +179,29 @@ describe('pagarLiquidacion (server action)', () => {
     expect(lineas.some((l) => l.concepto.startsWith('Horas extra'))).toBe(false)
   })
 
+  it('al pagar le manda al empleado el comprobante de ESE pago', async () => {
+    mockSupabase()
+
+    await pagarLiquidacion(100)
+
+    expect(mockEnviar).toHaveBeenCalledTimes(1)
+    expect(mockEnviar).toHaveBeenCalledWith(31)
+  })
+
+  it('si el correo no sale, la liquidación queda pagada igual y se dice por qué', async () => {
+    mockSupabase()
+    mockEnviar.mockRejectedValue(new Error('boom'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await pagarLiquidacion(100)
+
+    expect(result).toEqual({
+      ok: true,
+      pagoId: 31,
+      correo: { estado: 'error', error: 'ocurrió un error inesperado al enviarlo.' },
+    })
+  })
+
   it('no paga dos veces una liquidación ya pagada', async () => {
     const client = mockSupabase({
       sgrh_liquidaciones: { data: { ...LIQUIDACION, liq_pagado: true }, error: null },
@@ -179,6 +211,7 @@ describe('pagarLiquidacion (server action)', () => {
 
     expect(result).toEqual({ ok: false, error: 'Esta liquidación ya estaba pagada.' })
     expect(llamadaA(client, 'sgrh_pagos_extraordinarios', 'insert')).toBeUndefined()
+    expect(mockEnviar).not.toHaveBeenCalled()
   })
 
   it('si ya había un pago (índice único), lo dice en vez de duplicarlo', async () => {
@@ -214,7 +247,7 @@ describe('pagarLiquidacion (server action)', () => {
 
     const result = await pagarLiquidacion(100)
 
-    expect(result).toEqual({ ok: true, pagoId: 32 })
+    expect(result).toEqual({ ok: true, pagoId: 32, correo: CORREO })
     expect(
       client.from.mock.calls.filter((c) => c[0] === 'sgrh_pagos_extraordinarios')
     ).toHaveLength(2)

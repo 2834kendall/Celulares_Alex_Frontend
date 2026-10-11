@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
+import { enviarComprobantePorCorreo } from '@/modules/payroll/lib/envioComprobante'
 
 vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
@@ -12,10 +13,16 @@ vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 // La lectura de marcas se mockea entera: acá se prueba la decisión de la
 // acción, no el cálculo de horas (que tiene sus propios tests).
 vi.mock('@/modules/payroll/lib/horasPeriodoData', () => ({ getHorasDelPeriodo: vi.fn() }))
+// El correo tiene sus propios tests (lib/envioComprobante.test.ts): acá solo
+// importa que se pida al marcar el pago y que su resultado vuelva a la pantalla.
+vi.mock('@/modules/payroll/lib/envioComprobante', () => ({ enviarComprobantePorCorreo: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 const mockGetHorasDelPeriodo = vi.mocked(getHorasDelPeriodo)
+const mockEnviarComprobante = vi.mocked(enviarComprobantePorCorreo)
+
+const CORREO_ENVIADO = { estado: 'enviado', email: 'ana@correo.com' } as const
 
 const OK = { data: null, error: null }
 /** El UPDATE de ndt_pagado (solo si sigue en el estado leído) devuelve la fila. */
@@ -87,6 +94,7 @@ describe('marcarDetallePagado (server action)', () => {
     // Por defecto las marcas están completas; cada test que quiera lo contrario
     // lo declara.
     mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map([[77, SIN_PROBLEMAS]]) })
+    mockEnviarComprobante.mockResolvedValue(CORREO_ENVIADO)
   })
 
   it('rechaza un ndtId inválido sin llamar a Supabase', async () => {
@@ -130,8 +138,97 @@ describe('marcarDetallePagado (server action)', () => {
 
     const result = await marcarDetallePagado(1, true)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
     expect(client.from).toHaveBeenCalledWith('sgrh_provisiones_anuales')
+  })
+
+  describe('correo del comprobante', () => {
+    function pagable() {
+      return mockSupabase({
+        sgrh_nomina_detalle: [
+          { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+          ACTUALIZADA,
+          { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-07-28' }], error: null },
+        ],
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+      })
+    }
+
+    it('al marcar el pago se le envía el comprobante al empleado, después de guardarlo', async () => {
+      const client = pagable()
+
+      await marcarDetallePagado(1, true)
+
+      expect(mockEnviarComprobante).toHaveBeenCalledTimes(1)
+      expect(mockEnviarComprobante).toHaveBeenCalledWith(9, 1)
+      // El PDF sale de lo guardado: el envío va después del UPDATE del pago.
+      const ordenUpdate = client.from.mock.invocationCallOrder[1]
+      expect(mockEnviarComprobante.mock.invocationCallOrder[0]).toBeGreaterThan(ordenUpdate)
+    })
+
+    it('si el correo no sale, el pago queda marcado igual y se dice por qué', async () => {
+      pagable()
+      mockEnviarComprobante.mockResolvedValue({
+        estado: 'error',
+        error: 'no se pudo conectar con el servidor de correo.',
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({
+        ok: true,
+        correo: { estado: 'error', error: 'no se pudo conectar con el servidor de correo.' },
+      })
+    })
+
+    it('un fallo inesperado del envío tampoco deshace el pago', async () => {
+      pagable()
+      mockEnviarComprobante.mockRejectedValue(new Error('boom'))
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({
+        ok: true,
+        correo: { estado: 'error', error: 'ocurrió un error inesperado al enviarlo.' },
+      })
+    })
+
+    it('al desmarcar no se envía nada', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: [
+          { data: { ...DETALLE_BASE, ndt_pagado: true }, error: null },
+          ACTUALIZADA,
+          { data: [{ ndt_pagado: false, ndt_fecha_pago: null }], error: null },
+        ],
+        sgrh_provisiones_anuales: [
+          { data: [], error: null },
+          { data: { pra_id: 5, pra_monto_acumulado_aguinaldo: 300000 }, error: null },
+          OK,
+        ],
+        sgrh_nomina_periodo: OK,
+      })
+
+      const result = await marcarDetallePagado(1, false)
+
+      expect(result).toEqual({ ok: true })
+      expect(mockEnviarComprobante).not.toHaveBeenCalled()
+    })
+
+    it('un pago rechazado no envía correo', async () => {
+      mockSupabase({
+        sgrh_nomina_detalle: [
+          { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+          { data: null, error: { message: 'boom' } },
+        ],
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result.ok).toBe(false)
+      expect(mockEnviarComprobante).not.toHaveBeenCalled()
+    })
   })
 
   it('desmarca un pago y resta de una provisión existente', async () => {
@@ -292,6 +389,7 @@ describe('marcarDetallePagado (server action)', () => {
       const result = await marcarDetallePagado(1, true)
 
       expect(result).toEqual({ ok: true })
+      expect(mockEnviarComprobante).not.toHaveBeenCalled()
       expect(seActualizoLaFila(client)).toBe(false)
     })
   })
@@ -326,7 +424,7 @@ describe('marcarDetallePagado (server action)', () => {
 
       const result = await marcarDetallePagado(1, true)
 
-      expect(result).toEqual({ ok: true })
+      expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
       // 3 días × 400.000 / 30 × 50 % = 20.000
       expect(updateDeLaFila(client)).toMatchObject({
         ndt_pagado: true,
@@ -362,7 +460,7 @@ describe('marcarDetallePagado (server action)', () => {
 
       const result = await marcarDetallePagado(1, true)
 
-      expect(result).toEqual({ ok: true })
+      expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
       // 3 días × 600.000 / 30 × 50 % = 30.000
       expect(updateDeLaFila(client)).toMatchObject({ ndt_monto_incapacidad: 30000 })
     })
@@ -506,7 +604,7 @@ describe('marcarDetallePagado (server action)', () => {
 
       const result = await marcarDetallePagado(1, true)
 
-      expect(result).toEqual({ ok: true })
+      expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
       expect(escribioLaFila(client)).toBe(true)
     })
 
@@ -553,6 +651,7 @@ describe('marcarDetallePagado (server action)', () => {
     const result = await marcarDetallePagado(1, true)
 
     expect(result).toEqual({ ok: true })
+    expect(mockEnviarComprobante).not.toHaveBeenCalled()
   })
 
   it('el periodo pasa a "pagado" cuando el último empleado queda marcado (todos pagados)', async () => {
@@ -575,7 +674,7 @@ describe('marcarDetallePagado (server action)', () => {
 
     const result = await marcarDetallePagado(1, true)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
     // La primera llamada a la tabla lee el mes y la quincena del periodo; la
     // que importa es la que actualiza el estado.
     const llamadaPeriodo = client.from.mock.results.find(
@@ -609,7 +708,7 @@ describe('marcarDetallePagado (server action)', () => {
 
     const result = await marcarDetallePagado(1, true)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
     // La primera llamada a la tabla lee el mes y la quincena del periodo; la
     // que importa es la que actualiza el estado.
     const llamadaPeriodo = client.from.mock.results.find(
@@ -668,7 +767,7 @@ describe('marcarDetallePagado (server action)', () => {
 
     const result = await marcarDetallePagado(1, true)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
     const llamadaPeriodo = client.from.mock.results.find(
       (r, i) =>
         client.from.mock.calls[i][0] === 'sgrh_nomina_periodo' &&
@@ -696,7 +795,7 @@ describe('marcarDetallePagado (server action)', () => {
 
     const result = await marcarDetallePagado(1, true)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
 
     const comprobante = client.from.mock.results.find(
       (r, i) => client.from.mock.calls[i][0] === 'sgrh_comprobantes_pago'
@@ -872,7 +971,7 @@ describe('marcarDetallePagado (server action)', () => {
 
     const result = await marcarDetallePagado(1, true)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
   })
 
   // Una fila sin foto (anterior a esta función, o de un periodo sin fechas) no
@@ -905,7 +1004,7 @@ describe('marcarDetallePagado (server action)', () => {
 
     const result = await marcarDetallePagado(1, true)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
   })
 
   it('desmarcar siempre se puede, aunque haya marcas incompletas', async () => {
@@ -995,7 +1094,7 @@ describe('marcarDetallePagado (server action)', () => {
 
       const result = await marcarDetallePagado(1, true)
 
-      expect(result).toEqual({ ok: true })
+      expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
     })
 
     it('si la liquidación no incluyó salario pendiente, la quincena se paga por planilla', async () => {
@@ -1022,7 +1121,7 @@ describe('marcarDetallePagado (server action)', () => {
 
       const result = await marcarDetallePagado(1, true)
 
-      expect(result).toEqual({ ok: true })
+      expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
     })
 
     // Traslado en el mes de salida: esta fila es del contrato anterior (77) y
@@ -1093,7 +1192,7 @@ describe('marcarDetallePagado (server action)', () => {
 
       const result = await marcarDetallePagado(1, true)
 
-      expect(result).toEqual({ ok: true })
+      expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
     })
 
     it('si no puede verificarlo, no marca el pago', async () => {
@@ -1128,7 +1227,7 @@ describe('marcarDetallePagado (server action)', () => {
 
     const result = await marcarDetallePagado(1, true)
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
   })
 
   // Una fila en ₡0 no es un pago: es una fila a medias. Marcarla emitía un

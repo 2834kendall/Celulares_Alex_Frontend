@@ -31,6 +31,11 @@ interface LiquidacionTabProps {
   /** Contratos terminados desde el perfil del empleado y sin liquidar. */
   contratos: ContratoPorLiquidarItem[]
   historial: LiquidacionListItem[]
+  /**
+   * Si el envío de comprobantes por correo está configurado (SMTP). Solo
+   * cambia el texto de la confirmación del pago: el envío lo decide el servidor.
+   */
+  correoConfigurado?: boolean
 }
 
 /**
@@ -59,7 +64,11 @@ function contratoPreseleccionado(
   return contratos.some((c) => c.historialLaboralId === id) ? id : undefined
 }
 
-export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
+export function LiquidacionTab({
+  contratos,
+  historial,
+  correoConfigurado = false,
+}: LiquidacionTabProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [serverError, setServerError] = useState<string | null>(null)
@@ -231,7 +240,7 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
           title="No hay contratos pendientes de liquidar."
           description="Los contratos se terminan desde el perfil del empleado."
         />
-        <LiquidacionesHistorial items={historial} canWrite />
+        <LiquidacionesHistorial items={historial} canWrite correoConfigurado={correoConfigurado} />
       </div>
     )
   }
@@ -513,7 +522,7 @@ export function LiquidacionTab({ contratos, historial }: LiquidacionTabProps) {
         </div>
       </div>
 
-      <LiquidacionesHistorial items={historial} canWrite />
+      <LiquidacionesHistorial items={historial} canWrite correoConfigurado={correoConfigurado} />
 
       {confirmando && vistaPrevia && (
         <ConfirmDialog

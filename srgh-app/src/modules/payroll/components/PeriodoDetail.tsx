@@ -35,6 +35,11 @@ import {
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
+import { reenviarComprobante } from '@/modules/payroll/actions/reenviarComprobante'
+import {
+  avisarCorreoComprobante,
+  mensajeConfirmarPago,
+} from '@/modules/payroll/lib/avisoCorreoComprobante'
 import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHorasAsistencia'
 import { recalcularPeriodoDesdeAsistencia } from '@/modules/payroll/actions/recalcularPeriodoDesdeAsistencia'
 import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
@@ -52,6 +57,24 @@ interface PeriodoDetailProps {
   periodo: PeriodoDetalle
   canWrite: boolean
   conceptosManuales: ConceptoNominaRow[]
+  /**
+   * Si el envío de comprobantes por correo está configurado (SMTP). Solo
+   * cambia el texto de la confirmación del pago: el envío lo decide el servidor.
+   */
+  correoConfigurado?: boolean
+}
+
+/** Texto de la confirmación antes de marcar o desmarcar un pago. */
+function mensajeConfirmacionPago(d: DetalleNominaItem, correoConfigurado: boolean) {
+  if (d.pagado) {
+    const codigo = d.codigoVerificacion ? ` (código ${d.codigoVerificacion})` : ''
+    return `El pago se desmarca y la fila vuelve a quedar pendiente para poder editarla. El comprobante entregado${codigo} deja de valer: al pagarla de nuevo se genera uno nuevo y se le vuelve a enviar por correo.`
+  }
+  return mensajeConfirmarPago(
+    `Se registrará el pago de ${formatCRC(d.totalAPagar)} a ${d.empleadoNombre}`,
+    d.empleadoEmail,
+    correoConfigurado
+  )
 }
 
 /**
@@ -262,11 +285,18 @@ function filaVacia(d: DetalleNominaItem): boolean {
  * (BASE, FERIADO, COMISION, HORAS_EXTRA, AJUSTE) solo se ofrece mientras el
  * periodo está en borrador — igual que la subida de Excel.
  */
-export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoDetailProps) {
+export function PeriodoDetail({
+  periodo,
+  canWrite,
+  conceptosManuales,
+  correoConfigurado = false,
+}: PeriodoDetailProps) {
   const router = useRouter()
   const [editandoId, setEditandoId] = useState<number | null>(null)
   const [registrandoIncapacidadId, setRegistrandoIncapacidadId] = useState<number | null>(null)
   const [pagandoId, setPagandoId] = useState<number | null>(null)
+  /** Pago a marcar o desmarcar: se confirma antes. */
+  const [confirmandoPago, setConfirmandoPago] = useState<DetalleNominaItem | null>(null)
   /** Empleado cuyo desglose día por día está abierto. */
   const [viendoHorasId, setViendoHorasId] = useState<number | null>(null)
   const [refrescandoId, setRefrescandoId] = useState<number | null>(null)
@@ -289,6 +319,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
   // (ndt_pagado es independiente de npe_estado) — solo requiere permiso de
   // escritura sobre nómina.
   async function handleTogglePagado(detalle: DetalleNominaItem) {
+    setConfirmandoPago(null)
     setPagandoId(detalle.id)
     const result = await marcarDetallePagado(detalle.id, !detalle.pagado)
     setPagandoId(null)
@@ -298,12 +329,27 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
       return
     }
 
-    toast.success(
-      detalle.pagado
-        ? 'Pago desmarcado.'
-        : 'Pago marcado como realizado. Ya puedes ver el comprobante.'
-    )
+    if (detalle.pagado) {
+      toast.success('Pago desmarcado. La fila volvió a quedar pendiente y se puede editar.')
+    } else {
+      avisarCorreo(detalle, result.correo)
+    }
     router.refresh()
+  }
+
+  /** Aviso de cómo terminó el correo del comprobante después de marcar el pago. */
+  function avisarCorreo(
+    detalle: DetalleNominaItem,
+    correo: Parameters<typeof avisarCorreoComprobante>[2]
+  ) {
+    avisarCorreoComprobante('Pago registrado', detalle.empleadoNombre, correo, () => {
+      void handleReenviar(detalle)
+    })
+  }
+
+  async function handleReenviar(detalle: DetalleNominaItem) {
+    const correo = await reenviarComprobante(periodo.id, detalle.id)
+    avisarCorreo(detalle, correo)
   }
 
   /**
@@ -571,7 +617,7 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
     return (
       <button
         type="button"
-        onClick={() => handleTogglePagado(d)}
+        onClick={() => setConfirmandoPago(d)}
         disabled={pagandoId === d.id}
         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold outline-none ring-1 ring-inset transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
           d.pagado
@@ -1319,6 +1365,21 @@ export function PeriodoDetail({ periodo, canWrite, conceptosManuales }: PeriodoD
           confirmLabel="Quitar"
           onCancel={() => setQuitando(null)}
           onConfirm={() => void handleQuitarFila(quitando)}
+        />
+      )}
+
+      {confirmandoPago && (
+        <ConfirmDialog
+          title={
+            confirmandoPago.pagado
+              ? `¿Volver a editar el pago de ${confirmandoPago.empleadoNombre}?`
+              : `¿Desea pagarle a ${confirmandoPago.empleadoNombre}?`
+          }
+          message={mensajeConfirmacionPago(confirmandoPago, correoConfigurado)}
+          confirmLabel={confirmandoPago.pagado ? 'Desmarcar pago' : 'Sí, pagar'}
+          tone={confirmandoPago.pagado ? 'danger' : 'primary'}
+          onCancel={() => setConfirmandoPago(null)}
+          onConfirm={() => void handleTogglePagado(confirmandoPago)}
         />
       )}
 

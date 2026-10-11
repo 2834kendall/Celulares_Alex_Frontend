@@ -3,7 +3,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { normalizarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
+import {
+  confusionesEnCodigo,
+  normalizarCodigoVerificacion,
+} from '@/modules/payroll/lib/comprobante'
 
 export type BuscarComprobanteResult = { ok: true; href: string } | { ok: false; error: string }
 
@@ -35,6 +38,14 @@ export async function buscarComprobante(codigo: string): Promise<BuscarComproban
     return {
       ok: false,
       error: 'El código tiene 12 letras o números, con el formato XXXX-XXXX-XXXX.',
+    }
+  }
+
+  const confusiones = confusionesEnCodigo(normalizado)
+  if (confusiones.length > 0) {
+    return {
+      ok: false,
+      error: `Los códigos no llevan ${confusiones.join(', ')}: no usan las letras I, L, O ni los números 0 y 1, para que no se confundan. Revisá el código en el comprobante.`,
     }
   }
 
@@ -72,6 +83,6 @@ export async function buscarComprobante(codigo: string): Promise<BuscarComproban
 
   return {
     ok: false,
-    error: `No hay ningún comprobante con el código ${normalizado}. Si el pago se desmarcó, su comprobante dejó de valer.`,
+    error: `No hay ningún comprobante con el código ${normalizado} que puedas ver. Puede que el pago se haya desmarcado (su comprobante dejó de valer: al volver a pagarlo se emite otro código) o que sea de una sucursal que no tenés asignada.`,
   }
 }
