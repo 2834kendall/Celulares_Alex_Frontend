@@ -85,28 +85,30 @@ function renderWizard(
 }
 
 /**
- * Elige una fecha en el calendario del sistema.
- *
- * Ya no es un `<input type="date">` donde bastaba un fireEvent.change: es un
- * boton que abre un popover, asi que hay que abrirlo y tocar el dia. Se toma
- * el dia 1 del mes que ofrezca por defecto, que es suficiente para pasar la
- * validacion de "campo requerido" — el valor exacto no lo asertan estos
- * tests, solo que el formulario avance.
+ * Fechas fijas del alta. El contrato arranca DESPUES del ingreso, que es lo
+ * que exige `crear_empleado_completo`.
  */
-async function elegirFecha(user: UserEvent, label: string, dia = '15') {
-  await user.click(screen.getByRole('button', { name: label }))
-  const calendario = within(screen.getByRole('dialog', { name: label }))
-  // Se busca por el texto del dia y no por el nombre accesible, que trae el
-  // dia de la semana y cambia segun la fecha real de ejecucion. El 15 y el 20
-  // existen en todos los meses.
-  const celda = calendario.getAllByRole('button').find((b) => b.textContent?.trim() === dia)!
-  await user.click(celda)
+const FECHA_INGRESO = '2026-08-15'
+const FECHA_NACIMIENTO = '1995-03-10'
+const FECHA_CONTRATO = '2026-08-20'
 
-  // Devuelve la fecha elegida para que las aserciones no hardcodeen un mes:
-  // el calendario abre en el mes CORRIENTE, asi que el valor cambia segun
-  // cuando se corran los tests.
-  const hoy = new Date()
-  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${dia}`
+/**
+ * Pone una fecha en un campo del sistema.
+ *
+ * Desde que `DateField` acepta escritura se teclean los ocho digitos en vez de
+ * abrir el calendario y buscar el dia. Son tres lineas en vez de seis, y sobre
+ * todo deja la fecha FIJA: antes el calendario abria en el mes corriente, asi
+ * que el valor que devolvia este helper cambiaba segun el dia en que se
+ * corrieran los tests.
+ */
+async function elegirFecha(user: UserEvent, label: string, iso = FECHA_INGRESO) {
+  const campo = screen.getByRole('combobox', { name: label })
+  const [anio, mes, dia] = iso.split('-')
+
+  await user.clear(campo)
+  await user.type(campo, `${dia}${mes}${anio}`)
+
+  return iso
 }
 
 /** '2026-09-15' → '15/09/2026', que es lo que pinta el trigger de DateField. */
@@ -123,7 +125,7 @@ async function fillStepPersonal(user: UserEvent) {
   await user.type(screen.getByLabelText('Número de identificación *'), '1-1111-1111')
   fechaIngreso = await elegirFecha(user, 'Ingreso a la empresa')
   // Obligatorios en el alta (no en la edición).
-  await elegirFecha(user, 'Fecha de nacimiento')
+  await elegirFecha(user, 'Fecha de nacimiento', FECHA_NACIMIENTO)
   await chooseSelectMenuOption(user, 'Género *', 'Femenino')
   await fillDireccion(user)
   return fechaIngreso
@@ -256,7 +258,7 @@ describe('<EmployeeWizard />', () => {
     await user.click(screen.getByRole('button', { name: /siguiente/i }))
     await screen.findByLabelText('Puesto *')
 
-    expect(screen.getByRole('button', { name: 'Inicio del contrato' })).toHaveTextContent(
+    expect(screen.getByRole('combobox', { name: 'Inicio del contrato' })).toHaveValue(
       comoSeVe(fechaIngreso)
     )
   })
@@ -271,7 +273,7 @@ describe('<EmployeeWizard />', () => {
 
     // Se corrige a mano porque este contrato arranca despues del ingreso: el
     // dia 20 del mes en vez del 15 que quedo precargado.
-    const fechaContrato = await elegirFecha(user, 'Inicio del contrato', '20')
+    const fechaContrato = await elegirFecha(user, 'Inicio del contrato', FECHA_CONTRATO)
 
     // Volver al paso 1 y avanzar de nuevo no debe reponer la fecha de ingreso:
     // la precarga solo aplica cuando el campo esta vacio.
@@ -280,7 +282,7 @@ describe('<EmployeeWizard />', () => {
     await user.click(screen.getByRole('button', { name: /siguiente/i }))
     await screen.findByLabelText('Puesto *')
 
-    expect(screen.getByRole('button', { name: 'Inicio del contrato' })).toHaveTextContent(
+    expect(screen.getByRole('combobox', { name: 'Inicio del contrato' })).toHaveValue(
       comoSeVe(fechaContrato)
     )
   })
@@ -648,7 +650,7 @@ describe('<EmployeeWizard />', () => {
   it('el ingreso a la empresa arranca en hoy', () => {
     renderWizard()
 
-    expect(screen.getByRole('button', { name: 'Ingreso a la empresa' })).toHaveTextContent(
+    expect(screen.getByRole('combobox', { name: 'Ingreso a la empresa' })).toHaveValue(
       comoSeVe(todayInCostaRica())
     )
   })

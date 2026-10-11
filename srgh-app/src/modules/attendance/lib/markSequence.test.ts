@@ -4,7 +4,6 @@ import {
   isExitWindowOpen,
   describeSequenceRejection,
   groupIntoDayJourney,
-  isLunchWindowOpen,
   type RawMark,
 } from './marks'
 
@@ -98,44 +97,14 @@ describe('describeSequenceRejection', () => {
     expect(describeSequenceRejection('entrada', [])).toBe('Ya registraste tu salida de hoy.')
   })
 
-  describe('la ventana del almuerzo', () => {
-    it('esta abierta dentro de la media hora previa o posterior', () => {
-      expect(isLunchWindowOpen('12:00', '12:00')).toBe(true)
-      expect(isLunchWindowOpen('11:30', '12:00')).toBe(true)
-      expect(isLunchWindowOpen('12:30', '12:00')).toBe(true)
-    })
-
-    it('esta cerrada fuera de esa media hora', () => {
-      expect(isLunchWindowOpen('11:29', '12:00')).toBe(false)
-      expect(isLunchWindowOpen('12:31', '12:00')).toBe(false)
-      expect(isLunchWindowOpen('08:05', '12:00')).toBe(false)
-    })
-
-    it('sin almuerzo programado no hay hora que respetar', () => {
-      expect(isLunchWindowOpen('08:05', null)).toBe(true)
-    })
-
-    it('fuera de la ventana el kiosco no ofrece empezar el almuerzo', () => {
+  describe('el almuerzo no tiene hora', () => {
+    it('se ofrece empezarlo en cualquier momento de la jornada', () => {
+      // SGRH-95: cada quien almuerza cuando quiere; lo que se mide es cuanto
+      // dura desde que marca el inicio (ver lunchLateMinutes).
       const jornada = groupIntoDayJourney([mark(1, 'entrada', '08:00')])
 
-      expect(allowedNextMarks(jornada, { lunchWindowOpen: false })).toEqual([
-        'inicio_receso',
-        'salida',
-      ])
-      expect(allowedNextMarks(jornada, { lunchWindowOpen: true })).toEqual([
-        'inicio_receso',
-        'inicio_almuerzo',
-        'salida',
-      ])
-    })
-
-    it('el almuerzo abierto se puede cerrar aunque la ventana ya paso', () => {
-      const jornada = groupIntoDayJourney([
-        mark(1, 'entrada', '08:00'),
-        mark(2, 'inicio_almuerzo', '12:00'),
-      ])
-
-      expect(allowedNextMarks(jornada, { lunchWindowOpen: false })).toEqual(['fin_almuerzo'])
+      expect(allowedNextMarks(jornada)).toContain('inicio_almuerzo')
+      expect(allowedNextMarks(jornada, { exitWindowOpen: false })).toContain('inicio_almuerzo')
     })
   })
 

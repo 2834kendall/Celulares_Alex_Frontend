@@ -7,7 +7,7 @@
 //
 //   * `timeOfDay()` (attendance/lib/time) y `stripSeconds()` (schedules/lib/time)
 //     devuelven "HH:MM" en 24h y esa salida ENTRA A LA LÓGICA: ventanas del
-//     kiosco (isLunchWindowOpen/isExitWindowOpen), graduación de tardías
+//     kiosco (isExitWindowOpen), graduación de tardías
 //     (diffMinutes → classifyTardiness), reconstrucción de timestamps y
 //     valores de <input type="time">. Si devolvieran "8:35 a. m.", todo eso
 //     calcularía sobre basura sin tirar error.

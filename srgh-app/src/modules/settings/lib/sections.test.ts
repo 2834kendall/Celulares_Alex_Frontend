@@ -27,6 +27,7 @@ describe('visibleTree / visibleLeaves', () => {
       'appearance',
       'positions',
       'tardiness-types',
+      'absence-types',
       'stages',
       'criteria',
     ])
@@ -39,7 +40,7 @@ describe('visibleTree / visibleLeaves', () => {
 
   it('sin CATALOGOS_WRITE el módulo Reclutamiento desaparece entero (no queda vacío)', () => {
     const tree = visibleTree(SOLO_USUARIOS)
-    expect(tree.modules.map((mod) => mod.id)).toEqual(['employees', 'attendance'])
+    expect(tree.modules.map((mod) => mod.id)).toEqual(['employees', 'attendance', 'schedule'])
   })
 
   it('arma la ruta legible: Empresa sin prefijo, módulos con el nombre del módulo', () => {

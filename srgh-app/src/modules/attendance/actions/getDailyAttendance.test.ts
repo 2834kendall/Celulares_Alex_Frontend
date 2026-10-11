@@ -228,6 +228,60 @@ describe('getDailyAttendance (server action)', () => {
     expect(row.duplicateMarksCount).toBe(0)
   })
 
+  it('mide el almuerzo desde la marca de inicio, no desde el horario', async () => {
+    // El horario programa un almuerzo de 12:00 a 12:30, pero la hora es fija
+    // y corre desde la marca: lo toma de 14:10 a 15:15.
+    const marca = (id: number, tipo: string, hora: string) => ({
+      mar_id: id,
+      mar_historial_laboral_id: 1,
+      mar_sucursal_id: 100,
+      mar_tipo: tipo,
+      mar_fecha_hora: `${DATE} ${hora}`,
+    })
+
+    useClient(
+      createSupabaseClientMock(
+        mocks({
+          turnos: {
+            data: [
+              assignment({
+                sgrh_cat_horarios: {
+                  hor_hora_entrada: '08:00:00',
+                  hor_hora_inicio_almuerzo: '12:00:00',
+                  hor_hora_fin_almuerzo: '12:30:00',
+                },
+              }),
+            ],
+            error: null,
+          },
+          plantilla: { data: [{ lab_id: 1 }], error: null },
+          detalle: { data: [ANA_HISTORIAL], error: null },
+          marcas: {
+            data: [
+              marca(1, 'entrada', '08:00:00'),
+              marca(2, 'inicio_almuerzo', '14:10:00'),
+              marca(3, 'fin_almuerzo', '15:15:00'),
+            ],
+            error: null,
+          },
+        })
+      )
+    )
+
+    const result = await getDailyAttendance(DATE)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const row = result.data[0]
+    // Empezar a otra hora no es falta: no se compara contra el horario.
+    expect(row.inicioAlmuerzo).toEqual({ id: 2, time: '14:10', diffMinutes: null })
+    // El limite era 15:10 (14:10 + 1 h): volvio 5 minutos tarde.
+    expect(row.finAlmuerzo).toEqual({ id: 3, time: '15:15', diffMinutes: 5 })
+    expect(row.lunchTardiness).toMatchObject({ diffMinutes: 5, isJustified: false })
+    expect(row.lunchExcessMinutes).toBe(5)
+  })
+
   it('reporta la sucursal DEL DIA, no la del contrato', async () => {
     // Ana tiene contrato en la 100 y ese dia la trasladaron a la 200, que es
     // una de las que ve este gerente. De ahi sale el sucursalId con el que el

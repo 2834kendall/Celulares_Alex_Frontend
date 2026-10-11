@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_TARDINESS_TYPES,
   lunchCountsTowardWarning,
+  lunchLateMinutes,
   lunchTardinessOfDay,
   periodExcessMinutes,
   summarizeMonth,
@@ -18,7 +19,7 @@ function day(overrides: Partial<DayForInfraction> = {}): DayForInfraction {
     expectedStart: '08:00',
     entradaTime: '08:00',
     isJustifiedTardiness: false,
-    expectedLunchEnd: '13:00',
+    inicioAlmuerzoTime: '12:00',
     finAlmuerzoTime: '13:00',
     isJustifiedLunchTardiness: false,
     ...overrides,
@@ -39,15 +40,55 @@ describe('lunchTardinessOfDay', () => {
     )
   })
 
-  it('sin almuerzo programado o sin marcar el regreso no hay tardanza', () => {
+  it('la hora corre desde la marca de inicio, no desde el horario', () => {
+    // Empezo 12:40: vuelve a tiempo hasta las 13:40.
     expect(
-      lunchTardinessOfDay(day({ expectedLunchEnd: null, finAlmuerzoTime: '14:00' }), TIPOS)
+      lunchTardinessOfDay(day({ inicioAlmuerzoTime: '12:40', finAlmuerzoTime: '13:40' }), TIPOS)
+    ).toBeNull()
+    expect(
+      lunchTardinessOfDay(day({ inicioAlmuerzoTime: '12:40', finAlmuerzoTime: '13:43' }), TIPOS)
+        ?.nombre
+    ).toBe('Tardia leve')
+  })
+
+  it('empezar antes no regala tiempo: volver a la hora del horario puede ser tarde', () => {
+    expect(
+      lunchTardinessOfDay(day({ inicioAlmuerzoTime: '11:30', finAlmuerzoTime: '13:00' }), TIPOS)
+        ?.nombre
+    ).toBe('Tardia grave')
+  })
+
+  it('se puede almorzar a cualquier hora del dia', () => {
+    expect(
+      lunchTardinessOfDay(day({ inicioAlmuerzoTime: '15:10', finAlmuerzoTime: '16:10' }), TIPOS)
+    ).toBeNull()
+  })
+
+  it('sin marcar el inicio o el regreso no hay tardanza', () => {
+    expect(
+      lunchTardinessOfDay(day({ inicioAlmuerzoTime: null, finAlmuerzoTime: '14:00' }), TIPOS)
     ).toBeNull()
     expect(lunchTardinessOfDay(day({ finAlmuerzoTime: null }), TIPOS)).toBeNull()
   })
 
   it('un dia libre no tiene tardanza de almuerzo', () => {
     expect(lunchTardinessOfDay(day({ isDayOff: true, finAlmuerzoTime: '14:00' }), TIPOS)).toBeNull()
+  })
+})
+
+describe('lunchLateMinutes', () => {
+  it('mide el regreso contra una hora despues del inicio marcado', () => {
+    expect(lunchLateMinutes(day({ inicioAlmuerzoTime: '12:40', finAlmuerzoTime: '13:50' }))).toBe(
+      10
+    )
+    expect(lunchLateMinutes(day({ inicioAlmuerzoTime: '12:40', finAlmuerzoTime: '13:30' }))).toBe(
+      -10
+    )
+  })
+
+  it('es null si falta alguna de las dos marcas', () => {
+    expect(lunchLateMinutes(day({ inicioAlmuerzoTime: null }))).toBeNull()
+    expect(lunchLateMinutes(day({ finAlmuerzoTime: null }))).toBeNull()
   })
 })
 

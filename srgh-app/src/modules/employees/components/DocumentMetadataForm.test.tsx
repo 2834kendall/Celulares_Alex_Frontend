@@ -58,10 +58,9 @@ describe('<DocumentMetadataForm />', () => {
       await chooseSelectMenuOption(user, /tipo de documento/i, 'Contrato')
       await user.type(screen.getByLabelText(/descripción/i), 'Firmado en enero')
 
-      await user.click(screen.getByLabelText(/fecha de vencimiento/i))
-      // La coma del inicio acota al dia 1: sin ella el patron tambien caeria
-      // dentro de "11 de enero de 2030" y "21 de enero de 2030".
-      await user.click(screen.getByRole('button', { name: /, 1 de enero de 2030/ }))
+      // Se teclea en vez de abrir el calendario y buscar el dia: el campo
+      // acepta los ocho digitos y las barras las pone solo.
+      await user.type(screen.getByLabelText(/fecha de vencimiento/i), '01012030')
 
       await user.click(screen.getByRole('button', { name: /guardar/i }))
 
@@ -95,8 +94,8 @@ describe('<DocumentMetadataForm />', () => {
     expect(screen.getByLabelText(/nombre del documento/i)).toHaveValue('Contrato viejo')
     expect(screen.getByLabelText(/tipo de documento/i)).toHaveTextContent('Identificación')
     expect(screen.getByLabelText(/descripción/i)).toHaveValue('Nota previa')
-    // El disparador del calendario muestra dd/mm/aaaa; el form guarda el ISO.
-    expect(screen.getByLabelText(/fecha de vencimiento/i)).toHaveTextContent('01/05/2028')
+    // El campo muestra dd/mm/aaaa; el form guarda el ISO.
+    expect(screen.getByLabelText(/fecha de vencimiento/i)).toHaveValue('01/05/2028')
   })
 
   it('muestra el error del servidor en un role="alert"', () => {

@@ -7,6 +7,7 @@ import {
   classifyDay,
   countsTowardWarning,
   lunchCountsTowardWarning,
+  lunchLateMinutes,
   lunchTardinessOfDay,
   tardinessOfDay,
   type TardinessBadge,
@@ -168,7 +169,8 @@ export async function getMonthlyAttendanceSummary(
           date: day.date,
           kind: 'almuerzo',
           time: day.finAlmuerzoTime!,
-          diffMinutes: diffMinutes(day.finAlmuerzoTime!, day.expectedLunchEnd!),
+          // Con tipo de tardia las dos marcas del almuerzo existen.
+          diffMinutes: lunchLateMinutes(day)!,
           tipo: { nombre: tipoAlmuerzo.nombre, color: tipoAlmuerzo.color },
           countsTowardWarning: lunchCountsTowardWarning(day, gathered.tipos),
           markId: day.finAlmuerzoMarkId,

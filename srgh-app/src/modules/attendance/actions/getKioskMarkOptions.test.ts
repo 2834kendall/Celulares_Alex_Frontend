@@ -168,7 +168,7 @@ describe('getKioskMarkOptions (server action)', () => {
     expect(await getKioskMarkOptions(10)).toEqual({ ok: true, allowed: ['entrada'] })
   })
 
-  it('fuera de la hora del almuerzo no ofrece empezarlo', async () => {
+  it('ofrece empezar el almuerzo aunque no sea la hora del horario', async () => {
     vi.useFakeTimers()
     // 09:00 en Costa Rica, con almuerzo programado a las 12:00.
     vi.setSystemTime(new Date(`${todayInCostaRica()}T15:00:00Z`))
@@ -192,7 +192,10 @@ describe('getKioskMarkOptions (server action)', () => {
     )
 
     // Sin receso en el horario tampoco se ofrece el receso.
-    expect(await getKioskMarkOptions(10)).toEqual({ ok: true, allowed: ['salida'] })
+    expect(await getKioskMarkOptions(10)).toEqual({
+      ok: true,
+      allowed: ['inicio_almuerzo', 'salida'],
+    })
 
     vi.useRealTimers()
   })

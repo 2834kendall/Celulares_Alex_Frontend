@@ -31,7 +31,7 @@ export interface SettingsLeaf {
   visible: (permisos: readonly string[]) => boolean
 }
 
-export type SettingsModuleId = 'employees' | 'attendance' | 'recruitment'
+export type SettingsModuleId = 'employees' | 'attendance' | 'schedule' | 'recruitment'
 
 export interface SettingsModule {
   id: SettingsModuleId
@@ -115,6 +115,31 @@ export const SETTINGS_TREE: SettingsTree = {
           description: 'Desde qué minuto de atraso empieza cada tipo y si suma a la advertencia.',
           href: '/settings/attendance/tardiness-types',
           keywords: ['atraso', 'llegada tarde', 'minutos', 'advertencia', 'tardanza'],
+          visible: always,
+        },
+      ],
+    },
+    {
+      id: 'schedule',
+      label: 'Horarios',
+      children: [
+        {
+          id: 'absence-types',
+          label: 'Tipos de incapacidad',
+          description:
+            'Incapacidades, licencias y permisos: cuánto paga el patrono, la CCSS y si descuentan vacaciones.',
+          href: '/settings/schedule/absence-types',
+          keywords: [
+            'ausencia',
+            'licencia',
+            'permiso',
+            'ccss',
+            'ins',
+            'subsidio',
+            'maternidad',
+            'enfermedad',
+          ],
+          // Se ve en solo lectura sin CATALOGOS_WRITE.
           visible: always,
         },
       ],

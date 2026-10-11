@@ -22,11 +22,9 @@ import {
 import {
   allowedNextMarks,
   describeExitWindow,
-  describeLunchWindow,
   describeNoBreak,
   describeSequenceRejection,
   isExitWindowOpen,
-  isLunchWindowOpen,
 } from '@/modules/attendance/lib/marks'
 import { verifyFaceTicket } from '@/modules/attendance/lib/face/faceTicket'
 
@@ -201,22 +199,11 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
     return { ok: false, error: 'No se pudo validar la secuencia de marcas.' }
   }
 
-  // El almuerzo se toma a la hora del horario (SGRH-88, decision del
-  // cliente): tomarlo cuando a cada quien le parezca desordena la planilla,
-  // que liquida sobre la jornada programada. Se mide contra la hora del
-  // EVENTO, para que una marca que estuvo en la cola offline se juzgue por
-  // cuando se hizo y no por cuando se sincronizo.
+  // Se mide contra la hora del EVENTO, para que una marca que estuvo en la
+  // cola offline se juzgue por cuando se hizo y no por cuando se sincronizo.
+  // El almuerzo no tiene ventana: se toma a cualquier hora (SGRH-95).
   const horaEvento = timeOfDay(fechaHora ?? nowInCostaRica())
-  const almuerzoAbierto = isLunchWindowOpen(horaEvento, assignment.expectedLunchStart)
   const salidaAbierta = isExitWindowOpen(horaEvento, assignment.expectedEnd)
-
-  if (tipo === 'inicio_almuerzo' && !almuerzoAbierto) {
-    return {
-      ok: false,
-      error: describeLunchWindow(assignment.expectedLunchStart!, assignment.expectedLunchEnd!),
-      definitivo: true,
-    }
-  }
 
   // Una salida antes de tiempo casi siempre es un toque por error, y cierra
   // el dia: despues de marcarla no queda nada por marcar.
@@ -234,7 +221,6 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   }
 
   const permitidas = allowedNextMarks(jornada.journey, {
-    lunchWindowOpen: almuerzoAbierto,
     exitWindowOpen: salidaAbierta,
     breakScheduled: assignment.expectedBreakStart !== null,
   })
