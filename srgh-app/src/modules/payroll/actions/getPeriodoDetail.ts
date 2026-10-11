@@ -10,7 +10,7 @@ import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
 import type { DiaCalculado, TotalesPeriodo } from '@/modules/payroll/lib/horasPeriodo'
-import { evaluarBaseGuardado } from '@/modules/payroll/lib/prellenadoAsistencia'
+import { contratoDeLaFila, evaluarBaseGuardado } from '@/modules/payroll/lib/prellenadoAsistencia'
 import {
   CODIGO_AJUSTE,
   CODIGO_SALARIO_BASE,
@@ -48,6 +48,9 @@ interface DetalleRow {
   ndt_dias_incapacidad_empleador: number
   ndt_monto_incapacidad?: number | null
   ndt_porcentaje_incapacidad?: number | null
+  ndt_salario_base_contrato: number | null
+  ndt_salario_real_contrato: number | null
+  ndt_horas_semanales_contrato: number | null
   ndt_dias_incapacidad_ccss: number
   ndt_horas_asistencia: number | null
   ndt_horas_extra_asistencia: number | null
@@ -164,6 +167,9 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       ndt_monto_incapacidad,
       ndt_porcentaje_incapacidad,
       ndt_dias_incapacidad_ccss,
+      ndt_salario_base_contrato,
+      ndt_salario_real_contrato,
+      ndt_horas_semanales_contrato,
       ndt_horas_asistencia,
       ndt_horas_extra_asistencia,
       ndt_horas_leidas_en,
@@ -463,6 +469,17 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       (inicioContrato !== null && fecha < inicioContrato) ||
       (finContrato !== null && fecha > finContrato)
 
+    // El contrato con que se calculó ESTA fila, no el de hoy: desde que el
+    // contrato vigente se puede editar en cualquier momento, leerlo en vivo
+    // haría que corregir un salario moviera los montos de un período ya
+    // armado. Sin foto (filas viejas) cae al contrato en vivo.
+    const contratoFila = contratoDeLaFila(row, {
+      salarioBaseMensual: row.sgrh_historial_laboral?.lab_salario_base ?? 0,
+      salarioRealMensual: row.sgrh_historial_laboral?.lab_salario_real ?? null,
+      horasSemanales:
+        row.sgrh_historial_laboral?.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
+    })
+
     let incapacidad: IncapacidadItem | null = null
     const tieneIncapacidad =
       row.ndt_dias_incapacidad_empleador > 0 || row.ndt_dias_incapacidad_ccss > 0
@@ -487,10 +504,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
         porcentajePagoEmpleador: tipoAusencia.tau_porcentaje_pago_empleador,
         monto: montoIncapacidadEnVivo(
           row.ndt_dias_incapacidad_empleador,
-          {
-            salarioBaseMensual: row.sgrh_historial_laboral?.lab_salario_base ?? 0,
-            salarioRealMensual: row.sgrh_historial_laboral?.lab_salario_real ?? null,
-          },
+          contratoFila,
           tipoAusencia.tau_porcentaje_pago_empleador
         ),
         tipoNombre: tipoSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? null,
@@ -521,12 +535,10 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       : evaluarBaseGuardado({
           baseGuardado: montosFila[CODIGO_SALARIO_BASE] ?? 0,
           ajusteGuardado: montosFila[CODIGO_AJUSTE] ?? 0,
-          contrato: {
-            salarioBaseMensual: row.sgrh_historial_laboral?.lab_salario_base ?? 0,
-            salarioRealMensual: row.sgrh_historial_laboral?.lab_salario_real ?? null,
-            horasSemanales:
-              row.sgrh_historial_laboral?.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
-          },
+          // La foto del contrato, pero la asistencia DE HOY: lo que esto tiene
+          // que seguir detectando es que cambiaron las horas, no que alguien
+          // corrigió el salario para el período que viene.
+          contrato: contratoFila,
           guardadas,
           lectura: totalesPorLab.get(row.ndt_historial_laboral_id) ?? null,
           quincena: {

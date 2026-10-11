@@ -104,10 +104,28 @@ export function contratosFueraDeAlcance(
 export const ERROR_SUCURSAL_NO_VISIBLE =
   'Este empleado trabajó en una sucursal que tu usuario no ve (por ejemplo, antes de un traslado): su planilla y sus ausencias de allá no se pueden leer, y el monto saldría de menos. Pedile a alguien con acceso a todas sus sucursales que lo calcule.'
 
+/**
+ * El salario mensual que guardó la fila de planilla, con la misma regla que
+ * `aContrato`: manda el real y, si no hay, el base. `null` = la fila es
+ * anterior a esas columnas y hay que caer al contrato.
+ */
+function salarioDeLaFoto(row: {
+  ndt_salario_base_contrato: number | null
+  ndt_salario_real_contrato: number | null
+}): number | null {
+  const base = Number(row.ndt_salario_base_contrato ?? 0)
+  if (!(base > 0)) return null
+
+  const real = Number(row.ndt_salario_real_contrato ?? 0)
+  return real > 0 ? real : base
+}
+
 interface DetalleRow {
   ndt_historial_laboral_id: number
   ndt_salario_bruto: number
   ndt_pagado: boolean
+  ndt_salario_base_contrato: number | null
+  ndt_salario_real_contrato: number | null
   sgrh_nomina_periodo: {
     npe_periodo_mes: number
     npe_periodo_anio: number
@@ -138,6 +156,7 @@ export async function cargarQuincenas(
       .from('sgrh_nomina_detalle')
       .select(
         `ndt_id, ndt_historial_laboral_id, ndt_salario_bruto, ndt_pagado,
+         ndt_salario_base_contrato, ndt_salario_real_contrato,
          sgrh_nomina_periodo ( npe_periodo_mes, npe_periodo_anio, npe_quincena,
                                npe_fecha_inicio_periodo, npe_fecha_fin_periodo )`
       )
@@ -168,7 +187,14 @@ export async function cargarQuincenas(
       fechaFin: fechaFin.slice(0, 10),
       bruto: Number(row.ndt_salario_bruto ?? 0),
       pagado: row.ndt_pagado,
-      salarioMensualContrato: salario.get(row.ndt_historial_laboral_id) ?? 0,
+      // El salario que tenía el contrato cuando se calculó ESTA quincena, no
+      // el de hoy. Desde que el contrato vigente se puede editar, usar el
+      // actual hacía que corregir un salario moviera hacia atrás el promedio
+      // de una liquidación y el recargo de una licencia ya pasada. Sin foto
+      // (quincenas anteriores a esa columna) se cae al contrato, que es como
+      // se comportaba antes.
+      salarioMensualContrato:
+        salarioDeLaFoto(row) ?? salario.get(row.ndt_historial_laboral_id) ?? 0,
     })
     porLab.set(row.ndt_historial_laboral_id, lista)
   }

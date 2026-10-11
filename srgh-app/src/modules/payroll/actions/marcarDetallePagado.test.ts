@@ -1464,3 +1464,80 @@ describe('marcarDetallePagado (server action)', () => {
     if (!result.ok) expect(result.error).toContain('está en ₡0')
   })
 })
+
+// SGRH: el contrato vigente se puede editar en cualquier momento, y el cambio
+// tiene que aplicar desde el período SIGUIENTE. Antes, la verificación del BASE
+// leía el contrato en vivo: corregir un salario dejaba sin poder pagar el
+// período abierto hasta recalcularlo al valor nuevo.
+describe('contrato editado después de armar la fila', () => {
+  /** Q1 de junio: 15 días. Base 400.000 → 200.000; real 430.000 → ajuste 15.000. */
+  const FILA_CON_FOTO = {
+    ...DETALLE_BASE,
+    ndt_pagado: false,
+    ndt_horas_ordinarias_diurnas: 88,
+    ndt_horas_extra_al_50: 0,
+    ndt_horas_asistencia: 88,
+    ndt_horas_extra_asistencia: 0,
+    ndt_salario_base_contrato: 400000,
+    ndt_salario_real_contrato: 430000,
+    ndt_horas_semanales_contrato: 48,
+  }
+
+  /** Lo que se le guardó a la fila con ese contrato. */
+  const LINEAS = {
+    data: [
+      { ing_monto: 200000, sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' } },
+      { ing_monto: 15000, sgrh_cat_conceptos_nomina: { con_codigo: 'AJUSTE' } },
+    ],
+    error: null,
+  }
+
+  /** El contrato ya corregido: 600.000 / 645.000. */
+  const CONTRATO_NUEVO = {
+    data: {
+      lab_salario_base: 600000,
+      lab_salario_real: 645000,
+      sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: 48 },
+    },
+    error: null,
+  }
+
+  function escenario(fila: Record<string, unknown>) {
+    return mockSupabase({
+      sgrh_nomina_detalle: [
+        { data: fila, error: null },
+        ACTUALIZADA,
+        { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-16' }], error: null },
+      ],
+      sgrh_nomina_linea_ingreso: LINEAS,
+      sgrh_historial_laboral: CONTRATO_NUEVO,
+      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+      sgrh_nomina_periodo: OK,
+    })
+  }
+
+  it('con la foto del contrato, el pago del período abierto no se bloquea', async () => {
+    escenario(FILA_CON_FOTO)
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
+  })
+
+  // El mismo escenario sin foto: es el comportamiento viejo, y la razón por la
+  // que editar el contrato estaba prohibido.
+  it('sin foto, el mismo cambio de salario sí bloquea el pago', async () => {
+    escenario({
+      ...FILA_CON_FOTO,
+      ndt_salario_base_contrato: null,
+      ndt_salario_real_contrato: null,
+      ndt_horas_semanales_contrato: null,
+    })
+
+    const result = await marcarDetallePagado(1, true)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toContain('El salario de esta fila ya no corresponde')
+  })
+})

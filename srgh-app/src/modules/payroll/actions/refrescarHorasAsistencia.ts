@@ -25,6 +25,7 @@ import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
 import {
   basesDelSistema,
   esBaseDelSistema,
+  fotoDelContrato,
   prellenarDesdeAsistencia,
 } from '@/modules/payroll/lib/prellenadoAsistencia'
 import { camposFotoAsistencia, origenHoras } from '@/modules/payroll/lib/horasOrigen'
@@ -374,6 +375,9 @@ export async function refrescarHorasAsistencia(
       ndt_horas_ordinarias_diurnas: asistencia.horas,
       ndt_horas_extra_al_50: asistencia.horasExtra,
       ndt_salario_por_hora: prellenado.salarioPorHora,
+      // Recalcular adopta el contrato de hoy, así que la foto se reescribe:
+      // es la salida para el salario mal digitado que todavía no se pagó.
+      ...fotoDelContrato(contratoPago),
       ...(foto.escribir ? foto.campos : {}),
     })
     .eq('ndt_id', ndtId)

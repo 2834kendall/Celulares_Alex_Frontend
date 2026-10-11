@@ -59,7 +59,7 @@ const HISTORIAL_ROW = {
 }
 
 /** El vigente todavía no aparece en ninguna planilla: la ventana de edición está abierta. */
-const SIN_PLANILLA = { data: null, error: null, count: 0 }
+const SIN_PLANILLA = { data: [], error: null }
 
 /** Contrato anterior, ya cerrado por renuncia. */
 const HISTORIAL_CERRADO_ROW = {
@@ -243,14 +243,33 @@ describe('getEmployeeDetail (server action)', () => {
     expect(result.data.historial_completo[1]).not.toHaveProperty('sgrh_cat_motivos_salida')
   })
 
-  // SGRH-90: la ventana de edición del contrato vigente.
+  // Las dos banderas de planilla del contrato vigente, de una sola consulta:
+  // en_planilla solo avisa desde cuándo aplica un cambio, y quincena_sin_pagar
+  // bloquea el cambio de sucursal base.
   it.each([
-    ['sin planilla, se puede editar', SIN_PLANILLA, false],
-    ['con planilla, ya no', { data: null, error: null, count: 3 }, true],
-    // Si la consulta falla se asume que sí: esconder el botón es el error
-    // seguro; mostrar uno que la RPC va a rechazar, no.
-    ['si la consulta falla, se asume que sí', { data: null, error: { message: 'boom' } }, true],
-  ])('en_planilla del vigente: %s', async (_caso, planilla, esperado) => {
+    ['sin planilla', SIN_PLANILLA, false, false],
+    [
+      'con todo pagado: avisa, pero la sucursal se puede mover',
+      { data: [{ ndt_pagado: true }, { ndt_pagado: true }], error: null },
+      true,
+      false,
+    ],
+    [
+      'con una quincena sin pagar: la sucursal queda bloqueada',
+      { data: [{ ndt_pagado: true }, { ndt_pagado: false }], error: null },
+      true,
+      true,
+    ],
+    // Si la consulta falla se asume lo peor en las dos: un aviso de más o un
+    // campo bloqueado son errores seguros; dejar mover la sucursal con una
+    // quincena abierta, no.
+    [
+      'si la consulta falla, se asume lo peor',
+      { data: null, error: { message: 'boom' } },
+      true,
+      true,
+    ],
+  ])('banderas de planilla del vigente: %s', async (_caso, planilla, enPlanilla, sinPagar) => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_empleados: { data: EMPLEADO_ROW, error: null },
@@ -264,7 +283,8 @@ describe('getEmployeeDetail (server action)', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.data.historial_activo?.en_planilla).toBe(esperado)
+    expect(result.data.historial_activo?.en_planilla).toBe(enPlanilla)
+    expect(result.data.historial_activo?.quincena_sin_pagar).toBe(sinPagar)
   })
 
   // PostgREST puede devolver la liquidación embebida como objeto o como

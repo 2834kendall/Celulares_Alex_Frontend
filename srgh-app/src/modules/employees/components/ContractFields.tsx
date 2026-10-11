@@ -19,6 +19,12 @@ interface ContractFieldsProps extends ContractCatalogs {
    * traslado que reescribe la historia), así que ni se muestra el campo.
    */
   mostrarSucursal?: boolean
+  /**
+   * false al editar un contrato: la fecha de inicio no se mueve (dejaría las
+   * marcas, los turnos y el contrato anterior apuntando a un período que ya no
+   * existe). El perfil la muestra como texto; acá ni se renderiza el campo.
+   */
+  mostrarFechaInicio?: boolean
 }
 
 /**
@@ -29,6 +35,7 @@ interface ContractFieldsProps extends ContractCatalogs {
 export function ContractFields({
   basePath = '',
   mostrarSucursal = true,
+  mostrarFechaInicio = true,
   puestos,
   sucursales,
   tiposContrato,
@@ -56,16 +63,18 @@ export function ContractFields({
         options={tiposJornada}
       />
 
-      <Labeled
-        label="Inicio del contrato *"
-        error={getFieldError(errors, path('lab_fecha_inicio'))}
-      >
-        <DateInput
-          name={path('lab_fecha_inicio')}
-          label="Inicio del contrato"
-          invalid={Boolean(getFieldError(errors, path('lab_fecha_inicio')))}
-        />
-      </Labeled>
+      {mostrarFechaInicio && (
+        <Labeled
+          label="Inicio del contrato *"
+          error={getFieldError(errors, path('lab_fecha_inicio'))}
+        >
+          <DateInput
+            name={path('lab_fecha_inicio')}
+            label="Inicio del contrato"
+            invalid={Boolean(getFieldError(errors, path('lab_fecha_inicio')))}
+          />
+        </Labeled>
+      )}
 
       <Labeled label="Salario base (₡) *" error={getFieldError(errors, path('lab_salario_base'))}>
         <CurrencyInput

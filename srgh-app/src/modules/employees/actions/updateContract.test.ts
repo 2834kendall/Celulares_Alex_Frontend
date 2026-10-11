@@ -17,9 +17,9 @@ const mockRevalidatePath = vi.mocked(revalidatePath)
 
 const INPUT: EditarContratoInput = {
   lab_puesto_id: 3,
+  lab_sucursal_id: 2,
   lab_tipo_contrato_id: 1,
   lab_tipo_jornada_id: 1,
-  lab_fecha_inicio: '2026-09-01',
   lab_salario_base: 480000,
   lab_salario_real: 500000,
 }
@@ -44,7 +44,7 @@ describe('updateContract', () => {
   })
 
   it('rechaza un input inválido sin tocar permisos ni base', async () => {
-    const result = await updateContract(5, { ...INPUT, lab_fecha_inicio: '01/09/2026' })
+    const result = await updateContract(5, { ...INPUT, lab_salario_base: -1 })
 
     expect(result).toEqual({ ok: false, error: 'Datos del contrato inválidos.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
@@ -59,12 +59,15 @@ describe('updateContract', () => {
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 
-  it('la sucursal no viaja a la RPC aunque llegue en el input', async () => {
+  // La sucursal sí viaja (es la sucursal BASE, y corregirla no mueve la
+  // historia). La fecha de inicio no: el schema la descarta antes de llegar a
+  // la RPC, que además tampoco la toca.
+  it('la fecha de inicio no viaja a la RPC aunque llegue', async () => {
     const client = mockRpc({ data: null, error: null })
 
     const result = await updateContract(5, {
       ...INPUT,
-      lab_sucursal_id: 9,
+      lab_fecha_inicio: '2026-09-01',
     } as EditarContratoInput)
 
     expect(result).toEqual({ ok: true })
@@ -73,17 +76,24 @@ describe('updateContract', () => {
     expect(mockRevalidatePath).toHaveBeenCalledWith('/employees/[id]', 'page')
   })
 
-  it('muestra el rechazo de la RPC cuando el contrato ya pasó por planilla', async () => {
+  // El contrato con una terminación registrada sigue sin poder editarse: eso
+  // no es por planilla, es que la liquidación se calcularía con otras
+  // condiciones. Es el rechazo que queda para probar el paso-a-través del
+  // 23514, ahora que el de planilla no existe.
+  it('muestra el rechazo de la RPC tal cual', async () => {
     mockRpc({
       data: null,
-      error: { code: '23514', message: 'Este contrato ya pasó por planilla y no se puede editar.' },
+      error: {
+        code: '23514',
+        message: 'Este contrato tiene una terminación registrada: revertila antes de editarlo.',
+      },
     })
 
     const result = await updateContract(5, INPUT)
 
     expect(result).toEqual({
       ok: false,
-      error: 'Este contrato ya pasó por planilla y no se puede editar.',
+      error: 'Este contrato tiene una terminación registrada: revertila antes de editarlo.',
     })
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })

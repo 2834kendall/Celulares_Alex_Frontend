@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   baseParaHorasEditadas,
+  contratoDeLaFila,
   diasDeLaQuincena,
   evaluarBaseGuardado,
+  fotoDelContrato,
   prellenarDesdeAsistencia,
   type HorasDeAsistencia,
 } from './prellenadoAsistencia'
@@ -461,5 +463,131 @@ describe('vacaciones aprobadas después de armar la fila', () => {
       }).conservado
     ).toBe(true)
     expect(r.esperado).toBe(200000)
+  })
+})
+
+describe('foto del contrato en la fila', () => {
+  const SIN_FOTO = {
+    ndt_salario_base_contrato: null,
+    ndt_salario_real_contrato: null,
+    ndt_horas_semanales_contrato: null,
+  }
+
+  it('la foto manda sobre el contrato en vivo', () => {
+    const foto = {
+      ndt_salario_base_contrato: 300000,
+      ndt_salario_real_contrato: 320000,
+      ndt_horas_semanales_contrato: 36,
+    }
+
+    expect(contratoDeLaFila(foto, CONTRATO)).toEqual({
+      salarioBaseMensual: 300000,
+      salarioRealMensual: 320000,
+      horasSemanales: 36,
+    })
+  })
+
+  // Es la convención de ndt_monto_incapacidad: las filas anteriores a estas
+  // columnas se siguen comportando como antes.
+  it('sin foto cae al contrato en vivo', () => {
+    expect(contratoDeLaFila(SIN_FOTO, CONTRATO)).toEqual(CONTRATO)
+  })
+
+  it('una foto con base en cero o negativa no se usa', () => {
+    expect(contratoDeLaFila({ ...SIN_FOTO, ndt_salario_base_contrato: 0 }, CONTRATO)).toEqual(
+      CONTRATO
+    )
+  })
+
+  // Un contrato sin salario real ni jornada es válido: el real cae al base y
+  // la jornada a la ordinaria diurna. Esos nulls son dato, no ausencia de foto.
+  it('respeta los nulls de un contrato sin salario real ni jornada', () => {
+    const foto = {
+      ndt_salario_base_contrato: 300000,
+      ndt_salario_real_contrato: null,
+      ndt_horas_semanales_contrato: null,
+    }
+
+    expect(contratoDeLaFila(foto, CONTRATO)).toEqual({
+      salarioBaseMensual: 300000,
+      salarioRealMensual: null,
+      horasSemanales: null,
+    })
+  })
+
+  it('fotoDelContrato y contratoDeLaFila son inversos', () => {
+    expect(
+      contratoDeLaFila(fotoDelContrato(CONTRATO), { ...CONTRATO, salarioBaseMensual: 1 })
+    ).toEqual(CONTRATO)
+  })
+})
+
+// El corazón del cambio: editar el contrato no puede mover una fila ya
+// calculada, pero cambiar las horas sí tiene que seguir detectándose.
+describe('evaluarBaseGuardado contra la foto del contrato', () => {
+  const HORAS = { horas: 96, horasExtra: 0 }
+  const guardado = prellenarDesdeAsistencia(CONTRATO, lectura(96, 96), Q1_AGOSTO)
+
+  it('un salario corregido después NO desactualiza la fila', () => {
+    const subieronElSalario = {
+      ...CONTRATO,
+      salarioBaseMensual: 600000,
+      salarioRealMensual: 650000,
+    }
+
+    const resultado = evaluarBaseGuardado({
+      baseGuardado: guardado.base,
+      ajusteGuardado: guardado.ajuste,
+      // Lo que hace el action: la foto, no el contrato de hoy.
+      contrato: contratoDeLaFila(fotoDelContrato(CONTRATO), subieronElSalario),
+      guardadas: HORAS,
+      lectura: lectura(96, 96),
+      quincena: Q1_AGOSTO,
+    })
+
+    expect(resultado.desactualizado).toBe(false)
+  })
+
+  it('leyendo el contrato en vivo, el mismo cambio SÍ la desactualiza', () => {
+    const subieronElSalario = {
+      ...CONTRATO,
+      salarioBaseMensual: 600000,
+      salarioRealMensual: 650000,
+    }
+
+    const resultado = evaluarBaseGuardado({
+      baseGuardado: guardado.base,
+      ajusteGuardado: guardado.ajuste,
+      contrato: subieronElSalario,
+      guardadas: HORAS,
+      lectura: lectura(96, 96),
+      quincena: Q1_AGOSTO,
+    })
+
+    expect(resultado.desactualizado).toBe(true)
+  })
+
+  // Lo que la detección NO puede perder: la asistencia se sigue leyendo en
+  // vivo. Mismo caso que el describe de vacaciones aprobadas después, pero con
+  // la foto del contrato puesta.
+  it('con la foto puesta, un cambio en la ASISTENCIA sigue desactualizando', () => {
+    const Q2_SETIEMBRE = { anio: 2026, mes: 9, quincena: 2 }
+    const conVacaciones = lectura(88, 120, {
+      horasEsperadas: 88,
+      horasAcreditadas: 32,
+      horasAcreditadasAusencias: 32,
+    })
+    const baseVieja = 146666.67
+
+    const resultado = evaluarBaseGuardado({
+      baseGuardado: baseVieja,
+      ajusteGuardado: 157666.67 - baseVieja,
+      contrato: contratoDeLaFila(fotoDelContrato(CONTRATO), CONTRATO),
+      guardadas: { horas: 88, horasExtra: 0 },
+      lectura: conVacaciones,
+      quincena: Q2_SETIEMBRE,
+    })
+
+    expect(resultado.desactualizado).toBe(true)
   })
 })

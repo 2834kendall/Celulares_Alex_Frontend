@@ -94,11 +94,34 @@ describe('<EmployeeContractActions /> — botones por estado y permiso', () => {
     expect(screen.getByRole('button', { name: /terminar/i })).toBeEnabled()
   })
 
-  it('vigente que ya pasó por planilla: Editar deshabilitado, Terminar disponible', () => {
+  // Antes se bloqueaba porque la planilla leía el salario en vivo. Desde que
+  // cada fila guarda la foto del contrato, un período ya calculado conserva
+  // sus montos y la edición aplica desde el siguiente.
+  it('vigente que ya pasó por planilla: Editar sigue disponible', () => {
     renderActions([{ ...HISTORIAL_ACTIVO, en_planilla: true }], { canEditContrato: true })
 
-    expect(screen.getByRole('button', { name: /editar/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /editar/i })).toBeEnabled()
     expect(screen.getByRole('button', { name: /terminar/i })).toBeEnabled()
+  })
+
+  it('al editar un contrato que ya pasó por planilla avisa desde cuándo aplica', async () => {
+    const user = userEvent.setup()
+    renderActions([{ ...HISTORIAL_ACTIVO, en_planilla: true }], { canEditContrato: true })
+
+    await user.click(screen.getByRole('button', { name: /editar/i }))
+
+    const dialogo = within(screen.getByRole('dialog', { name: 'Editar contrato' }))
+    expect(dialogo.getByText(/aplican desde el próximo período/i)).toBeInTheDocument()
+  })
+
+  it('al editar un contrato sin planilla no aparece el aviso', async () => {
+    const user = userEvent.setup()
+    renderActions([HISTORIAL_ACTIVO], { canEditContrato: true })
+
+    await user.click(screen.getByRole('button', { name: /editar/i }))
+
+    const dialogo = within(screen.getByRole('dialog', { name: 'Editar contrato' }))
+    expect(dialogo.queryByText(/aplican desde el próximo período/i)).not.toBeInTheDocument()
   })
 
   it('terminación programada: solo Revertir', () => {
@@ -139,15 +162,43 @@ describe('<EmployeeContractActions /> — botones por estado y permiso', () => {
     expect(screen.getByRole('dialog', { name: 'Nuevo contrato' })).toBeInTheDocument()
   })
 
-  it('Editar muestra la sucursal como texto, no como campo', async () => {
+  it('Editar deja cambiar la sucursal base', async () => {
     const user = userEvent.setup()
     renderActions([HISTORIAL_ACTIVO], { canEditContrato: true })
 
     await user.click(screen.getByRole('button', { name: /editar/i }))
 
     const dialogo = screen.getByRole('dialog', { name: 'Editar contrato' })
-    expect(within(dialogo).queryByLabelText('Sucursal *')).not.toBeInTheDocument()
-    expect(within(dialogo).getByText('Central')).toBeInTheDocument()
+    expect(within(dialogo).getByLabelText('Sucursal *')).toBeInTheDocument()
+  })
+
+  // El diálogo tiene que abrir con TODO lo que ya tiene el contrato. Pasó al
+  // volver la sucursal editable: no estaba en defaultValues (antes no hacía
+  // falta) y el select abría vacío, obligando a elegirla de nuevo en cada
+  // corrección de salario. El test del formulario no lo agarró porque recibe
+  // un fixture completo; este monta el cableado real.
+  it('Editar precarga lo que ya tiene el contrato', async () => {
+    const user = userEvent.setup()
+    renderActions([HISTORIAL_ACTIVO], { canEditContrato: true })
+
+    await user.click(screen.getByRole('button', { name: /editar/i }))
+
+    const dialogo = within(screen.getByRole('dialog', { name: 'Editar contrato' }))
+    expect(dialogo.getByLabelText('Sucursal *')).toHaveTextContent('Central')
+    expect(dialogo.getByLabelText('Puesto *')).toHaveTextContent('Cajera')
+    expect(dialogo.getByLabelText('Tipo de contrato *')).toHaveTextContent('Indefinido')
+    expect(dialogo.getByLabelText('Tipo de jornada *')).toHaveTextContent('Diurna')
+  })
+
+  it('con una quincena sin pagar, la sucursal sale como texto con el motivo', async () => {
+    const user = userEvent.setup()
+    renderActions([{ ...HISTORIAL_ACTIVO, quincena_sin_pagar: true }], { canEditContrato: true })
+
+    await user.click(screen.getByRole('button', { name: /editar/i }))
+
+    const dialogo = within(screen.getByRole('dialog', { name: 'Editar contrato' }))
+    expect(dialogo.queryByLabelText('Sucursal *')).not.toBeInTheDocument()
+    expect(dialogo.getByText(/quincena sin pagar/i)).toBeInTheDocument()
   })
 
   it('Revertir pide confirmación y revierte el contrato terminado', async () => {

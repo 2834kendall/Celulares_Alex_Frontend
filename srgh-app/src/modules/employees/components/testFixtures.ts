@@ -64,6 +64,7 @@ export const HISTORIAL_ACTIVO: NonNullable<EmpleadoDetalle['historial_activo']> 
   motivo_salida_nombre: null,
   liquidado: false,
   en_planilla: false,
+  quincena_sin_pagar: false,
 }
 
 /** Un contrato anterior, ya cerrado, del mismo empleado. */
