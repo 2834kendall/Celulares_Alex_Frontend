@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { RecruitmentBoard } from './RecruitmentBoard'
 import { moveApplicationToStage } from '@/modules/recruitment/actions/moveApplicationToStage'
 import type { PostulacionBoardItem } from '@/modules/recruitment/actions/getPostulacionesBoard'
+import { resetBoardTab } from '@/modules/recruitment/hooks/useBoardTab'
 import type { EtapaSeleccionItem } from '@/modules/recruitment/types'
 
 const push = vi.fn()
@@ -88,6 +89,7 @@ describe('<RecruitmentBoard />', () => {
     // Tampoco scrollTo en elementos: lo usa el índice para ir a una columna.
     Element.prototype.scrollTo = vi.fn()
     window.localStorage.clear()
+    resetBoardTab()
   })
 
   it('pinta una columna por etapa, en el orden del tablero, con su conteo', () => {
@@ -144,8 +146,33 @@ describe('<RecruitmentBoard />', () => {
     await user.click(within(menu).getByRole('button', { name: 'Entrevista' }))
 
     expect(moveApplicationToStage).toHaveBeenCalledWith({ applicationId: 1, stageId: 20 })
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Ana Mora pasó a Entrevista.'))
+    // Un solo toque mueve: el aviso trae cómo deshacerlo.
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Ana Mora pasó a Entrevista.',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'Deshacer' }) })
+      )
+    )
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('"Deshacer" devuelve la tarjeta a la columna de la que salió', async () => {
+    vi.mocked(moveApplicationToStage).mockResolvedValue({ ok: true })
+    const user = userEvent.setup()
+    renderBoard()
+
+    await user.click(screen.getByRole('button', { name: 'Acciones de Ana Mora' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Entrevista' }))
+    await waitFor(() => expect(toast.success).toHaveBeenCalled())
+
+    const options = vi.mocked(toast.success).mock.calls[0][1] as unknown as {
+      action: { onClick: () => void }
+    }
+    options.action.onClick()
+
+    await waitFor(() =>
+      expect(moveApplicationToStage).toHaveBeenLastCalledWith({ applicationId: 1, stageId: 10 })
+    )
   })
 
   it('si el servidor rechaza el movimiento, avisa con su mensaje', async () => {
@@ -303,6 +330,27 @@ describe('<RecruitmentBoard />', () => {
     await user.click(within(indice).getByRole('button', { name: /^Ir a Entrevista/ }))
 
     expect(within(column(/^Entrevista/)).getByText('Carla Soto')).toBeInTheDocument()
+  })
+
+  it('en el celular no hay columnas ni arrastre: una etapa a la vez, con pestañas', async () => {
+    vi.mocked(moveApplicationToStage).mockResolvedValue({ ok: true })
+    // Ancho de celular.
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true })
+    const user = userEvent.setup()
+    renderBoard()
+
+    expect(screen.getByRole('navigation', { name: 'Etapas del proceso' })).toBeInTheDocument()
+    // Nada del tablero de escritorio: ni manijas, ni contraer, ni índice.
+    expect(screen.queryByRole('button', { name: /^Reordenar la columna/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Contraer la columna/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Ir a una columna' })).not.toBeInTheDocument()
+    // Se ve solo la etapa elegida.
+    expect(screen.getByText('Ana Mora')).toBeInTheDocument()
+    expect(screen.queryByText('Carla Soto')).not.toBeInTheDocument()
+
+    // El paso siguiente está en la tarjeta, a un toque.
+    await user.click(screen.getAllByRole('button', { name: /Pasar a: Entrevista/ })[0])
+    expect(moveApplicationToStage).toHaveBeenCalledWith({ applicationId: 2, stageId: 20 })
   })
 
   it('tablero sin columnas: invita a crear la primera a quien puede', async () => {

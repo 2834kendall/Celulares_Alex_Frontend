@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
   ChevronRight,
   History,
@@ -358,6 +359,24 @@ interface ScoreState extends ScoreValue {
   observacion: string
 }
 
+// 'pending' = se tocó algo y el guardado sale en un instante (ver AUTOSAVE_DELAY_MS).
+type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
+
+// Cuánto se espera después del último toque antes de guardar. Junta varios
+// cambios seguidos en un solo guardado: con el teclado, cada flecha cambia el
+// puntaje, y sin esta pausa serían diez pedidos para llegar del 0 al 10.
+const AUTOSAVE_DELAY_MS = 500
+
+type ScoresPayload = Parameters<typeof savePostulacionScores>[0]
+
+/**
+ * Puntaje de la postulación, criterio por criterio.
+ *
+ * No hay botón de guardar: cada calificación se guarda sola y el promedio —
+ * el anillo de arriba y el número de la tarjeta en el tablero — va cambiando
+ * conforme se evalúa. Se puede calificar de a poco: lo que falta simplemente
+ * no entra todavía en el promedio.
+ */
 function ScoreForm({
   postulacionId,
   criterios,
@@ -369,7 +388,7 @@ function ScoreForm({
   existentes: PostulacionDetalle['puntajes']
   canWrite: boolean
 }) {
-  const [guardados, setGuardados] = useState<Record<number, ScoreState>>(() => {
+  const [scores, setScores] = useState<Record<number, ScoreState>>(() => {
     const initial: Record<number, ScoreState> = {}
     for (const c of criterios) {
       const existing = existentes.find((p) => p.criterioId === c.id)
@@ -381,13 +400,19 @@ function ScoreForm({
     }
     return initial
   })
-  const [scores, setScores] = useState(guardados)
-  const [submitting, setSubmitting] = useState(false)
+  const [status, setStatus] = useState<SaveStatus>('idle')
   const [error, setError] = useState<string | null>(null)
+
+  // Estado del guardado automático. Va en refs y no en estado porque lo leen
+  // callbacks diferidos (el temporizador, la respuesta del servidor) que
+  // necesitan el valor de AHORA, no el del render en que nacieron.
+  const pendingPayload = useRef<ScoresPayload | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saving = useRef(false)
 
   // Promedio EN VIVO mientras se califica, con el mismo cálculo ponderado
   // que usa el servidor al guardar (savePostulacionScores): así el número
-  // que se ve al tocar es exactamente el que va a quedar guardado.
+  // que se ve al tocar es exactamente el que queda guardado.
   const promedio = useMemo(
     () =>
       weightedAverageScore(
@@ -402,143 +427,182 @@ function ScoreForm({
   const pendientes = criterios.filter(
     (c) => !scores[c.id]?.noAplica && scores[c.id]?.puntaje === null
   ).length
-  const hayCambios = criterios.some(
-    (c) =>
-      scores[c.id]?.puntaje !== guardados[c.id]?.puntaje ||
-      scores[c.id]?.noAplica !== guardados[c.id]?.noAplica
-  )
   const noAplican = criterios.filter((c) => scores[c.id]?.noAplica).length
   const calificados = criterios.length - pendientes - noAplican
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (pendientes > 0) {
-      setError(
-        `Falta${pendientes === 1 ? '' : 'n'} ${pendientes} criterio${pendientes === 1 ? '' : 's'}: elija un puntaje o N/A.`
-      )
+  async function save() {
+    timer.current = null
+    // Ya hay un guardado en viaje: al volver, verá que quedó algo pendiente
+    // y saldrá otra vez con lo último.
+    if (saving.current) return
+    const payload = pendingPayload.current
+    if (!payload) return
+
+    pendingPayload.current = null
+    saving.current = true
+    setStatus('saving')
+    const result = await savePostulacionScores(payload)
+    saving.current = false
+
+    if (pendingPayload.current) {
+      // Se siguió calificando mientras tanto: lo que vale es lo último.
+      void save()
       return
     }
-    setSubmitting(true)
-    setError(null)
-
-    const puntajes = criterios.map((c) => {
-      const s = scores[c.id]
-      return {
-        criterioId: c.id,
-        puntaje: s.noAplica ? null : s.puntaje,
-        noAplica: s.noAplica,
-        observacion: s.observacion.trim() || null,
-      }
-    })
-
-    const result = await savePostulacionScores({ postulacionId, puntajes })
-    setSubmitting(false)
     if (!result.ok) {
+      // Se conserva para "Reintentar": nada de lo calificado se pierde.
+      pendingPayload.current = payload
       setError(result.error)
+      setStatus('error')
       return
     }
-    setGuardados(scores)
-    toast.success(
-      result.promedio !== null ? `Puntaje guardado: ${result.promedio}/10.` : 'Puntaje guardado.'
-    )
+    setError(null)
+    setStatus('saved')
   }
 
+  function rate(criterioId: number, next: ScoreValue) {
+    const updated = { ...scores, [criterioId]: { ...scores[criterioId], ...next } }
+    setScores(updated)
+
+    // Solo viaja lo ya calificado: un criterio sin tocar no es un 0.
+    const puntajes = criterios
+      .filter((c) => updated[c.id].noAplica || updated[c.id].puntaje !== null)
+      .map((c) => ({
+        criterioId: c.id,
+        puntaje: updated[c.id].noAplica ? null : updated[c.id].puntaje,
+        noAplica: updated[c.id].noAplica,
+        observacion: updated[c.id].observacion.trim() || null,
+      }))
+    pendingPayload.current = { postulacionId, puntajes }
+
+    setError(null)
+    setStatus('pending')
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => void save(), AUTOSAVE_DELAY_MS)
+  }
+
+  // Si se sale de la ficha con un cambio todavía en la pausa, se guarda igual.
+  useEffect(
+    () => () => {
+      if (timer.current === null) return
+      clearTimeout(timer.current)
+      if (pendingPayload.current) void savePostulacionScores(pendingPayload.current)
+    },
+    []
+  )
+
+  const busy = status === 'pending' || status === 'saving'
+
   return (
-    <form onSubmit={handleSubmit} noValidate>
-      <CollapsibleSection
-        title="Puntaje"
-        icon={Star}
-        summary={
-          <>
-            {/* Aviso visible aunque la sección esté cerrada: se tocó algo
-                y no se guardó. */}
-            {hayCambios && (
-              <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-px text-[10px] font-semibold text-amber-700">
-                Sin guardar
-              </span>
-            )}
-            <ScoreRing
-              compact
-              score={promedio}
-              scored={calificados}
-              notApplicable={noAplican}
-              total={criterios.length}
-            />
-          </>
-        }
-      >
-        <div className="space-y-3">
+    <CollapsibleSection
+      title="Puntaje"
+      icon={Star}
+      summary={
+        <>
+          {/* Visible aunque la sección esté cerrada: algo no llegó a guardarse. */}
+          {status === 'error' && (
+            <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-px text-[10px] font-semibold text-amber-700">
+              Sin guardar
+            </span>
+          )}
           <ScoreRing
+            compact
             score={promedio}
             scored={calificados}
             notApplicable={noAplican}
             total={criterios.length}
           />
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <ScoreRing
+          score={promedio}
+          scored={calificados}
+          notApplicable={noAplican}
+          total={criterios.length}
+        />
 
-          {error && (
-            <Alert>
-              <div>{error}</div>
-            </Alert>
-          )}
-
-          <div className="space-y-3">
-            {criterios.map((c) => (
-              <div key={c.id} className="space-y-1.5">
-                <div className="flex min-w-0 items-start gap-2">
-                  <span
-                    aria-hidden="true"
-                    className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
-                    style={{ backgroundColor: c.color ?? '#e2e8f0' }}
-                  />
-                  {/*
-                    Igual que en Configuración: el nombre del criterio (el del
-                    área) es el título, y la descripción es la ayuda de qué se
-                    califica. Si la descripción repite el nombre, no se muestra
-                    dos veces.
-                  */}
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-800">{c.areaNombre}</p>
-                    {(c.descripcion.trim() !== c.areaNombre.trim() || c.peso !== 1) && (
-                      <p className="text-[11px] text-slate-500">
-                        {c.descripcion.trim() !== c.areaNombre.trim() && c.descripcion}
-                        {c.descripcion.trim() !== c.areaNombre.trim() && c.peso !== 1 && ' · '}
-                        {c.peso !== 1 && `pesa ×${c.peso}`}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <ScoreScale
-                  label={c.areaNombre}
-                  value={scores[c.id]}
-                  disabled={!canWrite || submitting}
-                  onChange={(next) => {
-                    setScores((prev) => ({ ...prev, [c.id]: { ...prev[c.id], ...next } }))
-                    setError(null)
-                  }}
+        <div className="space-y-3">
+          {criterios.map((c) => (
+            <div key={c.id} className="space-y-1.5">
+              <div className="flex min-w-0 items-start gap-2">
+                <span
+                  aria-hidden="true"
+                  className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
+                  style={{ backgroundColor: c.color ?? '#e2e8f0' }}
                 />
+                {/*
+                  Igual que en Configuración: el nombre del criterio (el del
+                  área) es el título, y la descripción es la ayuda de qué se
+                  califica. Si la descripción repite el nombre, no se muestra
+                  dos veces.
+                */}
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-800">{c.areaNombre}</p>
+                  {(c.descripcion.trim() !== c.areaNombre.trim() || c.peso !== 1) && (
+                    <p className="text-[11px] text-slate-500">
+                      {c.descripcion.trim() !== c.areaNombre.trim() && c.descripcion}
+                      {c.descripcion.trim() !== c.areaNombre.trim() && c.peso !== 1 && ' · '}
+                      {c.peso !== 1 && `pesa ×${c.peso}`}
+                    </p>
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
-
-          {canWrite && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <Button type="submit" disabled={submitting || !hayCambios}>
-                {submitting && <Loader2 className={SPINNER} />}
-                {submitting ? 'Guardando' : 'Guardar puntaje'}
-              </Button>
-              {/* aria-live: quien usa lector de pantalla también se entera de
-                  que hay cambios sin guardar o de cuántos faltan. */}
-              <p className="text-[11px] text-slate-500" aria-live="polite">
-                {hayCambios
-                  ? pendientes > 0
-                    ? `Cambios sin guardar · faltan ${pendientes}`
-                    : 'Cambios sin guardar'
-                  : null}
-              </p>
+              {/* No se deshabilita mientras guarda: se sigue calificando de
+                  corrido y el guardado alcanza a lo último. */}
+              <ScoreScale
+                label={c.areaNombre}
+                value={scores[c.id]}
+                disabled={!canWrite}
+                onChange={(next) => rate(c.id, next)}
+              />
             </div>
-          )}
+          ))}
         </div>
-      </CollapsibleSection>
-    </form>
+
+        {canWrite && (
+          // aria-live: quien usa lector de pantalla también se entera de que
+          // se guardó (o de que no) sin haber apretado nada.
+          <div
+            className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"
+            aria-live="polite"
+          >
+            {busy && (
+              <span className="flex items-center gap-1.5 text-slate-500">
+                <Loader2 className={SPINNER} /> Guardando…
+              </span>
+            )}
+            {status === 'saved' && (
+              <span className="animate-fade-in flex items-center gap-1 font-semibold text-emerald-700">
+                <Check className="h-3.5 w-3.5" aria-hidden="true" /> Guardado
+              </span>
+            )}
+            {status === 'error' && (
+              <>
+                <span className="font-semibold text-rose-700">
+                  {error ?? 'No se pudo guardar el puntaje.'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void save()}
+                  className="rounded font-semibold text-brand-700 underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2 focus-visible:ring-brand-500/60 pointer-coarse:min-h-11"
+                >
+                  Reintentar
+                </button>
+              </>
+            )}
+            {status === 'idle' && (
+              <span className="text-slate-500">Se guarda solo al calificar.</span>
+            )}
+            {status !== 'error' && pendientes > 0 && (
+              <span className="text-slate-500">
+                · {pendientes === 1 ? 'Falta 1 criterio' : `Faltan ${pendientes} criterios`}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </CollapsibleSection>
   )
 }

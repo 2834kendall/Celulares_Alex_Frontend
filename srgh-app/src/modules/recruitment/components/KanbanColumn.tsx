@@ -3,12 +3,13 @@
 import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronsLeftRight, ChevronsRightLeft, GripVertical, Pencil } from 'lucide-react'
+import { ChevronsLeftRight, ChevronsRightLeft, GripVertical, Pencil, UserRound } from 'lucide-react'
 import type { PostulacionBoardItem } from '@/modules/recruitment/actions/getPostulacionesBoard'
+import { STAGE_SOLID, stageTone } from '@/modules/recruitment/lib/stageTone'
 import type { EtapaSeleccionItem } from '@/modules/recruitment/types'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
-import { readableTextOn } from '@/lib/utils/color'
 import { ApplicationCard } from './ApplicationCard'
 
 /** Id de la columna como destino/arrastrable; el tablero lo lee al soltar. */
@@ -32,22 +33,10 @@ const COLUMN_FRAME =
  * franja entera de ese color. Así, con muchas columnas, cada una se reconoce
  * de lejos.
  *
- * El color es libre (lo elige el usuario), así que el texto que va encima no
- * puede ser fijo: --stage-ink se calcula por contraste (readableTextOn) —
- * blanco sobre un azul marino, oscuro sobre un pastel. Los controles del
- * encabezado heredan ese color en vez de traer el suyo.
+ * El color es libre (lo elige el usuario), así que el texto que va encima se
+ * calcula por contraste — ver lib/stageTone.ts. Los controles del encabezado
+ * heredan ese color en vez de traer el suyo.
  */
-const NO_COLOR = '#e2e8f0' // slate-200: una etapa sin color se ve neutra
-const NO_COLOR_INK = '#1e293b' // slate-800
-
-function stageTone(color: string | null) {
-  return {
-    '--stage': color ?? NO_COLOR,
-    '--stage-ink': color ? readableTextOn(color) : NO_COLOR_INK,
-  } as React.CSSProperties
-}
-
-const STAGE_SOLID = 'bg-(--stage) text-(--stage-ink)'
 const STAGE_SURFACE = 'bg-[color-mix(in_srgb,var(--stage)_16%,var(--color-slate-100))]'
 
 /** Conteo de la columna: pastilla blanca, legible sobre cualquier color. */
@@ -303,18 +292,27 @@ export function KanbanColumn({
             onOpenMenu={onOpenMenu}
           />
         ))}
-        {applications.length === 0 && (
-          <p
-            className={cn(
-              'flex flex-1 items-center justify-center rounded-lg border border-dashed px-3 py-6 text-center text-[11px] transition-colors',
-              receiving ? 'border-brand-400 text-brand-700' : 'border-slate-400/60 text-slate-500',
-              // Mientras hay una tarjeta en el aire el hueco late: "acá también".
-              cardInFlight && !receiving && 'animate-board-drop-hint'
-            )}
-          >
-            {cardInFlight ? 'Soltá acá' : 'Sin candidatos'}
-          </p>
-        )}
+        {applications.length === 0 &&
+          (cardInFlight ? (
+            <p
+              className={cn(
+                'flex flex-1 items-center justify-center rounded-lg border border-dashed px-3 py-6 text-center text-[11px] transition-colors',
+                receiving
+                  ? 'border-brand-400 text-brand-700'
+                  : // Mientras hay una tarjeta en el aire el hueco late: "acá también".
+                    'animate-board-drop-hint border-slate-400/60 text-slate-500'
+              )}
+            >
+              Soltá acá
+            </p>
+          ) : (
+            // El estado vacío animado del sistema, en su tamaño chico: puede
+            // haber varias columnas vacías a la vez, y la escena completa
+            // (que simula la mirada) es para un solo lugar por pantalla.
+            <div className="flex flex-1 items-center justify-center px-1 py-4">
+              <EmptyState size="sm" framed={false} icon={UserRound} title="Sin candidatos" />
+            </div>
+          ))}
       </div>
     </section>
   )

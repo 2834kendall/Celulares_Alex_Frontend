@@ -37,6 +37,7 @@ import {
 import type { PostulacionBoardItem } from '@/modules/recruitment/actions/getPostulacionesBoard'
 import { moveApplicationToStage } from '@/modules/recruitment/actions/moveApplicationToStage'
 import { reorderSelectionStages } from '@/modules/recruitment/actions/reorderSelectionStages'
+import { useIsPhone } from '@/hooks/useIsPhone'
 import { useCollapsedColumns } from '@/modules/recruitment/hooks/useCollapsedColumns'
 import type { EtapaSeleccionItem } from '@/modules/recruitment/types'
 import type { CatalogoItem } from '@/modules/employees/types'
@@ -56,6 +57,7 @@ import {
   columnDomId,
   columnDragId,
 } from './KanbanColumn'
+import { MobileBoard } from './MobileBoard'
 import { NuevoCandidatoForm } from './NuevoCandidatoForm'
 import { StageColumnForm } from './StageColumnForm'
 
@@ -154,6 +156,9 @@ const screenReaderInstructions = {
  * columna al soltarla y, si el servidor rechaza el cambio, vuelve sola a su
  * lugar con un aviso.
  *
+ * En el celular no se muestra este tablero sino MobileBoard: una etapa a la
+ * vez, con pestañas — ver ese componente.
+ *
  * Con muchas columnas: cada una se contrae a una franja (preferencia de quien
  * mira, se recuerda en el navegador), "Contraer vacías" lo hace de un toque, y
  * el índice de arriba lleva directo a cualquier columna.
@@ -171,6 +176,9 @@ export function RecruitmentBoard({
   // Id estable para los atributos ARIA que genera la librería: sin él el HTML
   // del servidor y el del navegador no coinciden al hidratar.
   const dndId = useId()
+  // null mientras no se sabe el ancho (servidor / hidratación): ahí se pintan
+  // las dos vistas y el CSS esconde la que no toca, para que no haya salto.
+  const isPhone = useIsPhone()
   const [, startTransition] = useTransition()
 
   const [applications, applyMove] = useOptimistic(
@@ -266,7 +274,7 @@ export function RecruitmentBoard({
     )
     root.querySelectorAll('[data-stage-id]').forEach((element) => observer.observe(element))
     return () => observer.disconnect()
-  }, [layoutKey])
+  }, [layoutKey, isPhone])
 
   /** Lleva el tablero hasta una columna; si estaba contraída, la abre. */
   function goToColumn(stageId: number) {
@@ -300,8 +308,18 @@ export function RecruitmentBoard({
         toast.error(result.error)
       } else if (confirm) {
         // Al arrastrar, la tarjeta moviéndose ya es la confirmación; desde
-        // el menú no se ve el movimiento, así que se avisa.
-        toast.success(`${application.candidatoNombre} pasó a ${stage.nombre}.`)
+        // el menú (o el botón del celular) no se ve el movimiento, así que
+        // se avisa — y se puede deshacer, porque es un solo toque.
+        const previous = columns.find((column) => column.id === application.etapaId)
+        toast.success(
+          `${application.candidatoNombre} pasó a ${stage.nombre}.`,
+          previous && {
+            action: {
+              label: 'Deshacer',
+              onClick: () => moveTo({ ...application, etapaId: stage.id }, previous),
+            },
+          }
+        )
       }
     })
   }
@@ -359,7 +377,8 @@ export function RecruitmentBoard({
           {/* El plural pierde la tilde: postulación → postulaciones. */}
           {total} postulaci{total === 1 ? 'ón' : 'ones'} en proceso
           {canWrite && columns.length > 0 && (
-            <>
+            // En el celular no se arrastra (ver MobileBoard): la pista sobra.
+            <span className="hidden sm:inline">
               {/* Con el dedo el gesto es otro: hay que mantener apretado. */}
               <span className="pointer-coarse:hidden">
                 {' · arrastrá una tarjeta para cambiarla de etapa'}
@@ -367,31 +386,35 @@ export function RecruitmentBoard({
               <span className="hidden pointer-coarse:inline">
                 {' · mantené apretada una tarjeta para moverla'}
               </span>
-            </>
+            </span>
           )}
         </p>
         <div className="flex flex-wrap gap-2">
           {/* Una sola acción a la vez: primero ofrece despejar las vacías;
-              cuando ya no queda ninguna abierta, ofrece volver a ver todo. */}
-          {emptyExpanded.length > 0 ? (
-            <Button
-              variant="secondary"
-              title="Contraer las columnas vacías"
-              onClick={() => collapse(emptyExpanded.map((stage) => stage.id))}
-            >
-              <ChevronsRightLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="sr-only sm:not-sr-only">Contraer vacías</span>
-            </Button>
-          ) : collapsedColumns.length > 0 ? (
-            <Button
-              variant="secondary"
-              title="Expandir todas las columnas"
-              onClick={() => expand(collapsedColumns.map((stage) => stage.id))}
-            >
-              <ChevronsLeftRight className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="sr-only sm:not-sr-only">Expandir todas</span>
-            </Button>
-          ) : null}
+              cuando ya no queda ninguna abierta, ofrece volver a ver todo.
+              Solo desde sm: en el celular se ve una etapa a la vez y no hay
+              columnas que contraer. */}
+          <span className="hidden sm:contents">
+            {emptyExpanded.length > 0 ? (
+              <Button
+                variant="secondary"
+                title="Contraer las columnas vacías"
+                onClick={() => collapse(emptyExpanded.map((stage) => stage.id))}
+              >
+                <ChevronsRightLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                Contraer vacías
+              </Button>
+            ) : collapsedColumns.length > 0 ? (
+              <Button
+                variant="secondary"
+                title="Expandir todas las columnas"
+                onClick={() => expand(collapsedColumns.map((stage) => stage.id))}
+              >
+                <ChevronsLeftRight className="h-3.5 w-3.5" aria-hidden="true" />
+                Expandir todas
+              </Button>
+            ) : null}
+          </span>
           {canManageStages && (
             <Button variant="secondary" onClick={() => setEditingStage('new')} className="group">
               <Plus className={PLUS_ICON} aria-hidden="true" /> Columna
@@ -423,79 +446,110 @@ export function RecruitmentBoard({
           }
         />
       ) : (
-        <DndContext
-          id={dndId}
-          sensors={sensors}
-          collisionDetection={collisionDetection}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-          onDragCancel={() => setDragging(null)}
-          accessibility={{ announcements, screenReaderInstructions }}
-        >
-          {/*
+        <>
+          {isPhone !== false && (
+            <div className={cn(isPhone === null && 'sm:hidden')}>
+              <MobileBoard
+                stages={columns}
+                byStage={byStage}
+                unplaced={unplaced}
+                canWrite={canWrite}
+                canManageStages={canManageStages}
+                onMove={(application, stage) => moveTo(application, stage, { confirm: true })}
+                onOpenMenu={setMenuFor}
+                onEditStage={setEditingStage}
+              />
+            </div>
+          )}
+          {isPhone !== true && (
+            <div className={cn('min-w-0 space-y-3', isPhone === null && 'hidden sm:block')}>
+              <DndContext
+                id={dndId}
+                sensors={sensors}
+                collisionDetection={collisionDetection}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onDragCancel={() => setDragging(null)}
+                accessibility={{ announcements, screenReaderInstructions }}
+              >
+                {/*
             Scroll horizontal propio: el tablero puede tener más columnas de
             las que entran. En el celular las columnas "encajan" al deslizar
             (snap); en escritorio el scroll es libre.
           */}
-          {columns.length > 1 && (
-            <BoardColumnNav stages={columns} counts={counts} visible={visible} onGo={goToColumn} />
+                {columns.length > 1 && (
+                  <BoardColumnNav
+                    stages={columns}
+                    counts={counts}
+                    visible={visible}
+                    onGo={goToColumn}
+                  />
+                )}
+
+                <div
+                  ref={scrollerRef}
+                  className={cn(
+                    'flex snap-x snap-mandatory items-stretch gap-3 overflow-x-auto pb-3 sm:snap-none',
+                    BOARD_MIN_HEIGHT
+                  )}
+                >
+                  {unplaced.length > 0 && (
+                    <UnplacedColumn
+                      applications={unplaced}
+                      canWrite={canWrite}
+                      onOpenMenu={setMenuFor}
+                    />
+                  )}
+                  <SortableContext
+                    items={columns.map((stage) => columnDragId(stage.id))}
+                    strategy={horizontalListSortingStrategy}
+                  >
+                    {columns.map((stage) => (
+                      <KanbanColumn
+                        key={stage.id}
+                        stage={stage}
+                        applications={byStage.get(stage.id) ?? []}
+                        canWrite={canWrite}
+                        canManage={canManageStages}
+                        cardInFlight={dragging?.type === 'card'}
+                        collapsed={collapsed.has(stage.id)}
+                        onToggleCollapse={toggleCollapsed}
+                        onOpenMenu={setMenuFor}
+                        onEdit={setEditingStage}
+                      />
+                    ))}
+                  </SortableContext>
+                  {canManageStages && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingStage('new')}
+                      className="group flex min-h-28 w-44 shrink-0 snap-start items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 text-xs font-semibold text-slate-500 outline-none transition hover:border-brand-400 hover:bg-brand-50/50 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.98] motion-reduce:active:scale-100"
+                    >
+                      <Plus className={PLUS_ICON} aria-hidden="true" /> Agregar columna
+                    </button>
+                  )}
+                </div>
+
+                {dragging?.type === 'card' && <DropZones />}
+
+                <DragOverlay dropAnimation={reducedMotion ? null : undefined}>
+                  {dragging?.type === 'card' ? (
+                    <ApplicationCardView application={dragging.application} floating />
+                  ) : dragging?.type === 'column' ? (
+                    <div
+                      className="flex h-24 w-72 max-w-[80vw] rotate-1 cursor-grabbing items-start rounded-xl border-t-4 bg-slate-100 p-3 shadow-xl ring-2 ring-brand-500/40"
+                      style={{ borderTopColor: dragging.stage.color ?? '#94a3b8' }}
+                    >
+                      <p className="truncate text-xs font-bold text-slate-800">
+                        {dragging.stage.nombre}
+                      </p>
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            </div>
           )}
-
-          <div
-            ref={scrollerRef}
-            className={cn(
-              'flex snap-x snap-mandatory items-stretch gap-3 overflow-x-auto pb-3 sm:snap-none',
-              BOARD_MIN_HEIGHT
-            )}
-          >
-            {unplaced.length > 0 && (
-              <UnplacedColumn applications={unplaced} canWrite={canWrite} onOpenMenu={setMenuFor} />
-            )}
-            <SortableContext
-              items={columns.map((stage) => columnDragId(stage.id))}
-              strategy={horizontalListSortingStrategy}
-            >
-              {columns.map((stage) => (
-                <KanbanColumn
-                  key={stage.id}
-                  stage={stage}
-                  applications={byStage.get(stage.id) ?? []}
-                  canWrite={canWrite}
-                  canManage={canManageStages}
-                  cardInFlight={dragging?.type === 'card'}
-                  collapsed={collapsed.has(stage.id)}
-                  onToggleCollapse={toggleCollapsed}
-                  onOpenMenu={setMenuFor}
-                  onEdit={setEditingStage}
-                />
-              ))}
-            </SortableContext>
-            {canManageStages && (
-              <button
-                type="button"
-                onClick={() => setEditingStage('new')}
-                className="group flex min-h-28 w-44 shrink-0 snap-start items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 text-xs font-semibold text-slate-500 outline-none transition hover:border-brand-400 hover:bg-brand-50/50 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.98] motion-reduce:active:scale-100"
-              >
-                <Plus className={PLUS_ICON} aria-hidden="true" /> Agregar columna
-              </button>
-            )}
-          </div>
-
-          {dragging?.type === 'card' && <DropZones />}
-
-          <DragOverlay dropAnimation={reducedMotion ? null : undefined}>
-            {dragging?.type === 'card' ? (
-              <ApplicationCardView application={dragging.application} floating />
-            ) : dragging?.type === 'column' ? (
-              <div
-                className="flex h-24 w-72 max-w-[80vw] rotate-1 cursor-grabbing items-start rounded-xl border-t-4 bg-slate-100 p-3 shadow-xl ring-2 ring-brand-500/40"
-                style={{ borderTopColor: dragging.stage.color ?? '#94a3b8' }}
-              >
-                <p className="truncate text-xs font-bold text-slate-800">{dragging.stage.nombre}</p>
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+        </>
       )}
 
       {showNewCandidate && (

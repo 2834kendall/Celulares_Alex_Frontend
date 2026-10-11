@@ -46,6 +46,9 @@ const postulacion = {
   puntajes: [],
 } as unknown as PostulacionDetalle
 
+// El guardado automático espera una pausa corta tras el último toque.
+const AUTOSAVE = { timeout: 4000 }
+
 function renderPanel() {
   render(
     <PostulacionPanel
@@ -61,45 +64,98 @@ function renderPanel() {
 describe('<PostulacionPanel />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(savePostulacionScores).mockResolvedValue({ ok: true, promedio: null })
   })
 
-  it('el promedio se actualiza en vivo al calificar y avisa cambios sin guardar', async () => {
+  it('no hay botón de guardar: el promedio cambia al calificar y se guarda solo', async () => {
     const user = userEvent.setup()
     renderPanel()
 
-    expect(screen.getByRole('button', { name: 'Guardar puntaje' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Guardar/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Se guarda solo al calificar.')).toBeInTheDocument()
 
     const experiencia = screen.getByRole('radiogroup', { name: 'Puntaje de Experiencia' })
     const actitud = screen.getByRole('radiogroup', { name: 'Puntaje de Actitud' })
     await user.click(experiencia.querySelector('[aria-label="8"]')!)
     await user.click(actitud.querySelector('[aria-label="6"]')!)
 
+    // El promedio se ve al instante, antes de que llegue a guardarse.
     expect(screen.getByRole('img', { name: /Promedio 7 de 10/ })).toBeInTheDocument()
     expect(screen.getByText('2 de 2 calificados')).toBeInTheDocument()
-    expect(screen.getByText('Cambios sin guardar')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Guardar puntaje' })).toBeEnabled()
+
+    await waitFor(
+      () =>
+        expect(savePostulacionScores).toHaveBeenLastCalledWith({
+          postulacionId: 9,
+          puntajes: [
+            { criterioId: 1, puntaje: 8, noAplica: false, observacion: null },
+            { criterioId: 2, puntaje: 6, noAplica: false, observacion: null },
+          ],
+        }),
+      AUTOSAVE
+    )
+    expect(await screen.findByText('Guardado')).toBeInTheDocument()
+    // Sin toast por cada toque: el aviso es el "Guardado" de la propia sección.
+    expect(toast.success).not.toHaveBeenCalled()
   })
 
-  it('guardar confirma con un toast y limpia el aviso de cambios', async () => {
-    vi.mocked(savePostulacionScores).mockResolvedValue({ ok: true, promedio: 7 })
+  it('se puede calificar de a poco: solo viaja lo ya calificado', async () => {
     const user = userEvent.setup()
     renderPanel()
 
     const experiencia = screen.getByRole('radiogroup', { name: 'Puntaje de Experiencia' })
-    const actitud = screen.getByRole('radiogroup', { name: 'Puntaje de Actitud' })
     await user.click(experiencia.querySelector('[aria-label="8"]')!)
-    await user.click(actitud.querySelector('[aria-label="No aplica"]')!)
-    await user.click(screen.getByRole('button', { name: 'Guardar puntaje' }))
 
+    await waitFor(
+      () =>
+        expect(savePostulacionScores).toHaveBeenCalledWith({
+          postulacionId: 9,
+          puntajes: [{ criterioId: 1, puntaje: 8, noAplica: false, observacion: null }],
+        }),
+      AUTOSAVE
+    )
+    expect(screen.getByText(/Falta 1 criterio/)).toBeInTheDocument()
+  })
+
+  it('varios toques seguidos se juntan en un solo guardado, con lo último', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+
+    const experiencia = screen.getByRole('radiogroup', { name: 'Puntaje de Experiencia' })
+    await user.click(experiencia.querySelector('[aria-label="3"]')!)
+    await user.click(experiencia.querySelector('[aria-label="5"]')!)
+    await user.click(experiencia.querySelector('[aria-label="No aplica"]')!)
+
+    await waitFor(() => expect(savePostulacionScores).toHaveBeenCalled(), AUTOSAVE)
+    expect(savePostulacionScores).toHaveBeenCalledTimes(1)
     expect(savePostulacionScores).toHaveBeenCalledWith({
       postulacionId: 9,
-      puntajes: [
-        { criterioId: 1, puntaje: 8, noAplica: false, observacion: null },
-        { criterioId: 2, puntaje: null, noAplica: true, observacion: null },
-      ],
+      puntajes: [{ criterioId: 1, puntaje: null, noAplica: true, observacion: null }],
     })
-    expect(toast.success).toHaveBeenCalledWith('Puntaje guardado: 7/10.')
-    expect(screen.queryByText('Cambios sin guardar')).not.toBeInTheDocument()
+  })
+
+  it('si no se pudo guardar lo dice y deja reintentar sin volver a calificar', async () => {
+    vi.mocked(savePostulacionScores).mockResolvedValueOnce({
+      ok: false,
+      error: 'No se pudo guardar el puntaje.',
+    })
+    const user = userEvent.setup()
+    renderPanel()
+
+    const experiencia = screen.getByRole('radiogroup', { name: 'Puntaje de Experiencia' })
+    await user.click(experiencia.querySelector('[aria-label="8"]')!)
+
+    expect(
+      await screen.findByText('No se pudo guardar el puntaje.', undefined, AUTOSAVE)
+    ).toBeInTheDocument()
+    // Aviso visible también con la sección cerrada.
+    expect(screen.getByText('Sin guardar')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+
+    expect(await screen.findByText('Guardado')).toBeInTheDocument()
+    expect(savePostulacionScores).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('Sin guardar')).not.toBeInTheDocument()
   })
 
   it('"Pasar a" mueve de un toque, sin ventana ni resultado, y confirma con un toast', async () => {
@@ -208,7 +264,8 @@ describe('<PostulacionPanel /> — postulación cerrada', () => {
     const escala = screen.getByRole('radiogroup', { name: 'Puntaje de Experiencia' })
     expect(escala.querySelector('[aria-label="8"]')).toHaveAttribute('aria-checked', 'true')
     expect(escala.querySelector('[aria-label="8"]')).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Guardar puntaje' })).not.toBeInTheDocument()
+    // Cerrada no se califica: ni escala activa ni aviso de guardado.
+    expect(screen.queryByText('Se guarda solo al calificar.')).not.toBeInTheDocument()
   })
 })
 

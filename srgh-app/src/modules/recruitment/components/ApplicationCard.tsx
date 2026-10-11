@@ -27,6 +27,11 @@ interface ApplicationCardViewProps {
   onOpenMenu?: () => void
   /** La copia que sigue al puntero mientras se arrastra. */
   floating?: boolean
+  /**
+   * Acciones bajo la tarjeta, fuera del enlace a la ficha. Las usa la vista de
+   * celular, donde no se arrastra: ahí va el paso siguiente a un toque.
+   */
+  footer?: React.ReactNode
   className?: string
 }
 
@@ -36,6 +41,7 @@ export function ApplicationCardView({
   showStageLabel = false,
   onOpenMenu,
   floating = false,
+  footer,
   className,
 }: ApplicationCardViewProps) {
   return (
@@ -93,6 +99,8 @@ export function ApplicationCardView({
           )}
         </div>
       </Link>
+
+      {footer}
 
       {onOpenMenu && !floating && (
         <button
