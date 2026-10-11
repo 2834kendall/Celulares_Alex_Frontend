@@ -33,7 +33,9 @@ import { ahoraLocal, hoyLocal } from '@/modules/payroll/lib/fechas'
 import { parsePlanillaWorkbook } from '@/modules/payroll/lib/planillaExcel'
 import {
   baseParaHorasEditadas,
+  fotoDelContrato,
   prellenarDesdeAsistencia,
+  type ContratoPago,
 } from '@/modules/payroll/lib/prellenadoAsistencia'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
@@ -102,6 +104,21 @@ interface LineaDeduccionExistenteRow {
 interface DetalleInsertadoRow {
   ndt_id: number
   ndt_historial_laboral_id: number
+}
+
+/**
+ * Los tres campos del contrato que usa el cálculo, recortados del empleado.
+ *
+ * Se recorta en vez de pasar el empleado entero porque el mismo objeto es lo
+ * que se guarda como foto en la fila (`fotoDelContrato`), y ahí no tiene nada
+ * que hacer el resto del expediente.
+ */
+function contratoDe(empleado: ContratoPago): ContratoPago {
+  return {
+    salarioBaseMensual: empleado.salarioBaseMensual,
+    salarioRealMensual: empleado.salarioRealMensual,
+    horasSemanales: empleado.horasSemanales,
+  }
 }
 
 /** Valores previos de una fila, en el mismo shape que PlanillaRowInput (sin cédula) para comparar con sameRowValues. */
@@ -315,11 +332,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ? (lecturaAsistencia.totales.get(empleado.labId) ?? null)
         : null
     const fila = prellenarDesdeAsistencia(
-      {
-        salarioBaseMensual: empleado.salarioBaseMensual,
-        salarioRealMensual: empleado.salarioRealMensual,
-        horasSemanales: empleado.horasSemanales,
-      },
+      contratoDe(empleado),
       lectura
         ? { ...lectura, horasOrdinarias: row.horasTrabajadas, horasExtra: row.horasExtra }
         : null,
@@ -330,11 +343,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     // las horas nuevas; uno corregido a mano se respeta.
     row.montos[CODIGO_SALARIO_BASE] = baseParaHorasEditadas({
       baseIngresado: row.montos[CODIGO_SALARIO_BASE] ?? 0,
-      contrato: {
-        salarioBaseMensual: empleado.salarioBaseMensual,
-        salarioRealMensual: empleado.salarioRealMensual,
-        horasSemanales: empleado.horasSemanales,
-      },
+      contrato: contratoDe(empleado),
       lectura,
       horasPrevias: null,
       horasNuevas: { horas: row.horasTrabajadas, horasExtra: row.horasExtra },
@@ -702,6 +711,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
         ndt_horas_extra_al_50: row.horasExtra,
         ndt_salario_por_hora: row.salarioPorHora,
+        ...fotoDelContrato(contratoDe(porCedula.get(row.cedula)!)),
         ...fotoDe(porCedula.get(row.cedula)!.labId, row, valoresPreviosPorNdt.get(ndtId) ?? null),
       })
       .eq('ndt_id', ndtId)
@@ -778,6 +788,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ndt_horas_extra_al_50: row.horasExtra,
         ndt_salario_por_hora: row.salarioPorHora,
         ndt_fecha_registro: hoy,
+        ...fotoDelContrato(contratoDe(porCedula.get(row.cedula)!)),
         // Fila nueva: no hay nada anterior contra lo cual comparar.
         ...fotoDe(porCedula.get(row.cedula)!.labId, row, null),
       }

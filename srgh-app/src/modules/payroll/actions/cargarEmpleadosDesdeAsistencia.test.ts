@@ -212,6 +212,10 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       ndt_salario_bruto: 322500,
       // La foto queda igual a lo guardado: la fila nace "origen asistencia".
       ndt_horas_asistencia: 96,
+      // Y la foto del CONTRATO: con esto, editarlo después no mueve esta fila.
+      ndt_salario_base_contrato: 600000,
+      ndt_salario_real_contrato: 645000,
+      ndt_horas_semanales_contrato: 48,
     })
 
     // El ajuste se escribe solo, como línea del concepto AJUSTE.

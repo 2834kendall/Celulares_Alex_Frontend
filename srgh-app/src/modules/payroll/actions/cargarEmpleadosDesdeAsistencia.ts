@@ -19,7 +19,10 @@ import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
-import { prellenarDesdeAsistencia } from '@/modules/payroll/lib/prellenadoAsistencia'
+import {
+  fotoDelContrato,
+  prellenarDesdeAsistencia,
+} from '@/modules/payroll/lib/prellenadoAsistencia'
 import { camposFotoAsistencia } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal, hoyLocal } from '@/modules/payroll/lib/fechas'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
@@ -233,15 +236,12 @@ export async function cargarEmpleadosDesdeAsistencia(
     const totales = lecturaUtilizable(leido) ? leido : null
     if (!totales) sinAsistencia += 1
 
-    const fila = prellenarDesdeAsistencia(
-      {
-        salarioBaseMensual: empleado.salarioBaseMensual,
-        salarioRealMensual: empleado.salarioRealMensual,
-        horasSemanales: empleado.horasSemanales,
-      },
-      totales,
-      quincena
-    )
+    const contrato = {
+      salarioBaseMensual: empleado.salarioBaseMensual,
+      salarioRealMensual: empleado.salarioRealMensual,
+      horasSemanales: empleado.horasSemanales,
+    }
+    const fila = prellenarDesdeAsistencia(contrato, totales, quincena)
     const montos: Record<string, number> = {
       [CODIGO_SALARIO_BASE]: fila.base,
       [CODIGO_AJUSTE]: fila.ajuste,
@@ -267,13 +267,13 @@ export async function cargarEmpleadosDesdeAsistencia(
       ahora,
     })
 
-    return { empleado, fila, resultado, foto }
+    return { empleado, fila, resultado, foto, contrato }
   })
 
   const { data: insertados, error: errInsert } = await supabase
     .from('sgrh_nomina_detalle')
     .insert(
-      calculado.map(({ empleado, fila, resultado, foto }) => ({
+      calculado.map(({ empleado, fila, resultado, foto, contrato }) => ({
         ndt_nomina_periodo_id: periodoId,
         ndt_historial_laboral_id: empleado.labId,
         ndt_salario_bruto: resultado.salarioBruto,
@@ -284,6 +284,7 @@ export async function cargarEmpleadosDesdeAsistencia(
         ndt_horas_extra_al_50: fila.horasExtra,
         ndt_salario_por_hora: fila.salarioPorHora,
         ndt_fecha_registro: hoy,
+        ...fotoDelContrato(contrato),
         ...(foto.escribir ? foto.campos : {}),
       }))
     )
