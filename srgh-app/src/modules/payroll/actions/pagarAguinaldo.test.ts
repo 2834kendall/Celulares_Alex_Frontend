@@ -3,14 +3,22 @@ import { pagarAguinaldo } from './pagarAguinaldo'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { enviarComprobanteExtraordinarioPorCorreo } from '@/modules/payroll/lib/envioComprobante'
 
 vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+// El correo tiene sus propios tests (lib/envioComprobante.test.ts): acá solo
+// importa que se pida al pagar y que su resultado vuelva a la pantalla.
+vi.mock('@/modules/payroll/lib/envioComprobante', () => ({
+  enviarComprobanteExtraordinarioPorCorreo: vi.fn(),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
+const mockEnviar = vi.mocked(enviarComprobanteExtraordinarioPorCorreo)
+const CORREO = { estado: 'enviado', email: 'ana@correo.com' } as const
 
 type Respuesta = { data: unknown; error: unknown }
 
@@ -100,6 +108,7 @@ function llamada(
 describe('pagarAguinaldo (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockEnviar.mockResolvedValue(CORREO)
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 11, 10, 10, 0, 0)) // 10 de diciembre de 2026
     mockRequirePermission.mockResolvedValue({
@@ -150,7 +159,7 @@ describe('pagarAguinaldo (server action)', () => {
 
       const result = await pagarAguinaldo(1, 2026)
 
-      expect(result).toEqual({ ok: true, pagoId: 55 })
+      expect(result).toEqual({ ok: true, pagoId: 55, correo: CORREO })
     })
   })
 
@@ -159,7 +168,7 @@ describe('pagarAguinaldo (server action)', () => {
 
     const result = await pagarAguinaldo(1, 2026)
 
-    expect(result).toEqual({ ok: true, pagoId: 55 })
+    expect(result).toEqual({ ok: true, pagoId: 55, correo: CORREO })
     const pago = llamada(client, 'sgrh_pagos_extraordinarios', 'insert')
     expect(pago).toMatchObject({
       pex_tipo: 'aguinaldo',
@@ -221,6 +230,29 @@ describe('pagarAguinaldo (server action)', () => {
     if (!result.ok) expect(result.error).toContain('un mes laborado')
   })
 
+  it('al pagar le manda al empleado el comprobante de ESE pago', async () => {
+    mockSupabase()
+
+    const result = await pagarAguinaldo(1, 2026)
+
+    expect(result.ok).toBe(true)
+    expect(mockEnviar).toHaveBeenCalledTimes(1)
+    expect(mockEnviar).toHaveBeenCalledWith(55)
+  })
+
+  it('si el correo no sale, el aguinaldo queda pagado igual y se dice por qué', async () => {
+    mockSupabase()
+    mockEnviar.mockResolvedValue({ estado: 'error', error: 'no se pudo conectar.' })
+
+    const result = await pagarAguinaldo(1, 2026)
+
+    expect(result).toEqual({
+      ok: true,
+      pagoId: 55,
+      correo: { estado: 'error', error: 'no se pudo conectar.' },
+    })
+  })
+
   it('si ya tiene un pago de ese ciclo, no lo paga otra vez', async () => {
     mockSupabase({
       sgrh_pagos_extraordinarios: {
@@ -239,6 +271,7 @@ describe('pagarAguinaldo (server action)', () => {
     const result = await pagarAguinaldo(1, 2026)
 
     expect(result).toEqual({ ok: false, error: 'Este aguinaldo ya estaba pagado.' })
+    expect(mockEnviar).not.toHaveBeenCalled()
   })
 
   it('si otro usuario lo pagó al mismo tiempo (índice único), lo dice', async () => {

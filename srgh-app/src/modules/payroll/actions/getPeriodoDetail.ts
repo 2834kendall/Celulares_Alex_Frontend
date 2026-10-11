@@ -65,6 +65,7 @@ interface DetalleRow {
       emp_apellido_1: string
       emp_apellido_2: string | null
       emp_numero_identificacion: string | null
+      emp_email_personal: string | null
     } | null
   } | null
 }
@@ -173,7 +174,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
         lab_salario_base,
         lab_salario_real,
         sgrh_cat_tipos_jornada ( tjo_horas_max_semanales ),
-        sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
+        sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal )
       )
     `
       )
@@ -540,6 +541,7 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       historialLaboralId: row.ndt_historial_laboral_id,
       empleadoNombre: nombre,
       empleadoCedula: empleado?.emp_numero_identificacion ?? '—',
+      empleadoEmail: empleado?.emp_email_personal?.trim() || null,
       salarioBruto: row.ndt_salario_bruto,
       totalNoSalarial: noSalarialPorNdt.get(row.ndt_id) ?? 0,
       totalDeducciones: row.ndt_total_deducciones_obreras,

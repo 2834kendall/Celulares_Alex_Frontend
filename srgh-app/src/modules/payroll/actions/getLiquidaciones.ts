@@ -43,6 +43,7 @@ interface LiquidacionRow {
       emp_apellido_1: string
       emp_apellido_2: string | null
       emp_numero_identificacion: string
+      emp_email_personal?: string | null
     } | null
   } | null
 }
@@ -102,7 +103,7 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       sgrh_pagos_extraordinarios ( pex_id, pex_fecha_pago ),
       sgrh_cat_motivos_salida ( mot_nombre, mot_genera_preaviso, mot_genera_cesantia ),
       sgrh_historial_laboral (
-        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion )
+        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal )
       )
     `
     )
@@ -126,6 +127,7 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       liqId: row.liq_id,
       empleadoNombre,
       empleadoCedula: empleado?.emp_numero_identificacion ?? '—',
+      empleadoEmail: empleado?.emp_email_personal?.trim() || null,
       fechaSalida: row.liq_fecha_salida,
       motivoNombre: row.sgrh_cat_motivos_salida?.mot_nombre ?? '—',
       total: row.liq_total,

@@ -17,9 +17,20 @@ import {
   calcularAguinaldosDelCiclo,
 } from '@/modules/payroll/lib/aguinaldoData'
 import { registrarPagoExtraordinario } from '@/modules/payroll/lib/pagosExtraordinarios'
+import {
+  enviarComprobanteExtraordinarioPorCorreo,
+  type ResultadoEnvioComprobante,
+} from '@/modules/payroll/lib/envioComprobante'
 import type { LineaPagoExtraordinario } from '@/modules/payroll/types'
 
-export type PagarAguinaldoResult = { ok: true; pagoId: number } | { ok: false; error: string }
+export type PagarAguinaldoResult =
+  | {
+      ok: true
+      pagoId: number
+      /** Qué pasó con el correo del comprobante. Si no salió, el pago queda igual. */
+      correo: ResultadoEnvioComprobante
+    }
+  | { ok: false; error: string }
 
 /**
  * Paga el aguinaldo de un ciclo a una persona: registra el pago con su
@@ -169,6 +180,16 @@ export async function pagarAguinaldo(
     })
   }
 
+  // El comprobante se le manda al empleado apenas queda pagado, con todo ya
+  // guardado. Un fallo del correo no deshace el pago.
+  let correo: ResultadoEnvioComprobante
+  try {
+    correo = await enviarComprobanteExtraordinarioPorCorreo(pago.pagoId)
+  } catch (error) {
+    console.error('[comprobante] fallo inesperado al enviar el correo', error)
+    correo = { estado: 'error', error: 'ocurrió un error inesperado al enviarlo.' }
+  }
+
   revalidatePath('/payroll/aguinaldo-liquidacion')
-  return { ok: true, pagoId: pago.pagoId }
+  return { ok: true, pagoId: pago.pagoId, correo }
 }

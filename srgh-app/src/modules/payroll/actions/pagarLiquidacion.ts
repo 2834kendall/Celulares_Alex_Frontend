@@ -6,9 +6,20 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { registrarPagoExtraordinario } from '@/modules/payroll/lib/pagosExtraordinarios'
+import {
+  enviarComprobanteExtraordinarioPorCorreo,
+  type ResultadoEnvioComprobante,
+} from '@/modules/payroll/lib/envioComprobante'
 import type { LineaPagoExtraordinario } from '@/modules/payroll/types'
 
-export type PagarLiquidacionResult = { ok: true; pagoId: number } | { ok: false; error: string }
+export type PagarLiquidacionResult =
+  | {
+      ok: true
+      pagoId: number
+      /** Qué pasó con el correo del comprobante. Si no salió, el pago queda igual. */
+      correo: ResultadoEnvioComprobante
+    }
+  | { ok: false; error: string }
 
 interface LiquidacionRow {
   liq_id: number
@@ -149,6 +160,16 @@ export async function pagarLiquidacion(liqId: number): Promise<PagarLiquidacionR
     console.error('pagarLiquidacion: pago registrado pero liq_pagado no se actualizó', errMarca)
   }
 
+  // El comprobante se le manda al empleado apenas queda pagado, con todo ya
+  // guardado. Un fallo del correo no deshace el pago.
+  let correo: ResultadoEnvioComprobante
+  try {
+    correo = await enviarComprobanteExtraordinarioPorCorreo(pago.pagoId)
+  } catch (error) {
+    console.error('[comprobante] fallo inesperado al enviar el correo', error)
+    correo = { estado: 'error', error: 'ocurrió un error inesperado al enviarlo.' }
+  }
+
   revalidatePath('/payroll/aguinaldo-liquidacion')
-  return { ok: true, pagoId: pago.pagoId }
+  return { ok: true, pagoId: pago.pagoId, correo }
 }

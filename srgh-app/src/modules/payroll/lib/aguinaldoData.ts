@@ -59,6 +59,7 @@ interface CandidatoRow {
     emp_apellido_1: string
     emp_apellido_2: string | null
     emp_numero_identificacion: string
+    emp_email_personal?: string | null
     emp_fecha_ingreso_original: string | null
     sgrh_historial_laboral?: ContratoRow[] | null
   } | null
@@ -71,6 +72,8 @@ export interface AguinaldoDeRelacion {
   labIds: number[]
   empleadoNombre: string
   empleadoCedula: string
+  /** Adonde se le manda el comprobante al pagar. Null si no tiene. */
+  empleadoEmail: string | null
   fechaSalida: string | null
   calculo: AguinaldoCalculado
   /** Ausencias cuyo tipo no se pudo leer (no se sabe si son maternidad). */
@@ -107,7 +110,7 @@ export async function calcularAguinaldosDelCiclo(
     .select(
       `lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion,
-                        emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) )`
+                        emp_email_personal, emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) )`
     )
     .or(`lab_fecha_fin.is.null,lab_fecha_fin.gte.${aperturaPagoAguinaldo(anio)}`)
   if (soloLabId !== undefined) consulta = consulta.eq('lab_id', soloLabId)
@@ -234,6 +237,7 @@ export async function calcularAguinaldosDelCiclo(
         .filter(Boolean)
         .join(' '),
       empleadoCedula: emp.emp_numero_identificacion,
+      empleadoEmail: emp.emp_email_personal?.trim() || null,
       fechaSalida: candidato.lab_fecha_fin,
       calculo,
       ausenciasSinTipo: ausencias.sinTipo,

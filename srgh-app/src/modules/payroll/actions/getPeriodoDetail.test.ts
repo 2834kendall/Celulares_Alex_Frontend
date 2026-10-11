@@ -59,6 +59,7 @@ const DETALLE_ROW = {
       emp_apellido_1: 'Mora',
       emp_apellido_2: null,
       emp_numero_identificacion: '1-1111-1111',
+      emp_email_personal: ' ana@correo.com ',
     },
   },
 }
@@ -206,6 +207,8 @@ describe('getPeriodoDetail (server action)', () => {
           historialLaboralId: 9,
           empleadoNombre: 'Ana Mora',
           empleadoCedula: '1-1111-1111',
+          // Sin los espacios con que se haya guardado: es adonde va el comprobante.
+          empleadoEmail: 'ana@correo.com',
           salarioBruto: 500000,
           totalNoSalarial: 0,
           totalDeducciones: 52500,
