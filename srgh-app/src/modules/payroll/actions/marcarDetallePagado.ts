@@ -17,8 +17,10 @@ import {
   type TotalesPeriodo,
 } from '@/modules/payroll/lib/horasPeriodo'
 import {
+  contratoDeLaFila,
   cumplimientoQuincena,
   evaluarBaseGuardado,
+  type FotoContratoFila,
   type QuincenaRef,
 } from '@/modules/payroll/lib/prellenadoAsistencia'
 import {
@@ -40,6 +42,9 @@ interface DetalleActualRow {
   ndt_horas_asistencia: number | null
   ndt_horas_extra_asistencia: number | null
   ndt_dias_incapacidad_empleador?: number | null
+  ndt_salario_base_contrato: number | null
+  ndt_salario_real_contrato: number | null
+  ndt_horas_semanales_contrato: number | null
   sgrh_nomina_periodo: {
     npe_periodo_mes: number
     npe_periodo_anio: number
@@ -188,6 +193,8 @@ async function verificarBaseGuardado(
   params: {
     ndtId: number
     historialLaboralId: number
+    /** La foto del contrato de la fila; manda sobre el contrato en vivo. */
+    foto: FotoContratoFila
     guardadas: { horas: number; horasExtra: number }
     lectura: TotalesPeriodo
     quincena: QuincenaRef
@@ -237,11 +244,14 @@ async function verificarBaseGuardado(
   const { desactualizado, esperado, ajusteEsperado } = evaluarBaseGuardado({
     baseGuardado: guardado,
     ajusteGuardado,
-    contrato: {
+    // Contra la foto del contrato, no contra el contrato de hoy: si no, una
+    // corrección de salario —que tiene que aplicar desde el período que
+    // viene— bloquearía el pago de este.
+    contrato: contratoDeLaFila(params.foto, {
       salarioBaseMensual: contrato.lab_salario_base ?? 0,
       salarioRealMensual: contrato.lab_salario_real ?? null,
       horasSemanales: contrato.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
-    },
+    }),
     guardadas: params.guardadas,
     lectura: params.lectura,
     quincena: params.quincena,
@@ -365,7 +375,8 @@ async function tieneRebajoDeSalario(
 async function incapacidadAlPagar(
   supabase: SupabaseServerClient,
   labId: number,
-  diasEmpleador: number
+  diasEmpleador: number,
+  foto: FotoContratoFila
 ): Promise<{ ndt_monto_incapacidad: number; ndt_porcentaje_incapacidad: number } | null> {
   const [contrato, tipo] = await Promise.all([
     supabase
@@ -384,10 +395,11 @@ async function incapacidadAlPagar(
   return {
     ndt_monto_incapacidad: montoIncapacidadEnVivo(
       diasEmpleador,
-      {
+      contratoDeLaFila(foto, {
         salarioBaseMensual: Number(contrato.data.lab_salario_base ?? 0),
         salarioRealMensual: contrato.data.lab_salario_real ?? null,
-      },
+        horasSemanales: null,
+      }),
       porcentaje
     ),
     ndt_porcentaje_incapacidad: porcentaje,
@@ -419,6 +431,9 @@ export async function marcarDetallePagado(
       ndt_horas_asistencia,
       ndt_horas_extra_asistencia,
       ndt_dias_incapacidad_empleador,
+      ndt_salario_base_contrato,
+      ndt_salario_real_contrato,
+      ndt_horas_semanales_contrato,
       sgrh_nomina_periodo (
         npe_periodo_mes, npe_periodo_anio, npe_quincena,
         npe_fecha_inicio_periodo, npe_fecha_fin_periodo
@@ -601,6 +616,7 @@ export async function marcarDetallePagado(
       const verificacion = await verificarBaseGuardado(supabase, {
         ndtId,
         historialLaboralId: detalle.ndt_historial_laboral_id,
+        foto: detalle,
         guardadas,
         lectura: totales!,
         quincena: {
@@ -643,7 +659,8 @@ export async function marcarDetallePagado(
     const congelada = await incapacidadAlPagar(
       supabase,
       detalle.ndt_historial_laboral_id,
-      Number(detalle.ndt_dias_incapacidad_empleador)
+      Number(detalle.ndt_dias_incapacidad_empleador),
+      detalle
     )
     if (!congelada) {
       return {
