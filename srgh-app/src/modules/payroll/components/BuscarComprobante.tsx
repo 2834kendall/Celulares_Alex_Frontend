@@ -31,7 +31,10 @@ export function BuscarComprobante() {
       }
       setError(result.error)
     } catch {
-      setError('No se pudo buscar el comprobante.')
+      // Lo típico es una pestaña abierta desde antes de actualizar el sistema:
+      // la búsqueda apunta a una versión vieja del servidor y falla. Recargar
+      // lo arregla.
+      setError('No se pudo buscar el comprobante. Recargá la página y volvé a intentarlo.')
     } finally {
       setBuscando(false)
     }

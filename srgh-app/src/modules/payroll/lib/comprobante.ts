@@ -36,12 +36,26 @@ export function generarCodigoVerificacion(): string {
 
 /**
  * Deja un código escrito a mano como se guardó: en mayúsculas y con guiones
- * (XXXX-XXXX-XXXX). Acepta minúsculas, espacios y guiones de más o de menos,
- * porque se copia de un papel impreso. Devuelve null si no tiene 12
- * caracteres alfanuméricos.
+ * (XXXX-XXXX-XXXX). Acepta minúsculas, espacios y separadores de más o de
+ * menos —incluidos los guiones "raros" (‐ – —) y los espacios duros que
+ * aparecen al copiar el código de un PDF o de un correo—, porque se copia de
+ * un papel impreso. Devuelve null si no tiene 12 caracteres alfanuméricos.
  */
 export function normalizarCodigoVerificacion(codigo: string): string | null {
-  const limpio = codigo.toUpperCase().replace(/[\s-]/g, '')
+  const limpio = codigo.toUpperCase().replace(/[\s\-‐‑‒–—―−_.·/]/g, '')
   if (!/^[A-Z0-9]{12}$/.test(limpio)) return null
   return [limpio.slice(0, 4), limpio.slice(4, 8), limpio.slice(8)].join('-')
+}
+
+/**
+ * Caracteres que un código nunca lleva (I, L, O, 0, 1: ver ALFABETO) y que
+ * salen de leer mal el papel. Con alguno, el código no puede existir: se le
+ * dice a quien busca en vez de un "no existe" que no explica nada.
+ */
+export function confusionesEnCodigo(codigoNormalizado: string): string[] {
+  const vistos = new Set<string>()
+  for (const c of codigoNormalizado.replace(/-/g, '')) {
+    if (!ALFABETO.includes(c)) vistos.add(c)
+  }
+  return [...vistos]
 }

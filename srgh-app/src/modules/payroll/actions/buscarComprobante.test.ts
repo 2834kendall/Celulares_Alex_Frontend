@@ -132,3 +132,48 @@ describe('buscarComprobante', () => {
     })
   })
 })
+
+describe('buscarComprobante: códigos mal leídos', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('un código con O, 0, I, L o 1 no puede existir: lo dice sin consultar la base', async () => {
+    const r = await buscarComprobante('ABC0-EFGH-JKMN')
+
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.error).toContain('Los códigos no llevan 0')
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
+  it('un código copiado con guiones tipográficos se encuentra igual', async () => {
+    mockRequirePermission.mockResolvedValue(
+      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
+    )
+    const mock = cliente({
+      sgrh_comprobantes_pago: {
+        data: { com_nomina_detalle_id: 41, sgrh_nomina_detalle: { ndt_nomina_periodo_id: 7 } },
+        error: null,
+      },
+    })
+
+    const r = await buscarComprobante('ABCD–EFGH–JKMN')
+
+    expect(r).toEqual({ ok: true, href: '/comprobante/7/41' })
+    expect(filtros(mock, 'sgrh_comprobantes_pago')).toEqual([
+      ['com_codigo_verificacion', 'ABCD-EFGH-JKMN'],
+    ])
+  })
+
+  it('si no lo encuentra explica las causas posibles (desmarcado u otra sucursal)', async () => {
+    mockRequirePermission.mockResolvedValue(
+      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
+    )
+    cliente({})
+
+    const r = await buscarComprobante('ABCD-EFGH-JKMN')
+
+    expect(!r.ok && r.error).toContain('se haya desmarcado')
+    expect(!r.ok && r.error).toContain('sucursal que no tenés asignada')
+  })
+})
