@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -90,6 +91,56 @@ describe('<ColorPicker />', () => {
     await user.click(document.body)
     expect(screen.queryByRole('button', { name: 'Agregar color' })).toBeNull()
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('el panel del color a medida sale del contenedor: un modal con scroll no lo recorta', async () => {
+    const user = userEvent.setup()
+    // Como el cuerpo de un Modal: scrollea, y recortaba el panel.
+    const { container } = render(
+      <div style={{ overflow: 'auto' }}>
+        <ColorPicker value={null} onChange={vi.fn()} label="Color" storageKey={KEY} />
+      </div>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Agregar color personalizado' }))
+
+    const panel = screen.getByLabelText('Tono').closest<HTMLElement>('.fixed')
+    expect(panel).not.toBeNull()
+    expect(container.contains(panel)).toBe(false)
+
+    // Usar el panel no lo cierra, aunque ya no sea hijo del botón...
+    await user.click(screen.getByLabelText('Codigo hexadecimal'))
+    expect(screen.getByLabelText('Tono')).toBeInTheDocument()
+
+    // ...y tocar fuera sí.
+    await user.click(screen.getByRole('button', { name: 'Usar #AEE1F9' }))
+    expect(screen.queryByLabelText('Tono')).not.toBeInTheDocument()
+  })
+
+  it('el color nuevo queda ÚLTIMO en la fila, junto al "+", y marcado', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify(['#111111', '#222222']))
+    const user = userEvent.setup()
+    // Con estado real: el swatch marcado depende del valor que vuelve por props.
+    function Harness() {
+      const [value, setValue] = useState<string | null>(null)
+      return <ColorPicker value={value} onChange={setValue} label="Color" storageKey={KEY} />
+    }
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: 'Agregar color personalizado' }))
+    await user.click(screen.getByRole('button', { name: 'Agregar color' }))
+
+    const swatches = screen.getAllByRole('button', { name: /^Usar #/ })
+    const last = swatches[swatches.length - 1]
+    expect(last).toHaveAttribute('aria-pressed', 'true')
+    // Los que ya estaban conservan su lugar, antes del nuevo.
+    expect(JSON.parse(window.localStorage.getItem(KEY)!).slice(0, 2)).toEqual([
+      '#111111',
+      '#222222',
+    ])
+    expect(swatches.filter((swatch) => swatch.getAttribute('aria-pressed') === 'true')).toEqual([
+      last,
+    ])
   })
 
   it('elegir el mismo color dos veces no lo duplica', async () => {
