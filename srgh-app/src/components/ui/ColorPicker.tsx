@@ -1,6 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react'
+import { createPortal } from 'react-dom'
 import { Check, Plus, X } from 'lucide-react'
 import { LABEL } from '@/components/ui/styles'
 
@@ -96,7 +104,7 @@ export function ColorPicker({
         PASTEL_PRESETS.some((preset) => preset.toLowerCase() === normalized) ||
         customColors.some((color) => color.toLowerCase() === normalized)
       if (!isKnown) {
-        const next = [normalized, ...customColors].slice(0, MAX_CUSTOM)
+        const next = [...customColors, normalized].slice(-MAX_CUSTOM)
         saveCustomColors(storageKey, next)
         setCustomColors(next)
       }
@@ -105,12 +113,15 @@ export function ColorPicker({
 
   function addCustomColor(hex: string) {
     const normalized = hex.toLowerCase()
-    const next = [
-      normalized,
-      ...customColors.filter((color) => color.toLowerCase() !== normalized),
-    ].slice(0, MAX_CUSTOM)
-    saveCustomColors(storageKey, next)
-    setCustomColors(next)
+    // El color nuevo va al FINAL de la fila, pegado al "+" con el que se
+    // agregó: es donde se lo busca. Antes entraba primero entre los
+    // personalizados y la marca aparecía en otro lado. Uno que ya estaba no
+    // se mueve: solo queda elegido. Si se pasa del máximo, sale el más viejo.
+    if (!customColors.some((color) => color.toLowerCase() === normalized)) {
+      const next = [...customColors, normalized].slice(-MAX_CUSTOM)
+      saveCustomColors(storageKey, next)
+      setCustomColors(next)
+    }
     onChange(normalized)
   }
 
@@ -234,7 +245,40 @@ function hsvToHex({ h, s, v }: Hsv): string {
     .join('')}`
 }
 
+/**
+ * Ubica el panel del color a medida (portal a <body>, `position: fixed`)
+ * pegado al botón "+": debajo si entra, arriba si no, y sin salirse de la
+ * pantalla por los costados. Mismo criterio que la lista de SelectMenu.
+ */
+function placePopover(popover: HTMLElement | null, trigger: HTMLElement | null) {
+  if (!popover || !trigger) return
+
+  const margin = 8
+  const gap = 6
+  const box = trigger.getBoundingClientRect()
+  const height = popover.offsetHeight
+  const below = window.innerHeight - box.bottom - margin - gap
+  const above = box.top - margin - gap
+  const upward = height > below && above > below
+
+  const left = Math.min(
+    box.left,
+    document.documentElement.clientWidth - popover.offsetWidth - margin
+  )
+  const top = upward
+    ? box.top - gap - height
+    : Math.min(box.bottom + gap, window.innerHeight - margin - height)
+
+  popover.style.left = `${Math.max(margin, left)}px`
+  popover.style.top = `${Math.max(margin, top)}px`
+}
+
 // Selector propio (no el <input type="color"> nativo) para que se vea y se comporte igual en Mac y Windows.
+//
+// El panel va en un portal a <body> y no colgado del botón: este control casi
+// siempre vive dentro de un Modal, cuyo cuerpo tiene scroll propio. Colgado
+// ahí, el panel quedaba recortado por el modal y le metía barras de scroll en
+// los dos sentidos (el "+" está al final de la fila, contra el borde derecho).
 function CustomColorPopover({
   disabled,
   onAdd,
@@ -246,22 +290,40 @@ function CustomColorPopover({
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv('#7c9cf2'))
   const [hexText, setHexText] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
   const areaRef = useRef<HTMLDivElement>(null)
   const hex = hsvToHex(hsv)
+
+  // Antes de pintar: sin esto el panel aparecía un cuadro en la esquina.
+  useLayoutEffect(() => {
+    if (open) placePopover(popoverRef.current, triggerRef.current)
+  }, [open])
 
   useEffect(() => {
     if (!open) return
     function onPointerDown(event: globalThis.PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      // El panel está en un portal: ya no es hijo del botón en el DOM.
+      if (rootRef.current?.contains(target) || popoverRef.current?.contains(target)) return
+      setOpen(false)
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') setOpen(false)
     }
+    // Si scrollea el modal (o cambia el tamaño de la ventana), el panel sigue al botón.
+    function onScrollOrResize() {
+      placePopover(popoverRef.current, triggerRef.current)
+    }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
     return () => {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
     }
   }, [open])
 
@@ -288,6 +350,7 @@ function CustomColorPopover({
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-label="Agregar color personalizado"
         aria-expanded={open}
@@ -298,81 +361,88 @@ function CustomColorPopover({
         <Plus className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
 
-      {open && (
-        <div className="absolute left-0 top-9 z-30 w-56 space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+      {open &&
+        createPortal(
+          // fixed + top-0/left-0 de arranque: la posición real la pone
+          // placePopover. z-60: por encima del Modal (z-50).
           <div
-            ref={areaRef}
-            className="relative h-32 w-full cursor-crosshair touch-none select-none rounded-lg"
-            style={{
-              backgroundColor: hsvToHex({ h: hsv.h, s: 1, v: 1 }),
-              backgroundImage:
-                'linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)',
-            }}
-            onPointerDown={(event) => {
-              event.currentTarget.setPointerCapture(event.pointerId)
-              moveInArea(event)
-            }}
-            onPointerMove={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) moveInArea(event)
-            }}
+            ref={popoverRef}
+            className="animate-fade-in fixed top-0 left-0 z-60 w-56 max-w-[calc(100vw-1rem)] space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
           >
-            <span
-              className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow ring-1 ring-black/30"
+            <div
+              ref={areaRef}
+              className="relative h-32 w-full cursor-crosshair touch-none select-none rounded-lg"
               style={{
-                left: `${hsv.s * 100}%`,
-                top: `${(1 - hsv.v) * 100}%`,
-                backgroundColor: hex,
+                backgroundColor: hsvToHex({ h: hsv.h, s: 1, v: 1 }),
+                backgroundImage:
+                  'linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)',
               }}
-            />
-          </div>
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId)
+                moveInArea(event)
+              }}
+              onPointerMove={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) moveInArea(event)
+              }}
+            >
+              <span
+                className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow ring-1 ring-black/30"
+                style={{
+                  left: `${hsv.s * 100}%`,
+                  top: `${(1 - hsv.v) * 100}%`,
+                  backgroundColor: hex,
+                }}
+              />
+            </div>
 
-          <input
-            type="range"
-            min={0}
-            max={359}
-            value={Math.round(hsv.h)}
-            aria-label="Tono"
-            onChange={(event) => {
-              setHexText(null)
-              setHsv((prev) => ({ ...prev, h: Number(event.target.value) }))
-            }}
-            className="h-3 w-full cursor-pointer appearance-none rounded-full"
-            style={{
-              background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
-            }}
-          />
-
-          <div className="flex items-center gap-2">
-            <span
-              className="h-8 w-8 shrink-0 rounded-full border border-black/10"
-              style={{ backgroundColor: hex }}
-            />
             <input
-              type="text"
-              aria-label="Codigo hexadecimal"
-              maxLength={7}
-              value={hexText ?? hex}
-              onChange={(event) => setHexText(event.target.value)}
-              onBlur={(event) => commitHexText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  commitHexText(event.currentTarget.value)
-                }
+              type="range"
+              min={0}
+              max={359}
+              value={Math.round(hsv.h)}
+              aria-label="Tono"
+              onChange={(event) => {
+                setHexText(null)
+                setHsv((prev) => ({ ...prev, h: Number(event.target.value) }))
               }}
-              className="w-full min-w-0 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs uppercase"
+              className="h-3 w-full cursor-pointer appearance-none rounded-full"
+              style={{
+                background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
+              }}
             />
-          </div>
 
-          <button
-            type="button"
-            onClick={add}
-            className="w-full rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700"
-          >
-            Agregar color
-          </button>
-        </div>
-      )}
+            <div className="flex items-center gap-2">
+              <span
+                className="h-8 w-8 shrink-0 rounded-full border border-black/10"
+                style={{ backgroundColor: hex }}
+              />
+              <input
+                type="text"
+                aria-label="Codigo hexadecimal"
+                maxLength={7}
+                value={hexText ?? hex}
+                onChange={(event) => setHexText(event.target.value)}
+                onBlur={(event) => commitHexText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    commitHexText(event.currentTarget.value)
+                  }
+                }}
+                className="w-full min-w-0 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs uppercase"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={add}
+              className="w-full rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700"
+            >
+              Agregar color
+            </button>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
