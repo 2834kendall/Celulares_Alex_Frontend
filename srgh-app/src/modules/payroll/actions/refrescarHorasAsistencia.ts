@@ -365,7 +365,7 @@ export async function refrescarHorasAsistencia(
     ahora: ahoraLocal(),
   })
 
-  const { error: errUpdate } = await supabase
+  const { data: actualizada, error: errUpdate } = await supabase
     .from('sgrh_nomina_detalle')
     .update({
       ndt_salario_bruto: salarioBruto,
@@ -381,9 +381,24 @@ export async function refrescarHorasAsistencia(
       ...(foto.escribir ? foto.campos : {}),
     })
     .eq('ndt_id', ndtId)
+    // Solo si sigue sin pagar. El "ya está pagada" de arriba se leyó antes de
+    // varias consultas lentas: si en el medio alguien marcó el pago (con su
+    // comprobante enviado y su aguinaldo acumulado), recalcular no puede
+    // cambiarle el monto por detrás. Igual que uploadPlanilla y la edición
+    // manual.
+    .eq('ndt_pagado', false)
+    .select('ndt_id')
+    .returns<{ ndt_id: number }[]>()
 
   if (errUpdate) {
     return { ok: false, error: 'No se pudieron guardar las horas actualizadas.' }
+  }
+  if (!Array.isArray(actualizada) || actualizada.length === 0) {
+    return {
+      ok: false,
+      error:
+        'A este empleado se le marcó el pago mientras se recalculaba: la fila quedó como se pagó. Recargá la página.',
+    }
   }
 
   const { error: errLineas } = await reemplazarLineasDetalle(

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { aplicarHorasExtraEnDetalle } from '@/modules/payroll/lib/horasExtraDetalle'
+import { formatCRC } from '@/modules/payroll/lib/format'
 
 export type RevertirBancoHorasResult = { ok: true } | { ok: false; error: string }
 
@@ -131,21 +132,72 @@ export async function revertirBancoHoras(bhmId: number): Promise<RevertirBancoHo
       }
     }
 
-    const { error: errAplicar } = await aplicarHorasExtraEnDetalle(
-      supabase,
-      detalle,
-      -(movimiento.bhm_monto_pagado ?? 0)
-    )
+    const monto = movimiento.bhm_monto_pagado ?? 0
+    const { error: errAplicar } = await aplicarHorasExtraEnDetalle(supabase, detalle, -monto)
     if (errAplicar) {
       return { ok: false, error: errAplicar }
     }
 
+    // Recién con el monto afuera, el movimiento vuelve a pendiente, y solo si
+    // sigue pagado en esta quincena. Mientras tanto siguió figurando como
+    // pagado, así que nadie lo pudo volver a pagar ni compensar en el medio.
+    //
+    // Si ya no estaba pagado es que otra reversión (doble clic, dos personas)
+    // ganó: esa ya sacó el monto, así que lo que se sacó acá se devuelve. Antes
+    // el monto salía dos veces y la segunda se llevaba plata de otro
+    // movimiento pagado en la misma fila.
+    const reservado = await reservar(supabase, bhmId, {
+      estado: 'pagado',
+      detalleId: detalle.ndt_id,
+    })
+    if (!reservado.ok) {
+      if (reservado.motivo === 'cambio') {
+        const { error: errDevolver } = await aplicarHorasExtraEnDetalle(supabase, detalle, monto)
+        if (errDevolver) {
+          console.error(
+            'revertirBancoHoras: no se pudo devolver el monto restado de más',
+            errDevolver
+          )
+          return {
+            ok: false,
+            error: `Este movimiento ya lo había revertido alguien más, y no se pudo devolver a la planilla el monto que se sacó de nuevo (${formatCRC(monto)}). Avisá para revisarlo a mano.`,
+          }
+        }
+        return { ok: false, error: reservado.error }
+      }
+      return {
+        ok: false,
+        error:
+          'Se sacó el monto de la planilla, pero no se pudo devolver el movimiento a pendiente. Avisá para revisarlo a mano.',
+      }
+    }
+
     periodoAfectado = detalle.ndt_nomina_periodo_id
+  } else {
+    const reservado = await reservar(supabase, bhmId, { estado: movimiento.bhm_estado })
+    if (!reservado.ok) return { ok: false, error: reservado.error }
   }
 
-  // Se limpia todo lo que describía la resolución: dejar el monto o el
-  // usuario de un pago que ya no existe es peor que no tenerlos.
-  const { error: errRevertir } = await supabase
+  revalidatePath('/payroll')
+  revalidatePath('/payroll/banco-horas')
+  if (periodoAfectado) revalidatePath(`/payroll/${periodoAfectado}`)
+  return { ok: true }
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
+
+/**
+ * Devuelve el movimiento a pendiente solo si sigue como se leyó (mismo estado
+ * y, si estaba pagado, en la misma quincena). Se limpia todo lo que describía
+ * la resolución: dejar el monto o el usuario de un pago que ya no existe es
+ * peor que no tenerlos.
+ */
+async function reservar(
+  supabase: SupabaseServerClient,
+  bhmId: number,
+  como: { estado: string; detalleId?: number }
+): Promise<{ ok: true } | { ok: false; motivo: 'error' | 'cambio'; error: string }> {
+  let consulta = supabase
     .from('sgrh_banco_horas_movimientos')
     .update({
       bhm_estado: 'pendiente',
@@ -155,17 +207,26 @@ export async function revertirBancoHoras(bhmId: number): Promise<RevertirBancoHo
       bhm_fecha_resolucion: null,
     })
     .eq('bhm_id', bhmId)
-
-  if (errRevertir) {
-    return {
-      ok: false,
-      error:
-        'Se sacó el monto de la planilla, pero no se pudo devolver el movimiento a pendiente. Avisá para revisarlo a mano.',
-    }
+    .eq('bhm_estado', como.estado)
+  if (como.detalleId !== undefined) {
+    consulta = consulta.eq('bhm_nomina_detalle_pago_id', como.detalleId)
   }
 
-  revalidatePath('/payroll')
-  revalidatePath('/payroll/banco-horas')
-  if (periodoAfectado) revalidatePath(`/payroll/${periodoAfectado}`)
+  const { data, error } = await consulta.select('bhm_id').returns<{ bhm_id: number }[]>()
+  if (error) {
+    return {
+      ok: false,
+      motivo: 'error',
+      error: 'No se pudo devolver el movimiento al banco de horas.',
+    }
+  }
+  if (!Array.isArray(data) || data.length === 0) {
+    return {
+      ok: false,
+      motivo: 'cambio',
+      error:
+        'Este movimiento cambió mientras tanto (alguien más lo revirtió o lo resolvió). Recargá la página.',
+    }
+  }
   return { ok: true }
 }

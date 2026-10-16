@@ -124,4 +124,28 @@ describe('sincronizarMovimientoBancoHoras', () => {
     expect(result).toEqual({ error: 'No se pudo revisar el banco de horas.' })
     expect(supabase.from).toHaveBeenCalledTimes(1)
   })
+
+  // Entre la lectura y la escritura alguien pudo pagar o compensar el
+  // movimiento: el borrado y la actualización solo valen si sigue pendiente.
+  it.each([
+    ['borrar', 0],
+    ['actualizar', 8],
+  ])('al %s solo toca el movimiento si sigue pendiente', async (_, horasExtra) => {
+    const supabase = client({
+      sgrh_banco_horas_movimientos: [
+        { data: { bhm_id: 77, bhm_estado: 'pendiente' }, error: null },
+        { data: null, error: null },
+      ],
+    })
+
+    await sincronizarMovimientoBancoHoras(supabase, { ...BASE, horasExtra })
+
+    const escritura = (supabase.from as ReturnType<typeof vi.fn>).mock.results[1].value as {
+      eq: ReturnType<typeof vi.fn>
+    }
+    expect(escritura.eq.mock.calls).toEqual([
+      ['bhm_id', 77],
+      ['bhm_estado', 'pendiente'],
+    ])
+  })
 })
