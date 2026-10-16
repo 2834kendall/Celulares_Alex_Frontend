@@ -163,7 +163,8 @@ export async function enviarComprobantePorCorreo(
   if (!config) return { estado: 'sin_configurar' }
 
   const [detailResult, conceptosResult, empresaNombre] = await Promise.all([
-    getPeriodoDetail(periodoId),
+    // Solo esta fila: el resto del periodo no se necesita para su comprobante.
+    getPeriodoDetail(periodoId, { soloDetalleId: detalleId }),
     getConceptos(),
     getEmpresaNombre(),
   ])

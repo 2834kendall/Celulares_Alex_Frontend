@@ -51,7 +51,8 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
 
   const [empresaNombre, detailResult, conceptosResult] = await Promise.all([
     getEmpresaNombre(),
-    getPeriodoDetail(periodoId),
+    // Solo esta fila: el resto del periodo no se necesita para su comprobante.
+    getPeriodoDetail(periodoId, { soloDetalleId: detalleId }),
     getConceptos(),
   ])
 

@@ -111,47 +111,31 @@ export type GetPeriodoDetailResult =
  * Cabecera del periodo + planilla (un detalle por empleado).
  * RLS garantiza que solo se ven periodos de la empresa del JWT.
  */
-export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDetailResult> {
+export async function getPeriodoDetail(
+  periodoId: number,
+  opciones: { soloDetalleId?: number } = {}
+): Promise<GetPeriodoDetailResult> {
   await requirePermission(PERMISOS.NOMINA_READ)
 
   if (!Number.isInteger(periodoId) || periodoId <= 0) {
     return { ok: false, error: 'Periodo inválido.', notFound: true }
   }
+  // Una sola fila (el comprobante, el correo al pagar): todo lo que sigue se
+  // calcula fila por fila, así que filtrar acá da exactamente el mismo
+  // DetalleNominaItem sin leer las marcas, líneas y cuentas de todo el periodo.
+  const soloDetalleId = opciones.soloDetalleId
+  if (soloDetalleId !== undefined && (!Number.isInteger(soloDetalleId) || soloDetalleId <= 0)) {
+    return { ok: false, error: 'Detalle inválido.', notFound: true }
+  }
 
   const supabase = await createClient()
 
-  const { data: periodo, error: errPeriodo } = await supabase
-    .from('sgrh_nomina_periodo')
+  // El periodo, sus filas y el % de incapacidad no dependen entre sí: se leen
+  // juntos. Los errores se revisan en el mismo orden de siempre.
+  let consultaDetalles = supabase
+    .from('sgrh_nomina_detalle')
     .select(
       `
-      npe_id,
-      npe_periodo_mes,
-      npe_periodo_anio,
-      npe_quincena,
-      npe_fecha_inicio_periodo,
-      npe_fecha_fin_periodo,
-      npe_estado,
-      npe_fecha_pago,
-      npe_observaciones,
-      sgrh_sucursales ( suc_nombre )
-    `
-    )
-    .eq('npe_id', periodoId)
-    .maybeSingle<PeriodoRow>()
-
-  if (errPeriodo) {
-    return { ok: false, error: 'No se pudo cargar el periodo de nómina.' }
-  }
-
-  if (!periodo) {
-    return { ok: false, error: 'El periodo no existe o no es visible.', notFound: true }
-  }
-
-  const [{ data: detalles, error: errDetalles }, { data: tipoAusencia }] = await Promise.all([
-    supabase
-      .from('sgrh_nomina_detalle')
-      .select(
-        `
       ndt_id,
       ndt_historial_laboral_id,
       ndt_salario_bruto,
@@ -183,10 +167,34 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
         sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal )
       )
     `
+    )
+    .eq('ndt_nomina_periodo_id', periodoId)
+  if (soloDetalleId !== undefined) consultaDetalles = consultaDetalles.eq('ndt_id', soloDetalleId)
+
+  const [
+    { data: periodo, error: errPeriodo },
+    { data: detalles, error: errDetalles },
+    { data: tipoAusencia },
+  ] = await Promise.all([
+    supabase
+      .from('sgrh_nomina_periodo')
+      .select(
+        `
+        npe_id,
+        npe_periodo_mes,
+        npe_periodo_anio,
+        npe_quincena,
+        npe_fecha_inicio_periodo,
+        npe_fecha_fin_periodo,
+        npe_estado,
+        npe_fecha_pago,
+        npe_observaciones,
+        sgrh_sucursales ( suc_nombre )
+      `
       )
-      .eq('ndt_nomina_periodo_id', periodoId)
-      .order('ndt_id', { ascending: true })
-      .returns<DetalleRow[]>(),
+      .eq('npe_id', periodoId)
+      .maybeSingle<PeriodoRow>(),
+    consultaDetalles.order('ndt_id', { ascending: true }).returns<DetalleRow[]>(),
     // % que paga el patrono durante sus días de incapacidad — se lee del
     // catálogo en vez de "adivinarlo" en el código (mismo criterio que el
     // resto del motor de cálculo). Si falla, la incapacidad simplemente no
@@ -198,15 +206,112 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       .maybeSingle<TipoAusenciaRow>(),
   ])
 
+  if (errPeriodo) {
+    return { ok: false, error: 'No se pudo cargar el periodo de nómina.' }
+  }
+
+  if (!periodo) {
+    return { ok: false, error: 'El periodo no existe o no es visible.', notFound: true }
+  }
+
   if (errDetalles) {
     return { ok: false, error: 'No se pudo cargar la planilla del periodo.' }
   }
+
+  const filas = detalles ?? []
+  const idsDetalle = filas.map((d: DetalleRow) => d.ndt_id)
+  const hayFechas = Boolean(periodo.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo)
+  const labsConSubsidio = filas
+    .filter(
+      (d: DetalleRow) => d.ndt_dias_incapacidad_empleador > 0 || d.ndt_dias_incapacidad_ccss > 0
+    )
+    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
+  const labsImpagos = filas
+    .filter((d: DetalleRow) => !d.ndt_pagado)
+    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
+  const empIds = Array.from(
+    new Set(
+      filas
+        .map((d: DetalleRow) => d.sgrh_historial_laboral?.sgrh_empleados?.emp_id)
+        .filter((id): id is number => typeof id === 'number')
+    )
+  )
+
+  // Todo lo demás depende solo de las filas y de las fechas del periodo, no
+  // de lo que devuelva otra consulta: antes iba una detrás de otra (~9 viajes
+  // a la base en fila en cada vista del periodo y después de cada acción).
+  // Cada lectura conserva su condición y su manejo de error de siempre: todas
+  // son informativas y, si fallan, la pantalla sale igual sin ese dato.
+  const [
+    horas,
+    { data: comprobantes },
+    [{ data: lineasIngreso }, { data: lineasDeduccion }],
+    { data: ausencias, error: errAusencias },
+    cubiertas,
+    datosPagoDescifrados,
+  ] = await Promise.all([
+    filas.length > 0 && hayFechas
+      ? getHorasDelPeriodo(supabase, {
+          historialLaboralIds: filas.map((d: DetalleRow) => d.ndt_historial_laboral_id),
+          fechaInicio: periodo.npe_fecha_inicio_periodo!,
+          fechaFin: periodo.npe_fecha_fin_periodo!,
+        })
+      : null,
+    idsDetalle.length > 0
+      ? supabase
+          .from('sgrh_comprobantes_pago')
+          .select('com_nomina_detalle_id, com_codigo_verificacion')
+          .in('com_nomina_detalle_id', idsDetalle)
+          .returns<ComprobanteRow[]>()
+      : { data: null },
+    idsDetalle.length > 0
+      ? Promise.all([
+          supabase
+            .from('sgrh_nomina_linea_ingreso')
+            .select(
+              'ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_afecta_salario_bruto )'
+            )
+            .in('ing_nomina_detalle_id', idsDetalle)
+            .returns<LineaIngresoRow[]>(),
+          supabase
+            .from('sgrh_nomina_linea_deduccion')
+            .select(
+              'ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_tipo_calculo, con_rebaja_salario )'
+            )
+            .in('ded_nomina_detalle_id', idsDetalle)
+            .returns<LineaDeduccionRow[]>(),
+        ])
+      : [{ data: null }, { data: null }],
+    labsConSubsidio.length > 0 && hayFechas
+      ? supabase
+          .from('sgrh_ausencias')
+          .select(
+            'aus_historial_laboral_id, aus_fecha_inicio, sgrh_cat_tipos_ausencia ( tau_nombre, tau_requiere_documento_ccss )'
+          )
+          .in('aus_historial_laboral_id', labsConSubsidio)
+          .eq('aus_estado', 'aprobada')
+          .lte('aus_fecha_inicio', periodo.npe_fecha_fin_periodo!)
+          .gte('aus_fecha_fin', periodo.npe_fecha_inicio_periodo!)
+          .order('aus_fecha_inicio', { ascending: true })
+          .returns<AusenciaSubsidioRow[]>()
+      : { data: null, error: null },
+    labsImpagos.length > 0
+      ? liquidacionesQueCubren(supabase, labsImpagos, {
+          anio: periodo.npe_periodo_anio,
+          mes: periodo.npe_periodo_mes,
+          quincena: periodo.npe_quincena,
+        }).catch((err: unknown) => {
+          console.error('getPeriodoDetail: no se pudieron leer las liquidaciones', err)
+          return null
+        })
+      : null,
+    empIds.length > 0 ? leerDatosPago(supabase, empIds) : null,
+  ])
 
   // Montos crudos por concepto (para poder editarlos sin re-subir el Excel, y
   // para mostrar el desglose en el comprobante). Es información
   // complementaria: si estas consultas fallan, se muestran los totales igual
   // y los montos crudos quedan vacíos — no se bloquea toda la pantalla.
-  const idsDetalle = (detalles ?? []).map((d: DetalleRow) => d.ndt_id)
   const montosPorNdt = new Map<number, Record<string, number>>()
   // Código del comprobante ya emitido (sgrh_comprobantes_pago). Solo existe
   // para los detalles marcados como pagados; es lo que hace verificable el
@@ -226,35 +331,23 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // La lectura completa, para saber si el BASE guardado sigue correspondiendo
   // (ver evaluarBaseGuardado).
   const totalesPorLab = new Map<number, TotalesPeriodo>()
-  if (
-    (detalles ?? []).length > 0 &&
-    periodo.npe_fecha_inicio_periodo &&
-    periodo.npe_fecha_fin_periodo
-  ) {
-    const horas = await getHorasDelPeriodo(supabase, {
-      historialLaboralIds: (detalles ?? []).map((d: DetalleRow) => d.ndt_historial_laboral_id),
-      fechaInicio: periodo.npe_fecha_inicio_periodo,
-      fechaFin: periodo.npe_fecha_fin_periodo,
-    })
-
-    if (horas.ok) {
-      for (const [labId, totales] of horas.data) {
-        if (totales.diasConProblema.length > 0) {
-          revisarPorLab.set(labId, totales.diasConProblema)
-        }
-        // Una lectura sin horas programadas son ceros que no significan nada
-        // (ver lecturaUtilizable). Publicarla ponía a todos "las marcas dicen
-        // 0 h": bloqueaba los pagos y ofrecía un botón "traer 0 h" que borraba
-        // las horas buenas.
-        if (lecturaUtilizable(totales)) {
-          asistenciaAhoraPorLab.set(labId, {
-            horas: totales.horasOrdinarias,
-            horasExtra: totales.horasExtra,
-          })
-        }
-        diasPorLab.set(labId, totales.dias)
-        totalesPorLab.set(labId, totales)
+  if (horas?.ok) {
+    for (const [labId, totales] of horas.data) {
+      if (totales.diasConProblema.length > 0) {
+        revisarPorLab.set(labId, totales.diasConProblema)
       }
+      // Una lectura sin horas programadas son ceros que no significan nada
+      // (ver lecturaUtilizable). Publicarla ponía a todos "las marcas dicen
+      // 0 h": bloqueaba los pagos y ofrecía un botón "traer 0 h" que borraba
+      // las horas buenas.
+      if (lecturaUtilizable(totales)) {
+        asistenciaAhoraPorLab.set(labId, {
+          horas: totales.horasOrdinarias,
+          horasExtra: totales.horasExtra,
+        })
+      }
+      diasPorLab.set(labId, totales.dias)
+      totalesPorLab.set(labId, totales)
     }
   }
   // Desglose de "Deducciones" en dos totales, por cómo se calculan:
@@ -266,72 +359,47 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // porque el dato de si un concepto es salario vive en el catálogo.
   const noSalarialPorNdt = new Map<number, number>()
 
-  if (idsDetalle.length > 0) {
-    const { data: comprobantes } = await supabase
-      .from('sgrh_comprobantes_pago')
-      .select('com_nomina_detalle_id, com_codigo_verificacion')
-      .in('com_nomina_detalle_id', idsDetalle)
-      .returns<ComprobanteRow[]>()
+  for (const comprobante of comprobantes ?? []) {
+    codigoPorNdt.set(comprobante.com_nomina_detalle_id, comprobante.com_codigo_verificacion)
+  }
 
-    for (const comprobante of comprobantes ?? []) {
-      codigoPorNdt.set(comprobante.com_nomina_detalle_id, comprobante.com_codigo_verificacion)
+  for (const linea of lineasIngreso ?? []) {
+    const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+    if (!codigo) continue
+    const montos = montosPorNdt.get(linea.ing_nomina_detalle_id) ?? {}
+    montos[codigo] = linea.ing_monto
+    montosPorNdt.set(linea.ing_nomina_detalle_id, montos)
+
+    if (linea.sgrh_cat_conceptos_nomina?.con_afecta_salario_bruto === false) {
+      noSalarialPorNdt.set(
+        linea.ing_nomina_detalle_id,
+        (noSalarialPorNdt.get(linea.ing_nomina_detalle_id) ?? 0) + linea.ing_monto
+      )
+    }
+  }
+  for (const linea of lineasDeduccion ?? []) {
+    const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
+    if (!codigo) continue
+    const montos = montosPorNdt.get(linea.ded_nomina_detalle_id) ?? {}
+    montos[codigo] = linea.ded_monto
+    montosPorNdt.set(linea.ded_nomina_detalle_id, montos)
+
+    // La ausencia sin goce ya se restó del bruto: no es una deducción del
+    // neto y no va en esas columnas (auditoría 2, hallazgo 6).
+    if (linea.sgrh_cat_conceptos_nomina && esRebajoDeSalario(linea.sgrh_cat_conceptos_nomina)) {
+      continue
     }
 
-    const [{ data: lineasIngreso }, { data: lineasDeduccion }] = await Promise.all([
-      supabase
-        .from('sgrh_nomina_linea_ingreso')
-        .select(
-          'ing_nomina_detalle_id, ing_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_afecta_salario_bruto )'
-        )
-        .in('ing_nomina_detalle_id', idsDetalle)
-        .returns<LineaIngresoRow[]>(),
-      supabase
-        .from('sgrh_nomina_linea_deduccion')
-        .select(
-          'ded_nomina_detalle_id, ded_monto, sgrh_cat_conceptos_nomina ( con_codigo, con_tipo_calculo, con_rebaja_salario )'
-        )
-        .in('ded_nomina_detalle_id', idsDetalle)
-        .returns<LineaDeduccionRow[]>(),
-    ])
-
-    for (const linea of lineasIngreso ?? []) {
-      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
-      if (!codigo) continue
-      const montos = montosPorNdt.get(linea.ing_nomina_detalle_id) ?? {}
-      montos[codigo] = linea.ing_monto
-      montosPorNdt.set(linea.ing_nomina_detalle_id, montos)
-
-      if (linea.sgrh_cat_conceptos_nomina?.con_afecta_salario_bruto === false) {
-        noSalarialPorNdt.set(
-          linea.ing_nomina_detalle_id,
-          (noSalarialPorNdt.get(linea.ing_nomina_detalle_id) ?? 0) + linea.ing_monto
-        )
-      }
+    const acumulado = deduccionesPorNdt.get(linea.ded_nomina_detalle_id) ?? {
+      porcentual: 0,
+      manual: 0,
     }
-    for (const linea of lineasDeduccion ?? []) {
-      const codigo = linea.sgrh_cat_conceptos_nomina?.con_codigo
-      if (!codigo) continue
-      const montos = montosPorNdt.get(linea.ded_nomina_detalle_id) ?? {}
-      montos[codigo] = linea.ded_monto
-      montosPorNdt.set(linea.ded_nomina_detalle_id, montos)
-
-      // La ausencia sin goce ya se restó del bruto: no es una deducción del
-      // neto y no va en esas columnas (auditoría 2, hallazgo 6).
-      if (linea.sgrh_cat_conceptos_nomina && esRebajoDeSalario(linea.sgrh_cat_conceptos_nomina)) {
-        continue
-      }
-
-      const acumulado = deduccionesPorNdt.get(linea.ded_nomina_detalle_id) ?? {
-        porcentual: 0,
-        manual: 0,
-      }
-      if (linea.sgrh_cat_conceptos_nomina?.con_tipo_calculo === 'porcentaje_deduccion_bruto') {
-        acumulado.porcentual += linea.ded_monto
-      } else {
-        acumulado.manual += linea.ded_monto
-      }
-      deduccionesPorNdt.set(linea.ded_nomina_detalle_id, acumulado)
+    if (linea.sgrh_cat_conceptos_nomina?.con_tipo_calculo === 'porcentaje_deduccion_bruto') {
+      acumulado.porcentual += linea.ded_monto
+    } else {
+      acumulado.manual += linea.ded_monto
     }
+    deduccionesPorNdt.set(linea.ded_nomina_detalle_id, acumulado)
   }
 
   // De qué ausencia son los días de subsidio de cada fila (incapacidad por
@@ -340,48 +408,17 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // (auditoría 2, hallazgo 9). Informativo: si la lectura falla, queda el
   // rótulo genérico.
   const tipoSubsidioPorLab = new Map<number, string>()
-  const labsConSubsidio = (detalles ?? [])
-    .filter(
-      (d: DetalleRow) => d.ndt_dias_incapacidad_empleador > 0 || d.ndt_dias_incapacidad_ccss > 0
-    )
-    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
-  if (
-    labsConSubsidio.length > 0 &&
-    periodo.npe_fecha_inicio_periodo &&
-    periodo.npe_fecha_fin_periodo
-  ) {
-    const { data: ausencias, error: errAusencias } = await supabase
-      .from('sgrh_ausencias')
-      .select(
-        'aus_historial_laboral_id, aus_fecha_inicio, sgrh_cat_tipos_ausencia ( tau_nombre, tau_requiere_documento_ccss )'
-      )
-      .in('aus_historial_laboral_id', labsConSubsidio)
-      .eq('aus_estado', 'aprobada')
-      .lte('aus_fecha_inicio', periodo.npe_fecha_fin_periodo)
-      .gte('aus_fecha_fin', periodo.npe_fecha_inicio_periodo)
-      .order('aus_fecha_inicio', { ascending: true })
-      .returns<
-        {
-          aus_historial_laboral_id: number
-          aus_fecha_inicio: string
-          sgrh_cat_tipos_ausencia: {
-            tau_nombre: string
-            tau_requiere_documento_ccss: boolean
-          } | null
-        }[]
-      >()
-    if (!errAusencias && Array.isArray(ausencias)) {
-      const nombresPorLab = new Map<number, string[]>()
-      for (const a of ausencias) {
-        const tipo = a.sgrh_cat_tipos_ausencia
-        if (!tipo?.tau_requiere_documento_ccss) continue
-        const nombres = nombresPorLab.get(a.aus_historial_laboral_id) ?? []
-        if (!nombres.includes(tipo.tau_nombre)) nombres.push(tipo.tau_nombre)
-        nombresPorLab.set(a.aus_historial_laboral_id, nombres)
-      }
-      for (const [labId, nombres] of nombresPorLab) {
-        tipoSubsidioPorLab.set(labId, nombres.join(' y '))
-      }
+  if (!errAusencias && Array.isArray(ausencias)) {
+    const nombresPorLab = new Map<number, string[]>()
+    for (const a of ausencias) {
+      const tipo = a.sgrh_cat_tipos_ausencia
+      if (!tipo?.tau_requiere_documento_ccss) continue
+      const nombres = nombresPorLab.get(a.aus_historial_laboral_id) ?? []
+      if (!nombres.includes(tipo.tau_nombre)) nombres.push(tipo.tau_nombre)
+      nombresPorLab.set(a.aus_historial_laboral_id, nombres)
+    }
+    for (const [labId, nombres] of nombresPorLab) {
+      tipoSubsidioPorLab.set(labId, nombres.join(' y '))
     }
   }
 
@@ -389,67 +426,16 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
   // del mes de salida): no se pagan por planilla. Informativo: si la lectura
   // falla se muestran como pendientes, igual que antes.
   const liquidacionPorLab = new Map<number, number>()
-  const labsImpagos = (detalles ?? [])
-    .filter((d: DetalleRow) => !d.ndt_pagado)
-    .map((d: DetalleRow) => d.ndt_historial_laboral_id)
-  if (labsImpagos.length > 0) {
-    try {
-      const cubiertas = await liquidacionesQueCubren(supabase, labsImpagos, {
-        anio: periodo.npe_periodo_anio,
-        mes: periodo.npe_periodo_mes,
-        quincena: periodo.npe_quincena,
-      })
-      if (cubiertas.ok) {
-        for (const [labId, liq] of cubiertas.data) liquidacionPorLab.set(labId, liq.liqId)
-      }
-    } catch (err) {
-      console.error('getPeriodoDetail: no se pudieron leer las liquidaciones', err)
-    }
+  if (cubiertas?.ok) {
+    for (const [labId, liq] of cubiertas.data) liquidacionPorLab.set(labId, liq.liqId)
   }
 
   // Cuenta IBAN + banco para la transferencia (sgrh_empleado_datos_pago). Es
   // informativo: si el empleado no cargó sus datos de pago o la consulta
   // falla, simplemente no se muestra — no bloquea el resto de la pantalla.
-  const empIds = Array.from(
-    new Set(
-      (detalles ?? [])
-        .map((d: DetalleRow) => d.sgrh_historial_laboral?.sgrh_empleados?.emp_id)
-        .filter((id): id is number => typeof id === 'number')
-    )
-  )
-  const datosPagoPorEmpleado = new Map<
-    number,
-    { numeroCuenta: string | null; bancoNombre: string | null; cuentaIlegible: boolean }
-  >()
-  if (empIds.length > 0) {
-    const { data: datosPago } = await supabase
-      .from('sgrh_empleado_datos_pago')
-      .select('edp_empleado_id, edp_numero_cuenta, sgrh_cat_bancos ( ban_nombre )')
-      .in('edp_empleado_id', empIds)
-      .returns<DatosPagoRow[]>()
+  const datosPagoPorEmpleado = datosPagoDescifrados ?? new Map<number, DatosPagoEmpleado>()
 
-    // La cuenta se guarda cifrada: se descifra acá, una por empleado del
-    // período. La llave se importa una sola vez (fieldCrypto.core memoiza el
-    // CryptoKey), así que el lote no paga un importKey por fila.
-    //
-    // cuentaIlegible se propaga en vez de aplanarse a null: quien arma la
-    // transferencia tiene que poder distinguir "no cargó datos de pago" de
-    // "tiene cuenta pero no se pudo leer" — son problemas distintos.
-    const cuentas = await Promise.all(
-      (datosPago ?? []).map((row) => decryptField(row.edp_numero_cuenta))
-    )
-
-    ;(datosPago ?? []).forEach((row, i) => {
-      const cuenta = cuentas[i]
-      datosPagoPorEmpleado.set(row.edp_empleado_id, {
-        numeroCuenta: cuenta.ok ? cuenta.value : null,
-        bancoNombre: row.sgrh_cat_bancos?.ban_nombre ?? null,
-        cuentaIlegible: !cuenta.ok,
-      })
-    })
-  }
-
-  const items: DetalleNominaItem[] = (detalles ?? []).map((row: DetalleRow) => {
+  const items: DetalleNominaItem[] = filas.map((row: DetalleRow) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados
     const nombre = empleado
       ? [empleado.emp_nombre, empleado.emp_apellido_1, empleado.emp_apellido_2]
@@ -618,4 +604,57 @@ export async function getPeriodoDetail(periodoId: number): Promise<GetPeriodoDet
       detalles: items,
     },
   }
+}
+
+interface AusenciaSubsidioRow {
+  aus_historial_laboral_id: number
+  aus_fecha_inicio: string
+  sgrh_cat_tipos_ausencia: {
+    tau_nombre: string
+    tau_requiere_documento_ccss: boolean
+  } | null
+}
+
+interface DatosPagoEmpleado {
+  numeroCuenta: string | null
+  bancoNombre: string | null
+  cuentaIlegible: boolean
+}
+
+/**
+ * Cuenta y banco de cada empleado, con la cuenta descifrada. Si la consulta
+ * falla, el mapa sale vacío (es informativo, ver arriba).
+ *
+ * La cuenta se guarda cifrada: se descifra acá, una por empleado del
+ * período. La llave se importa una sola vez (fieldCrypto.core memoiza el
+ * CryptoKey), así que el lote no paga un importKey por fila.
+ *
+ * cuentaIlegible se propaga en vez de aplanarse a null: quien arma la
+ * transferencia tiene que poder distinguir "no cargó datos de pago" de
+ * "tiene cuenta pero no se pudo leer" — son problemas distintos.
+ */
+async function leerDatosPago(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  empIds: number[]
+): Promise<Map<number, DatosPagoEmpleado>> {
+  const { data: datosPago } = await supabase
+    .from('sgrh_empleado_datos_pago')
+    .select('edp_empleado_id, edp_numero_cuenta, sgrh_cat_bancos ( ban_nombre )')
+    .in('edp_empleado_id', empIds)
+    .returns<DatosPagoRow[]>()
+
+  const cuentas = await Promise.all(
+    (datosPago ?? []).map((row) => decryptField(row.edp_numero_cuenta))
+  )
+
+  const porEmpleado = new Map<number, DatosPagoEmpleado>()
+  ;(datosPago ?? []).forEach((row, i) => {
+    const cuenta = cuentas[i]
+    porEmpleado.set(row.edp_empleado_id, {
+      numeroCuenta: cuenta.ok ? cuenta.value : null,
+      bancoNombre: row.sgrh_cat_bancos?.ban_nombre ?? null,
+      cuentaIlegible: !cuenta.ok,
+    })
+  })
+  return porEmpleado
 }

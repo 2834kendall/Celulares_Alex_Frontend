@@ -99,7 +99,8 @@ describe('enviarComprobantePorCorreo', () => {
     const r = await enviarComprobantePorCorreo(7, 41)
 
     expect(r).toEqual({ estado: 'enviado', email: 'nataly@correo.com' })
-    expect(getPeriodoDetail).toHaveBeenCalledWith(7)
+    // Solo la fila del pago, no el periodo entero.
+    expect(getPeriodoDetail).toHaveBeenCalledWith(7, { soloDetalleId: 41 })
     const [config, correo] = vi.mocked(enviarCorreo).mock.calls[0]
     expect(config).toBe(CONFIG)
     expect(correo.to).toBe('nataly@correo.com')

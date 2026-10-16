@@ -77,7 +77,19 @@ export async function getEmpleadosActivos(
   // a cualquiera con contrato vigente, y a alguien que entró en mayo se le
   // armaba (y pagaba) la planilla de diciembre anterior.
   if (finPeriodo) consulta = consulta.lte('lab_fecha_inicio', finPeriodo)
-  const { data, error } = await consulta.returns<HistorialActivoRow[]>()
+  // Los contratos vigentes y las filas del periodo no dependen entre sí: se
+  // leen juntos (antes, una consulta detrás de la otra). Los errores se
+  // revisan en el mismo orden.
+  const [{ data, error }, lecturaPeriodo] = await Promise.all([
+    consulta.returns<HistorialActivoRow[]>(),
+    periodoId !== undefined
+      ? supabase
+          .from('sgrh_nomina_detalle')
+          .select('ndt_historial_laboral_id')
+          .eq('ndt_nomina_periodo_id', periodoId)
+          .returns<{ ndt_historial_laboral_id: number }[]>()
+      : null,
+  ])
 
   if (error) {
     return { ok: false, error: 'No se pudieron cargar los empleados activos de la sucursal.' }
@@ -85,13 +97,9 @@ export async function getEmpleadosActivos(
 
   const filas = Array.isArray(data) ? [...data] : []
 
-  if (periodoId !== undefined) {
+  if (lecturaPeriodo) {
     const vigentes = new Set(filas.map((r) => r.lab_id))
-    const { data: enPeriodo, error: errPeriodo } = await supabase
-      .from('sgrh_nomina_detalle')
-      .select('ndt_historial_laboral_id')
-      .eq('ndt_nomina_periodo_id', periodoId)
-      .returns<{ ndt_historial_laboral_id: number }[]>()
+    const { data: enPeriodo, error: errPeriodo } = lecturaPeriodo
     if (errPeriodo) {
       return { ok: false, error: 'No se pudieron cargar los empleados de la planilla del periodo.' }
     }

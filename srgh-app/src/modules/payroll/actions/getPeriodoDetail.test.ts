@@ -101,10 +101,50 @@ describe('getPeriodoDetail (server action)', () => {
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 
+  // El comprobante y el correo al pagar necesitan una fila, no el periodo
+  // entero: se filtra en la consulta y lo demás (marcas, líneas, cuentas) se
+  // lee solo para esa fila.
+  it('con soloDetalleId trae solo esa fila del periodo', async () => {
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7, { soloDetalleId: 21 })
+
+    expect(result.ok && result.data.detalles.map((d) => d.id)).toEqual([21])
+    const client = (await mockCreateClient.mock.results[0].value) as ReturnType<
+      typeof createSupabaseClientMock
+    >
+    const i = client.from.mock.calls.findIndex(([t]) => t === 'sgrh_nomina_detalle')
+    const consulta = client.from.mock.results[i].value as { eq: ReturnType<typeof vi.fn> }
+    expect(consulta.eq.mock.calls).toEqual([
+      ['ndt_nomina_periodo_id', 7],
+      ['ndt_id', 21],
+    ])
+    expect(mockGetHorasDelPeriodo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ historialLaboralIds: [9] })
+    )
+  })
+
+  it('un soloDetalleId inválido se rechaza sin consultar', async () => {
+    const result = await getPeriodoDetail(7, { soloDetalleId: -1 })
+
+    expect(result).toEqual({ ok: false, error: 'Detalle inválido.', notFound: true })
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
   it('marca notFound cuando RLS no devuelve la fila', async () => {
     mockTables({
       sgrh_nomina_periodo: { data: null, error: null },
       sgrh_nomina_detalle: { data: [], error: null },
+      // El periodo, sus filas y el % de incapacidad se leen juntos.
+      sgrh_cat_tipos_ausencia: { data: null, error: null },
     })
 
     const result = await getPeriodoDetail(7)

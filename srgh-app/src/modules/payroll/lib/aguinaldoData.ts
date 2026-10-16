@@ -154,9 +154,45 @@ export async function calcularAguinaldosDelCiclo(
   const todosLosContratos = filas.flatMap((f) => f.relacion)
   const todosLosIds = [...new Set(todosLosContratos.map((c) => c.labId))]
 
-  const quincenasResult = await cargarQuincenas(supabase, todosLosContratos)
+  // Quincenas, ausencias y pagos/provisiones dependen solo de los contratos de
+  // arriba, no entre sí: se leen juntos (antes, uno detrás de otro, y las
+  // quincenas y ausencias van paginadas). Los errores se revisan en el mismo
+  // orden de siempre.
+  const [quincenasResult, ausenciasResult, pagosYProvisiones] = await Promise.all([
+    cargarQuincenas(supabase, todosLosContratos),
+    cargarAusencias(supabase, todosLosIds),
+    todosLosIds.length > 0
+      ? Promise.all([
+          supabase
+            .from('sgrh_pagos_extraordinarios')
+            .select('pex_id, pex_historial_laboral_id, pex_fecha_pago, pex_monto_bruto')
+            .eq('pex_tipo', 'aguinaldo')
+            .eq('pex_anio_aguinaldo', anio)
+            .in('pex_historial_laboral_id', todosLosIds)
+            .returns<
+              {
+                pex_id: number
+                pex_historial_laboral_id: number
+                pex_fecha_pago: string
+                pex_monto_bruto: number
+              }[]
+            >(),
+          supabase
+            .from('sgrh_provisiones_anuales')
+            .select('pra_historial_laboral_id, pra_aguinaldo_pagado, pra_fecha_pago_aguinaldo')
+            .eq('pra_anio', anio)
+            .in('pra_historial_laboral_id', todosLosIds)
+            .returns<
+              {
+                pra_historial_laboral_id: number
+                pra_aguinaldo_pagado: boolean
+                pra_fecha_pago_aguinaldo: string | null
+              }[]
+            >(),
+        ])
+      : null,
+  ])
   if (!quincenasResult.ok) return { ok: false, error: quincenasResult.error }
-  const ausenciasResult = await cargarAusencias(supabase, todosLosIds)
   if (!ausenciasResult.ok) return { ok: false, error: ausenciasResult.error }
 
   const pagosPorLab = new Map<
@@ -167,36 +203,9 @@ export async function calcularAguinaldosDelCiclo(
     number,
     { pra_aguinaldo_pagado: boolean; pra_fecha_pago_aguinaldo: string | null }
   >()
-  if (todosLosIds.length > 0) {
+  if (pagosYProvisiones) {
     const [{ data: pagos, error: errPagos }, { data: provisiones, error: errProv }] =
-      await Promise.all([
-        supabase
-          .from('sgrh_pagos_extraordinarios')
-          .select('pex_id, pex_historial_laboral_id, pex_fecha_pago, pex_monto_bruto')
-          .eq('pex_tipo', 'aguinaldo')
-          .eq('pex_anio_aguinaldo', anio)
-          .in('pex_historial_laboral_id', todosLosIds)
-          .returns<
-            {
-              pex_id: number
-              pex_historial_laboral_id: number
-              pex_fecha_pago: string
-              pex_monto_bruto: number
-            }[]
-          >(),
-        supabase
-          .from('sgrh_provisiones_anuales')
-          .select('pra_historial_laboral_id, pra_aguinaldo_pagado, pra_fecha_pago_aguinaldo')
-          .eq('pra_anio', anio)
-          .in('pra_historial_laboral_id', todosLosIds)
-          .returns<
-            {
-              pra_historial_laboral_id: number
-              pra_aguinaldo_pagado: boolean
-              pra_fecha_pago_aguinaldo: string | null
-            }[]
-          >(),
-      ])
+      pagosYProvisiones
     if (errPagos) return { ok: false, error: 'No se pudieron cargar los pagos de aguinaldo.' }
     if (errProv) return { ok: false, error: 'No se pudo cargar la provisión de aguinaldo.' }
     for (const p of pagos ?? []) pagosPorLab.set(p.pex_historial_laboral_id, p)

@@ -477,6 +477,41 @@ export async function marcarDetallePagado(
 
   const periodo = detalle.sgrh_nomina_periodo
 
+  // Las tres lecturas que verifican un pago (el contrato, si ya va en una
+  // liquidación y las marcas del periodo) no dependen entre sí: se piden
+  // juntas y cada verificación de abajo espera la suya, en el mismo orden de
+  // siempre y con los mismos mensajes. Antes iban una detrás de otra.
+  const lecturasPago =
+    pagado && periodo
+      ? {
+          contrato: Promise.resolve(
+            supabase
+              .from('sgrh_historial_laboral')
+              .select('lab_fecha_inicio, lab_fecha_fin')
+              .eq('lab_id', detalle.ndt_historial_laboral_id)
+              .maybeSingle<{ lab_fecha_inicio: string | null; lab_fecha_fin: string | null }>()
+          ),
+          cubiertas: liquidacionesQueCubren(supabase, [detalle.ndt_historial_laboral_id], {
+            anio: periodo.npe_periodo_anio,
+            mes: periodo.npe_periodo_mes,
+            quincena: periodo.npe_quincena,
+          }),
+          horas:
+            periodo.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo
+              ? getHorasDelPeriodo(supabase, {
+                  historialLaboralIds: [detalle.ndt_historial_laboral_id],
+                  fechaInicio: periodo.npe_fecha_inicio_periodo,
+                  fechaFin: periodo.npe_fecha_fin_periodo,
+                })
+              : null,
+        }
+      : null
+  // Si una verificación anterior corta, las demás lecturas quedan sin esperar:
+  // que un fallo de ellas no termine como rechazo sin manejar.
+  if (lecturasPago) {
+    for (const lectura of Object.values(lecturasPago)) lectura?.catch(() => {})
+  }
+
   // Desmarcar una quincena que ya se usó para pagar algo fuera de la planilla
   // dejaba ese pago con un monto que ya no corresponde: el aguinaldo pagado
   // (o la liquidación) seguía con el bruto viejo y como "pagado".
@@ -510,11 +545,7 @@ export async function marcarDetallePagado(
 
     // Tampoco una quincena que cae fuera del contrato: a alguien que ingresó
     // en mayo no se le paga diciembre anterior (auditoría, hallazgo 3).
-    const { data: contrato, error: errContrato } = await supabase
-      .from('sgrh_historial_laboral')
-      .select('lab_fecha_inicio, lab_fecha_fin')
-      .eq('lab_id', detalle.ndt_historial_laboral_id)
-      .maybeSingle<{ lab_fecha_inicio: string | null; lab_fecha_fin: string | null }>()
+    const { data: contrato, error: errContrato } = await lecturasPago!.contrato
     if (errContrato) {
       return { ok: false, error: 'No se pudo verificar el contrato del empleado.' }
     }
@@ -536,11 +567,7 @@ export async function marcarDetallePagado(
   // que no estaban pagados por planilla (salario pendiente). Marcar pagada
   // una de esas quincenas los pagaba dos veces.
   if (pagado && periodo) {
-    const cubiertas = await liquidacionesQueCubren(supabase, [detalle.ndt_historial_laboral_id], {
-      anio: periodo.npe_periodo_anio,
-      mes: periodo.npe_periodo_mes,
-      quincena: periodo.npe_quincena,
-    })
+    const cubiertas = await lecturasPago!.cubiertas
     if (!cubiertas.ok) {
       return { ok: false, error: 'No se pudo verificar si el empleado ya fue liquidado.' }
     }
@@ -563,11 +590,7 @@ export async function marcarDetallePagado(
   // algo quedo mal.
   let totales: TotalesPeriodo | undefined
   if (pagado && periodo?.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo) {
-    const horas = await getHorasDelPeriodo(supabase, {
-      historialLaboralIds: [detalle.ndt_historial_laboral_id],
-      fechaInicio: periodo.npe_fecha_inicio_periodo,
-      fechaFin: periodo.npe_fecha_fin_periodo,
-    })
+    const horas = (await lecturasPago!.horas)!
 
     totales = horas.ok ? horas.data.get(detalle.ndt_historial_laboral_id) : undefined
     // Solo los que de verdad dejan las horas cortas. Un día con marcas pero
@@ -738,20 +761,24 @@ export async function marcarDetallePagado(
     }
   }
 
-  await sincronizarComprobante(supabase, ndtId, pagado)
-
-  if (detalle.sgrh_nomina_periodo) {
-    await acumularProvisionAguinaldo(
-      supabase,
-      detalle.ndt_historial_laboral_id,
-      detalle.sgrh_nomina_periodo.npe_periodo_mes,
-      detalle.sgrh_nomina_periodo.npe_periodo_anio,
-      detalle.ndt_salario_bruto,
-      pagado ? 1 : -1
-    )
-  }
-
-  await sincronizarEstadoPeriodo(supabase, detalle.ndt_nomina_periodo_id)
+  // Lo que sigue al pago toca tres tablas distintas (comprobantes,
+  // provisiones y el estado del periodo), es de mejor esfuerzo y ninguna
+  // parte usa lo que devuelve otra: va en paralelo. El correo espera a las
+  // tres porque lee el código del comprobante.
+  await Promise.all([
+    sincronizarComprobante(supabase, ndtId, pagado),
+    detalle.sgrh_nomina_periodo
+      ? acumularProvisionAguinaldo(
+          supabase,
+          detalle.ndt_historial_laboral_id,
+          detalle.sgrh_nomina_periodo.npe_periodo_mes,
+          detalle.sgrh_nomina_periodo.npe_periodo_anio,
+          detalle.ndt_salario_bruto,
+          pagado ? 1 : -1
+        )
+      : null,
+    sincronizarEstadoPeriodo(supabase, detalle.ndt_nomina_periodo_id),
+  ])
 
   // El comprobante se le manda al empleado apenas queda pagado. Va al final,
   // con todo ya guardado: el PDF sale de lo que quedó en la base (código de
