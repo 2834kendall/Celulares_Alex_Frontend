@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reemplazarLineasDetalle } from './lineasNomina'
+import { insertarLineasFilasNuevas, reemplazarLineasDetalle } from './lineasNomina'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { createClient } from '@/lib/supabase/server'
 import type { LineaCalculada } from '@/modules/payroll/lib/planilla'
@@ -122,5 +122,110 @@ describe('reemplazarLineasDetalle', () => {
 
     expect(error).toBe('No se pudieron actualizar las líneas de la planilla.')
     expect(ultimoInsert(client, 'sgrh_nomina_linea_deduccion')).toBeUndefined()
+  })
+})
+
+describe('insertarLineasFilasNuevas', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  const FILAS = [
+    {
+      ndtId: 10,
+      labId: 5,
+      lineas: LINEAS,
+      lineasPatronales: [
+        {
+          con_id: 30,
+          con_codigo: 'PAT001',
+          monto: 29660,
+          porcentajeAplicado: 14.83,
+          baseCalculo: 200000,
+        },
+      ],
+      horasExtra: 3.004,
+      salarioPorHora: 2500,
+    },
+    {
+      ndtId: 11,
+      labId: 6,
+      lineas: [{ con_id: 21, con_codigo: 'BASE', monto: 150000, esIngreso: true }],
+      lineasPatronales: [],
+      horasExtra: 0,
+      salarioPorHora: 2000,
+    },
+  ]
+
+  function cliente(over: Record<string, { data: unknown; error: unknown }> = {}) {
+    return createSupabaseClientMock({
+      sgrh_nomina_linea_ingreso: OK,
+      sgrh_nomina_linea_deduccion: OK,
+      sgrh_nomina_linea_patronal: OK,
+      sgrh_banco_horas_movimientos: OK,
+      ...over,
+    })
+  }
+
+  // Es lo mismo que reemplazarLineasDetalle + sincronizarMovimientoBancoHoras
+  // sobre una fila nueva: sin metadatos previos, sin nada que borrar, y al
+  // banco solo las filas con horas extra.
+  it('guarda las líneas de todas las filas de una vez, como filas nuevas', async () => {
+    const client = cliente()
+
+    const r = await insertarLineasFilasNuevas(client as unknown as SupabaseServerClient, FILAS)
+
+    expect(r).toEqual({ error: null })
+    expect(ultimoInsert(client, 'sgrh_nomina_linea_ingreso')).toEqual([
+      { ing_nomina_detalle_id: 10, ing_concepto_id: 21, ing_monto: 200000, ing_observacion: null },
+      { ing_nomina_detalle_id: 11, ing_concepto_id: 21, ing_monto: 150000, ing_observacion: null },
+    ])
+    expect(ultimoInsert(client, 'sgrh_nomina_linea_deduccion')).toEqual([
+      expect.objectContaining({
+        ded_nomina_detalle_id: 10,
+        ded_concepto_id: 14,
+        ded_es_voluntaria: false,
+        ded_beneficio_id: null,
+        ded_observacion: null,
+      }),
+      expect.objectContaining({
+        ded_nomina_detalle_id: 10,
+        ded_concepto_id: 26,
+        ded_porcentaje_aplicado: 10.83,
+        ded_base_calculo: 200000,
+      }),
+    ])
+    expect(ultimoInsert(client, 'sgrh_nomina_linea_patronal')).toEqual([
+      expect.objectContaining({ pat_nomina_detalle_id: 10, pat_concepto_id: 30, pat_monto: 29660 }),
+    ])
+    // Solo la fila con horas extra, redondeadas como en sincronizarMovimientoBancoHoras.
+    expect(ultimoInsert(client, 'sgrh_banco_horas_movimientos')).toEqual([
+      {
+        bhm_historial_laboral_id: 5,
+        bhm_nomina_detalle_id: 10,
+        bhm_horas: 3,
+        bhm_salario_por_hora: 2500,
+      },
+    ])
+    // Filas nuevas: nada que borrar.
+    const borrados = client.from.mock.results
+      .map((x) => x.value as { delete: { mock: { calls: unknown[] } } })
+      .filter((b) => b.delete.mock.calls.length > 0)
+    expect(borrados).toEqual([])
+  })
+
+  it('devuelve el mismo mensaje de error que la versión fila por fila', async () => {
+    const client = cliente({ sgrh_nomina_linea_deduccion: { data: null, error: { message: 'x' } } })
+
+    const r = await insertarLineasFilasNuevas(client as unknown as SupabaseServerClient, FILAS)
+
+    expect(r).toEqual({ error: 'No se pudieron guardar las líneas de deducción.' })
+  })
+
+  it('sin filas no consulta nada', async () => {
+    const client = cliente()
+
+    const r = await insertarLineasFilasNuevas(client as unknown as SupabaseServerClient, [])
+
+    expect(r).toEqual({ error: null })
+    expect(client.from).not.toHaveBeenCalled()
   })
 })

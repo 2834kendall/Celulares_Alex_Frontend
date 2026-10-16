@@ -135,7 +135,11 @@ describe('uploadPlanilla (server action)', () => {
   })
 
   it('rechaza si el periodo no existe', async () => {
-    mockSupabase({ sgrh_nomina_periodo: { data: null, error: null } })
+    mockSupabase({
+      sgrh_nomina_periodo: { data: null, error: null },
+      // El catálogo se lee junto con el periodo.
+      sgrh_cat_conceptos_nomina: { data: [], error: null },
+    })
 
     const result = await uploadPlanilla(buildFormData())
 
@@ -145,6 +149,7 @@ describe('uploadPlanilla (server action)', () => {
   it('rechaza si el periodo no está en borrador', async () => {
     mockSupabase({
       sgrh_nomina_periodo: { data: { ...PERIODO_BORRADOR, npe_estado: 'pagado' }, error: null },
+      sgrh_cat_conceptos_nomina: { data: [], error: null },
     })
 
     const result = await uploadPlanilla(buildFormData())

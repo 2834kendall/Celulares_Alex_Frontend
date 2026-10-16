@@ -15,7 +15,12 @@ import {
   type ConceptoPlanillaColumna,
   type PlanillaRowInput,
 } from '@/modules/payroll/lib/planilla'
-import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
+import {
+  ERROR_REGISTRAR_BANCO_HORAS,
+  insertarLineasFilasNuevas,
+  reemplazarLineasDetalle,
+} from '@/modules/payroll/lib/lineasNomina'
+import { FILAS_EN_PARALELO, mapConLimite } from '@/modules/payroll/lib/concurrencia'
 import {
   CAMPOS_CONCEPTO_DE_LINEA,
   fusionarAjenas,
@@ -203,14 +208,29 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const usuarioId = (claims.app_metadata as { usr_id?: number })?.usr_id ?? null
   const supabase = await createClient()
 
-  // 1. El periodo debe existir (RLS: solo de la empresa del JWT) y estar en borrador
-  const { data: periodo, error: errPeriodo } = await supabase
-    .from('sgrh_nomina_periodo')
-    .select(
-      'npe_id, npe_estado, npe_sucursal_id, npe_periodo_mes, npe_periodo_anio, npe_quincena, npe_fecha_inicio_periodo, npe_fecha_fin_periodo'
-    )
-    .eq('npe_id', periodoId)
-    .maybeSingle()
+  // 1. El periodo debe existir (RLS: solo de la empresa del JWT) y estar en
+  // borrador. 2. Conceptos activos del catálogo — definen las columnas del
+  // Excel y el cálculo; se cargan antes de parsear porque el parseo necesita
+  // saber qué columnas de monto manual buscar (por el nombre del concepto).
+  // Las dos lecturas no dependen entre sí: van juntas, y los errores se
+  // revisan en el orden de siempre.
+  const [{ data: periodo, error: errPeriodo }, { data: conceptos, error: errConceptos }] =
+    await Promise.all([
+      supabase
+        .from('sgrh_nomina_periodo')
+        .select(
+          'npe_id, npe_estado, npe_sucursal_id, npe_periodo_mes, npe_periodo_anio, npe_quincena, npe_fecha_inicio_periodo, npe_fecha_fin_periodo'
+        )
+        .eq('npe_id', periodoId)
+        .maybeSingle(),
+      supabase
+        .from('sgrh_cat_conceptos_nomina')
+        .select(
+          'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje, con_rebaja_salario'
+        )
+        .eq('con_activo', true)
+        .returns<ConceptoPlanillaColumna[]>(),
+    ])
 
   if (errPeriodo) {
     return { ok: false, error: 'No se pudo cargar el periodo.' }
@@ -221,17 +241,6 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   if (periodo.npe_estado !== 'borrador') {
     return { ok: false, error: 'Solo se puede subir planilla a un periodo en borrador.' }
   }
-
-  // 2. Conceptos activos del catálogo — definen las columnas del Excel y el
-  // cálculo. Se cargan antes de parsear porque el parseo necesita saber qué
-  // columnas de monto manual buscar (por el nombre del concepto).
-  const { data: conceptos, error: errConceptos } = await supabase
-    .from('sgrh_cat_conceptos_nomina')
-    .select(
-      'con_id, con_codigo, con_nombre, con_tipo, con_afecta_salario_bruto, con_afecta_base_ccss, con_tipo_calculo, con_porcentaje, con_rebaja_salario'
-    )
-    .eq('con_activo', true)
-    .returns<ConceptoPlanillaColumna[]>()
 
   if (errConceptos) {
     return { ok: false, error: 'No se pudo cargar el catálogo de conceptos de nómina.' }
@@ -689,70 +698,98 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     }
   }
 
-  // 8. Actualizar los que cambiaron: totales recalculados + líneas desde cero
-  let actualizados = 0
-  for (const { row, ndtId, totales } of filasActualizar) {
-    const {
-      salarioBruto,
-      totalDeducciones,
-      salarioNeto,
-      totalCargasPatronales,
-      lineas,
-      lineasPatronales,
-    } = totales
+  // 8. Actualizar los que cambiaron: totales recalculados + líneas desde cero.
+  // Cada fila toca solo su detalle, sus líneas y su movimiento del banco, así
+  // que se procesan de a varias a la vez (antes, ~9 viajes a la base en serie
+  // por empleado). Dentro de una fila el orden es el de siempre, y los
+  // resultados se leen en el orden del archivo.
+  type ResultadoActualizar =
+    | { tipo: 'ok' }
+    | { tipo: 'pagada'; nombre: string }
+    | { tipo: 'error'; error: string }
+    | { tipo: 'saltada' }
 
-    const { data: actualizada, error: errUpdate } = await supabase
-      .from('sgrh_nomina_detalle')
-      .update({
-        ndt_salario_bruto: salarioBruto,
-        ndt_total_deducciones_obreras: totalDeducciones,
-        ndt_salario_neto: salarioNeto,
-        ndt_total_cargas_patronales: totalCargasPatronales,
-        ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
-        ndt_horas_extra_al_50: row.horasExtra,
-        ndt_salario_por_hora: row.salarioPorHora,
-        ...fotoDelContrato(contratoDe(porCedula.get(row.cedula)!)),
-        ...fotoDe(porCedula.get(row.cedula)!.labId, row, valoresPreviosPorNdt.get(ndtId) ?? null),
+  // Como antes, una fila que falla corta el resto: las que todavía no
+  // arrancaron ya no se tocan (las que estaban en vuelo terminan).
+  let huboError = false
+  const fallar = (error: string): ResultadoActualizar => {
+    huboError = true
+    return { tipo: 'error', error }
+  }
+
+  const resultadosActualizar = await mapConLimite(
+    filasActualizar,
+    FILAS_EN_PARALELO,
+    async ({ row, ndtId, totales }): Promise<ResultadoActualizar> => {
+      if (huboError) return { tipo: 'saltada' }
+      const {
+        salarioBruto,
+        totalDeducciones,
+        salarioNeto,
+        totalCargasPatronales,
+        lineas,
+        lineasPatronales,
+      } = totales
+
+      const { data: actualizada, error: errUpdate } = await supabase
+        .from('sgrh_nomina_detalle')
+        .update({
+          ndt_salario_bruto: salarioBruto,
+          ndt_total_deducciones_obreras: totalDeducciones,
+          ndt_salario_neto: salarioNeto,
+          ndt_total_cargas_patronales: totalCargasPatronales,
+          ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
+          ndt_horas_extra_al_50: row.horasExtra,
+          ndt_salario_por_hora: row.salarioPorHora,
+          ...fotoDelContrato(contratoDe(porCedula.get(row.cedula)!)),
+          ...fotoDe(porCedula.get(row.cedula)!.labId, row, valoresPreviosPorNdt.get(ndtId) ?? null),
+        })
+        .eq('ndt_id', ndtId)
+        // Solo si sigue sin pagar: alguien pudo marcarla pagada mientras se
+        // subía el archivo, y una fila pagada tiene comprobante emitido
+        // (auditoría 2, riesgo de lectura y escritura).
+        .eq('ndt_pagado', false)
+        .select('ndt_id')
+        .returns<{ ndt_id: number }[]>()
+      if (errUpdate) {
+        return fallar('No se pudieron actualizar los montos de la planilla.')
+      }
+      if (!Array.isArray(actualizada) || actualizada.length === 0) {
+        // Se pagó en el medio: queda como se pagó, igual que las que ya venían
+        // pagadas.
+        return { tipo: 'pagada', nombre: porCedula.get(row.cedula)!.nombre }
+      }
+
+      // reemplazarLineasDetalle borra y reinserta, conservando los metadatos de
+      // las deducciones (de qué beneficio vienen, si son voluntarias).
+      const { error: errLineas } = await reemplazarLineasDetalle(
+        supabase,
+        ndtId,
+        lineas,
+        lineasPatronales
+      )
+      if (errLineas) {
+        return fallar(errLineas)
+      }
+
+      const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
+        ndtId,
+        historialLaboralId: porCedula.get(row.cedula)!.labId,
+        horasExtra: row.horasExtra,
+        salarioPorHora: row.salarioPorHora,
       })
-      .eq('ndt_id', ndtId)
-      // Solo si sigue sin pagar: alguien pudo marcarla pagada mientras se
-      // subía el archivo, y una fila pagada tiene comprobante emitido
-      // (auditoría 2, riesgo de lectura y escritura).
-      .eq('ndt_pagado', false)
-      .select('ndt_id')
-      .returns<{ ndt_id: number }[]>()
-    if (errUpdate) {
-      return { ok: false, error: 'No se pudieron actualizar los montos de la planilla.' }
+      if (errBanco) {
+        return fallar(errBanco)
+      }
+      return { tipo: 'ok' }
     }
-    if (!Array.isArray(actualizada) || actualizada.length === 0) {
-      // Se pagó en el medio: queda como se pagó, igual que las que ya venían
-      // pagadas.
-      pagadasSinTocar.push(porCedula.get(row.cedula)!.nombre)
-      continue
-    }
-    actualizados += 1
+  )
 
-    // reemplazarLineasDetalle borra y reinserta, conservando los metadatos de
-    // las deducciones (de qué beneficio vienen, si son voluntarias).
-    const { error: errLineas } = await reemplazarLineasDetalle(
-      supabase,
-      ndtId,
-      lineas,
-      lineasPatronales
-    )
-    if (errLineas) {
-      return { ok: false, error: errLineas }
-    }
-
-    const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
-      ndtId,
-      historialLaboralId: porCedula.get(row.cedula)!.labId,
-      horasExtra: row.horasExtra,
-      salarioPorHora: row.salarioPorHora,
-    })
-    if (errBanco) {
-      return { ok: false, error: errBanco }
-    }
+  let actualizados = 0
+  for (const resultado of resultadosActualizar) {
+    if (resultado.tipo === 'error') return { ok: false, error: resultado.error }
+    if (resultado.tipo === 'pagada') pagadasSinTocar.push(resultado.nombre)
+    else if (resultado.tipo === 'ok') actualizados += 1
   }
 
   // 9. Insertar los empleados nuevos
@@ -811,34 +848,36 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       ])
     )
 
-    for (const row of filasNuevas) {
-      const labId = porCedula.get(row.cedula)!.labId
-      const ndtId = ndtIdPorLabNuevo.get(labId)
-      if (!ndtId) continue
-
-      const { lineas, lineasPatronales } = totalesPorFila.get(row.cedula)!
-      const { error: errLineas } = await reemplazarLineasDetalle(
-        supabase,
-        ndtId,
-        lineas,
-        lineasPatronales
-      )
-      if (errLineas) {
-        return {
-          ok: false,
-          error:
-            'Se guardaron los totales, pero fallaron algunas líneas de la planilla. Vuelve a subir el archivo.',
-        }
-      }
-
-      const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
-        ndtId,
-        historialLaboralId: labId,
-        horasExtra: row.horasExtra,
-        salarioPorHora: row.salarioPorHora,
+    // Filas recién insertadas: sus líneas y las horas que van al banco se
+    // guardan juntas (ver insertarLineasFilasNuevas).
+    const { error: errLineasNuevas } = await insertarLineasFilasNuevas(
+      supabase,
+      filasNuevas.flatMap((row) => {
+        const labId = porCedula.get(row.cedula)!.labId
+        const ndtId = ndtIdPorLabNuevo.get(labId)
+        if (!ndtId) return []
+        const { lineas, lineasPatronales } = totalesPorFila.get(row.cedula)!
+        return [
+          {
+            ndtId,
+            labId,
+            lineas,
+            lineasPatronales,
+            horasExtra: row.horasExtra,
+            salarioPorHora: row.salarioPorHora,
+          },
+        ]
       })
-      if (errBanco) {
-        return { ok: false, error: errBanco }
+    )
+    if (errLineasNuevas) {
+      // El banco de horas tiene su propio mensaje; el de las líneas es el de
+      // siempre, que pide volver a subir el archivo.
+      return {
+        ok: false,
+        error:
+          errLineasNuevas === ERROR_REGISTRAR_BANCO_HORAS
+            ? errLineasNuevas
+            : 'Se guardaron los totales, pero fallaron algunas líneas de la planilla. Vuelve a subir el archivo.',
       }
     }
 

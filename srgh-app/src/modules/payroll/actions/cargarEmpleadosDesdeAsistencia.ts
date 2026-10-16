@@ -15,7 +15,7 @@ import {
   type ConceptoCalculo,
 } from '@/modules/payroll/lib/planilla'
 import { CAMPOS_CONCEPTO_DE_LINEA } from '@/modules/payroll/lib/lineasAjenas'
-import { reemplazarLineasDetalle } from '@/modules/payroll/lib/lineasNomina'
+import { insertarLineasFilasNuevas } from '@/modules/payroll/lib/lineasNomina'
 import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
@@ -25,7 +25,6 @@ import {
 } from '@/modules/payroll/lib/prellenadoAsistencia'
 import { camposFotoAsistencia } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal, hoyLocal } from '@/modules/payroll/lib/fechas'
-import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 import { aplicarAusenciasAFilasNuevas } from '@/modules/payroll/lib/ausenciaNominaSync'
 
 export type CargarEmpleadosResult =
@@ -297,31 +296,28 @@ export async function cargarEmpleadosDesdeAsistencia(
 
   const ndtPorLab = new Map(insertados.map((d) => [d.ndt_historial_laboral_id, d.ndt_id]))
 
-  for (const { empleado, fila, resultado } of calculado) {
-    const ndtId = ndtPorLab.get(empleado.labId)
-    if (!ndtId) continue
-
-    const { error: errLineas } = await reemplazarLineasDetalle(
-      supabase,
-      ndtId,
-      resultado.lineas,
-      resultado.lineasPatronales
-    )
-    if (errLineas) {
-      return { ok: false, error: errLineas }
-    }
-
-    // Las horas por encima del tope quedan pendientes en el banco de horas, no
-    // se pagan solas acá.
-    const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
-      ndtId,
-      historialLaboralId: empleado.labId,
-      horasExtra: fila.horasExtra,
-      salarioPorHora: fila.salarioPorHora,
+  // Todas las filas son nuevas: sus líneas y las horas que van al banco se
+  // guardan juntas (ver insertarLineasFilasNuevas).
+  const { error: errLineas } = await insertarLineasFilasNuevas(
+    supabase,
+    calculado.flatMap(({ empleado, fila, resultado }) => {
+      const ndtId = ndtPorLab.get(empleado.labId)
+      return ndtId
+        ? [
+            {
+              ndtId,
+              labId: empleado.labId,
+              lineas: resultado.lineas,
+              lineasPatronales: resultado.lineasPatronales,
+              horasExtra: fila.horasExtra,
+              salarioPorHora: fila.salarioPorHora,
+            },
+          ]
+        : []
     })
-    if (errBanco) {
-      return { ok: false, error: errBanco }
-    }
+  )
+  if (errLineas) {
+    return { ok: false, error: errLineas }
   }
 
   // Incapacidades y licencias registradas antes de que existiera esta fila
