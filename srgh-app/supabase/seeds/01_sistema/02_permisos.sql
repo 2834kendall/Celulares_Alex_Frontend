@@ -62,3 +62,17 @@ SELECT setval(
   COALESCE((SELECT MAX(per_id) FROM public.sgrh_cat_permisos), 1),
   true
 );
+
+-- Permisos agregados despues de la siembra original: van por CODIGO y sin
+-- per_id, DESPUES del setval. Los ids ya no coinciden entre entornos (en dev
+-- 60 es MI_HORARIO_READ y 61 ASISTENCIA_KIOSCO, al reves que arriba), asi que
+-- fijar un id aca podria chocar con uno ocupado y el ON CONFLICT lo saltearia
+-- en silencio. Sin id, la secuencia da el siguiente libre de cada base.
+INSERT INTO public.sgrh_cat_permisos (per_codigo, per_modulo, per_nombre, per_descripcion)
+VALUES
+  -- SGRH-102: registrar, reemplazar y borrar el rostro de un empleado. Permiso
+  -- propio para no tener que darle EMPLEADOS_WRITE al gerente, que le abriria
+  -- el expediente completo. La RLS lo limita al personal de su sucursal.
+  ('BIOMETRIA_WRITE', 'empleados', 'Registrar rostros',
+   'Registrar, reemplazar y eliminar el rostro de un empleado para el kiosco')
+ON CONFLICT (per_codigo) DO NOTHING;
