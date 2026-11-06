@@ -45,7 +45,15 @@ export function NuevaPostulacionForm({
 
   async function onSubmit(input: PostulacionInput) {
     setServerError(null)
-    const result = await createPostulacion(candidatoId, input)
+    let result: Awaited<ReturnType<typeof createPostulacion>>
+    try {
+      result = await createPostulacion(candidatoId, input)
+    } catch {
+      setServerError(
+        'No se pudo confirmar el registro. Revisá las postulaciones antes de reintentar.'
+      )
+      return
+    }
 
     if (!result.ok) {
       setServerError(result.error)

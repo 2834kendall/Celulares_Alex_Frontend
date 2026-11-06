@@ -66,7 +66,13 @@ export function NuevoCandidatoForm({
 
   async function onSubmit(input: NuevoCandidatoInput) {
     setServerError(null)
-    const result = await createCandidateWithPostulacion(input)
+    let result: Awaited<ReturnType<typeof createCandidateWithPostulacion>>
+    try {
+      result = await createCandidateWithPostulacion(input)
+    } catch {
+      setServerError('No se pudo confirmar el registro. Revisá el tablero antes de reintentar.')
+      return
+    }
 
     if (!result.ok) {
       setServerError(result.error)
