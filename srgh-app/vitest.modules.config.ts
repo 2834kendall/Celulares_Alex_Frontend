@@ -32,9 +32,9 @@ export default defineConfig({
       reportsDirectory: 'coverage/modules',
       thresholds: {
         ...securityThresholds,
-        'src/modules/attendance/**': { lines: 87, branches: 74 },
-        'src/modules/dashboard/**': { lines: 44, branches: 34 },
-        'src/modules/recruitment/**': { lines: 73, branches: 68 },
+        'src/modules/attendance/**': { lines: 87, branches: 75 },
+        'src/modules/dashboard/**': { lines: 52, branches: 40 },
+        'src/modules/recruitment/**': { lines: 76, branches: 71 },
         'src/modules/evaluations/**': { lines: 46, branches: 34 },
       },
     },

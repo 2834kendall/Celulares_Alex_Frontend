@@ -37,13 +37,13 @@ The Storage PGlite fixture supplies company/permission helper outputs. The relat
 
 ## CI
 
-The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. One instrumented run enforces every include pattern from the original security config at 100% in all four metrics, plus measured module floors: attendance 87% lines/74% branches, dashboard 44%/34%, recruitment 73%/68%, evaluations 46%/34%. The original default security-only config is unchanged and remains available through test:coverage; CI does not need to run the suite twice for coverage. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
+The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. One instrumented run enforces every include pattern from the original security config at 100% in all four metrics, plus measured module floors: attendance 87% lines/75% branches, dashboard 52%/40%, recruitment 76%/71%, evaluations 46%/34%. The original default security-only config is unchanged and remains available through test:coverage; CI does not need to run the suite twice for coverage. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
 
 ## Validation and limits
 
-- Latest local suite: 339 files and 3463 tests passed; every original security scope remained at 100% in all four metrics (38 files checked). The browser/API suite passed nine scenarios: five browser flows and four HTTP integration cases.
+- Latest local suite: 341 files and 3479 tests passed; every original security scope remained at 100% in all four metrics (38 files checked). The browser/API suite passed 16 scenarios: six browser flows on both desktop and mobile emulation, plus four HTTP integration cases.
 - Typecheck, production build and lint passed; lint retains four pre-existing warnings outside this change.
-- Final combined coverage run passed with 339 files/3463 tests: attendance 87.44% lines/75.06% branches, dashboard 44.38%/34.38%, recruitment 73.34%/68.87%, evaluations 46.73%/34.79%. The evaluation floors were ratcheted to whole-number floors of this measurement.
+- Final combined coverage run passed with 341 files/3479 tests: attendance 87.44% lines/75.06% branches, dashboard 52.72%/40.16%, recruitment 76.13%/71.08%, evaluations 46.73%/34.79%. Module floors were ratcheted to whole-number floors of this measurement.
 - No successful full camera-to-browser-mark journey is claimed. Component tests verify recognition/interaction boundaries and SQL/HTTP tests verify persistence; real device camera/accuracy checks remain separate.
 - The fresh local stack required an Auth hook EXECUTE grant and explicit Data API table/sequence grants. Those are visible test provisioning, not a production migration. Existing hosted environments were not queried or changed for this work.
 - Browser tests currently run in Chromium. They do not establish Firefox/WebKit compatibility.
@@ -56,6 +56,30 @@ The evaluation continuation reproduced a false successful note save when UPDATE 
 The user explicitly requested keeping the same ticket and opening no PR. Keep SGRH-105 in progress and all commits on the same branch. Other modules may be added after these priorities if time permits. No production migrations, permissions, records or secrets are changed.
 
 ## Reproduction
+
+### Dashboard and registration continuation
+
+Ten DashboardBoard component cases cover personalization, visible/hidden panel
+ordering, size limits, restored defaults, drag completion, save failures and
+refresh only after a confirmed save. A real-browser regression reproduced widget
+links retaining keyboard focus during personalization; the content wrapper now
+uses `inert` while editing, and links become focusable again afterward.
+
+Six registration-form cases use the real validation and select components for
+new candidates and applications. Thrown requests previously escaped both submit
+handlers. They now preserve entered data, clear the submitting state and explain
+that registration could not be confirmed. Users are told to check existing
+records before an explicit retry; success callbacks/navigation require a confirmed
+response. This does not establish idempotence after a lost server response.
+
+The browser/API suite now passes 16 scenarios: six browser flows in desktop
+Chromium and the same six with Pixel 5 viewport/touch emulation, plus four HTTP
+integration cases. Document fixtures use distinct names per browser project.
+Mobile emulation is not a physical-device or cross-engine compatibility claim.
+
+The existing EmployeeWizard suite passed all 23 tests in isolation after one
+test timed out during overlapping build/browser/coverage workloads. The subsequent full combined coverage run passed all 341 files and 3479 tests
+without overlapping build/browser workloads.
 
 From `srgh-app`:
 
