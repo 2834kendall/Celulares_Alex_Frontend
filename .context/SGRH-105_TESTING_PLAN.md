@@ -25,22 +25,27 @@ Branch: `test/SGRH-105-system-test-coverage`.
 | Kiosk interaction | Recognition alone never registers entry; a double tap while saving submits one mark | Component, verification mocked |
 | Browser flows | Real login, preferences persisted after reload, candidate document validation recovery/upload/signed download, foreign candidate denial and kiosk role restrictions | Playwright with isolated Supabase |
 | Atomic mark HTTP | Actual PostgREST RPC retries persist exactly one row, reject altered content and deny anonymous/kiosk callers | HTTP integration with isolated Supabase |
+| Recruitment request recovery | Thrown upload/download/delete failures release pending controls, preserve unsaved file/metadata and permit retry; server rejections remain errors | Component/hook regression tests plus browser upload fault injection |
+| Dashboard save queue | Saves remain ordered, a failed request does not poison the queue, redirects to login are not treated as success, and gateway errors remain recoverable | Unit, HTTP mocked |
+| Evaluation rollback assertion | Failed score insertion must call delete on the exact newly created evaluation ID; an error result alone no longer satisfies the test | Unit, query mocked |
 
 The Storage PGlite fixture supplies company/permission helper outputs. The relational PGlite fixture instead loads the real JWT helper functions and supplies transaction-local claims through auth.jwt(). Both execute actual policy definitions from repository migrations under a non-owner role; every SQL case rolls back writes. These fixtures are not the full schema. The additional Supabase Docker suite runs all migrations and system/catalog seeds, real Auth/PostgREST/Storage, and explicit local provisioning described in [the E2E guide](../srgh-app/tests/e2e/README.md). No hosted database is used.
 
 ## CI
 
-The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. Coverage runs the unchanged 100% security gate plus a separate module config with measured progressive floors: attendance 87% lines/74% branches, dashboard 42%/33%, recruitment 68%/66%. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
+The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. Coverage runs the unchanged 100% security gate plus a separate module config with measured progressive floors: attendance 87% lines/74% branches, dashboard 44%/34%, recruitment 73%/68%. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
 
 ## Validation and limits
 
-- Local suite: 330 files and 3416 tests passed; security coverage remained 100% in all four metrics. The new browser/API suite passed six scenarios.
+- Latest local suite: 333 files and 3426 tests passed; security coverage remained 100% in all four metrics. The browser/API suite passed seven scenarios.
 - Typecheck, production build and lint passed; lint retains four pre-existing warnings outside this change.
-- Final module gate passed with 330 files/3416 tests: attendance 87.35% lines/74.43% branches, dashboard 42.93%/33.45%, recruitment 68.19%/66.75%.
+- Final module coverage run passed with 333 files/3426 tests: attendance 87.44% lines/74.55% branches, dashboard 44.38%/34.38%, recruitment 73.34%/68.87%. The dashboard/recruitment floors were then ratcheted to the whole-number floors of this measurement.
 - No successful full camera-to-browser-mark journey is claimed. Component tests verify recognition/interaction boundaries and SQL/HTTP tests verify persistence; real device camera/accuracy checks remain separate.
 - The fresh local stack required an Auth hook EXECUTE grant and explicit Data API table/sequence grants. Those are visible test provisioning, not a production migration. Existing hosted environments were not queried or changed for this work.
 - Browser tests currently run in Chromium. They do not establish Firefox/WebKit compatibility.
 - Only local verification has run; no GitHub CI run is claimed for unpublished changes.
+
+The continuation reproduced a thrown-delete failure before fixing it: recruitment's shared CRUD hook propagated the exception and left its pending deletion state set. It now returns a user-facing error and clears pending state in finally. Candidate document upload/download handlers use the same recovery boundary; failed uploads keep the file and metadata. A real browser test aborts an upload request before it reaches the server, then verifies preserved inputs and successful retry. This does not establish upload idempotence if a response is lost after persistence. No automatic retry or database schema change was added.
 
 The user explicitly requested keeping the same ticket and opening no PR. Keep SGRH-105 in progress and all commits on the same branch. Other modules may be added after these priorities if time permits. No production migrations, permissions, records or secrets are changed.
 

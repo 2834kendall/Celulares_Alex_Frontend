@@ -20,8 +20,8 @@ export default defineConfig({
       reportsDirectory: 'coverage/modules',
       thresholds: {
         'src/modules/attendance/**': { lines: 87, branches: 74 },
-        'src/modules/dashboard/**': { lines: 42, branches: 33 },
-        'src/modules/recruitment/**': { lines: 68, branches: 66 },
+        'src/modules/dashboard/**': { lines: 44, branches: 34 },
+        'src/modules/recruitment/**': { lines: 73, branches: 68 },
       },
     },
   },
