@@ -3,6 +3,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getEmployeeDetail } from '@/modules/employees/actions/getEmployeeDetail'
 import { getEmployeeDocuments } from '@/modules/employees/actions/getEmployeeDocuments'
+import { getFaceStatus } from '@/modules/attendance/actions/getFaceStatus'
 import {
   getBancos,
   getMotivosSalida,
@@ -39,6 +40,8 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
   const canLiquidar = permisos.includes(PERMISOS.NOMINA_WRITE)
   // SGRH-90: crear, editar, terminar y revertir contratos.
   const canEditContrato = permisos.includes(PERMISOS.HISTORIAL_WRITE)
+  // SGRH-102: el tab Rostro existe solo para quien puede registrar rostros.
+  const canEnrollFace = permisos.includes(PERMISOS.BIOMETRIA_WRITE)
 
   const [
     detailResult,
@@ -48,6 +51,7 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
     documentosResult,
     tiposDocumentoResult,
     catalogosContratoResult,
+    faceStatusResult,
   ] = await Promise.all([
     getEmployeeDetail(empId),
     getTiposIdentificacion(),
@@ -68,6 +72,9 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
           getMotivosSalida(),
         ])
       : Promise.resolve(null),
+    // Exige BIOMETRIA_WRITE (via requirePermission): sin el permiso no se
+    // llama, o redirigiria la pagina entera a /unauthorized.
+    canEnrollFace ? getFaceStatus(empId) : Promise.resolve(null),
   ])
 
   // Sin datos no hay nombre que mostrar: el error lleva un titulo generico y
@@ -135,6 +142,11 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
       canEditContrato={canEditContrato && catalogosContrato !== undefined}
       catalogosContrato={catalogosContrato}
       motivosSalida={motivosSalida}
+      // Como documentos: un fallo no tumba la ficha, queda inline en el tab.
+      faceStatus={
+        faceStatusResult === null ? undefined : faceStatusResult.ok ? faceStatusResult.status : null
+      }
+      faceStatusError={faceStatusResult && !faceStatusResult.ok ? faceStatusResult.error : null}
     />
   )
 }
