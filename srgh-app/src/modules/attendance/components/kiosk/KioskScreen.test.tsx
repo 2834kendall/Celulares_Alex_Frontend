@@ -190,16 +190,31 @@ describe('<KioskScreen />', () => {
       await user.click(await screen.findByRole('button', { name: 'Entrada' }))
 
       await waitFor(() =>
-        expect(mockRegisterKioskMark).toHaveBeenCalledWith({
-          employeeId: 10,
-          tipo: 'entrada',
-          latitud: 9.9333,
-          longitud: -84.0833,
-          dispositivoId: 'device-123',
-          ticketFacial: TICKET,
-        })
+        expect(mockRegisterKioskMark).toHaveBeenCalledWith(
+          expect.objectContaining({
+            employeeId: 10,
+            tipo: 'entrada',
+            latitud: 9.9333,
+            longitud: -84.0833,
+            dispositivoId: 'device-123',
+            ticketFacial: TICKET,
+            operationId: expect.any(String),
+            fechaHora: expect.any(String),
+          })
+        )
       )
       expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+    })
+
+    it('permite marcar aunque el GPS no haya respondido', async () => {
+      mockGetCurrentCoordinates.mockReturnValue(new Promise(() => {}))
+      mockRegisterKioskMark.mockResolvedValue({ ok: true })
+      await renderRecognized()
+      await userEvent.click(await screen.findByRole('button', { name: 'Entrada' }))
+      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(mockRegisterKioskMark).toHaveBeenCalledWith(
+        expect.objectContaining({ latitud: null, longitud: null })
+      )
     })
 
     it('tras el exito vuelve a la camara a los 3 segundos', async () => {

@@ -202,3 +202,23 @@ export function sharpnessScore(image: ImageData): number {
   const mean = sum / count
   return sumSq / count - mean * mean
 }
+
+/** Measurements for device calibration. Defaults reject only degenerate frames. */
+export function assessPixels(image: ImageData, minSharpness = 0, minLight = 0, maxLight = 255) {
+  let light = 0
+  for (let i = 0; i < image.data.length; i += 4) {
+    light += 0.299 * image.data[i] + 0.587 * image.data[i + 1] + 0.114 * image.data[i + 2]
+  }
+  light /= image.width * image.height
+  const sharpness = sharpnessScore(image)
+  return {
+    light,
+    sharpness,
+    ok:
+      Number.isFinite(light) &&
+      Number.isFinite(sharpness) &&
+      sharpness > minSharpness &&
+      light > minLight &&
+      light < maxLight,
+  }
+}

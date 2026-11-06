@@ -259,7 +259,7 @@ describe('verifyFace (server action)', () => {
     expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_auditoria')
   })
 
-  it('elige al empleado mas cercano cuando hay varios enrolados', async () => {
+  it('pide otra captura si dos empleados pasan el umbral de coincidencia', async () => {
     setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
@@ -277,10 +277,7 @@ describe('verifyFace (server action)', () => {
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
-    expect(result.ok).toBe(true)
-    if (!result.ok || result.status !== 'MATCH') throw new Error('esperaba MATCH')
-    expect(result.employeeId).toBe(11)
-    expect(result.fullName).toBe('Luis Mora')
+    expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
   })
 
   it('ignora vectores corruptos o de otra dimension sin romperse', async () => {

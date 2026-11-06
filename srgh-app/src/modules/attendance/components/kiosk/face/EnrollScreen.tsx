@@ -133,6 +133,7 @@ export function EnrollScreen({ employees, enrolledIds }: EnrollScreenProps) {
       {selectedEmployee && scanning && (
         <>
           <FaceScan
+            enrollment
             onEmbedding={handleEmbedding}
             onUnavailable={handleUnavailable}
             onSpoof={handleSpoof}

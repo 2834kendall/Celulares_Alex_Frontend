@@ -1932,6 +1932,7 @@ export type Database = {
       sgrh_marcas_asistencia: {
         Row: {
           mar_created_at: string
+          mar_operacion_id: string | null
           mar_dispositivo_id: string | null
           mar_distancia_geocerca_metros: number | null
           mar_fecha_hora: string
@@ -1951,6 +1952,7 @@ export type Database = {
         }
         Insert: {
           mar_created_at?: string
+          mar_operacion_id?: string | null
           mar_dispositivo_id?: string | null
           mar_distancia_geocerca_metros?: number | null
           mar_fecha_hora: string
@@ -1970,6 +1972,7 @@ export type Database = {
         }
         Update: {
           mar_created_at?: string
+          mar_operacion_id?: string | null
           mar_dispositivo_id?: string | null
           mar_distancia_geocerca_metros?: number | null
           mar_fecha_hora?: string
@@ -3052,6 +3055,10 @@ export type Database = {
       actualizar_perfil_empresa: {
         Args: { p_datos: Json; p_direccion: Json }
         Returns: undefined
+      }
+      registrar_marca_kiosco_atomica: {
+        Args: { p_marca: Json; p_snapshot: Json; p_empresa_id: number }
+        Returns: string
       }
       crear_contrato: {
         Args: { p_contrato: Json; p_empleado_id: number }
