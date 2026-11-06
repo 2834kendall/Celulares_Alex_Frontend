@@ -17,17 +17,47 @@ export const loginSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>
 
 /**
+ * La politica de contraseñas, en UN solo lugar.
+ *
+ * Es espejo de lo configurado en el Dashboard de Supabase
+ * (Authentication > Policies). Las dos tienen que decir lo mismo: si solo
+ * cambia una, el formulario acepta una contraseña que el servidor despues
+ * rechaza con `weak_password`, y la persona ve un "demasiado debil" generico
+ * sin saber que regla fallo.
+ *
+ * `patron` alimenta el esquema y tambien la lista de requisitos del
+ * formulario, que se va marcando mientras se escribe. `etiqueta` se usa en los
+ * dos lados: como item de esa lista y como mensaje de la regla en Zod.
+ *
+ * Son RegExp y no funciones a proposito: una funcion por regla contaria contra
+ * el umbral de cobertura de funciones del modulo (100% en modules/auth), y no
+ * aportaria nada que .test() no haga.
+ */
+export const PASSWORD_RULES = [
+  { id: 'largo', etiqueta: 'Al menos 12 caracteres', patron: /.{12,}/ },
+  { id: 'minuscula', etiqueta: 'Una letra minúscula', patron: /[a-z]/ },
+  { id: 'mayuscula', etiqueta: 'Una letra mayúscula', patron: /[A-Z]/ },
+  { id: 'digito', etiqueta: 'Un número', patron: /[0-9]/ },
+  { id: 'simbolo', etiqueta: 'Un símbolo', patron: /[^A-Za-z0-9]/ },
+] as const
+
+/**
  * Definir una contraseña sobre una sesion que /auth/confirm ya establecio.
  * Es el mismo formulario en los dos flujos que llegan por correo —activacion
  * de la invitacion y recuperacion—, asi que la regla vive una sola vez y los
  * dos nombres de abajo son alias: si cambia la politica de contraseñas, cambia
- * aqui y en ningun otro lado.
+ * en PASSWORD_RULES y en ningun otro lado.
+ *
+ * Una regex por regla, y no un refine con un predicado compuesto: v8 cuenta
+ * cada && como rama, asi que un predicado unico obligaria a escribir un test
+ * de fallo por cada regla solo para llegar al 100% de ramas.
  */
 export const setPasswordSchema = z
   .object({
-    password: z
-      .string({ message: 'La contraseña es requerida.' })
-      .min(8, 'La contraseña debe tener al menos 8 caracteres.'),
+    password: PASSWORD_RULES.reduce(
+      (schema, regla) => schema.regex(regla.patron, regla.etiqueta),
+      z.string({ message: 'La contraseña es requerida.' })
+    ),
     confirmPassword: z
       .string({ message: 'Confirme su contraseña.' })
       .min(1, 'Confirme su contraseña.'),

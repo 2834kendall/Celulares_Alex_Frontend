@@ -2,10 +2,20 @@
 
 import { useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Eye, EyeOff, KeyRound, Loader2, LockKeyhole } from 'lucide-react'
-import { setPasswordSchema, type SetPasswordInput } from '@/modules/auth/types'
+import {
+  AlertTriangle,
+  Check,
+  Circle,
+  Eye,
+  EyeOff,
+  HelpCircle,
+  KeyRound,
+  Loader2,
+  LockKeyhole,
+} from 'lucide-react'
+import { PASSWORD_RULES, setPasswordSchema, type SetPasswordInput } from '@/modules/auth/types'
 import { brandConfig } from '@/modules/auth/constants'
 import type { UpdatePasswordResult } from '@/modules/auth/lib/updatePassword'
 import { cn } from '@/lib/utils/cn'
@@ -41,15 +51,34 @@ export function SetPasswordForm({
   const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [requisitosAbiertos, setRequisitosAbiertos] = useState(false)
 
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<SetPasswordInput>({
     resolver: zodResolver(setPasswordSchema),
+    // onTouched y no onChange: la lista de requisitos ya da senal en vivo
+    // desde la primera tecla, asi que marcar el campo en rojo antes de que
+    // la persona termine de escribir solo agrega ruido.
+    mode: 'onTouched',
     defaultValues: { password: '', confirmPassword: '' },
   })
+
+  // useWatch y no watch(): se suscribe solo a este campo, y es la forma que
+  // el plugin de react-hooks sabe analizar (watch() le dispara un warning).
+  const password = useWatch({ control, name: 'password' })
+  const todasCumplidas = PASSWORD_RULES.every((regla) => regla.patron.test(password))
+
+  // La lista va plegada para no ocupar lugar, pero NUNCA puede quedar oculta
+  // justo cuando hace falta: se abre sola mientras lo escrito no cumple, y
+  // tambien si el envio fallo (con el campo vacio no hay nada escrito, y sin
+  // esto el rechazo seria un borde rojo mudo). El "?" es para quien quiere
+  // verla antes de empezar.
+  const mostrarRequisitos =
+    requisitosAbiertos || Boolean(errors.password) || (password.length > 0 && !todasCumplidas)
 
   async function onSubmit(input: SetPasswordInput) {
     setServerError(null)
@@ -103,12 +132,24 @@ export function SetPasswordForm({
 
           <form onSubmit={handleSubmit(onSubmit)} method="post" className="space-y-5" noValidate>
             <div>
-              <label
-                className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                htmlFor="new-password-input"
-              >
-                Nueva contraseña
-              </label>
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <label
+                  className="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                  htmlFor="new-password-input"
+                >
+                  Nueva contraseña
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setRequisitosAbiertos((abiertos) => !abiertos)}
+                  aria-expanded={mostrarRequisitos}
+                  aria-controls="password-requisitos"
+                  aria-label="Ver requisitos de la contraseña"
+                  className="rounded-full text-slate-400 transition hover:text-slate-600"
+                >
+                  <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
               <div className="relative">
                 <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -117,9 +158,9 @@ export function SetPasswordForm({
                   autoComplete="new-password"
                   disabled={isSubmitting}
                   aria-invalid={!!errors.password}
+                  aria-describedby="password-requisitos"
                   {...register('password')}
                   className={cn(INPUT, 'py-3 pl-10 pr-11')}
-                  placeholder="Mínimo 8 caracteres"
                 />
                 <button
                   type="button"
@@ -131,7 +172,42 @@ export function SetPasswordForm({
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              {errors.password && <p className={FIELD_ERROR}>{errors.password.message}</p>}
+              {/*
+                La lista reemplaza al mensaje de error de este campo: decir
+                "falta una mayuscula" en dos lugares a la vez es ruido.
+                Va atada al input por aria-describedby y NO lleva aria-live:
+                con una region viva, un lector de pantalla cantaria las cinco
+                reglas en cada tecla. Plegada usa `hidden` y no se desmonta,
+                asi aria-describedby sigue apuntando a algo y el lector de
+                pantalla lee los requisitos al entrar al campo aunque no se vean.
+              */}
+              <ul
+                id="password-requisitos"
+                hidden={!mostrarRequisitos}
+                className="mt-2 grid gap-1 sm:grid-cols-2"
+              >
+                {PASSWORD_RULES.map((regla) => {
+                  const cumple = regla.patron.test(password)
+
+                  return (
+                    <li
+                      key={regla.id}
+                      className={cn(
+                        'flex items-center gap-1.5 text-xs transition-colors',
+                        cumple ? 'text-emerald-600' : 'text-slate-500'
+                      )}
+                    >
+                      {cumple ? (
+                        <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      ) : (
+                        <Circle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      )}
+                      <span>{regla.etiqueta}</span>
+                      <span className="sr-only">{cumple ? '(cumplido)' : '(pendiente)'}</span>
+                    </li>
+                  )
+                })}
+              </ul>
             </div>
 
             <div>
