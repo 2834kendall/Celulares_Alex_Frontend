@@ -1,9 +1,11 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { useForm, type Resolver } from 'react-hook-form'
+import { type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, UserPlus } from 'lucide-react'
 import { nuevoCandidatoSchema, type NuevoCandidatoInput } from '@/modules/recruitment/types'
@@ -40,8 +42,10 @@ export function NuevoCandidatoForm({
     register,
     control,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<NuevoCandidatoInput>({
+    unsavedLabel: 'el candidato',
     // z.preprocess (emptyToNull) vuelve `unknown` el lado input del schema;
     // el formulario trabaja con el tipo de salida — mismo cast que
     // EmployeeWizard.tsx con onboardingEmpleadoSchema.
@@ -70,12 +74,18 @@ export function NuevoCandidatoForm({
     }
 
     toast.success('Candidato registrado.')
+    guard.acceptChanges()
     onSuccess?.()
     router.push(`/recruitment/candidates/${result.candidatoId}`)
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-4"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

@@ -1,7 +1,8 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FileText, Loader2 } from 'lucide-react'
 import {
@@ -30,8 +31,10 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
   const {
     register,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<TipoAusenciaInput>({
+    unsavedLabel: 'el tipo de ausencia',
     resolver: zodResolver(tipoAusenciaSchema),
     defaultValues: tipo
       ? {
@@ -75,6 +78,7 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
     }
 
     // revalidatePath('/settings', 'layout') en el server action ya refresca la ruta.
+    guard.acceptChanges()
     onSuccess?.()
   }
 
@@ -128,7 +132,12 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
   )
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-4"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

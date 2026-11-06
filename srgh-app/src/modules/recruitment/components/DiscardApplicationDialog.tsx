@@ -1,5 +1,7 @@
 'use client'
 
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -33,6 +35,12 @@ export function DiscardApplicationDialog({
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  const guard = useUnsavedChanges({
+    label: 'el motivo de descarte',
+    value: reason,
+    busy: submitting,
+  })
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (reason.trim().length < 3) {
@@ -48,6 +56,7 @@ export function DiscardApplicationDialog({
       return
     }
     toast.success('Postulación descartada.')
+    guard.acceptChanges()
     onClose()
     onDone?.()
   }
@@ -58,7 +67,12 @@ export function DiscardApplicationDialog({
       subtitle="Indica el motivo del descarte. No se puede deshacer."
       onClose={onClose}
     >
-      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit}
+        className="space-y-3"
+        noValidate
+      >
         {error && (
           <Alert>
             <div>{error}</div>
@@ -79,7 +93,12 @@ export function DiscardApplicationDialog({
           />
         </div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="secondary" size="lg" onClick={onClose} disabled={submitting}>
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => guard.confirmLeave(onClose)}
+            disabled={submitting}
+          >
             Cancelar
           </Button>
           <Button type="submit" variant="danger" disabled={submitting} size="lg">

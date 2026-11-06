@@ -118,6 +118,8 @@ export function EmployeeWizardStepDocumentos({
           onClose={handleNuevoCancel}
         >
           <DocumentMetadataForm
+            key={`${archivoEnCola.name}:${archivoEnCola.lastModified}:${cola.length}`}
+            pendingFile={archivoEnCola}
             tiposDocumento={tiposDocumento}
             defaultValues={{ doc_nombre: nombreSinExtension(archivoEnCola.name) }}
             onCancel={handleNuevoCancel}

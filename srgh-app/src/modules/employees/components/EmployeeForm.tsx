@@ -1,7 +1,9 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { FormProvider, useForm, type Resolver } from 'react-hook-form'
+import { FormProvider, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -51,6 +53,8 @@ export function EmployeeForm({
   const [reintentando, setReintentando] = useState(false)
 
   const methods = useForm<EditarFichaEmpleadoInput>({
+    unsavedLabel: 'la ficha del empleado',
+    unsavedBusy: reintentando,
     // z.preprocess vuelve `unknown` el lado input del schema; el formulario
     // trabaja con el tipo de salida (''→null ya resuelto por el resolver).
     resolver: zodResolver(editarFichaEmpleadoSchema) as Resolver<EditarFichaEmpleadoInput>,
@@ -87,6 +91,7 @@ export function EmployeeForm({
 
   const {
     handleSubmit,
+    guard,
     formState: { isSubmitting },
   } = methods
 
@@ -116,6 +121,7 @@ export function EmployeeForm({
     if (result.warning) toast.warning(result.warning)
     else toast.success('Cambios guardados correctamente.')
 
+    guard.acceptChanges()
     onSuccess?.()
   }
 
@@ -137,7 +143,12 @@ export function EmployeeForm({
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit)} noValidate className="@container space-y-4">
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit(onSubmit)}
+        noValidate
+        className="@container space-y-4"
+      >
         {serverError && (
           <Alert>
             <div>{serverError}</div>
@@ -177,7 +188,7 @@ export function EmployeeForm({
           {onCancel && (
             <button
               type="button"
-              onClick={onCancel}
+              onClick={() => guard.confirmLeave(onCancel)}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
             >
               Cancelar
