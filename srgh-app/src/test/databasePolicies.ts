@@ -24,7 +24,10 @@ export async function createPolicyDatabase() {
     INSERT INTO public.sgrh_sucursales VALUES (10,1), (11,1), (20,2);
   `)
   for (const [file, names] of [
-    ['20260101000400_funciones_auth.sql', ['get_empresa_id', 'get_emp_id', 'tiene_permiso']],
+    [
+      '20260101000400_funciones_auth.sql',
+      ['get_empresa_id', 'get_emp_id', 'get_usr_id', 'tiene_permiso'],
+    ],
     ['20260912010000_multi_sucursal_usuario.sql', ['get_sucursal_ids', 'sucursal_visible']],
   ] as const) {
     for (const name of names) {

@@ -32,6 +32,7 @@ it does not share the ordinary developer server build directory.
 
 `fixtures.sql` creates two fictitious companies, branches and candidates, a test
 employee/contract, and ADMIN/KIOSCO accounts with a published local-only password.
+It also creates evaluations in both companies for the note-update isolation tests.
 The actual access-token hook generates role/company/permission claims. Tests do
 not inject forged JWTs or bypass the application permission checks.
 
@@ -60,8 +61,11 @@ the existing hosted environments have the same problem.
 - Real PostgREST RPC retry creates one attendance row; retry returns duplicate,
   altered operation content returns conflict, and the stored row is unchanged.
 - Anonymous and authenticated kiosk sessions cannot call that server-only RPC.
+- Evaluation-note updates confirm the owned row through real PostgREST; foreign
+  and missing evaluations return no row, and a kiosk session cannot update notes.
 
-The last two tests are HTTP/database integration, not browser interaction.
+The kiosk and evaluation persistence specs are HTTP/database integration, not
+browser interaction.
 Facial camera/inference is not bypassed to manufacture a successful browser mark.
 Component tests cover no automatic entry after recognition, double taps, camera
 failures, encryption failures and resource cleanup; SQL/HTTP tests cover atomic

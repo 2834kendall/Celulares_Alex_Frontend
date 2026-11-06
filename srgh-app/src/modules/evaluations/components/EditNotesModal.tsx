@@ -57,17 +57,20 @@ export function EditNotesModal({ evaluationId, field, notes, onClose }: EditNote
     setIsSaving(true)
     const updated: EvaluationNotes =
       field === 'comentarios' ? { ...notes, comentarios } : { ...notes, [field]: items }
-    const result = await updateEvaluationNotes(evaluationId, updated)
-    setIsSaving(false)
-
-    if (!result.ok) {
-      setError(result.error)
-      return
+    try {
+      const result = await updateEvaluationNotes(evaluationId, updated)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      // revalidatePath('/evaluations') en la accion ya refresca la vista.
+      guard.acceptChanges()
+      onClose()
+    } catch {
+      setError('No se pudieron guardar las notas. Reintentá.')
+    } finally {
+      setIsSaving(false)
     }
-
-    // revalidatePath('/evaluations') en la accion ya refresca la vista.
-    guard.acceptChanges()
-    onClose()
   }
 
   return (

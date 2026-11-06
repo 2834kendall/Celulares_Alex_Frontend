@@ -52,3 +52,9 @@ INSERT INTO sgrh_historial_laboral (lab_id, lab_empleado_id, lab_empresa_id, lab
 OVERRIDING SYSTEM VALUE VALUES (1051,1051,1051,1051,1051,(SELECT min(tjo_id) FROM sgrh_cat_tipos_jornada),(SELECT min(tco_id) FROM sgrh_cat_tipos_contrato),400000,400000,'2026-01-01')
 ON CONFLICT (lab_id) DO NOTHING;
 DELETE FROM sgrh_marcas_asistencia WHERE mar_historial_laboral_id=1051;
+
+INSERT INTO sgrh_evaluaciones (eve_id, eve_empresa_id, eve_tipo_evaluacion, eve_historial_laboral_id, eve_sucursal_id, eve_evaluador_id, eve_fecha_evaluacion, eve_tipo_periodo, eve_estado, eve_promedio_final, eve_observaciones)
+OVERRIDING SYSTEM VALUE VALUES
+  (1051,1051,'Mensual',1051,1051,(SELECT usr_id FROM sgrh_usuarios WHERE usr_email='admin@e2e.sgrh.local'),'2026-11-06','Noviembre 2026','completada',8,'original'),
+  (1052,1052,'Mensual',NULL,1052,(SELECT usr_id FROM sgrh_usuarios WHERE usr_email='admin@e2e.sgrh.local'),'2026-11-06','Noviembre 2026','completada',8,'foreign evaluation')
+ON CONFLICT (eve_id) DO UPDATE SET eve_observaciones=EXCLUDED.eve_observaciones;
