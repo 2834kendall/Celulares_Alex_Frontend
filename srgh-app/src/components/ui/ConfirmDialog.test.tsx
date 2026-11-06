@@ -54,7 +54,7 @@ describe('<ConfirmDialog />', () => {
       />
     )
     const boton = screen.getByRole('button', { name: 'Sí, pagar' })
-    expect(boton.className).toContain('bg-brand-600')
+    expect(boton.className).toContain('bg-brand-action')
     expect(boton.className).not.toContain('bg-rose-600')
   })
 

@@ -9,6 +9,8 @@ import { PERMISOS } from './catalog'
 const PERMISOS_EN_SUPABASE = [
   'EMPLEADOS_READ',
   'EMPLEADOS_WRITE',
+  // Enrolamiento facial (SGRH-102), sembrado por codigo en 02_permisos.sql.
+  'BIOMETRIA_WRITE',
   // Sembrados por las migraciones de storage 2026073112/1300 (SGRH-60).
   'FOTOS_READ',
   'DOCUMENTOS_READ',
@@ -48,7 +50,7 @@ describe('catalogo de permisos', () => {
     }
   })
 
-  it('refleja exactamente los 28 permisos sembrados en Supabase', () => {
+  it('refleja exactamente los 30 permisos sembrados en Supabase', () => {
     expect(Object.values(PERMISOS).sort()).toEqual([...PERMISOS_EN_SUPABASE].sort())
   })
 })

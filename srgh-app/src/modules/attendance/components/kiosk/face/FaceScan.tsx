@@ -52,9 +52,9 @@ export interface FaceScanProps {
   enrollment?: boolean
   /**
    * Recibe el embedding YA cifrado, junto con la prueba de vida que lo
-   * respalda. El padre decide que hacer (verificar en el kiosco, enrolar en
-   * /kiosco/enrolar). Mientras la promesa esta viva, FaceScan muestra
-   * "procesando".
+   * respalda. El padre decide que hacer (verificar en el kiosco, enrolar desde
+   * el tab Rostro del perfil del empleado). Mientras la promesa esta viva,
+   * FaceScan muestra "procesando".
    */
   onEmbedding: (payload: EncryptedVector) => Promise<void>
   /**

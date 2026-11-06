@@ -53,6 +53,12 @@ vi.mock('@/modules/employees/actions/revertContractTermination', () => ({
   revertContractTermination: vi.fn(),
 }))
 
+// El tab Rostro (SGRH-102) importa las acciones de biometria: mockeadas por la
+// misma razon que las de foto.
+vi.mock('@/modules/attendance/actions/enrollFace', () => ({ enrollFace: vi.fn() }))
+vi.mock('@/modules/attendance/actions/deleteFaceEnrollment', () => ({
+  deleteFaceEnrollment: vi.fn(),
+}))
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))
@@ -386,5 +392,68 @@ describe('<EmployeeDetail />', () => {
     )
 
     expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()
+  })
+
+  describe('tab Rostro (SGRH-102)', () => {
+    const props = {
+      empleado: EMPLEADO_DETALLE,
+      tiposIdentificacion: TIPOS_IDENTIFICACION,
+      bancos: BANCOS,
+      territorio: TERRITORIO,
+      canWrite: true,
+    }
+
+    it('sin faceStatus (rol sin BIOMETRIA_WRITE) el tab no existe', () => {
+      render(<EmployeeDetail {...props} />)
+
+      expect(screen.queryByRole('tab', { name: /Rostro/ })).not.toBeInTheDocument()
+    })
+
+    it('con faceStatus aparece el tab, y en él no se ofrece Editar la ficha', () => {
+      searchString = 'tab=rostro'
+      render(<EmployeeDetail {...props} faceStatus={{ enrolled: false }} />)
+
+      expect(screen.getByRole('tab', { name: /Rostro/ })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('heading', { name: 'Reconocimiento facial' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /capturar rostro/i })).toBeEnabled()
+      expect(screen.queryByRole('button', { name: /^editar$/i })).not.toBeInTheDocument()
+    })
+
+    it('?tab=rostro sin el permiso cae al perfil y conserva el botón Editar', () => {
+      searchString = 'tab=rostro'
+      render(<EmployeeDetail {...props} />)
+
+      expect(screen.getByRole('heading', { name: 'Datos personales' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^editar$/i })).toBeInTheDocument()
+    })
+
+    it('si la consulta falló, el tab muestra el error sin tumbar la ficha', () => {
+      searchString = 'tab=rostro'
+      render(
+        <EmployeeDetail
+          {...props}
+          faceStatus={null}
+          faceStatusError="No se pudo cargar el registro facial."
+        />
+      )
+
+      expect(screen.getByRole('heading', { name: 'Ana Mora' })).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('No se pudo cargar el registro facial.')
+    })
+
+    // Sin contrato vigente enrollFace rechaza la captura: la ficha se lo pasa
+    // a la sección desde historial_activo, no desde un fixture aislado.
+    it('sin contrato vigente la captura queda deshabilitada', () => {
+      searchString = 'tab=rostro'
+      render(
+        <EmployeeDetail
+          {...props}
+          empleado={{ ...EMPLEADO_DETALLE, historial_activo: null }}
+          faceStatus={{ enrolled: false }}
+        />
+      )
+
+      expect(screen.getByRole('button', { name: /capturar rostro/i })).toBeDisabled()
+    })
   })
 })

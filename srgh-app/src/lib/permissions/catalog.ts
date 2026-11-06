@@ -12,6 +12,12 @@ export const PERMISOS = {
   EMPLEADOS_READ: 'EMPLEADOS_READ',
   EMPLEADOS_WRITE: 'EMPLEADOS_WRITE',
 
+  // Biometria (SGRH-102): registrar, reemplazar y borrar el rostro de un
+  // empleado. Permiso propio para que el gerente pueda enrolar sin recibir
+  // EMPLEADOS_WRITE, que le abriria el expediente completo. La RLS de
+  // sgrh_biometria_empleado lo limita al personal de su sucursal.
+  BIOMETRIA_WRITE: 'BIOMETRIA_WRITE',
+
   // Storage (SGRH-60): lectura de fotos de empleado (URLs firmadas).
   // Permiso propio y NO derivado de EMPLEADOS_READ a propósito: un dispositivo
   // compartido y físicamente expuesto no debe poder firmar archivos. La

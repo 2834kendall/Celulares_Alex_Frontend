@@ -1,9 +1,9 @@
 'use client'
 
-import { Briefcase, FileText, User } from 'lucide-react'
+import { Briefcase, FileText, ScanFace, User } from 'lucide-react'
 import { Tabs, type TabDefinition } from '@/components/ui/Tabs'
 
-export type ProfileTab = 'perfil' | 'contrato' | 'documentos'
+export type ProfileTab = 'perfil' | 'contrato' | 'documentos' | 'rostro'
 
 interface EmployeeProfileTabsProps {
   perfilContent: React.ReactNode
@@ -14,6 +14,8 @@ interface EmployeeProfileTabsProps {
   contratoContent: React.ReactNode
   /** null oculta el tab (rol sin DOCUMENTOS_READ). */
   documentosContent: React.ReactNode | null
+  /** null (o ausente) oculta el tab (rol sin BIOMETRIA_WRITE). */
+  rostroContent?: React.ReactNode | null
 }
 
 /**
@@ -22,9 +24,14 @@ interface EmployeeProfileTabsProps {
  * tab de perfil, y deben derivar del MISMO criterio que el tablist (la URL es la
  * única fuente de verdad — nada de estado duplicado).
  */
-export function resolveProfileTab(tabParam: string | null, hasDocumentos: boolean): ProfileTab {
+export function resolveProfileTab(
+  tabParam: string | null,
+  hasDocumentos: boolean,
+  hasRostro = false
+): ProfileTab {
   if (tabParam === 'contrato') return 'contrato'
   if (hasDocumentos && tabParam === 'documentos') return 'documentos'
+  if (hasRostro && tabParam === 'rostro') return 'rostro'
   return 'perfil'
 }
 
@@ -33,6 +40,7 @@ export function EmployeeProfileTabs({
   perfilContent,
   contratoContent,
   documentosContent,
+  rostroContent = null,
 }: EmployeeProfileTabsProps) {
   const tabs: TabDefinition<ProfileTab>[] = [
     { id: 'perfil', label: 'Perfil', icon: User, content: perfilContent },
@@ -41,6 +49,10 @@ export function EmployeeProfileTabs({
 
   if (documentosContent !== null) {
     tabs.push({ id: 'documentos', label: 'Documentos', icon: FileText, content: documentosContent })
+  }
+
+  if (rostroContent !== null) {
+    tabs.push({ id: 'rostro', label: 'Rostro', icon: ScanFace, content: rostroContent })
   }
 
   return <Tabs idPrefix="employee-profile" ariaLabel="Secciones del empleado" tabs={tabs} />

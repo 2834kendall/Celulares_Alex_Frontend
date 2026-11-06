@@ -46,6 +46,24 @@ describe('relativeLuminance', () => {
 const PRESETS_ACENTO = ['#0891b2', '#1e40af', '#166534', '#9f1239', '#5b21b6', '#334155']
 
 describe('deriveBrandTokens', () => {
+  it('mantiene texto blanco legible en acciones, incluso con acentos personalizados claros', () => {
+    for (const accent of [
+      ...PRESETS_ACENTO,
+      '#ffffff',
+      '#ffff00',
+      '#f8fafc',
+      '#00ff00',
+      '#000000',
+    ]) {
+      const tokens = deriveBrandTokens(accent)
+      expect(tokens['--color-brand-600']).toBe(accent)
+      expect(contrastRatio(tokens['--color-brand-action'], '#ffffff')).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(tokens['--color-brand-action-hover'], '#ffffff')).toBeGreaterThanOrEqual(
+        4.5
+      )
+    }
+  })
+
   it('el color elegido queda como el paso 600 (boton primario)', () => {
     const tokens = deriveBrandTokens('#0891b2')
     expect(tokens['--color-brand-600']).toBe('#0891b2')

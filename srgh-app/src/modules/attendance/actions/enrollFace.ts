@@ -11,9 +11,11 @@ import { enrollFaceSchema, type EnrollFaceInput } from '@/modules/attendance/typ
 export type EnrollFaceResult = { ok: true } | { ok: false; error: string }
 
 /**
- * Enrolamiento: guarda (o reemplaza) el vector facial de un empleado. Solo
- * gerentes (EMPLEADOS_WRITE) — el kiosco no puede escribir vectores, y la
- * pagina /kiosco/enrolar esta gated con el mismo permiso. El vector llega
+ * Enrolamiento: guarda (o reemplaza) el vector facial de un empleado, desde el
+ * tab Rostro de su perfil. Pide BIOMETRIA_WRITE (ADMIN y GERENTE, SGRH-102):
+ * antes pedia EMPLEADOS_WRITE, que el gerente no tiene, asi que solo el ADMIN
+ * podia enrolar. La RLS limita al gerente al personal de su sucursal y el
+ * kiosco no puede escribir vectores. El vector llega
  * cifrado igual que en la verificacion; aca se descifra y se upserta TAL
  * CUAL (sin normalizar: la distancia euclidea de dlib necesita la magnitud
  * original del descriptor — ver faceMath.ts).
@@ -31,7 +33,7 @@ export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResu
     return { ok: false, error: 'Datos de enrolamiento invalidos.' }
   }
 
-  const claims = await requirePermission(PERMISOS.EMPLEADOS_WRITE)
+  const claims = await requirePermission(PERMISOS.BIOMETRIA_WRITE)
   const meta = claims.app_metadata as { usr_id?: number; empresa_id?: number }
 
   if (!meta.empresa_id) {
