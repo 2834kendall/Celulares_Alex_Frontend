@@ -9,6 +9,9 @@ import type { KioskMarkInput } from '@/modules/attendance/types'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
+vi.mock('@/modules/attendance/lib/liveKioskAccess', () => ({
+  liveKioskMetadata: vi.fn(async (_sub, meta) => meta),
+}))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 // Jornada y ausencias se leen con el cliente admin (la cuenta KIOSCO no puede
@@ -88,6 +91,28 @@ function insertedMark(client: ClientMock) {
 }
 
 describe('registerKioskMark (server action)', () => {
+  it('archiva para revisión el rechazo de un kiosco bloqueado sin escribir marcas', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, kiosk_error: 'Kiosco bloqueado', kiosk_denied: true },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    expect(await registerKioskMark(await validInput())).toEqual({
+      ok: false,
+      error: 'Kiosco bloqueado',
+      definitivo: true,
+    })
+    expect(atomicWrite).not.toHaveBeenCalled()
+  })
+  it('mantiene reintentable una falla temporal al validar acceso', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, kiosk_error: 'Servicio no disponible', kiosk_denied: false },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    expect(await registerKioskMark(await validInput())).toEqual({
+      ok: false,
+      error: 'Servicio no disponible',
+      definitivo: false,
+    })
+    expect(atomicWrite).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     atomicWrite.mockResolvedValue({ data: 'inserted', error: null })

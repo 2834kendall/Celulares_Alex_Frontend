@@ -41,10 +41,11 @@ export async function signFaceTicket(
   employeeId: number,
   secret: string,
   nowMs: number = Date.now(),
-  ttlMs: number = DEFAULT_TTL_MS
+  ttlMs: number = DEFAULT_TTL_MS,
+  context?: string
 ): Promise<string> {
   const exp = nowMs + ttlMs
-  const payload = `${employeeId}.${exp}`
+  const payload = `${employeeId}.${exp}${context ? `.${toBase64Url(encoder.encode(context))}` : ''}`
   const key = await importHmacKey(secret, 'sign')
   const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(payload) as BufferSource)
   return `${payload}.${toBase64Url(new Uint8Array(sig))}`
@@ -59,12 +60,15 @@ export async function verifyFaceTicket(
   ticket: string,
   employeeId: number,
   secret: string,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  context?: string
 ): Promise<boolean> {
   const parts = ticket.split('.')
-  if (parts.length !== 3) return false
+  if (parts.length !== (context ? 4 : 3)) return false
 
-  const [empPart, expPart, sigPart] = parts
+  const [empPart, expPart] = parts
+  const sigPart = parts[parts.length - 1]
+  if (context && parts[2] !== toBase64Url(encoder.encode(context))) return false
   if (Number(empPart) !== employeeId) return false
 
   const exp = Number(expPart)
@@ -83,6 +87,6 @@ export async function verifyFaceTicket(
     'HMAC',
     key,
     sig as BufferSource,
-    encoder.encode(`${empPart}.${expPart}`) as BufferSource
+    encoder.encode(parts.slice(0, -1).join('.')) as BufferSource
   )
 }

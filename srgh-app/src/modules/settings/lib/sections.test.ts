@@ -23,6 +23,7 @@ describe('visibleTree / visibleLeaves', () => {
   it('con todos los permisos ve todos los ajustes, en el orden del menú', () => {
     expect(ids(ADMIN)).toEqual([
       'profile',
+      'branches',
       'general',
       'appearance',
       'positions',

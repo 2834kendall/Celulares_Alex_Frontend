@@ -25,7 +25,10 @@ function mockAdmin(
   responses: Parameters<typeof createSupabaseAdminClientMock>[0],
   options?: Parameters<typeof createSupabaseAdminClientMock>[1]
 ) {
-  const admin = createSupabaseAdminClientMock(responses, options)
+  const admin = createSupabaseAdminClientMock(
+    { sgrh_kioscos: { data: null, error: null }, ...responses },
+    options
+  )
   mockCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>)
   return admin
 }
@@ -79,10 +82,14 @@ describe('setUserActive (server action)', () => {
     })
 
     // from(): uer (read), usuarios (read), usuarios (update), uer (update)
-    const usrUpdateBuilder = admin.from.mock.results[2].value
+    const usrUpdateBuilder = admin.from.mock.results
+      .filter((_, i) => admin.from.mock.calls[i][0] === 'sgrh_usuarios')
+      .at(-1)!.value
     expect(usrUpdateBuilder.update).toHaveBeenCalledWith({ usr_activo: false })
 
-    const uerUpdateBuilder = admin.from.mock.results[3].value
+    const uerUpdateBuilder = admin.from.mock.results
+      .filter((_, i) => admin.from.mock.calls[i][0] === 'sgrh_usuarios_empresa_rol')
+      .at(-1)!.value
     expect(uerUpdateBuilder.update).toHaveBeenCalledWith({ uer_activo: false })
     expect(uerUpdateBuilder.in).toHaveBeenCalledWith('uer_id', [55])
 
@@ -99,7 +106,9 @@ describe('setUserActive (server action)', () => {
 
     expect(result).toEqual({ ok: true })
 
-    const uerUpdateBuilder = admin.from.mock.results[3].value
+    const uerUpdateBuilder = admin.from.mock.results
+      .filter((_, i) => admin.from.mock.calls[i][0] === 'sgrh_usuarios_empresa_rol')
+      .at(-1)!.value
     expect(uerUpdateBuilder.update).toHaveBeenCalledWith({ uer_activo: false })
     expect(uerUpdateBuilder.in).toHaveBeenCalledWith('uer_id', [55, 56])
   })
@@ -117,7 +126,9 @@ describe('setUserActive (server action)', () => {
       ban_duration: 'none',
     })
 
-    const usrUpdateBuilder = admin.from.mock.results[2].value
+    const usrUpdateBuilder = admin.from.mock.results
+      .filter((_, i) => admin.from.mock.calls[i][0] === 'sgrh_usuarios')
+      .at(-1)!.value
     expect(usrUpdateBuilder.update).toHaveBeenCalledWith({ usr_activo: true })
   })
 
@@ -146,7 +157,7 @@ describe('setUserActive (server action)', () => {
 
     expect(result).toEqual({ ok: false, error: 'No se pudo actualizar el acceso del usuario.' })
     // Solo las dos lecturas: nunca llegó a los updates de flags.
-    expect(admin.from).toHaveBeenCalledTimes(2)
+    for (const call of admin.from.mock.results) expect(call.value.update).not.toHaveBeenCalled()
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
 

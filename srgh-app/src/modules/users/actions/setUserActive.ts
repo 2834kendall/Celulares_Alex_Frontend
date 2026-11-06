@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { kioskAssignmentGuard } from '@/modules/users/lib/kioskAssignmentGuard'
 
 export type SetUserActiveResult = { ok: true } | { ok: false; error: string }
 
@@ -44,6 +45,8 @@ export async function setUserActive(usrId: number, active: boolean): Promise<Set
   if (uerReadError || !asignaciones || asignaciones.length === 0) {
     return { ok: false, error: 'Usuario no encontrado.' }
   }
+  const kioskError = await kioskAssignmentGuard(admin, { usrId })
+  if (kioskError) return { ok: false, error: kioskError }
 
   const { data: usuario, error: usrReadError } = await admin
     .from('sgrh_usuarios')

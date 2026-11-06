@@ -26,7 +26,10 @@ function mockAdmin(
   responses: Parameters<typeof createSupabaseAdminClientMock>[0],
   options?: Parameters<typeof createSupabaseAdminClientMock>[1]
 ) {
-  const admin = createSupabaseAdminClientMock(responses, options)
+  const admin = createSupabaseAdminClientMock(
+    { sgrh_kioscos: { data: null, error: null }, ...responses },
+    options
+  )
   mockCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>)
   return admin
 }
@@ -96,7 +99,9 @@ describe('resendInvitation (server action)', () => {
     expect(result).toEqual({ ok: true })
 
     // from(): uer (read), usuarios (read), usuarios (unlink)
-    const unlinkBuilder = admin.from.mock.results[2].value
+    const unlinkBuilder = admin.from.mock.results
+      .filter((_, i) => admin.from.mock.calls[i][0] === 'sgrh_usuarios')
+      .at(-1)!.value
     expect(unlinkBuilder.update).toHaveBeenCalledWith({ usr_auth_id: null })
     expect(unlinkBuilder.eq).toHaveBeenCalledWith('usr_id', 7)
 

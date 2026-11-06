@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
+import type { ManagedKioskMeta } from '@/modules/attendance/lib/liveKioskAccess'
 import { kioskMarkSchema, type KioskMarkInput } from '@/modules/attendance/types'
 import { haversineDistanceMeters } from '@/modules/attendance/lib/geofence'
 import {
@@ -78,11 +79,8 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   }
 
   const claims = await requireKioskAccess()
-  const meta = claims.app_metadata as {
-    usr_id?: number
-    empresa_id?: number
-    sucursal_ids?: number[] | null
-  }
+  const meta = claims.app_metadata as ManagedKioskMeta
+  if (meta.kiosk_error) return { ok: false, error: meta.kiosk_error, definitivo: meta.kiosk_denied }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
@@ -116,7 +114,9 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   const rostroVerificado =
     Number.isFinite(eventoMs) &&
     eventoMs <= ahoraMs + 60_000 &&
-    (await verifyFaceTicket(ticketFacial, employeeId, ticketSecret, eventoMs))
+    (await (meta.kiosk_context
+      ? verifyFaceTicket(ticketFacial, employeeId, ticketSecret, eventoMs, meta.kiosk_context)
+      : verifyFaceTicket(ticketFacial, employeeId, ticketSecret, eventoMs)))
 
   if (!rostroVerificado) {
     return {
@@ -308,7 +308,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
       mar_longitud_marcada: longitud,
       mar_distancia_geocerca_metros: distancia,
       mar_metodo_verificacion: 'FACIAL',
-      mar_dispositivo_id: dispositivoId,
+      mar_dispositivo_id: meta.kiosk_id ?? dispositivoId,
       mar_registrado_por_id: meta.usr_id ?? null,
       mar_observacion: observaciones.length > 0 ? observaciones.join(' ') : null,
       mar_operacion_id: operationId ?? crypto.randomUUID(),

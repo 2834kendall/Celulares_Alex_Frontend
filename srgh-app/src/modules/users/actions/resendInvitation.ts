@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { branchAdmin } from '@/modules/settings/branches/access'
 
 export type ResendInvitationResult = { ok: true } | { ok: false; error: string }
 
@@ -42,6 +43,17 @@ export async function resendInvitation(usrId: number): Promise<ResendInvitationR
 
   if (uerReadError || !asignacion) {
     return { ok: false, error: 'Usuario no encontrado.' }
+  }
+  const registered = await admin
+    .from('sgrh_kioscos')
+    .select('kio_estado')
+    .eq('kio_usuario_id', usrId)
+    .maybeSingle()
+  if (registered.error) return { ok: false, error: 'No se pudo comprobar el acceso del kiosco.' }
+  if (registered.data) {
+    await branchAdmin(true)
+    if (registered.data.kio_estado !== 'activo')
+      return { ok: false, error: 'El kiosco no está habilitado.' }
   }
 
   const { data: usuario, error: usrReadError } = await admin
