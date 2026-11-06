@@ -46,8 +46,15 @@ the existing hosted environments have the same problem.
 
 ## Covered flows
 
+The suite runs six browser flows in Desktop Chrome and in Chromium with Pixel 5
+viewport/touch emulation, plus four HTTP integration cases once: 16 scenarios in
+total. Document names include the project name to keep both browser runs isolated.
+Mobile emulation does not establish physical-device, Firefox or WebKit support.
+
 - Real login and dashboard customization persisted through the preferences API,
   followed by reload and verification of the saved layout.
+- Widget links cannot receive focus while dashboard customization is active and
+  become focusable again when customization ends.
 - Candidate document validation failure keeps the selected file; correcting the
   name uploads it to real Storage, persists metadata, and permits a signed
   download after reload.

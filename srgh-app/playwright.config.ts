@@ -22,7 +22,14 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     serviceWorkers: 'block',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium-mobile',
+      testMatch: '**/critical-flows.spec.ts',
+      use: { ...devices['Pixel 5'] },
+    },
+  ],
   webServer: {
     command: 'pnpm exec next dev --hostname 127.0.0.1 --port 3105',
     url: 'http://127.0.0.1:3105/login',

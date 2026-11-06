@@ -27,9 +27,24 @@ test('dashboard customization persists after reload through the real preferences
   await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
 })
 
-test('candidate document validation preserves the selected file, then upload and download work', async ({
+test('personalization keeps widget links out of keyboard focus until editing ends', async ({
   page,
 }) => {
+  await login(page)
+  const link = page.locator('.dash-slot a[href]').first()
+  await expect(link).toBeVisible()
+  await page.getByRole('button', { name: 'Personalizar', exact: true }).click()
+  await link.focus()
+  await expect(link).not.toBeFocused()
+  await page.getByRole('button', { name: 'Listo', exact: true }).click()
+  await link.focus()
+  await expect(link).toBeFocused()
+})
+
+test('candidate document validation preserves the selected file, then upload and download work', async ({
+  page,
+}, testInfo) => {
+  const documentName = `CV E2E 105 ${testInfo.project.name}`
   await login(page)
   await page.goto('/recruitment/candidates/1051')
   await expect(page.getByRole('heading', { name: 'Ana E2E Prueba' })).toBeVisible()
@@ -45,19 +60,20 @@ test('candidate document validation preserves the selected file, then upload and
   await dialog.getByRole('button', { name: 'Guardar documento', exact: true }).click()
   await expect(dialog.getByText('Ingrese un nombre para el documento.')).toBeVisible()
   await expect(dialog.getByText('Archivo: CV-E2E.pdf')).toBeVisible()
-  await dialog.getByLabel('Nombre', { exact: true }).fill('CV E2E 105')
+  await dialog.getByLabel('Nombre', { exact: true }).fill(documentName)
   await dialog.getByRole('button', { name: 'Guardar documento', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   await page.reload()
   await page.getByRole('button', { name: /Documentos/ }).click()
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Abrir CV E2E 105', exact: true }).click()
-  expect((await download).suggestedFilename()).toBe('CV E2E 105.pdf')
+  await page.getByRole('button', { name: `Abrir ${documentName}`, exact: true }).click()
+  expect((await download).suggestedFilename()).toBe(`${documentName}.pdf`)
 })
 
 test('a failed document request keeps the file and permits a successful retry', async ({
   page,
-}) => {
+}, testInfo) => {
+  const documentName = `CV Recuperado E2E 105 ${testInfo.project.name}`
   await login(page)
   await page.goto('/recruitment/candidates/1051')
   await page.getByRole('button', { name: /Documentos/ }).click()
@@ -67,7 +83,7 @@ test('a failed document request keeps the file and permits a successful retry', 
     buffer: Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF'),
   })
   const dialog = page.getByRole('dialog', { name: 'Guardar documento' })
-  await dialog.getByLabel('Nombre', { exact: true }).fill('CV Recuperado E2E 105')
+  await dialog.getByLabel('Nombre', { exact: true }).fill(documentName)
   let blocked = false
   await page.route('**/recruitment/candidates/1051', async (route) => {
     if (
@@ -84,14 +100,14 @@ test('a failed document request keeps the file and permits a successful retry', 
   await dialog.getByRole('button', { name: 'Guardar documento', exact: true }).click()
   await expect(dialog.getByText('No se pudo subir el documento. Reintentá.')).toBeVisible()
   expect(blocked).toBe(true)
-  await expect(dialog.getByLabel('Nombre', { exact: true })).toHaveValue('CV Recuperado E2E 105')
+  await expect(dialog.getByLabel('Nombre', { exact: true })).toHaveValue(documentName)
   await expect(dialog.getByText('Archivo: reintento.pdf')).toBeVisible()
   await dialog.getByRole('button', { name: 'Guardar documento', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   await page.reload()
   await page.getByRole('button', { name: /Documentos/ }).click()
   await expect(
-    page.getByRole('button', { name: 'Abrir CV Recuperado E2E 105', exact: true })
+    page.getByRole('button', { name: `Abrir ${documentName}`, exact: true })
   ).toHaveCount(1)
 })
 
