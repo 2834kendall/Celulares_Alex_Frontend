@@ -53,7 +53,7 @@ export function getFaceLandmarker(): Promise<FaceLandmarker> {
         baseOptions: { modelAssetPath: MODEL_PATH, delegate: 'GPU' },
         runningMode: 'VIDEO',
         numFaces: 1,
-        outputFaceBlendshapes: true,
+        outputFaceBlendshapes: false,
       })
     })().catch((err) => {
       // Si fallo la carga (assets ausentes, WebGL bloqueado), el siguiente

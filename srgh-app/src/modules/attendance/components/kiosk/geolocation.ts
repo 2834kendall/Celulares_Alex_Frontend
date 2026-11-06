@@ -20,7 +20,7 @@ export function getCurrentCoordinates(): Promise<Coordinates | null> {
       (position) =>
         resolve({ latitud: position.coords.latitude, longitud: position.coords.longitude }),
       () => resolve(null),
-      { timeout: 5000 }
+      { timeout: 1000, maximumAge: 60_000, enableHighAccuracy: false }
     )
   })
 }

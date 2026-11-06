@@ -61,7 +61,10 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
     return { ok: false, error: 'No tienes turno asignado en esta sucursal hoy.' }
   }
 
-  const ausencia = await findApprovedAbsence(admin, turno.employmentHistoryId, hoy)
+  const [ausencia, jornada] = await Promise.all([
+    findApprovedAbsence(admin, turno.employmentHistoryId, hoy),
+    loadDayJourney(admin, turno.employmentHistoryId, hoy),
+  ])
 
   if (!ausencia.ok) {
     return { ok: false, error: ausencia.error }
@@ -70,8 +73,6 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
   if (ausencia.tipo) {
     return { ok: false, error: absenceBlocksMarkMessage(ausencia.tipo) }
   }
-
-  const jornada = await loadDayJourney(admin, turno.employmentHistoryId, hoy)
 
   if (!jornada.ok) {
     return { ok: false, error: jornada.error }
