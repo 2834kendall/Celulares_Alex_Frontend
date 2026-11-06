@@ -37,13 +37,13 @@ The Storage PGlite fixture supplies company/permission helper outputs. The relat
 
 ## CI
 
-The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. One instrumented run enforces every include pattern from the original security config at 100% in all four metrics, plus measured module floors: attendance 87% lines/75% branches, dashboard 52%/40%, recruitment 76%/71%, evaluations 46%/34%. The original default security-only config is unchanged and remains available through test:coverage; CI does not need to run the suite twice for coverage. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
+The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. One instrumented run enforces every include pattern from the original security config at 100% in all four metrics, plus measured module floors: attendance 87% lines/75% branches, dashboard 60%/50%, recruitment 76%/71%, evaluations 61%/46%. The original default security-only config is unchanged and remains available through test:coverage; CI does not need to run the suite twice for coverage. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
 
 ## Validation and limits
 
-- Latest local suite: 341 files and 3479 tests passed; every original security scope remained at 100% in all four metrics (38 files checked). The browser/API suite passed 16 scenarios: six browser flows on both desktop and mobile emulation, plus four HTTP integration cases.
+- Latest local suite: 344 files and 3514 tests passed; every original security scope remained at 100% in all four metrics (38 files checked). The browser/API suite passed 16 scenarios: six browser flows on both desktop and mobile emulation, plus four HTTP integration cases.
 - Typecheck, production build and lint passed; lint retains four pre-existing warnings outside this change.
-- Final combined coverage run passed with 341 files/3479 tests: attendance 87.44% lines/75.06% branches, dashboard 52.72%/40.16%, recruitment 76.13%/71.08%, evaluations 46.73%/34.79%. Module floors were ratcheted to whole-number floors of this measurement.
+- Final combined coverage run passed with 344 files/3514 tests: attendance 87.45% lines/75.11% branches, dashboard 60.10%/50.58%, recruitment 76.13%/71.08%, evaluations 61.41%/46.61%. Module floors were ratcheted to whole-number floors of this measurement.
 - No successful full camera-to-browser-mark journey is claimed. Component tests verify recognition/interaction boundaries and SQL/HTTP tests verify persistence; real device camera/accuracy checks remain separate.
 - The fresh local stack required an Auth hook EXECUTE grant and explicit Data API table/sequence grants. Those are visible test provisioning, not a production migration. Existing hosted environments were not queried or changed for this work.
 - Browser tests currently run in Chromium. They do not establish Firefox/WebKit compatibility.
@@ -80,6 +80,33 @@ Mobile emulation is not a physical-device or cross-engine compatibility claim.
 The existing EmployeeWizard suite passed all 23 tests in isolation after one
 test timed out during overlapping build/browser/coverage workloads. The subsequent full combined coverage run passed all 341 files and 3479 tests
 without overlapping build/browser workloads.
+
+### Evaluation forms and personal widgets continuation
+
+Another 35 regression cases cover evaluation creation (9), rubric creation/editing
+(7), personal dashboard widgets (17) and kiosk verification (2). Evaluation form
+tests use the real schema/select/notes controls and an ISO date-input boundary;
+the date picker's own mechanics are outside these cases. Unsaved-state acceptance
+is a spy boundary, not a replacement for the existing unsaved-changes tests.
+
+The first run reproduced rejected-request failures in evaluation creation and in
+both rubric modes. Evaluation submission now releases its pending state in
+finally, while rubric forms return a visible error to React Hook Form. Both keep
+the draft and only accept changes/call success after a confirmed result. Error
+copy asks users to inspect existing records before manually retrying; no automatic
+retry or idempotence guarantee is introduced. Evaluation navigation keeps other
+query filters, and the redundant second acceptChanges call was removed.
+
+Personal widgets cover empty states, today's schedule, keyboard/pointer day
+selection, holidays/day-off precedence, missing hours, fractional totals,
+evaluation history previews/trend suppression, branch percentages and overflow
+headcounts. The CountUp browser boundary requests reduced motion in these tests.
+
+A thrown facial verification request also reproduced an uncaught rejection.
+KioskScreen now reports verification failure instead of allowing FaceScan to
+misclassify the network failure as camera unavailability. Explicit retry returns
+to recognition; neither retry nor successful recognition registers attendance.
+Pending verification exposes no mark buttons. Camera/inference remain mocked.
 
 From `srgh-app`:
 
