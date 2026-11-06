@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { Database } from '@/types/database.types'
 import { env } from '@/lib/env'
+import { sessionCookieOptions } from '@/lib/supabase/cookieOptions'
 import { timedFetch } from './timedFetch'
 
 /**
@@ -34,6 +35,7 @@ export const createClient = cache(async () => {
           }
         },
       },
+      cookieOptions: sessionCookieOptions,
       global: timedFetch ? { fetch: timedFetch } : undefined,
     }
   )
