@@ -340,7 +340,7 @@ describe('<PostulacionPanel /> — etapas y secciones', () => {
 
     expect(screen.queryByRole('button', { name: /Pasar a:/ })).not.toBeInTheDocument()
     expect(screen.getByText('Está en la última etapa: falta decidir.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /contratar/i }).className).toContain('bg-brand-600')
+    expect(screen.getByRole('link', { name: /contratar/i }).className).toContain('bg-brand-action')
     // Todavía se puede devolver a una etapa anterior.
     expect(screen.getByRole('button', { name: /Otra etapa/ })).toBeEnabled()
   })
