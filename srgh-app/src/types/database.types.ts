@@ -2696,6 +2696,18 @@ export type Database = {
           },
         ]
       }
+      sgrh_kioscos: {
+        Row: { kio_id: string; kio_empresa_id: number; kio_sucursal_id: number; kio_nombre: string; kio_email: string; kio_usuario_id: number | null; kio_estado: string; kio_version: number; kio_ultima_actividad: string | null; kio_created_at: string; kio_updated_at: string }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      sgrh_config_auditoria: {
+        Row: { aud_id: number; aud_empresa_id: number; aud_usuario_id: number; aud_entidad: string; aud_referencia: string; aud_accion: string; aud_created_at: string }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
       sgrh_programacion_semanal: {
         Row: {
           prg_creado_por_id: number | null
@@ -3052,6 +3064,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      sgrh_assert_branch_admin: {
+        Args: { p_actor: string; p_empresa: number; p_kioscos?: boolean }
+        Returns: number
+      }
+      sgrh_save_branch: {
+        Args: { p_actor: string; p_empresa: number; p_id: number | null; p_data: Json; p_direccion: Json }
+        Returns: number
+      }
+      sgrh_manage_kiosk: {
+        Args: { p_actor: string; p_empresa: number; p_action: string; p_id: string | null; p_data: Json }
+        Returns: string
+      }
+      sgrh_kiosk_context: {
+        Args: { p_auth: string; p_empresa: number }
+        Returns: Json
+      }
       actualizar_perfil_empresa: {
         Args: { p_datos: Json; p_direccion: Json }
         Returns: undefined
