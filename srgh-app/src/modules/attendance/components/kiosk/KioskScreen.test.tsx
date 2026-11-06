@@ -302,6 +302,47 @@ describe('<KioskScreen />', () => {
   })
 
   describe('cuando Face ID no alcanza', () => {
+    it('una solicitud interrumpida no se confunde con un error de camara y permite volver a reconocer', async () => {
+      mockVerifyFace.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(MATCH)
+      render(<KioskScreen employees={employees} />)
+      await emitEmbedding()
+
+      expect(screen.getByText('No pudimos verificarte')).toBeInTheDocument()
+      expect(screen.getByText(/No se pudo completar la verificacion/)).toBeInTheDocument()
+      expect(screen.queryByText('La camara no esta disponible')).not.toBeInTheDocument()
+      expect(mockGetKioskMarkOptions).not.toHaveBeenCalled()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Intentar de nuevo' }))
+      expect(screen.getByTestId('face-scan')).toBeInTheDocument()
+      await emitEmbedding()
+      expect(await screen.findByRole('button', { name: 'Entrada' })).toBeEnabled()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+    })
+
+    it('mientras la verificacion esta pendiente no muestra marcas ni registra asistencia', async () => {
+      let finish!: (value: typeof MATCH) => void
+      mockVerifyFace.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      render(<KioskScreen employees={employees} />)
+      let pending!: Promise<void>
+      act(() => {
+        pending = faceScanProps!.onEmbedding(PAYLOAD) as Promise<void>
+      })
+      expect(screen.getByText('Verificando tu rostro…')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+      await act(async () => {
+        finish(MATCH)
+        await pending
+      })
+      expect(await screen.findByRole('button', { name: 'Entrada' })).toBeEnabled()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+    })
+
     it('DENIED: no reconocido, pide avisar al encargado, sin forma de marcar', async () => {
       mockVerifyFace.mockResolvedValue({ ok: true, status: 'DENIED' })
       render(<KioskScreen employees={employees} />)

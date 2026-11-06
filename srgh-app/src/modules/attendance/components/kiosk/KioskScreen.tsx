@@ -264,6 +264,11 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
         // REQUIRE_PIN conserva su nombre en verifyFace, pero ya no hay PIN:
         // es la zona de duda, se ofrece reintentar.
         setFailure(result.status === 'DENIED' ? FAILURES.noReconocido : FAILURES.dudoso)
+      } catch {
+        setFailure({
+          titulo: 'No pudimos verificarte',
+          detalle: `No se pudo completar la verificacion. Intenta de nuevo. ${AVISA_AL_ENCARGADO}`,
+        })
       } finally {
         setVerifying(false)
       }
