@@ -50,6 +50,9 @@ the existing hosted environments have the same problem.
 - Candidate document validation failure keeps the selected file; correcting the
   name uploads it to real Storage, persists metadata, and permits a signed
   download after reload.
+- A deliberately aborted upload request never reaches the server; the browser
+  preserves the selected file and metadata, and retry succeeds against real
+  Storage. This does not simulate a response lost after the server committed.
 - A candidate belonging to the other company displays the not-found screen and
   exposes no candidate name. App Router streaming can return HTTP 200 before
   `notFound()` resolves, so this checks the rendered result, not a fixed status.

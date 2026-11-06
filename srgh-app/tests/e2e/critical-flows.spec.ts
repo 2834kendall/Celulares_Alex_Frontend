@@ -55,6 +55,48 @@ test('candidate document validation preserves the selected file, then upload and
   expect((await download).suggestedFilename()).toBe('CV E2E 105.pdf')
 })
 
+test('a failed document request keeps the file and permits a successful retry', async ({
+  page,
+}) => {
+  await login(page)
+  await page.goto('/recruitment/candidates/1051')
+  await page.getByRole('button', { name: /Documentos/ }).click()
+  await page
+    .locator('input[type=file]')
+    .setInputFiles({
+      name: 'reintento.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF'),
+    })
+  const dialog = page.getByRole('dialog', { name: 'Guardar documento' })
+  await dialog.getByLabel('Nombre', { exact: true }).fill('CV Recuperado E2E 105')
+  let blocked = false
+  await page.route('**/recruitment/candidates/1051', async (route) => {
+    if (
+      !blocked &&
+      route.request().method() === 'POST' &&
+      route.request().headers()['next-action']
+    ) {
+      blocked = true
+      await route.abort('failed')
+      return
+    }
+    await route.continue()
+  })
+  await dialog.getByRole('button', { name: 'Guardar documento', exact: true }).click()
+  await expect(dialog.getByText('No se pudo subir el documento. Reintentá.')).toBeVisible()
+  expect(blocked).toBe(true)
+  await expect(dialog.getByLabel('Nombre', { exact: true })).toHaveValue('CV Recuperado E2E 105')
+  await expect(dialog.getByText('Archivo: reintento.pdf')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Guardar documento', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await page.reload()
+  await page.getByRole('button', { name: /Documentos/ }).click()
+  await expect(
+    page.getByRole('button', { name: 'Abrir CV Recuperado E2E 105', exact: true })
+  ).toHaveCount(1)
+})
+
 test('foreign candidate details are unavailable to the authenticated company', async ({ page }) => {
   await login(page)
   await page.goto('/recruitment/candidates/1052')

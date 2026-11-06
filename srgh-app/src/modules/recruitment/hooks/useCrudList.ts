@@ -36,10 +36,17 @@ export function useCrudList<T>(deleteAction: (id: number) => Promise<DeleteResul
     setConfirmingId(null)
     setDeleteError(null)
     setDeletingId(id)
-    const result = await deleteAction(id)
-    setDeletingId(null)
-    if (!result.ok) setDeleteError(result.error)
-    return result
+    try {
+      const result = await deleteAction(id)
+      if (!result.ok) setDeleteError(result.error)
+      return result
+    } catch {
+      const error = 'No se pudo eliminar. Reintentá.'
+      setDeleteError(error)
+      return { ok: false, error }
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   return {
