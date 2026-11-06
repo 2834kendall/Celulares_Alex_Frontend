@@ -102,6 +102,53 @@ describe('FaceScan continuity', () => {
     expect(mocks.detect).toHaveBeenCalledTimes(2)
   })
 
+  it('reports missing camera support without starting recognition', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined })
+    const onUnavailable = vi.fn()
+    const onEmbedding = vi.fn()
+    render(<FaceScan onEmbedding={onEmbedding} onUnavailable={onUnavailable} />)
+    await waitFor(() => expect(onUnavailable).toHaveBeenCalledTimes(1))
+    expect(onUnavailable).toHaveBeenCalledWith('Este dispositivo no tiene camara disponible.')
+    expect(mocks.detect).not.toHaveBeenCalled()
+    expect(onEmbedding).not.toHaveBeenCalled()
+  })
+
+  it('handles camera permission denial without emitting a facial payload', async () => {
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(
+      new DOMException('Denied', 'NotAllowedError')
+    )
+    const onUnavailable = vi.fn()
+    const onEmbedding = vi.fn()
+    render(<FaceScan onEmbedding={onEmbedding} onUnavailable={onUnavailable} />)
+    await waitFor(() =>
+      expect(onUnavailable).toHaveBeenCalledWith('No se pudo acceder a la camara.')
+    )
+    expect(onEmbedding).not.toHaveBeenCalled()
+    expect(mocks.detect).not.toHaveBeenCalled()
+  })
+
+  it('stops the camera if frame detection throws', async () => {
+    const { onUnavailable, onEmbedding } = await mount()
+    mocks.detect.mockImplementationOnce(() => {
+      throw new Error('runtime failure')
+    })
+    await frame()
+    expect(onUnavailable).toHaveBeenCalledTimes(1)
+    expect(mocks.stop).toHaveBeenCalled()
+    expect(onEmbedding).not.toHaveBeenCalled()
+  })
+
+  it('reports encryption failure without publishing unencrypted biometrics', async () => {
+    mocks.encrypt.mockRejectedValueOnce(new Error('encryption failure'))
+    const { onUnavailable, onEmbedding } = await mount()
+    for (let i = 0; i < 24; i++) await frame()
+    await waitFor(() =>
+      expect(onUnavailable).toHaveBeenCalledWith('No se pudo procesar el rostro capturado.')
+    )
+    expect(onEmbedding).not.toHaveBeenCalled()
+    expect(mocks.stop).toHaveBeenCalled()
+  })
+
   it('can wait idle without timing out before anybody approaches', async () => {
     mocks.detect.mockReturnValue(null)
     const { onUnavailable } = await mount()

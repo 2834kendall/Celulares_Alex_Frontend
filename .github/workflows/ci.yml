@@ -117,6 +117,35 @@ jobs:
       - name: Test
         run: pnpm test --shard=${{ matrix.shard }}/2
 
+  coverage:
+    name: Security coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: srgh-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ">=22.13"
+          cache: pnpm
+          cache-dependency-path: srgh-app/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+      - name: Enforce existing security coverage thresholds
+        run: pnpm test:coverage --maxWorkers=4 --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=html
+      - name: Publish coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-coverage
+          path: srgh-app/coverage
+          retention-days: 14
+          if-no-files-found: error
+
   # Compila la app. Atrapa lo que lint, typecheck y tests
   # no ven: limites Server/Client mal puestos, imports que solo revientan al
   # empaquetar, rutas que no prerenderizan.
@@ -187,16 +216,18 @@ jobs:
   ci:
     name: CI passed
     if: always()
-    needs: [static, test, build]
+    needs: [static, test, coverage, build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs succeeded
         run: |
           echo "static: ${{ needs.static.result }}"
           echo "test:   ${{ needs.test.result }}"
+          echo "coverage: ${{ needs.coverage.result }}"
           echo "build:  ${{ needs.build.result }}"
           if [ "${{ needs.static.result }}" != "success" ] \
             || [ "${{ needs.test.result }}" != "success" ] \
+            || [ "${{ needs.coverage.result }}" != "success" ] \
             || [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::Algun job del CI no paso."
             exit 1
