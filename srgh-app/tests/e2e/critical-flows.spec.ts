@@ -61,13 +61,11 @@ test('a failed document request keeps the file and permits a successful retry', 
   await login(page)
   await page.goto('/recruitment/candidates/1051')
   await page.getByRole('button', { name: /Documentos/ }).click()
-  await page
-    .locator('input[type=file]')
-    .setInputFiles({
-      name: 'reintento.pdf',
-      mimeType: 'application/pdf',
-      buffer: Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF'),
-    })
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'reintento.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF'),
+  })
   const dialog = page.getByRole('dialog', { name: 'Guardar documento' })
   await dialog.getByLabel('Nombre', { exact: true }).fill('CV Recuperado E2E 105')
   let blocked = false
