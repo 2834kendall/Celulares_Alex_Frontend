@@ -340,7 +340,10 @@ export function DashboardBoard({
 
                 {/* While personalizing, the panel is a block to arrange, not
                     something to operate: its own controls are switched off. */}
-                <div className={cn('h-full [&>section]:h-full', editing && 'pointer-events-none')}>
+                <div
+                  inert={editing}
+                  className={cn('h-full [&>section]:h-full', editing && 'pointer-events-none')}
+                >
                   {node ?? (
                     <div
                       className="flex h-full min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white/60 text-sm text-slate-500"
