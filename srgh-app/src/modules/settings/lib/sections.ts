@@ -72,6 +72,14 @@ export const SETTINGS_TREE: SettingsTree = {
       visible: (permisos) => permisos.includes(PERMISOS.EMPRESAS_WRITE),
     },
     {
+      id: 'branches',
+      label: 'Sucursales y kioscos',
+      description: 'Ubicaciones de la empresa y sus accesos de marcación.',
+      href: '/settings/branches',
+      keywords: ['sucursal', 'tienda', 'terminal', 'kiosco', 'cuenta', 'marcacion'],
+      visible: (permisos) => permisos.includes(PERMISOS.EMPRESAS_WRITE),
+    },
+    {
       id: 'general',
       label: 'General',
       description: 'Preferencias que aplican a todas las sucursales de la empresa.',
