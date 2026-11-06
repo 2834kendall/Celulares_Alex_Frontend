@@ -49,12 +49,20 @@ export function getFaceLandmarker(): Promise<FaceLandmarker> {
       // reventaba en el SSR antes de montar nada.
       const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision')
       const fileset = await FilesetResolver.forVisionTasks(WASM_PATH)
-      return FaceLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_PATH, delegate: 'GPU' },
-        runningMode: 'VIDEO',
-        numFaces: 1,
-        outputFaceBlendshapes: false,
-      })
+      const create = (delegate: 'GPU' | 'CPU') =>
+        FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: MODEL_PATH, delegate },
+          runningMode: 'VIDEO',
+          numFaces: 1,
+          outputFaceBlendshapes: false,
+        })
+      try {
+        return await create('GPU')
+      } catch {
+        // Some devices block hardware acceleration. Keep the same model and
+        // capture policy, using MediaPipe's WASM CPU delegate instead.
+        return create('CPU')
+      }
     })().catch((err) => {
       // Si fallo la carga (assets ausentes, WebGL bloqueado), el siguiente
       // intento debe poder reintentar en vez de heredar la promesa rota.
