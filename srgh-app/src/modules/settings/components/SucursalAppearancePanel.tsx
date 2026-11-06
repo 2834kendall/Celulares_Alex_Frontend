@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 import { useRouter } from 'next/navigation'
 import { Building2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -43,6 +44,7 @@ export function SucursalAppearancePanel({
   officialColorSidebar,
 }: SucursalAppearancePanelProps) {
   const router = useRouter()
+  const confirmLeave = useConfirmLeave()
   const [seleccionadaId, setSeleccionadaId] = useState<number | null>(
     sucursalIdInicial ?? sucursales[0]?.id ?? null
   )
@@ -100,7 +102,10 @@ export function SucursalAppearancePanel({
               <button
                 key={sucursal.id}
                 type="button"
-                onClick={() => elegirSucursal(sucursal.id)}
+                onClick={() => {
+                  if (sucursal.id !== seleccionadaId)
+                    confirmLeave(() => elegirSucursal(sucursal.id))
+                }}
                 disabled={cambiandoVista}
                 className={cn(
                   'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium outline-none transition',

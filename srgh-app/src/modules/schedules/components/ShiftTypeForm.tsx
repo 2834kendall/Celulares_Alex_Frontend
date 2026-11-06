@@ -1,7 +1,8 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Layers, Loader2 } from 'lucide-react'
 import { shiftTypeSchema, type ShiftTypeInput, type ShiftTypeRow } from '@/modules/schedules/types'
@@ -24,8 +25,10 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
   const {
     register,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<ShiftTypeInput>({
+    unsavedLabel: 'el tipo de jornada',
     resolver: zodResolver(shiftTypeSchema),
     defaultValues: shiftType
       ? {
@@ -57,11 +60,17 @@ export function ShiftTypeForm({ shiftType, onSuccess }: ShiftTypeFormProps) {
     }
 
     // revalidatePath('/schedule') in the server action already refreshes the route.
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

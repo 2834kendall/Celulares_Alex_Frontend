@@ -1,6 +1,8 @@
 'use client'
 
-import { useForm, type Resolver } from 'react-hook-form'
+import { useForm } from '@/hooks/useProtectedForm'
+
+import { type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import {
@@ -15,6 +17,7 @@ import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { Alert } from '@/components/ui/Alert'
 
 interface DocumentMetadataFormProps {
+  pendingFile?: File
   tiposDocumento: CatalogoItem[]
   defaultValues?: Partial<DocumentoMetadataInput>
   serverError?: string | null
@@ -37,6 +40,7 @@ interface DocumentMetadataFormProps {
  * botón y con Enter en los campos de una línea.
  */
 export function DocumentMetadataForm({
+  pendingFile,
   tiposDocumento,
   defaultValues,
   serverError,
@@ -48,8 +52,12 @@ export function DocumentMetadataForm({
     register,
     control,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<DocumentoMetadataInput>({
+    unsavedLabel: 'los datos del documento',
+    unsavedExtra: pendingFile,
+    unsavedHasFiles: Boolean(pendingFile),
     // z.preprocess (emptyToNull) vuelve `unknown` el lado input del schema;
     // el formulario trabaja con el tipo de salida (mismo criterio que
     // EmployeeWizard con onboardingEmpleadoSchema).
@@ -68,6 +76,7 @@ export function DocumentMetadataForm({
 
   return (
     <div
+      ref={(element) => guard.bindRoot(element)}
       className="space-y-3"
       onKeyDown={(e) => {
         // Enter confirma, como en un form real — salvo en el textarea, donde
@@ -149,7 +158,12 @@ export function DocumentMetadataForm({
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-1">
-        <Button onClick={onCancel} disabled={isSubmitting} variant="secondary" size="md">
+        <Button
+          onClick={() => guard.confirmLeave(onCancel)}
+          disabled={isSubmitting}
+          variant="secondary"
+          size="md"
+        >
           Cancelar
         </Button>
         {/* type="button": este bloque no es un <form>, y en el wizard un

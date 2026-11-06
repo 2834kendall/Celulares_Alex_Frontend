@@ -1,7 +1,8 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Clock, Info, Loader2, Save, TrendingDown, TrendingUp } from 'lucide-react'
 import {
@@ -73,8 +74,10 @@ export function DetalleEditForm({
   const {
     register,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<EditarDetalleInput>({
+    unsavedLabel: 'el detalle de nómina',
     resolver: zodResolver(editarDetalleSchema),
     defaultValues: {
       montos: Object.fromEntries(
@@ -100,11 +103,17 @@ export function DetalleEditForm({
       return
     }
 
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>
@@ -278,7 +287,7 @@ export function DetalleEditForm({
       <div className="flex items-center justify-end gap-2">
         <button
           type="button"
-          onClick={onCancel}
+          onClick={() => guard.confirmLeave(() => onCancel?.())}
           disabled={isSubmitting}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
         >

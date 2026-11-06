@@ -1,8 +1,10 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { FormProvider, useForm } from 'react-hook-form'
+import { FormProvider } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
@@ -26,6 +28,7 @@ export function BranchForm({
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const methods = useForm<BranchInput>({
+    unsavedLabel: 'la sucursal',
     resolver: zodResolver(branchSchema),
     defaultValues: {
       suc_nombre: branch?.suc_nombre ?? '',
@@ -47,6 +50,7 @@ export function BranchForm({
   const {
     register,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = methods
   const err = (name: string) => getFieldError(errors, name)
@@ -66,6 +70,7 @@ export function BranchForm({
         setError(r.error)
         return
       }
+      guard.acceptChanges()
       router.push(`/settings/branches/${r.data}`)
       router.refresh()
     } catch {
@@ -76,7 +81,12 @@ export function BranchForm({
   }
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(submit)} className="@container space-y-6" noValidate>
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit(submit)}
+        className="@container space-y-6"
+        noValidate
+      >
         {error && <Alert>{error}</Alert>}
         <fieldset
           disabled={isSubmitting}
@@ -174,7 +184,7 @@ export function BranchForm({
             type="button"
             variant="secondary"
             disabled={isSubmitting}
-            onClick={() => router.push('/settings/branches')}
+            onClick={() => guard.confirmLeave(() => router.push('/settings/branches'))}
           >
             Volver al listado
           </Button>

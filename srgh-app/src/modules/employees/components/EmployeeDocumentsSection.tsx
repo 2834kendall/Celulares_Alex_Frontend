@@ -45,6 +45,7 @@ export function EmployeeDocumentsSection({
   const {
     editing,
     setEditing,
+    finishEditing,
     deletingId,
     confirmingId,
     deleteError,
@@ -96,7 +97,7 @@ export function EmployeeDocumentsSection({
       return
     }
     toast.success('Documento actualizado.')
-    setEditing(null)
+    finishEditing()
   }
 
   async function handleDownload(key: string) {
@@ -162,6 +163,8 @@ export function EmployeeDocumentsSection({
       {archivoEnCola && (
         <Modal title="Datos del documento" subtitle={archivoEnCola.name} onClose={handleAddCancel}>
           <DocumentMetadataForm
+            key={`${archivoEnCola.name}:${archivoEnCola.lastModified}:${cola.length}`}
+            pendingFile={archivoEnCola}
             tiposDocumento={tiposDocumento}
             defaultValues={{ doc_nombre: nombreSinExtension(archivoEnCola.name) }}
             serverError={addError}

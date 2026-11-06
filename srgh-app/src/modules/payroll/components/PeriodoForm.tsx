@@ -1,8 +1,10 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useForm, type Resolver } from 'react-hook-form'
+import { type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -45,8 +47,10 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
     handleSubmit,
     watch,
     setValue,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<CrearPeriodoInput>({
+    unsavedLabel: 'el período de nómina',
     resolver: zodResolver(crearPeriodoSchema) as Resolver<CrearPeriodoInput>,
     mode: 'onTouched',
     defaultValues: {
@@ -113,11 +117,17 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
       )
     }
 
+    guard.acceptChanges()
     router.push(`/payroll/${result.periodoId}`)
   })
 
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-4">
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={onSubmit}
+      noValidate
+      className="space-y-4"
+    >
       {serverError && (
         <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />

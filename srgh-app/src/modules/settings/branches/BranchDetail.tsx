@@ -7,6 +7,7 @@ import type { TerritorioCatalogo } from '@/modules/employees/types'
 import type { Branch, BranchSettings } from './types'
 import { BranchForm } from './BranchForm'
 import { KiosksPanel } from './KiosksPanel'
+import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 
 export function BranchDetail({
   branch,
@@ -18,6 +19,7 @@ export function BranchDetail({
   territorio: TerritorioCatalogo
 }) {
   const [tab, setTab] = useState('datos')
+  const confirmLeave = useConfirmLeave()
   return (
     <div className="space-y-6">
       <PageHeader
@@ -31,7 +33,9 @@ export function BranchDetail({
         <Button
           variant={tab === 'datos' ? 'primary' : 'secondary'}
           aria-pressed={tab === 'datos'}
-          onClick={() => setTab('datos')}
+          onClick={() => {
+            if (tab !== 'datos') confirmLeave(() => setTab('datos'))
+          }}
         >
           Datos
         </Button>
@@ -39,7 +43,9 @@ export function BranchDetail({
           <Button
             variant={tab === 'kioscos' ? 'primary' : 'secondary'}
             aria-pressed={tab === 'kioscos'}
-            onClick={() => setTab('kioscos')}
+            onClick={() => {
+              if (tab !== 'kioscos') confirmLeave(() => setTab('kioscos'))
+            }}
           >
             Kioscos
           </Button>
