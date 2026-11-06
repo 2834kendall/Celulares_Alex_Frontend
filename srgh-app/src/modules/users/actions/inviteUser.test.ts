@@ -41,7 +41,10 @@ function mockAdmin(
   responses: Parameters<typeof createSupabaseAdminClientMock>[0],
   options?: Parameters<typeof createSupabaseAdminClientMock>[1]
 ) {
-  const admin = createSupabaseAdminClientMock(responses, options)
+  const admin = createSupabaseAdminClientMock(
+    { sgrh_cat_roles: { data: { rol_id: 13 }, error: null }, ...responses },
+    options
+  )
   mockCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>)
   return admin
 }
