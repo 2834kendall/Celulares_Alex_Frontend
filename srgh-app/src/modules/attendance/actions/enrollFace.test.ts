@@ -3,6 +3,7 @@ import { enrollFace } from './enrollFace'
 import { getFaceEnrollment } from './getFaceEnrollment'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { PERMISOS } from '@/lib/permissions/catalog'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import { encryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
 import type { LivenessProof } from '@/modules/attendance/lib/face/livenessProof'
@@ -52,6 +53,21 @@ describe('enrollFace (server action)', () => {
     })
 
     expect(result).toEqual({ ok: false, error: 'Datos de enrolamiento invalidos.' })
+  })
+
+  // SGRH-102: el gerente enrola con un permiso propio. Con EMPLEADOS_WRITE (lo
+  // de antes) el gerente quedaba afuera, y darselo le abriria el expediente.
+  it('pide BIOMETRIA_WRITE, no EMPLEADOS_WRITE', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: { data: { lab_id: 1 }, error: null },
+        sgrh_biometria_empleado: { data: null, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    await enrollFace({ employeeId: 10, vector: await encryptedEnrollment() })
+
+    expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.BIOMETRIA_WRITE)
   })
 
   it('falla si el servidor no tiene la llave configurada', async () => {
