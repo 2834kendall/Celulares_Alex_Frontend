@@ -46,6 +46,7 @@ export function useOfflineSync() {
   const backoffRef = useRef(BASE_BACKOFF_MS)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const syncingRef = useRef(false)
+  const mounted = useRef(true)
   // Referencia a la version mas reciente de attemptSync: el reintento con
   // backoff se llama a si mismo desde un setTimeout, y auto-referenciar el
   // useCallback por su nombre antes de terminar de declararse dispara
@@ -55,17 +56,17 @@ export function useOfflineSync() {
 
   const refreshPendingCount = useCallback(async () => {
     const marks = await getQueuedMarks()
-    setPendingCount(marks.length)
+    if (mounted.current) setPendingCount(marks.length)
     return marks
   }, [])
 
   const refreshDiscardedCount = useCallback(async () => {
     const marks = await getDiscardedMarks()
-    setDiscardedCount(marks.length)
+    if (mounted.current) setDiscardedCount(marks.length)
   }, [])
 
   const attemptSync = useCallback(async () => {
-    if (syncingRef.current) return
+    if (syncingRef.current || !mounted.current) return
     syncingRef.current = true
 
     if (timeoutRef.current) {
@@ -74,22 +75,38 @@ export function useOfflineSync() {
     }
 
     try {
+      if (!navigator.onLine) return
       const marks = await refreshPendingCount()
       let allSynced = true
+      const blockedEmployees = new Set<number>()
 
       for (const mark of marks) {
-        const result = await registerKioskMark({
-          employeeId: mark.employeeId,
-          tipo: mark.tipo,
-          latitud: mark.latitud,
-          longitud: mark.longitud,
-          ticketFacial: mark.ticketFacial,
-          dispositivoId: mark.dispositivoId,
-          // La hora capturada al encolar, no la de este intento de envio: es
-          // lo que distingue "marco a las 8:00 y no habia red" de "marco a
-          // las 14:00". Sin esto la marca diferida nace como tardanza falsa.
-          fechaHora: mark.fechaHora,
-        })
+        if (!mounted.current || !navigator.onLine) {
+          allSynced = false
+          break
+        }
+        if (blockedEmployees.has(mark.employeeId)) continue
+        let result: Awaited<ReturnType<typeof registerKioskMark>>
+        try {
+          result = await registerKioskMark({
+            operationId: mark.id,
+            sincronizada: true,
+            employeeId: mark.employeeId,
+            tipo: mark.tipo,
+            latitud: mark.latitud,
+            longitud: mark.longitud,
+            ticketFacial: mark.ticketFacial,
+            dispositivoId: mark.dispositivoId,
+            // La hora capturada al encolar, no la de este intento de envio: es
+            // lo que distingue "marco a las 8:00 y no habia red" de "marco a
+            // las 14:00". Sin esto la marca diferida nace como tardanza falsa.
+            fechaHora: mark.fechaHora,
+          })
+        } catch {
+          blockedEmployees.add(mark.employeeId)
+          allSynced = false
+          continue
+        }
 
         if (result.ok) {
           await removeQueuedMark(mark.id)
@@ -107,19 +124,21 @@ export function useOfflineSync() {
         }
 
         allSynced = false
+        blockedEmployees.add(mark.employeeId)
       }
 
       const remaining = await refreshPendingCount()
 
       if (allSynced || remaining.length === 0) {
         backoffRef.current = BASE_BACKOFF_MS
-      } else {
+      } else if (mounted.current) {
         backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS)
         timeoutRef.current = setTimeout(() => {
           void attemptSyncRef.current()
         }, backoffRef.current)
       }
     } catch {
+      if (!mounted.current) return
       backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS)
       timeoutRef.current = setTimeout(() => {
         void attemptSyncRef.current()
@@ -134,6 +153,7 @@ export function useOfflineSync() {
   }, [attemptSync])
 
   useEffect(() => {
+    mounted.current = true
     // setTimeout(0, ...) en vez de invocar refreshPendingCount()/setIsOnline
     // directo: el linter marca como sospechoso llamar, dentro del cuerpo del
     // efecto, a cualquier funcion que termine en un setState — incluso si es
@@ -146,6 +166,7 @@ export function useOfflineSync() {
       setIsOnline(navigator.onLine)
       void refreshPendingCount()
       void refreshDiscardedCount()
+      if (navigator.onLine) void attemptSyncRef.current()
     }, 0)
 
     function handleOnline() {
@@ -161,6 +182,7 @@ export function useOfflineSync() {
     window.addEventListener('offline', handleOffline)
 
     return () => {
+      mounted.current = false
       clearTimeout(initialLoad)
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
@@ -170,18 +192,25 @@ export function useOfflineSync() {
 
   const submitMark = useCallback(
     async (input: KioskMarkInput): Promise<SubmitMarkOutcome> => {
+      // Allocate once BEFORE the first request; preserve it if its response is lost.
+      const operationId = input.operationId ?? crypto.randomUUID()
+      const fechaHora = input.fechaHora ?? nowInCostaRica()
+      const request = { ...input, operationId, fechaHora }
+      const queuedAt = Date.now()
       const queueNow = async () => {
         await queueOfflineMark({
-          id: crypto.randomUUID(),
+          id: operationId,
           employeeId: input.employeeId,
           tipo: input.tipo,
-          fechaHora: nowInCostaRica(),
+          fechaHora,
+          queuedAt,
           latitud: input.latitud,
           longitud: input.longitud,
           ticketFacial: input.ticketFacial,
           dispositivoId: input.dispositivoId,
         })
         await refreshPendingCount()
+        if (navigator.onLine) void attemptSyncRef.current()
       }
 
       if (!isOnline) {
@@ -190,7 +219,12 @@ export function useOfflineSync() {
       }
 
       try {
-        const result = await registerKioskMark(input)
+        // Do not overtake an older event belonging to the same employee.
+        if ((await getQueuedMarks()).some((m) => m.employeeId === input.employeeId)) {
+          await queueNow()
+          return { queued: true }
+        }
+        const result = await registerKioskMark(request)
         return { queued: false, result }
       } catch {
         await queueNow()

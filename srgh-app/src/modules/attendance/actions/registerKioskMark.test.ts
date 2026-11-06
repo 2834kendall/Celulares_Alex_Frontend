@@ -16,8 +16,10 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 // salvo sgrh_ausencias, que por defecto viene vacia: nadie tiene ausencia.
 let ausenciasAdmin: { data: unknown; error: unknown } = { data: [], error: null }
 let clienteActual: { from: (tabla: string) => unknown } | null = null
+const atomicWrite = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
+    rpc: atomicWrite,
     from: (tabla: string) =>
       tabla === 'sgrh_ausencias'
         ? createSupabaseClientMock({ sgrh_ausencias: ausenciasAdmin }).from(tabla)
@@ -81,15 +83,14 @@ function useClient(client: ClientMock) {
 
 /** El builder del INSERT: la ultima llamada sobre la tabla de marcas. */
 function insertedMark(client: ClientMock) {
-  const builder = client.from.mock.results.findLast(
-    (_r, i) => client.from.mock.calls[i][0] === 'sgrh_marcas_asistencia'
-  )!.value
-  return (builder.insert as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
+  void client
+  return atomicWrite.mock.calls[0]?.[1]?.p_marca
 }
 
 describe('registerKioskMark (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    atomicWrite.mockResolvedValue({ data: 'inserted', error: null })
     ausenciasAdmin = { data: [], error: null }
     vi.stubEnv('FACE_TICKET_SECRET', TICKET_SECRET)
     mockRequirePermission.mockResolvedValue({
@@ -358,6 +359,7 @@ describe('registerKioskMark (server action)', () => {
   })
 
   it('devuelve error generico si supabase falla al insertar', async () => {
+    atomicWrite.mockResolvedValue({ data: null, error: { message: 'boom' } })
     useClient(
       clientConTurno({
         sgrh_marcas_asistencia: [
@@ -371,6 +373,61 @@ describe('registerKioskMark (server action)', () => {
       ok: false,
       error: 'No se pudo registrar la marca.',
     })
+  })
+
+  it('reconoce un reintento guardado antes de rechazar la secuencia repetida', async () => {
+    const fechaHora = '2026-11-05 08:00:00'
+    const client = useClient(
+      clientConTurno({
+        sgrh_marcas_asistencia: {
+          data: { mar_tipo: 'entrada', mar_fecha_hora: fechaHora },
+          error: null,
+        },
+      })
+    )
+    expect(
+      await registerKioskMark(
+        await validInput({
+          operationId: '00000000-0000-4000-8000-000000000001',
+          fechaHora,
+          ticketFacial: await signFaceTicket(
+            10,
+            TICKET_SECRET,
+            new Date('2026-11-05T14:00:00Z').getTime()
+          ),
+        })
+      )
+    ).toEqual({ ok: true })
+    expect(atomicWrite).not.toHaveBeenCalled()
+    const query = client.from.mock.results[0].value
+    expect(query.eq).toHaveBeenCalledWith('sgrh_historial_laboral.lab_empleado_id', 10)
+    expect(query.eq).toHaveBeenCalledWith('sgrh_historial_laboral.lab_empresa_id', 1)
+    expect(query.in).toHaveBeenCalledWith('mar_sucursal_id', [100])
+  })
+
+  it('un cambio concurrente de jornada se puede reintentar, no se descarta', async () => {
+    useClient(clientConTurno())
+    atomicWrite.mockResolvedValue({ data: 'stale', error: null })
+    expect(await registerKioskMark(await validInput())).toEqual({
+      ok: false,
+      error: 'Tus marcas cambiaron mientras se guardaba. Intenta de nuevo.',
+    })
+  })
+
+  it('no descarta la marca si la consulta de programacion falla temporalmente', async () => {
+    useClient(
+      clientConTurno({ sgrh_programacion_semanal: { data: null, error: { message: 'offline' } } })
+    )
+    const result = await registerKioskMark(await validInput())
+    expect(result.ok).toBe(false)
+    expect(result).not.toHaveProperty('definitivo', true)
+    expect(atomicWrite).not.toHaveBeenCalled()
+  })
+
+  it('un resultado duplicado de la escritura atomica se considera exito', async () => {
+    useClient(clientConTurno())
+    atomicWrite.mockResolvedValue({ data: 'duplicate', error: null })
+    expect(await registerKioskMark(await validInput())).toEqual({ ok: true })
   })
 
   describe('ausencias aprobadas', () => {

@@ -48,6 +48,56 @@ describe('useOfflineSync', () => {
     expect(result.current.pendingCount).toBe(0)
   })
 
+  it('sincroniza pendientes al arrancar conectado sin esperar un evento online', async () => {
+    await queueOfflineMark({ ...input, id: crypto.randomUUID(), fechaHora: '2026-11-05 08:00:00' })
+    mockRegisterKioskMark.mockResolvedValue({ ok: true })
+    const { result } = renderHook(() => useOfflineSync())
+    await waitFor(() => expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(result.current.pendingCount).toBe(0))
+  })
+
+  it('no adelanta la salida de un empleado cuya entrada tiene un fallo temporal', async () => {
+    const first = crypto.randomUUID()
+    await queueOfflineMark({ ...input, id: first, fechaHora: '2026-11-05 08:00:00' })
+    await queueOfflineMark({
+      ...input,
+      id: crypto.randomUUID(),
+      tipo: 'salida',
+      fechaHora: '2026-11-05 17:00:00',
+    })
+    await queueOfflineMark({
+      ...input,
+      id: crypto.randomUUID(),
+      employeeId: 20,
+      fechaHora: '2026-11-05 09:00:00',
+    })
+    mockRegisterKioskMark.mockImplementation(async (mark) =>
+      mark.employeeId === 10 ? { ok: false, error: 'Temporal' } : { ok: true }
+    )
+    const { result } = renderHook(() => useOfflineSync())
+    await waitFor(() => expect(mockRegisterKioskMark).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(result.current.pendingCount).toBe(2))
+    expect(mockRegisterKioskMark.mock.calls.map(([mark]) => [mark.employeeId, mark.tipo])).toEqual([
+      [10, 'entrada'],
+      [20, 'entrada'],
+    ])
+  })
+
+  it('conserva la operacion y hora originales si se pierde la respuesta', async () => {
+    mockRegisterKioskMark.mockImplementationOnce(async () => {
+      setOnline(false)
+      throw new Error('response lost')
+    })
+    const { result } = renderHook(() => useOfflineSync())
+    await act(async () => {
+      await result.current.submitMark(input)
+    })
+    const sent = mockRegisterKioskMark.mock.calls[0][0]
+    const [queued] = await getQueuedMarks()
+    expect(queued.id).toBe(sent.operationId)
+    expect(queued.fechaHora).toBe(sent.fechaHora)
+  })
+
   it('detecta el estado offline inicial', async () => {
     setOnline(false)
     const { result } = renderHook(() => useOfflineSync())
@@ -81,7 +131,13 @@ describe('useOfflineSync', () => {
     })
 
     expect(outcome).toEqual({ queued: false, result: { ok: true } })
-    expect(mockRegisterKioskMark).toHaveBeenCalledWith(input)
+    expect(mockRegisterKioskMark).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...input,
+        operationId: expect.any(String),
+        fechaHora: expect.any(String),
+      })
+    )
     expect(result.current.pendingCount).toBe(0)
   })
 
@@ -114,6 +170,7 @@ describe('useOfflineSync', () => {
   })
 
   it('al sincronizar manda la hora del EVENTO, no la del reintento', async () => {
+    setOnline(false)
     // Marca hecha a las 08:00 con la tablet sin red: asi quedo en la cola.
     await queueOfflineMark({
       id: 'marca-de-las-ocho',
@@ -131,6 +188,7 @@ describe('useOfflineSync', () => {
     await waitFor(() => expect(result.current.pendingCount).toBe(1))
 
     // La red vuelve horas despues y dispara la sincronizacion.
+    setOnline(true)
     await act(async () => {
       window.dispatchEvent(new Event('online'))
     })
@@ -143,6 +201,7 @@ describe('useOfflineSync', () => {
   })
 
   it('archiva y deja de reintentar una marca que el servidor rechaza para siempre', async () => {
+    setOnline(false)
     await queueOfflineMark({
       id: 'marca-sin-turno',
       employeeId: 10,
@@ -163,6 +222,7 @@ describe('useOfflineSync', () => {
     const { result } = renderHook(() => useOfflineSync())
     await waitFor(() => expect(result.current.pendingCount).toBe(1))
 
+    setOnline(true)
     await act(async () => {
       window.dispatchEvent(new Event('online'))
     })

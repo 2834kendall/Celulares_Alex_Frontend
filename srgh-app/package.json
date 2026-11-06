@@ -57,6 +57,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.1.0",
     "@commitlint/config-conventional": "^21.1.0",
+    "@electric-sql/pglite": "0.5.15",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
