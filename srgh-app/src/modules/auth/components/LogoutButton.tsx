@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 import { logout } from '@/modules/auth/actions/logout'
+import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 
 interface LogoutButtonProps {
   label?: string
@@ -16,6 +17,7 @@ export function LogoutButton({
   className = 'inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60',
 }: LogoutButtonProps) {
   const router = useRouter()
+  const confirmLeave = useConfirmLeave()
   const [loading, setLoading] = useState(false)
 
   async function handleLogout() {
@@ -48,7 +50,12 @@ export function LogoutButton({
   }
 
   return (
-    <button type="button" onClick={handleLogout} disabled={loading} className={className}>
+    <button
+      type="button"
+      onClick={() => confirmLeave(() => void handleLogout())}
+      disabled={loading}
+      className={className}
+    >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
       {label}
     </button>
