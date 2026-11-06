@@ -10,6 +10,9 @@ import { FACE_EMBEDDING_DIM } from '@/modules/attendance/lib/face/model'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
+vi.mock('@/modules/attendance/lib/liveKioskAccess', () => ({
+  liveKioskMetadata: vi.fn(async (_sub, meta) => meta),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 
@@ -80,6 +83,16 @@ const HISTORIAL = {
 }
 
 describe('verifyFace (server action)', () => {
+  it('rechaza el contexto bloqueado antes de consultar rostros', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, kiosk_error: 'Kiosco bloqueado' },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    expect(await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })).toEqual({
+      ok: false,
+      error: 'Kiosco bloqueado',
+    })
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('FACE_VECTOR_KEY', KEY)

@@ -8,6 +8,9 @@ import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
+vi.mock('@/modules/attendance/lib/liveKioskAccess', () => ({
+  liveKioskMetadata: vi.fn(async (_sub, meta) => meta),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequireAnyPermission = vi.mocked(requireAnyPermission)
@@ -55,6 +58,13 @@ const ANA = {
 }
 
 describe('getScheduledEmployees (server action)', () => {
+  it('rechaza el contexto bloqueado antes de leer colaboradores', async () => {
+    mockRequireAnyPermission.mockResolvedValue(
+      claims({ empresa_id: 1, kiosk_error: 'Kiosco bloqueado' })
+    )
+    expect(await getScheduledEmployees()).toEqual({ ok: false, error: 'Kiosco bloqueado' })
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequireAnyPermission.mockResolvedValue(

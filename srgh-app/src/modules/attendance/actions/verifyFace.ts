@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
+import type { ManagedKioskMeta } from '@/modules/attendance/lib/liveKioskAccess'
 import { resolveKioskSucursalIds } from '@/modules/attendance/lib/dayJourney'
 import { getDayAssignments, isWorkable } from '@/modules/attendance/lib/workingDay'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
@@ -61,11 +62,8 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   }
 
   const claims = await requireKioskAccess()
-  const meta = claims.app_metadata as {
-    usr_id?: number
-    empresa_id?: number
-    sucursal_ids?: number[]
-  }
+  const meta = claims.app_metadata as ManagedKioskMeta
+  if (meta.kiosk_error) return { ok: false, error: meta.kiosk_error }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
@@ -243,6 +241,8 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     employeeId: bestEmployeeId,
     fullName: nameByEmployee.get(bestEmployeeId) ?? '',
     confianza: clasificacion.confianza ?? 'tolerancia',
-    ticket: await signFaceTicket(bestEmployeeId, ticketSecret),
+    ticket: await (meta.kiosk_context
+      ? signFaceTicket(bestEmployeeId, ticketSecret, Date.now(), undefined, meta.kiosk_context)
+      : signFaceTicket(bestEmployeeId, ticketSecret)),
   }
 }

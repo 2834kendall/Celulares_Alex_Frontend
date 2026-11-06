@@ -7,6 +7,7 @@ import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { getDayAssignments, isWorkable } from '@/modules/attendance/lib/workingDay'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
 import type { ActiveEmployeeOption } from '@/modules/attendance/actions/getActiveEmployees'
+import type { ManagedKioskMeta } from '@/modules/attendance/lib/liveKioskAccess'
 
 interface EmployeeJoin {
   emp_id: number
@@ -50,11 +51,8 @@ export type GetScheduledEmployeesResult =
  */
 export async function getScheduledEmployees(): Promise<GetScheduledEmployeesResult> {
   const claims = await requireKioskAccess()
-  const meta = claims.app_metadata as {
-    usr_id?: number
-    empresa_id?: number
-    sucursal_ids?: number[] | null
-  }
+  const meta = claims.app_metadata as ManagedKioskMeta
+  if (meta.kiosk_error) return { ok: false, error: meta.kiosk_error }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
