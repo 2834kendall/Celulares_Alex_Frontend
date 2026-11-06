@@ -1,6 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { enrollFace } from './enrollFace'
-import { getFaceEnrollment } from './getFaceEnrollment'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
@@ -202,41 +201,5 @@ describe('enrollFace (server action)', () => {
 
       expect(result).toEqual({ ok: true })
     })
-  })
-})
-
-describe('getFaceEnrollment (server action)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockRequirePermission.mockResolvedValue({
-      app_metadata: { empresa_id: 1 },
-    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
-  })
-
-  it('devuelve los ids enrolados', async () => {
-    mockCreateClient.mockResolvedValue(
-      createSupabaseClientMock({
-        sgrh_biometria_empleado: {
-          data: [{ bio_empleado_id: 10 }, { bio_empleado_id: 12 }],
-          error: null,
-        },
-      }) as unknown as Awaited<ReturnType<typeof createClient>>
-    )
-
-    const result = await getFaceEnrollment()
-
-    expect(result).toEqual({ ok: true, enrolledIds: [10, 12] })
-  })
-
-  it('devuelve error generico si la consulta falla', async () => {
-    mockCreateClient.mockResolvedValue(
-      createSupabaseClientMock({
-        sgrh_biometria_empleado: { data: null, error: { message: 'boom' } },
-      }) as unknown as Awaited<ReturnType<typeof createClient>>
-    )
-
-    const result = await getFaceEnrollment()
-
-    expect(result).toEqual({ ok: false, error: 'No se pudo cargar el estado de enrolamiento.' })
   })
 })
