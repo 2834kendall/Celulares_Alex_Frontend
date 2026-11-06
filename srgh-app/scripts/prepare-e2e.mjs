@@ -11,5 +11,8 @@ const config = readFileSync('supabase/config.toml', 'utf8')
   .replace('project_id = "srgh-app"', 'project_id = "sgrh105-e2e"')
   .replace(/543(\d{2})/g, '554$1')
   .replaceAll('127.0.0.1:3000', '127.0.0.1:3105')
+if (!config.includes('project_id = "sgrh105-e2e"')) {
+  throw new Error('Source config changed: refusing to prepare an unexpected project ID')
+}
 writeFileSync(resolve(destination, 'config.toml'), config)
 console.log('Prepared isolated sgrh105-e2e stack on API port 55421.')

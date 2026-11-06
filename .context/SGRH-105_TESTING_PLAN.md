@@ -3,7 +3,7 @@
 Base: `dev` at `113975d6c9a5d3427a4c2610a28293e5ecacb375`.
 Branch: `test/SGRH-105-system-test-coverage`.
 
-## Implemented first batch
+## Implemented scope
 
 | Area | New behavior checked | Level |
 | --- | --- | --- |
@@ -18,22 +18,31 @@ Branch: `test/SGRH-105-system-test-coverage`.
 | Candidate applications | Validation, invisible candidate, insertion failure, authenticated company assignment, first-stage placement and refreshes | Unit, stage placement mocked |
 | Candidate detail | Invalid/missing candidate, independent query failures, candidate predicates and no dependent reads without applications | Unit, query mocked |
 | CV storage isolation | Actual repository storage policies execute under a non-owner PostgreSQL role against two companies; SELECT, INSERT, UPDATE and DELETE isolation, bucket restriction and unrelated permission denial | SQL integration, PGlite |
+| Attendance isolation | Real JWT helpers and SELECT/INSERT/UPDATE/DELETE policies enforce employee ownership, company isolation and single/multiple assigned branches; direct kiosk table access is blocked | SQL integration, PGlite |
+| Recruitment records | Actual candidate/document/application policies restrict reads and writes by company and permission; joins do not expose foreign candidates | SQL integration, PGlite |
+| Dashboard summaries | Approved absences, full-day vs intraday counts, missing joined people, staffing, evaluation scores, expiring contracts and provider failures | Unit, query mocked |
+| Candidate history | Stages/scores stay associated with their application; optional joins have safe fallbacks; dependent read failures remain errors | Unit, query mocked |
+| Kiosk interaction | Recognition alone never registers entry; a double tap while saving submits one mark | Component, verification mocked |
+| Browser flows | Real login, preferences persisted after reload, candidate document validation recovery/upload/signed download, foreign candidate denial and kiosk role restrictions | Playwright with isolated Supabase |
+| Atomic mark HTTP | Actual PostgREST RPC retries persist exactly one row, reject altered content and deny anonymous/kiosk callers | HTTP integration with isolated Supabase |
 
-The SQL fixture replaces Auth helper outputs with transaction-local company and permission values. It executes the real storage policy migration, not a handwritten equivalent. It does not run Supabase Auth, PostgREST, signed URL expiry or Storage HTTP APIs. Every SQL test rolls back its changes; no hosted database is used.
+The Storage PGlite fixture supplies company/permission helper outputs. The relational PGlite fixture instead loads the real JWT helper functions and supplies transaction-local claims through auth.jwt(). Both execute actual policy definitions from repository migrations under a non-owner role; every SQL case rolls back writes. These fixtures are not the full schema. The additional Supabase Docker suite runs all migrations and system/catalog seeds, real Auth/PostgREST/Storage, and explicit local provisioning described in [the E2E guide](../srgh-app/tests/e2e/README.md). No hosted database is used.
 
 ## CI
 
-Adds a required dependency of the aggregate `CI passed` job that runs `pnpm test:coverage`, enforces the existing 100% security thresholds and publishes an HTML/JSON coverage artifact for 14 days, including on failure when a report exists. It does not lower thresholds or claim module-wide 100% coverage. Sharded tests remain unchanged.
+The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. Coverage runs the unchanged 100% security gate plus a separate module config with measured progressive floors: attendance 87% lines/74% branches, dashboard 42%/33%, recruitment 68%/66%. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
 
-## Remaining work before final PR
+## Validation and limits
 
-- Extend loader success/failure cases for dashboard summaries and candidate stage/score grouping, using the coverage report to prioritize branches.
-- Extend actual database policy integration for attendance, candidates and their relational records, including branch-limited access. Storage policy fixtures alone do not establish full application isolation.
-- Add repeatable browser E2E for a kiosk mark with retry/no duplicate, role-specific dashboard and candidate document recovery against isolated services/fixtures.
-- Publish comparable module coverage in CI and set progressive regression thresholds after measuring the final baseline, retaining the existing security gates.
-- Keep real-device camera/accuracy checks explicitly separate from automated camera/inference doubles.
+- Local suite: 330 files and 3416 tests passed; security coverage remained 100% in all four metrics. The new browser/API suite passed six scenarios.
+- Typecheck, production build and lint passed; lint retains four pre-existing warnings outside this change.
+- Final module gate passed with 330 files/3416 tests: attendance 87.35% lines/74.43% branches, dashboard 42.93%/33.45%, recruitment 68.19%/66.75%.
+- No successful full camera-to-browser-mark journey is claimed. Component tests verify recognition/interaction boundaries and SQL/HTTP tests verify persistence; real device camera/accuracy checks remain separate.
+- The fresh local stack required an Auth hook EXECUTE grant and explicit Data API table/sequence grants. Those are visible test provisioning, not a production migration. Existing hosted environments were not queried or changed for this work.
+- Browser tests currently run in Chromium. They do not establish Firefox/WebKit compatibility.
+- Only local verification has run; no GitHub CI run is claimed for unpublished changes.
 
-Do not open the final PR or close SGRH-105 based only on this first batch. Other modules may be added after these priorities if time permits. No production migrations, permissions, records or secrets are changed.
+The user explicitly requested keeping the same ticket and opening no PR. Keep SGRH-105 in progress and all commits on the same branch. Other modules may be added after these priorities if time permits. No production migrations, permissions, records or secrets are changed.
 
 ## Reproduction
 
@@ -41,12 +50,13 @@ From `srgh-app`:
 
 ```powershell
 pnpm test:coverage --maxWorkers=4
+pnpm test:coverage:modules --maxWorkers=4
 pnpm typecheck
 pnpm lint
 pnpm build
 ```
 
-For comparable diagnostic module coverage, keep reports outside `.next` because the production build clears that directory. CLI zero thresholds below apply only to this diagnostic command; they do not modify the security thresholds in the committed config or the CI gate:
+For the real browser/API suite, follow [tests/e2e/README.md](../srgh-app/tests/e2e/README.md). For a broader diagnostic beyond the gated modules, keep reports outside `.next` because the production build clears that directory. CLI zero thresholds below apply only to this diagnostic command; they do not modify the security thresholds in the committed config or the CI gate:
 
 ```powershell
 pnpm exec vitest run --maxWorkers=4 --coverage --coverage.include=src/modules/** --coverage.include=src/lib/** --coverage.include=src/components/** --coverage.include=src/hooks/** --coverage.reporter=json-summary --coverage.reportsDirectory=coverage/testing-105 --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0

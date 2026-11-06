@@ -118,7 +118,7 @@ jobs:
         run: pnpm test --shard=${{ matrix.shard }}/2
 
   coverage:
-    name: Security coverage
+    name: Coverage checks
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -137,14 +137,59 @@ jobs:
         run: pnpm install --frozen-lockfile --prefer-offline
       - name: Enforce existing security coverage thresholds
         run: pnpm test:coverage --maxWorkers=4 --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=html
+      - name: Enforce module coverage baselines
+        run: pnpm test:coverage:modules --maxWorkers=4
       - name: Publish coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: security-coverage
+          name: coverage-reports
           path: srgh-app/coverage
           retention-days: 14
           if-no-files-found: error
+
+  e2e:
+    name: Browser & Supabase integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: srgh-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ">=22.13"
+          cache: pnpm
+          cache-dependency-path: srgh-app/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+      - name: Prepare isolated Supabase project
+        run: pnpm test:e2e:prepare
+      - name: Start isolated services
+        run: |
+          pnpm exec supabase start --workdir .e2e --exclude=studio --exclude=imgproxy --exclude=realtime --exclude=edge-runtime --exclude=vector --exclude=logflare > .e2e/start.log 2>&1
+          pnpm exec supabase status --workdir .e2e --output json > .e2e/connection.json
+      - name: Install test browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser and HTTP integration tests
+        run: pnpm test:e2e
+      - name: Publish browser report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-report
+          path: |
+            srgh-app/playwright-report
+            srgh-app/test-results
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Stop only the isolated test services
+        if: always()
+        run: pnpm exec supabase stop --workdir .e2e --project-id sgrh105-e2e
 
   # Compila la app. Atrapa lo que lint, typecheck y tests
   # no ven: limites Server/Client mal puestos, imports que solo revientan al
@@ -216,7 +261,7 @@ jobs:
   ci:
     name: CI passed
     if: always()
-    needs: [static, test, coverage, build]
+    needs: [static, test, coverage, e2e, build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs succeeded
@@ -224,10 +269,12 @@ jobs:
           echo "static: ${{ needs.static.result }}"
           echo "test:   ${{ needs.test.result }}"
           echo "coverage: ${{ needs.coverage.result }}"
+          echo "e2e: ${{ needs.e2e.result }}"
           echo "build:  ${{ needs.build.result }}"
           if [ "${{ needs.static.result }}" != "success" ] \
             || [ "${{ needs.test.result }}" != "success" ] \
             || [ "${{ needs.coverage.result }}" != "success" ] \
+            || [ "${{ needs.e2e.result }}" != "success" ] \
             || [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::Algun job del CI no paso."
             exit 1
