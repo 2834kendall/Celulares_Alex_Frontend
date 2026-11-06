@@ -2,6 +2,10 @@
 node_modules/
 out/
 build/
+.e2e/
+coverage/
+playwright-report/
+test-results/
 pnpm-lock.yaml
 pnpm-workspace.yaml
 tsconfig.tsbuildinfo
