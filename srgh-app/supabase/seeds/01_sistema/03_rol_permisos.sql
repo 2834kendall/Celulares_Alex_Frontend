@@ -28,6 +28,9 @@
 INSERT INTO public.sgrh_rol_permisos (rpe_rol_id, rpe_permiso_id)
 SELECT r.rol_id, p.per_id
 FROM (VALUES
+  -- Compatibility for existing accounts until the retired role is migrated.
+  -- This does not recreate SUPERADMIN in environments where it is absent.
+  ('SUPERADMIN', 'BIOMETRIA_WRITE'),
   -- ── ADMIN: todo, acotado a su empresa por la RLS ───────────────────────
   ('ADMIN', 'EMPLEADOS_READ'),      ('ADMIN', 'EMPLEADOS_WRITE'),
   ('ADMIN', 'HISTORIAL_READ'),      ('ADMIN', 'HISTORIAL_WRITE'),
