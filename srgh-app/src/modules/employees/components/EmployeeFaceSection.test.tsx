@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { EmployeeFaceSection } from './EmployeeFaceSection'
@@ -119,6 +119,38 @@ describe('<EmployeeFaceSection />', () => {
   })
 
   describe('captura', () => {
+    it('bloquea cancelar y duplicar la captura durante el guardado', async () => {
+      let finish!: (value: { ok: true }) => void
+      mockEnrollFace.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      renderSection(SIN_REGISTRO)
+      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+      await userEvent.click(screen.getByRole('button', { name: /simular captura/i }))
+      expect(screen.getByRole('status')).toHaveTextContent('Guardando registro facial')
+      expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled()
+      await userEvent.click(screen.getByRole('button', { name: /simular captura/i }))
+      expect(mockEnrollFace).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('face-scan')).toBeInTheDocument()
+      await act(async () => finish({ ok: true }))
+      await waitFor(() => expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument())
+      expect(refresh).toHaveBeenCalledTimes(1)
+    })
+
+    it('permite reintentar cuando la llamada de guardado rechaza por red', async () => {
+      mockEnrollFace.mockRejectedValueOnce(new TypeError('Network failed'))
+      renderSection(SIN_REGISTRO)
+      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+      await userEvent.click(screen.getByRole('button', { name: /simular captura/i }))
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/conexión/))
+      )
+      expect(screen.getByRole('button', { name: /capturar rostro/i })).toBeEnabled()
+      expect(refresh).not.toHaveBeenCalled()
+    })
     it('abre la cámara en modo enrolamiento y Cancelar la cierra', async () => {
       renderSection(SIN_REGISTRO)
 
@@ -182,6 +214,18 @@ describe('<EmployeeFaceSection />', () => {
   })
 
   describe('eliminar', () => {
+    it('libera los controles y avisa cuando el transporte rechaza el borrado', async () => {
+      mockDelete.mockRejectedValueOnce(new TypeError('Network failed'))
+      renderSection(REGISTRADO)
+      await userEvent.click(screen.getByRole('button', { name: /eliminar registro/i }))
+      await userEvent.click(screen.getByRole('button', { name: 'Eliminar' }))
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/conexión/))
+      )
+      expect(screen.getByRole('button', { name: /eliminar registro/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /reemplazar/i })).toBeEnabled()
+      expect(toast.success).not.toHaveBeenCalled()
+    })
     it('pide confirmación, y Cancelar no borra nada', async () => {
       renderSection(REGISTRADO)
 

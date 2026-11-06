@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ScanFace, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -48,20 +48,29 @@ export function EmployeeFaceSection({
   const [scanning, setScanning] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
 
   const handleEmbedding = useCallback(
     async (payload: EncryptedVector) => {
-      const result = await enrollFace({ employeeId: empId, vector: payload })
-      setScanning(false)
-
-      if (!result.ok) {
-        toast.error(result.error)
-        return
+      if (savingRef.current) return
+      savingRef.current = true
+      setSaving(true)
+      try {
+        const result = await enrollFace({ employeeId: empId, vector: payload })
+        if (!result.ok) {
+          toast.error(result.error)
+          return
+        }
+        toast.success('Rostro registrado.')
+        router.refresh()
+      } catch {
+        toast.error('No se pudo guardar el rostro. Revisá la conexión e intentá de nuevo.')
+      } finally {
+        savingRef.current = false
+        setSaving(false)
+        setScanning(false)
       }
-
-      toast.success('Rostro registrado.')
-      // enrollFace no revalida: el estado de la sección viene del servidor.
-      router.refresh()
     },
     [empId, router]
   )
@@ -81,14 +90,18 @@ export function EmployeeFaceSection({
   async function handleConfirmDelete() {
     setConfirmingDelete(false)
     setDeleting(true)
-    const result = await deleteFaceEnrollment(empId)
-    setDeleting(false)
-
-    if (!result.ok) {
-      toast.error(result.error)
-      return
+    try {
+      const result = await deleteFaceEnrollment(empId)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      toast.success('Registro facial eliminado.')
+    } catch {
+      toast.error('No se pudo eliminar el rostro. Revisá la conexión e intentá de nuevo.')
+    } finally {
+      setDeleting(false)
     }
-    toast.success('Registro facial eliminado.')
   }
 
   if (status === null) {
@@ -139,7 +152,18 @@ export function EmployeeFaceSection({
               onUnavailable={handleUnavailable}
               onSpoof={handleSpoof}
             />
-            <Button variant="secondary" onClick={() => setScanning(false)}>
+            {saving && (
+              <p role="status" className="text-sm text-slate-600">
+                Guardando registro facial…
+              </p>
+            )}
+            <Button
+              variant="secondary"
+              disabled={saving}
+              onClick={() => {
+                if (!savingRef.current) setScanning(false)
+              }}
+            >
               Cancelar
             </Button>
           </div>
