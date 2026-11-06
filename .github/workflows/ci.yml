@@ -135,9 +135,7 @@ jobs:
           cache-dependency-path: srgh-app/pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
-      - name: Enforce existing security coverage thresholds
-        run: pnpm test:coverage --maxWorkers=4 --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=html
-      - name: Enforce module coverage baselines
+      - name: Enforce security and module coverage thresholds
         run: pnpm test:coverage:modules --maxWorkers=4
       - name: Publish coverage report
         if: always()
