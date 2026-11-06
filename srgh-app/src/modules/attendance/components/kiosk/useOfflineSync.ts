@@ -129,13 +129,20 @@ export function useOfflineSync() {
 
       const remaining = await refreshPendingCount()
 
-      if (allSynced || remaining.length === 0) {
+      if (remaining.length === 0) {
         backoffRef.current = BASE_BACKOFF_MS
       } else if (mounted.current) {
-        backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS)
-        timeoutRef.current = setTimeout(() => {
-          void attemptSyncRef.current()
-        }, backoffRef.current)
+        // An event can be queued while this batch is in flight. Drain that
+        // new batch even if every event in the previous snapshot succeeded.
+        backoffRef.current = allSynced
+          ? BASE_BACKOFF_MS
+          : Math.min(backoffRef.current * 2, MAX_BACKOFF_MS)
+        timeoutRef.current = setTimeout(
+          () => {
+            void attemptSyncRef.current()
+          },
+          allSynced ? 0 : backoffRef.current
+        )
       }
     } catch {
       if (!mounted.current) return
@@ -164,8 +171,8 @@ export function useOfflineSync() {
     // hidratacion) — recien el cliente conoce navigator.onLine de verdad.
     const initialLoad = setTimeout(() => {
       setIsOnline(navigator.onLine)
-      void refreshPendingCount()
-      void refreshDiscardedCount()
+      void refreshPendingCount().catch(() => {})
+      void refreshDiscardedCount().catch(() => {})
       if (navigator.onLine) void attemptSyncRef.current()
     }, 0)
 
@@ -220,7 +227,10 @@ export function useOfflineSync() {
 
       try {
         // Do not overtake an older event belonging to the same employee.
-        if ((await getQueuedMarks()).some((m) => m.employeeId === input.employeeId)) {
+        // Storage can be blocked even with a working network. The server still
+        // validates sequencing, so allow online marks when the queue cannot open.
+        const pending = await getQueuedMarks().catch(() => [])
+        if (pending.some((m) => m.employeeId === input.employeeId)) {
           await queueNow()
           return { queued: true }
         }

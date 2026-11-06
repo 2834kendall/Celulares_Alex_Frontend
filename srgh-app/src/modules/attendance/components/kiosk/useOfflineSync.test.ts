@@ -48,11 +48,57 @@ describe('useOfflineSync', () => {
     expect(result.current.pendingCount).toBe(0)
   })
 
+  it('permite marcar en linea cuando el navegador bloquea IndexedDB', async () => {
+    const blockedStorage = vi.spyOn(indexedDB, 'open').mockImplementation(() => {
+      throw new Error('Storage blocked')
+    })
+    const { result, unmount } = renderHook(() => useOfflineSync())
+    try {
+      mockRegisterKioskMark.mockResolvedValue({ ok: true })
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        expect(await result.current.submitMark(input)).toEqual({
+          queued: false,
+          result: { ok: true },
+        })
+      })
+      expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1)
+    } finally {
+      unmount()
+      blockedStorage.mockRestore()
+    }
+  })
+
   it('sincroniza pendientes al arrancar conectado sin esperar un evento online', async () => {
     await queueOfflineMark({ ...input, id: crypto.randomUUID(), fechaHora: '2026-11-05 08:00:00' })
     mockRegisterKioskMark.mockResolvedValue({ ok: true })
     const { result } = renderHook(() => useOfflineSync())
     await waitFor(() => expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(result.current.pendingCount).toBe(0))
+  })
+
+  it('drena tambien una marca agregada mientras otra se esta sincronizando', async () => {
+    await queueOfflineMark({ ...input, id: crypto.randomUUID(), fechaHora: '2026-11-05 08:00:00' })
+    let finish: (value: { ok: true }) => void = () => {}
+    mockRegisterKioskMark
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      .mockResolvedValue({ ok: true })
+    const { result } = renderHook(() => useOfflineSync())
+    await waitFor(() => expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      await result.current.submitMark({
+        ...input,
+        tipo: 'salida',
+        fechaHora: '2026-11-05 17:00:00',
+      })
+    })
+    await act(async () => finish({ ok: true }))
+    await waitFor(() => expect(mockRegisterKioskMark).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(result.current.pendingCount).toBe(0))
   })
 
