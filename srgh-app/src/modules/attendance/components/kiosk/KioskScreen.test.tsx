@@ -181,6 +181,31 @@ describe('<KioskScreen />', () => {
       expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
     })
 
+    it('reconocer un rostro solo ofrece la entrada; no registra una marca automaticamente', async () => {
+      await renderRecognized()
+      expect(await screen.findByRole('button', { name: 'Entrada' })).toBeEnabled()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+      expect(await getQueuedMarks()).toHaveLength(0)
+      expect(screen.queryByText('Entrada registrada')).not.toBeInTheDocument()
+    })
+
+    it('un doble toque mientras se guarda envia una sola marca', async () => {
+      let finish!: (value: { ok: true }) => void
+      mockRegisterKioskMark.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      await renderRecognized()
+      const user = userEvent.setup()
+      await user.dblClick(await screen.findByRole('button', { name: 'Entrada' }))
+      expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1)
+      await act(async () => finish({ ok: true }))
+      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1)
+    })
+
     it('marca con el ticket facial, las coordenadas y el dispositivo', async () => {
       mockGetCurrentCoordinates.mockResolvedValue({ latitud: 9.9333, longitud: -84.0833 })
       mockRegisterKioskMark.mockResolvedValue({ ok: true })
