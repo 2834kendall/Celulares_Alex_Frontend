@@ -13,8 +13,13 @@
 |---|---|---|
 | Expedientes | [`modules/employees/README.md`](../srgh-app/src/modules/employees/README.md) | ✅ |
 | Nómina | [`modules/payroll/README.md`](../srgh-app/src/modules/payroll/README.md) | ✅ |
-| Auth, usuarios, archivos, configuración | — | pendiente (fase 3) |
-| Cifrado, UI compartida, base de datos | — | pendiente (fase 3) |
+| Autenticación | [`modules/auth/README.md`](../srgh-app/src/modules/auth/README.md) | ✅ |
+| Usuarios | [`modules/users/README.md`](../srgh-app/src/modules/users/README.md) | ✅ |
+| Archivos | [`modules/storage/README.md`](../srgh-app/src/modules/storage/README.md) | ✅ |
+| Configuración, sucursales y kioscos | [`modules/settings/README.md`](../srgh-app/src/modules/settings/README.md) | ✅ |
+| Cifrado de campos | [`lib/crypto/README.md`](../srgh-app/src/lib/crypto/README.md) | ✅ |
+| UI compartida y marca | [`components/ui/README.md`](../srgh-app/src/components/ui/README.md) | ✅ |
+| Base de datos: proyectos, RLS, migraciones, respaldos | [`supabase/README.md`](../srgh-app/supabase/README.md) | ✅ |
 | Asistencia, horarios, ausencias, reclutamiento, evaluaciones, dashboard | — | pendiente (fase 4) |
 
 ## Transversal
@@ -25,8 +30,9 @@
 | [`SGRH_Frontend_Architecture.md`](SGRH_Frontend_Architecture.md) _(pendiente de partir)_ | estructura de carpetas, capas de seguridad, cómo crear un módulo |
 | [`GIT_WORKFLOW_STANDARD.md`](GIT_WORKFLOW_STANDARD.md) _(pendiente de partir)_ | ramas, commits, PRs |
 
-Las specs de ticket (`SGRH-101` a `SGRH-105`, branding) siguen acá hasta que su contenido
-pase al módulo que corresponde (fases 4 y 5).
+Las specs de ticket (`SGRH-101` a `SGRH-105`) siguen acá hasta que su contenido pase al
+módulo que corresponde (fases 4 y 5). Branding ya se pasó a `components/ui`, y la parte de
+configuración de SGRH-103 a `settings`; los archivos se borran al terminar de extraerlos.
 
 ## Reglas para mantener esto ordenado
 

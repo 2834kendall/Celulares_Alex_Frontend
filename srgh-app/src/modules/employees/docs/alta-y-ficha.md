@@ -36,7 +36,7 @@ repetir `REVOKE PUBLIC / REVOKE anon / GRANT authenticated`.
   ficha, cualquier rol con `EMPLEADOS_READ` los leería por la API.
   Lectura: `NOMINA_READ` o `EMPLEADOS_WRITE` de la misma empresa, o el propio empleado.
 - **Número de cuenta cifrado at-rest.** Las reglas y las tres formas de perder datos están en
-  el `CLAUDE.md` de `src/lib/crypto/`. Si se pierde `FIELD_ENCRYPTION_KEY`, no hay forma de
+  [`src/lib/crypto/README.md`](../../../lib/crypto/README.md). Si se pierde `FIELD_ENCRYPTION_KEY`, no hay forma de
   recuperarlos.
 - **Validación sobre el texto plano, antes de cifrar** (`datosPagoSchema` +
   `lib/validateDatosPago.ts`): SINPE → teléfono de 8 dígitos; si no, IBAN `CR` + 20 con

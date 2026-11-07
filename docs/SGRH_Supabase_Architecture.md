@@ -703,74 +703,17 @@ CREATE POLICY "cat_delete" ON public.sgrh_cat_...
 
 ---
 
-### Empresas y Sucursales
+### Empresas, sucursales y kioscos
 
-```sql
-CREATE POLICY "empresas_select" ON public.sgrh_empresas
-  FOR SELECT TO authenticated USING (org_id = (SELECT public.get_empresa_id()));
-
-CREATE POLICY "empresas_insert" ON public.sgrh_empresas
-  FOR INSERT TO authenticated WITH CHECK (org_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
-
-CREATE POLICY "empresas_update" ON public.sgrh_empresas
-  FOR UPDATE TO authenticated
-  USING (org_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')))
-  WITH CHECK (org_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
-
-CREATE POLICY "empresas_delete" ON public.sgrh_empresas
-  FOR DELETE TO authenticated USING (org_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
-
-CREATE POLICY "sucursales_select" ON public.sgrh_sucursales
-  FOR SELECT TO authenticated USING (suc_empresa_id = (SELECT public.get_empresa_id()));
-
-CREATE POLICY "sucursales_insert" ON public.sgrh_sucursales
-  FOR INSERT TO authenticated WITH CHECK (suc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
-
-CREATE POLICY "sucursales_update" ON public.sgrh_sucursales
-  FOR UPDATE TO authenticated
-  USING (suc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')))
-  WITH CHECK (suc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
-
-CREATE POLICY "sucursales_delete" ON public.sgrh_sucursales
-  FOR DELETE TO authenticated USING (suc_empresa_id = (SELECT public.get_empresa_id()) AND (SELECT public.tiene_permiso('EMPRESAS_WRITE')));
-```
+> **Movido** a [`modules/settings/README.md`](../srgh-app/src/modules/settings/README.md) y
+> [sucursales y kioscos](../srgh-app/src/modules/settings/docs/sucursales-y-kioscos.md).
 
 ---
 
-### Usuarios y Permisos de Acceso
+### Usuarios y permisos de acceso
 
-```sql
--- Usuarios (Perfiles de acceso)
-CREATE POLICY "usuarios_select" ON public.sgrh_usuarios
-  FOR SELECT TO authenticated USING (usr_auth_id = (SELECT auth.uid()) OR (SELECT public.tiene_permiso('USUARIOS_WRITE')));
-
-CREATE POLICY "usuarios_insert" ON public.sgrh_usuarios
-  FOR INSERT TO authenticated WITH CHECK ((SELECT public.tiene_permiso('USUARIOS_WRITE')));
-
-CREATE POLICY "usuarios_update" ON public.sgrh_usuarios
-  FOR UPDATE TO authenticated
-  USING (usr_auth_id = (SELECT auth.uid()) OR (SELECT public.tiene_permiso('USUARIOS_WRITE')))
-  WITH CHECK (usr_auth_id = (SELECT auth.uid()) OR (SELECT public.tiene_permiso('USUARIOS_WRITE')));
-
-CREATE POLICY "usuarios_delete" ON public.sgrh_usuarios
-  FOR DELETE TO authenticated USING ((SELECT public.tiene_permiso('USUARIOS_WRITE')));
-
--- Usuarios Empresa Rol (Asociación Inquilino-Rol)
-CREATE POLICY "uer_select" ON public.sgrh_usuarios_empresa_rol
-  FOR SELECT TO authenticated
-  USING (uer_usuario_id = (SELECT public.get_usr_id()) OR (SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')));
-
-CREATE POLICY "uer_insert" ON public.sgrh_usuarios_empresa_rol
-  FOR INSERT TO authenticated WITH CHECK ((SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')));
-
-CREATE POLICY "uer_update" ON public.sgrh_usuarios_empresa_rol
-  FOR UPDATE TO authenticated
-  USING ((SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')))
-  WITH CHECK ((SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')));
-
-CREATE POLICY "uer_delete" ON public.sgrh_usuarios_empresa_rol
-  FOR DELETE TO authenticated USING ((SELECT public.tiene_permiso('USUARIOS_WRITE')) OR (SELECT public.tiene_permiso('ROLES_WRITE')));
-```
+> **Movido** a [`modules/users/README.md`](../srgh-app/src/modules/users/README.md). Alcance y
+> trampas de policies: [RLS y alcance](../srgh-app/supabase/docs/rls-y-alcance.md).
 
 ---
 
