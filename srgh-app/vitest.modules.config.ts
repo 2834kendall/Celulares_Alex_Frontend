@@ -33,9 +33,9 @@ export default defineConfig({
       thresholds: {
         ...securityThresholds,
         'src/modules/attendance/**': { lines: 87, branches: 75 },
-        'src/modules/dashboard/**': { lines: 60, branches: 50 },
-        'src/modules/recruitment/**': { lines: 76, branches: 71 },
-        'src/modules/evaluations/**': { lines: 61, branches: 46 },
+        'src/modules/dashboard/**': { lines: 72, branches: 64 },
+        'src/modules/recruitment/**': { lines: 82, branches: 73 },
+        'src/modules/evaluations/**': { lines: 75, branches: 61 },
       },
     },
   },

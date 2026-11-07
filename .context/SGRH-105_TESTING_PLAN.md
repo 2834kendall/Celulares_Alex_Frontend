@@ -37,13 +37,13 @@ The Storage PGlite fixture supplies company/permission helper outputs. The relat
 
 ## CI
 
-The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. One instrumented run enforces every include pattern from the original security config at 100% in all four metrics, plus measured module floors: attendance 87% lines/75% branches, dashboard 60%/50%, recruitment 76%/71%, evaluations 61%/46%. The original default security-only config is unchanged and remains available through test:coverage; CI does not need to run the suite twice for coverage. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
+The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. One instrumented run enforces every include pattern from the original security config at 100% in all four metrics, plus measured module floors: attendance 87% lines/75% branches, dashboard 72%/64%, recruitment 82%/73%, evaluations 75%/61%. The original default security-only config is unchanged and remains available through test:coverage; CI does not need to run the suite twice for coverage. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
 
 ## Validation and limits
 
-- Latest local suite: 344 files and 3514 tests passed; every original security scope remained at 100% in all four metrics (38 files checked). The browser/API suite passed 16 scenarios: six browser flows on both desktop and mobile emulation, plus four HTTP integration cases.
+- Latest local suite: 349 files and 3584 tests passed; every original security scope remained at 100% in all four metrics (38 files checked). The browser/API suite passed 16 scenarios: six browser flows on both desktop and mobile emulation, plus four HTTP integration cases.
 - Typecheck, production build and lint passed; lint retains four pre-existing warnings outside this change.
-- Final combined coverage run passed with 344 files/3514 tests: attendance 87.45% lines/75.11% branches, dashboard 60.10%/50.58%, recruitment 76.13%/71.08%, evaluations 61.41%/46.61%. Module floors were ratcheted to whole-number floors of this measurement.
+- Final combined coverage run passed with 349 files/3584 tests: attendance 87.45% lines/75.00% branches, dashboard 72.31%/64.81%, recruitment 82.14%/73.92%, evaluations 75.15%/61.93%. Module floors were ratcheted to whole-number floors of this measurement.
 - No successful full camera-to-browser-mark journey is claimed. Component tests verify recognition/interaction boundaries and SQL/HTTP tests verify persistence; real device camera/accuracy checks remain separate.
 - The fresh local stack required an Auth hook EXECUTE grant and explicit Data API table/sequence grants. Those are visible test provisioning, not a production migration. Existing hosted environments were not queried or changed for this work.
 - Browser tests currently run in Chromium. They do not establish Firefox/WebKit compatibility.
@@ -107,6 +107,36 @@ KioskScreen now reports verification failure instead of allowing FaceScan to
 misclassify the network failure as camera unavailability. Explicit retry returns
 to recognition; neither retry nor successful recognition registers attendance.
 Pending verification exposes no mark buttons. Camera/inference remain mocked.
+
+### Catalogs, discard confirmation and dashboard detail continuation
+
+Another 70 cases cover selection catalog mutations (32), application discard
+confirmation (9), birthdays (13), branch evaluation metrics (9) and the daily
+attendance widget (7).
+
+Catalog tests verify CATALOGOS_WRITE before database access, schema rejection,
+normalized payloads, exact parent/child predicates, rollback of only the newly
+created area, historical archival after blocked deletion, failures in either
+archival operation, duplicate active/inactive stage names and route invalidation
+only after confirmed success. These are query-builder mocks, not additional RLS
+integration tests or transaction guarantees for multi-request mutations.
+
+The discard regression reproduced an unhandled rejected request and permanently
+pending controls. The action boundary now catches the exception, preserves the
+reason and clears pending state in finally. It asks users to inspect the
+application before an explicit retry; no automatic retry is introduced. The real
+modal is rendered, but no unsaved-changes provider is installed in these cases;
+the unchanged-cancel case does not claim dirty-exit protection integration.
+
+Birthday tests verify permission-related absence of names/actions, compact and
+expanded limits, month counts/filter/day ordering, per-person expansion/tab order,
+profile navigation restrictions for sample data, clipboard denial/missing API,
+first-name greeting and temporary celebration state. The decorative cake is mocked;
+no message is sent externally. Branch metrics use the real SearchSelect/modals to
+check scored vs pending records, branch filtering, low-performance threshold and
+ordering, globally scoped branch comparison, chart filtering and single navigation.
+Attendance widget tests distinguish justified late, missing and not-yet-due people,
+check expected-headcount percentages, empty/zero buckets and overflow lists.
 
 From `srgh-app`:
 
