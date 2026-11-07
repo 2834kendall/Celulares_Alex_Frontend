@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Alert } from '@/components/ui/Alert'
+import { Modal } from '@/components/ui/Modal'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { INPUT_CLASSES, Labeled } from '@/modules/employees/components/EmployeeFields'
 import type { Branch, BranchSettings, Kiosk } from './types'
 import { createKiosk, provisionKiosk, setKioskState, moveKiosk, renameKiosk } from './actions'
@@ -22,14 +24,27 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [blocking, setBlocking] = useState<Kiosk | null>(null)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const guard = useUnsavedChanges({
     label: 'los kioscos de la sucursal',
-    value: { name, email, drafts },
+    value: drafts,
     busy,
   })
+  const registrationGuard = useUnsavedChanges({
+    label: 'el registro del kiosco',
+    value: { name, email },
+    busy,
+    enabled: adding,
+  })
+  function closeRegistration() {
+    setAdding(false)
+    setName('')
+    setEmail('')
+    setError(null)
+  }
   function draft(key: string, value: string, original: string) {
     setDrafts((current) => {
       const next = { ...current }
@@ -60,17 +75,6 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
       setBusy(false)
     }
   }
-  function block(k: Kiosk) {
-    if (
-      window.confirm(
-        `¿Bloquear ${k.kio_nombre}? No podrá reconocer ni guardar marcas, aunque conserve una sesión abierta. Las marcas pendientes quedarán para revisión del encargado.`
-      )
-    )
-      void run(
-        () => setKioskState(k.kio_id, false),
-        'Kiosco bloqueado. Las sesiones anteriores ya no pueden operar.'
-      )
-  }
   return (
     <section
       ref={(element) => guard.bindRoot(element)}
@@ -83,96 +87,106 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
             Kioscos ({kiosks.length})
           </h2>
         </div>
-        <Button disabled={busy || !branch.suc_activa} onClick={() => setAdding(!adding)}>
-          {adding ? 'Cerrar formulario' : 'Registrar kiosco'}
+        <Button
+          disabled={busy || !branch.suc_activa}
+          onClick={() => {
+            registrationGuard.acceptChanges()
+            setError(null)
+            setAdding(true)
+          }}
+        >
+          Registrar kiosco
         </Button>
       </div>
       {!branch.suc_activa && (
         <Alert tone="info">Activá la sucursal para registrar o habilitar sus kioscos.</Alert>
       )}
-      {error && <Alert>{error}</Alert>}
+      {error && !adding && <Alert>{error}</Alert>}
       {message && (
         <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
           {message}
         </p>
       )}
       {adding && (
-        <form
-          className="space-y-4 rounded-xl border border-slate-200 bg-white p-5"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void run(async () => {
-              const r = await createKiosk({ nombre: name, email, sucursal_id: branch.suc_id })
-              if (r.ok) {
-                setAdding(false)
-                setName('')
-                setEmail('')
-              }
-              return r
-            }, 'Kiosco registrado. Ahora invitá o vinculá su cuenta.')
-          }}
-        >
-          <fieldset disabled={busy} className="space-y-4">
-            <legend className="mb-3 font-bold">Nuevo acceso de kiosco</legend>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Labeled label="Nombre de la terminal *">
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  minLength={2}
-                  maxLength={80}
-                  required
-                  className={INPUT_CLASSES}
-                  placeholder="Por ejemplo: Mostrador 1"
-                />
-              </Labeled>
-              <Labeled label="Correo de acceso *">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className={INPUT_CLASSES}
-                />
-              </Labeled>
-            </div>
-            <p className="text-sm text-slate-600">
-              Usá un correo de la empresa exclusivo para este kiosco. La invitación se envía después
-              de registrar.
-            </p>
-            {data.legacy.length > 0 && (
-              <Labeled label="Usar una cuenta KIOSCO existente">
-                <select
-                  className={INPUT_CLASSES}
-                  value=""
-                  onChange={(e) => {
-                    setEmail(e.target.value)
-                    if (!name) setName('Kiosco existente')
-                  }}
-                >
-                  <option value="">Seleccionar cuenta…</option>
-                  {data.legacy.map((u) => (
-                    <option
-                      key={u.id}
-                      value={u.email}
-                      disabled={u.sucursales.length !== 1 || u.sucursales[0] !== branch.suc_id}
-                    >
-                      {u.email}
-                      {u.sucursales.length !== 1
-                        ? ' — corregir asignación'
-                        : u.sucursales[0] !== branch.suc_id
-                          ? ' — otra sucursal'
-                          : ''}
-                    </option>
-                  ))}
-                </select>
-              </Labeled>
-            )}
-            <Button type="submit" disabled={busy}>
-              {busy ? 'Registrando…' : 'Guardar registro'}
-            </Button>
-          </fieldset>
-        </form>
+        <Modal title="Registrar kiosco" onClose={closeRegistration}>
+          <form
+            ref={(element) => registrationGuard.bindRoot(element)}
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void run(async () => {
+                const r = await createKiosk({ nombre: name, email, sucursal_id: branch.suc_id })
+                if (r.ok) {
+                  setAdding(false)
+                  setName('')
+                  setEmail('')
+                }
+                return r
+              }, 'Kiosco registrado. Ahora invitá o vinculá su cuenta.')
+            }}
+          >
+            {error && <Alert>{error}</Alert>}
+            <fieldset disabled={busy} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Labeled label="Nombre de la terminal *">
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    minLength={2}
+                    maxLength={80}
+                    required
+                    className={INPUT_CLASSES}
+                    placeholder="Por ejemplo: Mostrador 1"
+                  />
+                </Labeled>
+                <Labeled label="Correo de acceso *">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className={INPUT_CLASSES}
+                  />
+                </Labeled>
+              </div>
+              <p className="text-sm text-slate-600">
+                Usá un correo de la empresa exclusivo para este kiosco. La invitación se envía
+                después de registrar.
+              </p>
+              {data.legacy.length > 0 && (
+                <Labeled label="Usar una cuenta KIOSCO existente">
+                  <select
+                    className={INPUT_CLASSES}
+                    value=""
+                    onChange={(e) => {
+                      setEmail(e.target.value)
+                      if (!name) setName('Kiosco existente')
+                    }}
+                  >
+                    <option value="">Seleccionar cuenta…</option>
+                    {data.legacy.map((u) => (
+                      <option
+                        key={u.id}
+                        value={u.email}
+                        disabled={u.sucursales.length !== 1 || u.sucursales[0] !== branch.suc_id}
+                      >
+                        {u.email}
+                        {u.sucursales.length !== 1
+                          ? ' — corregir asignación'
+                          : u.sucursales[0] !== branch.suc_id
+                            ? ' — otra sucursal'
+                            : ''}
+                      </option>
+                    ))}
+                  </select>
+                </Labeled>
+              )}
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Registrando…' : 'Guardar registro'}
+              </Button>
+            </fieldset>
+          </form>
+        </Modal>
       )}
       {kiosks.length === 0 ? (
         <p className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600">
@@ -252,18 +266,6 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
                           disabled={busy}
                           onClick={() =>
                             void run(
-                              () => provisionKiosk(k.kio_id, 'reenviar'),
-                              'Invitación reenviada al correo del kiosco.'
-                            )
-                          }
-                        >
-                          Reenviar invitación
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(
                               () => provisionKiosk(k.kio_id, 'recuperar'),
                               'Correo de recuperación enviado.'
                             )
@@ -274,7 +276,7 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
                       </>
                     )}
                     {k.kio_estado !== 'bloqueado' ? (
-                      <Button variant="danger" disabled={busy} onClick={() => block(k)}>
+                      <Button variant="danger" disabled={busy} onClick={() => setBlocking(k)}>
                         Bloquear kiosco
                       </Button>
                     ) : (
@@ -378,6 +380,19 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
             </li>
           ))}
         </ul>
+      )}
+      {blocking && (
+        <ConfirmDialog
+          title={`Bloquear ${blocking.kio_nombre}`}
+          message="No podrá registrar asistencia, incluso con una sesión abierta. Las marcas pendientes quedarán para revisión."
+          confirmLabel="Confirmar bloqueo"
+          onCancel={() => setBlocking(null)}
+          onConfirm={() => {
+            const target = blocking
+            setBlocking(null)
+            void run(() => setKioskState(target.kio_id, false), 'Kiosco bloqueado.')
+          }}
+        />
       )}
     </section>
   )
