@@ -72,17 +72,20 @@ export function CandidateDocumentsSection({
     formData.set('cdo_tipo', tipo)
     formData.set('cdo_nombre', nombre.trim())
 
-    const result = await addCandidateDocument(candidatoId, formData)
-    setUploading(false)
-
-    if (!result.ok) {
-      setAddError(result.error)
-      return
+    try {
+      const result = await addCandidateDocument(candidatoId, formData)
+      if (!result.ok) {
+        setAddError(result.error)
+        return
+      }
+      toast.success(`Documento guardado: ${nombre.trim()}.`)
+      guard.acceptChanges()
+      setPendingFile(null)
+    } catch {
+      setAddError('No se pudo subir el documento. Reintentá.')
+    } finally {
+      setUploading(false)
     }
-
-    toast.success(`Documento guardado: ${nombre.trim()}.`)
-    guard.acceptChanges()
-    setPendingFile(null)
   }
 
   // `location.assign` y no `window.open`: la URL firmada llega DESPUÉS de un
@@ -91,13 +94,18 @@ export function CandidateDocumentsSection({
   // avisaba nada. Mismo criterio que EmployeeDocumentsSection.
   async function handleDownload(docId: number) {
     setDownloadingId(docId)
-    const result = await getCandidateDocumentDownloadUrl(docId)
-    setDownloadingId(null)
-    if (!result.ok) {
-      toast.error(result.error)
-      return
+    try {
+      const result = await getCandidateDocumentDownloadUrl(docId)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      window.location.assign(result.url)
+    } catch {
+      toast.error('No se pudo descargar el documento. Reintentá.')
+    } finally {
+      setDownloadingId(null)
     }
-    window.location.assign(result.url)
   }
 
   async function handleConfirmDelete() {

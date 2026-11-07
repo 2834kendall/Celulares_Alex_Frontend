@@ -300,10 +300,16 @@ export function RecruitmentBoard({
     if (application.etapaId === stage.id) return
     startTransition(async () => {
       applyMove({ applicationId: application.posId, stage })
-      const result = await moveApplicationToStage({
-        applicationId: application.posId,
-        stageId: stage.id,
-      })
+      let result: Awaited<ReturnType<typeof moveApplicationToStage>>
+      try {
+        result = await moveApplicationToStage({
+          applicationId: application.posId,
+          stageId: stage.id,
+        })
+      } catch {
+        toast.error('No se pudo confirmar el movimiento. Revisá el tablero antes de reintentar.')
+        return
+      }
       if (!result.ok) {
         toast.error(result.error)
       } else if (confirm) {
@@ -332,7 +338,13 @@ export function RecruitmentBoard({
     const next = arrayMove(ids, from, to)
     startTransition(async () => {
       applyOrder(next)
-      const result = await reorderSelectionStages(next)
+      let result: Awaited<ReturnType<typeof reorderSelectionStages>>
+      try {
+        result = await reorderSelectionStages(next)
+      } catch {
+        toast.error('No se pudo confirmar el orden. Revisá el tablero antes de reintentar.')
+        return
+      }
       if (!result.ok) toast.error(result.error)
     })
   }

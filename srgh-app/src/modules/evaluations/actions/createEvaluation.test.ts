@@ -98,12 +98,13 @@ describe('createEvaluation (server action)', () => {
   })
 
   it('revierte la evaluacion si fallan los resultados por rubro', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_historial_laboral: { data: { lab_id: 12, lab_sucursal_id: 4 }, error: null },
+      sgrh_evaluaciones: { data: { eve_id: 55 }, error: null },
+      sgrh_evaluacion_resultados: { data: null, error: { message: 'fk violation' } },
+    })
     mockCreateClient.mockResolvedValue(
-      createSupabaseClientMock({
-        sgrh_historial_laboral: { data: { lab_id: 12, lab_sucursal_id: 4 }, error: null },
-        sgrh_evaluaciones: { data: { eve_id: 55 }, error: null },
-        sgrh_evaluacion_resultados: { data: null, error: { message: 'fk violation' } },
-      }) as unknown as Awaited<ReturnType<typeof createClient>>
+      client as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
     const result = await createEvaluation(validInput)
@@ -113,6 +114,13 @@ describe('createEvaluation (server action)', () => {
       error: 'No se pudieron guardar las calificaciones por rubro.',
     })
     expect(revalidatePath).not.toHaveBeenCalled()
+    const evaluationQueries = client.from.mock.results.filter(
+      (_result, index) => client.from.mock.calls[index][0] === 'sgrh_evaluaciones'
+    )
+    expect(evaluationQueries).toHaveLength(2)
+    const rollback = evaluationQueries[1].value
+    expect(rollback.delete).toHaveBeenCalledTimes(1)
+    expect(rollback.eq).toHaveBeenCalledWith('eve_id', 55)
   })
 
   it('registra la evaluacion completa y revalida la ruta', async () => {
