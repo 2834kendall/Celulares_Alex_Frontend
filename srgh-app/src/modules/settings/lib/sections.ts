@@ -73,7 +73,7 @@ export const SETTINGS_TREE: SettingsTree = {
     },
     {
       id: 'branches',
-      label: 'Sucursales y kioscos',
+      label: 'Sucursales',
       description: 'Ubicaciones de la empresa y sus accesos de marcación.',
       href: '/settings/branches',
       keywords: ['sucursal', 'tienda', 'terminal', 'kiosco', 'cuenta', 'marcacion'],

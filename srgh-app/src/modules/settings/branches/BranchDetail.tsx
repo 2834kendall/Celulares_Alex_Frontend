@@ -1,7 +1,6 @@
 'use client'
-import Link from 'next/link'
-import { useState } from 'react'
-import { Button } from '@/components/ui/Button'
+import { Building2, Monitor } from 'lucide-react'
+import { Tabs, type TabDefinition } from '@/components/ui/Tabs'
 import { PageHeader } from '@/components/ui/PageHeader'
 import type { TerritorioCatalogo } from '@/modules/employees/types'
 import type { Branch, BranchSettings } from './types'
@@ -17,7 +16,21 @@ export function BranchDetail({
   data: BranchSettings
   territorio: TerritorioCatalogo
 }) {
-  const [tab, setTab] = useState('datos')
+  const tabs: TabDefinition<'datos' | 'kioscos'>[] = [
+    {
+      id: 'datos',
+      label: 'Datos',
+      icon: Building2,
+      content: <BranchForm branch={branch} territorio={territorio} />,
+    },
+  ]
+  if (data.canManageKiosks)
+    tabs.push({
+      id: 'kioscos',
+      label: 'Kioscos',
+      icon: Monitor,
+      content: <KiosksPanel branch={branch} data={data} />,
+    })
   return (
     <div className="space-y-6">
       <PageHeader
@@ -27,35 +40,7 @@ export function BranchDetail({
         }
         backHref="/settings/branches"
       />
-      <div className="flex flex-wrap gap-2" aria-label="Apartados de sucursal">
-        <Button
-          variant={tab === 'datos' ? 'primary' : 'secondary'}
-          aria-pressed={tab === 'datos'}
-          onClick={() => setTab('datos')}
-        >
-          Datos
-        </Button>
-        {data.canManageKiosks && (
-          <Button
-            variant={tab === 'kioscos' ? 'primary' : 'secondary'}
-            aria-pressed={tab === 'kioscos'}
-            onClick={() => setTab('kioscos')}
-          >
-            Kioscos
-          </Button>
-        )}
-        <Link
-          className="px-3 py-2 text-sm font-medium text-brand-700 underline"
-          href="/settings/appearance"
-        >
-          Editar apariencia
-        </Link>
-      </div>
-      {tab === 'datos' ? (
-        <BranchForm branch={branch} territorio={territorio} />
-      ) : (
-        <KiosksPanel branch={branch} data={data} />
-      )}
+      <Tabs idPrefix={`branch-${branch.suc_id}`} ariaLabel="Apartados de sucursal" tabs={tabs} />
     </div>
   )
 }

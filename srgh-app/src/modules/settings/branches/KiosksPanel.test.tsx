@@ -64,6 +64,7 @@ describe('kiosk settings', () => {
   it('recovers the block control on a rejected transport request', async () => {
     vi.mocked(setKioskState).mockRejectedValueOnce(new TypeError('Network failed'))
     setup()
+    await userEvent.click(screen.getByText('Administrar kiosco'))
     await userEvent.click(screen.getByRole('button', { name: 'Bloquear kiosco' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/conexión/))
     expect(screen.getByRole('button', { name: 'Bloquear kiosco' })).toBeEnabled()
@@ -72,6 +73,7 @@ describe('kiosk settings', () => {
   it('does not block without confirmation', async () => {
     vi.mocked(window.confirm).mockReturnValue(false)
     setup()
+    await userEvent.click(screen.getByText('Administrar kiosco'))
     await userEvent.click(screen.getByRole('button', { name: 'Bloquear kiosco' }))
     expect(setKioskState).not.toHaveBeenCalled()
   })
@@ -84,13 +86,15 @@ describe('kiosk settings', () => {
         })
     )
     setup()
+    await userEvent.click(screen.getByText('Administrar kiosco'))
     await userEvent.click(screen.getByRole('button', { name: 'Bloquear kiosco' }))
     expect(screen.getByRole('button', { name: 'Bloquear kiosco' })).toBeDisabled()
     finish({ ok: true, data: undefined })
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1))
   })
-  it('does not register or enable kiosks in an inactive branch', () => {
+  it('does not register or enable kiosks in an inactive branch', async () => {
     setup([{ ...kiosk, kio_estado: 'bloqueado' }], false)
+    await userEvent.click(screen.getByText('Administrar kiosco'))
     expect(screen.getByRole('button', { name: 'Registrar kiosco' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Habilitar kiosco' })).toBeDisabled()
   })
