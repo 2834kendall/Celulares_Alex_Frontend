@@ -37,13 +37,13 @@ The Storage PGlite fixture supplies company/permission helper outputs. The relat
 
 ## CI
 
-The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. One instrumented run enforces every include pattern from the original security config at 100% in all four metrics, plus measured module floors: attendance 87% lines/75% branches, dashboard 72%/64%, recruitment 82%/73%, evaluations 75%/61%. The original default security-only config is unchanged and remains available through test:coverage; CI does not need to run the suite twice for coverage. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
+The aggregate `CI passed` job now depends on coverage and browser/integration jobs in addition to the existing checks. One instrumented run enforces every include pattern from the original security config at 100% in all four metrics, plus measured module floors: attendance 87% lines/75% branches, dashboard 72%/64%, recruitment 85%/77%, evaluations 93%/86%. The original default security-only config is unchanged and remains available through test:coverage; CI does not need to run the suite twice for coverage. Untested production files remain included. Reports are retained for 14 days. Browser/integration CI starts its own local Docker stack and stops only that stack afterward. Sharded tests remain unchanged. These new jobs are configured and their commands validated locally; GitHub execution is pending publication.
 
 ## Validation and limits
 
-- Latest local suite: 349 files and 3584 tests passed; every original security scope remained at 100% in all four metrics (38 files checked). The browser/API suite passed 16 scenarios: six browser flows on both desktop and mobile emulation, plus four HTTP integration cases.
+- Latest local suite: 352 files and 3627 tests passed; every original security scope remained at 100% in all four metrics (38 files checked). The browser/API suite passed 16 scenarios: six browser flows on both desktop and mobile emulation, plus four HTTP integration cases.
 - Typecheck, production build and lint passed; lint retains four pre-existing warnings outside this change.
-- Final combined coverage run passed with 349 files/3584 tests: attendance 87.45% lines/75.00% branches, dashboard 72.31%/64.81%, recruitment 82.14%/73.92%, evaluations 75.15%/61.93%. Module floors were ratcheted to whole-number floors of this measurement.
+- Final combined coverage run passed with 352 files/3627 tests: attendance 87.45% lines/75.11% branches, dashboard 72.31%/64.81%, recruitment 85.78%/77.70%, evaluations 93.57%/86.33%. Module floors were ratcheted to whole-number floors of this measurement.
 - No successful full camera-to-browser-mark journey is claimed. Component tests verify recognition/interaction boundaries and SQL/HTTP tests verify persistence; real device camera/accuracy checks remain separate.
 - The fresh local stack required an Auth hook EXECUTE grant and explicit Data API table/sequence grants. Those are visible test provisioning, not a production migration. Existing hosted environments were not queried or changed for this work.
 - Browser tests currently run in Chromium. They do not establish Firefox/WebKit compatibility.
@@ -137,6 +137,34 @@ check scored vs pending records, branch filtering, low-performance threshold and
 ordering, globally scoped branch comparison, chart filtering and single navigation.
 Attendance widget tests distinguish justified late, missing and not-yet-due people,
 check expected-headcount percentages, empty/zero buckets and overflow lists.
+
+### Evaluation records and recruitment transition recovery
+
+Another 43 cases cover individual/history/new evaluation views (21), selection
+criterion forms (10) and resolved board drag operations (12). The record cases
+render real selectors, history and detail modals; server actions are mocked.
+They cover collaborator deep links/fallback, identity search, write permission
+controls, persisted notes, legacy/missing scores, rubric/history pagination,
+cross-page trends, read-only historical detail and recent-evaluation ordering.
+
+A real UnsavedChangesProvider regression reproduced Cancel unmounting a dirty
+evaluation without warning. NewEvaluationSection now requests a form-scoped
+leave decision before closing. The integration case verifies keeping the exact
+draft and then explicitly discarding it with the existing dialog. Only the
+navigation-library boundary is mocked; the registry, form guard and dialog are real.
+
+Selection-criterion form cases reproduce thrown create/edit requests and verify
+draft preservation, released controls, exact IDs/weight/color, schema limits and
+reset only after confirmed creation. The action boundary now returns a visible
+confirmation error instead of propagating rejected requests.
+
+Board tests retain real DnD components but inject resolved drop events at the
+library callback boundary. They verify no-op drops, hire/discard dispatch,
+complete column reordering, rejected optimistic updates and explicit retry after
+thrown movement/reordering requests. Those exceptions previously reached React's
+error boundary; both action boundaries now report an unconfirmed outcome while
+allowing the optimistic transition to finish. These are not pointer hit-testing
+or full browser drag gestures. No automatic retry/idempotence claim is introduced.
 
 From `srgh-app`:
 
