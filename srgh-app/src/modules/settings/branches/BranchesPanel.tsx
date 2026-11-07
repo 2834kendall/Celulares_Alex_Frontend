@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { PageHeader } from '@/components/ui/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { INPUT_CLASSES } from '@/modules/employees/components/EmployeeFields'
 import type { BranchSettings } from './types'
@@ -19,18 +18,14 @@ export function BranchesPanel({ data }: { data: BranchSettings }) {
   )
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Sucursales y kioscos"
-        description="Administrá las ubicaciones y sus accesos de marcación."
-        actions={
-          <Link
-            href="/settings/branches/new"
-            className="rounded-lg bg-brand-action px-4 py-2 text-sm font-bold text-white hover:bg-brand-action-hover"
-          >
-            Nueva sucursal
-          </Link>
-        }
-      />
+      <div className="flex justify-end">
+        <Link
+          href="/settings/branches/new"
+          className="rounded-lg bg-brand-action px-4 py-2 text-sm font-bold text-white hover:bg-brand-action-hover"
+        >
+          Nueva sucursal
+        </Link>
+      </div>
       <div className="flex flex-col gap-3 sm:flex-row">
         <label className="grow">
           <span className="sr-only">Buscar sucursal</span>
@@ -85,42 +80,6 @@ export function BranchesPanel({ data }: { data: BranchSettings }) {
             </li>
           ))}
         </ul>
-      )}
-      <Link
-        href="/settings/branches/pending"
-        className="inline-block text-sm text-brand-700 underline"
-      >
-        Revisar pendientes de este navegador
-      </Link>
-      {data.canManageKiosks && data.legacy.length > 0 && (
-        <p className="text-sm text-slate-600">
-          Hay {data.legacy.length} cuentas KIOSCO existentes sin registro. Revisalas y vinculalas
-          desde la sucursal correspondiente; no se modificaron automáticamente.
-        </p>
-      )}
-      {data.audit.length > 0 && (
-        <section aria-labelledby="branch-activity" className="space-y-3">
-          <h2 id="branch-activity" className="font-bold text-slate-900">
-            Actividad reciente
-          </h2>
-          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
-            {data.audit.slice(0, 10).map((a) => (
-              <li
-                key={a.aud_id}
-                className="flex flex-wrap justify-between gap-2 px-4 py-3 text-sm text-slate-600"
-              >
-                <span className="capitalize">
-                  {a.aud_entidad} · {a.aud_accion}
-                </span>
-                <time dateTime={a.aud_created_at}>
-                  {new Date(a.aud_created_at).toLocaleString('es-CR', {
-                    timeZone: 'America/Costa_Rica',
-                  })}
-                </time>
-              </li>
-            ))}
-          </ul>
-        </section>
       )}
     </div>
   )

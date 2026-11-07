@@ -111,19 +111,10 @@ export function BranchForm({
               <input {...register('suc_email_sucursal')} type="email" className={INPUT_CLASSES} />
             </Labeled>
           </div>
-          <p className="text-sm text-slate-600">
-            El correo de contacto no crea una cuenta de kiosco.
-          </p>
           <label className="flex items-center gap-2 text-sm font-medium">
             <input {...register('suc_activa')} type="checkbox" />
             Sucursal activa
           </label>
-          {branch && (
-            <p className="text-sm text-slate-600">
-              {branch.contratos} contratos vigentes · {branch.programaciones} turnos actuales o
-              futuros. Resolvé esas asignaciones antes de desactivar.
-            </p>
-          )}
         </fieldset>
         <fieldset
           disabled={isSubmitting}
@@ -131,50 +122,6 @@ export function BranchForm({
         >
           <legend className="px-1 text-base font-bold">Dirección</legend>
           <AddressFields basePath="direccion." territorio={territorio} />
-        </fieldset>
-        <fieldset
-          disabled={isSubmitting}
-          className="space-y-4 rounded-xl border border-slate-200 bg-white p-5"
-        >
-          <legend className="px-1 text-base font-bold">Preferencias de marcación</legend>
-          <p className="text-sm text-slate-600">
-            La ubicación se usa como referencia informativa. No acredita que el dispositivo esté
-            físicamente en la sucursal.
-          </p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Labeled label="Latitud" error={err('suc_latitud')}>
-              <input
-                {...register('suc_latitud', {
-                  setValueAs: (v) => (v === '' || v == null ? null : Number(v)),
-                })}
-                type="number"
-                step="any"
-                className={INPUT_CLASSES}
-              />
-            </Labeled>
-            <Labeled label="Longitud" error={err('suc_longitud')}>
-              <input
-                {...register('suc_longitud', {
-                  setValueAs: (v) => (v === '' || v == null ? null : Number(v)),
-                })}
-                type="number"
-                step="any"
-                className={INPUT_CLASSES}
-              />
-            </Labeled>
-            <Labeled label="Radio de referencia (metros)" error={err('suc_radio_geocerca_metros')}>
-              <input
-                {...register('suc_radio_geocerca_metros', { valueAsNumber: true })}
-                type="number"
-                min={1}
-                max={10000}
-                className={INPUT_CLASSES}
-              />
-            </Labeled>
-          </div>
-          <p className="text-sm text-slate-600">
-            Las reglas de tardía se administran en Configuración → Asistencia → Tipos de tardía.
-          </p>
         </fieldset>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={isSubmitting}>

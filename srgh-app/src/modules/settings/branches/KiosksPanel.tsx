@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Alert } from '@/components/ui/Alert'
+import { Modal } from '@/components/ui/Modal'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { INPUT_CLASSES, Labeled } from '@/modules/employees/components/EmployeeFields'
 import type { Branch, BranchSettings, Kiosk } from './types'
 import { createKiosk, provisionKiosk, setKioskState, moveKiosk, renameKiosk } from './actions'
@@ -22,14 +24,27 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [blocking, setBlocking] = useState<Kiosk | null>(null)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const guard = useUnsavedChanges({
     label: 'los kioscos de la sucursal',
-    value: { name, email, drafts },
+    value: drafts,
     busy,
   })
+  const registrationGuard = useUnsavedChanges({
+    label: 'el registro del kiosco',
+    value: { name, email },
+    busy,
+    enabled: adding,
+  })
+  function closeRegistration() {
+    setAdding(false)
+    setName('')
+    setEmail('')
+    setError(null)
+  }
   function draft(key: string, value: string, original: string) {
     setDrafts((current) => {
       const next = { ...current }
@@ -60,17 +75,6 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
       setBusy(false)
     }
   }
-  function block(k: Kiosk) {
-    if (
-      window.confirm(
-        `¿Bloquear ${k.kio_nombre}? No podrá reconocer ni guardar marcas, aunque conserve una sesión abierta. Las marcas pendientes quedarán para revisión del encargado.`
-      )
-    )
-      void run(
-        () => setKioskState(k.kio_id, false),
-        'Kiosco bloqueado. Las sesiones anteriores ya no pueden operar.'
-      )
-  }
   return (
     <section
       ref={(element) => guard.bindRoot(element)}
@@ -80,103 +84,109 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="branch-kiosks" className="text-lg font-bold">
-            Kioscos de {branch.suc_nombre}
+            Kioscos ({kiosks.length})
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Un acceso por terminal; teléfonos, tablets y computadoras.
-          </p>
         </div>
-        <Button disabled={busy || !branch.suc_activa} onClick={() => setAdding(!adding)}>
-          {adding ? 'Cerrar formulario' : 'Registrar kiosco'}
+        <Button
+          disabled={busy || !branch.suc_activa}
+          onClick={() => {
+            registrationGuard.acceptChanges()
+            setError(null)
+            setAdding(true)
+          }}
+        >
+          Registrar kiosco
         </Button>
       </div>
       {!branch.suc_activa && (
         <Alert tone="info">Activá la sucursal para registrar o habilitar sus kioscos.</Alert>
       )}
-      {error && <Alert>{error}</Alert>}
+      {error && !adding && <Alert>{error}</Alert>}
       {message && (
         <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
           {message}
         </p>
       )}
       {adding && (
-        <form
-          className="space-y-4 rounded-xl border border-slate-200 bg-white p-5"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void run(async () => {
-              const r = await createKiosk({ nombre: name, email, sucursal_id: branch.suc_id })
-              if (r.ok) {
-                setAdding(false)
-                setName('')
-                setEmail('')
-              }
-              return r
-            }, 'Kiosco registrado. Ahora invitá o vinculá su cuenta.')
-          }}
-        >
-          <fieldset disabled={busy} className="space-y-4">
-            <legend className="mb-3 font-bold">Nuevo acceso de kiosco</legend>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Labeled label="Nombre de la terminal *">
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  minLength={2}
-                  maxLength={80}
-                  required
-                  className={INPUT_CLASSES}
-                  placeholder="Por ejemplo: Mostrador 1"
-                />
-              </Labeled>
-              <Labeled label="Correo de acceso *">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className={INPUT_CLASSES}
-                />
-              </Labeled>
-            </div>
-            <p className="text-sm text-slate-600">
-              Usá un correo o alias único que reciba la empresa. No uses la cuenta personal de un
-              empleado ni compartas la misma cuenta entre terminales. Registrar no envía un correo
-              todavía.
-            </p>
-            {data.legacy.length > 0 && (
-              <Labeled label="Usar una cuenta KIOSCO existente">
-                <select
-                  className={INPUT_CLASSES}
-                  value=""
-                  onChange={(e) => {
-                    setEmail(e.target.value)
-                    if (!name) setName('Kiosco existente')
-                  }}
-                >
-                  <option value="">Seleccionar cuenta…</option>
-                  {data.legacy.map((u) => (
-                    <option
-                      key={u.id}
-                      value={u.email}
-                      disabled={u.sucursales.length !== 1 || u.sucursales[0] !== branch.suc_id}
-                    >
-                      {u.email}
-                      {u.sucursales.length !== 1
-                        ? ' — corregir asignación'
-                        : u.sucursales[0] !== branch.suc_id
-                          ? ' — otra sucursal'
-                          : ''}
-                    </option>
-                  ))}
-                </select>
-              </Labeled>
-            )}
-            <Button type="submit" disabled={busy}>
-              {busy ? 'Registrando…' : 'Guardar registro'}
-            </Button>
-          </fieldset>
-        </form>
+        <Modal title="Registrar kiosco" onClose={closeRegistration}>
+          <form
+            ref={(element) => registrationGuard.bindRoot(element)}
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void run(async () => {
+                const r = await createKiosk({ nombre: name, email, sucursal_id: branch.suc_id })
+                if (r.ok) {
+                  setAdding(false)
+                  setName('')
+                  setEmail('')
+                }
+                return r
+              }, 'Kiosco registrado. Ahora invitá o vinculá su cuenta.')
+            }}
+          >
+            {error && <Alert>{error}</Alert>}
+            <fieldset disabled={busy} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Labeled label="Nombre de la terminal *">
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    minLength={2}
+                    maxLength={80}
+                    required
+                    className={INPUT_CLASSES}
+                    placeholder="Por ejemplo: Mostrador 1"
+                  />
+                </Labeled>
+                <Labeled label="Correo de acceso *">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className={INPUT_CLASSES}
+                  />
+                </Labeled>
+              </div>
+              <p className="text-sm text-slate-600">
+                Usá un correo de la empresa exclusivo para este kiosco. La invitación se envía
+                después de registrar.
+              </p>
+              {data.legacy.length > 0 && (
+                <Labeled label="Usar una cuenta KIOSCO existente">
+                  <select
+                    className={INPUT_CLASSES}
+                    value=""
+                    onChange={(e) => {
+                      setEmail(e.target.value)
+                      if (!name) setName('Kiosco existente')
+                    }}
+                  >
+                    <option value="">Seleccionar cuenta…</option>
+                    {data.legacy.map((u) => (
+                      <option
+                        key={u.id}
+                        value={u.email}
+                        disabled={u.sucursales.length !== 1 || u.sucursales[0] !== branch.suc_id}
+                      >
+                        {u.email}
+                        {u.sucursales.length !== 1
+                          ? ' — corregir asignación'
+                          : u.sucursales[0] !== branch.suc_id
+                            ? ' — otra sucursal'
+                            : ''}
+                      </option>
+                    ))}
+                  </select>
+                </Labeled>
+              )}
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Registrando…' : 'Guardar registro'}
+              </Button>
+            </fieldset>
+          </form>
+        </Modal>
       )}
       {kiosks.length === 0 ? (
         <p className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600">
@@ -210,177 +220,180 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
                 {k.kio_ultima_actividad
                   ? `Última actividad: ${new Date(k.kio_ultima_actividad).toLocaleString('es-CR', { timeZone: 'America/Costa_Rica' })}`
                   : 'Todavía no hay actividad registrada.'}{' '}
-                La habilitación no indica que esté conectado ahora.
               </p>
-              <div className="flex flex-wrap gap-2">
-                {!k.kio_usuario_id && k.kio_estado !== 'bloqueado' && (
-                  <>
-                    <Button
-                      disabled={busy || !branch.suc_activa}
-                      onClick={() =>
-                        void run(
-                          () => provisionKiosk(k.kio_id, 'invitar'),
-                          'Invitación enviada y cuenta vinculada. Revisá el buzón de la empresa.'
-                        )
-                      }
-                    >
-                      Enviar invitación
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={busy || !branch.suc_activa}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            'Se validará la cuenta de este correo y se asignará a este kiosco. Debe ser una cuenta técnica sin empleado y de esta sucursal.'
-                          )
-                        )
+              <details className="group border-t border-slate-100 pt-3">
+                <summary className="w-fit cursor-pointer rounded-lg py-2 text-sm font-semibold text-brand-700 outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60">
+                  Administrar kiosco
+                </summary>
+                <div className="mt-3 space-y-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    {!k.kio_usuario_id && k.kio_estado !== 'bloqueado' && (
+                      <>
+                        <Button
+                          disabled={busy || !branch.suc_activa}
+                          onClick={() =>
+                            void run(
+                              () => provisionKiosk(k.kio_id, 'invitar'),
+                              'Invitación enviada y cuenta vinculada. Revisá el buzón de la empresa.'
+                            )
+                          }
+                        >
+                          Enviar invitación
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          disabled={busy || !branch.suc_activa}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                'Se validará la cuenta de este correo y se asignará a este kiosco. Debe ser una cuenta técnica sin empleado y de esta sucursal.'
+                              )
+                            )
+                              void run(
+                                () => provisionKiosk(k.kio_id, 'vincular'),
+                                'Cuenta vinculada al kiosco.'
+                              )
+                          }}
+                        >
+                          Completar vínculo
+                        </Button>
+                      </>
+                    )}
+                    {k.kio_usuario_id && k.kio_estado === 'activo' && (
+                      <>
+                        <Button
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(
+                              () => provisionKiosk(k.kio_id, 'recuperar'),
+                              'Correo de recuperación enviado.'
+                            )
+                          }
+                        >
+                          Recuperar acceso
+                        </Button>
+                      </>
+                    )}
+                    {k.kio_estado !== 'bloqueado' ? (
+                      <Button variant="danger" disabled={busy} onClick={() => setBlocking(k)}>
+                        Bloquear kiosco
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        disabled={busy || !branch.suc_activa}
+                        onClick={() =>
                           void run(
-                            () => provisionKiosk(k.kio_id, 'vincular'),
-                            'Cuenta vinculada al kiosco.'
+                            () => setKioskState(k.kio_id, true),
+                            'Kiosco desbloqueado. Completá su cuenta si está pendiente e iniciá una captura nueva; los comprobantes anteriores no se reactivan.'
                           )
+                        }
+                      >
+                        Habilitar kiosco
+                      </Button>
+                    )}
+                  </div>
+                  <details className="text-sm">
+                    <summary className="cursor-pointer text-brand-700">Cambiar nombre</summary>
+                    <form
+                      className="mt-3 flex flex-wrap items-end gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        const name = String(new FormData(e.currentTarget).get('nombre') ?? '')
+                        void run(async () => {
+                          const result = await renameKiosk(k.kio_id, name)
+                          if (result.ok) draft(k.kio_id, '', '')
+                          return result
+                        }, 'Nombre actualizado.')
                       }}
                     >
-                      Completar vínculo
-                    </Button>
-                  </>
-                )}
-                {k.kio_usuario_id && k.kio_estado === 'activo' && (
-                  <>
-                    <Button
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() =>
-                        void run(
-                          () => provisionKiosk(k.kio_id, 'reenviar'),
-                          'Invitación reenviada al correo del kiosco.'
+                      <label className="grow">
+                        Nombre de la terminal
+                        <input
+                          className={INPUT_CLASSES}
+                          name="nombre"
+                          defaultValue={k.kio_nombre}
+                          onChange={(e) => draft(k.kio_id, e.target.value, k.kio_nombre)}
+                          required
+                          minLength={2}
+                          maxLength={80}
+                          disabled={busy}
+                        />
+                      </label>
+                      <Button type="submit" variant="secondary" disabled={busy}>
+                        Guardar nombre
+                      </Button>
+                    </form>
+                  </details>
+                  {!k.kio_usuario_id && (
+                    <p className="text-sm text-slate-600">
+                      Hasta completar el vínculo, una cuenta existente conserva su configuración
+                      anterior. Este registro todavía no administra sus sesiones.
+                    </p>
+                  )}
+                  {k.kio_estado === 'bloqueado' && (
+                    <form
+                      className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4"
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        const id = Number(new FormData(e.currentTarget).get('sucursal'))
+                        if (
+                          window.confirm(
+                            '¿Cambiar la sucursal de este kiosco? Seguirá bloqueado. Las marcas pendientes de la ubicación anterior no se trasladarán; deben revisarse manualmente.'
+                          )
                         )
-                      }
+                          void run(async () => {
+                            const result = await moveKiosk(k.kio_id, id)
+                            if (result.ok) draft(`branch:${k.kio_id}`, '', '')
+                            return result
+                          }, 'Asignación cambiada. El kiosco sigue bloqueado hasta que lo habilités desde su nueva sucursal.')
+                      }}
                     >
-                      Reenviar invitación
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() =>
-                        void run(
-                          () => provisionKiosk(k.kio_id, 'recuperar'),
-                          'Correo de recuperación enviado.'
-                        )
-                      }
-                    >
-                      Recuperar acceso
-                    </Button>
-                  </>
-                )}
-                {k.kio_estado !== 'bloqueado' ? (
-                  <Button variant="danger" disabled={busy} onClick={() => block(k)}>
-                    Bloquear kiosco
-                  </Button>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    disabled={busy || !branch.suc_activa}
-                    onClick={() =>
-                      void run(
-                        () => setKioskState(k.kio_id, true),
-                        'Kiosco desbloqueado. Completá su cuenta si está pendiente e iniciá una captura nueva; los comprobantes anteriores no se reactivan.'
-                      )
-                    }
-                  >
-                    Habilitar kiosco
-                  </Button>
-                )}
-              </div>
-              <details className="text-sm">
-                <summary className="cursor-pointer text-brand-700">Cambiar nombre</summary>
-                <form
-                  className="mt-3 flex flex-wrap items-end gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const name = String(new FormData(e.currentTarget).get('nombre') ?? '')
-                    void run(async () => {
-                      const result = await renameKiosk(k.kio_id, name)
-                      if (result.ok) draft(k.kio_id, '', '')
-                      return result
-                    }, 'Nombre actualizado.')
-                  }}
-                >
-                  <label className="grow">
-                    Nombre de la terminal
-                    <input
-                      className={INPUT_CLASSES}
-                      name="nombre"
-                      defaultValue={k.kio_nombre}
-                      onChange={(e) => draft(k.kio_id, e.target.value, k.kio_nombre)}
-                      required
-                      minLength={2}
-                      maxLength={80}
-                      disabled={busy}
-                    />
-                  </label>
-                  <Button type="submit" variant="secondary" disabled={busy}>
-                    Guardar nombre
-                  </Button>
-                </form>
+                      <label className="min-w-0 grow text-sm font-medium">
+                        Cambiar sucursal
+                        <select
+                          name="sucursal"
+                          defaultValue={k.kio_sucursal_id}
+                          onChange={(e) =>
+                            draft(`branch:${k.kio_id}`, e.target.value, String(k.kio_sucursal_id))
+                          }
+                          className={INPUT_CLASSES}
+                          disabled={busy}
+                        >
+                          {data.branches
+                            .filter((b) => b.suc_activa)
+                            .map((b) => (
+                              <option key={b.suc_id} value={b.suc_id}>
+                                {b.suc_nombre}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <Button type="submit" variant="secondary" disabled={busy}>
+                        Cambiar asignación
+                      </Button>
+                    </form>
+                  )}
+                </div>
               </details>
-              {!k.kio_usuario_id && (
-                <p className="text-sm text-slate-600">
-                  Hasta completar el vínculo, una cuenta existente conserva su configuración
-                  anterior. Este registro todavía no administra sus sesiones.
-                </p>
-              )}
-              {k.kio_estado === 'bloqueado' && (
-                <form
-                  className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const id = Number(new FormData(e.currentTarget).get('sucursal'))
-                    if (
-                      window.confirm(
-                        '¿Cambiar la sucursal de este kiosco? Seguirá bloqueado. Las marcas pendientes de la ubicación anterior no se trasladarán; deben revisarse manualmente.'
-                      )
-                    )
-                      void run(async () => {
-                        const result = await moveKiosk(k.kio_id, id)
-                        if (result.ok) draft(`branch:${k.kio_id}`, '', '')
-                        return result
-                      }, 'Asignación cambiada. El kiosco sigue bloqueado hasta que lo habilités desde su nueva sucursal.')
-                  }}
-                >
-                  <label className="min-w-0 grow text-sm font-medium">
-                    Cambiar sucursal
-                    <select
-                      name="sucursal"
-                      defaultValue={k.kio_sucursal_id}
-                      onChange={(e) =>
-                        draft(`branch:${k.kio_id}`, e.target.value, String(k.kio_sucursal_id))
-                      }
-                      className={INPUT_CLASSES}
-                      disabled={busy}
-                    >
-                      {data.branches
-                        .filter((b) => b.suc_activa)
-                        .map((b) => (
-                          <option key={b.suc_id} value={b.suc_id}>
-                            {b.suc_nombre}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                  <Button type="submit" variant="secondary" disabled={busy}>
-                    Cambiar asignación
-                  </Button>
-                </form>
-              )}
             </li>
           ))}
         </ul>
       )}
-      <p className="text-sm text-slate-600">
-        El rol KIOSCO solo permite marcar. Registrar un acceso no identifica el hardware: protegé
-        las credenciales. La captura de rostros se administra desde el perfil del empleado.
-      </p>
+      {blocking && (
+        <ConfirmDialog
+          title={`Bloquear ${blocking.kio_nombre}`}
+          message="No podrá registrar asistencia, incluso con una sesión abierta. Las marcas pendientes quedarán para revisión."
+          confirmLabel="Confirmar bloqueo"
+          onCancel={() => setBlocking(null)}
+          onConfirm={() => {
+            const target = blocking
+            setBlocking(null)
+            void run(() => setKioskState(target.kio_id, false), 'Kiosco bloqueado.')
+          }}
+        />
+      )}
     </section>
   )
 }
