@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -55,6 +56,12 @@ export function ImageUploadModal({
   const [error, setError] = useState<string | null>(null)
 
   const busy = saving || removing
+  const guard = useUnsavedChanges({
+    label: title.toLocaleLowerCase(),
+    value: file,
+    hasFiles: Boolean(file),
+    busy,
+  })
 
   async function handleSave() {
     if (!file) {
@@ -71,6 +78,7 @@ export function ImageUploadModal({
       return
     }
     toast.success(copy.saved)
+    guard.acceptChanges()
     onClose()
   }
 
@@ -85,13 +93,17 @@ export function ImageUploadModal({
       return
     }
     toast.success(copy.removed)
+    guard.acceptChanges()
     onClose()
   }
 
   return (
     <>
       <Modal title={title} onClose={onClose}>
-        <div className="flex flex-col items-center gap-3">
+        <div
+          ref={(element) => guard.bindRoot(element)}
+          className="flex flex-col items-center gap-3"
+        >
           <PhotoDropzone
             file={file}
             currentUrl={currentUrl}
@@ -122,7 +134,12 @@ export function ImageUploadModal({
             )}
 
             <div className="flex items-center gap-2">
-              <Button onClick={onClose} disabled={busy} variant="secondary" size="md">
+              <Button
+                onClick={() => guard.confirmLeave(onClose)}
+                disabled={busy}
+                variant="secondary"
+                size="md"
+              >
                 Cancelar
               </Button>
               <Button onClick={handleSave} disabled={!file || busy} size="md">

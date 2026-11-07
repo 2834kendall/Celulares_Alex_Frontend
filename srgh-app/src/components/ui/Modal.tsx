@@ -5,6 +5,7 @@ import { X } from 'lucide-react'
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { useDialog } from '@/hooks/useDialog'
 import { IconButton } from '@/components/ui/IconButton'
+import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 
 interface ModalProps {
   title: string
@@ -28,25 +29,13 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
   useBodyScrollLock()
   const titleId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
-  useDialog(panelRef, onClose)
+  const confirmLeave = useConfirmLeave()
+  const close = () => confirmLeave(onClose, panelRef.current)
+  useDialog(panelRef, close)
 
-  // Tocar el fondo cierra el modal, salvo que ya se haya escrito algo: con
-  // un formulario de diez campos, un toque de más al costado (en el celular
-  // pasa seguido) borraba todo lo cargado. Con datos, el fondo solo hace que
-  // el panel "rebote" para indicar que se cierra con la X o con Escape.
-  const touchedRef = useRef(false)
+  // Every dismissal uses the same form-aware decision, including the backdrop.
   function onBackdropClick() {
-    if (!touchedRef.current) {
-      onClose()
-      return
-    }
-    // Imperativo y no con estado: cambiar la `key` del panel para reiniciar
-    // la animacion lo remontaria y borraria justo lo que se quiere cuidar.
-    const panel = panelRef.current
-    if (!panel) return
-    panel.classList.remove('animate-modal-in', 'animate-modal-nudge')
-    void panel.offsetWidth // fuerza el reflow para que la animacion reinicie
-    panel.classList.add('animate-modal-nudge')
+    close()
   }
 
   return (
@@ -67,9 +56,6 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
         tabIndex={-1}
         className="animate-modal-in w-full max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 outline-none"
         onClick={(e) => e.stopPropagation()}
-        onInput={() => {
-          touchedRef.current = true
-        }}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div className="min-w-0">
@@ -78,7 +64,7 @@ export function Modal({ title, subtitle, onClose, children }: ModalProps) {
             </h3>
             {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
           </div>
-          <IconButton onClick={onClose} aria-label="Cerrar">
+          <IconButton onClick={close} aria-label="Cerrar">
             <X className="h-3.5 w-3.5" />
           </IconButton>
         </div>

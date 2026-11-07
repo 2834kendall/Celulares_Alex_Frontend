@@ -1,7 +1,9 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ClipboardList, Loader2 } from 'lucide-react'
 import { ColorPicker } from '@/components/ui/ColorPicker'
@@ -33,8 +35,10 @@ export function RubroSeleccionForm({ rubro, onSuccess }: RubroSeleccionFormProps
     reset,
     control,
     setValue,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<RubroSeleccionInput>({
+    unsavedLabel: 'el rubro de selección',
     resolver: zodResolver(rubroSeleccionSchema),
     defaultValues: rubro
       ? {
@@ -64,11 +68,17 @@ export function RubroSeleccionForm({ rubro, onSuccess }: RubroSeleccionFormProps
     }
 
     if (!isEditing) reset({ nombre: '', descripcion: '', color: null, peso: 1 })
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

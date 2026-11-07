@@ -1,5 +1,7 @@
 'use client'
 
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -303,6 +305,7 @@ function MoveStageDialog({
   const [stageId, setStageId] = useState(options[0] ? String(options[0].id) : '')
   const [note, setNote] = useState('')
   const selected = options.find((stage) => String(stage.id) === stageId) ?? null
+  const moveGuard = useUnsavedChanges({ label: 'el cambio de etapa', value: { stageId, note } })
 
   return (
     <Modal
@@ -311,6 +314,7 @@ function MoveStageDialog({
       onClose={onClose}
     >
       <form
+        ref={(element) => moveGuard.bindRoot(element)}
         className="space-y-3"
         noValidate
         onSubmit={(e) => {
@@ -343,7 +347,7 @@ function MoveStageDialog({
           />
         </div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="secondary" size="lg" onClick={onClose}>
+          <Button variant="secondary" size="lg" onClick={() => moveGuard.confirmLeave(onClose)}>
             Cancelar
           </Button>
           <Button type="submit" size="lg" disabled={!selected}>
@@ -409,6 +413,17 @@ function ScoreForm({
   const pendingPayload = useRef<ScoresPayload | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saving = useRef(false)
+  const scoreGuard = useUnsavedChanges({
+    label: 'los puntajes de la postulación',
+    value: scores,
+    enabled: status === 'pending' || status === 'saving' || status === 'error',
+    busy: status === 'pending' || status === 'saving',
+    onDiscard: () => {
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = null
+      pendingPayload.current = null
+    },
+  })
 
   // Promedio EN VIVO mientras se califica, con el mismo cálculo ponderado
   // que usa el servidor al guardar (savePostulacionScores): así el número
@@ -441,7 +456,15 @@ function ScoreForm({
     pendingPayload.current = null
     saving.current = true
     setStatus('saving')
-    const result = await savePostulacionScores(payload)
+    let result
+    try {
+      result = await savePostulacionScores(payload)
+    } catch {
+      result = {
+        ok: false as const,
+        error: 'No se pudo guardar el puntaje. Revisá la conexión y reintentá.',
+      }
+    }
     saving.current = false
 
     if (pendingPayload.current) {
@@ -457,6 +480,7 @@ function ScoreForm({
       return
     }
     setError(null)
+    scoreGuard.acceptChanges()
     setStatus('saved')
   }
 

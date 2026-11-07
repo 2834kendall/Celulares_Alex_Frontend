@@ -1,5 +1,7 @@
 'use client'
 
+import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
+
 import { useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -52,6 +54,7 @@ function AddNoteButton({ label, onClick }: AddNoteButtonProps) {
 
 export function IndividualView({ collaborators, rubros, canWrite }: IndividualViewProps) {
   const router = useRouter()
+  const confirmLeave = useConfirmLeave()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
@@ -69,7 +72,7 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
     const params = new URLSearchParams(searchParams.toString())
     params.set('tab', 'individual')
     params.set('colaborador', String(labId))
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    confirmLeave(() => router.replace(`${pathname}?${params.toString()}`, { scroll: false }))
   }
 
   function goToNewEvaluation(labId: number) {

@@ -1,7 +1,9 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm, type Resolver } from 'react-hook-form'
+import { type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { Info, Loader2, Save } from 'lucide-react'
@@ -56,8 +58,10 @@ export function EditUserDialog({
   const {
     control,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<EditarAsignacionInput>({
+    unsavedLabel: 'la asignación del usuario',
     // z.preprocess vuelve `unknown` el lado input del schema; el formulario
     // trabaja con el tipo de salida (''→null ya resuelto por el resolver).
     resolver: zodResolver(editarAsignacionSchema) as Resolver<EditarAsignacionInput>,
@@ -78,12 +82,18 @@ export function EditUserDialog({
     }
 
     toast.success('Usuario actualizado.')
+    guard.acceptChanges()
     onClose()
   }
 
   return (
     <Modal title="Editar usuario" subtitle={usuario.email} onClose={onClose}>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit(onSubmit)}
+        className="space-y-3"
+        noValidate
+      >
         {serverError && (
           <Alert>
             <div>{serverError}</div>
@@ -132,7 +142,7 @@ export function EditUserDialog({
         </Labeled>
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button onClick={onClose} variant="secondary" size="md">
+          <Button onClick={() => guard.confirmLeave(onClose)} variant="secondary" size="md">
             Cancelar
           </Button>
           <Button type="submit" disabled={isSubmitting} size="md">

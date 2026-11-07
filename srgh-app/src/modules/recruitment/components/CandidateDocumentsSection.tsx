@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { toast } from 'sonner'
 import { FileText, Loader2, Trash2 } from 'lucide-react'
 import { DocumentDropzone } from '@/components/ui/DocumentDropzone'
@@ -41,6 +42,13 @@ export function CandidateDocumentsSection({
   const [addError, setAddError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const guard = useUnsavedChanges({
+    label: 'el documento del candidato',
+    value: { pendingFile, tipo, nombre },
+    enabled: Boolean(pendingFile),
+    busy: uploading,
+    hasFiles: Boolean(pendingFile),
+  })
 
   function handleSelect(file: File) {
     setPendingFile(file)
@@ -73,6 +81,7 @@ export function CandidateDocumentsSection({
     }
 
     toast.success(`Documento guardado: ${nombre.trim()}.`)
+    guard.acceptChanges()
     setPendingFile(null)
   }
 
@@ -167,7 +176,12 @@ export function CandidateDocumentsSection({
 
       {pendingFile && (
         <Modal title="Guardar documento" onClose={() => setPendingFile(null)}>
-          <form onSubmit={handleUploadSubmit} className="space-y-3" noValidate>
+          <form
+            ref={(element) => guard.bindRoot(element)}
+            onSubmit={handleUploadSubmit}
+            className="space-y-3"
+            noValidate
+          >
             {addError && (
               <Alert>
                 <div>{addError}</div>

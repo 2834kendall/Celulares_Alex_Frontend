@@ -1,7 +1,9 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Check, Clock, Loader2, Plus } from 'lucide-react'
 import {
@@ -44,8 +46,10 @@ export function TipoTardiaForm({ tipo, onSuccess }: TipoTardiaFormProps) {
     register,
     control,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<TipoTardiaInput>({
+    unsavedLabel: 'el tipo de tardía',
     resolver: zodResolver(tipoTardiaSchema),
     defaultValues: tipo
       ? {
@@ -75,11 +79,17 @@ export function TipoTardiaForm({ tipo, onSuccess }: TipoTardiaFormProps) {
     }
 
     // revalidatePath('/settings', 'layout') en el server action ya refresca la ruta.
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

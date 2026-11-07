@@ -77,21 +77,6 @@ describe('Modal — teclado, foco y datos sin guardar', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('con algo escrito, tocar el fondo NO cierra (se perdería lo cargado)', async () => {
-    const onClose = vi.fn()
-    const user = userEvent.setup()
-    render(
-      <Modal title="Nuevo candidato" onClose={onClose}>
-        <input aria-label="Nombre" />
-      </Modal>
-    )
-
-    await user.type(screen.getByLabelText('Nombre'), 'Ana')
-    await user.click(screen.getByRole('dialog'))
-
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
   it('Tab no se escapa del panel', async () => {
     const user = userEvent.setup()
     render(

@@ -1,7 +1,9 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { Loader2, Trash2 } from 'lucide-react'
@@ -45,8 +47,10 @@ export function StageColumnForm({ stage, cardCount = 0, onDone }: StageColumnFor
     handleSubmit,
     control,
     setValue,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<StageColumnInput>({
+    unsavedLabel: 'la etapa de selección',
     resolver: zodResolver(stageColumnSchema),
     defaultValues: stage
       ? { nombre: stage.nombre, color: stage.color }
@@ -67,6 +71,7 @@ export function StageColumnForm({ stage, cardCount = 0, onDone }: StageColumnFor
       return
     }
     toast.success(isEditing ? 'Columna actualizada.' : 'Columna creada.')
+    guard.acceptChanges()
     onDone()
   }
 
@@ -82,11 +87,17 @@ export function StageColumnForm({ stage, cardCount = 0, onDone }: StageColumnFor
       return
     }
     toast.success('Columna eliminada.')
+    guard.acceptChanges()
     onDone()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

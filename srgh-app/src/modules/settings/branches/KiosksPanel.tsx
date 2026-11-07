@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -23,6 +24,20 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
   const [adding, setAdding] = useState(false)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const guard = useUnsavedChanges({
+    label: 'los kioscos de la sucursal',
+    value: { name, email, drafts },
+    busy,
+  })
+  function draft(key: string, value: string, original: string) {
+    setDrafts((current) => {
+      const next = { ...current }
+      if (value === original) delete next[key]
+      else next[key] = value
+      return next
+    })
+  }
   const kiosks = data.kiosks.filter((k) => k.kio_sucursal_id === branch.suc_id)
   async function run(task: () => Promise<{ ok: boolean; error?: string }>, success: string) {
     if (busyRef.current) return
@@ -57,7 +72,11 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
       )
   }
   return (
-    <section className="space-y-5" aria-labelledby="branch-kiosks">
+    <section
+      ref={(element) => guard.bindRoot(element)}
+      className="space-y-5"
+      aria-labelledby="branch-kiosks"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="branch-kiosks" className="text-lg font-bold">
@@ -280,7 +299,11 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
                       onSubmit={(e) => {
                         e.preventDefault()
                         const name = String(new FormData(e.currentTarget).get('nombre') ?? '')
-                        void run(() => renameKiosk(k.kio_id, name), 'Nombre actualizado.')
+                        void run(async () => {
+                          const result = await renameKiosk(k.kio_id, name)
+                          if (result.ok) draft(k.kio_id, '', '')
+                          return result
+                        }, 'Nombre actualizado.')
                       }}
                     >
                       <label className="grow">
@@ -289,6 +312,7 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
                           className={INPUT_CLASSES}
                           name="nombre"
                           defaultValue={k.kio_nombre}
+                          onChange={(e) => draft(k.kio_id, e.target.value, k.kio_nombre)}
                           required
                           minLength={2}
                           maxLength={80}
@@ -317,10 +341,11 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
                             '¿Cambiar la sucursal de este kiosco? Seguirá bloqueado. Las marcas pendientes de la ubicación anterior no se trasladarán; deben revisarse manualmente.'
                           )
                         )
-                          void run(
-                            () => moveKiosk(k.kio_id, id),
-                            'Asignación cambiada. El kiosco sigue bloqueado hasta que lo habilités desde su nueva sucursal.'
-                          )
+                          void run(async () => {
+                            const result = await moveKiosk(k.kio_id, id)
+                            if (result.ok) draft(`branch:${k.kio_id}`, '', '')
+                            return result
+                          }, 'Asignación cambiada. El kiosco sigue bloqueado hasta que lo habilités desde su nueva sucursal.')
                       }}
                     >
                       <label className="min-w-0 grow text-sm font-medium">
@@ -328,6 +353,9 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
                         <select
                           name="sucursal"
                           defaultValue={k.kio_sucursal_id}
+                          onChange={(e) =>
+                            draft(`branch:${k.kio_id}`, e.target.value, String(k.kio_sucursal_id))
+                          }
                           className={INPUT_CLASSES}
                           disabled={busy}
                         >

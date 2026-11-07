@@ -1,5 +1,7 @@
 'use client'
 
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { type FormEvent, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -53,6 +55,12 @@ export function JustifyAbsenceModal({
   const [serverError, setServerError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
+  const guard = useUnsavedChanges({
+    label: 'la justificación de ausencia',
+    value: { tipoId, observaciones, boleta },
+    busy: isSaving,
+  })
+
   useEffect(() => {
     let cancelled = false
     getAusenciaTypes().then((result) => {
@@ -94,6 +102,7 @@ export function JustifyAbsenceModal({
     }
 
     toast.success('Ausencia justificada.')
+    guard.acceptChanges()
     onClose()
   }
 
@@ -103,7 +112,12 @@ export function JustifyAbsenceModal({
       subtitle={`${employeeName} — ${formatDay(dateISO)}`}
       onClose={onClose}
     >
-      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit}
+        className="space-y-3"
+        noValidate
+      >
         {(serverError || loadError) && (
           <Alert>
             <div>{serverError ?? loadError}</div>
