@@ -49,8 +49,15 @@ export function DiscardApplicationDialog({
     }
     setSubmitting(true)
     setError(null)
-    const result = await rejectPostulacion({ postulacionId: applicationId, motivo: reason.trim() })
-    setSubmitting(false)
+    let result: Awaited<ReturnType<typeof rejectPostulacion>>
+    try {
+      result = await rejectPostulacion({ postulacionId: applicationId, motivo: reason.trim() })
+    } catch {
+      setError('No se pudo confirmar el descarte. Revisá la postulación antes de reintentar.')
+      return
+    } finally {
+      setSubmitting(false)
+    }
     if (!result.ok) {
       setError(result.error)
       return

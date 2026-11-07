@@ -39,9 +39,15 @@ export function RubroForm({ rubro, onSuccess }: RubroFormProps) {
   async function onSubmit(input: RubroInput) {
     setServerError(null)
 
-    const result = isEditing
-      ? await updateRubro(rubro!.areaId, rubro!.criterioId, input)
-      : await createRubro(input)
+    let result: Awaited<ReturnType<typeof createRubro>> | Awaited<ReturnType<typeof updateRubro>>
+    try {
+      result = isEditing
+        ? await updateRubro(rubro!.areaId, rubro!.criterioId, input)
+        : await createRubro(input)
+    } catch {
+      setServerError('No se pudo confirmar el guardado. Revisá los rubros antes de reintentar.')
+      return
+    }
 
     if (!result.ok) {
       setServerError(result.error)

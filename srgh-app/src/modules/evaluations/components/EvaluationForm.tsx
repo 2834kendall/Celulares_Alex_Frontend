@@ -97,8 +97,15 @@ export function EvaluationForm({
     }
 
     setIsSubmitting(true)
-    const result = await createEvaluation(parsed.data)
-    setIsSubmitting(false)
+    let result: Awaited<ReturnType<typeof createEvaluation>>
+    try {
+      result = await createEvaluation(parsed.data)
+    } catch {
+      setError('No se pudo confirmar el registro. Revisá las evaluaciones antes de reintentar.')
+      return
+    } finally {
+      setIsSubmitting(false)
+    }
 
     if (!result.ok) {
       setError(result.error)
@@ -111,7 +118,6 @@ export function EvaluationForm({
     const params = new URLSearchParams(searchParams.toString())
     params.set('tab', 'individual')
     params.set('colaborador', String(parsed.data.labId))
-    guard.acceptChanges()
     router.push(`${pathname}?${params.toString()}`)
   }
 
