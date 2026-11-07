@@ -58,9 +58,17 @@ export function RubroSeleccionForm({ rubro, onSuccess }: RubroSeleccionFormProps
   async function onSubmit(input: RubroSeleccionInput) {
     setServerError(null)
 
-    const result = isEditing
-      ? await updateCriterioSeleccion(rubro!.areaId, rubro!.criterioId, input)
-      : await createCriterioSeleccion(input)
+    let result:
+      | Awaited<ReturnType<typeof createCriterioSeleccion>>
+      | Awaited<ReturnType<typeof updateCriterioSeleccion>>
+    try {
+      result = isEditing
+        ? await updateCriterioSeleccion(rubro!.areaId, rubro!.criterioId, input)
+        : await createCriterioSeleccion(input)
+    } catch {
+      setServerError('No se pudo confirmar el guardado. Revisá los criterios antes de reintentar.')
+      return
+    }
 
     if (!result.ok) {
       setServerError(result.error)
