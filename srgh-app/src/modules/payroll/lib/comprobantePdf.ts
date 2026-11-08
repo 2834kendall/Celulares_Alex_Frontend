@@ -382,7 +382,7 @@ export async function generarComprobantePdf(datos: DatosComprobantePdf): Promise
   if (detalle.incapacidad) {
     h.linea('Salario neto', formatCRC(detalle.salarioNeto), { fuerte: true })
     h.y -= 10
-    h.espacio(80)
+    h.espacio(150)
     h.bloque(detalle.incapacidad.tipoNombre ?? 'Incapacidad')
     h.linea(
       `Días pagados por la empresa (${detalle.incapacidad.porcentajePagoEmpleador}% del salario)`,
@@ -392,7 +392,23 @@ export async function generarComprobantePdf(datos: DatosComprobantePdf): Promise
       h.linea('Días pagados por la CCSS', `${detalle.incapacidad.diasCcss} día(s)`)
     }
     h.separador(0, 16)
-    h.linea('Monto que paga la empresa', formatCRC(detalle.incapacidad.monto), { fuerte: true })
+    const inc = detalle.incapacidad
+    if (inc.cuotaObrera > 0) {
+      h.linea('Monto que paga la empresa', formatCRC(inc.montoEmpleador))
+      h.linea(
+        `Cuota obrera CCSS (${inc.porcentajeCuotaObrera}%)`,
+        `− ${formatCRC(inc.cuotaObrera)}`
+      )
+    }
+    h.linea(
+      inc.cuotaObrera > 0 ? 'Neto de la empresa' : 'Monto que paga la empresa',
+      formatCRC(inc.monto),
+      { fuerte: true }
+    )
+    if (inc.subsidioCcssEstimado !== null && inc.subsidioCcssEstimado > 0) {
+      h.linea('Subsidio de la CCSS (estimado)', formatCRC(inc.subsidioCcssEstimado))
+      h.nota('Lo paga la CCSS directamente, con su propio cálculo: no está en este total.')
+    }
     h.separador(0, 20)
     h.totalDestacado('Total a pagar', formatCRC(detalle.totalAPagar))
   } else {

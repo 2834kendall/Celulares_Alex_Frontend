@@ -3,7 +3,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { montoIncapacidadEnVivo } from '@/modules/payroll/lib/incapacidad'
+import {
+  CODIGO_INCAPACIDAD_ENFERMEDAD,
+  SELECT_TIPO_SUBSIDIO,
+  conCuotaObrera,
+  esAusenciaDeSubsidio,
+  parametrosDeTipo,
+  subsidioCcssEstimado,
+  subsidioPatronoEnVivo,
+  tipoDeLaFila,
+  type AusenciaSubsidio,
+  type TipoSubsidioRow,
+} from '@/modules/payroll/lib/subsidio'
 import { round2 } from '@/modules/payroll/lib/numeros'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
@@ -48,6 +59,9 @@ interface DetalleRow {
   ndt_dias_incapacidad_empleador: number
   ndt_monto_incapacidad?: number | null
   ndt_porcentaje_incapacidad?: number | null
+  ndt_cuota_obrera_incapacidad?: number | null
+  ndt_porcentaje_cuota_obrera_incapacidad?: number | null
+  ndt_subsidio_ccss_estimado?: number | null
   ndt_salario_base_contrato: number | null
   ndt_salario_real_contrato: number | null
   ndt_horas_semanales_contrato: number | null
@@ -77,10 +91,6 @@ interface DatosPagoRow {
   edp_empleado_id: number
   edp_numero_cuenta: string | null
   sgrh_cat_bancos: { ban_nombre: string } | null
-}
-
-interface TipoAusenciaRow {
-  tau_porcentaje_pago_empleador: number
 }
 
 interface ComprobanteRow {
@@ -150,6 +160,9 @@ export async function getPeriodoDetail(
       ndt_dias_incapacidad_empleador,
       ndt_monto_incapacidad,
       ndt_porcentaje_incapacidad,
+      ndt_cuota_obrera_incapacidad,
+      ndt_porcentaje_cuota_obrera_incapacidad,
+      ndt_subsidio_ccss_estimado,
       ndt_dias_incapacidad_ccss,
       ndt_salario_base_contrato,
       ndt_salario_real_contrato,
@@ -195,15 +208,16 @@ export async function getPeriodoDetail(
       .eq('npe_id', periodoId)
       .maybeSingle<PeriodoRow>(),
     consultaDetalles.order('ndt_id', { ascending: true }).returns<DetalleRow[]>(),
-    // % que paga el patrono durante sus días de incapacidad — se lee del
-    // catálogo en vez de "adivinarlo" en el código (mismo criterio que el
-    // resto del motor de cálculo). Si falla, la incapacidad simplemente no
-    // se muestra (no bloquea el resto de la pantalla).
+    // Tipo de respaldo para una fila con días de incapacidad cuya ausencia
+    // no se encuentre: INC_ENF, lo que se usaba siempre antes. Lo normal es
+    // que cada fila use el tipo de SU ausencia (ver más abajo). Si falla, y
+    // tampoco se encuentra la ausencia, la incapacidad no se muestra (no
+    // bloquea el resto de la pantalla).
     supabase
       .from('sgrh_cat_tipos_ausencia')
-      .select('tau_porcentaje_pago_empleador')
-      .eq('tau_codigo', 'INC_ENF')
-      .maybeSingle<TipoAusenciaRow>(),
+      .select(SELECT_TIPO_SUBSIDIO)
+      .eq('tau_codigo', CODIGO_INCAPACIDAD_ENFERMEDAD)
+      .maybeSingle<TipoSubsidioRow>(),
   ])
 
   if (errPeriodo) {
@@ -286,7 +300,7 @@ export async function getPeriodoDetail(
       ? supabase
           .from('sgrh_ausencias')
           .select(
-            'aus_historial_laboral_id, aus_fecha_inicio, sgrh_cat_tipos_ausencia ( tau_nombre, tau_requiere_documento_ccss )'
+            `aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin, sgrh_cat_tipos_ausencia ( ${SELECT_TIPO_SUBSIDIO} )`
           )
           .in('aus_historial_laboral_id', labsConSubsidio)
           .eq('aus_estado', 'aprobada')
@@ -407,7 +421,12 @@ export async function getPeriodoDetail(
   // "Incapacidad por enfermedad", también en una licencia de maternidad
   // (auditoría 2, hallazgo 9). Informativo: si la lectura falla, queda el
   // rótulo genérico.
+  //
+  // Las mismas ausencias dicen con qué % se paga la fila (el de SU tipo, no
+  // siempre el de INC_ENF), qué cuota obrera se le rebaja y cuánto paga la
+  // CCSS (ver lib/subsidio.ts).
   const tipoSubsidioPorLab = new Map<number, string>()
+  const ausenciasSubsidioPorLab = new Map<number, AusenciaSubsidio[]>()
   if (!errAusencias && Array.isArray(ausencias)) {
     const nombresPorLab = new Map<number, string[]>()
     for (const a of ausencias) {
@@ -416,11 +435,24 @@ export async function getPeriodoDetail(
       const nombres = nombresPorLab.get(a.aus_historial_laboral_id) ?? []
       if (!nombres.includes(tipo.tau_nombre)) nombres.push(tipo.tau_nombre)
       nombresPorLab.set(a.aus_historial_laboral_id, nombres)
+      if (esAusenciaDeSubsidio(tipo) && a.aus_fecha_fin) {
+        const lista = ausenciasSubsidioPorLab.get(a.aus_historial_laboral_id) ?? []
+        lista.push({
+          inicio: a.aus_fecha_inicio,
+          fin: a.aus_fecha_fin,
+          tipo: parametrosDeTipo(tipo),
+        })
+        ausenciasSubsidioPorLab.set(a.aus_historial_laboral_id, lista)
+      }
     }
     for (const [labId, nombres] of nombresPorLab) {
       tipoSubsidioPorLab.set(labId, nombres.join(' y '))
     }
   }
+  const tipoRespaldo = tipoAusencia ? parametrosDeTipo(tipoAusencia) : null
+  const rangoPeriodo = hayFechas
+    ? { inicio: periodo.npe_fecha_inicio_periodo!, fin: periodo.npe_fecha_fin_periodo! }
+    : null
 
   // Filas impagas cuyo salario ya va en una liquidación (salario pendiente
   // del mes de salida): no se pagan por planilla. Informativo: si la lectura
@@ -470,30 +502,76 @@ export async function getPeriodoDetail(
     const tieneIncapacidad =
       row.ndt_dias_incapacidad_empleador > 0 || row.ndt_dias_incapacidad_ccss > 0
     const congelado = row.ndt_monto_incapacidad
+    const ausenciasFila = ausenciasSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? []
+    const tipoNombre = tipoSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? null
     if (tieneIncapacidad && congelado !== null && congelado !== undefined) {
-      // Fila pagada: el monto se guardó al marcar el pago (ver
-      // marcarDetallePagado) y el comprobante no cambia aunque después cambie
-      // el salario o el porcentaje del catálogo.
+      // Fila pagada: el monto, la cuota y el estimado de la CCSS se guardaron
+      // al marcar el pago (ver marcarDetallePagado) y el comprobante no
+      // cambia aunque después cambie el salario o el tipo de ausencia. Las
+      // pagadas antes de guardar la cuota no la tienen: se pagaron sin ella.
+      const montos = conCuotaObrera(
+        Number(congelado),
+        Number(row.ndt_porcentaje_cuota_obrera_incapacidad ?? 0)
+      )
+      const cuota = Number(row.ndt_cuota_obrera_incapacidad ?? 0)
       incapacidad = {
         diasEmpleador: row.ndt_dias_incapacidad_empleador,
         diasCcss: row.ndt_dias_incapacidad_ccss,
         porcentajePagoEmpleador:
-          row.ndt_porcentaje_incapacidad ?? tipoAusencia?.tau_porcentaje_pago_empleador ?? 0,
-        monto: Number(congelado),
-        tipoNombre: tipoSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? null,
+          row.ndt_porcentaje_incapacidad ?? tipoRespaldo?.porcentajePagoEmpleador ?? 0,
+        montoEmpleador: montos.montoEmpleador,
+        porcentajeCuotaObrera: montos.porcentajeCuotaObrera,
+        cuotaObrera: cuota,
+        monto: round2(montos.montoEmpleador - cuota),
+        subsidioCcssEstimado:
+          row.ndt_subsidio_ccss_estimado === null || row.ndt_subsidio_ccss_estimado === undefined
+            ? null
+            : Number(row.ndt_subsidio_ccss_estimado),
+        tipoNombre,
       }
-    } else if (tieneIncapacidad && tipoAusencia) {
-      // Sin pagar (o pagada antes de que se guardara el monto): en vivo.
+    } else if (tieneIncapacidad && row.ndt_pagado && tipoRespaldo) {
+      // Pagada antes de que se guardara el monto (2026-10): se sigue
+      // mostrando como se calculaba al pagarla, con el % de INC_ENF y sin
+      // cuota. Cambiarle la cuenta ahora movería un comprobante ya entregado.
+      const montos = subsidioPatronoEnVivo(row.ndt_dias_incapacidad_empleador, contratoFila, {
+        porcentajePagoEmpleador: tipoRespaldo.porcentajePagoEmpleador,
+        porcentajeCuotaObrera: 0,
+      })
       incapacidad = {
         diasEmpleador: row.ndt_dias_incapacidad_empleador,
         diasCcss: row.ndt_dias_incapacidad_ccss,
-        porcentajePagoEmpleador: tipoAusencia.tau_porcentaje_pago_empleador,
-        monto: montoIncapacidadEnVivo(
-          row.ndt_dias_incapacidad_empleador,
-          contratoFila,
-          tipoAusencia.tau_porcentaje_pago_empleador
-        ),
-        tipoNombre: tipoSubsidioPorLab.get(row.ndt_historial_laboral_id) ?? null,
+        porcentajePagoEmpleador: tipoRespaldo.porcentajePagoEmpleador,
+        montoEmpleador: montos.montoEmpleador,
+        porcentajeCuotaObrera: 0,
+        cuotaObrera: 0,
+        monto: montos.neto,
+        subsidioCcssEstimado: null,
+        tipoNombre,
+      }
+    } else if (tieneIncapacidad && !row.ndt_pagado) {
+      // Sin pagar: en vivo, con el tipo de SU ausencia. Si no se encuentra la
+      // ausencia (lectura fallida o días cargados a mano), INC_ENF.
+      const tipo = (rangoPeriodo && tipoDeLaFila(ausenciasFila, rangoPeriodo)) || tipoRespaldo
+      if (tipo) {
+        const montos = subsidioPatronoEnVivo(row.ndt_dias_incapacidad_empleador, contratoFila, tipo)
+        incapacidad = {
+          diasEmpleador: row.ndt_dias_incapacidad_empleador,
+          diasCcss: row.ndt_dias_incapacidad_ccss,
+          porcentajePagoEmpleador: tipo.porcentajePagoEmpleador,
+          montoEmpleador: montos.montoEmpleador,
+          porcentajeCuotaObrera: montos.porcentajeCuotaObrera,
+          cuotaObrera: montos.cuotaObrera,
+          monto: montos.neto,
+          subsidioCcssEstimado: rangoPeriodo
+            ? subsidioCcssEstimado(
+                ausenciasFila,
+                rangoPeriodo,
+                contratoFila,
+                row.ndt_dias_incapacidad_ccss
+              )
+            : null,
+          tipoNombre,
+        }
       }
     }
 
@@ -609,10 +687,8 @@ export async function getPeriodoDetail(
 interface AusenciaSubsidioRow {
   aus_historial_laboral_id: number
   aus_fecha_inicio: string
-  sgrh_cat_tipos_ausencia: {
-    tau_nombre: string
-    tau_requiere_documento_ccss: boolean
-  } | null
+  aus_fecha_fin: string
+  sgrh_cat_tipos_ausencia: TipoSubsidioRow | null
 }
 
 interface DatosPagoEmpleado {

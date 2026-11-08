@@ -16,6 +16,7 @@ function tipo(id: number, nombre: string, codigo = `T${id}`): AusenciaTypeRow {
     tau_requiere_documento_ccss: false,
     tau_paga_empleador_dias: 0,
     tau_porcentaje_pago_empleador: 0,
+    tau_porcentaje_cuota_obrera: 0,
     tau_paga_ccss_desde_dia: null,
     tau_porcentaje_subsidio_ccss: null,
     tau_descuenta_vacaciones: false,

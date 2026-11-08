@@ -241,11 +241,39 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
                 />
               )}
               <div className="my-2 border-t border-slate-100" />
+              {detalle.incapacidad.cuotaObrera > 0 && (
+                <>
+                  <Linea
+                    label="Monto que paga la empresa"
+                    value={formatCRC(detalle.incapacidad.montoEmpleador)}
+                  />
+                  <Linea
+                    label={`Cuota obrera CCSS (${detalle.incapacidad.porcentajeCuotaObrera}%)`}
+                    value={`− ${formatCRC(detalle.incapacidad.cuotaObrera)}`}
+                  />
+                </>
+              )}
               <Linea
-                label="Monto que paga la empresa"
+                label={
+                  detalle.incapacidad.cuotaObrera > 0
+                    ? 'Neto de la empresa'
+                    : 'Monto que paga la empresa'
+                }
                 value={formatCRC(detalle.incapacidad.monto)}
                 strong
               />
+              {detalle.incapacidad.subsidioCcssEstimado !== null &&
+                detalle.incapacidad.subsidioCcssEstimado > 0 && (
+                  <>
+                    <Linea
+                      label="Subsidio de la CCSS (estimado)"
+                      value={formatCRC(detalle.incapacidad.subsidioCcssEstimado)}
+                    />
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      Lo paga la CCSS directamente, con su propio cálculo: no está en este total.
+                    </p>
+                  </>
+                )}
 
               <div className="my-2 border-t border-slate-100" />
               <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-base font-extrabold text-emerald-800">

@@ -1021,6 +1021,7 @@ export type Database = {
           tau_paga_ccss_desde_dia: number | null
           tau_paga_empleador_dias: number
           tau_porcentaje_pago_empleador: number
+          tau_porcentaje_cuota_obrera: number
           tau_porcentaje_subsidio_ccss: number | null
           tau_referencia_legal: string | null
           tau_requiere_documento_ccss: boolean
@@ -1035,6 +1036,7 @@ export type Database = {
           tau_paga_ccss_desde_dia?: number | null
           tau_paga_empleador_dias?: number
           tau_porcentaje_pago_empleador?: number
+          tau_porcentaje_cuota_obrera?: number
           tau_porcentaje_subsidio_ccss?: number | null
           tau_referencia_legal?: string | null
           tau_requiere_documento_ccss?: boolean
@@ -1049,6 +1051,7 @@ export type Database = {
           tau_paga_ccss_desde_dia?: number | null
           tau_paga_empleador_dias?: number
           tau_porcentaje_pago_empleador?: number
+          tau_porcentaje_cuota_obrera?: number
           tau_porcentaje_subsidio_ccss?: number | null
           tau_referencia_legal?: string | null
           tau_requiere_documento_ccss?: boolean
@@ -1541,6 +1544,7 @@ export type Database = {
           org_direccion_id: number | null
           org_email_corporativo: string | null
           org_formato_hora: string
+          org_horas_anular_pago: number
           org_id: number
           org_logo_url: string | null
           org_nombre_fantasia: string | null
@@ -1559,6 +1563,7 @@ export type Database = {
           org_direccion_id?: number | null
           org_email_corporativo?: string | null
           org_formato_hora?: string
+          org_horas_anular_pago?: number
           org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
@@ -1577,6 +1582,7 @@ export type Database = {
           org_direccion_id?: number | null
           org_email_corporativo?: string | null
           org_formato_hora?: string
+          org_horas_anular_pago?: number
           org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
@@ -2046,6 +2052,9 @@ export type Database = {
           ndt_nomina_periodo_id: number
           ndt_pagado: boolean
           ndt_porcentaje_incapacidad: number | null
+          ndt_cuota_obrera_incapacidad: number | null
+          ndt_porcentaje_cuota_obrera_incapacidad: number | null
+          ndt_subsidio_ccss_estimado: number | null
           ndt_salario_base_contrato: number | null
           ndt_salario_bruto: number
           ndt_salario_neto: number
@@ -2078,6 +2087,9 @@ export type Database = {
           ndt_nomina_periodo_id: number
           ndt_pagado?: boolean
           ndt_porcentaje_incapacidad?: number | null
+          ndt_cuota_obrera_incapacidad?: number | null
+          ndt_porcentaje_cuota_obrera_incapacidad?: number | null
+          ndt_subsidio_ccss_estimado?: number | null
           ndt_salario_base_contrato?: number | null
           ndt_salario_bruto?: number
           ndt_salario_neto?: number
@@ -2110,6 +2122,9 @@ export type Database = {
           ndt_nomina_periodo_id?: number
           ndt_pagado?: boolean
           ndt_porcentaje_incapacidad?: number | null
+          ndt_cuota_obrera_incapacidad?: number | null
+          ndt_porcentaje_cuota_obrera_incapacidad?: number | null
+          ndt_subsidio_ccss_estimado?: number | null
           ndt_salario_base_contrato?: number | null
           ndt_salario_bruto?: number
           ndt_salario_neto?: number
@@ -2451,6 +2466,11 @@ export type Database = {
           pex_monto_bruto: number
           pex_monto_neto: number
           pex_observaciones: string | null
+          pex_pagado_en: string
+          pex_anulado_en: string | null
+          pex_anulado_por: number | null
+          pex_anulado_por_nombre: string | null
+          pex_motivo_anulacion: string | null
           pex_referencia_bancaria: string | null
           pex_tipo: string
         }
@@ -2468,6 +2488,11 @@ export type Database = {
           pex_monto_bruto: number
           pex_monto_neto: number
           pex_observaciones?: string | null
+          pex_pagado_en?: string
+          pex_anulado_en?: string | null
+          pex_anulado_por?: number | null
+          pex_anulado_por_nombre?: string | null
+          pex_motivo_anulacion?: string | null
           pex_referencia_bancaria?: string | null
           pex_tipo: string
         }
@@ -2485,6 +2510,11 @@ export type Database = {
           pex_monto_bruto?: number
           pex_monto_neto?: number
           pex_observaciones?: string | null
+          pex_pagado_en?: string
+          pex_anulado_en?: string | null
+          pex_anulado_por?: number | null
+          pex_anulado_por_nombre?: string | null
+          pex_motivo_anulacion?: string | null
           pex_referencia_bancaria?: string | null
           pex_tipo?: string
         }
@@ -3087,6 +3117,10 @@ export type Database = {
       registrar_marca_kiosco_atomica: {
         Args: { p_marca: Json; p_snapshot: Json; p_empresa_id: number }
         Returns: string
+      }
+      anular_pago_extraordinario: {
+        Args: { p_motivo: string; p_pex_id: number }
+        Returns: Json
       }
       crear_contrato: {
         Args: { p_contrato: Json; p_empleado_id: number }
