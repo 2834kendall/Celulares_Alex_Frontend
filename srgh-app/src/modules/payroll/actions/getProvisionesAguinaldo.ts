@@ -7,6 +7,7 @@ import { puedeLeerAusencias, sucursalesVisibles } from '@/modules/payroll/lib/de
 import { calcularAguinaldosDelCiclo } from '@/modules/payroll/lib/aguinaldoData'
 import type { AguinaldoItem } from '@/modules/payroll/types'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
+import { anulableHasta, leerHorasParaAnular } from '@/modules/payroll/lib/anulacionPagos'
 
 export type GetProvisionesAguinaldoResult =
   | {
@@ -43,7 +44,10 @@ export async function getProvisionesAguinaldo(
   // (UTC) ya es el siguiente y mostraba el ciclo equivocado.
   const anio = anioCiclo ?? Number(hoyLocal().slice(0, 4))
 
-  const resultado = await calcularAguinaldosDelCiclo(supabase, anio, sucursalesVisibles(claims))
+  const [resultado, horasParaAnular] = await Promise.all([
+    calcularAguinaldosDelCiclo(supabase, anio, sucursalesVisibles(claims)),
+    leerHorasParaAnular(supabase),
+  ])
   if (!resultado.ok) return resultado
 
   const items: AguinaldoItem[] = resultado.data.map((a) => ({
@@ -62,6 +66,11 @@ export async function getProvisionesAguinaldo(
     fechaPago: a.fechaPago,
     pagoId: a.pagoId,
     fechaSalida: a.fechaSalida,
+    anulableHasta:
+      a.pagoId && a.pagadoEn
+        ? anulableHasta({ pex_pagado_en: a.pagadoEn, pex_anulado_en: null }, horasParaAnular)
+        : null,
+    ultimaAnulacion: a.ultimaAnulacion,
   }))
 
   return { ok: true, data: { anio, items, puedeLeerAusencias: puedeLeerAusencias(claims) } }

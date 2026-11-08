@@ -46,7 +46,9 @@ function patronoLabel(tipo: AusenciaTypeRow): string {
     return 'No paga'
   const dias = tipo.tau_paga_empleador_dias
   const pct = `${tipo.tau_porcentaje_pago_empleador}%`
-  return dias > 0 ? `${dias} ${dias === 1 ? 'día' : 'días'} al ${pct}` : `${pct} del salario`
+  const base = dias > 0 ? `${dias} ${dias === 1 ? 'día' : 'días'} al ${pct}` : `${pct} del salario`
+  const cuota = Number(tipo.tau_porcentaje_cuota_obrera ?? 0)
+  return cuota > 0 ? `${base}, menos ${cuota}% de CCSS` : base
 }
 
 function subsidioLabel(tipo: AusenciaTypeRow): string {

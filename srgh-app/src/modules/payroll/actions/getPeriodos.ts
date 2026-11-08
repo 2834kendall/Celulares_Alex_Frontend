@@ -16,7 +16,8 @@ interface PeriodoQueryRow {
   npe_estado: string
   npe_fecha_pago: string | null
   sgrh_sucursales: { suc_nombre: string | null } | null
-  sgrh_nomina_detalle: { ndt_id: number }[]
+  /** Conteo agregado por PostgREST: una fila con { count }. */
+  sgrh_nomina_detalle: { count: number }[] | null
 }
 
 export type GetPeriodosResult = { ok: true; data: PeriodoListItem[] } | { ok: false; error: string }
@@ -44,7 +45,7 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
       npe_estado,
       npe_fecha_pago,
       sgrh_sucursales ( suc_nombre ),
-      sgrh_nomina_detalle ( ndt_id )
+      sgrh_nomina_detalle ( count )
     `
     )
     .order('npe_periodo_anio', { ascending: false })
@@ -67,7 +68,9 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
     atrasado: periodoAtrasado(row.npe_estado, row.npe_fecha_fin_periodo),
     fechaPago: row.npe_fecha_pago,
     sucursalNombre: row.sgrh_sucursales?.suc_nombre ?? '—',
-    totalEmpleados: row.sgrh_nomina_detalle?.length ?? 0,
+    // Antes se traía el id de cada fila de cada periodo solo para contarlas:
+    // la lista crecía con cada quincena pagada. Ahora la base devuelve el número.
+    totalEmpleados: row.sgrh_nomina_detalle?.[0]?.count ?? 0,
   }))
 
   return { ok: true, data: periodos }

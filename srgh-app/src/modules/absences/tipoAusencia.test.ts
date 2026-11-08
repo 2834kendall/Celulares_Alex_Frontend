@@ -23,6 +23,23 @@ describe('tipoAusenciaSchema', () => {
     expect(r.tau_es_intradia).toBe(false)
   })
 
+  it('la cuota obrera vacía es 0 (no se rebaja nada) y acepta decimales hasta 100', () => {
+    const vacia = tipoAusenciaSchema.parse({ ...base, tau_porcentaje_cuota_obrera: NaN })
+    expect(vacia.tau_porcentaje_cuota_obrera).toBe(0)
+    const sinCampo = tipoAusenciaSchema.parse(base)
+    expect(sinCampo.tau_porcentaje_cuota_obrera).toBe(0)
+    expect(
+      tipoAusenciaSchema.parse({ ...base, tau_porcentaje_cuota_obrera: 10.83 })
+        .tau_porcentaje_cuota_obrera
+    ).toBe(10.83)
+    expect(
+      tipoAusenciaSchema.safeParse({ ...base, tau_porcentaje_cuota_obrera: 101 }).success
+    ).toBe(false)
+    expect(tipoAusenciaSchema.safeParse({ ...base, tau_porcentaje_cuota_obrera: -1 }).success).toBe(
+      false
+    )
+  })
+
   it('rechaza codigos con espacios o simbolos', () => {
     expect(tipoAusenciaSchema.safeParse({ ...base, tau_codigo: 'a b' }).success).toBe(false)
   })

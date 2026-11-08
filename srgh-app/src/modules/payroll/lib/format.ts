@@ -82,6 +82,28 @@ export function formatDate(iso: string | null | undefined) {
   return `${day}/${month}/${year}`
 }
 
+/**
+ * Un instante (ISO con zona) como fecha y hora de Costa Rica:
+ * '2026-11-07T20:30:00Z' → '07/11/2026 14:30'. Con la zona explícita da lo
+ * mismo en el servidor (UTC) y en el navegador.
+ */
+export function formatFechaHora(iso: string | null | undefined) {
+  if (!iso) return '—'
+  const instante = new Date(iso)
+  if (Number.isNaN(instante.getTime())) return '—'
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Costa_Rica',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instante)
+  const parte = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? '00'
+  return `${parte('day')}/${parte('month')}/${parte('year')} ${parte('hour')}:${parte('minute')}`
+}
+
 /** Monto en colones con separador de miles; '—' cuando no hay dato. */
 export function formatCRC(amount: number | null | undefined) {
   if (amount === null || amount === undefined) return '—'

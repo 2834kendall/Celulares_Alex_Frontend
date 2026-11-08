@@ -21,6 +21,10 @@ export type DeleteConceptoResult = { ok: true } | { ok: false; error: string }
  * que deleteRubro en evaluations.
  */
 export async function deleteConcepto(id: number): Promise<DeleteConceptoResult> {
+  if (!Number.isInteger(id) || id <= 0) {
+    return { ok: false, error: 'Concepto inválido.' }
+  }
+
   await requirePermission(PERMISOS.CATALOGOS_WRITE)
 
   const supabase = await createClient()
@@ -29,11 +33,17 @@ export async function deleteConcepto(id: number): Promise<DeleteConceptoResult> 
   // código para pagar el salario de la quincena. Y como el borrado cae en
   // desactivar cuando ya tiene líneas, el daño se hacía igual por el camino
   // largo.
-  const { data: actual } = await supabase
+  const { data: actual, error: errActual } = await supabase
     .from('sgrh_cat_conceptos_nomina')
     .select('con_codigo')
     .eq('con_id', id)
     .maybeSingle<{ con_codigo: string }>()
+
+  // Sin poder leer qué concepto es, no se sabe si es BASE o AJUSTE: seguir
+  // podía terminar desactivando BASE por el camino del "no se pudo borrar".
+  if (errActual) {
+    return { ok: false, error: 'No se pudo eliminar el concepto.' }
+  }
 
   if (actual?.con_codigo === CODIGO_SALARIO_BASE) {
     return { ok: false, error: ERROR_CONCEPTO_BASE_PROTEGIDO }

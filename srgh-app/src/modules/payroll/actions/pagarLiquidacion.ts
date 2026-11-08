@@ -79,7 +79,22 @@ export async function pagarLiquidacion(liqId: number): Promise<PagarLiquidacionR
 
   if (errLiq) return { ok: false, error: 'No se pudo cargar la liquidación.' }
   if (!liq) return { ok: false, error: 'La liquidación no existe o no es visible.' }
-  if (liq.liq_pagado) return { ok: false, error: 'Esta liquidación ya estaba pagada.' }
+  // La marca sola no alcanza: si se anuló el pago justo cuando se marcaba,
+  // puede haber quedado en true sin ningún pago vigente, y eso no debe trabar
+  // volver a pagarla. Lo que manda es el pago vigente (el índice único lo
+  // vuelve a revisar al insertar).
+  if (liq.liq_pagado) {
+    const { data: vigentes, error: errVigentes } = await supabase
+      .from('sgrh_pagos_extraordinarios')
+      .select('pex_id')
+      .eq('pex_liquidacion_id', liq.liq_id)
+      .is('pex_anulado_en', null)
+      .returns<{ pex_id: number }[]>()
+    if (errVigentes) return { ok: false, error: 'No se pudo verificar el pago de la liquidación.' }
+    if ((vigentes ?? []).length > 0) {
+      return { ok: false, error: 'Esta liquidación ya estaba pagada.' }
+    }
+  }
 
   const neto = liq.liq_neto ?? liq.liq_total
   const horasExtra = Number(liq.liq_horas_extra_banco ?? 0)

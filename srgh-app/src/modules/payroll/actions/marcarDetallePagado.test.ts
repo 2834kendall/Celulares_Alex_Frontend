@@ -79,6 +79,9 @@ function mockSupabase(
     sgrh_liquidaciones: { data: null, error: null },
     // Aguinaldo del ciclo sin pagar: desmarcar está permitido.
     sgrh_pagos_extraordinarios: { data: [], error: null },
+    // Sin ausencias de subsidio en el periodo: la incapacidad usa el tipo de
+    // respaldo (INC_ENF). Los tests del tipo de la ausencia la declaran.
+    sgrh_ausencias: { data: [], error: null },
     ...responses,
   })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
@@ -289,9 +292,15 @@ describe('marcarDetallePagado (server action)', () => {
       // Busca en todos los contratos del empleado (un traslado paga el aguinaldo en el último).
       const pagos = client.from.mock.results[
         client.from.mock.calls.findIndex((c) => c[0] === 'sgrh_pagos_extraordinarios')
-      ].value as { in: { mock: { calls: unknown[][] } }; eq: { mock: { calls: unknown[][] } } }
+      ].value as {
+        in: { mock: { calls: unknown[][] } }
+        eq: { mock: { calls: unknown[][] } }
+        is: { mock: { calls: unknown[][] } }
+      }
       expect(pagos.in.mock.calls[0]).toEqual(['pex_historial_laboral_id', [77, 76]])
       expect(pagos.eq.mock.calls).toContainEqual(['pex_anio_aguinaldo', 2026])
+      // Un pago anulado por error no bloquea: solo cuenta el vigente.
+      expect(pagos.is.mock.calls).toContainEqual(['pex_anulado_en', null])
     })
 
     // Auditoría, hallazgo 2: la marca del botón anterior (sin comprobante) ya
@@ -501,6 +510,95 @@ describe('marcarDetallePagado (server action)', () => {
         ndt_pagado: false,
         ndt_monto_incapacidad: null,
         ndt_porcentaje_incapacidad: null,
+        ndt_cuota_obrera_incapacidad: null,
+        ndt_porcentaje_cuota_obrera_incapacidad: null,
+        ndt_subsidio_ccss_estimado: null,
+      })
+    })
+
+    it('licencia de maternidad: congela el % de SU tipo, la cuota obrera y el estimado de la CCSS', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: [
+          {
+            data: { ...DETALLE_BASE, ndt_pagado: false, ndt_dias_incapacidad_empleador: 15 },
+            error: null,
+          },
+          ACTUALIZADA,
+          { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-16' }], error: null },
+        ],
+        sgrh_historial_laboral: {
+          data: { lab_salario_base: 600000, sgrh_cat_tipos_jornada: null },
+          error: null,
+        },
+        // INC_ENF (respaldo) paga 50 % sin cuota: si se usara, no habría rebajo.
+        sgrh_cat_tipos_ausencia: {
+          data: { tau_codigo: 'INC_ENF', tau_porcentaje_pago_empleador: 50 },
+          error: null,
+        },
+        sgrh_ausencias: {
+          data: [
+            {
+              aus_fecha_inicio: '2026-05-20',
+              aus_fecha_fin: '2026-09-19',
+              sgrh_cat_tipos_ausencia: {
+                tau_codigo: 'INC_MAT',
+                tau_paga_empleador_dias: 120,
+                tau_nombre: 'Incapacidad por Maternidad',
+                tau_requiere_documento_ccss: true,
+                tau_es_intradia: false,
+                tau_porcentaje_pago_empleador: 50,
+                tau_porcentaje_cuota_obrera: 10.83,
+                tau_porcentaje_subsidio_ccss: 50,
+                tau_paga_ccss_desde_dia: 1,
+              },
+            },
+          ],
+          error: null,
+        },
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
+      // 15 días × 600.000 / 30 × 50 % = 150.000; 10,83 % = 16.245.
+      expect(updateDeLaFila(client)).toMatchObject({
+        ndt_pagado: true,
+        ndt_monto_incapacidad: 150000,
+        ndt_porcentaje_incapacidad: 50,
+        ndt_cuota_obrera_incapacidad: 16245,
+        ndt_porcentaje_cuota_obrera_incapacidad: 10.83,
+        ndt_subsidio_ccss_estimado: 150000,
+      })
+    })
+
+    it('una fila con días que solo paga la CCSS se paga aunque falle la lectura del tipo', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_detalle: [
+          {
+            data: {
+              ...DETALLE_BASE,
+              ndt_pagado: false,
+              ndt_dias_incapacidad_empleador: 0,
+              ndt_dias_incapacidad_ccss: 4,
+            },
+            error: null,
+          },
+          ACTUALIZADA,
+          { data: [{ ndt_pagado: true, ndt_fecha_pago: '2026-06-16' }], error: null },
+        ],
+        sgrh_cat_tipos_ausencia: { data: null, error: { message: 'boom' } },
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+      })
+
+      const result = await marcarDetallePagado(1, true)
+
+      expect(result).toEqual({ ok: true, correo: CORREO_ENVIADO })
+      expect(updateDeLaFila(client)).toMatchObject({
+        ndt_pagado: true,
+        ndt_monto_incapacidad: null,
       })
     })
   })

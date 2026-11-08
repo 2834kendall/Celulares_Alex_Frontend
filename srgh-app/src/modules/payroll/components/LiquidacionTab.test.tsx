@@ -9,6 +9,9 @@ import type { ContratoPorLiquidarItem, LiquidacionCalculada } from '@/modules/pa
 let searchString = ''
 
 // Server action del "Reintentar" del correo: acá no se ejecuta.
+vi.mock('@/modules/payroll/actions/anularPagoExtraordinario', () => ({
+  anularPagoExtraordinario: vi.fn(),
+}))
 vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({
   reenviarComprobanteExtraordinario: vi.fn(),
 }))

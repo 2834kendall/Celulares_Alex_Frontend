@@ -318,7 +318,16 @@ describe('PeriodoDetail: quitar una fila sin nada que pagar', () => {
       ...VACIA,
       id: 11,
       empleadoNombre: 'Con Incapacidad',
-      incapacidad: { diasEmpleador: 3, diasCcss: 0, porcentajePagoEmpleador: 50, monto: 1000 },
+      incapacidad: {
+        diasEmpleador: 3,
+        diasCcss: 0,
+        porcentajePagoEmpleador: 50,
+        montoEmpleador: 1000,
+        porcentajeCuotaObrera: 0,
+        cuotaObrera: 0,
+        monto: 1000,
+        subsidioCcssEstimado: null,
+      },
     })
     const { unmount } = render(
       <PeriodoDetail

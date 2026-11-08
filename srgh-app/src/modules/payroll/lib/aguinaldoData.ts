@@ -44,6 +44,8 @@ import {
   juntarQuincenas,
   type ContratoRow,
 } from './derechosData'
+import { SELECT_ANULACION, separarPagos, type AnulacionRow } from './anulacionPagos'
+import type { AnulacionPago } from '@/modules/payroll/types'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -88,6 +90,17 @@ export interface AguinaldoDeRelacion {
   fechaPago: string | null
   pagoId: number | null
   montoPagado: number | null
+  /** Cuándo se registró el pago vigente (para el plazo de anulación). */
+  pagadoEn: string | null
+  /** La anulación más reciente de un pago anterior de este aguinaldo. */
+  ultimaAnulacion: AnulacionPago | null
+}
+
+interface PagoAguinaldoRow extends AnulacionRow {
+  pex_id: number
+  pex_historial_laboral_id: number
+  pex_fecha_pago: string
+  pex_monto_bruto: number
 }
 
 export type AguinaldosResult =
@@ -154,52 +167,59 @@ export async function calcularAguinaldosDelCiclo(
   const todosLosContratos = filas.flatMap((f) => f.relacion)
   const todosLosIds = [...new Set(todosLosContratos.map((c) => c.labId))]
 
-  const quincenasResult = await cargarQuincenas(supabase, todosLosContratos)
+  // Quincenas, ausencias y pagos/provisiones dependen solo de los contratos de
+  // arriba, no entre sí: se leen juntos (antes, uno detrás de otro, y las
+  // quincenas y ausencias van paginadas). Los errores se revisan en el mismo
+  // orden de siempre.
+  const [quincenasResult, ausenciasResult, pagosYProvisiones] = await Promise.all([
+    cargarQuincenas(supabase, todosLosContratos),
+    cargarAusencias(supabase, todosLosIds),
+    todosLosIds.length > 0
+      ? Promise.all([
+          supabase
+            .from('sgrh_pagos_extraordinarios')
+            .select(
+              `pex_id, pex_historial_laboral_id, pex_fecha_pago, pex_monto_bruto, ${SELECT_ANULACION}`
+            )
+            .eq('pex_tipo', 'aguinaldo')
+            .eq('pex_anio_aguinaldo', anio)
+            .in('pex_historial_laboral_id', todosLosIds)
+            .returns<PagoAguinaldoRow[]>(),
+          supabase
+            .from('sgrh_provisiones_anuales')
+            .select('pra_historial_laboral_id, pra_aguinaldo_pagado, pra_fecha_pago_aguinaldo')
+            .eq('pra_anio', anio)
+            .in('pra_historial_laboral_id', todosLosIds)
+            .returns<
+              {
+                pra_historial_laboral_id: number
+                pra_aguinaldo_pagado: boolean
+                pra_fecha_pago_aguinaldo: string | null
+              }[]
+            >(),
+        ])
+      : null,
+  ])
   if (!quincenasResult.ok) return { ok: false, error: quincenasResult.error }
-  const ausenciasResult = await cargarAusencias(supabase, todosLosIds)
   if (!ausenciasResult.ok) return { ok: false, error: ausenciasResult.error }
 
-  const pagosPorLab = new Map<
-    number,
-    { pex_id: number; pex_fecha_pago: string; pex_monto_bruto: number }
-  >()
+  // Todos los pagos de cada contrato, también los anulados: el vigente es el
+  // que cuenta como pagado; los anulados quedan para el historial.
+  const pagosPorLab = new Map<number, PagoAguinaldoRow[]>()
   const provisionPorLab = new Map<
     number,
     { pra_aguinaldo_pagado: boolean; pra_fecha_pago_aguinaldo: string | null }
   >()
-  if (todosLosIds.length > 0) {
+  if (pagosYProvisiones) {
     const [{ data: pagos, error: errPagos }, { data: provisiones, error: errProv }] =
-      await Promise.all([
-        supabase
-          .from('sgrh_pagos_extraordinarios')
-          .select('pex_id, pex_historial_laboral_id, pex_fecha_pago, pex_monto_bruto')
-          .eq('pex_tipo', 'aguinaldo')
-          .eq('pex_anio_aguinaldo', anio)
-          .in('pex_historial_laboral_id', todosLosIds)
-          .returns<
-            {
-              pex_id: number
-              pex_historial_laboral_id: number
-              pex_fecha_pago: string
-              pex_monto_bruto: number
-            }[]
-          >(),
-        supabase
-          .from('sgrh_provisiones_anuales')
-          .select('pra_historial_laboral_id, pra_aguinaldo_pagado, pra_fecha_pago_aguinaldo')
-          .eq('pra_anio', anio)
-          .in('pra_historial_laboral_id', todosLosIds)
-          .returns<
-            {
-              pra_historial_laboral_id: number
-              pra_aguinaldo_pagado: boolean
-              pra_fecha_pago_aguinaldo: string | null
-            }[]
-          >(),
-      ])
+      pagosYProvisiones
     if (errPagos) return { ok: false, error: 'No se pudieron cargar los pagos de aguinaldo.' }
     if (errProv) return { ok: false, error: 'No se pudo cargar la provisión de aguinaldo.' }
-    for (const p of pagos ?? []) pagosPorLab.set(p.pex_historial_laboral_id, p)
+    for (const p of pagos ?? []) {
+      const lista = pagosPorLab.get(p.pex_historial_laboral_id) ?? []
+      lista.push(p)
+      pagosPorLab.set(p.pex_historial_laboral_id, lista)
+    }
     for (const p of provisiones ?? []) provisionPorLab.set(p.pra_historial_laboral_id, p)
   }
 
@@ -226,9 +246,18 @@ export async function calcularAguinaldosDelCiclo(
     )
     const calculo = aguinaldoDelCiclo({ quincenas, anio, inicioRelacion })
 
-    const pago = labIds.map((id) => pagosPorLab.get(id)).find(Boolean) ?? null
-    const provisionPagada =
-      labIds.map((id) => provisionPorLab.get(id)).find((p) => p?.pra_aguinaldo_pagado) ?? null
+    const { vigente: pago, ultimaAnulacion } = separarPagos(
+      labIds.flatMap((id) => pagosPorLab.get(id) ?? [])
+    )
+    // La marca de la provisión solo vale sola en los aguinaldos del botón viejo,
+    // que no tienen ningún pago registrado. Si hay pagos (aunque todos
+    // anulados), manda el pago: una marca que quedó en true justo cuando se
+    // anulaba no puede dejar el aguinaldo "pagado" sin comprobante y sin
+    // forma de volver a pagarlo.
+    const tienePagosRegistrados = labIds.some((id) => (pagosPorLab.get(id) ?? []).length > 0)
+    const provisionPagada = tienePagosRegistrados
+      ? null
+      : (labIds.map((id) => provisionPorLab.get(id)).find((p) => p?.pra_aguinaldo_pagado) ?? null)
 
     data.push({
       labId: candidato.lab_id,
@@ -254,6 +283,8 @@ export async function calcularAguinaldosDelCiclo(
       fechaPago: pago?.pex_fecha_pago ?? provisionPagada?.pra_fecha_pago_aguinaldo ?? null,
       pagoId: pago?.pex_id ?? null,
       montoPagado: pago ? Number(pago.pex_monto_bruto) : null,
+      pagadoEn: pago?.pex_pagado_en ?? null,
+      ultimaAnulacion,
     })
   }
 

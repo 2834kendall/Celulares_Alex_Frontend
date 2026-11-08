@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiquidacionesHistorial } from './LiquidacionesHistorial'
 import { pagarLiquidacion } from '@/modules/payroll/actions/pagarLiquidacion'
+import { anularPagoExtraordinario } from '@/modules/payroll/actions/anularPagoExtraordinario'
 import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
 import { toast } from 'sonner'
@@ -10,6 +11,9 @@ import { toast } from 'sonner'
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
 vi.mock('@/modules/payroll/actions/pagarLiquidacion', () => ({ pagarLiquidacion: vi.fn() }))
+vi.mock('@/modules/payroll/actions/anularPagoExtraordinario', () => ({
+  anularPagoExtraordinario: vi.fn(),
+}))
 vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({
   reenviarComprobanteExtraordinario: vi.fn(),
 }))
@@ -53,6 +57,8 @@ function item(overrides: Partial<LiquidacionListItem> = {}): LiquidacionListItem
     pagado: false,
     pagoId: null,
     fechaPago: null,
+    anulableHasta: null,
+    ultimaAnulacion: null,
     createdAt: '2026-07-15T10:00:00',
     desglose: DESGLOSE,
     ...overrides,
@@ -211,5 +217,61 @@ describe('<LiquidacionesHistorial /> detalle', () => {
     await userEvent.click(tabla().getByRole('button', { name: 'Ver detalle' }))
 
     expect(tabla().getByText('Neto entregado')).toBeInTheDocument()
+  })
+
+  describe('anular un pago hecho por error', () => {
+    const PAGADA = {
+      pagado: true,
+      pagoId: 40,
+      fechaPago: '2026-09-02',
+      anulableHasta: '2026-09-04T12:00:00.000Z',
+    }
+
+    it('pide el motivo y anula ESE pago, sin tocar la liquidación', async () => {
+      const user = userEvent.setup()
+      vi.mocked(anularPagoExtraordinario).mockResolvedValue({ ok: true })
+      render(<LiquidacionesHistorial items={[item(PAGADA)]} canWrite />)
+
+      await user.click(tabla().getByRole('button', { name: 'Anular' }))
+      const dialogo = screen.getByRole('dialog', {
+        name: '¿Anular el pago de la liquidación de Ana Pérez?',
+      })
+      await user.type(
+        within(dialogo).getByLabelText('Motivo (obligatorio)'),
+        'Se pagó a otra cuenta.'
+      )
+      await user.click(within(dialogo).getByRole('button', { name: 'Sí, anular el pago' }))
+
+      expect(anularPagoExtraordinario).toHaveBeenCalledWith(40, 'Se pagó a otra cuenta.')
+      expect(pagarLiquidacion).not.toHaveBeenCalled()
+      expect(toast.success).toHaveBeenCalledWith(
+        'Pago de la liquidación de Ana Pérez anulado. Quedó pendiente de pago, con los mismos montos.'
+      )
+    })
+
+    it('sin plazo o sin permiso no hay botón; el pago anulado queda a la vista', () => {
+      const { unmount } = render(
+        <LiquidacionesHistorial items={[item({ ...PAGADA, anulableHasta: null })]} canWrite />
+      )
+      expect(tabla().queryByRole('button', { name: 'Anular' })).not.toBeInTheDocument()
+      unmount()
+      render(
+        <LiquidacionesHistorial
+          items={[
+            item({
+              ultimaAnulacion: {
+                fecha: '2026-09-01T16:00:00+00:00',
+                por: 'Laura Vargas',
+                motivo: 'Se pagó antes de firmar.',
+              },
+            }),
+          ]}
+        />
+      )
+      expect(tabla().queryByRole('button', { name: 'Anular' })).not.toBeInTheDocument()
+      expect(
+        tabla().getByText(/Un pago anterior se anuló el 01\/09\/2026 10:00 \(Laura Vargas\)/)
+      ).toBeInTheDocument()
+    })
   })
 })

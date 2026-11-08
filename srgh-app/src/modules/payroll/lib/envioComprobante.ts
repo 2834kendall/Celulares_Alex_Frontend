@@ -163,7 +163,8 @@ export async function enviarComprobantePorCorreo(
   if (!config) return { estado: 'sin_configurar' }
 
   const [detailResult, conceptosResult, empresaNombre] = await Promise.all([
-    getPeriodoDetail(periodoId),
+    // Solo esta fila: el resto del periodo no se necesita para su comprobante.
+    getPeriodoDetail(periodoId, { soloDetalleId: detalleId }),
     getConceptos(),
     getEmpresaNombre(),
   ])
@@ -208,6 +209,12 @@ export async function enviarComprobantePorCorreo(
   ]
   if (detalle.incapacidad) {
     resumen.push({ label: 'Incapacidad (empresa)', valor: formatCRC(detalle.incapacidad.monto) })
+    if (detalle.incapacidad.cuotaObrera > 0) {
+      resumen.push({
+        label: 'Cuota obrera CCSS de la incapacidad (ya rebajada)',
+        valor: `− ${formatCRC(detalle.incapacidad.cuotaObrera)}`,
+      })
+    }
   }
   resumen.push({ label: 'Total pagado', valor: formatCRC(detalle.totalAPagar), total: true })
   if (detalle.codigoVerificacion) {
@@ -242,6 +249,10 @@ export async function enviarComprobanteExtraordinarioPorCorreo(
     return { estado: 'error', error: 'no se pudo cargar el pago para armar el comprobante.' }
   }
   const pago = pagoResult.data
+  // Un pago anulado ya no vale: no se le manda ese comprobante a nadie.
+  if (pago.anulacion) {
+    return { estado: 'error', error: 'el pago fue anulado, así que su comprobante ya no vale.' }
+  }
 
   const destino = revisarEmail(pago.empleadoEmail)
   if (!destino.ok) return destino.resultado

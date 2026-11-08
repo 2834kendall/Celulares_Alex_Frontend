@@ -3,16 +3,19 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, FileText, Gift, Loader2 } from 'lucide-react'
+import { AlertTriangle, FileText, Gift, Loader2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AguinaldoItem } from '@/modules/payroll/types'
 import {
   formatCRC,
   formatDate,
+  formatFechaHora,
   nombreAguinaldo,
   rangoAguinaldo,
 } from '@/modules/payroll/lib/format'
 import { pagarAguinaldo } from '@/modules/payroll/actions/pagarAguinaldo'
+import { anularPagoExtraordinario } from '@/modules/payroll/actions/anularPagoExtraordinario'
+import { AnularPagoModal } from './AnularPagoModal'
 import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
 import {
   avisarCorreoComprobante,
@@ -77,6 +80,12 @@ function notasDe(item: AguinaldoItem): string[] {
   if (!item.pagado && item.quincenasSinPagar.length > 0) {
     notas.push(`Sin pagar (no entran): ${item.quincenasSinPagar.join(', ')}.`)
   }
+  if (item.ultimaAnulacion) {
+    const a = item.ultimaAnulacion
+    notas.push(
+      `Un pago anterior se anuló el ${formatFechaHora(a.fecha)}${a.por ? ` (${a.por})` : ''}: ${a.motivo}`
+    )
+  }
   if (item.pagado && !item.pagoId) {
     notas.push(
       'Marcado pagado con el botón anterior, sin comprobante: el monto mostrado es el calculado, no uno registrado.'
@@ -98,24 +107,40 @@ function notasDe(item: AguinaldoItem): string[] {
 function AccionAguinaldo({
   item,
   habilitado,
+  puedeAnular,
   pagando,
   compacto,
   onPagar,
+  onAnular,
 }: {
   item: AguinaldoItem
   habilitado: boolean
+  puedeAnular: boolean
   pagando: boolean
   compacto: boolean
   onPagar: (item: AguinaldoItem) => void
+  onAnular: (item: AguinaldoItem) => void
 }) {
   if (item.pagoId) {
     return (
-      <Link
-        href={`/comprobante/extraordinario/${item.pagoId}`}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:text-brand-900"
-      >
-        <FileText className="h-3 w-3" /> Comprobante
-      </Link>
+      <span className="inline-flex items-center gap-3">
+        <Link
+          href={`/comprobante/extraordinario/${item.pagoId}`}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:text-brand-900"
+        >
+          <FileText className="h-3 w-3" /> Comprobante
+        </Link>
+        {puedeAnular && item.anulableHasta && (
+          <button
+            type="button"
+            onClick={() => onAnular(item)}
+            title={`Se puede anular hasta el ${formatFechaHora(item.anulableHasta)}`}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 outline-none transition hover:text-rose-900 focus-visible:ring-2 focus-visible:ring-rose-500/60"
+          >
+            <Undo2 className="h-3 w-3" /> Anular
+          </button>
+        )}
+      </span>
     )
   }
   if (!habilitado) return null
@@ -167,6 +192,25 @@ export function AguinaldoTab({
 
   /** Aguinaldo a pagar: se confirma antes. */
   const [confirmando, setConfirmando] = useState<AguinaldoItem | null>(null)
+  /** Pago a anular por error: pide el motivo antes. */
+  const [anulando, setAnulando] = useState<AguinaldoItem | null>(null)
+  const [enviandoAnulacion, setEnviandoAnulacion] = useState(false)
+
+  async function anular(item: AguinaldoItem, motivo: string) {
+    if (!item.pagoId) return
+    setEnviandoAnulacion(true)
+    const result = await anularPagoExtraordinario(item.pagoId, motivo)
+    setEnviandoAnulacion(false)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    setAnulando(null)
+    toast.success(
+      `Pago del aguinaldo de ${item.empleadoNombre} anulado. Quedó sin pagar: se puede volver a pagar.`
+    )
+    router.refresh()
+  }
 
   function handlePagar(item: AguinaldoItem) {
     setConfirmando(item)
@@ -313,9 +357,11 @@ export function AguinaldoTab({
                     <AccionAguinaldo
                       item={item}
                       habilitado={puedePagar(item)}
+                      puedeAnular={canWrite}
                       pagando={pagandoId === item.historialLaboralId}
                       compacto={false}
                       onPagar={handlePagar}
+                      onAnular={setAnulando}
                     />
                   </div>
                 </li>
@@ -360,9 +406,11 @@ export function AguinaldoTab({
                       <AccionAguinaldo
                         item={item}
                         habilitado={puedePagar(item)}
+                        puedeAnular={canWrite}
                         pagando={pagandoId === item.historialLaboralId}
                         compacto
                         onPagar={handlePagar}
+                        onAnular={setAnulando}
                       />
                     </td>
                   </tr>
@@ -380,11 +428,23 @@ export function AguinaldoTab({
             `Se registrará el pago de ${formatCRC(confirmando.monto)}`,
             confirmando.empleadoEmail,
             correoConfigurado
-          )} El pago no se puede deshacer desde acá.`}
+          )} Si fue un error, se puede anular dentro del plazo que fija la empresa (Configuración → General).`}
           confirmLabel="Sí, pagar"
           tone="primary"
           onCancel={() => setConfirmando(null)}
           onConfirm={() => void pagar(confirmando)}
+        />
+      )}
+
+      {anulando && anulando.anulableHasta && (
+        <AnularPagoModal
+          que={nombreAguinaldo(anulando.anio).toLowerCase()}
+          empleadoNombre={anulando.empleadoNombre}
+          monto={anulando.monto}
+          hasta={anulando.anulableHasta}
+          submitting={enviandoAnulacion}
+          onCancel={() => setAnulando(null)}
+          onConfirm={(motivo) => void anular(anulando, motivo)}
         />
       )}
     </div>

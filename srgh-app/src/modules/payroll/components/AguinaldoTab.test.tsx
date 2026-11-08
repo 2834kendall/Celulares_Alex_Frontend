@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AguinaldoTab } from './AguinaldoTab'
 import { pagarAguinaldo } from '@/modules/payroll/actions/pagarAguinaldo'
+import { anularPagoExtraordinario } from '@/modules/payroll/actions/anularPagoExtraordinario'
 import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
 import type { AguinaldoItem } from '@/modules/payroll/types'
 import { toast } from 'sonner'
@@ -10,6 +11,9 @@ import { toast } from 'sonner'
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
 vi.mock('@/modules/payroll/actions/pagarAguinaldo', () => ({ pagarAguinaldo: vi.fn() }))
+vi.mock('@/modules/payroll/actions/anularPagoExtraordinario', () => ({
+  anularPagoExtraordinario: vi.fn(),
+}))
 vi.mock('@/modules/payroll/actions/reenviarComprobante', () => ({
   reenviarComprobanteExtraordinario: vi.fn(),
 }))
@@ -34,6 +38,8 @@ function item(over: Partial<AguinaldoItem> = {}): AguinaldoItem {
     fechaPago: null,
     pagoId: null,
     fechaSalida: null,
+    anulableHasta: null,
+    ultimaAnulacion: null,
     ...over,
   }
 }
@@ -248,5 +254,83 @@ describe('<AguinaldoTab /> aguinaldos del año anterior sin pagar', () => {
     renderTab([item()], { pendientesAnterior: null })
 
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+
+  describe('anular un pago hecho por error', () => {
+    const PAGADO = {
+      pagado: true,
+      pagoId: 70,
+      fechaPago: '2026-12-10',
+      anulableHasta: '2026-12-12T15:00:00.000Z',
+    }
+
+    it('pide el motivo y anula ESE pago', async () => {
+      const user = userEvent.setup()
+      vi.mocked(anularPagoExtraordinario).mockResolvedValue({ ok: true })
+      renderTab([item(PAGADO)])
+
+      await user.click(tabla().getByRole('button', { name: 'Anular' }))
+      const dialogo = screen.getByRole('dialog', {
+        name: '¿Anular el pago de aguinaldo 2026 de Ana Pérez?',
+      })
+      // 15:00 UTC = 09:00 en Costa Rica.
+      expect(dialogo).toHaveTextContent('Se puede anular hasta el 12/12/2026 09:00')
+      const confirmar = within(dialogo).getByRole('button', { name: 'Sí, anular el pago' })
+      // Sin motivo no deja.
+      expect(confirmar).toBeDisabled()
+
+      await user.type(within(dialogo).getByLabelText('Motivo (obligatorio)'), 'Se pagó dos veces.')
+      await user.click(confirmar)
+
+      expect(anularPagoExtraordinario).toHaveBeenCalledWith(70, 'Se pagó dos veces.')
+      expect(refresh).toHaveBeenCalled()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('si la base lo rechaza, muestra el motivo y deja el diálogo abierto', async () => {
+      const user = userEvent.setup()
+      vi.mocked(anularPagoExtraordinario).mockResolvedValue({
+        ok: false,
+        error: 'Ya pasó el plazo para anular este pago (48 horas desde que se registró).',
+      })
+      renderTab([item(PAGADO)])
+
+      await user.click(tabla().getByRole('button', { name: 'Anular' }))
+      await user.type(screen.getByLabelText('Motivo (obligatorio)'), 'Se pagó dos veces.')
+      // Un refresh pendiente de otro test no cuenta.
+      refresh.mockClear()
+      await user.click(screen.getByRole('button', { name: 'Sí, anular el pago' }))
+
+      expect(toast.error).toHaveBeenCalledWith(
+        'Ya pasó el plazo para anular este pago (48 horas desde que se registró).'
+      )
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(refresh).not.toHaveBeenCalled()
+    })
+
+    it('fuera del plazo, o sin permiso de escribir, no hay botón', () => {
+      const { unmount } = renderTab([item({ ...PAGADO, anulableHasta: null })])
+      expect(tabla().queryByRole('button', { name: 'Anular' })).not.toBeInTheDocument()
+      unmount()
+      renderTab([item(PAGADO)], { canWrite: false })
+      expect(tabla().queryByRole('button', { name: 'Anular' })).not.toBeInTheDocument()
+    })
+
+    it('un pago anterior anulado queda a la vista', () => {
+      renderTab([
+        item({
+          ultimaAnulacion: {
+            fecha: '2026-12-10T18:00:00+00:00',
+            por: 'Laura Vargas',
+            motivo: 'Se pagó con quincenas sin marcar.',
+          },
+        }),
+      ])
+      expect(
+        tabla().getByText(
+          /Un pago anterior se anuló el 10\/12\/2026 12:00 \(Laura Vargas\): Se pagó con quincenas sin marcar\./
+        )
+      ).toBeInTheDocument()
+    })
   })
 })

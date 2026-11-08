@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { FILAS_EN_PARALELO, mapConLimite } from '@/modules/payroll/lib/concurrencia'
 import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHorasAsistencia'
 
 /** Una fila que quedó como estaba, con el motivo para poder ir a arreglarlo. */
@@ -110,37 +111,41 @@ export async function recalcularPeriodoDesdeAsistencia(
     }
   }
 
+  // De a varias filas a la vez (antes en serie, ~5 a 15 viajes a la base por
+  // empleado). Es seguro porque cada fila escribe solo lo suyo: su detalle,
+  // sus líneas (por ndt_id) y su movimiento del banco de horas (UNIQUE por
+  // detalle); ninguna fila lee ni toca lo de otra. Los resultados se cuentan
+  // en el orden de la planilla, igual que antes.
+  type ResultadoFila = { nombre: string; omitida: string | null; sinCambios: boolean }
+  const resultados = await mapConLimite(
+    detalles,
+    FILAS_EN_PARALELO,
+    async (detalle): Promise<ResultadoFila> => {
+      const empleado = detalle.sgrh_historial_laboral?.sgrh_empleados
+      const nombre = empleado
+        ? `${empleado.emp_nombre} ${empleado.emp_apellido_1}`.trim()
+        : `Detalle ${detalle.ndt_id}`
+
+      if (detalle.ndt_pagado) {
+        return { nombre, omitida: 'ya se le marcó el pago', sinCambios: false }
+      }
+
+      // false: una corrección a mano no se pisa en masa. Quien la hizo la
+      // confirma desde su propia fila, viendo los dos números.
+      const resultado = await refrescarHorasAsistencia(detalle.ndt_id, false)
+
+      if (!resultado.ok) return { nombre, omitida: resultado.error, sinCambios: false }
+      return { nombre, omitida: null, sinCambios: resultado.sinCambios === true }
+    }
+  )
+
   let recalculadas = 0
   let yaEstaban = 0
   const omitidas: FilaOmitida[] = []
-
-  // En serie a propósito: cada fila borra y reinserta sus líneas, y además
-  // sincroniza su movimiento del banco de horas. En paralelo serían escrituras
-  // cruzadas sobre las mismas tablas sin transacción que las ordene.
-  for (const detalle of detalles) {
-    const empleado = detalle.sgrh_historial_laboral?.sgrh_empleados
-    const nombre = empleado
-      ? `${empleado.emp_nombre} ${empleado.emp_apellido_1}`.trim()
-      : `Detalle ${detalle.ndt_id}`
-
-    if (detalle.ndt_pagado) {
-      omitidas.push({ nombre, motivo: 'ya se le marcó el pago' })
-      continue
-    }
-
-    // false: una corrección a mano no se pisa en masa. Quien la hizo la
-    // confirma desde su propia fila, viendo los dos números.
-    const resultado = await refrescarHorasAsistencia(detalle.ndt_id, false)
-
-    if (!resultado.ok) {
-      omitidas.push({ nombre, motivo: resultado.error })
-      continue
-    }
-    if (resultado.sinCambios) {
-      yaEstaban += 1
-      continue
-    }
-    recalculadas += 1
+  for (const r of resultados) {
+    if (r.omitida !== null) omitidas.push({ nombre: r.nombre, motivo: r.omitida })
+    else if (r.sinCambios) yaEstaban += 1
+    else recalculadas += 1
   }
 
   return { ok: true, recalculadas, yaEstaban, omitidas }

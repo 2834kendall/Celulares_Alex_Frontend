@@ -24,7 +24,7 @@ const PERIODO_BASE = {
   npe_estado: 'borrador',
   npe_fecha_pago: null,
   sgrh_sucursales: { suc_nombre: 'Central' },
-  sgrh_nomina_detalle: [{ ndt_id: 1 }, { ndt_id: 2 }, { ndt_id: 3 }, { ndt_id: 4 }],
+  sgrh_nomina_detalle: [{ count: 4 }],
 }
 
 describe('getPeriodos (server action)', () => {
@@ -80,7 +80,7 @@ describe('getPeriodos (server action)', () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
         sgrh_nomina_periodo: {
-          data: [{ ...PERIODO_BASE, sgrh_sucursales: null, sgrh_nomina_detalle: [] }],
+          data: [{ ...PERIODO_BASE, sgrh_sucursales: null, sgrh_nomina_detalle: [{ count: 0 }] }],
           error: null,
         },
       }) as unknown as Awaited<ReturnType<typeof createClient>>

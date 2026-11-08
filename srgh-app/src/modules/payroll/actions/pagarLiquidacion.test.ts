@@ -205,13 +205,38 @@ describe('pagarLiquidacion (server action)', () => {
   it('no paga dos veces una liquidación ya pagada', async () => {
     const client = mockSupabase({
       sgrh_liquidaciones: { data: { ...LIQUIDACION, liq_pagado: true }, error: null },
+      // Su pago vigente.
+      sgrh_pagos_extraordinarios: { data: [{ pex_id: 31 }], error: null },
     })
 
     const result = await pagarLiquidacion(100)
 
     expect(result).toEqual({ ok: false, error: 'Esta liquidación ya estaba pagada.' })
     expect(llamadaA(client, 'sgrh_pagos_extraordinarios', 'insert')).toBeUndefined()
+    expect(llamadaA(client, 'sgrh_pagos_extraordinarios', 'is')).toBe('pex_anulado_en')
     expect(mockEnviar).not.toHaveBeenCalled()
+  })
+
+  // Revisión: si el pago se anuló justo mientras se marcaba liq_pagado, la
+  // marca queda en true sin pago vigente. No debe trabar volver a pagarla.
+  it('una marca de pagada sin pago vigente (se anuló) no impide volver a pagar', async () => {
+    const client = mockSupabase({
+      sgrh_liquidaciones: [
+        { data: { ...LIQUIDACION, liq_pagado: true }, error: null },
+        { data: null, error: null },
+      ],
+      sgrh_pagos_extraordinarios: [
+        { data: [], error: null },
+        { data: { pex_id: 32 }, error: null },
+      ],
+    })
+
+    const result = await pagarLiquidacion(100)
+
+    expect(result).toMatchObject({ ok: true, pagoId: 32 })
+    expect(llamadaA(client, 'sgrh_pagos_extraordinarios', 'insert')).toMatchObject({
+      pex_liquidacion_id: 100,
+    })
   })
 
   it('si ya había un pago (índice único), lo dice en vez de duplicarlo', async () => {

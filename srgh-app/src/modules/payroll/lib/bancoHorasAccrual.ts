@@ -49,10 +49,13 @@ export async function sincronizarMovimientoBancoHoras(
     // la baja): si había un movimiento pendiente, se elimina. Uno ya resuelto
     // (pagado/compensado) es historial y no se toca.
     if (existente && existente.bhm_estado === 'pendiente') {
+      // Solo si sigue pendiente: entre la lectura y esto alguien pudo pagarlo
+      // o compensarlo, y uno resuelto es historial.
       const { error } = await supabase
         .from('sgrh_banco_horas_movimientos')
         .delete()
         .eq('bhm_id', existente.bhm_id)
+        .eq('bhm_estado', 'pendiente')
       if (error) return { error: 'No se pudo actualizar el banco de horas.' }
     }
     return { error: null }
@@ -74,6 +77,8 @@ export async function sincronizarMovimientoBancoHoras(
       .from('sgrh_banco_horas_movimientos')
       .update({ bhm_horas: horasExtra, bhm_salario_por_hora: params.salarioPorHora })
       .eq('bhm_id', existente.bhm_id)
+      // Igual que el borrado: uno que se pagó en el medio ya no se toca.
+      .eq('bhm_estado', 'pendiente')
     if (error) return { error: 'No se pudo actualizar el banco de horas.' }
   }
 
