@@ -1,79 +1,48 @@
-# SGRH — Sistema de Gestión de Recursos Humanos
+# SGRH — aplicación
 
-Sistema interno de gestión de recursos humanos para Celulares Alex.
+La aplicación Next.js del Sistema de Gestión de Recursos Humanos de **Celulares Alex CR** e
+**Infinity CR**. Todos los comandos se corren desde esta carpeta.
 
 ## Stack
 
-- **Frontend:** Next.js 14 (App Router) + TypeScript + Tailwind CSS
-- **Backend / DB:** Supabase (PostgreSQL, Auth, RLS multi-tenant)
-- **Package manager:** pnpm
-- **Gestión de proyecto:** Jira (clave `SGRH`)
+Next.js 16 (App Router) + React 19 + TypeScript + Tailwind v4 · Supabase (Postgres, Auth,
+RLS, Storage) · React Hook Form + Zod · Vitest + Testing Library + Playwright · pnpm · Husky,
+lint-staged y commitlint.
 
-## Supabase Permissions
+## Arranque rápido
 
-El sistema usa RLS en Supabase y depende de helpers de PostgreSQL que leen claims del JWT, como `get_empresa_id()` y `tiene_permiso()`. Esos helpers se revocan desde `PUBLIC` por seguridad, pero el script maestro vuelve a otorgar `EXECUTE` a `authenticated` para que las policies puedan ejecutarse correctamente.
-
-Si cambian los permisos de un rol en la base de datos, el usuario debe cerrar sesión y volver a iniciar sesión para obtener un JWT nuevo con los claims actualizados.
-
-## Requisitos previos
-
-- Node.js 18.18+ o 20+
-- pnpm (`corepack enable && corepack prepare pnpm@latest --activate`)
-- Acceso al proyecto de Supabase (solicitar credenciales al equipo)
-- Cuenta con acceso al Jira del proyecto
-
-## Setup inicial
-
-1. Clonar el repositorio:
+Requisitos: Node **≥ 22.13**, pnpm y acceso al proyecto **dev** de Supabase (pedir las llaves
+al equipo).
 
 ```bash
-   git clone <repo-url>
-   cd sgrh-frontend
+pnpm install
+# crear .env.local con las variables de docs/guias/entorno-y-supabase.md
+pnpm supabase:link        # vincula el CLI a dev
+pnpm dev                  # http://localhost:3000
 ```
 
-2. Instalar dependencias:
+No hay `.env.example`: la lista de variables, para qué sirve cada una y cuáles son
+obligatorias está en la [guía de entorno](../docs/guias/entorno-y-supabase.md). **Si se pierde
+`FIELD_ENCRYPTION_KEY`, los números de cuenta son irrecuperables.**
 
-```bash
-   pnpm install
-```
+## Comandos
 
-3. Configurar variables de entorno:
+| comando              | qué hace                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`           | servidor de desarrollo                                                                                                |
+| `pnpm build`         | build de producción                                                                                                   |
+| `pnpm test`          | suite completa                                                                                                        |
+| `pnpm test:coverage` | cobertura de las zonas de seguridad (100 % obligatorio)                                                               |
+| `pnpm lint`          | ESLint                                                                                                                |
+| `pnpm tsc --noEmit`  | type-check                                                                                                            |
+| `pnpm format`        | Prettier (en Windows, `format:check` siempre sale rojo por CRLF: ver [git y calidad](../docs/guias/git-y-calidad.md)) |
+| `pnpm supabase:*`    | base de datos: ver [`supabase/README.md`](supabase/README.md)                                                         |
 
-```bash
-   cp .env.example .env.local
-```
+Si cambian los permisos de un rol, el usuario tiene que cerrar sesión y volver a entrar: los
+permisos viajan en el JWT.
 
-Completar `.env.local` con las keys de Supabase Dashboard → Settings → API.
+## Documentación
 
-Para que el comprobante de pago se le envíe por correo al empleado al marcar su pago,
-agregar también la cuenta de correo de la empresa (sin esto el pago se marca igual,
-pero no se envía nada):
-
-```bash
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=465
-   SMTP_USER=planillas@empresa.com
-   SMTP_PASS=contraseña-de-aplicacion
-   SMTP_FROM="Celulares Alex <planillas@empresa.com>"
-```
-
-Con Gmail, `SMTP_PASS` es una contraseña de aplicación (Cuenta de Google → Seguridad →
-Verificación en dos pasos → Contraseñas de aplicaciones), no la contraseña de la cuenta.
-
-4. (Opcional) Regenerar tipos de la base de datos si hubo cambios de schema:
-
-```bash
-   pnpm dlx supabase login
-   pnpm dlx supabase link --project-ref <project-ref>
-   pnpm dlx supabase gen types typescript --linked > src/types/database.types.ts
-```
-
-5. Levantar el entorno de desarrollo:
-
-```bash
-   pnpm dev
-```
-
-Abrir [http://localhost:3000](http://localhost:3000)
-
-## Estructura del proyecto
+- Índice general y reglas para mantenerla: [`docs/README.md`](../docs/README.md).
+- Cada módulo tiene su `README.md` junto al código (`src/modules/<módulo>/README.md`).
+- Base de datos: [`supabase/README.md`](supabase/README.md).

@@ -33,6 +33,12 @@
 | [rendimiento](arquitectura/rendimiento.md) | viajes en serie, `Promise.all`, `router.refresh`, catálogos cacheados |
 | [errores de Postgres](arquitectura/errores-postgres.md) | códigos SQLSTATE y qué muestra la UI |
 
+## Propuestas
+
+| documento | estado |
+|---|---|
+| [portal público de reclutamiento](propuestas/portal-reclutamiento.md) | para decisión, sin código |
+
 ## Guías
 
 | documento | para |
@@ -60,7 +66,10 @@ kiosco va al README de `attendance`.
    una línea solo si explica algo que no es obvio; el resto está en git, en el PR y en Jira.
 4. **Las specs de ticket son temporales.** Al mergear, las reglas que duran pasan al README
    del módulo y la spec se borra.
-5. **Máximo ~6 KB por archivo.** Si un módulo se pasa, se parte en `modules/<m>/docs/*.md`
+5. **El repo es público: nunca documentar una vulnerabilidad sin corregir.** Un hallazgo de
+   seguridad abierto va a Jira; al repo llega cuando ya está corregido, como trampa ya
+   pisada.
+6. **Máximo ~6 KB por archivo.** Si un módulo se pasa, se parte en `modules/<m>/docs/*.md`
    y el README queda como índice.
 
 ## Plantilla de un README de módulo

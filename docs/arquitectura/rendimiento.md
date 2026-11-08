@@ -43,7 +43,34 @@ hace una página y cuáles van en serie.
 | helpers `STABLE` + envueltos en `(SELECT …)` | se evalúan una vez por consulta, no por fila |
 | índices sobre las columnas de las policies | `20260929120000_indices_historial_laboral.sql`, `20261007120000_indices_nomina.sql` |
 
-## Pendiente
+## Local es más lento que producción
 
-- Payroll todavía tiene llamadas a `router.refresh()` después de acciones que revalidan: es
-  deuda abierta.
+Un deploy en la misma región que la base (Vercel `iad1` = us-east-1) paga 1–2 ms por consulta
+en vez de ~200 ms. **Mover Supabase a sa-east-1 empeoraría la latencia**: desde Costa Rica el
+tráfico sale por Miami, y Virginia queda más cerca que São Paulo. Que las páginas del dashboard
+se rendericen en cada request es correcto: dependen de la sesión y de la RLS.
+
+`React.cache` en las lecturas compartidas (alcance de sucursal, tipos de tardía, días del mes)
+funciona **porque `createClient` está memoizado**: la clave del caché incluye el cliente. Si se
+crea un cliente aparte, se pierde el ahorro (no se rompe nada).
+
+## Pendiente (re-verificado el 2026-11-07)
+
+- **Planilla por lotes, el caso más lento del sistema.** `cargarEmpleadosDesdeAsistencia` hace
+  ~7–8 viajes en serie **por empleado** (líneas del detalle + banco de horas): con 20 personas
+  son ~150 viajes, ~30 s desde local. Como las filas son nuevas, se pueden juntar las líneas de
+  todos y hacer un `insert` por tabla. `uploadPlanilla` tiene los mismos bucles por fila. Vale
+  evaluar una RPC transaccional: hoy un fallo a mitad deja la planilla a medias.
+- **`router.refresh()` redundante en 8 componentes de payroll**, después de acciones que ya
+  revalidan.
+- Calidad: el formato de IBAN está duplicado (`formatIbanGroups` en employees, `formatIban` en
+  payroll).
+
+## Lo que conviene NO hacer
+
+- **Índices para todas las FK sin índice**: cada uno cuesta en cada escritura. Se agregan
+  cuando una consulta real los pide.
+- **Optimizar consultas sobre 40 filas**: lo que cuesta es el número de viajes, no el tamaño.
+- **Quitar `@vladmandic/face-api`, `onnxruntime-web` o `@mediapipe/tasks-vision`**: entran por
+  `import()` dinámico y solo cargan en el kiosco.
+- **Cachear páginas del dashboard** o catálogos por empresa con el cliente admin.

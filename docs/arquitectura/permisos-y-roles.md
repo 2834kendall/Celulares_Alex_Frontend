@@ -64,3 +64,25 @@ ofrecerlo en una pantalla de gestión de roles.
   Ya pasó tres veces.
 - **Los seeds solo agregan**: quitar un permiso de un rol en el seed no lo revoca en una base
   que ya lo tenía. Hay que revocarlo a mano.
+- **No hay alcance "solo lo mío" por permiso.** Todo permiso de lectura es de toda la empresa,
+  acotado solo por la sucursal del usuario. "Un supervisor que ve solo a su equipo" no se arma
+  con permisos.
+
+## Pendiente: permisos que no hacen lo que dicen
+
+Inventario del 2026-10-09, re-verificado el 2026-11-07. Son 30 permisos; estos no gatean lo
+que su nombre promete, y **no pueden ofrecerse en una pantalla de roles** hasta resolverlos:
+
+| prioridad | permiso | problema |
+|---|---|---|
+| **P0** | `NOMINA_APPROVE` | 0 usos en RLS y en guards. Todas las acciones de pago piden `NOMINA_WRITE`: **quien calcula la planilla es quien la marca pagada**, y no hay separación de funciones |
+| **P0** | `AUSENCIAS_WRITE` | no gatea nada. Para *registrar* una ausencia hay que tener `AUSENCIAS_APPROVE`. **Decisión de negocio pendiente:** cablearlo (habilita "solicitar sin aprobar", el autoservicio de vacaciones) o borrarlo y dejar dos niveles, Ver y Aprobar |
+| **P0** | `HISTORIAL_READ` | hoy no separa nada: la policy de `sgrh_historial_laboral` lo acepta como alternativa de otro permiso, así que no distingue "ver expedientes" de "ver contratos y salarios". Detalle y arreglo propuesto, en el ticket correspondiente |
+| P1 | `REPORTES_READ` | sin módulo y sin uso: borrarlo o marcarlo reservado |
+| P1 | `COMPROBANTES_READ` | placeholder a propósito (`payroll/page.tsx` muestra "Disponible próximamente") |
+| P1 | `ROLES_WRITE` | nunca es *requerido*: siempre aparece como alternativa de `USUARIOS_WRITE` |
+| P2 | `CATALOGOS_WRITE` | un solo interruptor para seis catálogos de dueños distintos (puestos, tardías, **conceptos de nómina**, rubros, etapas y criterios, tipos de turno). Partirlo por módulo merece ticket propio; mientras tanto, la UI tiene que enumerar los seis |
+| P2 | — | no hay forma de ver Configuración sin poder cambiarla (`/settings` exige uno de cuatro permisos `WRITE`). Un `CONFIGURACION_READ` habilitaría un rol auditor |
+
+Las tres P0 tocan los mismos archivos (`20260101000600_rls_policies.sql` y los guards) y pueden
+ir en una sola migración.
