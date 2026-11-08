@@ -9,7 +9,7 @@ type DeleteResult = { ok: true } | { ok: false; error: string }
  * Estado compartido de las listas CRUD del modulo (tipos de tardia): panel de
  * edicion inline, confirmacion de borrado y su error.
  * Duplicado a proposito de modules/schedules/hooks/useCrudList — cada modulo
- * de negocio es independiente (ver SGRH_Frontend_Architecture.md, seccion 1).
+ * de negocio es independiente (ver docs/arquitectura/vision-general.md).
  */
 export function useCrudList<T>(deleteAction: (id: number) => Promise<DeleteResult>) {
   const [editing, setEditingState] = useState<T | 'new' | null>(null)
