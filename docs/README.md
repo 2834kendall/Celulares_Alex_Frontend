@@ -3,9 +3,9 @@
 Índice de toda la documentación. Las reglas de cada módulo viven **junto a su código**
 (`srgh-app/src/modules/<módulo>/README.md`); acá solo está lo transversal.
 
-> **En migración.** Se está pasando de dos documentos gigantes a archivos cortos por tema
-> (plan: una fase por PR). Mientras dure, los que siguen marcados como _(pendiente de
-> partir)_ todavía son la fuente; los demás ya tienen su lugar definitivo.
+> **En migración.** Falta la documentación de los módulos de asistencia, horarios, ausencias,
+> reclutamiento, evaluaciones y dashboard (fase 4). Hasta entonces, sus specs de ticket
+> siguen en esta carpeta.
 
 ## Por módulo
 
@@ -13,20 +13,48 @@
 |---|---|---|
 | Expedientes | [`modules/employees/README.md`](../srgh-app/src/modules/employees/README.md) | ✅ |
 | Nómina | [`modules/payroll/README.md`](../srgh-app/src/modules/payroll/README.md) | ✅ |
-| Auth, usuarios, archivos, configuración | — | pendiente (fase 3) |
-| Cifrado, UI compartida, base de datos | — | pendiente (fase 3) |
+| Autenticación | [`modules/auth/README.md`](../srgh-app/src/modules/auth/README.md) | ✅ |
+| Usuarios | [`modules/users/README.md`](../srgh-app/src/modules/users/README.md) | ✅ |
+| Archivos | [`modules/storage/README.md`](../srgh-app/src/modules/storage/README.md) | ✅ |
+| Configuración, sucursales y kioscos | [`modules/settings/README.md`](../srgh-app/src/modules/settings/README.md) | ✅ |
+| Cifrado de campos | [`lib/crypto/README.md`](../srgh-app/src/lib/crypto/README.md) | ✅ |
+| UI compartida y marca | [`components/ui/README.md`](../srgh-app/src/components/ui/README.md) | ✅ |
+| Base de datos: proyectos, RLS, migraciones, respaldos | [`supabase/README.md`](../srgh-app/supabase/README.md) | ✅ |
 | Asistencia, horarios, ausencias, reclutamiento, evaluaciones, dashboard | — | pendiente (fase 4) |
 
-## Transversal
+## Arquitectura
 
 | documento | qué tiene |
 |---|---|
-| [`SGRH_Supabase_Architecture.md`](SGRH_Supabase_Architecture.md) _(pendiente de partir)_ | auth y JWT, permisos, RLS, policies de los módulos que todavía no se movieron |
-| [`SGRH_Frontend_Architecture.md`](SGRH_Frontend_Architecture.md) _(pendiente de partir)_ | estructura de carpetas, capas de seguridad, cómo crear un módulo |
-| [`GIT_WORKFLOW_STANDARD.md`](GIT_WORKFLOW_STANDARD.md) _(pendiente de partir)_ | ramas, commits, PRs |
+| [visión general](arquitectura/vision-general.md) | stack, organización por módulo, estructura de carpetas, routing |
+| [capas de seguridad](arquitectura/capas-de-seguridad.md) | proxy → guard → RLS → `usePermisos`, patrón de Server Action, principios de las policies |
+| [auth y JWT](arquitectura/auth-y-jwt.md) | usuarios de Auth y de negocio, claims del token, helpers, por qué hay que volver a entrar |
+| [permisos y roles](arquitectura/permisos-y-roles.md) | el modelo, los roles, cómo agregar un permiso |
+| [rendimiento](arquitectura/rendimiento.md) | viajes en serie, `Promise.all`, `router.refresh`, catálogos cacheados |
+| [errores de Postgres](arquitectura/errores-postgres.md) | códigos SQLSTATE y qué muestra la UI |
 
-Las specs de ticket (`SGRH-101` a `SGRH-105`, branding) siguen acá hasta que su contenido
-pase al módulo que corresponde (fases 4 y 5).
+## Propuestas
+
+| documento | estado |
+|---|---|
+| [portal público de reclutamiento](propuestas/portal-reclutamiento.md) | para decisión, sin código |
+
+## Guías
+
+| documento | para |
+|---|---|
+| [crear un módulo](guias/nuevo-modulo.md) | un módulo nuevo o una funcionalidad nueva |
+| [datos y formularios](guias/datos-y-formularios.md) | leer, escribir, Zod + RHF, protección de cambios sin guardar |
+| [git y calidad](guias/git-y-calidad.md) | ramas, commits, PRs, hooks, Prettier y la trampa de CRLF |
+| [testing](guias/testing.md) | convenciones, cobertura, SQL real, CI |
+| [entorno y Supabase](guias/entorno-y-supabase.md) | variables de entorno, levantar un proyecto desde cero |
+
+## Specs de ticket pendientes de extraer (fase 4)
+
+[`SGRH_BRANCH_KIOSK_SETTINGS.md`](SGRH_BRANCH_KIOSK_SETTINGS.md) (la parte de configuración ya
+está en `settings`), [`SGRH_KIOSK_FACE_PIPELINE.md`](SGRH_KIOSK_FACE_PIPELINE.md) y
+[`SGRH_EMPLOYEE_FACE_ENROLLMENT.md`](SGRH_EMPLOYEE_FACE_ENROLLMENT.md). Su lado de asistencia y
+kiosco va al README de `attendance`.
 
 ## Reglas para mantener esto ordenado
 
@@ -38,7 +66,10 @@ pase al módulo que corresponde (fases 4 y 5).
    una línea solo si explica algo que no es obvio; el resto está en git, en el PR y en Jira.
 4. **Las specs de ticket son temporales.** Al mergear, las reglas que duran pasan al README
    del módulo y la spec se borra.
-5. **Máximo ~6 KB por archivo.** Si un módulo se pasa, se parte en `modules/<m>/docs/*.md`
+5. **El repo es público: nunca documentar una vulnerabilidad sin corregir.** Un hallazgo de
+   seguridad abierto va a Jira; al repo llega cuando ya está corregido, como trampa ya
+   pisada.
+6. **Máximo ~6 KB por archivo.** Si un módulo se pasa, se parte en `modules/<m>/docs/*.md`
    y el README queda como índice.
 
 ## Plantilla de un README de módulo
