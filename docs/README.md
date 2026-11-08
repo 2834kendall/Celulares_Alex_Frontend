@@ -3,9 +3,6 @@
 Índice de toda la documentación. Las reglas de cada módulo viven **junto a su código**
 (`srgh-app/src/modules/<módulo>/README.md`); acá solo está lo transversal.
 
-> **En migración.** Falta la documentación de los módulos de asistencia, horarios, ausencias,
-> reclutamiento, evaluaciones y dashboard (fase 4). Hasta entonces, sus specs de ticket
-> siguen en esta carpeta.
 
 ## Por módulo
 
@@ -20,7 +17,12 @@
 | Cifrado de campos | [`lib/crypto/README.md`](../srgh-app/src/lib/crypto/README.md) | ✅ |
 | UI compartida y marca | [`components/ui/README.md`](../srgh-app/src/components/ui/README.md) | ✅ |
 | Base de datos: proyectos, RLS, migraciones, respaldos | [`supabase/README.md`](../srgh-app/supabase/README.md) | ✅ |
-| Asistencia, horarios, ausencias, reclutamiento, evaluaciones, dashboard | — | pendiente (fase 4) |
+| Asistencia y kiosco | [`modules/attendance/README.md`](../srgh-app/src/modules/attendance/README.md) | ✅ revisión del dueño pendiente |
+| Horarios | [`modules/schedules/README.md`](../srgh-app/src/modules/schedules/README.md) | ✅ revisión del dueño pendiente |
+| Ausencias | [`modules/absences/README.md`](../srgh-app/src/modules/absences/README.md) | ✅ revisión del dueño pendiente |
+| Reclutamiento | [`modules/recruitment/README.md`](../srgh-app/src/modules/recruitment/README.md) | ✅ revisión del dueño pendiente |
+| Evaluaciones | [`modules/evaluations/README.md`](../srgh-app/src/modules/evaluations/README.md) | ✅ revisión del dueño pendiente |
+| Dashboard | [`modules/dashboard/README.md`](../srgh-app/src/modules/dashboard/README.md) | ✅ revisión del dueño pendiente |
 
 ## Arquitectura
 
@@ -49,12 +51,6 @@
 | [testing](guias/testing.md) | convenciones, cobertura, SQL real, CI |
 | [entorno y Supabase](guias/entorno-y-supabase.md) | variables de entorno, levantar un proyecto desde cero |
 
-## Specs de ticket pendientes de extraer (fase 4)
-
-[`SGRH_BRANCH_KIOSK_SETTINGS.md`](SGRH_BRANCH_KIOSK_SETTINGS.md) (la parte de configuración ya
-está en `settings`), [`SGRH_KIOSK_FACE_PIPELINE.md`](SGRH_KIOSK_FACE_PIPELINE.md) y
-[`SGRH_EMPLOYEE_FACE_ENROLLMENT.md`](SGRH_EMPLOYEE_FACE_ENROLLMENT.md). Su lado de asistencia y
-kiosco va al README de `attendance`.
 
 ## Reglas para mantener esto ordenado
 
