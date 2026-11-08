@@ -84,7 +84,17 @@ export const SETTINGS_TREE: SettingsTree = {
       label: 'General',
       description: 'Preferencias que aplican a todas las sucursales de la empresa.',
       href: '/settings/general',
-      keywords: ['formato de hora', '12 horas', '24 horas', 'am pm', 'reloj'],
+      keywords: [
+        'formato de hora',
+        '12 horas',
+        '24 horas',
+        'am pm',
+        'reloj',
+        'anular pago',
+        'aguinaldo',
+        'liquidacion',
+        'plazo',
+      ],
       // Afecta a toda la empresa: el mismo permiso que exige la RLS.
       visible: (permisos) => permisos.includes(PERMISOS.EMPRESAS_WRITE),
     },
