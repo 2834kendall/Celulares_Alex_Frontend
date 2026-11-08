@@ -3,8 +3,6 @@
 Índice de toda la documentación. Las reglas de cada módulo viven **junto a su código**
 (`srgh-app/src/modules/<módulo>/README.md`); acá solo está lo transversal.
 
-> **En migración.** Falta la documentación de los módulos de horarios, ausencias,
-> reclutamiento, evaluaciones y dashboard (fase 4).
 
 ## Por módulo
 
@@ -19,8 +17,12 @@
 | Cifrado de campos | [`lib/crypto/README.md`](../srgh-app/src/lib/crypto/README.md) | ✅ |
 | UI compartida y marca | [`components/ui/README.md`](../srgh-app/src/components/ui/README.md) | ✅ |
 | Base de datos: proyectos, RLS, migraciones, respaldos | [`supabase/README.md`](../srgh-app/supabase/README.md) | ✅ |
-| Asistencia y kiosco | [`modules/attendance/README.md`](../srgh-app/src/modules/attendance/README.md) | ✅ (revisión del dueño pendiente) |
-| Horarios, ausencias, reclutamiento, evaluaciones, dashboard | — | pendiente (fase 4) |
+| Asistencia y kiosco | [`modules/attendance/README.md`](../srgh-app/src/modules/attendance/README.md) | ✅ revisión del dueño pendiente |
+| Horarios | [`modules/schedules/README.md`](../srgh-app/src/modules/schedules/README.md) | ✅ revisión del dueño pendiente |
+| Ausencias | [`modules/absences/README.md`](../srgh-app/src/modules/absences/README.md) | ✅ revisión del dueño pendiente |
+| Reclutamiento | [`modules/recruitment/README.md`](../srgh-app/src/modules/recruitment/README.md) | ✅ revisión del dueño pendiente |
+| Evaluaciones | [`modules/evaluations/README.md`](../srgh-app/src/modules/evaluations/README.md) | ✅ revisión del dueño pendiente |
+| Dashboard | [`modules/dashboard/README.md`](../srgh-app/src/modules/dashboard/README.md) | ✅ revisión del dueño pendiente |
 
 ## Arquitectura
 

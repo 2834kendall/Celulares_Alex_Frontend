@@ -53,11 +53,15 @@ descanso, y **en qué sucursal trabaja ese día**.
 
 ## Datos
 
-| tabla                       | permiso                                                                                                                                  | definida en                                                                                                                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sgrh_programacion_semanal` | lectura `ASISTENCIA_READ` (y el propio empleado, lo suyo); escritura `ASISTENCIA_WRITE`; acotada por `sucursal_visible(prg_sucursal_id)` | `20260101000300_tablas_operativas.sql`; lectura propia en `20260817140000_horarios_select_propio.sql`; otras sucursales en `20261002120000_asistencia_nomina_otras_sucursales.sql` |
-| `sgrh_cat_horarios`         | `HORARIOS_READ` / `HORARIOS_WRITE`                                                                                                       | `20260101000200_tablas_core.sql`; color en `20260912000000_horarios_color.sql`                                                                                                     |
-| `sgrh_cat_tipos_jornada`    | lectura autenticada; escritura `CATALOGOS_WRITE`                                                                                         | `20260101000100_tablas_catalogos.sql`                                                                                                                                              |
+- **`sgrh_programacion_semanal`**: lectura con `ASISTENCIA_READ` (el propio empleado ve lo
+  suyo), escritura con `ASISTENCIA_WRITE`, acotada por `sucursal_visible(prg_sucursal_id)`.
+  Tabla en `20260101000300_tablas_operativas.sql`; lectura propia en
+  `20260817140000_horarios_select_propio.sql`; otras sucursales en
+  `20261002120000_asistencia_nomina_otras_sucursales.sql`.
+- **`sgrh_cat_horarios`**: `HORARIOS_READ` / `HORARIOS_WRITE`. Tabla en
+  `20260101000200_tablas_core.sql`; color en `20260912000000_horarios_color.sql`.
+- **`sgrh_cat_tipos_jornada`**: lectura autenticada, escritura `CATALOGOS_WRITE`. Tabla en
+  `20260101000100_tablas_catalogos.sql`.
 
 ## Trampas
 
