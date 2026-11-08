@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarCheck2, Star, X } from 'lucide-react'
 import type { CollaboratorRow, RubroRow } from '@/modules/evaluations/types'
@@ -27,6 +28,8 @@ interface NewEvaluationSectionProps {
 }
 
 export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSectionProps) {
+  const confirmLeave = useConfirmLeave()
+  const formRoot = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -70,7 +73,13 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
             cada rubro.
           </p>
         </div>
-        <Button onClick={() => setShowForm((v) => !v)} className="shrink-0">
+        <Button
+          onClick={() => {
+            if (showForm) confirmLeave(() => setShowForm(false), formRoot.current ?? undefined)
+            else setShowForm(true)
+          }}
+          className="shrink-0"
+        >
           {showForm ? (
             <>
               <X className="h-3.5 w-3.5" /> Cancelar
@@ -84,7 +93,10 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
       </div>
 
       {showForm && (
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
+        <div
+          ref={formRoot}
+          className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4"
+        >
           <h3 className="mb-3 text-sm font-bold text-slate-900">
             Realizar evaluación a colaborador
           </h3>

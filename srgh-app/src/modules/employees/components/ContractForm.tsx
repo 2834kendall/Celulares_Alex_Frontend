@@ -1,6 +1,8 @@
 'use client'
 
-import { FormProvider, useForm, type Resolver } from 'react-hook-form'
+import { useForm } from '@/hooks/useProtectedForm'
+
+import { FormProvider, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import {
@@ -63,6 +65,7 @@ export function ContractForm(props: ContractFormProps) {
   const { catalogos, defaultValues, serverError, submitLabel = 'Guardar', onCancel } = props
 
   const methods = useForm<CrearHistorialLaboralInput>({
+    unsavedLabel: 'el contrato',
     // El formulario trabaja con el tipo de alta (superconjunto); en "editar"
     // el schema simplemente no pide ni devuelve lab_sucursal_id.
     resolver: (props.modo === 'crear'
@@ -83,6 +86,7 @@ export function ContractForm(props: ContractFormProps) {
   })
   const {
     handleSubmit,
+    guard,
     formState: { isSubmitting },
   } = methods
 
@@ -93,7 +97,7 @@ export function ContractForm(props: ContractFormProps) {
 
   return (
     <FormProvider {...methods}>
-      <div className="space-y-3">
+      <div ref={(element) => guard.bindRoot(element)} className="space-y-3">
         {serverError && (
           <Alert>
             <div>{serverError}</div>
@@ -123,7 +127,12 @@ export function ContractForm(props: ContractFormProps) {
         />
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button onClick={onCancel} disabled={isSubmitting} variant="secondary" size="md">
+          <Button
+            onClick={() => guard.confirmLeave(onCancel)}
+            disabled={isSubmitting}
+            variant="secondary"
+            size="md"
+          >
             Cancelar
           </Button>
           <Button onClick={() => void submit()} disabled={isSubmitting} size="md">

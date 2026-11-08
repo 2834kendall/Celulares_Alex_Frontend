@@ -206,3 +206,14 @@ export async function findWorkableDay(
 
   return result.data.find(isWorkable) ?? null
 }
+
+/** Kiosk retries must distinguish an empty schedule from a database outage. */
+export async function findWorkableDayResult(
+  supabase: SupabaseServerClient,
+  dateISO: string,
+  employeeId: number,
+  sucursalIds: number[] | null
+): Promise<{ ok: true; assignment: DayAssignment | null } | { ok: false; error: string }> {
+  const result = await queryDayAssignments(supabase, dateISO, sucursalIds, employeeId)
+  return result.ok ? { ok: true, assignment: result.data.find(isWorkable) ?? null } : result
+}

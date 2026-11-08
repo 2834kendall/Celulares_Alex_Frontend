@@ -1,7 +1,8 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ClipboardList, Loader2 } from 'lucide-react'
 import { rubroSchema, type RubroInput, type RubroRow } from '@/modules/evaluations/types'
@@ -25,8 +26,10 @@ export function RubroForm({ rubro, onSuccess }: RubroFormProps) {
     register,
     handleSubmit,
     reset,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<RubroInput>({
+    unsavedLabel: 'el rubro de evaluación',
     resolver: zodResolver(rubroSchema),
     defaultValues: rubro
       ? { nombre: rubro.nombre, descripcion: rubro.descripcion }
@@ -36,9 +39,15 @@ export function RubroForm({ rubro, onSuccess }: RubroFormProps) {
   async function onSubmit(input: RubroInput) {
     setServerError(null)
 
-    const result = isEditing
-      ? await updateRubro(rubro!.areaId, rubro!.criterioId, input)
-      : await createRubro(input)
+    let result: Awaited<ReturnType<typeof createRubro>> | Awaited<ReturnType<typeof updateRubro>>
+    try {
+      result = isEditing
+        ? await updateRubro(rubro!.areaId, rubro!.criterioId, input)
+        : await createRubro(input)
+    } catch {
+      setServerError('No se pudo confirmar el guardado. Revisá los rubros antes de reintentar.')
+      return
+    }
 
     if (!result.ok) {
       setServerError(result.error)
@@ -47,11 +56,17 @@ export function RubroForm({ rubro, onSuccess }: RubroFormProps) {
 
     // revalidatePath('/evaluations') en la accion ya refresca la ruta.
     if (!isEditing) reset({ nombre: '', descripcion: '' })
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  distDir: process.env.SGRH_E2E === '1' ? '.e2e/next' : '.next',
+  typescript: process.env.SGRH_E2E === '1' ? { tsconfigPath: 'tsconfig.e2e.json' } : {},
   /* config options here */
   allowedDevOrigins: ['172.30.208.1'],
   experimental: {

@@ -10,6 +10,9 @@ import { FACE_EMBEDDING_DIM } from '@/modules/attendance/lib/face/model'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
+vi.mock('@/modules/attendance/lib/liveKioskAccess', () => ({
+  liveKioskMetadata: vi.fn(async (_sub, meta) => meta),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 
@@ -80,6 +83,16 @@ const HISTORIAL = {
 }
 
 describe('verifyFace (server action)', () => {
+  it('rechaza el contexto bloqueado antes de consultar rostros', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, kiosk_error: 'Kiosco bloqueado' },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    expect(await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })).toEqual({
+      ok: false,
+      error: 'Kiosco bloqueado',
+    })
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('FACE_VECTOR_KEY', KEY)
@@ -259,7 +272,7 @@ describe('verifyFace (server action)', () => {
     expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_auditoria')
   })
 
-  it('elige al empleado mas cercano cuando hay varios enrolados', async () => {
+  it('pide otra captura si dos empleados pasan el umbral de coincidencia', async () => {
     setClient(
       createSupabaseClientMock({
         sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
@@ -277,10 +290,7 @@ describe('verifyFace (server action)', () => {
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
-    expect(result.ok).toBe(true)
-    if (!result.ok || result.status !== 'MATCH') throw new Error('esperaba MATCH')
-    expect(result.employeeId).toBe(11)
-    expect(result.fullName).toBe('Luis Mora')
+    expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
   })
 
   it('ignora vectores corruptos o de otra dimension sin romperse', async () => {

@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     'build/**',
     'next-env.d.ts',
     'coverage/**',
+    '.e2e/**',
+    'playwright-report/**',
+    'test-results/**',
     'src/types/database.types.ts',
     // Runtimes WASM copiados desde node_modules por setup-face-assets.mjs:
     // codigo generado de terceros, no se lintea.

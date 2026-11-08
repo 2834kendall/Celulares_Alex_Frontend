@@ -1,5 +1,7 @@
 'use client'
 
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { type FormEvent, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -64,6 +66,12 @@ export function JustifyTardinessModal({
   const [serverError, setServerError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
+  const guard = useUnsavedChanges({
+    label: 'la justificación de tardía',
+    value: motivo,
+    busy: isSaving,
+  })
+
   async function submit(justificada: boolean) {
     setError(null)
     setServerError(null)
@@ -89,6 +97,7 @@ export function JustifyTardinessModal({
     }
 
     toast.success(justificada ? 'Tardanza justificada.' : 'Justificacion retirada.')
+    guard.acceptChanges()
     onSuccess?.()
     onClose()
   }
@@ -104,7 +113,12 @@ export function JustifyTardinessModal({
       subtitle={`${employeeName} — ${formatDay(dateISO)}`}
       onClose={onClose}
     >
-      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit}
+        className="space-y-3"
+        noValidate
+      >
         {serverError && (
           <Alert>
             <div>{serverError}</div>

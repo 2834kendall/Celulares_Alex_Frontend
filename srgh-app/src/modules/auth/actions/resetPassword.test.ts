@@ -6,7 +6,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 
 const mockCreateClient = vi.mocked(createClient)
 
-const VALID_INPUT = { password: 'secreto123', confirmPassword: 'secreto123' }
+const VALID_INPUT = { password: 'Secreto1234!', confirmPassword: 'Secreto1234!' }
 
 function mockAuth({
   claims = { app_metadata: { permisos: ['EMPLEADOS_READ'] } } as unknown,
@@ -35,7 +35,7 @@ describe('resetPassword (server action)', () => {
   })
 
   it('rechaza cuando la confirmación no coincide', async () => {
-    const result = await resetPassword({ password: 'secreto123', confirmPassword: 'otra-cosa' })
+    const result = await resetPassword({ password: 'Secreto1234!', confirmPassword: 'otra-cosa' })
 
     expect(result).toEqual({ ok: false, error: 'Datos de recuperación inválidos.' })
     expect(mockCreateClient).not.toHaveBeenCalled()
@@ -59,7 +59,7 @@ describe('resetPassword (server action)', () => {
     const result = await resetPassword(VALID_INPUT)
 
     expect(result).toEqual({ ok: true, destination: '/dashboard' })
-    expect(client.auth.updateUser).toHaveBeenCalledWith({ password: 'secreto123' })
+    expect(client.auth.updateUser).toHaveBeenCalledWith({ password: 'Secreto1234!' })
   })
 
   it('manda a /unauthorized cuando el JWT no trae permisos', async () => {

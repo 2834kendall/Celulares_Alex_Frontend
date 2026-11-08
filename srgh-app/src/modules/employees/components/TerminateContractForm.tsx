@@ -1,7 +1,9 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { FormProvider, useForm, useWatch, type Resolver } from 'react-hook-form'
+import { FormProvider, useWatch, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import {
@@ -61,6 +63,7 @@ export function TerminateContractForm({
   const [porConfirmar, setPorConfirmar] = useState<TerminarContratoInput | null>(null)
 
   const methods = useForm<TerminarContratoInput>({
+    unsavedLabel: 'la finalización del contrato',
     // emptyToNull vuelve `unknown` el lado input del schema; el formulario
     // trabaja con el tipo de salida (mismo criterio que DocumentMetadataForm).
     resolver: zodResolver(terminarContratoSchema) as Resolver<TerminarContratoInput>,
@@ -78,6 +81,7 @@ export function TerminateContractForm({
     register,
     control,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = methods
 
@@ -97,7 +101,7 @@ export function TerminateContractForm({
 
   return (
     <FormProvider {...methods}>
-      <div className="space-y-3">
+      <div ref={(element) => guard.bindRoot(element)} className="space-y-3">
         {serverError && (
           <Alert>
             <div>{serverError}</div>
@@ -156,7 +160,12 @@ export function TerminateContractForm({
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button onClick={onCancel} disabled={isSubmitting} variant="secondary" size="md">
+          <Button
+            onClick={() => guard.confirmLeave(onCancel)}
+            disabled={isSubmitting}
+            variant="secondary"
+            size="md"
+          >
             Cancelar
           </Button>
           <Button

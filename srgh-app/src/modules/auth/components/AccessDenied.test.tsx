@@ -8,6 +8,12 @@ vi.mock('@/modules/auth/actions/logout', () => ({
   logout: vi.fn(),
 }))
 
+// LogoutButton navega al login con useRouter (la accion ya no redirige desde
+// el servidor), y fuera de Next no hay app router montado.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+}))
+
 const mockLogout = vi.mocked(logout)
 
 describe('<AccessDenied />', () => {

@@ -1,5 +1,7 @@
 'use client'
 
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -51,6 +53,12 @@ export function SucursalAppearanceForm({
   const [colorAcento, setColorAcento] = useState(colorAcentoActual ?? DEFAULT_ACCENT)
   const [colorSidebar, setColorSidebar] = useState(colorSidebarActual ?? DEFAULT_SIDEBAR)
   const [saving, setSaving] = useState(false)
+
+  const guard = useUnsavedChanges({
+    label: 'la apariencia de la sucursal',
+    value: { colorAcento, colorSidebar },
+    busy: saving,
+  })
 
   const acentoValido = HEX_RE.test(colorAcento)
   const sidebarValido = HEX_RE.test(colorSidebar)
@@ -165,6 +173,10 @@ export function SucursalAppearanceForm({
       return
     }
 
+    guard.acceptChanges({
+      colorAcento: nuevoAcento ?? DEFAULT_ACCENT,
+      colorSidebar: nuevoSidebar ?? DEFAULT_SIDEBAR,
+    })
     toast.success('Apariencia actualizada.')
 
     // Guardar deja la vista puesta en la sucursal recien editada, para que
@@ -195,7 +207,7 @@ export function SucursalAppearanceForm({
   }
 
   return (
-    <div className={`${CARD} max-w-md p-5`}>
+    <div ref={(element) => guard.bindRoot(element)} className={`${CARD} max-w-md p-5`}>
       <h2 className="text-sm font-bold text-slate-900">Apariencia — {sucursalNombre}</h2>
       <p className="mt-1 text-xs leading-relaxed text-slate-500">
         Estos colores solo se aplican cuando estás viendo esta sucursal — cada sucursal tiene los

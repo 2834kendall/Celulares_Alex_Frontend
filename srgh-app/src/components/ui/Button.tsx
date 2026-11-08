@@ -27,7 +27,7 @@ export const BUTTON_BASE =
 // tarjeta de atras se movio, no el boton.
 export const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    'bg-brand-600 text-white hover:bg-brand-700 hover:shadow-md focus-visible:ring-brand-600',
+    'bg-brand-action text-white hover:bg-brand-action-hover hover:shadow-md focus-visible:ring-brand-700',
   secondary:
     'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 focus-visible:ring-brand-500/60',
   danger: 'bg-rose-600 text-white hover:bg-rose-700 hover:shadow-md focus-visible:ring-rose-600',

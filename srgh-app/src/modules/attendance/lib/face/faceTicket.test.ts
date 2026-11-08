@@ -5,6 +5,19 @@ const SECRET = 'secreto-de-prueba'
 const NOW = 1_753_600_000_000
 
 describe('faceTicket (HMAC-SHA256)', () => {
+  it('vincula el comprobante a empresa, sucursal, kiosco y versión de acceso', async () => {
+    const context = '1:10:kiosk-uuid:2'
+    const ticket = await signFaceTicket(10, SECRET, NOW, undefined, context)
+    expect(await verifyFaceTicket(ticket, 10, SECRET, NOW + 1000, context)).toBe(true)
+    expect(await verifyFaceTicket(ticket, 10, SECRET, NOW + 1000, '1:20:kiosk-uuid:2')).toBe(false)
+    expect(await verifyFaceTicket(ticket, 10, SECRET, NOW + 1000, '1:10:other:2')).toBe(false)
+    expect(await verifyFaceTicket(ticket, 10, SECRET, NOW + 1000, '1:10:kiosk-uuid:3')).toBe(false)
+    expect(await verifyFaceTicket(ticket, 10, SECRET, NOW + 1000)).toBe(false)
+  })
+  it('no acepta un comprobante viejo sin contexto como prueba de un kiosco administrado', async () => {
+    const ticket = await signFaceTicket(10, SECRET, NOW)
+    expect(await verifyFaceTicket(ticket, 10, SECRET, NOW, '1:10:kiosk:2')).toBe(false)
+  })
   it('firma y verifica un ticket valido para el mismo empleado', async () => {
     const ticket = await signFaceTicket(10, SECRET, NOW)
     expect(await verifyFaceTicket(ticket, 10, SECRET, NOW + 1000)).toBe(true)

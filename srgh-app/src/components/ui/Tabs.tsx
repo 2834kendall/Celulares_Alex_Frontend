@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 
 export interface TabDefinition<T extends string> {
   id: T
@@ -56,6 +57,7 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const confirmLeave = useConfirmLeave()
 
   const defaultTab = tabs[0]
 
@@ -75,7 +77,8 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
       params.set('tab', id)
     }
     const query = params.toString()
-    router.push(query ? `${pathname}?${query}` : pathname)
+    if (id !== activeTab.id)
+      confirmLeave(() => router.push(query ? `${pathname}?${query}` : pathname))
   }
 
   const grouped = tabs.filter((tab) => !tab.standalone)

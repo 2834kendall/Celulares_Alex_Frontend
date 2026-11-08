@@ -1,8 +1,10 @@
 'use client'
 
+import { useForm } from 'react-hook-form'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Calculator, Loader2, Receipt, Save } from 'lucide-react'
 import { toast } from 'sonner'
@@ -95,9 +97,9 @@ export function LiquidacionTab({
     handleSubmit,
     watch,
     reset,
-    setValue,
     setError,
-    formState: { errors },
+    resetField,
+    formState: { errors, isDirty },
   } = useForm<ProcesarLiquidacionInput>({
     resolver: zodResolver(procesarLiquidacionSchema),
     defaultValues: {
@@ -112,6 +114,12 @@ export function LiquidacionTab({
   const diasVacaciones = watch('diasVacacionesPendientes')
   const cesantiaPactada = watch('cesantiaPactada')
   const plazoSeisMesesOMas = watch('plazoSeisMesesOMas')
+  const guard = useUnsavedChanges({
+    label: 'la liquidación',
+    value: { contratoElegidoId, diasVacaciones, cesantiaPactada, plazoSeisMesesOMas },
+    enabled: !resultado && (isDirty || Boolean(vistaPrevia)),
+    busy: guardando || calculando,
+  })
 
   // Si cambia cualquier dato después de calcular, la vista previa ya no es
   // la de esos datos: se descarta y hay que volver a calcular.
@@ -158,7 +166,7 @@ export function LiquidacionTab({
         }
         setPropuestaError(null)
         setPropuesta(r.data)
-        setValue('diasVacacionesPendientes', r.data.diasPendientes, { shouldValidate: true })
+        resetField('diasVacacionesPendientes', { defaultValue: r.data.diasPendientes })
       })
       .catch(() => {
         if (!vigente) return
@@ -169,7 +177,7 @@ export function LiquidacionTab({
     return () => {
       vigente = false
     }
-  }, [contratoElegidoId, setValue])
+  }, [contratoElegidoId, resetField])
 
   async function calcular(valores: ProcesarLiquidacionInput) {
     if (calculando || guardando) return
@@ -249,6 +257,7 @@ export function LiquidacionTab({
     <div className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-2">
         <form
+          ref={(element) => guard.bindRoot(element)}
           onSubmit={handleSubmit((values) => {
             if (esMutuoAcuerdo && !values.cesantiaPactada) {
               setError('cesantiaPactada', { message: 'Indicá si se pactó pagar cesantía.' })

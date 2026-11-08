@@ -1,5 +1,6 @@
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { liveKioskMetadata } from './liveKioskAccess'
 
 /**
  * Guarda de las acciones del kiosco (SGRH-88).
@@ -20,6 +21,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
  * ASISTENCIA_WRITE se sigue aceptando para el encargado que abre la pantalla
  * del kiosco con su propia cuenta.
  */
-export function requireKioskAccess() {
-  return requireAnyPermission([PERMISOS.ASISTENCIA_KIOSCO, PERMISOS.ASISTENCIA_WRITE])
+export async function requireKioskAccess() {
+  const claims = await requireAnyPermission([PERMISOS.ASISTENCIA_KIOSCO, PERMISOS.ASISTENCIA_WRITE])
+  return { ...claims, app_metadata: await liveKioskMetadata(claims.sub, claims.app_metadata ?? {}) }
 }

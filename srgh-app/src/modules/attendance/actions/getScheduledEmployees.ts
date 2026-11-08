@@ -7,6 +7,7 @@ import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { getDayAssignments, isWorkable } from '@/modules/attendance/lib/workingDay'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
 import type { ActiveEmployeeOption } from '@/modules/attendance/actions/getActiveEmployees'
+import type { ManagedKioskMeta } from '@/modules/attendance/lib/liveKioskAccess'
 
 interface EmployeeJoin {
   emp_id: number
@@ -26,10 +27,9 @@ export type GetScheduledEmployeesResult =
  * Quienes trabajan HOY en la sucursal de este kiosco: la lista de la pantalla
  * de marcaje.
  *
- * Es deliberadamente distinta de getActiveEmployees, que sigue devolviendo la
- * plantilla completa de la sucursal y alimenta el enrolamiento facial —
- * enrolar a alguien es una tarea de configuracion que no tiene por que
- * esperar a que le toque turno.
+ * Es deliberadamente distinta de la plantilla completa de la sucursal: el
+ * enrolamiento facial (que no tiene por que esperar a que a alguien le toque
+ * turno) se hace desde el perfil del empleado desde SGRH-102.
  *
  * Arranca desde la programacion del dia (ver lib/workingDay.ts) y recien
  * despues busca el expediente. Antes el kiosco listaba por lab_sucursal_id, y
@@ -51,11 +51,8 @@ export type GetScheduledEmployeesResult =
  */
 export async function getScheduledEmployees(): Promise<GetScheduledEmployeesResult> {
   const claims = await requireKioskAccess()
-  const meta = claims.app_metadata as {
-    usr_id?: number
-    empresa_id?: number
-    sucursal_ids?: number[] | null
-  }
+  const meta = claims.app_metadata as ManagedKioskMeta
+  if (meta.kiosk_error) return { ok: false, error: meta.kiosk_error }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }

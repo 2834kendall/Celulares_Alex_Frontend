@@ -21,7 +21,11 @@ import { verifyFace } from '@/modules/attendance/actions/verifyFace'
 import { getKioskMarkOptions } from '@/modules/attendance/actions/getKioskMarkOptions'
 import { MARK_LABELS, MARK_TYPES, type MarkType } from '@/modules/attendance/lib/marks'
 import type { EncryptedVector } from '@/modules/attendance/lib/face/faceCrypto'
-import { getCurrentCoordinates } from '@/modules/attendance/components/kiosk/geolocation'
+import {
+  getCurrentCoordinates,
+  type Coordinates,
+} from '@/modules/attendance/components/kiosk/geolocation'
+import { timeFaceStage } from './face/timing'
 import { getOrCreateDeviceId } from '@/modules/attendance/components/kiosk/deviceId'
 import { useOfflineSync } from '@/modules/attendance/components/kiosk/useOfflineSync'
 import { FaceScan } from '@/modules/attendance/components/kiosk/face/FaceScan'
@@ -165,6 +169,9 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
   // Numero de la ultima consulta: si la persona cambia antes de que vuelva la
   // respuesta anterior, esa respuesta vieja se descarta.
   const optionsRequest = useRef(0)
+  const coordinates = useRef<Coordinates | null>(null)
+  const coordinatesRequest = useRef(0)
+  const marking = useRef(false)
 
   const { isOnline, pendingCount, discardedCount, submitMark } = useOfflineSync()
   const now = useClock()
@@ -172,6 +179,8 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
   const faceConfigured = Boolean(process.env.NEXT_PUBLIC_FACE_VECTOR_KEY)
 
   const reset = useCallback(() => {
+    coordinatesRequest.current += 1
+    coordinates.current = null
     optionsRequest.current += 1
     setVerified(null)
     setVerifying(false)
@@ -189,7 +198,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
     setOptionsError(null)
 
     try {
-      const result = await getKioskMarkOptions(targetId)
+      const result = await timeFaceStage('options', () => getKioskMarkOptions(targetId))
       if (request !== optionsRequest.current) return
 
       if (result.ok) {
@@ -222,10 +231,12 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
       setVerifying(true)
 
       try {
-        const result = await verifyFace({
-          vector: payload,
-          dispositivoId: getOrCreateDeviceId() || null,
-        })
+        const result = await timeFaceStage('verify', () =>
+          verifyFace({
+            vector: payload,
+            dispositivoId: getOrCreateDeviceId() || null,
+          })
+        )
 
         if (!result.ok) {
           setFailure({
@@ -236,6 +247,11 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
         }
 
         if (result.status === 'MATCH') {
+          const request = ++coordinatesRequest.current
+          coordinates.current = null
+          void getCurrentCoordinates().then((coords) => {
+            if (request === coordinatesRequest.current) coordinates.current = coords
+          })
           setVerified({
             employeeId: result.employeeId,
             fullName: result.fullName,
@@ -248,6 +264,11 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
         // REQUIRE_PIN conserva su nombre en verifyFace, pero ya no hay PIN:
         // es la zona de duda, se ofrece reintentar.
         setFailure(result.status === 'DENIED' ? FAILURES.noReconocido : FAILURES.dudoso)
+      } catch {
+        setFailure({
+          titulo: 'No pudimos verificarte',
+          detalle: `No se pudo completar la verificacion. Intenta de nuevo. ${AVISA_AL_ENCARGADO}`,
+        })
       } finally {
         setVerifying(false)
       }
@@ -269,37 +290,45 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
   }, [])
 
   async function handleMark(tipo: MarkType) {
-    if (!verified || submittingTipo) return
+    if (!verified || marking.current) return
 
+    marking.current = true
     setSubmittingTipo(tipo)
-    const coords = await getCurrentCoordinates()
+    const coords = coordinates.current
 
-    const outcome = await submitMark({
-      employeeId: verified.employeeId,
-      tipo,
-      latitud: coords?.latitud ?? null,
-      longitud: coords?.longitud ?? null,
-      dispositivoId: getOrCreateDeviceId() || null,
-      ticketFacial: verified.ticket,
-    })
+    try {
+      const outcome = await timeFaceStage('mark', () =>
+        submitMark({
+          employeeId: verified.employeeId,
+          tipo,
+          latitud: coords?.latitud ?? null,
+          longitud: coords?.longitud ?? null,
+          dispositivoId: getOrCreateDeviceId() || null,
+          ticketFacial: verified.ticket,
+        })
+      )
 
-    setSubmittingTipo(null)
+      if (outcome.queued) {
+        toast.success('Marca guardada. Se enviara al servidor cuando regrese el internet.')
+        setSuccessLabel(`${MARK_LABELS[tipo]} registrada`)
+        return
+      }
 
-    if (outcome.queued) {
-      toast.success('Marca guardada. Se enviara al servidor cuando regrese el internet.')
+      if (!outcome.result.ok) {
+        toast.error(outcome.result.error)
+        // Lo mas probable es que la jornada cambio en el medio: se vuelve a
+        // preguntar para no dejar botones viejos.
+        void fetchOptions(verified.employeeId)
+        return
+      }
+
       setSuccessLabel(`${MARK_LABELS[tipo]} registrada`)
-      return
+    } catch {
+      toast.error('No se pudo guardar la marca en este dispositivo. Intenta de nuevo.')
+    } finally {
+      marking.current = false
+      setSubmittingTipo(null)
     }
-
-    if (!outcome.result.ok) {
-      toast.error(outcome.result.error)
-      // Lo mas probable es que la jornada cambio en el medio: se vuelve a
-      // preguntar para no dejar botones viejos.
-      void fetchOptions(verified.employeeId)
-      return
-    }
-
-    setSuccessLabel(`${MARK_LABELS[tipo]} registrada`)
   }
 
   const clock = now ? formatClock(now, formatoHora) : null

@@ -26,13 +26,22 @@ export async function updateEvaluationNotes(
   await requirePermission(PERMISOS.EVALUACIONES_WRITE)
 
   const supabase = await createClient()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('sgrh_evaluaciones')
     .update({ eve_observaciones: serializeNotes(parsed.data) })
     .eq('eve_id', evaluationId)
+    .select('eve_id')
+    .maybeSingle()
 
   if (error) {
     return { ok: false, error: 'No se pudieron guardar las notas de la evaluacion.' }
+  }
+
+  if (!data) {
+    return {
+      ok: false,
+      error: 'La evaluación no está disponible o no tenés permiso para modificarla.',
+    }
   }
 
   revalidatePath('/evaluations')

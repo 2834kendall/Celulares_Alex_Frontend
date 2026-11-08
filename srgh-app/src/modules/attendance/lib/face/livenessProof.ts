@@ -36,8 +36,11 @@ export interface LivenessProof {
 
 const METHODS: readonly LivenessMethod[] = ['textura']
 
+export const LIVE_THRESHOLD = 0.6
+export const MIN_LIVE_SAMPLES = 5
+
 /**
- * Valida la forma de la prueba recibida. NO valida que sea cierta —eso es
+ * Valida forma y mínimos compartidos con la captura. NO valida que sea cierta —eso es
  * imposible desde el servidor, ver la nota de arriba—; descarta payloads
  * malformados y deja el veredicto en un tipo confiable para el resto del
  * codigo.
@@ -49,8 +52,10 @@ export function isLivenessProof(value: unknown): value is LivenessProof {
   if (!METHODS.includes(proof.method as LivenessMethod)) return false
 
   const { score, samples } = proof
-  if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) return false
-  if (typeof samples !== 'number' || !Number.isInteger(samples) || samples < 1) return false
+  if (typeof score !== 'number' || !Number.isFinite(score) || score < LIVE_THRESHOLD || score > 1)
+    return false
+  if (typeof samples !== 'number' || !Number.isInteger(samples) || samples < MIN_LIVE_SAMPLES)
+    return false
 
   return true
 }

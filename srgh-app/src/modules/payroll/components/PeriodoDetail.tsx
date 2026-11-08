@@ -1,5 +1,7 @@
 'use client'
 
+import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
+
 import { Fragment, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -293,6 +295,7 @@ export function PeriodoDetail({
 }: PeriodoDetailProps) {
   const router = useRouter()
   const [editandoId, setEditandoId] = useState<number | null>(null)
+  const confirmLeave = useConfirmLeave()
   const [registrandoIncapacidadId, setRegistrandoIncapacidadId] = useState<number | null>(null)
   const [pagandoId, setPagandoId] = useState<number | null>(null)
   /** Pago a marcar o desmarcar: se confirma antes. */
@@ -674,7 +677,7 @@ export function PeriodoDetail({
         {canWrite &&
           (editable ? (
             <IconButton
-              onClick={() => setEditandoId(editandoId === d.id ? null : d.id)}
+              onClick={() => confirmLeave(() => setEditandoId(editandoId === d.id ? null : d.id))}
               aria-label={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
               title={editandoId === d.id ? 'Cerrar edición' : 'Editar ingresos'}
               tone="blue"
@@ -691,7 +694,9 @@ export function PeriodoDetail({
         {canWrite && (
           <IconButton
             onClick={() =>
-              setRegistrandoIncapacidadId(registrandoIncapacidadId === d.id ? null : d.id)
+              confirmLeave(() =>
+                setRegistrandoIncapacidadId(registrandoIncapacidadId === d.id ? null : d.id)
+              )
             }
             aria-label={
               registrandoIncapacidadId === d.id

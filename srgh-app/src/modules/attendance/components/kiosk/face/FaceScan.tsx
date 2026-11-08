@@ -3,13 +3,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { ScanFace } from 'lucide-react'
 import { encryptFacePayload, type EncryptedVector } from '@/modules/attendance/lib/face/faceCrypto'
-import type { LivenessProof } from '@/modules/attendance/lib/face/livenessProof'
+import {
+  LIVE_THRESHOLD,
+  MIN_LIVE_SAMPLES as MIN_SAMPLES,
+  type LivenessProof,
+} from '@/modules/attendance/lib/face/livenessProof'
+import { enrollmentMedoid } from '@/modules/attendance/lib/face/enrollment'
+import { timeFaceStage } from './timing'
 import { FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
 import { getFaceLandmarker } from './faceLandmarker'
 import { computeEmbedding, preloadEmbeddingModel } from './embedding'
 import { preloadAntispoofModel, scoreRealness } from './antispoof'
 import { eyeTiltAngle, faceCropBox, firstFaceLandmarks } from './landmarks'
-import { assessQuality, qualityMessage, sharpnessScore } from './quality'
+import { assessPixels, assessQuality, qualityMessage } from './quality'
 
 /**
  * Umbrales sobre la MEDIANA del puntaje de realidad. Medidos contra las
@@ -18,11 +24,9 @@ import { assessQuality, qualityMessage, sharpnessScore } from './quality'
  * una zona muerta amplia — en la duda no se confirma NI se acusa, se cae al
  * PIN, que es el resultado seguro.
  */
-const LIVE_THRESHOLD = 0.6
 const SPOOF_THRESHOLD = 0.35
 
 /** Mediciones necesarias antes de dictar un veredicto. */
-const MIN_SAMPLES = 5
 
 /**
  * Se evalua 1 de cada N frames: la inferencia toma ~10-25 ms y correrla en
@@ -45,11 +49,12 @@ const CAPTURE_WINDOW_MS = 500
 const DEBUG = process.env.NEXT_PUBLIC_FACE_DEBUG === 'true'
 
 export interface FaceScanProps {
+  enrollment?: boolean
   /**
    * Recibe el embedding YA cifrado, junto con la prueba de vida que lo
-   * respalda. El padre decide que hacer (verificar en el kiosco, enrolar en
-   * /kiosco/enrolar). Mientras la promesa esta viva, FaceScan muestra
-   * "procesando".
+   * respalda. El padre decide que hacer (verificar en el kiosco, enrolar desde
+   * el tab Rostro del perfil del empleado). Mientras la promesa esta viva,
+   * FaceScan muestra "procesando".
    */
   onEmbedding: (payload: EncryptedVector) => Promise<void>
   /**
@@ -121,7 +126,12 @@ function median(values: number[]): number {
  * Falla CERRADO: si no logra evidencia suficiente a tiempo, no captura; cae al
  * PIN.
  */
-export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps) {
+export function FaceScan({
+  onEmbedding,
+  onUnavailable,
+  onSpoof,
+  enrollment = false,
+}: FaceScanProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const rafRef = useRef<number | null>(null)
@@ -135,16 +145,25 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
   useEffect(() => {
     let cancelled = false
     doneRef.current = false
+    unavailableRef.current = false
+    const stopCamera = () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
 
     function fail(reason: string) {
       if (unavailableRef.current || cancelled) return
       unavailableRef.current = true
+      doneRef.current = true
+      stopCamera()
       onUnavailable(reason)
     }
 
     function rejectSpoof() {
       if (unavailableRef.current || cancelled) return
       unavailableRef.current = true
+      doneRef.current = true
+      stopCamera()
       if (onSpoof) onSpoof()
       else onUnavailable('No se detecto una persona real frente a la camara.')
     }
@@ -165,13 +184,16 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
       try {
         // Los dos modelos pesados se precargan en paralelo con el detector
         // para que el costo se pague al abrir el kiosco y no al marcar.
-        const preload = Promise.all([preloadEmbeddingModel(), preloadAntispoofModel()])
-        landmarker = await getFaceLandmarker()
-        await preload
+        const models = await timeFaceStage('models', () =>
+          Promise.all([getFaceLandmarker(), preloadEmbeddingModel(), preloadAntispoofModel()])
+        )
+        landmarker = models[0]
       } catch {
         fail('No se pudieron cargar los modelos de reconocimiento.')
         return
       }
+
+      if (cancelled) return
 
       let stream: MediaStream
       try {
@@ -191,7 +213,10 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
 
       streamRef.current = stream
       const video = videoRef.current
-      if (!video) return
+      if (!video) {
+        stopCamera()
+        return
+      }
       video.srcObject = stream
       try {
         await video.play()
@@ -199,6 +224,8 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
         // El autoplay puede rechazarse si el tab pierde foco: el loop de
         // deteccion simplemente no vera frames hasta que vuelva.
       }
+
+      if (cancelled) return
 
       setStatus('buscando_rostro')
 
@@ -209,6 +236,24 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
       let startMs: number | null = null
       let captureStartMs: number | null = null
       let best: Candidate | null = null
+      let lastVideoTime = -1
+      let generation = 0
+      let candidates: Candidate[] = []
+      let lastCandidateMs = -Infinity
+      let detectionFrames = 0
+      let detectionMs = 0
+
+      function resetCapture(resetTimer = false) {
+        if (resetTimer) startMs = null
+        generation += 1
+        scores.length = 0
+        proof = null
+        frameCount = 0
+        captureStartMs = null
+        best = null
+        candidates = []
+        lastCandidateMs = -Infinity
+      }
 
       /** Recorte alineado del rostro, listo para el modelo de embeddings. */
       function buildCrop(
@@ -249,17 +294,31 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
       }
 
       function capture(canvas: HTMLCanvasElement, livenessProof: LivenessProof) {
+        if (DEBUG)
+          console.info('[kiosk timing]', 'capture', {
+            frames: detectionFrames,
+            averageDetectionMs: detectionFrames ? Math.round(detectionMs / detectionFrames) : 0,
+            elapsedMs: startMs === null ? 0 : Math.round(performance.now() - startMs),
+          })
         doneRef.current = true
+        stopCamera()
         setStatus('procesando')
         setHint(null)
 
         void (async () => {
           try {
-            const vector = await computeEmbedding(canvas)
-            const payload = await encryptFacePayload<LivenessProof>(
-              { vector, liveness: livenessProof },
-              key!
+            const vector = await timeFaceStage('embedding', async () => {
+              if (!enrollment) return computeEmbedding(canvas)
+              const vectors: number[][] = []
+              for (const candidate of candidates)
+                vectors.push(await computeEmbedding(candidate.canvas))
+              return enrollmentMedoid(vectors)
+            })
+            if (cancelled) return
+            const payload = await timeFaceStage('encrypt', () =>
+              encryptFacePayload<LivenessProof>({ vector, liveness: livenessProof }, key!)
             )
+            if (cancelled) return
             await onEmbedding(payload)
           } catch {
             fail('No se pudo procesar el rostro capturado.')
@@ -276,20 +335,40 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
         }
 
         const now = performance.now()
-        if (startMs === null) startMs = now
+        if (startMs !== null && now - startMs > DECISION_TIMEOUT_MS) {
+          fail('No pudimos completar una captura valida. Ajusta la luz e intenta de nuevo.')
+          return
+        }
+        if (document.hidden || v.currentTime === lastVideoTime) {
+          if (document.hidden) resetCapture(true)
+          rafRef.current = requestAnimationFrame(loop)
+          return
+        }
+        lastVideoTime = v.currentTime
 
-        const result = landmarker.detectForVideo(v, now)
+        let result: ReturnType<typeof landmarker.detectForVideo>
+        try {
+          result = landmarker.detectForVideo(v, now)
+          detectionFrames += 1
+          detectionMs += performance.now() - now
+        } catch {
+          fail('No se pudo analizar la camara. Intenta de nuevo.')
+          return
+        }
         const landmarks = firstFaceLandmarks(result)
 
         if (!landmarks) {
+          resetCapture(true)
           setStatus('buscando_rostro')
           setHint(null)
           rafRef.current = requestAnimationFrame(loop)
           return
         }
 
+        if (startMs === null) startMs = now
         const quality = assessQuality(landmarks)
         if (!quality || !quality.ok) {
+          resetCapture()
           setStatus('ajusta_encuadre')
           setHint(quality ? qualityMessage(quality.issues) : null)
           rafRef.current = requestAnimationFrame(loop)
@@ -306,9 +385,16 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
           // ignoran los frames que lleguen mientras una sigue en vuelo.
           if (!scoring && frameCount % SCORE_EVERY === 0) {
             scoring = true
+            const sampleGeneration = generation
             void scoreRealness(v, landmarks, v.videoWidth, v.videoHeight)
               .then((score) => {
-                if (score !== null) scores.push(score)
+                if (
+                  !cancelled &&
+                  !doneRef.current &&
+                  sampleGeneration === generation &&
+                  score !== null
+                )
+                  scores.push(score)
               })
               .catch(() => {
                 // Un fallo suelto de inferencia no debe tumbar la sesion; si
@@ -365,16 +451,32 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
           const ctx = canvas.getContext('2d', { willReadFrequently: true })
           // La nitidez se mide sobre el RECORTE y no sobre el frame completo:
           // lo que importa es que este definida la cara, no el fondo.
-          const sharpness = ctx
-            ? sharpnessScore(ctx.getImageData(0, 0, FACE_INPUT_SIZE, FACE_INPUT_SIZE))
-            : 0
+          const image = ctx?.getImageData(0, 0, FACE_INPUT_SIZE, FACE_INPUT_SIZE)
+          const pixels = image ? assessPixels(image) : null
+          const sharpness = pixels?.sharpness ?? 0
+
+          // Reject empty/flat captures without inventing device-specific blur thresholds.
+          if (!pixels?.ok) {
+            setHint('Mejora la luz y manten el rostro quieto')
+            rafRef.current = requestAnimationFrame(loop)
+            return
+          }
+          if (enrollment && now - lastCandidateMs >= 150 && candidates.length < 3) {
+            candidates.push({ canvas, sharpness })
+            lastCandidateMs = now
+          }
 
           if (!best || sharpness > best.sharpness) best = { canvas, sharpness }
           if (captureStartMs === null) captureStartMs = now
         }
 
         // Se dispara con el mejor candidato del lote, no con el primero.
-        if (best && captureStartMs !== null && now - captureStartMs >= CAPTURE_WINDOW_MS) {
+        if (
+          best &&
+          captureStartMs !== null &&
+          now - captureStartMs >= CAPTURE_WINDOW_MS &&
+          (!enrollment || candidates.length === 3)
+        ) {
           capture(best.canvas, proof)
           return
         }
@@ -393,7 +495,7 @@ export function FaceScan({ onEmbedding, onUnavailable, onSpoof }: FaceScanProps)
       streamRef.current?.getTracks().forEach((t) => t.stop())
       streamRef.current = null
     }
-  }, [onEmbedding, onUnavailable, onSpoof])
+  }, [onEmbedding, onUnavailable, onSpoof, enrollment])
 
   return (
     <div className="flex w-full flex-col items-center gap-4">

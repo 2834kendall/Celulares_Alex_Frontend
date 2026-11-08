@@ -13,6 +13,7 @@ export interface QueuedMark {
   tipo: MarkType
   /** "YYYY-MM-DD HH:mm:ss", capturada en el momento del evento — nunca la de sincronizacion. */
   fechaHora: string
+  queuedAt?: number
   latitud: number | null
   longitud: number | null
   dispositivoId: string | null
@@ -72,7 +73,15 @@ export async function getQueuedMarks(): Promise<QueuedMark[]> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly')
     const request = tx.objectStore(STORE_NAME).getAll()
-    request.onsuccess = () => resolve(request.result as QueuedMark[])
+    request.onsuccess = () =>
+      resolve(
+        (request.result as QueuedMark[]).sort(
+          (a, b) =>
+            a.fechaHora.localeCompare(b.fechaHora) ||
+            (a.queuedAt ?? 0) - (b.queuedAt ?? 0) ||
+            a.id.localeCompare(b.id)
+        )
+      )
     request.onerror = () => reject(request.error)
   })
 }

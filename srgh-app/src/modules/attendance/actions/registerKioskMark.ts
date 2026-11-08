@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
+import type { ManagedKioskMeta } from '@/modules/attendance/lib/liveKioskAccess'
 import { kioskMarkSchema, type KioskMarkInput } from '@/modules/attendance/types'
 import { haversineDistanceMeters } from '@/modules/attendance/lib/geofence'
 import {
@@ -12,7 +13,7 @@ import {
   nowInCostaRica,
   timeOfDay,
 } from '@/modules/attendance/lib/time'
-import { findWorkableDay } from '@/modules/attendance/lib/workingDay'
+import { findWorkableDayResult } from '@/modules/attendance/lib/workingDay'
 import {
   absenceBlocksMarkMessage,
   findApprovedAbsence,
@@ -78,18 +79,23 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   }
 
   const claims = await requireKioskAccess()
-  const meta = claims.app_metadata as {
-    usr_id?: number
-    empresa_id?: number
-    sucursal_ids?: number[] | null
-  }
+  const meta = claims.app_metadata as ManagedKioskMeta
+  if (meta.kiosk_error) return { ok: false, error: meta.kiosk_error, definitivo: meta.kiosk_denied }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
   }
 
-  const { employeeId, tipo, latitud, longitud, dispositivoId, ticketFacial, fechaHora } =
-    parsed.data
+  const {
+    employeeId,
+    tipo,
+    latitud,
+    longitud,
+    dispositivoId,
+    ticketFacial,
+    fechaHora,
+    operationId,
+  } = parsed.data
 
   const ticketSecret = process.env.FACE_TICKET_SECRET
 
@@ -108,7 +114,9 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   const rostroVerificado =
     Number.isFinite(eventoMs) &&
     eventoMs <= ahoraMs + 60_000 &&
-    (await verifyFaceTicket(ticketFacial, employeeId, ticketSecret, eventoMs))
+    (await (meta.kiosk_context
+      ? verifyFaceTicket(ticketFacial, employeeId, ticketSecret, eventoMs, meta.kiosk_context)
+      : verifyFaceTicket(ticketFacial, employeeId, ticketSecret, eventoMs)))
 
   if (!rostroVerificado) {
     return {
@@ -141,7 +149,35 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   // cuenta, validadas arriba, o a la empresa del JWT.
   const admin = createAdminClient()
 
-  const assignment = await findWorkableDay(admin, fechaEvento, employeeId, sucursalIds)
+  // A lost HTTP response is not a new mark. Check retries before sequence rules,
+  // scoped to this employee, company and the kiosk's authorized branches.
+  if (operationId) {
+    const { data: existing, error: lookupError } = await admin
+      .from('sgrh_marcas_asistencia')
+      .select(
+        'mar_tipo, mar_fecha_hora, sgrh_historial_laboral!inner(lab_empleado_id, lab_empresa_id)'
+      )
+      .eq('mar_operacion_id', operationId)
+      .eq('sgrh_historial_laboral.lab_empleado_id', employeeId)
+      .eq('sgrh_historial_laboral.lab_empresa_id', meta.empresa_id)
+      .in('mar_sucursal_id', sucursalIds)
+      .maybeSingle<{ mar_tipo: string; mar_fecha_hora: string }>()
+    if (lookupError) return { ok: false, error: 'No se pudo comprobar el intento anterior.' }
+    if (existing) {
+      if (
+        existing.mar_tipo === tipo &&
+        fechaHora &&
+        existing.mar_fecha_hora.replace('T', ' ').slice(0, 19) === fechaHora
+      ) {
+        return { ok: true }
+      }
+      return { ok: false, error: 'Este intento corresponde a otra marca.', definitivo: true }
+    }
+  }
+
+  const scheduled = await findWorkableDayResult(admin, fechaEvento, employeeId, sucursalIds)
+  if (!scheduled.ok) return { ok: false, error: scheduled.error }
+  const assignment = scheduled.assignment
 
   if (!assignment) {
     return {
@@ -255,27 +291,38 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   // hora en que el empleado marco, no a la que se restablecio el internet:
   // de lo contrario el resumen mensual la lee como una tardanza inventada.
   const observaciones = [
-    fechaHora
+    fechaHora && (!operationId || parsed.data.sincronizada)
       ? 'Marca sincronizada desde la cola offline: la hora es la del evento, no la de sincronizacion.'
       : null,
   ].filter((o): o is string => o !== null)
 
-  const { error } = await admin.from('sgrh_marcas_asistencia').insert({
-    mar_historial_laboral_id: historial.lab_id,
-    mar_sucursal_id: assignment.branchId,
-    mar_tipo: tipo,
-    mar_fecha_hora: fechaHora ?? nowInCostaRica(),
-    mar_latitud_marcada: latitud,
-    mar_longitud_marcada: longitud,
-    mar_distancia_geocerca_metros: distancia,
-    mar_metodo_verificacion: 'FACIAL',
-    mar_dispositivo_id: dispositivoId,
-    mar_registrado_por_id: meta.usr_id ?? null,
-    mar_observacion: observaciones.length > 0 ? observaciones.join(' ') : null,
+  const { data: saved, error } = await admin.rpc('registrar_marca_kiosco_atomica', {
+    p_empresa_id: meta.empresa_id,
+    p_snapshot: jornada.snapshot,
+    p_marca: {
+      mar_historial_laboral_id: historial.lab_id,
+      mar_sucursal_id: assignment.branchId,
+      mar_tipo: tipo,
+      mar_fecha_hora: fechaHora ?? nowInCostaRica(),
+      mar_latitud_marcada: latitud,
+      mar_longitud_marcada: longitud,
+      mar_distancia_geocerca_metros: distancia,
+      mar_metodo_verificacion: 'FACIAL',
+      mar_dispositivo_id: meta.kiosk_id ?? dispositivoId,
+      mar_registrado_por_id: meta.usr_id ?? null,
+      mar_observacion: observaciones.length > 0 ? observaciones.join(' ') : null,
+      mar_operacion_id: operationId ?? crypto.randomUUID(),
+    },
   })
 
   if (error) {
     return { ok: false, error: 'No se pudo registrar la marca.' }
+  }
+
+  if (saved === 'stale')
+    return { ok: false, error: 'Tus marcas cambiaron mientras se guardaba. Intenta de nuevo.' }
+  if (saved !== 'inserted' && saved !== 'duplicate') {
+    return { ok: false, error: 'No se pudo validar la marca.', definitivo: true }
   }
 
   revalidatePath('/attendance')

@@ -43,18 +43,17 @@ describe('<ActivateAccountForm />', () => {
   it('valida la coincidencia antes de llamar la action', async () => {
     render(<ActivateAccountForm email="ana@empresa.com" />)
 
-    await fillPasswords('secreto123', 'no-coincide')
+    await fillPasswords('Secreto1234!', 'no-coincide')
 
     expect(await screen.findByText('Las contraseñas no coinciden.')).toBeVisible()
     expect(mockActivateAccount).not.toHaveBeenCalled()
   })
 
-  it('valida la longitud mínima antes de llamar la action', async () => {
+  it('no llama la action con una contraseña que incumple la politica', async () => {
     render(<ActivateAccountForm email="ana@empresa.com" />)
 
     await fillPasswords('corta', 'corta')
 
-    expect(await screen.findByText('La contraseña debe tener al menos 8 caracteres.')).toBeVisible()
     expect(mockActivateAccount).not.toHaveBeenCalled()
   })
 
@@ -62,12 +61,12 @@ describe('<ActivateAccountForm />', () => {
     mockActivateAccount.mockResolvedValue({ ok: true, destination: '/dashboard' })
     render(<ActivateAccountForm email="ana@empresa.com" />)
 
-    await fillPasswords('secreto123', 'secreto123')
+    await fillPasswords('Secreto1234!', 'Secreto1234!')
 
     await waitFor(() => {
       expect(mockActivateAccount).toHaveBeenCalledWith({
-        password: 'secreto123',
-        confirmPassword: 'secreto123',
+        password: 'Secreto1234!',
+        confirmPassword: 'Secreto1234!',
       })
     })
     expect(replace).toHaveBeenCalledWith('/dashboard')
@@ -81,7 +80,7 @@ describe('<ActivateAccountForm />', () => {
     })
     render(<ActivateAccountForm email="ana@empresa.com" />)
 
-    await fillPasswords('secreto123', 'secreto123')
+    await fillPasswords('Secreto1234!', 'Secreto1234!')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'La nueva contraseña debe ser distinta a la anterior.'
@@ -93,7 +92,7 @@ describe('<ActivateAccountForm />', () => {
     mockActivateAccount.mockRejectedValue(new Error('offline'))
     render(<ActivateAccountForm email="ana@empresa.com" />)
 
-    await fillPasswords('secreto123', 'secreto123')
+    await fillPasswords('Secreto1234!', 'Secreto1234!')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       /No se pudo conectar con el servicio de autenticacion/

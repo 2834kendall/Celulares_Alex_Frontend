@@ -1,5 +1,7 @@
 'use client'
 
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { type FormEvent, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -58,6 +60,12 @@ export function ManualMarkModal({
   const [serverError, setServerError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
+  const guard = useUnsavedChanges({
+    label: 'la marca manual',
+    value: { fecha, hora, observacion },
+    busy: isSaving,
+  })
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setServerError(null)
@@ -94,6 +102,7 @@ export function ManualMarkModal({
     }
 
     toast.success(markId ? 'Marca corregida correctamente.' : 'Marca agregada correctamente.')
+    guard.acceptChanges()
     onSuccess?.()
     onClose()
   }
@@ -104,7 +113,12 @@ export function ManualMarkModal({
       subtitle={`${employeeName} — ${MARK_LABELS[tipo]}`}
       onClose={onClose}
     >
-      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit}
+        className="space-y-3"
+        noValidate
+      >
         {serverError && (
           <Alert>
             <div>{serverError}</div>

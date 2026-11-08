@@ -1,88 +1,34 @@
-# HR Management System - Frontend
+# SGRH — Sistema de Gestión de Recursos Humanos
 
-Web frontend for the HR Management System developed for **INFINITY CR** and **Celulares Alex CR**.
-This application provides a responsive interface for managing administrative HR processes
-including employee records, attendance, payroll, leave management, performance evaluations,
-and recruitment.
+Sistema interno de recursos humanos para **Celulares Alex CR** e **Infinity CR**: expedientes
+de empleados y contratos, asistencia con kiosco y reconocimiento facial, horarios, ausencias,
+planillas quincenales con liquidación y aguinaldo según el Código de Trabajo de Costa Rica,
+evaluaciones de desempeño y reclutamiento. Multi-empresa, con control de acceso por roles,
+permisos y sucursal.
 
-## Features
+## Dónde está cada cosa
 
-- **Dashboard**: key indicators (attendance, pending requests, upcoming birthdays)
-- **Employee Management**: digital records, personal data, contracts, job positions
-- **Attendance**: clock-in/out, schedules, weekly programming, holidays
-- **Leave Management**: vacations, absences, sick leave requests and approvals
-- **Payroll**: payroll periods, income/deductions, pay receipts
-- **Performance Evaluations**: criteria-based evaluations and commissions
-- **Recruitment**: candidates, applications, selection pipeline
-- **Access Control**: users, roles, and permissions
+| carpeta | contiene |
+|---|---|
+| [`srgh-app/`](srgh-app/README.md) | la aplicación (Next.js 16 + Supabase). **Todos los comandos se corren desde ahí** |
+| [`srgh-app/supabase/`](srgh-app/supabase/README.md) | migraciones, seeds y la documentación de la base |
+| [`docs/`](docs/README.md) | arquitectura, guías y propuestas |
 
-## Tech Stack
+## Para empezar
 
-- **Language**: TypeScript
-- **Framework**: React (or specify: Next.js / Vue / Angular)
-- **Styling**: (e.g. Tailwind CSS)
-- **State Management**: (e.g. React Query / Redux)
-- **HTTP Client**: (e.g. Axios / Fetch)
+1. Arranque rápido: [`srgh-app/README.md`](srgh-app/README.md).
+2. Variables de entorno y proyectos de Supabase:
+   [entorno y Supabase](docs/guias/entorno-y-supabase.md).
+3. Antes de tu primera rama: [git y calidad](docs/guias/git-y-calidad.md) y
+   [testing](docs/guias/testing.md).
+4. Antes de tocar un módulo: su `README.md`, en `srgh-app/src/modules/<módulo>/`.
 
-## Project Structure
+## Flujo de trabajo
 
-```
-src/
-├── components/     # Reusable UI components
-├── pages/          # Page-level views / routes
-├── modules/        # Feature modules (employees, payroll, attendance, etc.)
-├── services/       # API calls / integration with backend
-├── hooks/          # Custom hooks
-├── types/          # TypeScript types/interfaces
-├── assets/         # Images, icons, styles
-└── main.tsx        # App entry point
-```
+- Jira, clave `SGRH`. Rama `<type>/SGRH-XX-<desc>` desde **`dev`**; PR a `dev`. `main` solo
+  recibe PRs desde `dev`.
+- Commits `SGRH-XX: <type>(<scope>): <resumen>`, validados por commitlint.
+- Todo el contenido técnico de git (ramas, commits, PRs) en inglés; la documentación y la UI,
+  en español.
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js (vXX or higher)
-- npm or yarn
-- Backend API running (see backend repo)
-
-### Installation
-
-```bash
-git clone <repo-url>
-cd <repo-name>
-npm install
-```
-
-### Environment Variables
-
-Create a `.env` file based on `.env.example`:
-
-```
-VITE_API_URL=http://localhost:3000/api
-```
-
-### Run the project
-
-```bash
-# Development
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-```
-
-## Testing
-
-```bash
-npm run test
-```
-
-## Branching Strategy
-
-- `main`: production-ready code
-- `dev`: integration branch for ongoing development
-- `feature/*`: new features, branched from and merged into `dev`
+Detalle en [git y calidad](docs/guias/git-y-calidad.md).

@@ -54,4 +54,10 @@ describe('offlineQueue', () => {
     const marks = await getQueuedMarks()
     expect(marks.map((m) => m.id)).toEqual(['mark-2'])
   })
+
+  it('replays events chronologically rather than in UUID key order', async () => {
+    await queueOfflineMark(mark({ id: 'aaa', tipo: 'salida', fechaHora: '2026-07-25 17:00:00' }))
+    await queueOfflineMark(mark({ id: 'zzz', tipo: 'entrada', fechaHora: '2026-07-25 08:00:00' }))
+    expect((await getQueuedMarks()).map((m) => m.tipo)).toEqual(['entrada', 'salida'])
+  })
 })

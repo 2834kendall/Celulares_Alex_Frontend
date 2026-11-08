@@ -26,6 +26,8 @@ import { EmployeePhotoModal } from './EmployeePhotoModal'
 import { EmployeeDocumentsSection } from './EmployeeDocumentsSection'
 import { EmployeeContractSection } from './EmployeeContractSection'
 import { EmployeeContractActions } from './EmployeeContractActions'
+import { EmployeeFaceSection } from './EmployeeFaceSection'
+import type { FaceStatus } from '@/modules/attendance/actions/getFaceStatus'
 import type { ContractCatalogs } from './ContractFields'
 import { EmployeeProfileTabs, resolveProfileTab } from './EmployeeProfileTabs'
 import { InfoItem, SectionCard } from '@/components/ui/ProfileSection'
@@ -52,6 +54,13 @@ interface EmployeeDetailProps {
   /** Catálogos del formulario de contrato; solo llegan con canEditContrato. */
   catalogosContrato?: ContractCatalogs
   motivosSalida?: MotivoSalidaItem[]
+  /**
+   * Tab Rostro (SGRH-102). undefined = sin BIOMETRIA_WRITE, el tab no existe.
+   * null = con el permiso pero la consulta fallo: el tab se muestra con
+   * faceStatusError, igual que documentos.
+   */
+  faceStatus?: FaceStatus | null
+  faceStatusError?: string | null
 }
 
 export function EmployeeDetail({
@@ -68,6 +77,8 @@ export function EmployeeDetail({
   canEditContrato = false,
   catalogosContrato,
   motivosSalida,
+  faceStatus,
+  faceStatusError = null,
 }: EmployeeDetailProps) {
   const [editing, setEditing] = useState(false)
   const [editingPhoto, setEditingPhoto] = useState(false)
@@ -96,7 +107,11 @@ export function EmployeeDetail({
   // botón "Editar" y el overlay de cámara solo aplican al perfil, y no deben
   // quedar colgando si se cambia de tab en medio de una edición.
   const searchParams = useSearchParams()
-  const activeTab = resolveProfileTab(searchParams.get('tab'), documentos !== null)
+  const activeTab = resolveProfileTab(
+    searchParams.get('tab'),
+    documentos !== null,
+    faceStatus !== undefined
+  )
   const enPerfil = activeTab === 'perfil'
 
   const perfilContent = (
@@ -256,6 +271,16 @@ export function EmployeeDetail({
       />
     )
 
+  const rostroContent =
+    faceStatus === undefined ? null : (
+      <EmployeeFaceSection
+        empId={empleado.emp_id}
+        status={faceStatus}
+        error={faceStatusError}
+        hasActiveContract={historial !== null}
+      />
+    )
+
   return (
     <div className="min-w-0 space-y-4">
       <PageHeader
@@ -309,6 +334,7 @@ export function EmployeeDetail({
         perfilContent={perfilContent}
         contratoContent={contratoContent}
         documentosContent={documentosContent}
+        rostroContent={rostroContent}
       />
 
       {editingPhoto && (
