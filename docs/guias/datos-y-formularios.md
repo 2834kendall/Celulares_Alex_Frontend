@@ -49,7 +49,10 @@ Un formulario limpio, o con los cambios revertidos, no pregunta.
 
 - **Un guardado que falla mantiene el aviso**; uno exitoso acepta la base nueva **antes** de
   navegar o llamar al callback de éxito.
-- Un guardado en curso no se cancela desde el diálogo: se pide esperar.
+- Un guardado en curso no se cancela desde el diálogo: se pide esperar. Por eso `busy` **se
+  libera en todos los caminos**, con `try/finally`: una Server Action también rechaza si se cae
+  la red, y sin liberarlo el formulario queda sin salida hasta recargar. En el `catch`,
+  `isNextNavigation` (`lib/utils`) separa una redirección de una falla real.
 - `beforeunload` nativo mientras haya cambios. Recargar está excluido, porque las mutaciones lo
   usan para refrescar datos.
 - **Al agregar un formulario nuevo de edición, hay que sumarlo a la protección.** No la usan los
