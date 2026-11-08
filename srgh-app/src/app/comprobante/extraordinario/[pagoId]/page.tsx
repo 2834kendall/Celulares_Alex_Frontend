@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { getPagoExtraordinario } from '@/modules/payroll/actions/getPagoExtraordinario'
-import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
+import { formatCRC, formatDate, formatFechaHora } from '@/modules/payroll/lib/format'
 import { armarComprobanteExtraordinario } from '@/modules/payroll/lib/comprobanteExtraordinarioContenido'
 import { PrintComprobanteButton } from '@/modules/payroll/components/PrintComprobanteButton'
 
@@ -73,6 +73,21 @@ export default async function ComprobanteExtraordinarioPage({
         </Link>
         <PrintComprobanteButton />
       </div>
+
+      {/* Se ve también al imprimir: un comprobante anulado no debe pasar por válido. */}
+      {pago.anulacion && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-xs text-rose-900"
+        >
+          <p className="text-sm font-extrabold uppercase tracking-wide">Pago anulado</p>
+          <p className="mt-1">
+            Se anuló el {formatFechaHora(pago.anulacion.fecha)}
+            {pago.anulacion.por ? ` por ${pago.anulacion.por}` : ''}. Este comprobante ya no vale.
+          </p>
+          <p className="mt-1">Motivo: {pago.anulacion.motivo}</p>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm print:rounded-none print:border-0 print:shadow-none">
         <div className="border-b border-slate-100 pb-4">

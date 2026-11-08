@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 
+vi.mock('server-only', () => ({}))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 
@@ -14,6 +15,7 @@ function mockSupabase(data: unknown, error: unknown = null) {
   mockCreateClient.mockResolvedValue(
     createSupabaseClientMock({
       sgrh_liquidaciones: { data, error },
+      sgrh_empresas: { data: { org_horas_anular_pago: 48 }, error: null },
     }) as unknown as Awaited<ReturnType<typeof createClient>>
   )
 }
@@ -104,6 +106,8 @@ describe('getLiquidaciones (server action)', () => {
           pagado: false,
           pagoId: null,
           fechaPago: null,
+          anulableHasta: null,
+          ultimaAnulacion: null,
           createdAt: '2026-07-15T10:00:00',
           desglose: {
             salarioDiario: 16666.67,
@@ -169,6 +173,8 @@ describe('getLiquidaciones (server action)', () => {
           pagado: true,
           pagoId: null,
           fechaPago: '2026-07-12',
+          anulableHasta: null,
+          ultimaAnulacion: null,
           createdAt: '2026-07-10T08:00:00',
           // Liquidación guardada antes de esas columnas: lo que falta no
           // inventa montos (sin neto, el neto es el bruto).
@@ -208,6 +214,71 @@ describe('getLiquidaciones (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data[0]).toMatchObject({ pagado: true, pagoId: 40, fechaPago: '2026-09-02' })
+  })
+
+  it('un pago anulado no cuenta: con otro vigente gana el vigente, y el anulado queda en el historial', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-03T12:00:00Z'))
+    try {
+      const anulado = {
+        pex_id: 40,
+        pex_fecha_pago: '2026-09-01',
+        pex_pagado_en: '2026-09-01T15:00:00+00:00',
+        pex_anulado_en: '2026-09-01T16:00:00+00:00',
+        pex_anulado_por_nombre: 'Laura Vargas',
+        pex_motivo_anulacion: 'Se pagó antes de firmar el finiquito.',
+      }
+      const base = {
+        liq_id: 3,
+        liq_fecha_salida: '2026-08-31',
+        liq_total: 500000,
+        liq_neto: 480000,
+        liq_fecha_pago: null,
+        liq_created_at: '2026-08-31T08:00:00',
+        sgrh_cat_motivos_salida: null,
+        sgrh_historial_laboral: null,
+      }
+      // Solo anulado: la RPC dejó liq_pagado en false.
+      mockSupabase([{ ...base, liq_pagado: false, sgrh_pagos_extraordinarios: [anulado] }])
+      const soloAnulado = await getLiquidaciones()
+      expect(soloAnulado.ok && soloAnulado.data[0]).toMatchObject({
+        pagado: false,
+        pagoId: null,
+        anulableHasta: null,
+        ultimaAnulacion: {
+          por: 'Laura Vargas',
+          motivo: 'Se pagó antes de firmar el finiquito.',
+        },
+      })
+
+      // Pagada de nuevo hace 24 h, con plazo de 48 h.
+      mockSupabase([
+        {
+          ...base,
+          liq_pagado: true,
+          sgrh_pagos_extraordinarios: [
+            anulado,
+            {
+              pex_id: 41,
+              pex_fecha_pago: '2026-09-02',
+              pex_pagado_en: '2026-09-02T12:00:00+00:00',
+              pex_anulado_en: null,
+              pex_anulado_por_nombre: null,
+              pex_motivo_anulacion: null,
+            },
+          ],
+        },
+      ])
+      const repagada = await getLiquidaciones()
+      expect(repagada.ok && repagada.data[0]).toMatchObject({
+        pagado: true,
+        pagoId: 41,
+        fechaPago: '2026-09-02',
+        anulableHasta: '2026-09-04T12:00:00.000Z',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // Auditoría 2, hallazgo 10: el 0 se explica. Con la nota guardada se usa

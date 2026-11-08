@@ -4,8 +4,13 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import type { LineaPagoExtraordinario, PagoExtraordinario } from '@/modules/payroll/types'
+import {
+  SELECT_ANULACION,
+  anulacionDe,
+  type AnulacionRow,
+} from '@/modules/payroll/lib/anulacionPagos'
 
-interface PagoRow {
+interface PagoRow extends AnulacionRow {
   pex_id: number
   pex_tipo: string
   pex_anio_aguinaldo: number | null
@@ -47,6 +52,7 @@ export async function getPagoExtraordinario(pagoId: number): Promise<GetPagoExtr
     .select(
       `pex_id, pex_tipo, pex_anio_aguinaldo, pex_liquidacion_id, pex_monto_bruto, pex_deducciones,
        pex_monto_neto, pex_lineas, pex_fecha_pago, pex_codigo_verificacion, pex_observaciones,
+       ${SELECT_ANULACION},
        sgrh_historial_laboral ( sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal ) ),
        sgrh_liquidaciones ( liq_fecha_salida, sgrh_cat_motivos_salida ( mot_nombre ) )`
     )
@@ -78,6 +84,7 @@ export async function getPagoExtraordinario(pagoId: number): Promise<GetPagoExtr
       fechaPago: data.pex_fecha_pago,
       codigoVerificacion: data.pex_codigo_verificacion,
       observaciones: data.pex_observaciones,
+      anulacion: anulacionDe(data),
     },
   }
 }

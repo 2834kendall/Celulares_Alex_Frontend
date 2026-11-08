@@ -213,6 +213,7 @@ const AGUINALDO: PagoExtraordinario = {
   fechaPago: '2026-12-15',
   codigoVerificacion: 'WXYZ-2345-6789',
   observaciones: null,
+  anulacion: null,
 }
 
 const LIQUIDACION: PagoExtraordinario = {
@@ -294,6 +295,22 @@ describe('enviarComprobanteExtraordinarioPorCorreo', () => {
       estado: 'sin_configurar',
     })
     expect(getPagoExtraordinario).not.toHaveBeenCalled()
+  })
+
+  it('un pago anulado no se manda: su comprobante ya no vale', async () => {
+    vi.mocked(getPagoExtraordinario).mockResolvedValue({
+      ok: true,
+      data: {
+        ...AGUINALDO,
+        anulacion: { fecha: '2026-12-15T18:00:00+00:00', por: 'Laura', motivo: 'Error.' },
+      },
+    })
+
+    expect(await enviarComprobanteExtraordinarioPorCorreo(9)).toEqual({
+      estado: 'error',
+      error: 'el pago fue anulado, así que su comprobante ya no vale.',
+    })
+    expect(enviarCorreo).not.toHaveBeenCalled()
   })
 
   it('si no se puede leer el pago no manda nada', async () => {

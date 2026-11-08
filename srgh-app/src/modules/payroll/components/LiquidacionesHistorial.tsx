@@ -3,11 +3,13 @@
 import { Fragment, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, FileText, Loader2 } from 'lucide-react'
+import { ChevronDown, FileText, Loader2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
-import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
+import { formatCRC, formatDate, formatFechaHora } from '@/modules/payroll/lib/format'
 import { pagarLiquidacion } from '@/modules/payroll/actions/pagarLiquidacion'
+import { anularPagoExtraordinario } from '@/modules/payroll/actions/anularPagoExtraordinario'
+import { AnularPagoModal } from './AnularPagoModal'
 import { reenviarComprobanteExtraordinario } from '@/modules/payroll/actions/reenviarComprobante'
 import {
   avisarCorreoComprobante,
@@ -44,20 +46,34 @@ function AccionLiquidacion({
   canWrite,
   pagando,
   onPagar,
+  onAnular,
 }: {
   item: LiquidacionListItem
   canWrite: boolean
   pagando: boolean
   onPagar: (item: LiquidacionListItem) => void
+  onAnular: (item: LiquidacionListItem) => void
 }) {
   if (item.pagoId) {
     return (
-      <Link
-        href={`/comprobante/extraordinario/${item.pagoId}`}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:text-brand-900"
-      >
-        <FileText className="h-3 w-3" /> Comprobante
-      </Link>
+      <span className="inline-flex items-center gap-3">
+        <Link
+          href={`/comprobante/extraordinario/${item.pagoId}`}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:text-brand-900"
+        >
+          <FileText className="h-3 w-3" /> Comprobante
+        </Link>
+        {canWrite && item.anulableHasta && (
+          <button
+            type="button"
+            onClick={() => onAnular(item)}
+            title={`Se puede anular hasta el ${formatFechaHora(item.anulableHasta)}`}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 outline-none transition hover:text-rose-900 focus-visible:ring-2 focus-visible:ring-rose-500/60"
+          >
+            <Undo2 className="h-3 w-3" /> Anular
+          </button>
+        )}
+      </span>
     )
   }
   if (!canWrite || item.pagado) return null
@@ -70,6 +86,18 @@ function AccionLiquidacion({
     >
       {pagando ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Pagar'}
     </button>
+  )
+}
+
+/** Pago anterior anulado por error: queda a la vista en el historial. */
+function NotaAnulacion({ item }: { item: LiquidacionListItem }) {
+  const a = item.ultimaAnulacion
+  if (!a) return null
+  return (
+    <p className="mt-0.5 text-[11px] font-normal text-slate-500">
+      Un pago anterior se anuló el {formatFechaHora(a.fecha)}
+      {a.por ? ` (${a.por})` : ''}: {a.motivo}
+    </p>
   )
 }
 
@@ -114,6 +142,25 @@ export function LiquidacionesHistorial({
 
   /** Liquidación a pagar: se confirma antes. */
   const [confirmando, setConfirmando] = useState<LiquidacionListItem | null>(null)
+  /** Pago a anular por error: pide el motivo antes. */
+  const [anulando, setAnulando] = useState<LiquidacionListItem | null>(null)
+  const [enviandoAnulacion, setEnviandoAnulacion] = useState(false)
+
+  async function anular(item: LiquidacionListItem, motivo: string) {
+    if (!item.pagoId) return
+    setEnviandoAnulacion(true)
+    const result = await anularPagoExtraordinario(item.pagoId, motivo)
+    setEnviandoAnulacion(false)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    setAnulando(null)
+    toast.success(
+      `Pago de la liquidación de ${item.empleadoNombre} anulado. Quedó pendiente de pago, con los mismos montos.`
+    )
+    router.refresh()
+  }
 
   function handlePagar(item: LiquidacionListItem) {
     setConfirmando(item)
@@ -168,6 +215,7 @@ export function LiquidacionesHistorial({
                     <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">
                       {item.empleadoCedula}
                     </p>
+                    <NotaAnulacion item={item} />
                   </div>
                   <Badge tone={item.pagado ? 'emerald' : 'amber'} size="xs">
                     {item.pagado ? 'Pagada' : 'Pendiente de pago'}
@@ -214,6 +262,7 @@ export function LiquidacionesHistorial({
                     canWrite={canWrite}
                     pagando={pagandoId === item.liqId}
                     onPagar={handlePagar}
+                    onAnular={setAnulando}
                   />
                 </div>
               </li>
@@ -237,7 +286,10 @@ export function LiquidacionesHistorial({
                 {paginatedItems.map((item) => (
                   <Fragment key={item.liqId}>
                     <tr>
-                      <td className={TABLE_TD_STRONG}>{item.empleadoNombre}</td>
+                      <td className={TABLE_TD_STRONG}>
+                        {item.empleadoNombre}
+                        <NotaAnulacion item={item} />
+                      </td>
                       <td className={TABLE_TD}>{item.empleadoCedula}</td>
                       <td className={TABLE_TD}>{formatDate(item.fechaSalida)}</td>
                       <td className={TABLE_TD}>{item.motivoNombre}</td>
@@ -263,6 +315,7 @@ export function LiquidacionesHistorial({
                             canWrite={canWrite}
                             pagando={pagandoId === item.liqId}
                             onPagar={handlePagar}
+                            onAnular={setAnulando}
                           />
                         </div>
                       </td>
@@ -300,11 +353,23 @@ export function LiquidacionesHistorial({
             `Se registrará el pago de ${formatCRC(confirmando.neto)} netos`,
             confirmando.empleadoEmail,
             correoConfigurado
-          )} El pago no se puede deshacer desde acá.`}
+          )} Si fue un error, se puede anular dentro del plazo que fija la empresa (Configuración → General).`}
           confirmLabel="Sí, pagar"
           tone="primary"
           onCancel={() => setConfirmando(null)}
           onConfirm={() => void pagar(confirmando)}
+        />
+      )}
+
+      {anulando && anulando.anulableHasta && (
+        <AnularPagoModal
+          que="la liquidación"
+          empleadoNombre={anulando.empleadoNombre}
+          monto={anulando.neto}
+          hasta={anulando.anulableHasta}
+          submitting={enviandoAnulacion}
+          onCancel={() => setAnulando(null)}
+          onConfirm={(motivo) => void anular(anulando, motivo)}
         />
       )}
     </div>

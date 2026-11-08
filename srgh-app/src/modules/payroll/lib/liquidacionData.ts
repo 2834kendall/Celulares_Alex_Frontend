@@ -331,17 +331,22 @@ export async function avisoAguinaldoAnterior(
         .returns<{ pra_historial_laboral_id: number; pra_aguinaldo_pagado: boolean }[]>(),
       supabase
         .from('sgrh_pagos_extraordinarios')
-        .select('pex_id')
+        .select('pex_id, pex_anulado_en')
         .in('pex_historial_laboral_id', cicloAnterior.labIds)
         .eq('pex_tipo', 'aguinaldo')
         .eq('pex_anio_aguinaldo', cicloAnterior.anio)
-        .returns<{ pex_id: number }[]>(),
+        .returns<{ pex_id: number; pex_anulado_en: string | null }[]>(),
     ])
 
   if (errProv || errPagos) {
     return `No se pudo verificar si el aguinaldo ${cicloAnterior.anio} (${rangoAguinaldo(cicloAnterior.anio)}) ya se pagó. Revisalo en la pestaña Aguinaldo antes de entregar el finiquito.`
   }
-  const pagado = (pagos ?? []).length > 0 || (provisiones ?? []).some((p) => p.pra_aguinaldo_pagado)
+  // Un pago anulado por error no cuenta. La marca de la provisión solo vale
+  // si no hay ningún pago registrado (aguinaldos del botón viejo).
+  const lista = pagos ?? []
+  const pagado =
+    lista.some((p) => !p.pex_anulado_en) ||
+    (lista.length === 0 && (provisiones ?? []).some((p) => p.pra_aguinaldo_pagado))
   if (pagado) return null
 
   return `El aguinaldo ${cicloAnterior.anio} (${rangoAguinaldo(cicloAnterior.anio)}, ${formatCRC(cicloAnterior.monto)}) no consta como pagado y NO está incluido en esta liquidación. Si no se le ha pagado, pagalo desde la pestaña Aguinaldo; si se pagó fuera del sistema, ignorá este aviso.`
