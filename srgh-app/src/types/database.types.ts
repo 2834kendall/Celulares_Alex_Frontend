@@ -991,24 +991,48 @@ export type Database = {
           rol_activo: boolean
           rol_codigo: string
           rol_descripcion: string | null
+          rol_empresa_id: number | null
           rol_id: number
           rol_nombre: string
+          rol_sucursal_id: number | null
+          rol_updated_at: string | null
         }
         Insert: {
           rol_activo?: boolean
           rol_codigo: string
           rol_descripcion?: string | null
+          rol_empresa_id?: number | null
           rol_id?: never
           rol_nombre: string
+          rol_sucursal_id?: number | null
+          rol_updated_at?: string | null
         }
         Update: {
           rol_activo?: boolean
           rol_codigo?: string
           rol_descripcion?: string | null
+          rol_empresa_id?: number | null
           rol_id?: never
           rol_nombre?: string
+          rol_sucursal_id?: number | null
+          rol_updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_cat_roles_rol_empresa_id_fkey"
+            columns: ["rol_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_cat_roles_rol_sucursal_id_fkey"
+            columns: ["rol_sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_sucursales"
+            referencedColumns: ["suc_id"]
+          },
+        ]
       }
       sgrh_cat_tipos_ausencia: {
         Row: {
@@ -3097,6 +3121,26 @@ export type Database = {
       sgrh_assert_branch_admin: {
         Args: { p_actor: string; p_empresa: number; p_kioscos?: boolean }
         Returns: number
+      }
+      sgrh_assert_roles_admin: {
+        Args: { p_actor: string; p_empresa: number }
+        Returns: number
+      }
+      sgrh_save_role: {
+        Args: {
+          p_actor: string
+          p_empresa: number
+          p_id: number | null
+          p_nombre: string
+          p_descripcion: string | null
+          p_sucursal: number | null
+          p_permisos: string[]
+        }
+        Returns: number
+      }
+      sgrh_delete_role: {
+        Args: { p_actor: string; p_empresa: number; p_id: number }
+        Returns: string
       }
       sgrh_save_branch: {
         Args: { p_actor: string; p_empresa: number; p_id: number | null; p_data: Json; p_direccion: Json }
