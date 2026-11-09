@@ -6,6 +6,11 @@ const text = (max: number) => z.string().trim().max(max)
 export const branchSchema = z
   .object({
     suc_nombre: text(100).min(2, 'Escribí el nombre de la sucursal.'),
+    // El vacío del select llega como NaN (ver CatalogSelect): lo rechaza `.int()`.
+    suc_marca_id: z
+      .number({ error: 'Elegí la marca de la sucursal.' })
+      .int('Elegí la marca de la sucursal.')
+      .positive('Elegí la marca de la sucursal.'),
     suc_codigo_interno: text(40),
     suc_telefono: text(30),
     suc_email_sucursal: z.union([z.literal(''), z.email()]),
@@ -34,8 +39,11 @@ export const kioskSchema = z.object({
 })
 export type KioskInput = z.infer<typeof kioskSchema>
 export type LegacyKiosk = { id: number; email: string; sucursales: (number | null)[] }
+/** Marca elegible en el formulario de sucursal. */
+export type BranchBrand = { id: number; nombre: string; activa: boolean }
 export type BranchSettings = {
   branches: Branch[]
+  brands: BranchBrand[]
   kiosks: Kiosk[]
   legacy: LegacyKiosk[]
   audit: Audit[]

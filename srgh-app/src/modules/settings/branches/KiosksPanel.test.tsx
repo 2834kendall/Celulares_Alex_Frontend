@@ -35,7 +35,14 @@ function setup(kiosks: Kiosk[] = [kiosk], active = true) {
       <KiosksPanel
         branch={b}
         data={
-          { branches: [b], kiosks, legacy: [], audit: [], canManageKiosks: true } as BranchSettings
+          {
+            branches: [b],
+            brands: [],
+            kiosks,
+            legacy: [],
+            audit: [],
+            canManageKiosks: true,
+          } as BranchSettings
         }
       />
     </UnsavedChangesProvider>

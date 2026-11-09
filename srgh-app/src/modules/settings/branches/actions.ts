@@ -6,6 +6,7 @@ import { branchAdmin } from './access'
 import {
   branchSchema,
   kioskSchema,
+  type BranchBrand,
   type BranchInput,
   type BranchSettings,
   type KioskInput,
@@ -24,8 +25,34 @@ const failure = (error: unknown): { ok: false; error: string } => ({
 })
 function refresh() {
   revalidatePath('/settings/branches')
+  revalidatePath('/settings/profile')
   revalidatePath('/employees')
   revalidatePath('/', 'layout')
+}
+
+type Admin = Awaited<ReturnType<typeof branchAdmin>>['admin']
+
+/** Marcas de la empresa para el select de sucursal (activas e inactivas). */
+async function loadBrands(admin: Admin, empresa: number) {
+  const { data, error } = await admin
+    .from('sgrh_marcas_comerciales')
+    .select('mco_id, mco_nombre, mco_activa')
+    .eq('mco_empresa_id', empresa)
+    .order('mco_nombre')
+  const brands: BranchBrand[] = (data ?? []).map((x) => ({
+    id: x.mco_id,
+    nombre: x.mco_nombre,
+    activa: x.mco_activa,
+  }))
+  return { data: brands, error }
+}
+
+/** Solo las marcas, para la pantalla de alta (no necesita kioscos ni auditoría). */
+export async function getBranchBrands(): Promise<Result<BranchBrand[]>> {
+  const { admin, empresa } = await branchAdmin()
+  const r = await loadBrands(admin, empresa)
+  if (r.error) return { ok: false, error: 'No se pudieron cargar las marcas. Reintentá.' }
+  return { ok: true, data: r.data }
 }
 
 export async function getBranchSettings(): Promise<Result<BranchSettings>> {
@@ -47,7 +74,7 @@ export async function getBranchSettings(): Promise<Result<BranchSettings>> {
     .eq('suc_empresa_id', empresa)
     .order('suc_nombre')
   if (b.error) return { ok: false, error: 'No se pudieron cargar las sucursales. Reintentá.' }
-  const [k, dependencies, a] = await Promise.all([
+  const [k, dependencies, a, m] = await Promise.all([
     canManageKiosks
       ? admin.from('sgrh_kioscos').select('*').eq('kio_empresa_id', empresa).order('kio_created_at')
       : Promise.resolve({ data: [], error: null }),
@@ -80,8 +107,9 @@ export async function getBranchSettings(): Promise<Result<BranchSettings>> {
       .eq('aud_empresa_id', empresa)
       .order('aud_created_at', { ascending: false })
       .limit(25),
+    loadBrands(admin, empresa),
   ])
-  if ([k, a, ...dependencies].some((r) => r.error))
+  if ([k, a, m, ...dependencies].some((r) => r.error))
     return {
       ok: false,
       error:
@@ -121,6 +149,7 @@ export async function getBranchSettings(): Promise<Result<BranchSettings>> {
         contratos: dependencies.find((d) => d.id === s.suc_id)?.contracts ?? 0,
         programaciones: dependencies.find((d) => d.id === s.suc_id)?.programs ?? 0,
       })),
+      brands: m.data,
       kiosks: k.data ?? [],
       legacy,
       audit: a.data ?? [],
@@ -139,7 +168,8 @@ export async function saveBranch(id: number | null, input: BranchInput): Promise
   const result = await admin.rpc('sgrh_save_branch', {
     p_actor: actor,
     p_empresa: empresa,
-    p_id: id,
+    // gen types no refleja que la RPC acepta NULL (= crear).
+    p_id: id as number,
     p_data: data,
     p_direccion: direccion,
   })
@@ -163,7 +193,8 @@ export async function createKiosk(input: KioskInput): Promise<Result<string>> {
     p_actor: actor,
     p_empresa: empresa,
     p_action: 'crear',
-    p_id: null,
+    // gen types no refleja que la RPC acepta NULL (= crear).
+    p_id: null as unknown as string,
     p_data: parsed.data,
   })
   if (r.error)
