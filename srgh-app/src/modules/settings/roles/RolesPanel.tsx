@@ -41,6 +41,11 @@ function RoleCard({ role }: { role: RoleSummary }) {
           )}
           {!role.asignable && <Badge tone="slate">No asignable</Badge>}
         </div>
+        {role.baseNombre && (
+          <p className="mt-1 text-sm text-slate-600">
+            Versión de «{role.baseNombre}» para esta sucursal
+          </p>
+        )}
         {role.descripcion && <p className="mt-1 text-sm text-slate-600">{role.descripcion}</p>}
       </div>
       <dl className="flex shrink-0 gap-7">
@@ -70,7 +75,7 @@ function RoleCard({ role }: { role: RoleSummary }) {
               href={`/settings/roles/${role.id}`}
               className="inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-brand-700 hover:underline"
             >
-              Ver permisos
+              {role.asignable ? 'Permisos por sucursal' : 'Ver permisos'}
             </Link>
           </>
         ) : (
@@ -138,8 +143,9 @@ export function RolesPanel({ data }: { data: RolesSettings }) {
             <span className="text-sm text-slate-500">compartidos con las demás empresas</span>
           </div>
           <p className="mt-1 max-w-prose text-sm text-slate-600">
-            No se editan: un cambio acá le cambiaría los permisos a la gente de otras empresas. Para
-            partir de uno, duplicalo y editá la copia.
+            No se editan para todos: un cambio acá le cambiaría los permisos a la gente de otras
+            empresas. Para cambiar sus permisos en una sucursal, abrilo y usá «Personalizar para
+            esta sucursal»; para partir de uno, duplicalo.
           </p>
         </div>
         <ul className="space-y-3">

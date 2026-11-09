@@ -6,6 +6,7 @@ import { rolesAdmin } from './access'
 import { sortPermissions } from './permissions'
 import {
   roleSchema,
+  type CustomizeResult,
   type RoleInput,
   type RoleResult,
   type RoleSummary,
@@ -28,6 +29,7 @@ interface RoleRow {
   rol_activo: boolean
   rol_empresa_id: number | null
   rol_sucursal_id: number | null
+  rol_base_id: number | null
 }
 
 function refresh() {
@@ -48,7 +50,7 @@ export async function getRolesSettings(): Promise<RoleResult<RolesSettings>> {
     admin
       .from('sgrh_cat_roles')
       .select(
-        'rol_id, rol_codigo, rol_nombre, rol_descripcion, rol_activo, rol_empresa_id, rol_sucursal_id'
+        'rol_id, rol_codigo, rol_nombre, rol_descripcion, rol_activo, rol_empresa_id, rol_sucursal_id, rol_base_id'
       )
       .or(`rol_empresa_id.is.null,rol_empresa_id.eq.${empresa}`)
       .order('rol_nombre')
@@ -112,6 +114,8 @@ export async function getRolesSettings(): Promise<RoleResult<RolesSettings>> {
 
   const nombreSucursal = new Map((sucursales.data ?? []).map((s) => [s.suc_id, s.suc_nombre]))
 
+  const nombreRol = new Map((roles.data ?? []).map((r) => [r.rol_id, r.rol_nombre]))
+
   const toSummary = (r: RoleRow): RoleSummary => ({
     id: r.rol_id,
     nombre: r.rol_nombre,
@@ -120,6 +124,8 @@ export async function getRolesSettings(): Promise<RoleResult<RolesSettings>> {
     asignable: r.rol_activo,
     sucursalId: r.rol_sucursal_id,
     sucursalNombre: r.rol_sucursal_id ? (nombreSucursal.get(r.rol_sucursal_id) ?? null) : null,
+    baseId: r.rol_base_id,
+    baseNombre: r.rol_base_id ? (nombreRol.get(r.rol_base_id) ?? null) : null,
     permisos: [...(permisosPorRol.get(r.rol_id) ?? [])],
     usuarios: usuariosPorRol.get(r.rol_id)?.size ?? 0,
   })
@@ -185,4 +191,44 @@ export async function deleteRole(id: number): Promise<RoleResult<'eliminado' | '
     }
   refresh()
   return { ok: true, data: data === 'archivado' ? 'archivado' : 'eliminado' }
+}
+
+/**
+ * Crea la versión de una sucursal de un rol (del sistema o propio de toda la
+ * empresa) con sus mismos permisos, y le pasa las cuentas que trabajan solo
+ * en esa sucursal con el rol base. Si ya existe, devuelve su id.
+ */
+export async function customizeRoleForBranch(
+  rolBaseId: number,
+  sucursalId: number
+): Promise<RoleResult<CustomizeResult>> {
+  if (!idSchema.safeParse(rolBaseId).success || !idSchema.safeParse(sucursalId).success)
+    return { ok: false, error: 'Elegí el rol y la sucursal.' }
+  const { admin, empresa, actor } = await rolesAdmin()
+  const { data, error } = await admin.rpc('sgrh_customize_role_for_branch', {
+    p_actor: actor,
+    p_empresa: empresa,
+    p_rol_base: rolBaseId,
+    p_sucursal: sucursalId,
+  })
+  if (error)
+    return {
+      ok: false,
+      error: MENSAJE_PROPIO.includes(error.code)
+        ? error.message
+        : 'No se pudo personalizar el rol para la sucursal.',
+    }
+  const r = data as Partial<CustomizeResult> | null
+  if (!r || typeof r.id !== 'number')
+    return { ok: false, error: 'No se pudo personalizar el rol para la sucursal.' }
+  refresh()
+  return {
+    ok: true,
+    data: {
+      id: r.id,
+      creado: r.creado === true,
+      movidos: Number(r.movidos ?? 0),
+      omitidos: Number(r.omitidos ?? 0),
+    },
+  }
 }

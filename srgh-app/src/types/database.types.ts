@@ -989,6 +989,7 @@ export type Database = {
       sgrh_cat_roles: {
         Row: {
           rol_activo: boolean
+          rol_base_id: number | null
           rol_codigo: string
           rol_descripcion: string | null
           rol_empresa_id: number | null
@@ -999,6 +1000,7 @@ export type Database = {
         }
         Insert: {
           rol_activo?: boolean
+          rol_base_id?: number | null
           rol_codigo: string
           rol_descripcion?: string | null
           rol_empresa_id?: number | null
@@ -1009,6 +1011,7 @@ export type Database = {
         }
         Update: {
           rol_activo?: boolean
+          rol_base_id?: number | null
           rol_codigo?: string
           rol_descripcion?: string | null
           rol_empresa_id?: number | null
@@ -1018,6 +1021,13 @@ export type Database = {
           rol_updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "sgrh_cat_roles_rol_base_id_fkey"
+            columns: ["rol_base_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_roles"
+            referencedColumns: ["rol_id"]
+          },
           {
             foreignKeyName: "sgrh_cat_roles_rol_empresa_id_fkey"
             columns: ["rol_empresa_id"]
@@ -3137,6 +3147,10 @@ export type Database = {
           p_permisos: string[]
         }
         Returns: number
+      }
+      sgrh_customize_role_for_branch: {
+        Args: { p_actor: string; p_empresa: number; p_rol_base: number; p_sucursal: number }
+        Returns: Json
       }
       sgrh_delete_role: {
         Args: { p_actor: string; p_empresa: number; p_id: number }

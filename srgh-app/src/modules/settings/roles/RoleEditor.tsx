@@ -42,6 +42,7 @@ import {
   uncheckPermission,
   type PermissionGroupIcon,
 } from './permissions'
+import { BranchVersions } from './BranchVersions'
 import { roleSchema, type RoleInput, type RoleSummary, type RolesSettings } from './types'
 
 const ICONS: Record<PermissionGroupIcon, LucideIcon> = {
@@ -186,9 +187,13 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
   const busy = isSubmitting || deleting
 
   const title = role ? role.nombre : base ? `Copia de ${base.nombre}` : 'Nuevo rol'
+  const esVersion = role?.baseId != null
+  const canDelete = role !== undefined && (role.usuarios === 0 || esVersion)
   const description = readOnly
-    ? 'Rol del sistema: se puede ver, pero no editar. Duplicalo para ajustar una copia.'
-    : 'Marcá los permisos del rol. Al marcar «Editar» o «Aprobar» se marca «Ver» solo; al desmarcar «Ver», se desmarca lo que depende de él.'
+    ? 'Rol del sistema: no se edita para todas las sucursales. Personalizalo para una sucursal (abajo) o duplicalo.'
+    : esVersion
+      ? `Versión de «${role?.baseNombre ?? 'otro rol'}» solo para ${role?.sucursalNombre ?? 'una sucursal'}: sus cambios no afectan a las demás tiendas.`
+      : 'Marcá los permisos del rol. Al marcar «Editar» o «Aprobar» se marca «Ver» solo; al desmarcar «Ver», se desmarca lo que depende de él.'
 
   return (
     <div className="space-y-6">
@@ -372,7 +377,7 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
           </section>
 
           {error && <Alert tone="error">{error}</Alert>}
-          {role && !readOnly && role.usuarios > 0 && (
+          {role && !readOnly && !canDelete && (
             <p className="text-xs text-slate-500">
               Para eliminar este rol, primero asigná otro rol a sus {role.usuarios}{' '}
               {role.usuarios === 1 ? 'usuario' : 'usuarios'} desde Usuarios.
@@ -408,11 +413,11 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
                   variant="danger"
                   size="lg"
                   className="min-h-11 sm:ml-auto"
-                  disabled={busy || role.usuarios > 0}
+                  disabled={busy || !canDelete}
                   title={
-                    role.usuarios > 0
-                      ? 'Tiene usuarios activos: asignales otro rol antes de eliminarlo.'
-                      : undefined
+                    canDelete
+                      ? undefined
+                      : 'Tiene usuarios activos: asignales otro rol antes de eliminarlo.'
                   }
                   onClick={() => setConfirmDelete(true)}
                 >
@@ -478,10 +483,18 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
         </aside>
       </form>
 
+      {role && role.asignable && role.sucursalId === null && (
+        <BranchVersions role={role} data={data} />
+      )}
+
       {confirmDelete && role && (
         <ConfirmDialog
-          title="Eliminar rol"
-          message={`¿Eliminar «${role.nombre}»? Dejará de poder asignarse. Esta acción no se puede deshacer.`}
+          title={esVersion ? 'Quitar la versión de la sucursal' : 'Eliminar rol'}
+          message={
+            esVersion && role.usuarios > 0
+              ? `¿Eliminar «${role.nombre}»? Sus ${role.usuarios} ${role.usuarios === 1 ? 'usuario vuelve' : 'usuarios vuelven'} a «${role.baseNombre ?? 'el rol original'}» con sus permisos.`
+              : `¿Eliminar «${role.nombre}»? Dejará de poder asignarse. Esta acción no se puede deshacer.`
+          }
           confirmLabel="Eliminar"
           onCancel={() => setConfirmDelete(false)}
           onConfirm={onDelete}

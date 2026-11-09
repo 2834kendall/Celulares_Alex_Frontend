@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteRole, getRolesSettings, saveRole } from './actions'
+import { customizeRoleForBranch, deleteRole, getRolesSettings, saveRole } from './actions'
 import { rolesAdmin } from './access'
 import { createSupabaseAdminClientMock } from '@/test/supabaseMock'
 
@@ -222,5 +222,42 @@ describe('deleteRole', () => {
     const r = await deleteRole(40)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toMatch(/usuario/)
+  })
+})
+
+describe('customizeRoleForBranch', () => {
+  it('valida ids antes de tocar la base', async () => {
+    expect((await customizeRoleForBranch(4, 0)).ok).toBe(false)
+    expect(rolesAdmin).not.toHaveBeenCalled()
+  })
+
+  it('manda empresa y actor de la sesión y devuelve el resumen', async () => {
+    const admin = setup({
+      sgrh_customize_role_for_branch: {
+        data: { id: 77, creado: true, movidos: 2, omitidos: 1 },
+        error: null,
+      },
+    })
+    const r = await customizeRoleForBranch(4, 10)
+    expect(admin.rpc).toHaveBeenCalledWith('sgrh_customize_role_for_branch', {
+      p_actor: 'actor-uuid',
+      p_empresa: 1,
+      p_rol_base: 4,
+      p_sucursal: 10,
+    })
+    expect(r).toEqual({ ok: true, data: { id: 77, creado: true, movidos: 2, omitidos: 1 } })
+  })
+
+  it('muestra el mensaje de validación de la RPC', async () => {
+    setup({
+      sgrh_customize_role_for_branch: {
+        data: null,
+        error: { code: '23514', message: 'Elegí una sucursal activa de tu empresa.' },
+      },
+    })
+    expect(await customizeRoleForBranch(4, 10)).toEqual({
+      ok: false,
+      error: 'Elegí una sucursal activa de tu empresa.',
+    })
   })
 })
