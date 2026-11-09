@@ -15,6 +15,8 @@ function shell(org_logo_url: string | null) {
     org_nombre_social: 'Empresa',
     org_formato_hora: '24h',
     org_logo_url,
+    org_color_acento: null,
+    org_color_sidebar: null,
   })
 }
 
@@ -50,5 +52,13 @@ describe('getEmpresaLogoUrl', () => {
     getSignedUrl.mockResolvedValue({ ok: false, error: 'PROVIDER_ERROR' })
 
     expect(await getEmpresaLogoUrl()).toBeNull()
+  })
+
+  it('con logo de marca firma ese y no lee el de la empresa', async () => {
+    getSignedUrl.mockResolvedValue({ ok: true, data: 'https://marca' })
+
+    expect(await getEmpresaLogoUrl('1/marcas/3/b.png')).toBe('https://marca')
+    expect(getSignedUrl).toHaveBeenCalledWith('LOGO_EMPRESA', '1/marcas/3/b.png', 3600)
+    expect(getEmpresaShell).not.toHaveBeenCalled()
   })
 })
