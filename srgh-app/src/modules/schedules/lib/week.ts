@@ -1,3 +1,5 @@
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
+
 /**
  * Formats a date as YYYY-MM-DD using the LOCAL calendar.
  * Do not use toISOString() for this: it converts to UTC, which shifts the
@@ -24,12 +26,13 @@ export function getWeekDates(anyDateISO: string): string[] {
   })
 }
 
+/**
+ * Lunes de la semana actual EN COSTA RICA, no en la zona del proceso: en un servidor
+ * en UTC ya es lunes desde las 6 p. m. del domingo, y "Mi horario" y la matriz
+ * saltaban a la semana siguiente esas horas.
+ */
 export function currentMondayISO(): string {
-  const now = new Date()
-  const day = now.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  now.setDate(now.getDate() + diff)
-  return toISODate(now)
+  return getWeekDates(todayInCostaRica())[0]
 }
 
 /** Corre el lunes de referencia N semanas (negativo hacia atras) para las flechas del navegador. */
