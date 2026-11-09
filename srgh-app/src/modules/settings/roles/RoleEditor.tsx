@@ -82,7 +82,9 @@ interface RoleEditorProps {
  */
 export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
   const router = useRouter()
-  const readOnly = role?.sistema === true
+  // Solo el Kiosco es de solo lectura (cuenta de tablet con su permiso especial).
+  const readOnly = role?.sistema === true && !role.asignable
+  const esSistema = role?.sistema === true
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -112,7 +114,7 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
 
   /** Por qué una casilla no se puede tocar (null = se puede). */
   function lockReason(code: Permiso): string | null {
-    if (readOnly) return 'Rol del sistema'
+    if (readOnly) return 'Rol del kiosco'
     if (esRolPropio && code === PERMISOS.ROLES_WRITE && selected.has(code))
       return 'Es tu propio rol: no podés quitártelo'
     if (!selected.has(code) && !SIEMPRE_OTORGABLES.has(code) && !actorPerms.has(code))
@@ -188,12 +190,14 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
 
   const title = role ? role.nombre : base ? `Copia de ${base.nombre}` : 'Nuevo rol'
   const esVersion = role?.baseId != null
-  const canDelete = role !== undefined && (role.usuarios === 0 || esVersion)
+  const canDelete = role !== undefined && !esSistema && (role.usuarios === 0 || esVersion)
   const description = readOnly
-    ? 'Rol del sistema: no se edita para todas las sucursales. Personalizalo para una sucursal (abajo) o duplicalo.'
-    : esVersion
-      ? `Versión de «${role?.baseNombre ?? 'otro rol'}» solo para ${role?.sucursalNombre ?? 'una sucursal'}: sus cambios no afectan a las demás tiendas.`
-      : 'Marcá los permisos del rol. Al marcar «Editar» o «Aprobar» se marca «Ver» solo; al desmarcar «Ver», se desmarca lo que depende de él.'
+    ? 'Rol de la cuenta del kiosco: no se edita.'
+    : esSistema
+      ? 'Rol del sistema: los cambios aplican en todas las sucursales. Para cambiarlo solo en una, usá «Permisos por sucursal» abajo.'
+      : esVersion
+        ? `Versión de «${role?.baseNombre ?? 'otro rol'}» solo para ${role?.sucursalNombre ?? 'una sucursal'}: sus cambios no afectan a las demás tiendas.`
+        : 'Marcá los permisos del rol. Al marcar «Editar» o «Aprobar» se marca «Ver» solo; al desmarcar «Ver», se desmarca lo que depende de él.'
 
   return (
     <div className="space-y-6">
@@ -203,7 +207,7 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
         backHref="/settings/roles"
         backLabel="Volver a roles y permisos"
         actions={
-          readOnly && role ? (
+          esSistema && role && !readOnly ? (
             <Link
               href={`/settings/roles/new?desde=${role.id}`}
               className={cn(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES.lg, 'min-h-11')}
@@ -261,7 +265,7 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
                   <p className="mt-1 text-xs text-rose-700">{errors.descripcion.message}</p>
                 )}
               </div>
-              {!readOnly && (
+              {!readOnly && !esSistema && (
                 <div className="sm:col-span-2">
                   <label htmlFor="rol-sucursal" className={FIELD_LABEL}>
                     Sucursal
@@ -376,8 +380,14 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
             })}
           </section>
 
+          {esSistema && !readOnly && (
+            <Alert tone="warning">
+              Es un rol del sistema, compartido con las demás empresas que usan SGRH: al guardar, el
+              cambio les aplica también a ellas.
+            </Alert>
+          )}
           {error && <Alert tone="error">{error}</Alert>}
-          {role && !readOnly && !canDelete && (
+          {role && !readOnly && !esSistema && !canDelete && (
             <p className="text-xs text-slate-500">
               Para eliminar este rol, primero asigná otro rol a sus {role.usuarios}{' '}
               {role.usuarios === 1 ? 'usuario' : 'usuarios'} desde Usuarios.
@@ -407,7 +417,7 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
               >
                 Cancelar
               </Button>
-              {role && (
+              {role && !esSistema && (
                 <Button
                   type="button"
                   variant="danger"

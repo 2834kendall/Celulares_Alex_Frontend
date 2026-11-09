@@ -182,21 +182,43 @@ describe('RoleEditor', () => {
     expect(push).toHaveBeenCalledWith('/settings/roles')
   })
 
-  it('un rol del sistema se ve en solo lectura, con opción de duplicarlo', () => {
+  it('un rol del sistema se edita, sin sucursal ni eliminar, con aviso de alcance', async () => {
+    vi.mocked(saveRole).mockResolvedValue({ ok: true, data: 4 })
     const gerente = {
       ...supervisor,
       id: 4,
       nombre: 'Gerente de Sucursal',
       sistema: true,
       sucursalId: null,
+      sucursalNombre: null,
     }
     setup({ role: gerente, data: data({ propios: [], sistema: [gerente] }) })
+    expect(box('Ver empleados')).toBeEnabled()
+    expect(
+      screen.queryByLabelText('Sucursal', { selector: '#rol-sucursal' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Eliminar rol' })).not.toBeInTheDocument()
+    expect(screen.getByText(/compartido con las demás empresas/)).toBeInTheDocument()
+    await userEvent.click(box('Ver nómina'))
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() =>
+      expect(saveRole).toHaveBeenCalledWith(4, expect.objectContaining({ sucursalId: null }))
+    )
+  })
+
+  it('el rol del kiosco se ve en solo lectura', () => {
+    const kiosco = {
+      ...supervisor,
+      id: 13,
+      nombre: 'Kiosco',
+      sistema: true,
+      asignable: false,
+      sucursalId: null,
+      sucursalNombre: null,
+    }
+    setup({ role: kiosco, data: data({ propios: [], sistema: [kiosco] }) })
     expect(box('Ver empleados')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Duplicar/ })).toHaveAttribute(
-      'href',
-      '/settings/roles/new?desde=4'
-    )
   })
 
   it('un rol del sistema se personaliza para una sucursal y abre la versión', async () => {

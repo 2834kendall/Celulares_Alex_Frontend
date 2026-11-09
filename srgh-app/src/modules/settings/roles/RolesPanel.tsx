@@ -23,8 +23,8 @@ function RoleCard({ role }: { role: RoleSummary }) {
     >
       <div className="min-w-0 grow basis-72">
         <div className="flex flex-wrap items-center gap-2">
-          {role.sistema && <Lock aria-hidden="true" className="h-4 w-4 text-slate-500" />}
-          {role.sistema ? (
+          {!role.asignable && <Lock aria-hidden="true" className="h-4 w-4 text-slate-500" />}
+          {!role.asignable ? (
             <span className="break-words font-bold text-slate-900">{role.nombre}</span>
           ) : (
             <Link
@@ -65,19 +65,13 @@ function RoleCard({ role }: { role: RoleSummary }) {
         </div>
       </dl>
       <div className="flex shrink-0 flex-wrap gap-2">
-        {role.sistema ? (
-          <>
-            <Link href={`/settings/roles/new?desde=${role.id}`} className={linkButton('secondary')}>
-              <Copy aria-hidden="true" className="h-4 w-4" />
-              Duplicar
-            </Link>
-            <Link
-              href={`/settings/roles/${role.id}`}
-              className="inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-brand-700 hover:underline"
-            >
-              {role.asignable ? 'Permisos por sucursal' : 'Ver permisos'}
-            </Link>
-          </>
+        {!role.asignable ? (
+          <Link
+            href={`/settings/roles/${role.id}`}
+            className="inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-brand-700 hover:underline"
+          >
+            Ver permisos
+          </Link>
         ) : (
           <>
             <Link href={`/settings/roles/${role.id}`} className={linkButton('secondary')}>
@@ -140,12 +134,12 @@ export function RolesPanel({ data }: { data: RolesSettings }) {
             <h2 id="roles-sistema" className="text-base font-bold text-slate-900">
               Roles del sistema
             </h2>
-            <span className="text-sm text-slate-500">compartidos con las demás empresas</span>
+            <span className="text-sm text-slate-500">aplican en todas las sucursales</span>
           </div>
           <p className="mt-1 max-w-prose text-sm text-slate-600">
-            No se editan para todos: un cambio acá le cambiaría los permisos a la gente de otras
-            empresas. Para cambiar sus permisos en una sucursal, abrilo y usá «Personalizar para
-            esta sucursal»; para partir de uno, duplicalo.
+            Se editan desde acá, pero son compartidos: un cambio aplica en todas las sucursales (y
+            en las demás empresas que los usen). Para cambiar uno solo en una sucursal, abrilo y usá
+            «Permisos por sucursal».
           </p>
         </div>
         <ul className="space-y-3">
