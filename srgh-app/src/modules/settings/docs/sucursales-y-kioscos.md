@@ -54,6 +54,9 @@ coordenadas informativas y cuentas de acceso de los kioscos de cada sucursal. C�
 
 ## Ciclo de una sucursal
 
+- **Toda sucursal pertenece a una marca** de su empresa ([marcas](marcas.md)). El formulario la
+  exige, y llega preseleccionada si se viene filtrando por una marca o si hay una sola activa. El
+  listado se agrupa por marca, y su filtro de marca vive en la URL (`?marca=<id>`).
 - **Guardar es transaccional.** La dirección se edita con copy-on-write: no modifica una
   dirección vieja que comparta otra entidad.
 - El código interno se valida sin distinguir mayúsculas, bajo un advisory lock por empresa.
@@ -79,5 +82,6 @@ marcas: ver el módulo de asistencia.
 | ---------------------------------------- | ------------------------------------------------------ |
 | sucursales, kioscos, auditoría, RPC      | `20261106185915_branch_kiosk_settings.sql`             |
 | protección de las asignaciones de kiosco | `20261106193801_protect_managed_kiosk_assignments.sql` |
+| marca de la sucursal (`suc_marca_id`)    | `20261107153512_marcas_comerciales.sql`                |
 
 Los tests corren el SQL real en un PostgreSQL desechable (`branches/migration.test.ts`).

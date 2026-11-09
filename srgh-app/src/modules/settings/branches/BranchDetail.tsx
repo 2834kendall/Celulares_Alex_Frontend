@@ -11,17 +11,28 @@ export function BranchDetail({
   branch,
   data,
   territorio,
+  listQuery = '',
 }: {
   branch: Branch
   data: BranchSettings
   territorio: TerritorioCatalogo
+  /** Filtro del listado del que se vino (`?marca=1`), para volver a él. */
+  listQuery?: string
 }) {
+  const marca = data.brands.find((b) => b.id === branch.suc_marca_id)
   const tabs: TabDefinition<'datos' | 'kioscos'>[] = [
     {
       id: 'datos',
       label: 'Datos',
       icon: Building2,
-      content: <BranchForm branch={branch} territorio={territorio} />,
+      content: (
+        <BranchForm
+          branch={branch}
+          territorio={territorio}
+          brands={data.brands}
+          listQuery={listQuery}
+        />
+      ),
     },
   ]
   if (data.canManageKiosks)
@@ -35,10 +46,13 @@ export function BranchDetail({
     <div className="space-y-6">
       <PageHeader
         title={branch.suc_nombre}
-        description={
-          branch.suc_activa ? 'Sucursal activa' : 'Sucursal inactiva · historial conservado'
-        }
-        backHref="/settings/branches"
+        description={[
+          marca?.nombre,
+          branch.suc_activa ? 'Sucursal activa' : 'Sucursal inactiva · historial conservado',
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+        backHref={`/settings/branches${listQuery}`}
       />
       <Tabs idPrefix={`branch-${branch.suc_id}`} ariaLabel="Apartados de sucursal" tabs={tabs} />
     </div>

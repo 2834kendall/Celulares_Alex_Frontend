@@ -6,6 +6,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import { hoursBetween } from '@/modules/schedules/lib/hours'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
+import { formatSucursalLabel, sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface EmployeeJoin {
   emp_id: number
@@ -22,6 +23,7 @@ interface PositionJoin {
 interface BranchJoin {
   suc_id: number
   suc_nombre: string
+  sgrh_marcas_comerciales?: { mco_nombre: string } | null
 }
 
 interface EmploymentHistoryRow {
@@ -131,7 +133,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       lab_sucursal_id,
       sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_foto_path ),
       sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_id, suc_nombre )
+      sgrh_sucursales ( suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
     `
       )
       .eq('lab_empresa_id', empresaId)
@@ -140,7 +142,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
     // Catalogo completo de sucursales de la empresa (no solo las de casa de los empleados).
     supabase
       .from('sgrh_sucursales')
-      .select('suc_id, suc_nombre')
+      .select('suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre )')
       .eq('suc_empresa_id', empresaId)
       .eq('suc_activa', true)
       .order('suc_nombre', { ascending: true })
@@ -155,10 +157,13 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
     return { ok: false, error: 'No se pudieron cargar las sucursales.' }
   }
 
-  const sucursales: SucursalOption[] = sucursalesRows.map((s) => ({
-    id: s.suc_id,
-    nombre: s.suc_nombre,
-  }))
+  // Se ordena por lo que se muestra: así quedan juntas las de cada marca.
+  const sucursales: SucursalOption[] = sucursalesRows
+    .map((s) => ({
+      id: s.suc_id,
+      nombre: formatSucursalLabel(s.sgrh_marcas_comerciales?.mco_nombre, s.suc_nombre),
+    }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
 
   const employmentHistoryIds = employmentHistory.map((h) => h.lab_id)
 
@@ -176,7 +181,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
           prg_es_dia_libre,
           prg_horario_id,
           prg_sucursal_id,
-          sgrh_sucursales ( suc_id, suc_nombre ),
+          sgrh_sucursales ( suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
           sgrh_cat_horarios ( hor_id, hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo, hor_hora_inicio_break, hor_hora_fin_break ),
             prg_hora_entrada_custom,
             prg_hora_salida_custom,
@@ -229,7 +234,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
           hours: 0,
           // Sin fila propia: el dia usa la sucursal de casa.
           branchId: h.lab_sucursal_id,
-          branchName: h.sgrh_sucursales?.suc_nombre ?? null,
+          branchName: sucursalLabel(h.sgrh_sucursales) ?? null,
         }
       }
 
@@ -281,7 +286,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
         isDayOff: assignment.prg_es_dia_libre,
         hours,
         branchId: assignment.prg_sucursal_id,
-        branchName: assignment.sgrh_sucursales?.suc_nombre ?? null,
+        branchName: sucursalLabel(assignment.sgrh_sucursales) ?? null,
       }
     })
 
@@ -289,7 +294,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       employmentHistoryId: h.lab_id,
       employeeId: h.lab_empleado_id,
       branchId: h.lab_sucursal_id,
-      branchName: h.sgrh_sucursales?.suc_nombre ?? null,
+      branchName: sucursalLabel(h.sgrh_sucursales) ?? null,
       fullName,
       // emp_foto_path nunca cruza al cliente: solo la URL firmada opaca.
       fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,

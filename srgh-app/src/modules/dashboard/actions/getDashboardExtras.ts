@@ -22,6 +22,7 @@ import {
 import { shiftISODate } from '@/modules/attendance/lib/time'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import type { SgrhJwtClaims } from '@/types/auth'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 /*
  * Loaders of the optional panels that no module had ready in summary form.
@@ -46,7 +47,10 @@ interface RosterRow {
     emp_apellido_2: string | null
   } | null
   sgrh_cat_puestos: { pue_nombre: string | null } | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 const getSession = cache(async () => {
@@ -80,7 +84,7 @@ const getRoster = cache(async (): Promise<Map<number, RosterPerson> | null> => {
       lab_fecha_fin_programada,
       sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 ),
       sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre )
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
     `
     )
     .eq('lab_empresa_id', empresaId)
@@ -97,7 +101,7 @@ const getRoster = cache(async (): Promise<Map<number, RosterPerson> | null> => {
       employeeId: row.lab_empleado_id,
       nombre: fullName(row.sgrh_empleados),
       puesto: row.sgrh_cat_puestos?.pue_nombre ?? null,
-      sucursal: row.sgrh_sucursales?.suc_nombre ?? null,
+      sucursal: sucursalLabel(row.sgrh_sucursales) ?? null,
       fechaFinProgramada: row.lab_fecha_fin_programada,
     })
   }

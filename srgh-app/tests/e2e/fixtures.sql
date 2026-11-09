@@ -15,23 +15,53 @@ OVERRIDING SYSTEM VALUE VALUES
   (1051, 'E2E-105-1', 'Empresa E2E Uno', 'Empresa E2E Uno', 'Quincenal'),
   (1052, 'E2E-105-2', 'Empresa E2E Dos', 'Empresa E2E Dos', 'Quincenal')
 ON CONFLICT (org_id) DO NOTHING;
-INSERT INTO sgrh_sucursales (suc_id, suc_empresa_id, suc_nombre)
-OVERRIDING SYSTEM VALUE VALUES (1051,1051,'Sucursal E2E Uno'), (1052,1052,'Sucursal E2E Dos')
-ON CONFLICT (suc_id) DO NOTHING;
+-- Brands. Every run resets them: brands.spec.ts edits colors and logos, and
+-- creates "Temporal E2E ..." rows that are removed further down.
+INSERT INTO sgrh_marcas_comerciales (mco_id, mco_empresa_id, mco_nombre, mco_activa, mco_color_acento, mco_color_sidebar, mco_logo_path)
+OVERRIDING SYSTEM VALUE VALUES
+  (1051,1051,'Marca E2E Uno',true,'#9f1239','#1b2a41',NULL),
+  (1052,1051,'Marca E2E Dos',true,'#1e40af',NULL,NULL),
+  (1053,1052,'Marca E2E Ajena',true,'#5b21b6','#15181d',NULL),
+  (1054,1051,'Marca E2E Tiendas',true,'#334155','#f1efe8',NULL)
+ON CONFLICT (mco_id) DO UPDATE SET mco_nombre=EXCLUDED.mco_nombre, mco_activa=EXCLUDED.mco_activa,
+  mco_color_acento=EXCLUDED.mco_color_acento, mco_color_sidebar=EXCLUDED.mco_color_sidebar, mco_logo_path=NULL;
+INSERT INTO sgrh_sucursales (suc_id, suc_empresa_id, suc_nombre, suc_marca_id)
+OVERRIDING SYSTEM VALUE VALUES
+  (1051,1051,'Sucursal E2E Uno',1051),
+  (1052,1052,'Sucursal E2E Dos',1053),
+  (1053,1051,'Mall E2E',1054),
+  (1054,1051,'Centro E2E',1054),
+  (1055,1051,'Otra E2E',1052)
+ON CONFLICT (suc_id) DO UPDATE SET suc_marca_id=EXCLUDED.suc_marca_id, suc_activa=true;
+DELETE FROM sgrh_sucursales WHERE suc_empresa_id=1051 AND suc_nombre LIKE 'Temporal E2E%';
+DELETE FROM sgrh_marcas_comerciales WHERE mco_empresa_id=1051 AND mco_nombre LIKE 'Temporal E2E%';
+-- Company theme and logo for the general view. global-setup.ts uploads the file.
+UPDATE sgrh_empresas SET org_color_acento='#166534', org_color_sidebar='#eef1f4',
+  org_logo_url='1051/logo/e2e-empresa.png' WHERE org_id=1051;
 
 INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, confirmation_token, recovery_token, email_change_token_new, email_change)
 SELECT '00000000-0000-0000-0000-000000000000', md5('sgrh105-' || code)::uuid, 'authenticated', 'authenticated',
   lower(code) || '@e2e.sgrh.local', extensions.crypt('Sgrh105OnlyLocal!', extensions.gen_salt('bf')),
   now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, '', '', '', ''
-FROM (VALUES ('ADMIN'), ('KIOSCO')) AS roles(code)
+FROM (VALUES ('ADMIN'), ('KIOSCO'), ('GERENTE'), ('GERENTE2'), ('EMPLEADO')) AS roles(code)
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
 SELECT id::text, id, jsonb_build_object('sub',id::text,'email',email,'email_verified',true), 'email', now(), now()
-FROM auth.users WHERE email IN ('admin@e2e.sgrh.local','kiosco@e2e.sgrh.local')
+FROM auth.users WHERE email IN ('admin@e2e.sgrh.local','kiosco@e2e.sgrh.local','gerente@e2e.sgrh.local','gerente2@e2e.sgrh.local','empleado@e2e.sgrh.local')
 ON CONFLICT (provider_id, provider) DO NOTHING;
 INSERT INTO sgrh_usuarios_empresa_rol (uer_usuario_id, uer_empresa_id, uer_sucursal_id, uer_rol_id)
-SELECT usr.usr_id, 1051, CASE WHEN rol.rol_codigo='KIOSCO' THEN 1051 ELSE NULL END, rol.rol_id
-FROM sgrh_usuarios usr JOIN sgrh_cat_roles rol ON lower(rol.rol_codigo)||'@e2e.sgrh.local'=usr.usr_email
+SELECT usr.usr_id, 1051, cuenta.sucursal, rol.rol_id
+FROM (VALUES
+  ('admin@e2e.sgrh.local','ADMIN',NULL::int),
+  ('kiosco@e2e.sgrh.local','KIOSCO',1051),
+  -- Two managers in two stores of the same brand: the shared-theme criterion.
+  ('gerente@e2e.sgrh.local','GERENTE',1053),
+  ('gerente2@e2e.sgrh.local','GERENTE',1054),
+  -- No branch on the account: the brand has to come from the current contract.
+  ('empleado@e2e.sgrh.local','EMPLEADO',NULL)
+) AS cuenta(email, rol, sucursal)
+JOIN sgrh_usuarios usr ON usr.usr_email=cuenta.email
+JOIN sgrh_cat_roles rol ON rol.rol_codigo=cuenta.rol
 WHERE NOT EXISTS (SELECT 1 FROM sgrh_usuarios_empresa_rol existing WHERE existing.uer_usuario_id=usr.usr_id AND existing.uer_empresa_id=1051);
 
 INSERT INTO sgrh_candidatos (cdt_id, cdt_empresa_id, cdt_nombre, cdt_apellido_1, cdt_email)
@@ -52,6 +82,11 @@ INSERT INTO sgrh_historial_laboral (lab_id, lab_empleado_id, lab_empresa_id, lab
 OVERRIDING SYSTEM VALUE VALUES (1051,1051,1051,1051,1051,(SELECT min(tjo_id) FROM sgrh_cat_tipos_jornada),(SELECT min(tco_id) FROM sgrh_cat_tipos_contrato),400000,400000,'2026-01-01')
 ON CONFLICT (lab_id) DO NOTHING;
 DELETE FROM sgrh_marcas_asistencia WHERE mar_historial_laboral_id=1051;
+UPDATE sgrh_usuarios SET usr_empleado_id=1051 WHERE usr_email='empleado@e2e.sgrh.local';
+-- A borrowed shift today in a store of ANOTHER brand: it must not change the theme.
+INSERT INTO sgrh_programacion_semanal (prg_id, prg_empleado_id, prg_sucursal_id, prg_historial_laboral_id, prg_fecha, prg_hora_entrada_custom, prg_hora_salida_custom)
+OVERRIDING SYSTEM VALUE VALUES (1051,1051,1055,1051,(now() AT TIME ZONE 'America/Costa_Rica')::date,'08:00','16:00')
+ON CONFLICT (prg_id) DO UPDATE SET prg_fecha=EXCLUDED.prg_fecha;
 
 INSERT INTO sgrh_evaluaciones (eve_id, eve_empresa_id, eve_tipo_evaluacion, eve_historial_laboral_id, eve_sucursal_id, eve_evaluador_id, eve_fecha_evaluacion, eve_tipo_periodo, eve_estado, eve_promedio_final, eve_observaciones)
 OVERRIDING SYSTEM VALUE VALUES

@@ -8,17 +8,19 @@ de Configuración (`lib/returnPath.ts`, en sessionStorage), búsqueda y dos grup
 
 | grupo   | ajuste                          | ruta                                                           |
 | ------- | ------------------------------- | -------------------------------------------------------------- |
-| Empresa | Datos de la empresa             | `/settings/profile`                                            |
+| Empresa | Empresa: Información            | `/settings/profile`                                            |
+|         | Empresa: Apariencia (tema)      | `/settings/profile?tab=apariencia`                             |
+|         | Empresa: Marcas (logo, colores) | `/settings/profile?tab=marcas` ([detalle](docs/marcas.md))     |
 |         | Sucursales y kioscos            | `/settings/branches` ([detalle](docs/sucursales-y-kioscos.md)) |
 |         | General (formato de hora)       | `/settings/general`                                            |
-|         | Apariencia (por sucursal)       | `/settings/appearance`                                         |
 | Módulos | Puestos                         | `/settings/employees/positions`                                |
 |         | Tipos de tardía                 | `/settings/attendance/tardiness-types`                         |
 |         | Tipos de incapacidad            | `/settings/schedule/absence-types`                             |
 |         | Etapas y criterios de selección | `/settings/recruitment/{stages,criteria}`                      |
 
 `/settings` y `/settings/<módulo>` redirigen al primer ajuste visible. **Ctrl/⌘+K** abre
-`SettingsSearch`, solo en modo configuración.
+`SettingsSearch`, solo en modo configuración; también encuentra las pestañas de Empresa
+(`subpages` en `sections.ts`). `/settings/appearance` redirige a su pestaña.
 
 ## Reglas de negocio
 
@@ -31,7 +33,7 @@ de Configuración (`lib/returnPath.ts`, en sessionStorage), búsqueda y dos grup
   jornadas, conceptos de planilla) no tienen `empresa_id`. No son configuración por empresa.
 - Rutas, ids y nombres de código en inglés; textos de UI en español.
 
-## Datos de la empresa (`EMPRESAS_WRITE`)
+## Información de la empresa (`EMPRESAS_WRITE`)
 
 - Identidad, contacto y dirección se guardan con la RPC `actualizar_perfil_empresa`
   (`SECURITY DEFINER`, `20261006120000_perfil_empresa.sql`). La RLS de `sgrh_direcciones` no

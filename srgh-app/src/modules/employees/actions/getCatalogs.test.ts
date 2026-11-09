@@ -76,6 +76,36 @@ describe('getCatalogs (server actions)', () => {
     expect(result).toEqual({ ok: true, data: [{ id: 2, nombre: 'Central' }] })
   })
 
+  // La base ordena por sucursal, pero se muestra "Marca · Sucursal": sin ordenar
+  // por lo que se ve, las marcas quedaban mezcladas en el select.
+  it('getSucursales deja juntas las sucursales de cada marca', async () => {
+    mockClient({
+      sgrh_sucursales: {
+        data: [
+          { suc_id: 1, suc_nombre: 'Centro', sgrh_marcas_comerciales: { mco_nombre: 'Infinity' } },
+          {
+            suc_id: 2,
+            suc_nombre: 'Mall',
+            sgrh_marcas_comerciales: { mco_nombre: 'Celulares Alex' },
+          },
+          { suc_id: 3, suc_nombre: 'Plaza', sgrh_marcas_comerciales: { mco_nombre: 'Infinity' } },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await getSucursales()
+
+    expect(result).toEqual({
+      ok: true,
+      data: [
+        { id: 2, nombre: 'Celulares Alex · Mall' },
+        { id: 1, nombre: 'Infinity · Centro' },
+        { id: 3, nombre: 'Infinity · Plaza' },
+      ],
+    })
+  })
+
   it('getTiposContrato mapea al DTO CatalogoItem', async () => {
     mockClient({
       sgrh_cat_tipos_contrato: { data: [{ tco_id: 3, tco_nombre: 'Indefinido' }], error: null },

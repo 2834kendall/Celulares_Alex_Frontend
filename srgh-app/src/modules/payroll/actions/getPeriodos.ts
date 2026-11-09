@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import type { PeriodoListItem } from '@/modules/payroll/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface PeriodoQueryRow {
   npe_id: number
@@ -15,7 +16,10 @@ interface PeriodoQueryRow {
   npe_fecha_fin_periodo: string | null
   npe_estado: string
   npe_fecha_pago: string | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
   /** Conteo agregado por PostgREST: una fila con { count }. */
   sgrh_nomina_detalle: { count: number }[] | null
 }
@@ -44,7 +48,7 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
       npe_fecha_fin_periodo,
       npe_estado,
       npe_fecha_pago,
-      sgrh_sucursales ( suc_nombre ),
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_nomina_detalle ( count )
     `
     )
@@ -67,7 +71,7 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
     estado: row.npe_estado,
     atrasado: periodoAtrasado(row.npe_estado, row.npe_fecha_fin_periodo),
     fechaPago: row.npe_fecha_pago,
-    sucursalNombre: row.sgrh_sucursales?.suc_nombre ?? '—',
+    sucursalNombre: sucursalLabel(row.sgrh_sucursales) ?? '—',
     // Antes se traía el id de cada fila de cada periodo solo para contarlas:
     // la lista crecía con cada quincena pagada. Ahora la base devuelve el número.
     totalEmpleados: row.sgrh_nomina_detalle?.[0]?.count ?? 0,
