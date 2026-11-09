@@ -7,7 +7,8 @@ import { PERMISOS } from '@/lib/permissions/catalog'
  * /settings y de cada módulo, y el guard de cada subpágina.
  *
  * Dos niveles:
- * - Empresa: ajustes de toda la empresa (formato de hora, apariencia).
+ * - Empresa: ajustes de toda la empresa (sus datos, apariencia y marcas, sus
+ *   sucursales y el formato de hora).
  * - Módulos: los mismos módulos del menú principal (sus ids son las claves
  *   de zona de lib/permissions/zones.ts, para usar los mismos íconos), cada
  *   uno con sus catálogos como hojas.
@@ -29,6 +30,15 @@ export interface SettingsLeaf {
   /** Otras palabras con las que alguien buscaría este ajuste (Ctrl+K). */
   keywords: string[]
   visible: (permisos: readonly string[]) => boolean
+  /** Pestañas que el buscador encuentra por sí solas, aunque no estén en el menú. */
+  subpages?: SettingsSubpage[]
+}
+
+export interface SettingsSubpage {
+  id: string
+  label: string
+  href: string
+  keywords: string[]
 }
 
 export type SettingsModuleId = 'employees' | 'attendance' | 'schedule' | 'recruitment'
@@ -52,8 +62,8 @@ export const SETTINGS_TREE: SettingsTree = {
   company: [
     {
       id: 'profile',
-      label: 'Datos de la empresa',
-      description: 'Nombre, logo, contacto y dirección de la empresa.',
+      label: 'Empresa',
+      description: 'Los datos, la apariencia y las marcas de la empresa.',
       href: '/settings/profile',
       keywords: [
         'empresa',
@@ -68,8 +78,22 @@ export const SETTINGS_TREE: SettingsTree = {
         'ciiu',
         'actividad economica',
       ],
-      // Lo mismo que exige empresas_update.
+      // Lo mismo que exige empresas_update, y que revalida sgrh_save_brand.
       visible: (permisos) => permisos.includes(PERMISOS.EMPRESAS_WRITE),
+      subpages: [
+        {
+          id: 'appearance',
+          label: 'Apariencia',
+          href: '/settings/profile?tab=apariencia',
+          keywords: ['colores', 'tema', 'acento', 'menu', 'barra lateral'],
+        },
+        {
+          id: 'brands',
+          label: 'Marcas',
+          href: '/settings/profile?tab=marcas',
+          keywords: ['marca comercial', 'identidad', 'logo', 'colores', 'tema', 'tiendas'],
+        },
+      ],
     },
     {
       id: 'branches',
@@ -97,14 +121,6 @@ export const SETTINGS_TREE: SettingsTree = {
       ],
       // Afecta a toda la empresa: el mismo permiso que exige la RLS.
       visible: (permisos) => permisos.includes(PERMISOS.EMPRESAS_WRITE),
-    },
-    {
-      id: 'appearance',
-      label: 'Apariencia',
-      description: 'Colores del menú y de los botones de cada sucursal.',
-      href: '/settings/appearance',
-      keywords: ['colores', 'tema', 'sucursal', 'acento', 'menu'],
-      visible: always,
     },
   ],
   modules: [
@@ -248,7 +264,13 @@ function normalize(text: string): string {
  */
 export function searchSettings(query: string, permisos: readonly string[]): LocatedLeaf[] {
   const terms = normalize(query).split(/\s+/).filter(Boolean)
-  const leaves = visibleLeaves(permisos)
+  const leaves = visibleLeaves(permisos).flatMap((located) => [
+    located,
+    ...(located.leaf.subpages ?? []).map((subpage) => ({
+      leaf: { ...located.leaf, ...subpage },
+      path: `${located.path} / ${subpage.label}`,
+    })),
+  ])
   if (terms.length === 0) return leaves
 
   return leaves.filter(({ leaf, path }) => {

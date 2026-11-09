@@ -48,7 +48,10 @@ describe('<SettingsSidebarNav />', () => {
   it('agrupa en Empresa y Módulos', () => {
     renderNav()
 
-    expect(screen.getByText('Empresa')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Empresa' })).toHaveAttribute(
+      'href',
+      '/settings/profile'
+    )
     expect(screen.getByText('Módulos')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'General' })).toHaveAttribute(
       'href',

@@ -54,6 +54,16 @@ export function buildCompanyLogoPath(empresaId: number, extension: string): stri
 }
 
 /**
+ * `<empresaId>/marcas/<marcaId>/<uuid>.<ext>` — logo de una marca comercial
+ * (mismo bucket logos-empresa). Bajo la carpeta de la empresa, así que las
+ * policies del bucket lo aíslan igual que al de la empresa; y la columna
+ * `mco_logo_path` tiene un CHECK que exige ese mismo prefijo.
+ */
+export function buildBrandLogoPath(empresaId: number, marcaId: number, extension: string): string {
+  return `${empresaId}/marcas/${marcaId}/${crypto.randomUUID()}.${extension}`
+}
+
+/**
  * Guard para TODA ruta que llegue del cliente (ver/borrar): además de la
  * policy RLS, el servidor verifica que la ruta pertenezca a la empresa del
  * JWT antes de tocar el proveedor. Doble candado a propósito.

@@ -4,7 +4,7 @@
  * si cambian allá, cambian acá. Son el punto de partida del picker de
  * Apariencia y a donde vuelve "Restablecer".
  *
- * Archivo propio y no en previewShell.ts: los tests de Apariencia mockean
+ * Archivo propio: los tests de Apariencia mockean
  * ese módulo entero, y las constantes llegarían undefined.
  */
 export const DEFAULT_ACCENT = '#0891b2'

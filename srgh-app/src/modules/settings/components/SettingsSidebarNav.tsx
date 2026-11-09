@@ -8,7 +8,6 @@ import {
   Building2,
   ChevronRight,
   LayoutDashboard,
-  Palette,
   Search,
   SlidersHorizontal,
   Store,
@@ -25,7 +24,6 @@ const COMPANY_ICONS: Record<string, LucideIcon> = {
   profile: Building2,
   branches: Store,
   general: SlidersHorizontal,
-  appearance: Palette,
 }
 
 /* Filas que se reducen al ícono en el riel: la etiqueta se recorta, no salta de línea. */
