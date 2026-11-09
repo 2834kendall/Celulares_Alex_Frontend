@@ -194,7 +194,7 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
   const description = readOnly
     ? 'Rol de la cuenta del kiosco: no se edita.'
     : esSistema
-      ? 'Rol del sistema: los cambios aplican en todas las sucursales. Para cambiarlo solo en una, usá «Permisos por sucursal» abajo.'
+      ? 'Rol del sistema: los cambios aplican en todas las sucursales. Para cambiarlo solo en una, usá «Permisos por sucursal».'
       : esVersion
         ? `Versión de «${role?.baseNombre ?? 'otro rol'}» solo para ${role?.sucursalNombre ?? 'una sucursal'}: sus cambios no afectan a las demás tiendas.`
         : 'Marcá los permisos del rol. Al marcar «Editar» o «Aprobar» se marca «Ver» solo; al desmarcar «Ver», se desmarca lo que depende de él.'
@@ -298,6 +298,10 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
               )}
             </div>
           </section>
+
+          {role && role.asignable && role.sucursalId === null && (
+            <BranchVersions role={role} data={data} />
+          )}
 
           <section aria-labelledby="rol-permisos" className={CARD}>
             <div className="flex flex-wrap items-center gap-3">
@@ -492,10 +496,6 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
           </section>
         </aside>
       </form>
-
-      {role && role.asignable && role.sucursalId === null && (
-        <BranchVersions role={role} data={data} />
-      )}
 
       {confirmDelete && role && (
         <ConfirmDialog
