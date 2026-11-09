@@ -24,6 +24,7 @@ describe('visibleTree / visibleLeaves', () => {
     expect(ids(ADMIN)).toEqual([
       'profile',
       'branches',
+      'roles',
       'general',
       'appearance',
       'positions',

@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Palette,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Store,
   type LucideIcon,
@@ -24,6 +25,7 @@ import { DEFAULT_RETURN_PATH, readReturnPath } from '@/modules/settings/lib/retu
 const COMPANY_ICONS: Record<string, LucideIcon> = {
   profile: Building2,
   branches: Store,
+  roles: ShieldCheck,
   general: SlidersHorizontal,
   appearance: Palette,
 }

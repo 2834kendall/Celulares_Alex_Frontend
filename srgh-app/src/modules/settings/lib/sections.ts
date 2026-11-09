@@ -80,6 +80,24 @@ export const SETTINGS_TREE: SettingsTree = {
       visible: (permisos) => permisos.includes(PERMISOS.EMPRESAS_WRITE),
     },
     {
+      id: 'roles',
+      label: 'Roles y permisos',
+      description: 'Qué puede hacer cada rol, para toda la empresa o para una sucursal.',
+      href: '/settings/roles',
+      keywords: [
+        'rol',
+        'permiso',
+        'acceso',
+        'seguridad',
+        'perfil de usuario',
+        'gerente',
+        'supervisor',
+        'administrador',
+      ],
+      // Solo quien administra roles (hoy, el Administrador). La RPC lo revalida en vivo.
+      visible: (permisos) => permisos.includes(PERMISOS.ROLES_WRITE),
+    },
+    {
       id: 'general',
       label: 'General',
       description: 'Preferencias que aplican a todas las sucursales de la empresa.',
