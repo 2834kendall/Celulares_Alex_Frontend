@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { fetchStageColumns } from '@/modules/recruitment/lib/stageColumns'
 import type { EtapaSeleccionItem } from '@/modules/recruitment/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 export interface PostulacionBoardItem {
   posId: number
@@ -31,7 +32,10 @@ interface PostulacionQueryRow {
     cdt_apellido_2: string | null
   } | null
   sgrh_cat_puestos: { pue_nombre: string } | null
-  sgrh_sucursales: { suc_nombre: string } | null
+  sgrh_sucursales: {
+    suc_nombre: string
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
   pos_etapa_actual_id: number | null
   sgrh_cat_etapas_seleccion: {
     eta_nombre: string
@@ -68,7 +72,7 @@ export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResu
       pos_etapa_actual_id,
       sgrh_candidatos ( cdt_nombre, cdt_apellido_1, cdt_apellido_2 ),
       sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre ),
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_etapas_seleccion ( eta_nombre, eta_color )
     `
       )
@@ -95,7 +99,7 @@ export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResu
       candidatoId: row.pos_candidato_id,
       candidatoNombre: nombreCompleto,
       puestoNombre: row.sgrh_cat_puestos?.pue_nombre ?? '—',
-      sucursalNombre: row.sgrh_sucursales?.suc_nombre ?? null,
+      sucursalNombre: sucursalLabel(row.sgrh_sucursales) ?? null,
       fechaPostula: row.pos_fecha_postula,
       puntajePromedio: row.pos_puntaje_promedio,
       etapaId: row.pos_etapa_actual_id,

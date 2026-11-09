@@ -7,6 +7,7 @@ import { getEmpleadosActivos, getFilasGuardadas } from '@/modules/payroll/lib/pl
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import type { ConceptoPlanillaColumna } from '@/modules/payroll/lib/planilla'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface PeriodoRow {
   npe_id: number
@@ -16,7 +17,10 @@ interface PeriodoRow {
   npe_sucursal_id: number
   npe_fecha_inicio_periodo: string | null
   npe_fecha_fin_periodo: string | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 /**
@@ -47,7 +51,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       npe_sucursal_id,
       npe_fecha_inicio_periodo,
       npe_fecha_fin_periodo,
-      sgrh_sucursales ( suc_nombre )
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
     `
     )
     .eq('npe_id', periodoId)
@@ -144,7 +148,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     periodo.npe_periodo_anio,
     periodo.npe_quincena
   )}`
-  const subtitulo = `Sucursal: ${periodo.sgrh_sucursales?.suc_nombre ?? '—'} · Montos por quincena en colones`
+  const subtitulo = `Sucursal: ${sucursalLabel(periodo.sgrh_sucursales) ?? '—'} · Montos por quincena en colones`
 
   const buffer = await buildPlanillaTemplate(
     {

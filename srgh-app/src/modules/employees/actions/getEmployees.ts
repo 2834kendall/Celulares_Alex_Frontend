@@ -6,6 +6,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getStorageProvider } from '@/lib/storage'
 import { TTL_FOTO } from '@/lib/storage/containers'
 import type { EmpleadoListItem } from '@/modules/employees/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface EmpleadoQueryRow {
   emp_id: number
@@ -26,7 +27,10 @@ interface HistorialActivoRow {
   lab_fecha_inicio: string
   lab_salario_base: number
   sgrh_cat_puestos: { pue_nombre: string | null } | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
   sgrh_cat_tipos_contrato: { tco_nombre: string | null } | null
 }
 
@@ -79,7 +83,7 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
       lab_fecha_inicio,
       lab_salario_base,
       sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre ),
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_tipos_contrato ( tco_nombre )
     `
         )
@@ -125,7 +129,7 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
     return {
       ...empleadoSinFoto,
       puesto_nombre: historial?.sgrh_cat_puestos?.pue_nombre ?? null,
-      sucursal_nombre: historial?.sgrh_sucursales?.suc_nombre ?? null,
+      sucursal_nombre: sucursalLabel(historial?.sgrh_sucursales) ?? null,
       tipo_contrato_nombre: historial?.sgrh_cat_tipos_contrato?.tco_nombre ?? null,
       salario_base: historial?.lab_salario_base ?? null,
       fecha_inicio_contrato: historial?.lab_fecha_inicio ?? null,

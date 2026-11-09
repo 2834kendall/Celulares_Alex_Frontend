@@ -30,6 +30,7 @@ import {
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface PeriodoRow {
   npe_id: number
@@ -41,7 +42,10 @@ interface PeriodoRow {
   npe_estado: string
   npe_fecha_pago: string | null
   npe_observaciones: string | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 interface DetalleRow {
@@ -202,7 +206,7 @@ export async function getPeriodoDetail(
         npe_estado,
         npe_fecha_pago,
         npe_observaciones,
-        sgrh_sucursales ( suc_nombre )
+        sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
       `
       )
       .eq('npe_id', periodoId)
@@ -678,7 +682,7 @@ export async function getPeriodoDetail(
       atrasado: periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo),
       fechaPago: periodo.npe_fecha_pago,
       observaciones: periodo.npe_observaciones,
-      sucursalNombre: periodo.sgrh_sucursales?.suc_nombre ?? '—',
+      sucursalNombre: sucursalLabel(periodo.sgrh_sucursales) ?? '—',
       detalles: items,
     },
   }

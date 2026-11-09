@@ -15,6 +15,7 @@ import {
   type UpcomingBirthday,
 } from '@/modules/dashboard/lib/birthdays'
 import type { SgrhJwtClaims } from '@/types/auth'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface EmpleadoRow {
   emp_id: number
@@ -29,7 +30,10 @@ interface EmpleadoRow {
 interface HistorialActivoRow {
   lab_empleado_id: number
   sgrh_cat_puestos: { pue_nombre: string | null } | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 export interface DashboardPeople {
@@ -98,7 +102,9 @@ export async function getDashboardPeople(): Promise<DashboardPeople> {
         .returns<EmpleadoRow[]>(),
       supabase
         .from('sgrh_historial_laboral')
-        .select('lab_empleado_id, sgrh_cat_puestos ( pue_nombre ), sgrh_sucursales ( suc_nombre )')
+        .select(
+          'lab_empleado_id, sgrh_cat_puestos ( pue_nombre ), sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )'
+        )
         .eq('lab_empresa_id', meta.empresa_id)
         .is('lab_fecha_fin', null)
         .returns<HistorialActivoRow[]>(),
@@ -132,7 +138,7 @@ export async function getDashboardPeople(): Promise<DashboardPeople> {
       id: empleado.emp_id,
       nombre: fullName(empleado),
       puesto: contrato?.sgrh_cat_puestos?.pue_nombre ?? null,
-      sucursal: contrato?.sgrh_sucursales?.suc_nombre ?? null,
+      sucursal: sucursalLabel(contrato?.sgrh_sucursales) ?? null,
       fotoUrl: empleado.emp_foto_path ? (fotoUrls[empleado.emp_foto_path] ?? null) : null,
       fechaNacimiento: empleado.emp_fecha_nacimiento,
       fechaIngreso: empleado.emp_fecha_ingreso_original,

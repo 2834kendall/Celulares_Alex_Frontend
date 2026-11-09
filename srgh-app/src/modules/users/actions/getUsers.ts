@@ -5,6 +5,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import type { UsuarioEstado, UsuarioListItem } from '@/modules/users/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface UerQueryRow {
   uer_rol_id: number
@@ -23,7 +24,10 @@ interface UerQueryRow {
     } | null
   } | null
   sgrh_cat_roles: { rol_nombre: string | null } | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 export type GetUsersResult = { ok: true; data: UsuarioListItem[] } | { ok: false; error: string }
@@ -61,7 +65,7 @@ export async function getUsers(): Promise<GetUsersResult> {
         sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
       ),
       sgrh_cat_roles ( rol_nombre ),
-      sgrh_sucursales ( suc_nombre )
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
     `
     )
     .eq('uer_empresa_id', empresaId)
@@ -124,7 +128,7 @@ export async function getUsers(): Promise<GetUsersResult> {
         .filter((fila) => fila.uer_sucursal_id !== null && fila.sgrh_sucursales)
         .map((fila) => ({
           id: fila.uer_sucursal_id as number,
-          nombre: fila.sgrh_sucursales!.suc_nombre ?? '—',
+          nombre: sucursalLabel(fila.sgrh_sucursales) ?? '—',
         }))
 
       return {

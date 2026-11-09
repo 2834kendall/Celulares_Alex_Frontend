@@ -8,6 +8,7 @@ import { TTL_FOTO } from '@/lib/storage/containers'
 import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { Database } from '@/types/database.types'
 import type { ContratoDetalle, EmpleadoDetalle } from '@/modules/employees/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 type EmpleadoRow = Database['public']['Tables']['sgrh_empleados']['Row']
 type HistorialRow = Database['public']['Tables']['sgrh_historial_laboral']['Row']
@@ -32,7 +33,10 @@ type EmpleadoQueryRow = EmpleadoRow & {
 
 type HistorialQueryRow = HistorialRow & {
   sgrh_cat_puestos: { pue_nombre: string } | null
-  sgrh_sucursales: { suc_nombre: string } | null
+  sgrh_sucursales: {
+    suc_nombre: string
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
   sgrh_cat_tipos_contrato: { tco_nombre: string } | null
   sgrh_cat_tipos_jornada: { tjo_nombre: string } | null
   sgrh_cat_motivos_salida: { mot_nombre: string } | null
@@ -60,7 +64,7 @@ function toContrato(row: HistorialQueryRow): ContratoDetalle {
   return {
     ...base,
     puesto_nombre: sgrh_cat_puestos?.pue_nombre ?? '—',
-    sucursal_nombre: sgrh_sucursales?.suc_nombre ?? '—',
+    sucursal_nombre: sucursalLabel(sgrh_sucursales) ?? '—',
     tipo_contrato_nombre: sgrh_cat_tipos_contrato?.tco_nombre ?? '—',
     tipo_jornada_nombre: sgrh_cat_tipos_jornada?.tjo_nombre ?? '—',
     motivo_salida_nombre: sgrh_cat_motivos_salida?.mot_nombre ?? null,
@@ -123,7 +127,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
         `
       *,
       sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre ),
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_tipos_contrato ( tco_nombre ),
       sgrh_cat_tipos_jornada ( tjo_nombre ),
       sgrh_cat_motivos_salida ( mot_nombre ),

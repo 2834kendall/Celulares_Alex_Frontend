@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import type { CatalogoItem, MotivoSalidaItem, TerritorioCatalogo } from '@/modules/employees/types'
+import { formatSucursalLabel } from '@/lib/empresa/marca-label'
 
 export type GetCatalogoResult = { ok: true; data: CatalogoItem[] } | { ok: false; error: string }
 
@@ -196,7 +197,7 @@ export async function getSucursales(): Promise<GetCatalogoResult> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_sucursales')
-    .select('suc_id, suc_nombre')
+    .select('suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre )')
     .eq('suc_activa', true)
     .order('suc_nombre', { ascending: true })
 
@@ -204,7 +205,16 @@ export async function getSucursales(): Promise<GetCatalogoResult> {
     return { ok: false, error: CATALOG_ERROR }
   }
 
-  return { ok: true, data: data.map((s) => ({ id: s.suc_id, nombre: s.suc_nombre })) }
+  return {
+    ok: true,
+    // Se ordena por lo que se muestra: así quedan juntas las de cada marca.
+    data: data
+      .map((s) => ({
+        id: s.suc_id,
+        nombre: formatSucursalLabel(s.sgrh_marcas_comerciales?.mco_nombre, s.suc_nombre),
+      }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+  }
 }
 
 /** Catálogo global de tipos de contrato (cacheado). */
