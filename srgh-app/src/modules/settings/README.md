@@ -6,17 +6,17 @@ Es un **modo**, no una pantalla (SGRH-92). En `/settings…` el sidebar (y el dr
 reemplaza el menú principal por `SettingsSidebarNav`: "← Volver" a la última pantalla de fuera
 de Configuración (`lib/returnPath.ts`, en sessionStorage), búsqueda y dos grupos.
 
-| grupo   | ajuste                          | ruta                                                           |
-| ------- | ------------------------------- | -------------------------------------------------------------- |
-| Empresa | Empresa: Información            | `/settings/profile`                                            |
-|         | Empresa: Apariencia (tema)      | `/settings/profile?tab=apariencia`                             |
-|         | Empresa: Marcas (logo, colores) | `/settings/profile?tab=marcas` ([detalle](docs/marcas.md))     |
-|         | Sucursales y kioscos            | `/settings/branches` ([detalle](docs/sucursales-y-kioscos.md)) |
-|         | General (formato de hora)       | `/settings/general`                                            |
-| Módulos | Puestos                         | `/settings/employees/positions`                                |
-|         | Tipos de tardía                 | `/settings/attendance/tardiness-types`                         |
-|         | Tipos de incapacidad            | `/settings/schedule/absence-types`                             |
-|         | Etapas y criterios de selección | `/settings/recruitment/{stages,criteria}`                      |
+| grupo   | ajuste                          | ruta                                                                                          |
+| ------- | ------------------------------- | --------------------------------------------------------------------------------------------- |
+| Empresa | Empresa: Información            | `/settings/profile`                                                                           |
+|         | Empresa: Apariencia (tema)      | `/settings/profile?tab=apariencia`                                                            |
+|         | Empresa: Marcas (logo, colores) | `/settings/profile?tab=marcas` ([marcas](docs/marcas.md), [selector](docs/contexto-marca.md)) |
+|         | Sucursales y kioscos            | `/settings/branches` ([detalle](docs/sucursales-y-kioscos.md))                                |
+|         | General (formato de hora)       | `/settings/general`                                                                           |
+| Módulos | Puestos                         | `/settings/employees/positions`                                                               |
+|         | Tipos de tardía                 | `/settings/attendance/tardiness-types`                                                        |
+|         | Tipos de incapacidad            | `/settings/schedule/absence-types`                                                            |
+|         | Etapas y criterios de selección | `/settings/recruitment/{stages,criteria}`                                                     |
 
 `/settings` y `/settings/<módulo>` redirigen al primer ajuste visible. **Ctrl/⌘+K** abre
 `SettingsSearch`, solo en modo configuración; también encuentra las pestañas de Empresa
