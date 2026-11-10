@@ -24,6 +24,8 @@ interface AusenciaJoinRow {
 export interface AusenciaWeekRow {
   ausenciaId: number
   employmentHistoryId: number
+  /** Sucursal base del contrato (ver ausenciasDelPanel). */
+  sucursalContratoId: number | null
   tipoAusenciaId: number
   fechaInicio: string
   fechaFin: string
@@ -41,6 +43,10 @@ export type GetAusenciasForWeekResult =
  * Ausencias (incapacidades y licencias) que se solapan con la semana dada,
  * para superponerlas sobre la matriz de horarios. Filtra por empresa via
  * historial laboral, igual que getWeeklySchedule.
+ *
+ * La marca elegida NO se aplica acá: un empleado de otra marca con un turno prestado
+ * sale en la matriz, y sin su ausencia la celda de ese dia quedaria editable y "Pegar"
+ * la pisaria. El panel se acota despues, con ausenciasDelPanel.
  */
 export async function getAusenciasForWeek(
   weekStartISO: string,
@@ -57,7 +63,7 @@ export async function getAusenciasForWeek(
 
   const { data: employmentHistory, error: errHistory } = await supabase
     .from('sgrh_historial_laboral')
-    .select('lab_id')
+    .select('lab_id, lab_sucursal_id')
     .eq('lab_empresa_id', empresaId)
     .is('lab_fecha_fin', null)
 
@@ -66,6 +72,9 @@ export async function getAusenciasForWeek(
   }
 
   const employmentHistoryIds = (employmentHistory ?? []).map((h) => h.lab_id as number)
+  const sucursalPorContrato = new Map(
+    (employmentHistory ?? []).map((h) => [h.lab_id as number, h.lab_sucursal_id as number | null])
+  )
 
   if (employmentHistoryIds.length === 0) {
     return { ok: true, data: [] }
@@ -99,6 +108,7 @@ export async function getAusenciasForWeek(
     .map((a) => ({
       ausenciaId: a.aus_id,
       employmentHistoryId: a.aus_historial_laboral_id,
+      sucursalContratoId: sucursalPorContrato.get(a.aus_historial_laboral_id) ?? null,
       tipoAusenciaId: a.aus_tipo_ausencia_id,
       fechaInicio: a.aus_fecha_inicio,
       fechaFin: a.aus_fecha_fin,

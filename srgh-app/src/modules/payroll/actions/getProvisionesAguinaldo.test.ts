@@ -1,8 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getProvisionesAguinaldo } from './getProvisionesAguinaldo'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
@@ -77,6 +83,7 @@ function mockSupabase(responses: Record<string, Respuesta | Respuesta[]>) {
     sgrh_ausencias: { data: [], error: null },
     sgrh_pagos_extraordinarios: { data: [], error: null },
     sgrh_provisiones_anuales: { data: [], error: null },
+    sgrh_empresas: { data: { org_horas_anular_pago: 48 }, error: null },
     ...responses,
   })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
@@ -250,6 +257,10 @@ describe('getProvisionesAguinaldo (server action)', () => {
             pex_historial_laboral_id: 1,
             pex_fecha_pago: '2026-12-10',
             pex_monto_bruto: 429000,
+            pex_pagado_en: '2026-12-10T15:00:00+00:00',
+            pex_anulado_en: null,
+            pex_anulado_por_nombre: null,
+            pex_motivo_anulacion: null,
           },
         ],
         error: null,
@@ -265,6 +276,113 @@ describe('getProvisionesAguinaldo (server action)', () => {
       pagoId: 70,
       fechaPago: '2026-12-10',
       monto: 429000,
+      ultimaAnulacion: null,
+    })
+  })
+
+  describe('pago anulado por error', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2027-01-01T00:30:00Z'))
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    const ANULADO = {
+      pex_id: 70,
+      pex_historial_laboral_id: 1,
+      pex_fecha_pago: '2026-12-10',
+      pex_monto_bruto: 400000,
+      pex_pagado_en: '2026-12-10T15:00:00+00:00',
+      pex_anulado_en: '2026-12-10T18:00:00+00:00',
+      pex_anulado_por_nombre: 'Laura Vargas',
+      pex_motivo_anulacion: 'Se pagó con quincenas sin marcar.',
+    }
+
+    it('un pago anulado no cuenta: vuelve a pendiente y queda en el historial', async () => {
+      mockSupabase({
+        sgrh_historial_laboral: { data: [candidato(1, 'Ana', '2020-01-15')], error: null },
+        sgrh_nomina_detalle: { data: ciclo2026(1), error: null },
+        sgrh_pagos_extraordinarios: { data: [ANULADO], error: null },
+      })
+
+      const result = await getProvisionesAguinaldo(2026)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.items[0]).toMatchObject({
+        pagado: false,
+        pagoId: null,
+        // El monto vuelve a ser el calculado (24 × 215.000 ÷ 12), no el del
+        // pago anulado.
+        monto: 430000,
+        anulableHasta: null,
+        ultimaAnulacion: {
+          fecha: '2026-12-10T18:00:00+00:00',
+          por: 'Laura Vargas',
+          motivo: 'Se pagó con quincenas sin marcar.',
+        },
+      })
+    })
+
+    it('una marca de la provisión que quedó en true no lo da por pagado si el pago se anuló', async () => {
+      mockSupabase({
+        sgrh_historial_laboral: { data: [candidato(1, 'Ana', '2020-01-15')], error: null },
+        sgrh_nomina_detalle: { data: ciclo2026(1), error: null },
+        sgrh_pagos_extraordinarios: { data: [ANULADO], error: null },
+        sgrh_provisiones_anuales: {
+          data: [
+            {
+              pra_historial_laboral_id: 1,
+              pra_aguinaldo_pagado: true,
+              pra_fecha_pago_aguinaldo: '2026-12-10',
+            },
+          ],
+          error: null,
+        },
+      })
+
+      const result = await getProvisionesAguinaldo(2026)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.items[0]).toMatchObject({ pagado: false, pagoId: null })
+    })
+
+    it('después de anular se puede volver a pagar: cuenta el pago nuevo y se puede anular a tiempo', async () => {
+      mockSupabase({
+        sgrh_historial_laboral: { data: [candidato(1, 'Ana', '2020-01-15')], error: null },
+        sgrh_nomina_detalle: { data: ciclo2026(1), error: null },
+        sgrh_pagos_extraordinarios: {
+          data: [
+            ANULADO,
+            {
+              ...ANULADO,
+              pex_id: 71,
+              pex_monto_bruto: 429000,
+              // Hoy es 01/01/2027 00:30 UTC: pagado hace media hora.
+              pex_pagado_en: '2027-01-01T00:00:00+00:00',
+              pex_anulado_en: null,
+              pex_anulado_por_nombre: null,
+              pex_motivo_anulacion: null,
+            },
+          ],
+          error: null,
+        },
+      })
+
+      const result = await getProvisionesAguinaldo(2026)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.items[0]).toMatchObject({
+        pagado: true,
+        pagoId: 71,
+        monto: 429000,
+        anulableHasta: '2027-01-03T00:00:00.000Z',
+        ultimaAnulacion: { motivo: 'Se pagó con quincenas sin marcar.' },
+      })
     })
   })
 
@@ -502,5 +620,62 @@ describe('getProvisionesAguinaldo (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data.items[0]).toMatchObject({ fechaSalida: '2026-12-05', monto: 430000 })
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getProvisionesAguinaldo con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    conPermisos(['NOMINA_READ', 'AUSENCIAS_READ'])
+  })
+
+  // Trasladada de la tienda 9 a la 5 a mitad del ciclo: una sola fila, con lo de ambas.
+  const trasladada = {
+    ...candidato(2, 'Trasladada', '2026-06-01', {
+      ingreso: '2020-01-15',
+      contratos: [
+        { ...contrato(1, '2020-01-15', '2026-05-31'), lab_sucursal_id: 9 },
+        { ...contrato(2, '2026-06-01'), lab_sucursal_id: 5 },
+      ],
+    }),
+    lab_sucursal_id: 5,
+  }
+  const deOtraMarca = { ...candidato(3, 'Otra', '2020-01-15'), lab_sucursal_id: 9 }
+
+  function conCiclo() {
+    const quincenas = ciclo2026(1).map((fila, i) =>
+      i < 12 ? fila : { ...fila, ndt_historial_laboral_id: 2 }
+    )
+    mockSupabase({
+      sgrh_historial_laboral: { data: [trasladada, deOtraMarca], error: null },
+      sgrh_nomina_detalle: { data: [...quincenas, ...ciclo2026(3)], error: null },
+    })
+  }
+
+  it('filtra después de calcular: el monto sale completo y se puede pagar', async () => {
+    conCiclo()
+    const sinFiltro = await getProvisionesAguinaldo(2026)
+    const montoCompleto =
+      sinFiltro.ok && sinFiltro.data.items.find((i) => i.historialLaboralId === 2)?.monto
+    expect(montoCompleto).toBe(430000)
+
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    conCiclo()
+    const result = await getProvisionesAguinaldo(2026)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items.map((i) => i.historialLaboralId)).toEqual([2])
+    expect(result.data.items[0]).toMatchObject({ monto: montoCompleto, sucursalesOcultas: false })
+  })
+
+  it('si no se pudo leer el filtro da error', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getProvisionesAguinaldo(2026)).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

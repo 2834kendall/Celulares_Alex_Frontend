@@ -7,13 +7,16 @@ export interface EmpresaShellRow {
   org_formato_hora: string | null
   /** Ruta del logo en el bucket logos-empresa (no una URL), o null. */
   org_logo_url: string | null
+  /** Tema por defecto de la empresa (vista sin marca), o null = el del sistema. */
+  org_color_acento: string | null
+  org_color_sidebar: string | null
 }
 
 /**
  * La fila de la empresa del JWT con lo que pinta el shell (nombre, formato de
- * hora y logo), leída UNA vez por request: el layout y el dashboard la piden
- * por separado y antes eran dos consultas a la misma fila (tres con el
- * dashboard).
+ * hora, logo y tema por defecto), leída UNA vez por request: el layout y el
+ * dashboard la piden por separado y antes eran dos consultas a la misma fila
+ * (tres con el dashboard).
  *
  * No filtra por empresa_id: la RLS `empresas_select` solo expone la fila de
  * la empresa del JWT. Devuelve null ante cualquier fallo; cada lector decide
@@ -23,7 +26,9 @@ export const getEmpresaShell = cache(async (): Promise<EmpresaShellRow | null> =
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_empresas')
-    .select('org_nombre_fantasia, org_nombre_social, org_formato_hora, org_logo_url')
+    .select(
+      'org_nombre_fantasia, org_nombre_social, org_formato_hora, org_logo_url, org_color_acento, org_color_sidebar'
+    )
     .maybeSingle()
 
   return error || !data ? null : data

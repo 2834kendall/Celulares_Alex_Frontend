@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { Loader2 } from 'lucide-react'
 import type { BancoHorasItem } from '@/modules/payroll/types'
 import { formatCRC, formatDate } from '@/modules/payroll/lib/format'
@@ -27,10 +28,16 @@ export function CompensarHorasLiquidadoModal({
   onConfirm,
 }: CompensarHorasLiquidadoModalProps) {
   const [nota, setNota] = useState('')
+  const guard = useUnsavedChanges({
+    label: 'la compensación de horas',
+    value: nota,
+    busy: submitting,
+  })
   const valida = nota.trim().length >= LARGO_MINIMO
 
   return (
     <div
+      ref={(element) => guard.bindRoot(element)}
       className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 px-4 py-4 backdrop-blur-[2px] sm:items-center sm:py-5"
       role="dialog"
       aria-modal="true"
@@ -70,7 +77,7 @@ export function CompensarHorasLiquidadoModal({
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={() => guard.confirmLeave(onCancel)}
             disabled={submitting}
             className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
           >

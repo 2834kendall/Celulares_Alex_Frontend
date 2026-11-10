@@ -2,9 +2,11 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { fetchStageColumns } from '@/modules/recruitment/lib/stageColumns'
 import type { EtapaSeleccionItem } from '@/modules/recruitment/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 export interface PostulacionBoardItem {
   posId: number
@@ -31,7 +33,10 @@ interface PostulacionQueryRow {
     cdt_apellido_2: string | null
   } | null
   sgrh_cat_puestos: { pue_nombre: string } | null
-  sgrh_sucursales: { suc_nombre: string } | null
+  sgrh_sucursales: {
+    suc_nombre: string
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
   pos_etapa_actual_id: number | null
   sgrh_cat_etapas_seleccion: {
     eta_nombre: string
@@ -55,12 +60,14 @@ export type GetPostulacionesBoardResult =
 export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResult> {
   await requirePermission(PERMISOS.RECLUTAMIENTO_READ)
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
-  const [{ data, error }, stages] = await Promise.all([
-    supabase
-      .from('sgrh_postulaciones')
-      .select(
-        `
+  let postulaciones = supabase
+    .from('sgrh_postulaciones')
+    .select(
+      `
       pos_id,
       pos_candidato_id,
       pos_fecha_postula,
@@ -68,13 +75,17 @@ export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResu
       pos_etapa_actual_id,
       sgrh_candidatos ( cdt_nombre, cdt_apellido_1, cdt_apellido_2 ),
       sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre ),
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_etapas_seleccion ( eta_nombre, eta_color )
     `
-      )
-      .eq('pos_estado_final', 'en_proceso')
-      .order('pos_fecha_postula', { ascending: true })
-      .returns<PostulacionQueryRow[]>(),
+    )
+    .eq('pos_estado_final', 'en_proceso')
+    .order('pos_fecha_postula', { ascending: true })
+  // Una postulación sin tienda solo sale en "Todas".
+  if (filtro.sucursalIds) postulaciones = postulaciones.in('pos_sucursal_id', filtro.sucursalIds)
+
+  const [{ data, error }, stages] = await Promise.all([
+    postulaciones.returns<PostulacionQueryRow[]>(),
     fetchStageColumns(supabase),
   ])
 
@@ -95,7 +106,7 @@ export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResu
       candidatoId: row.pos_candidato_id,
       candidatoNombre: nombreCompleto,
       puestoNombre: row.sgrh_cat_puestos?.pue_nombre ?? '—',
-      sucursalNombre: row.sgrh_sucursales?.suc_nombre ?? null,
+      sucursalNombre: sucursalLabel(row.sgrh_sucursales) ?? null,
       fechaPostula: row.pos_fecha_postula,
       puntajePromedio: row.pos_puntaje_promedio,
       etapaId: row.pos_etapa_actual_id,

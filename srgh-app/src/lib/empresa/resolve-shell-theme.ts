@@ -1,54 +1,59 @@
-import { getSucursalTema } from '@/lib/empresa/get-sucursal-tema'
-import {
-  listSucursalesConApariencia,
-  type SucursalConApariencia,
-} from '@/lib/empresa/list-sucursales'
-import { getSucursalPreviewId } from '@/lib/empresa/sucursal-preview'
-import { PERMISOS } from '@/lib/permissions/catalog'
+import { getSelectorMarca } from '@/lib/empresa/contexto-activo'
+import { getEmpresaShell } from '@/lib/empresa/get-empresa-shell'
+import { getMarcaTema, type MarcaApariencia } from '@/lib/empresa/get-marca-tema'
 
 export interface ShellTheme {
+  /** Marca que pinta el shell (la elegida o la propia), o null = vista de empresa. */
+  marcaNombre: string | null
+  /** Sucursal propia del usuario; null si tiene selector o si opera a nivel empresa. */
   sucursalNombre: string | null
   colorAcento: string | null
   colorSidebar: string | null
-  /** Sucursales de la empresa con permiso EMPRESAS_WRITE; vacio para el resto. */
-  sucursales: SucursalConApariencia[]
-  /** Sucursal actualmente en preview (ver sucursal-preview.ts), o null. */
-  sucursalPreviewId: number | null
+  /** RUTA del logo de la marca, o null para usar el de la empresa. */
+  logoPath: string | null
+  /** Marcas que la cuenta puede elegir; vacío si no tiene selector. */
+  marcas: MarcaApariencia[]
+  /** Marca elegida en el selector (ver contexto-activo.ts), o null = todas. */
+  marcaContextoId: number | null
 }
 
 /**
- * Tema OFICIAL que pinta el shell ahora mismo: la sucursal fija del usuario,
- * salvo que haya una sucursal en preview (selector de la barra superior), que
- * gana. Fuente unica — la usan `(dashboard)/layout.tsx` (para pintar
- * AppShell) y `settings/page.tsx` (para poder RESTAURAR estos mismos colores
- * cuando se sale del formulario de apariencia de una sucursal).
+ * Tema OFICIAL que pinta el shell ahora mismo. Orden:
  *
- * Antes cada uno calculaba esto por su lado: `(dashboard)/layout.tsx` si
- * consideraba la cookie de preview, `settings/page.tsx` no. Eso es lo que
- * dejaba la previsualizacion en vivo del formulario de apariencia "pegada"
- * al salir — no habia forma de saber a que colores volver porque
- * `settings/page.tsx` nunca supo que colores estaba pintando el shell
- * realmente.
+ *   marca elegida en el selector
+ *   → si tiene selector y está en "Todas": tema de la empresa
+ *   → marca propia (sucursal de la cuenta, o la del contrato vigente)
+ *   → tema de la empresa
+ *   → colores del sistema (null)
+ *
+ * Quien tiene selector y está en "Todas" ve datos de varias marcas: pintar la de
+ * su primera tienda se leería como un filtro que no existe.
+ *
+ * Cada color cae por separado: una marca que solo personalizó el acento
+ * hereda la barra lateral de la empresa.
+ *
+ * Fuente única: la usa `(dashboard)/layout.tsx` para pintar AppShell.
  */
 export async function resolveShellTheme(
   usrId: number | null | undefined,
-  permisos: string[]
+  empId: number | null | undefined
 ): Promise<ShellTheme> {
-  const administraEmpresa = permisos.includes(PERMISOS.EMPRESAS_WRITE)
-
-  const [tema, sucursales, previewId] = await Promise.all([
-    getSucursalTema(usrId),
-    administraEmpresa ? listSucursalesConApariencia() : Promise.resolve([]),
-    administraEmpresa ? getSucursalPreviewId() : Promise.resolve(null),
+  const [tema, selector, empresa] = await Promise.all([
+    getMarcaTema(usrId, empId),
+    getSelectorMarca(),
+    getEmpresaShell(),
   ])
 
-  const previewSucursal = previewId ? (sucursales.find((s) => s.id === previewId) ?? null) : null
+  const tieneSelector = selector.marcas.length > 0
+  const marca = selector.marcaElegida ?? (tieneSelector ? null : tema.marca)
 
   return {
-    sucursalNombre: previewSucursal?.nombre ?? tema.sucursalNombre,
-    colorAcento: previewSucursal?.colorAcento ?? tema.colorAcento,
-    colorSidebar: previewSucursal?.colorSidebar ?? tema.colorSidebar,
-    sucursales,
-    sucursalPreviewId: previewSucursal?.id ?? null,
+    marcaNombre: marca?.nombre ?? null,
+    sucursalNombre: tieneSelector ? null : tema.sucursalNombre,
+    colorAcento: marca?.colorAcento ?? empresa?.org_color_acento ?? null,
+    colorSidebar: marca?.colorSidebar ?? empresa?.org_color_sidebar ?? null,
+    logoPath: marca?.logoPath ?? null,
+    marcas: selector.marcas,
+    marcaContextoId: selector.marcaElegida?.id ?? null,
   }
 }

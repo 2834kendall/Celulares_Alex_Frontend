@@ -34,6 +34,7 @@ function mockClient(responses: Record<string, { data: unknown; error: unknown }>
   const client = createSupabaseClientMock(responses)
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   mockCreateAdminClient.mockReturnValue(client as unknown as ReturnType<typeof createAdminClient>)
+  return client
 }
 
 describe('getCatalogs (server actions)', () => {
@@ -74,6 +75,36 @@ describe('getCatalogs (server actions)', () => {
     const result = await getSucursales()
 
     expect(result).toEqual({ ok: true, data: [{ id: 2, nombre: 'Central' }] })
+  })
+
+  // La base ordena por sucursal, pero se muestra "Marca · Sucursal": sin ordenar
+  // por lo que se ve, las marcas quedaban mezcladas en el select.
+  it('getSucursales deja juntas las sucursales de cada marca', async () => {
+    mockClient({
+      sgrh_sucursales: {
+        data: [
+          { suc_id: 1, suc_nombre: 'Centro', sgrh_marcas_comerciales: { mco_nombre: 'Infinity' } },
+          {
+            suc_id: 2,
+            suc_nombre: 'Mall',
+            sgrh_marcas_comerciales: { mco_nombre: 'Celulares Alex' },
+          },
+          { suc_id: 3, suc_nombre: 'Plaza', sgrh_marcas_comerciales: { mco_nombre: 'Infinity' } },
+        ],
+        error: null,
+      },
+    })
+
+    const result = await getSucursales()
+
+    expect(result).toEqual({
+      ok: true,
+      data: [
+        { id: 2, nombre: 'Celulares Alex · Mall' },
+        { id: 1, nombre: 'Infinity · Centro' },
+        { id: 3, nombre: 'Infinity · Plaza' },
+      ],
+    })
   })
 
   it('getTiposContrato mapea al DTO CatalogoItem', async () => {
@@ -129,14 +160,43 @@ describe('getCatalogs (server actions)', () => {
   })
 
   it('getRoles exige USUARIOS_WRITE y mapea al DTO CatalogoItem', async () => {
-    mockClient({
-      sgrh_cat_roles: { data: [{ rol_id: 6, rol_nombre: 'Empleado' }], error: null },
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const client = mockClient({
+      sgrh_cat_roles: {
+        data: [
+          { rol_id: 6, rol_nombre: 'Empleado' },
+          { rol_id: 40, rol_nombre: 'Supervisor' },
+        ],
+        error: null,
+      },
     })
 
     const result = await getRoles()
 
-    expect(result).toEqual({ ok: true, data: [{ id: 6, nombre: 'Empleado' }] })
+    expect(result).toEqual({
+      ok: true,
+      data: [
+        { id: 6, nombre: 'Empleado' },
+        { id: 40, nombre: 'Supervisor' },
+      ],
+    })
     expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.USUARIOS_WRITE)
+    // Solo los de la empresa del JWT: las plantillas sin empresa no se ofrecen.
+    const query = client.from.mock.results[0].value
+    expect(query.eq).toHaveBeenCalledWith('rol_empresa_id', 1)
+    expect(query.eq).toHaveBeenCalledWith('rol_activo', true)
+    expect(query.or).not.toHaveBeenCalled()
+  })
+
+  it('getRoles falla cerrado si el JWT no trae empresa', async () => {
+    mockRequirePermission.mockResolvedValue({ app_metadata: {} } as unknown as Awaited<
+      ReturnType<typeof requirePermission>
+    >)
+    mockClient({ sgrh_cat_roles: { data: [], error: null } })
+
+    expect(await getRoles()).toEqual({ ok: false, error: 'No se pudo cargar el catálogo.' })
   })
 
   it('getTerritorio arma el árbol con el id del padre en cada nivel', async () => {

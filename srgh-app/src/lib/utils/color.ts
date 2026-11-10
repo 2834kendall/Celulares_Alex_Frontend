@@ -173,6 +173,8 @@ export interface BrandTokens {
   '--color-brand-600': string
   '--color-brand-700': string
   '--color-brand-800': string
+  '--color-brand-action': string
+  '--color-brand-action-hover': string
 }
 
 /**
@@ -199,6 +201,12 @@ export interface BrandTokens {
  * significar lo mismo en todas las sucursales.
  */
 export function deriveBrandTokens(hex: string): BrandTokens {
+  // Keep the selected accent intact, but make filled controls readable even
+  // when a branch chooses a bright custom color (white text requires 4.5:1).
+  let action = hex
+  for (let step = 1; contrastRatio(action, '#ffffff') < 4.5 && step <= 100; step++) {
+    action = darken(hex, step / 100)
+  }
   return {
     '--color-brand-50': lighten(hex, 0.95),
     '--color-brand-100': lighten(hex, 0.88),
@@ -209,6 +217,8 @@ export function deriveBrandTokens(hex: string): BrandTokens {
     '--color-brand-600': hex,
     '--color-brand-700': darken(hex, 0.15),
     '--color-brand-800': darken(hex, 0.3),
+    '--color-brand-action': action,
+    '--color-brand-action-hover': darken(action, 0.15),
   }
 }
 

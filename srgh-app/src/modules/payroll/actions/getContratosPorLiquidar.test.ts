@@ -4,6 +4,12 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -175,5 +181,39 @@ describe('getContratosPorLiquidar (server action)', () => {
       ok: false,
       error: 'No se pudieron cargar los contratos por liquidar.',
     })
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getContratosPorLiquidar con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({} as never)
+  })
+
+  it('lee solo los contratos de sus tiendas', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    const client = mockHistorial({ data: [terminado(1, 'Ana', [])], error: null })
+
+    await getContratosPorLiquidar()
+
+    expect(client.from.mock.results[0].value.in).toHaveBeenCalledWith('lab_sucursal_id', [5, 6])
+  })
+
+  it('sin marca no acota', async () => {
+    const client = mockHistorial({ data: [terminado(1, 'Ana', [])], error: null })
+
+    await getContratosPorLiquidar()
+
+    expect(client.from.mock.results[0].value.in).not.toHaveBeenCalled()
+  })
+
+  it('si no se pudo leer el filtro da error', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getContratosPorLiquidar()).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

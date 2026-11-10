@@ -85,4 +85,27 @@ describe('deleteConcepto (server action)', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('AJUSTE')
   })
+
+  // Sin saber qué concepto es no se sabe si es BASE: seguir podía terminar
+  // desactivando BASE por el camino del "no se pudo borrar".
+  it('si no puede leer el concepto, no borra ni desactiva nada', async () => {
+    const supabase = createSupabaseClientMock({
+      sgrh_cat_conceptos_nomina: [{ data: null, error: { message: 'boom' } }],
+    })
+    mockCreateClient.mockResolvedValue(
+      supabase as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await deleteConcepto(1)
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo eliminar el concepto.' })
+    expect(supabase.from).toHaveBeenCalledTimes(1)
+  })
+
+  it('rechaza un id inválido sin llamar a Supabase', async () => {
+    const result = await deleteConcepto(0)
+
+    expect(result).toEqual({ ok: false, error: 'Concepto inválido.' })
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
 })

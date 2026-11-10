@@ -5,6 +5,12 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { getStorageProvider } from '@/lib/storage'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { StorageProvider } from '@/lib/storage/types'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -218,5 +224,122 @@ describe('getEmployees (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data[0]).toMatchObject({ foto_url: null })
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getEmployees con una marca elegida', () => {
+  const persona = (id: number, nombre: string) => ({
+    ...EMPLEADO_BASE,
+    emp_id: id,
+    emp_nombre: nombre,
+  })
+  const vigente = (id: number, sucursal: number) => ({
+    lab_empleado_id: id,
+    lab_sucursal_id: sucursal,
+    lab_fecha_inicio: '2024-01-01',
+    lab_salario_base: 1,
+    sgrh_cat_puestos: null,
+    sgrh_sucursales: null,
+    sgrh_cat_tipos_contrato: null,
+  })
+  const cerrado = (labId: number, id: number, sucursal: number, inicio: string) => ({
+    lab_id: labId,
+    lab_empleado_id: id,
+    lab_sucursal_id: sucursal,
+    lab_fecha_inicio: inicio,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(CLAIMS)
+    mockProvider()
+  })
+
+  function conDatos(vigentes: unknown[], cerrados: unknown[]) {
+    const client = createSupabaseClientMock({
+      sgrh_empleados: {
+        data: [
+          persona(10, 'Vigente en la marca'),
+          persona(11, 'Vigente en otra'),
+          persona(12, 'Ex de la marca'),
+          persona(13, 'Ex que se fue de la marca'),
+          persona(14, 'Sin contrato'),
+        ],
+        error: null,
+      },
+      sgrh_historial_laboral: [
+        { data: vigentes, error: null },
+        { data: cerrados, error: null },
+      ],
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    return client
+  }
+
+  it('cuenta el contrato vigente y, de un exempleado, el último que tuvo', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    conDatos(
+      [vigente(10, 5), vigente(11, 9)],
+      [
+        cerrado(1, 12, 9, '2020-01-01'),
+        cerrado(2, 12, 5, '2023-01-01'),
+        cerrado(3, 13, 6, '2020-01-01'),
+        cerrado(4, 13, 9, '2023-01-01'),
+      ]
+    )
+
+    const result = await getEmployees()
+
+    expect(result.ok && result.data.map((e) => e.emp_id)).toEqual([10, 12])
+  })
+
+  it('el contrato vigente manda sobre uno anterior en otra marca', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    conDatos([vigente(11, 9)], [cerrado(1, 11, 5, '2020-01-01')])
+
+    const result = await getEmployees()
+
+    expect(result.ok && result.data.map((e) => e.emp_id)).toEqual([])
+  })
+
+  it('sin marca no filtra ni lee contratos cerrados', async () => {
+    const client = conDatos([vigente(10, 5)], [])
+
+    const result = await getEmployees()
+
+    expect(result.ok && result.data).toHaveLength(5)
+    const lecturas = client.from.mock.calls.filter(([t]) => t === 'sgrh_historial_laboral')
+    expect(lecturas).toHaveLength(1)
+  })
+
+  it('si falla un contrato cerrado no muestra un listado incompleto', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    const client = createSupabaseClientMock({
+      sgrh_empleados: { data: [], error: null },
+      sgrh_historial_laboral: [
+        { data: [], error: null },
+        { data: null, error: { message: 'boom' } },
+      ],
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    expect((await getEmployees()).ok).toBe(false)
+  })
+
+  it('si no se pudo leer el filtro da error, no todos los empleados', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect(await getEmployees()).toEqual({
+      ok: false,
+      error: 'No se pudo aplicar el filtro de marca.',
+    })
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

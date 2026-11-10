@@ -1,7 +1,8 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Clock, Loader2 } from 'lucide-react'
 import { scheduleSchema, type ScheduleInput, type ScheduleRow } from '@/modules/schedules/types'
@@ -43,8 +44,10 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
     setValue,
     getValues,
     watch,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<ScheduleInput>({
+    unsavedLabel: 'el horario',
     resolver: zodResolver(scheduleSchema),
     defaultValues: schedule
       ? {
@@ -102,11 +105,17 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
     }
 
     // revalidatePath('/schedule') in the server action already refreshes the route.
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

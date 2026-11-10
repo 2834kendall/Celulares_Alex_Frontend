@@ -1,7 +1,9 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm, type Resolver } from 'react-hook-form'
+import { type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { Loader2, Send } from 'lucide-react'
@@ -44,8 +46,10 @@ export function InviteUserForm({
     handleSubmit,
     getValues,
     setValue,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<InvitarUsuarioInput>({
+    unsavedLabel: 'la invitación de usuario',
     // z.preprocess vuelve `unknown` el lado input del schema; el formulario
     // trabaja con el tipo de salida (''→null ya resuelto por el resolver).
     resolver: zodResolver(invitarUsuarioSchema) as Resolver<InvitarUsuarioInput>,
@@ -67,6 +71,7 @@ export function InviteUserForm({
 
     // revalidatePath('/employees') en la action ya refresca la lista.
     toast.success(`Invitación enviada a ${input.email}.`)
+    guard.acceptChanges()
     onClose()
   }
 
@@ -76,7 +81,12 @@ export function InviteUserForm({
       subtitle="Recibirá un email para definir su contraseña en el primer acceso."
       onClose={onClose}
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit(onSubmit)}
+        className="space-y-3"
+        noValidate
+      >
         {serverError && (
           <Alert>
             <div>{serverError}</div>
@@ -134,7 +144,7 @@ export function InviteUserForm({
         />
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button onClick={onClose} variant="secondary" size="md">
+          <Button onClick={() => guard.confirmLeave(onClose)} variant="secondary" size="md">
             Cancelar
           </Button>
           <Button type="submit" disabled={isSubmitting} size="md">

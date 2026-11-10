@@ -13,7 +13,9 @@ interface MarkDbRow {
   mar_fecha_hora: string
 }
 
-export type LoadDayJourneyResult = { ok: true; journey: DayJourney } | { ok: false; error: string }
+export type LoadDayJourneyResult =
+  | { ok: true; journey: DayJourney; snapshot: [number, string, string][] }
+  | { ok: false; error: string }
 
 /**
  * La jornada de UN contrato en UN dia, a partir de sus marcas.
@@ -34,7 +36,7 @@ export async function loadDayJourney(
     .select('mar_id, mar_tipo, mar_fecha_hora')
     .eq('mar_historial_laboral_id', employmentHistoryId)
     .gte('mar_fecha_hora', `${dateISO} 00:00:00`)
-    .lte('mar_fecha_hora', `${dateISO} 23:59:59`)
+    .lte('mar_fecha_hora', `${dateISO} 23:59:59.999999`)
     .returns<MarkDbRow[]>()
 
   if (error) {
@@ -47,7 +49,13 @@ export async function loadDayJourney(
     if (tipo.success) marks.push({ id: m.mar_id, tipo: tipo.data, fechaHora: m.mar_fecha_hora })
   }
 
-  return { ok: true, journey: groupIntoDayJourney(marks) }
+  return {
+    ok: true,
+    journey: groupIntoDayJourney(marks),
+    snapshot: [...(data ?? [])]
+      .sort((a, b) => a.mar_id - b.mar_id)
+      .map((m) => [m.mar_id, m.mar_tipo, m.mar_fecha_hora.replace('T', ' ').slice(0, 19)]),
+  }
 }
 
 /**

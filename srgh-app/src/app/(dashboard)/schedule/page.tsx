@@ -1,4 +1,5 @@
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getSchedules } from '@/modules/schedules/actions/getSchedules'
 import { getShiftTypes } from '@/modules/schedules/actions/getShiftTypes'
@@ -10,7 +11,7 @@ import { WeeklyScheduleMatrix } from '@/modules/schedules/components/WeeklySched
 import { currentMondayISO, getWeekDates, isValidISODate } from '@/modules/schedules/lib/week'
 import { getAusenciaTypes } from '@/modules/absences/actions/getAusenciaTypes'
 import { getAusenciasForWeek } from '@/modules/absences/actions/getAusenciasForWeek'
-import { buildAusenciaOverlayEntries } from '@/modules/absences/lib/overlay'
+import { ausenciasDelPanel, buildAusenciaOverlayEntries } from '@/modules/absences/lib/overlay'
 import { AbsencesPanel } from '@/modules/absences/components/AbsencesPanel'
 import type { EmployeeOption } from '@/modules/absences/types'
 import { Alert } from '@/components/ui/Alert'
@@ -50,12 +51,14 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
     weeklyScheduleResult,
     ausenciaTypesResult,
     ausenciasResult,
+    filtro,
   ] = await Promise.all([
     getSchedules(),
     getShiftTypes(),
     canReadMatrix ? getWeeklySchedule(weekStartISO) : Promise.resolve(null),
     getAusenciaTypes(),
     canReadAusencias ? getAusenciasForWeek(weekDates[0], weekDates[6]) : Promise.resolve(null),
+    getFiltroMarca(),
   ])
 
   if (!schedulesResult.ok) {
@@ -78,7 +81,12 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
   // no aplicada) no debe tumbar toda la pagina de horarios: se degrada a
   // "sin ausencias" para la matriz y el error solo se muestra en su propia
   // pestaña, donde es accionable.
-  const ausenciasError = ausenciasResult && !ausenciasResult.ok ? ausenciasResult.error : null
+  const ausenciasError =
+    filtro.estado === 'error'
+      ? ERROR_FILTRO_MARCA
+      : ausenciasResult && !ausenciasResult.ok
+        ? ausenciasResult.error
+        : null
   const ausenciasData = ausenciasResult?.ok ? ausenciasResult.data : []
 
   const ausenciaOverlay = weeklyScheduleResult
@@ -134,7 +142,11 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
               <AbsencesPanel
                 employees={employeeOptions}
                 ausenciaTypes={ausenciaTypesResult.data}
-                ausencias={ausenciasData}
+                ausencias={ausenciasDelPanel(
+                  ausenciasData,
+                  filtro.sucursalIds,
+                  weeklyScheduleResult?.data.map((row) => row.employmentHistoryId) ?? null
+                )}
                 canManageAbsences={canManageAbsences}
               />
             )

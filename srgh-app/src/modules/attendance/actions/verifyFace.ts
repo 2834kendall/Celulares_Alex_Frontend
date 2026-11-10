@@ -3,7 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
-import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
+import type { ManagedKioskMeta } from '@/modules/attendance/lib/liveKioskAccess'
+import { resolveKioskSucursalIds } from '@/modules/attendance/lib/dayJourney'
 import { getDayAssignments, isWorkable } from '@/modules/attendance/lib/workingDay'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
 import { decryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
@@ -61,7 +62,8 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   }
 
   const claims = await requireKioskAccess()
-  const meta = claims.app_metadata as { usr_id?: number; empresa_id?: number }
+  const meta = claims.app_metadata as ManagedKioskMeta
+  if (meta.kiosk_error) return { ok: false, error: meta.kiosk_error }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
@@ -98,7 +100,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
 
   const supabase = await createClient()
 
-  const sucursalIds = meta.usr_id ? await getUsuarioSucursalScope(supabase, meta.usr_id) : null
+  const sucursalIds = await resolveKioskSucursalIds(supabase, meta)
 
   if (!sucursalIds || sucursalIds.length === 0) {
     return { ok: false, error: 'Este kiosco no tiene una sucursal asignada.' }
@@ -180,16 +182,20 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
 
   let bestEmployeeId: number | null = null
   let bestDistance = Number.POSITIVE_INFINITY
+  let secondDistance = Number.POSITIVE_INFINITY
 
   for (const row of vectores ?? []) {
     const stored = row.bio_vector
     if (!Array.isArray(stored) || stored.length !== FACE_EMBEDDING_DIM) continue
-    if (!stored.every((x) => typeof x === 'number')) continue
+    if (!stored.every((x) => typeof x === 'number' && Number.isFinite(x))) continue
 
     const distance = euclideanDistance(probe, stored)
     if (distance < bestDistance) {
+      secondDistance = bestDistance
       bestDistance = distance
       bestEmployeeId = row.bio_empleado_id
+    } else if (distance < secondDistance) {
+      secondDistance = distance
     }
   }
 
@@ -200,6 +206,12 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   }
 
   const clasificacion = classifyDistance(bestDistance)
+
+  // A second identity also passing today's MATCH threshold is ambiguous.
+  // Do not invent a new uncalibrated margin or relax the existing threshold.
+  if (clasificacion.status === 'MATCH' && classifyDistance(secondDistance).status === 'MATCH') {
+    return { ok: true, status: 'REQUIRE_PIN' }
+  }
 
   if (clasificacion.status === 'DENIED') {
     // Log de auditoria obligatorio en DENIED. Best-effort: si el insert
@@ -229,6 +241,8 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     employeeId: bestEmployeeId,
     fullName: nameByEmployee.get(bestEmployeeId) ?? '',
     confianza: clasificacion.confianza ?? 'tolerancia',
-    ticket: await signFaceTicket(bestEmployeeId, ticketSecret),
+    ticket: await (meta.kiosk_context
+      ? signFaceTicket(bestEmployeeId, ticketSecret, Date.now(), undefined, meta.kiosk_context)
+      : signFaceTicket(bestEmployeeId, ticketSecret)),
   }
 }

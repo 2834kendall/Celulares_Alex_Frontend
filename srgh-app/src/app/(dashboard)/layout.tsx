@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AppShell } from '@/components/layout/AppShell'
@@ -5,6 +6,7 @@ import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { resolveShellTheme } from '@/lib/empresa/resolve-shell-theme'
 import { getFormatoHora } from '@/lib/empresa/get-formato-hora'
 import { getEmpresaLogoUrl } from '@/lib/empresa/get-empresa-logo'
+import { getRolNombre } from '@/lib/empresa/get-rol-nombre'
 import type { SgrhJwtClaims } from '@/types/auth'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,17 +36,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   const email = typeof data.claims.email === 'string' ? data.claims.email : 'Usuario autenticado'
-  const rol = typeof meta.rol === 'string' ? meta.rol : null
 
   // Nombre real de la empresa del tenant (RLS devuelve solo la del JWT) y el
-  // tema oficial del shell — sucursal fija propia, salvo que haya una
-  // sucursal en preview desde el selector de la barra superior.
-  const [empresaNombre, theme, formatoHora, logoUrl] = await Promise.all([
+  // tema oficial del shell — la marca elegida en el selector de la barra superior
+  // o, sin selector, la propia (sucursal de la cuenta o del contrato vigente); sin
+  // marca, el tema de la empresa. El rol se muestra por su nombre: el código del
+  // JWT es un identificador, no un texto.
+  const [empresaNombre, theme, formatoHora, rol] = await Promise.all([
     getEmpresaNombre(),
-    resolveShellTheme(meta.usr_id, permisos),
+    resolveShellTheme(meta.usr_id, meta.emp_id),
     getFormatoHora(),
-    getEmpresaLogoUrl(),
+    getRolNombre(typeof meta.rol === 'string' ? meta.rol : null),
   ])
+  // Depende de la marca resuelta: el logo de la marca, o el de la empresa.
+  const logoUrl = await getEmpresaLogoUrl(theme.logoPath)
 
   return (
     <AppShell
@@ -53,14 +58,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
       rol={rol}
       empresaNombre={empresaNombre}
       logoUrl={logoUrl}
+      marcaNombre={theme.marcaNombre}
       sucursalNombre={theme.sucursalNombre}
       colorAcento={theme.colorAcento}
       colorSidebar={theme.colorSidebar}
-      sucursales={theme.sucursales}
-      sucursalPreviewId={theme.sucursalPreviewId}
+      marcas={theme.marcas}
+      marcaContextoId={theme.marcaContextoId}
       formatoHora={formatoHora}
     >
-      {children}
+      {/* Al cambiar de marca se vuelve a montar la página: un filtro o una selección
+          en estado de cliente no pueden quedar con datos de la marca anterior. */}
+      <Fragment key={theme.marcaContextoId ?? 'todas'}>{children}</Fragment>
     </AppShell>
   )
 }

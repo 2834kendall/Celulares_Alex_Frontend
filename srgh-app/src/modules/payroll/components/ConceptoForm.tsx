@@ -1,7 +1,8 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { z } from 'zod'
 import { Coins, Loader2 } from 'lucide-react'
@@ -83,8 +84,10 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
     control,
     handleSubmit,
     watch,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<z.input<typeof conceptoNominaSchema>, unknown, ConceptoNominaInput>({
+    unsavedLabel: 'el concepto de nómina',
     resolver: zodResolver(conceptoNominaSchema),
     defaultValues: concepto
       ? {
@@ -131,11 +134,17 @@ export function ConceptoForm({ concepto, onSuccess }: ConceptoFormProps) {
     }
 
     // revalidatePath('/payroll/concepts') en la server action ya refresca la ruta.
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

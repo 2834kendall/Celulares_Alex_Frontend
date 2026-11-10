@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { toast } from 'sonner'
 import { FileText, Loader2, Trash2 } from 'lucide-react'
 import { DocumentDropzone } from '@/components/ui/DocumentDropzone'
@@ -41,6 +42,13 @@ export function CandidateDocumentsSection({
   const [addError, setAddError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const guard = useUnsavedChanges({
+    label: 'el documento del candidato',
+    value: { pendingFile, tipo, nombre },
+    enabled: Boolean(pendingFile),
+    busy: uploading,
+    hasFiles: Boolean(pendingFile),
+  })
 
   function handleSelect(file: File) {
     setPendingFile(file)
@@ -64,16 +72,20 @@ export function CandidateDocumentsSection({
     formData.set('cdo_tipo', tipo)
     formData.set('cdo_nombre', nombre.trim())
 
-    const result = await addCandidateDocument(candidatoId, formData)
-    setUploading(false)
-
-    if (!result.ok) {
-      setAddError(result.error)
-      return
+    try {
+      const result = await addCandidateDocument(candidatoId, formData)
+      if (!result.ok) {
+        setAddError(result.error)
+        return
+      }
+      toast.success(`Documento guardado: ${nombre.trim()}.`)
+      guard.acceptChanges()
+      setPendingFile(null)
+    } catch {
+      setAddError('No se pudo subir el documento. Reintentá.')
+    } finally {
+      setUploading(false)
     }
-
-    toast.success(`Documento guardado: ${nombre.trim()}.`)
-    setPendingFile(null)
   }
 
   // `location.assign` y no `window.open`: la URL firmada llega DESPUÉS de un
@@ -82,13 +94,18 @@ export function CandidateDocumentsSection({
   // avisaba nada. Mismo criterio que EmployeeDocumentsSection.
   async function handleDownload(docId: number) {
     setDownloadingId(docId)
-    const result = await getCandidateDocumentDownloadUrl(docId)
-    setDownloadingId(null)
-    if (!result.ok) {
-      toast.error(result.error)
-      return
+    try {
+      const result = await getCandidateDocumentDownloadUrl(docId)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      window.location.assign(result.url)
+    } catch {
+      toast.error('No se pudo descargar el documento. Reintentá.')
+    } finally {
+      setDownloadingId(null)
     }
-    window.location.assign(result.url)
   }
 
   async function handleConfirmDelete() {
@@ -167,7 +184,12 @@ export function CandidateDocumentsSection({
 
       {pendingFile && (
         <Modal title="Guardar documento" onClose={() => setPendingFile(null)}>
-          <form onSubmit={handleUploadSubmit} className="space-y-3" noValidate>
+          <form
+            ref={(element) => guard.bindRoot(element)}
+            onSubmit={handleUploadSubmit}
+            className="space-y-3"
+            noValidate
+          >
             {addError && (
               <Alert>
                 <div>{addError}</div>

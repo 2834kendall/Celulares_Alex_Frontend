@@ -2,6 +2,7 @@
 
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { fullName } from '@/modules/employees/lib/format'
 import {
@@ -22,6 +23,7 @@ import {
 import { shiftISODate } from '@/modules/attendance/lib/time'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import type { SgrhJwtClaims } from '@/types/auth'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 /*
  * Loaders of the optional panels that no module had ready in summary form.
@@ -46,7 +48,10 @@ interface RosterRow {
     emp_apellido_2: string | null
   } | null
   sgrh_cat_puestos: { pue_nombre: string | null } | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 const getSession = cache(async () => {
@@ -65,13 +70,17 @@ const getSession = cache(async () => {
 /**
  * Contracts in force with who holds them, by employment history id. Shared
  * by the three loaders below — `cache` makes it one query per request, no
- * matter how many of their panels are on.
+ * matter how many of their panels are on. With a brand chosen it only holds that
+ * brand, and the panels built on it follow: what is outside the roster is dropped.
  */
 const getRoster = cache(async (): Promise<Map<number, RosterPerson> | null> => {
   const { supabase, empresaId } = await getSession()
   if (!empresaId) return null
 
-  const { data, error } = await supabase
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return null
+
+  let contratos = supabase
     .from('sgrh_historial_laboral')
     .select(
       `
@@ -80,12 +89,14 @@ const getRoster = cache(async (): Promise<Map<number, RosterPerson> | null> => {
       lab_fecha_fin_programada,
       sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 ),
       sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre )
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
     `
     )
     .eq('lab_empresa_id', empresaId)
     .is('lab_fecha_fin', null)
-    .returns<RosterRow[]>()
+  if (filtro.sucursalIds) contratos = contratos.in('lab_sucursal_id', filtro.sucursalIds)
+
+  const { data, error } = await contratos.returns<RosterRow[]>()
 
   if (error) return null
 
@@ -97,7 +108,7 @@ const getRoster = cache(async (): Promise<Map<number, RosterPerson> | null> => {
       employeeId: row.lab_empleado_id,
       nombre: fullName(row.sgrh_empleados),
       puesto: row.sgrh_cat_puestos?.pue_nombre ?? null,
-      sucursal: row.sgrh_sucursales?.suc_nombre ?? null,
+      sucursal: sucursalLabel(row.sgrh_sucursales) ?? null,
       fechaFinProgramada: row.lab_fecha_fin_programada,
     })
   }

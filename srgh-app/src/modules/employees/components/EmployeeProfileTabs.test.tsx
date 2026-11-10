@@ -44,6 +44,14 @@ describe('resolveProfileTab', () => {
     expect(resolveProfileTab('contrato', true)).toBe('contrato')
     expect(resolveProfileTab('contrato', false)).toBe('contrato')
   })
+
+  // SGRH-102: el tab Rostro solo existe con BIOMETRIA_WRITE. Forzar
+  // ?tab=rostro sin el permiso no debe dejar la ficha sin el botón Editar.
+  it('devuelve rostro solo si el rol puede registrar rostros', () => {
+    expect(resolveProfileTab('rostro', false, true)).toBe('rostro')
+    expect(resolveProfileTab('rostro', true, false)).toBe('perfil')
+    expect(resolveProfileTab('rostro', true)).toBe('perfil')
+  })
 })
 
 describe('<EmployeeProfileTabs />', () => {
@@ -105,5 +113,28 @@ describe('<EmployeeProfileTabs />', () => {
     expect(screen.getByText('Contenido perfil')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Contrato/ })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: /Documentos/ })).not.toBeInTheDocument()
+  })
+
+  it('con contenido de rostro agrega ese tab y lo muestra con ?tab=rostro', () => {
+    searchString = 'tab=rostro'
+    render(
+      <EmployeeProfileTabs
+        perfilContent={<div>Contenido perfil</div>}
+        contratoContent={<div>Contenido contrato</div>}
+        documentosContent={null}
+        rostroContent={<div>Contenido rostro</div>}
+      />
+    )
+
+    expect(screen.getByRole('tab', { name: /Rostro/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Contenido rostro')).toBeInTheDocument()
+  })
+
+  it('sin contenido de rostro el tab no existe y ?tab=rostro cae al perfil', () => {
+    searchString = 'tab=rostro'
+    renderTabs()
+
+    expect(screen.queryByRole('tab', { name: /Rostro/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Contenido perfil')).toBeInTheDocument()
   })
 })

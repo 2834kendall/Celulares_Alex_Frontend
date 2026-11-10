@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { invitarUsuarioSchema, type InvitarUsuarioInput } from '@/modules/users/types'
 import { syncUserSucursales } from '@/modules/users/lib/syncUserSucursales'
+import { kioskAssignmentGuard } from '@/modules/users/lib/kioskAssignmentGuard'
 
 export type InviteUserResult = { ok: true; usrId: number } | { ok: false; error: string }
 
@@ -31,6 +32,11 @@ export async function inviteUser(input: InvitarUsuarioInput): Promise<InviteUser
   }
 
   const admin = createAdminClient()
+  const kioskError = await kioskAssignmentGuard(admin, {
+    rolId: parsed.data.rol_id,
+    inviting: true,
+  })
+  if (kioskError) return { ok: false, error: kioskError }
 
   // El cliente admin bypasea RLS: la pertenencia de las sucursales a la
   // empresa del JWT se valida explícitamente, y ANTES de crear el auth user

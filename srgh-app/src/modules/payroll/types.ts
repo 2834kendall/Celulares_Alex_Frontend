@@ -165,17 +165,33 @@ export interface DetalleNominaItem {
 }
 
 /**
- * Desglose de la incapacidad por enfermedad (INC_ENF) de un empleado dentro
- * de un periodo. `monto` es lo que paga la EMPRESA (días del patrono × salario
- * diario × % del catálogo) — no incluye lo que paga la CCSS, eso no pasa por
- * nuestra planilla. Nunca se suma a salarioBruto: se muestra como línea aparte
+ * Desglose de la incapacidad o licencia (enfermedad, maternidad…) de un
+ * empleado dentro de un periodo, con los % de SU tipo de ausencia (ver
+ * lib/subsidio.ts). `montoEmpleador` es lo que paga la EMPRESA (días del
+ * patrono × salario diario × %); `monto`, eso menos la cuota obrera. Lo que
+ * paga la CCSS no pasa por nuestra planilla: `subsidioCcssEstimado` es solo
+ * informativo. Nunca se suma a salarioBruto: se muestra como línea aparte
  * después del salario neto (por eso no afecta aguinaldo/vacaciones/liquidación).
  */
 export interface IncapacidadItem {
   diasEmpleador: number
   diasCcss: number
   porcentajePagoEmpleador: number
+  /** Lo que paga el patrono, antes de la cuota obrera. */
+  montoEmpleador: number
+  /** % de cuota obrera CCSS rebajada (tau_porcentaje_cuota_obrera). 0 = ninguna. */
+  porcentajeCuotaObrera: number
+  cuotaObrera: number
+  /**
+   * Lo que se le paga a la persona por la incapacidad o licencia:
+   * montoEmpleador − cuotaObrera. Es lo que suma al total a pagar.
+   */
   monto: number
+  /**
+   * Estimado de lo que le paga la CCSS (o el INS) esos días. Informativo: la
+   * empresa no lo paga. null si el tipo no tiene subsidio configurado.
+   */
+  subsidioCcssEstimado: number | null
   /**
    * Tipo de la ausencia (tau_nombre: "Incapacidad por Maternidad"…), para el
    * rótulo del comprobante. null si no se pudo leer: queda el genérico.
@@ -526,6 +542,22 @@ export interface AguinaldoItem {
   pagoId: number | null
   /** El contrato ya terminó (salió después de que cerró el ciclo). */
   fechaSalida: string | null
+  /**
+   * Hasta cuándo se puede anular el pago (ISO). null si no hay pago vigente o
+   * ya pasó el plazo de la empresa.
+   */
+  anulableHasta: string | null
+  /** La anulación más reciente de un pago anterior de este aguinaldo. */
+  ultimaAnulacion: AnulacionPago | null
+}
+
+/** Un pago de aguinaldo o liquidación anulado por error (queda en el historial). */
+export interface AnulacionPago {
+  /** Cuándo se anuló (ISO). */
+  fecha: string
+  /** Quién lo anuló, como se llamaba en ese momento. */
+  por: string | null
+  motivo: string
 }
 
 /**
@@ -649,6 +681,10 @@ export interface LiquidacionListItem {
   /** Pago con comprobante. Null si todavía no se pagó. */
   pagoId: number | null
   fechaPago: string | null
+  /** Hasta cuándo se puede anular el pago (ISO). null si no hay pago o ya pasó el plazo. */
+  anulableHasta: string | null
+  /** La anulación más reciente de un pago anterior de esta liquidación. */
+  ultimaAnulacion: AnulacionPago | null
   createdAt: string
   /** Rubros guardados, para revisarlos antes de pagar. */
   desglose: DesgloseLiquidacion
@@ -684,6 +720,8 @@ export interface PagoExtraordinario {
   fechaPago: string
   codigoVerificacion: string
   observaciones: string | null
+  /** Si el pago se anuló por error: el comprobante ya no vale. */
+  anulacion: AnulacionPago | null
 }
 
 // ─── Incapacidades ────────────────────────────────────────────────────────

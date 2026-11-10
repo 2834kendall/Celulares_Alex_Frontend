@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { Loader2, Save } from 'lucide-react'
 import type { EvaluationNotes } from '@/modules/evaluations/types'
 import { updateEvaluationNotes } from '@/modules/evaluations/actions/updateEvaluationNotes'
@@ -43,6 +44,11 @@ export function EditNotesModal({ evaluationId, field, notes, onClose }: EditNote
   const [comentarios, setComentarios] = useState(notes.comentarios)
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const guard = useUnsavedChanges({
+    label: 'las notas de la evaluación',
+    value: { items, comentarios },
+    busy: isSaving,
+  })
 
   const meta = FIELD_META[field]
 
@@ -51,21 +57,25 @@ export function EditNotesModal({ evaluationId, field, notes, onClose }: EditNote
     setIsSaving(true)
     const updated: EvaluationNotes =
       field === 'comentarios' ? { ...notes, comentarios } : { ...notes, [field]: items }
-    const result = await updateEvaluationNotes(evaluationId, updated)
-    setIsSaving(false)
-
-    if (!result.ok) {
-      setError(result.error)
-      return
+    try {
+      const result = await updateEvaluationNotes(evaluationId, updated)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      // revalidatePath('/evaluations') en la accion ya refresca la vista.
+      guard.acceptChanges()
+      onClose()
+    } catch {
+      setError('No se pudieron guardar las notas. Reintentá.')
+    } finally {
+      setIsSaving(false)
     }
-
-    // revalidatePath('/evaluations') en la accion ya refresca la vista.
-    onClose()
   }
 
   return (
     <Modal title={meta.title} subtitle={meta.subtitle} onClose={onClose}>
-      <div className="space-y-3">
+      <div ref={(element) => guard.bindRoot(element)} className="space-y-3">
         {error && (
           <Alert>
             <div>{error}</div>

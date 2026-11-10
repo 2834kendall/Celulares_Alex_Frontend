@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAusenciaOverlayEntries } from './overlay'
+import { ausenciasDelPanel, buildAusenciaOverlayEntries } from './overlay'
 import type { AusenciaWeekRow } from '@/modules/absences/actions/getAusenciasForWeek'
 
 const WEEK_DATES = [
@@ -16,6 +16,7 @@ function ausencia(overrides: Partial<AusenciaWeekRow>): AusenciaWeekRow {
   return {
     ausenciaId: 1,
     employmentHistoryId: 1,
+    sucursalContratoId: 5,
     tipoAusenciaId: 3,
     fechaInicio: '2026-01-06',
     fechaFin: '2026-01-08',
@@ -73,5 +74,30 @@ describe('buildAusenciaOverlayEntries', () => {
     )
 
     expect(entries).toEqual([])
+  })
+})
+
+describe('ausenciasDelPanel', () => {
+  // La 2 es de una persona de otra marca que cubre un turno en esta: sale en la matriz.
+  const propia = ausencia({ ausenciaId: 1, employmentHistoryId: 1, sucursalContratoId: 5 })
+  const prestada = ausencia({ ausenciaId: 2, employmentHistoryId: 2, sucursalContratoId: 9 })
+  const ajena = ausencia({ ausenciaId: 3, employmentHistoryId: 3, sucursalContratoId: 9 })
+  const todas = [propia, prestada, ajena]
+
+  it('sin marca elegida las deja todas', () => {
+    expect(ausenciasDelPanel(todas, null, [1])).toEqual(todas)
+  })
+
+  it('con matriz, las de quienes salen en ella, turnos prestados incluidos', () => {
+    expect(ausenciasDelPanel(todas, [5], [1, 2])).toEqual([propia, prestada])
+  })
+
+  it('sin matriz, por la sucursal del contrato', () => {
+    expect(ausenciasDelPanel(todas, [5], null)).toEqual([propia])
+  })
+
+  it('sin matriz, un contrato sin sucursal conocida no sale', () => {
+    const sinSucursal = ausencia({ sucursalContratoId: null })
+    expect(ausenciasDelPanel([sinSucursal], [5], null)).toEqual([])
   })
 })

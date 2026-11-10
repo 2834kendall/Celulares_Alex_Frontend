@@ -1,5 +1,7 @@
 'use client'
 
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { AlertTriangle, Loader2, Star } from 'lucide-react'
@@ -56,6 +58,12 @@ export function EvaluationForm({
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const guard = useUnsavedChanges({
+    label: 'la evaluación',
+    value: { labId, tipo, periodoInicio, periodoFin, scores, fortalezas, mejoras, comentarios },
+    busy: isSubmitting,
+  })
+
   const applicable = Object.values(scores).filter((s) => !s.noAplica)
   const promedio = averageScore(applicable.map((s) => s.puntaje))
 
@@ -89,14 +97,22 @@ export function EvaluationForm({
     }
 
     setIsSubmitting(true)
-    const result = await createEvaluation(parsed.data)
-    setIsSubmitting(false)
+    let result: Awaited<ReturnType<typeof createEvaluation>>
+    try {
+      result = await createEvaluation(parsed.data)
+    } catch {
+      setError('No se pudo confirmar el registro. Revisá las evaluaciones antes de reintentar.')
+      return
+    } finally {
+      setIsSubmitting(false)
+    }
 
     if (!result.ok) {
       setError(result.error)
       return
     }
 
+    guard.acceptChanges()
     onSuccess?.()
     // Lleva al expediente recien evaluado para ver el resultado.
     const params = new URLSearchParams(searchParams.toString())
@@ -121,7 +137,12 @@ export function EvaluationForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit}
+      className="space-y-4"
+      noValidate
+    >
       {error && (
         <Alert>
           <div>{error}</div>

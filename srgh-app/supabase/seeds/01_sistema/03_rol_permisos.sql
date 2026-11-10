@@ -1,9 +1,13 @@
 -- =====================================================================
--- Seed de sistema: matriz rol → permiso
+-- Seed de sistema: matriz plantilla → permiso
 -- =====================================================================
--- El archivo más importante del repo desde el punto de vista de seguridad:
--- decide qué puede hacer cada rol. Lo lee custom_access_token_hook para armar
--- el claim `permisos` del JWT en cada login.
+-- Define con qué permisos NACE cada rol de una empresa. Ya no decide los
+-- permisos de nadie en curso: las cuentas usan la copia de su empresa
+-- (ver 01_roles.sql), que la empresa edita desde Configuración, y este seed no
+-- la toca. Un cambio acá solo llega a las empresas que se instancien después;
+-- para repartir un permiso nuevo a las empresas existentes hace falta una
+-- migración que elija los roles por permiso (src/modules/settings/docs/roles.md).
+-- La excepción es KIOSCO, que se asigna tal cual: su fila sigue mandando.
 --
 -- Se siembra de forma DECLARATIVA (lista de pares + join por código) en vez
 -- de con sgrh_private.asignar_permisos(): así el diff de un PR muestra
@@ -28,6 +32,9 @@
 INSERT INTO public.sgrh_rol_permisos (rpe_rol_id, rpe_permiso_id)
 SELECT r.rol_id, p.per_id
 FROM (VALUES
+  -- Compatibility for existing accounts until the retired role is migrated.
+  -- This does not recreate SUPERADMIN in environments where it is absent.
+  ('SUPERADMIN', 'BIOMETRIA_WRITE'),
   -- ── ADMIN: todo, acotado a su empresa por la RLS ───────────────────────
   ('ADMIN', 'EMPLEADOS_READ'),      ('ADMIN', 'EMPLEADOS_WRITE'),
   ('ADMIN', 'HISTORIAL_READ'),      ('ADMIN', 'HISTORIAL_WRITE'),
@@ -43,6 +50,8 @@ FROM (VALUES
   ('ADMIN', 'USUARIOS_WRITE'),      ('ADMIN', 'REPORTES_READ'),
   ('ADMIN', 'FOTOS_READ'),          ('ADMIN', 'DOCUMENTOS_READ'),
   ('ADMIN', 'DOCUMENTOS_WRITE'),
+  -- SGRH-102: enrolamiento facial (antes iba colgado de EMPLEADOS_WRITE).
+  ('ADMIN', 'BIOMETRIA_WRITE'),
 
   -- ── RRHH: todo lo operativo de personas; no aprueba nómina ni toca config ─
   ('RRHH', 'EMPLEADOS_READ'),      ('RRHH', 'EMPLEADOS_WRITE'),
@@ -56,6 +65,7 @@ FROM (VALUES
   ('RRHH', 'EVALUACIONES_READ'),   ('RRHH', 'EVALUACIONES_WRITE'),
   ('RRHH', 'REPORTES_READ'),       ('RRHH', 'FOTOS_READ'),
   ('RRHH', 'DOCUMENTOS_READ'),     ('RRHH', 'DOCUMENTOS_WRITE'),
+  ('RRHH', 'BIOMETRIA_WRITE'),
 
   -- ── GERENTE / SUPERVISOR / JEFE_SUCURSAL: misma matriz operativa ─────────
   ('GERENTE', 'EMPLEADOS_READ'),      ('GERENTE', 'HISTORIAL_READ'),
@@ -64,6 +74,9 @@ FROM (VALUES
   ('GERENTE', 'HORARIOS_READ'),       ('GERENTE', 'HORARIOS_WRITE'),
   ('GERENTE', 'EVALUACIONES_READ'),   ('GERENTE', 'EVALUACIONES_WRITE'),
   ('GERENTE', 'REPORTES_READ'),       ('GERENTE', 'FOTOS_READ'),
+  -- Registra el rostro de su personal; la RLS lo limita a su sucursal. NO
+  -- recibe EMPLEADOS_WRITE: le abriria el expediente completo.
+  ('GERENTE', 'BIOMETRIA_WRITE'),
 
   ('SUPERVISOR', 'EMPLEADOS_READ'),    ('SUPERVISOR', 'HISTORIAL_READ'),
   ('SUPERVISOR', 'ASISTENCIA_READ'),   ('SUPERVISOR', 'ASISTENCIA_WRITE'),
@@ -71,6 +84,7 @@ FROM (VALUES
   ('SUPERVISOR', 'HORARIOS_READ'),     ('SUPERVISOR', 'HORARIOS_WRITE'),
   ('SUPERVISOR', 'EVALUACIONES_READ'), ('SUPERVISOR', 'EVALUACIONES_WRITE'),
   ('SUPERVISOR', 'REPORTES_READ'),     ('SUPERVISOR', 'FOTOS_READ'),
+  ('SUPERVISOR', 'BIOMETRIA_WRITE'),
 
   ('JEFE_SUCURSAL', 'EMPLEADOS_READ'),    ('JEFE_SUCURSAL', 'HISTORIAL_READ'),
   ('JEFE_SUCURSAL', 'ASISTENCIA_READ'),   ('JEFE_SUCURSAL', 'ASISTENCIA_WRITE'),
@@ -78,6 +92,7 @@ FROM (VALUES
   ('JEFE_SUCURSAL', 'HORARIOS_READ'),     ('JEFE_SUCURSAL', 'HORARIOS_WRITE'),
   ('JEFE_SUCURSAL', 'EVALUACIONES_READ'), ('JEFE_SUCURSAL', 'EVALUACIONES_WRITE'),
   ('JEFE_SUCURSAL', 'REPORTES_READ'),     ('JEFE_SUCURSAL', 'FOTOS_READ'),
+  ('JEFE_SUCURSAL', 'BIOMETRIA_WRITE'),
 
   -- ── CONTADOR: nómina de punta a punta, personas solo de lectura ──────────
   ('CONTADOR', 'EMPLEADOS_READ'),    ('CONTADOR', 'HISTORIAL_READ'),

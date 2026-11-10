@@ -102,7 +102,7 @@ describe('<SettingsSearch />', () => {
 
     await userEvent.click(screen.getByRole('option', { name: /apariencia/i }))
 
-    expect(push).toHaveBeenCalledWith('/settings/appearance')
+    expect(push).toHaveBeenCalledWith('/settings/profile?tab=apariencia')
   })
 
   it('Escape y el clic afuera cierran', async () => {

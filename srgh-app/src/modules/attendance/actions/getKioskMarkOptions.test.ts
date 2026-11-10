@@ -7,6 +7,9 @@ import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
+vi.mock('@/modules/attendance/lib/liveKioskAccess', () => ({
+  liveKioskMetadata: vi.fn(async (_sub, meta) => meta),
+}))
 
 // Jornada y ausencias se leen con el cliente admin (la cuenta KIOSCO no puede
 // leer esas tablas). El admin del test delega en el mismo cliente del test,
@@ -53,6 +56,13 @@ function marca(mar_id: number, mar_tipo: string, hora: string) {
 }
 
 describe('getKioskMarkOptions (server action)', () => {
+  it('rechaza una cuenta bloqueada antes de leer marcas', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, kiosk_error: 'Kiosco bloqueado' },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    expect(await getKioskMarkOptions(10)).toEqual({ ok: false, error: 'Kiosco bloqueado' })
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     ausenciasAdmin = { data: [], error: null }

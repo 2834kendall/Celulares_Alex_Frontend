@@ -3,6 +3,12 @@ import { getBancoHoras } from './getBancoHoras'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -202,5 +208,57 @@ describe('getBancoHoras — más de mil movimientos', () => {
     if (!result.ok) return
     expect(result.data.historial).toHaveLength(1000)
     expect(result.data.pendientes.map((p) => p.id)).toEqual([3])
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getBancoHoras con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(
+      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
+    )
+  })
+
+  const empleado = movimientoPendiente().sgrh_historial_laboral.sgrh_empleados
+  const en = (id: number, sucursal: number) =>
+    movimientoPendiente({
+      bhm_id: id,
+      sgrh_historial_laboral: { lab_sucursal_id: sucursal, sgrh_empleados: empleado },
+    })
+
+  it('deja solo las horas de los contratos de sus tiendas', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    mockSupabase([en(1, 5), en(2, 9), en(3, 6)])
+
+    const result = await getBancoHoras()
+
+    expect(result.ok && result.data.pendientes.map((i) => i.id)).toEqual([1, 3])
+  })
+
+  it('una fila cuyo contrato no se pudo leer no sale como "Empleado no disponible"', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    mockSupabase([movimientoPendiente({ sgrh_historial_laboral: null })])
+
+    const result = await getBancoHoras()
+
+    expect(result.ok && result.data.pendientes).toEqual([])
+  })
+
+  it('sin marca muestra todas', async () => {
+    mockSupabase([en(1, 5), en(2, 9)])
+
+    const result = await getBancoHoras()
+
+    expect(result.ok && result.data.pendientes).toHaveLength(2)
+  })
+
+  it('si no se pudo leer el filtro da error', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getBancoHoras()).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

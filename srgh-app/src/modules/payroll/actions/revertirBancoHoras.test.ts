@@ -16,6 +16,18 @@ const mockRequirePermission = vi.mocked(requirePermission)
 
 const OK = { data: null, error: null }
 
+const RESERVADO = { data: [{ bhm_id: 1 }], error: null }
+
+/** Lo que se le pidió escribir a sgrh_banco_horas_movimientos con update(). */
+function updatesMovimiento(client: { from: ReturnType<typeof vi.fn> }) {
+  return client.from.mock.results
+    .filter((_, i) => client.from.mock.calls[i][0] === 'sgrh_banco_horas_movimientos')
+    .flatMap((r) => {
+      const fn = (r.value as { update: { mock: { calls: unknown[][] } } }).update
+      return fn.mock.calls.map((args) => args[0] as Record<string, unknown>)
+    })
+}
+
 const MOVIMIENTO_PAGADO = {
   bhm_id: 1,
   bhm_estado: 'pagado',
@@ -67,7 +79,11 @@ function mockEscenarioReversible(
   over: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]> = {}
 ) {
   return mockSupabase({
-    sgrh_banco_horas_movimientos: [{ data: MOVIMIENTO_PAGADO, error: null }, OK],
+    sgrh_banco_horas_movimientos: [
+      { data: MOVIMIENTO_PAGADO, error: null },
+      // 2.ª: con el monto ya afuera, vuelve a pendiente solo si sigue pagado.
+      RESERVADO,
+    ],
     // 2.ª: el UPDATE de montos (solo si sigue sin pagar) devuelve la fila.
     sgrh_nomina_detalle: [
       { data: DETALLE_BORRADOR, error: null },
@@ -218,7 +234,7 @@ describe('revertirBancoHoras (server action)', () => {
           },
           error: null,
         },
-        OK,
+        RESERVADO,
       ],
     })
 
@@ -226,6 +242,59 @@ describe('revertirBancoHoras (server action)', () => {
 
     expect(result).toEqual({ ok: true })
     expect(client.from.mock.calls.map((c) => c[0])).not.toContain('sgrh_nomina_detalle')
+  })
+
+  // Dos reversiones a la vez (doble clic, dos personas): las dos leían el
+  // movimiento como pagado y restaban el monto dos veces; la segunda se
+  // llevaba plata de otro movimiento pagado en la misma fila.
+  it('si otro ya lo revirtió, devuelve a la planilla el monto que sacó de más', async () => {
+    const client = mockEscenarioReversible({
+      sgrh_banco_horas_movimientos: [
+        { data: MOVIMIENTO_PAGADO, error: null },
+        // Con el monto ya afuera, el movimiento ya no figura como pagado: otra
+        // reversión ganó y ya sacó su monto.
+        { data: [], error: null },
+      ],
+      // La devolución vuelve a leer el catálogo, la fila y sus líneas.
+      sgrh_cat_conceptos_nomina: [
+        { data: CONCEPTOS_ACTIVOS, error: null },
+        { data: HORAS_EXTRA_CONCEPTO, error: null },
+        { data: CONCEPTOS_ACTIVOS, error: null },
+        { data: HORAS_EXTRA_CONCEPTO, error: null },
+      ],
+      sgrh_nomina_detalle: [
+        { data: DETALLE_BORRADOR, error: null },
+        { data: { ndt_salario_bruto: 130000 }, error: null },
+        { data: { ndt_salario_bruto: 100000 }, error: null },
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            { ing_monto: 100000, sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' } },
+            { ing_monto: 30000, sgrh_cat_conceptos_nomina: { con_codigo: 'HORAS_EXTRA' } },
+          ],
+          error: null,
+        },
+        {
+          data: [{ ing_monto: 100000, sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' } }],
+          error: null,
+        },
+      ],
+    })
+
+    const result = await revertirBancoHoras(1)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('cambió mientras tanto')
+    // Dos guardados: el que sacó los ₡30 000 y el que los vuelve a poner.
+    const guardados = (client.rpc.mock.calls as unknown[][]).filter(
+      (c) => c[0] === 'guardar_calculo_detalle'
+    )
+    expect(guardados).toHaveLength(2)
+    const devuelto = (
+      guardados[1][1] as { p_calculo: { ingresos: { con_id: number; monto: number }[] } }
+    ).p_calculo.ingresos
+    expect(devuelto).toContainEqual(expect.objectContaining({ con_id: 4, monto: 30000 }))
   })
 
   // Antes esto se recortaba a cero en silencio. Si en la quincena hay dos
@@ -254,8 +323,9 @@ describe('revertirBancoHoras (server action)', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('Alguien ya cambió ese monto')
 
-    // Y no se tocó nada: ni las líneas ni el movimiento.
+    // Y no se tocó nada: ni las líneas ni el movimiento, que sigue pagado.
     expect(filasInsertadas(client, 'sgrh_nomina_linea_ingreso')).toEqual([])
+    expect(updatesMovimiento(client)).toEqual([])
   })
 
   it('avisa si un movimiento pagado no dice en qué periodo se pagó', async () => {

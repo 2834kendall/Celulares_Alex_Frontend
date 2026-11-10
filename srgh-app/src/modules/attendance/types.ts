@@ -53,6 +53,8 @@ export type ManualMarkInput = z.input<typeof manualMarkSchema>
  * marca la registra el encargado desde el panel (decision del cliente).
  */
 export const kioskMarkSchema = z.object({
+  operationId: z.string().uuid().optional(),
+  sincronizada: z.boolean().optional(),
   employeeId: z.number().int().positive(),
   tipo: marcaTipoSchema,
   latitud: z.number().min(-90).max(90).nullable(),

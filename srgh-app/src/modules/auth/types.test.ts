@@ -3,6 +3,7 @@ import {
   activateAccountSchema,
   forgotPasswordSchema,
   loginSchema,
+  PASSWORD_RULES,
   resetPasswordSchema,
 } from './types'
 
@@ -61,27 +62,53 @@ describe('loginSchema', () => {
 describe('activateAccountSchema', () => {
   it('acepta una contrasena valida confirmada', () => {
     const result = activateAccountSchema.safeParse({
-      password: 'secreto123',
-      confirmPassword: 'secreto123',
+      password: 'Secreto1234!',
+      confirmPassword: 'Secreto1234!',
     })
     expect(result.success).toBe(true)
   })
 
-  it('rechaza contrasenas de menos de 8 caracteres', () => {
-    const result = activateAccountSchema.safeParse({
-      password: 'corta',
-      confirmPassword: 'corta',
-    })
+  // Un caso por regla, y cada contrasena cumple TODAS las demas: asi el
+  // mensaje que se afirma es inequivocamente el de la regla bajo prueba y no
+  // el de otra que fallo antes.
+  it.each([
+    ['Cor1!', 'Al menos 12 caracteres'],
+    // El borde: 11 caracteres que cumplen todo lo demas. Es el unico caso que
+    // distingue 12 de 8 -- si alguien baja la politica, esta fila falla.
+    ['Secreto123!', 'Al menos 12 caracteres'],
+    ['SECRETO1234!', 'Una letra minúscula'],
+    ['secreto1234!', 'Una letra mayúscula'],
+    ['Secretooooo!', 'Un número'],
+    ['Secreto12345', 'Un símbolo'],
+  ])('rechaza "%s" y lo explica con "%s"', (password, mensaje) => {
+    const result = activateAccountSchema.safeParse({ password, confirmPassword: password })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0].message).toBe('La contraseña debe tener al menos 8 caracteres.')
+      expect(result.error.issues[0].message).toBe(mensaje)
+    }
+  })
+
+  it('deriva la politica de PASSWORD_RULES, que es lo que pinta el formulario', () => {
+    // El formulario arma su lista de requisitos recorriendo este array. Si
+    // alguien agrega una regla al esquema sin pasar por aca, la lista miente:
+    // el campo se rechaza por algo que la pantalla daba por cumplido.
+    expect(PASSWORD_RULES.map((regla) => regla.id)).toEqual([
+      'largo',
+      'minuscula',
+      'mayuscula',
+      'digito',
+      'simbolo',
+    ])
+
+    for (const regla of PASSWORD_RULES) {
+      expect(regla.patron.test('Secreto1234!')).toBe(true)
     }
   })
 
   it('rechaza cuando la confirmacion no coincide', () => {
     const result = activateAccountSchema.safeParse({
-      password: 'secreto123',
-      confirmPassword: 'otra-cosa',
+      password: 'Secreto1234!',
+      confirmPassword: 'Otra-Cosa456?',
     })
     expect(result.success).toBe(false)
     if (!result.success) {
@@ -92,7 +119,7 @@ describe('activateAccountSchema', () => {
 
   it('rechaza la confirmacion vacia', () => {
     const result = activateAccountSchema.safeParse({
-      password: 'secreto123',
+      password: 'Secreto1234!',
       confirmPassword: '',
     })
     expect(result.success).toBe(false)

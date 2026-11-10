@@ -2,8 +2,16 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
+import {
+  SELECT_ANULACION,
+  anulableHasta,
+  leerHorasParaAnular,
+  separarPagos,
+  type AnulacionRow,
+} from '@/modules/payroll/lib/anulacionPagos'
 
 interface LiquidacionRow {
   liq_id: number
@@ -31,13 +39,14 @@ interface LiquidacionRow {
   liq_indemnizacion_plazo_fijo: number | null
   liq_deducciones_obreras: number
   liq_observaciones: string | null
-  sgrh_pagos_extraordinarios: { pex_id: number; pex_fecha_pago: string }[] | null
+  sgrh_pagos_extraordinarios: ({ pex_id: number; pex_fecha_pago: string } & AnulacionRow)[] | null
   sgrh_cat_motivos_salida: {
     mot_nombre: string
     mot_genera_preaviso: boolean
     mot_genera_cesantia: boolean
   } | null
   sgrh_historial_laboral: {
+    lab_sucursal_id: number | null
     sgrh_empleados: {
       emp_nombre: string
       emp_apellido_1: string
@@ -69,9 +78,13 @@ export type GetLiquidacionesResult =
  */
 export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
   await requirePermission(PERMISOS.NOMINA_READ)
+
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
 
-  const { data, error } = await supabase
+  const consulta = supabase
     .from('sgrh_liquidaciones')
     .select(
       `
@@ -100,23 +113,38 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       liq_indemnizacion_plazo_fijo,
       liq_deducciones_obreras,
       liq_observaciones,
-      sgrh_pagos_extraordinarios ( pex_id, pex_fecha_pago ),
+      sgrh_pagos_extraordinarios ( pex_id, pex_fecha_pago, ${SELECT_ANULACION} ),
       sgrh_cat_motivos_salida ( mot_nombre, mot_genera_preaviso, mot_genera_cesantia ),
       sgrh_historial_laboral (
+        lab_sucursal_id,
         sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal )
       )
     `
     )
     .order('liq_created_at', { ascending: false })
     .returns<LiquidacionRow[]>()
+  const [{ data, error }, horasParaAnular] = await Promise.all([
+    consulta,
+    leerHorasParaAnular(supabase),
+  ])
 
   if (error) {
     return { ok: false, error: 'No se pudo cargar el historial de liquidaciones.' }
   }
 
-  const items: LiquidacionListItem[] = (data ?? []).map((row) => {
+  // En memoria, por lo mismo que getBancoHoras: el join no es !inner.
+  const { sucursalIds } = filtro
+  const filas = sucursalIds
+    ? (data ?? []).filter((row) =>
+        sucursalIds.includes(row.sgrh_historial_laboral?.lab_sucursal_id ?? Number.NaN)
+      )
+    : (data ?? [])
+
+  const items: LiquidacionListItem[] = filas.map((row) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados
-    const pago = row.sgrh_pagos_extraordinarios?.[0] ?? null
+    // Puede haber varios pagos: los anulados por error quedan en el historial
+    // y solo uno está vigente (índice único parcial).
+    const { vigente: pago, ultimaAnulacion } = separarPagos(row.sgrh_pagos_extraordinarios ?? [])
     const empleadoNombre = empleado
       ? [empleado.emp_nombre, empleado.emp_apellido_1, empleado.emp_apellido_2]
           .filter(Boolean)
@@ -134,10 +162,15 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       // Filas de antes de la migración no tienen neto: se muestra el bruto.
       neto: row.liq_neto ?? row.liq_total,
       // El pago con comprobante es la fuente de verdad; liq_pagado lo
-      // acompaña (ver pagarLiquidacion).
-      pagado: row.liq_pagado || pago !== null,
+      // acompaña (ver pagarLiquidacion). Solo cuenta solo si no hay ningún
+      // pago registrado: con pagos anulados, una marca que quedó en true no
+      // puede dejarla "pagada" sin comprobante.
+      pagado:
+        pago !== null || (row.liq_pagado && (row.sgrh_pagos_extraordinarios ?? []).length === 0),
       pagoId: pago?.pex_id ?? null,
       fechaPago: pago?.pex_fecha_pago ?? row.liq_fecha_pago,
+      anulableHasta: pago ? anulableHasta(pago, horasParaAnular) : null,
+      ultimaAnulacion,
       createdAt: row.liq_created_at,
       // numeric llega como número desde PostgREST; Number() por si un día
       // llega como texto (numeric grande).

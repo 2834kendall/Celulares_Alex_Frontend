@@ -8,7 +8,17 @@ import { anioCicloAguinaldo } from '@/modules/payroll/lib/liquidacion'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 import { sincronizarEstadoPeriodo } from '@/modules/payroll/lib/estadoPeriodoData'
 import { hoyLocal, rangoQuincena } from '@/modules/payroll/lib/fechas'
-import { montoIncapacidadEnVivo } from '@/modules/payroll/lib/incapacidad'
+import {
+  CODIGO_INCAPACIDAD_ENFERMEDAD,
+  SELECT_TIPO_SUBSIDIO,
+  esAusenciaDeSubsidio,
+  parametrosDeTipo,
+  subsidioCcssEstimado,
+  subsidioPatronoEnVivo,
+  tipoDeLaFila,
+  type AusenciaSubsidio,
+  type TipoSubsidioRow,
+} from '@/modules/payroll/lib/subsidio'
 import { generarCodigoVerificacion } from '@/modules/payroll/lib/comprobante'
 import {
   enviarComprobantePorCorreo,
@@ -46,6 +56,7 @@ interface DetalleActualRow {
   ndt_horas_asistencia: number | null
   ndt_horas_extra_asistencia: number | null
   ndt_dias_incapacidad_empleador?: number | null
+  ndt_dias_incapacidad_ccss?: number | null
   ndt_salario_base_contrato: number | null
   ndt_salario_real_contrato: number | null
   ndt_horas_semanales_contrato: number | null
@@ -331,6 +342,8 @@ async function motivoParaNoDesmarcar(
       .eq('pex_tipo', 'aguinaldo')
       .eq('pex_anio_aguinaldo', ciclo)
       .in('pex_historial_laboral_id', labIds)
+      // Un pago anulado por error no cuenta como pagado.
+      .is('pex_anulado_en', null)
       .returns<{ pex_id: number }[]>(),
     supabase
       .from('sgrh_liquidaciones')
@@ -385,18 +398,43 @@ async function tieneRebajoDeSalario(
   )
 }
 
+/** Lo que se congela de la incapacidad al marcar el pago (NULL al desmarcar). */
+interface IncapacidadCongelada {
+  ndt_monto_incapacidad: number | null
+  ndt_porcentaje_incapacidad: number | null
+  ndt_cuota_obrera_incapacidad: number | null
+  ndt_porcentaje_cuota_obrera_incapacidad: number | null
+  ndt_subsidio_ccss_estimado: number | null
+}
+
+const INCAPACIDAD_SIN_CONGELAR: IncapacidadCongelada = {
+  ndt_monto_incapacidad: null,
+  ndt_porcentaje_incapacidad: null,
+  ndt_cuota_obrera_incapacidad: null,
+  ndt_porcentaje_cuota_obrera_incapacidad: null,
+  ndt_subsidio_ccss_estimado: null,
+}
+
+interface AusenciaDeLaFilaRow {
+  aus_fecha_inicio: string
+  aus_fecha_fin: string
+  sgrh_cat_tipos_ausencia: TipoSubsidioRow | null
+}
+
 /**
- * Monto y porcentaje de la incapacidad para congelarlos al marcar el pago,
- * con la misma cuenta que muestra la planilla (montoIncapacidadEnVivo). null
- * si no se pudo leer el contrato o el catálogo.
+ * Monto, cuota obrera y estimado de la CCSS de la incapacidad para
+ * congelarlos al marcar el pago, con la misma cuenta que muestra la planilla
+ * (lib/subsidio.ts): el % del tipo de SU ausencia, o el de INC_ENF si no se
+ * encuentra. null si no se pudo leer el contrato, las ausencias o ningún tipo.
  */
 async function incapacidadAlPagar(
   supabase: SupabaseServerClient,
   labId: number,
-  diasEmpleador: number,
+  dias: { empleador: number; ccss: number },
+  rango: { inicio: string; fin: string } | null,
   foto: FotoContratoFila
-): Promise<{ ndt_monto_incapacidad: number; ndt_porcentaje_incapacidad: number } | null> {
-  const [contrato, tipo] = await Promise.all([
+): Promise<IncapacidadCongelada | null> {
+  const [contrato, respaldo, ausencias] = await Promise.all([
     supabase
       .from('sgrh_historial_laboral')
       .select('lab_salario_base, lab_salario_real')
@@ -404,23 +442,50 @@ async function incapacidadAlPagar(
       .maybeSingle<{ lab_salario_base: number | null; lab_salario_real: number | null }>(),
     supabase
       .from('sgrh_cat_tipos_ausencia')
-      .select('tau_porcentaje_pago_empleador')
-      .eq('tau_codigo', 'INC_ENF')
-      .maybeSingle<{ tau_porcentaje_pago_empleador: number }>(),
+      .select(SELECT_TIPO_SUBSIDIO)
+      .eq('tau_codigo', CODIGO_INCAPACIDAD_ENFERMEDAD)
+      .maybeSingle<TipoSubsidioRow>(),
+    rango
+      ? supabase
+          .from('sgrh_ausencias')
+          .select(
+            `aus_fecha_inicio, aus_fecha_fin, sgrh_cat_tipos_ausencia ( ${SELECT_TIPO_SUBSIDIO} )`
+          )
+          .eq('aus_historial_laboral_id', labId)
+          .eq('aus_estado', 'aprobada')
+          .lte('aus_fecha_inicio', rango.fin)
+          .gte('aus_fecha_fin', rango.inicio)
+          .returns<AusenciaDeLaFilaRow[]>()
+      : { data: [] as AusenciaDeLaFilaRow[], error: null },
   ])
-  if (contrato.error || tipo.error || !contrato.data || !tipo.data) return null
-  const porcentaje = Number(tipo.data.tau_porcentaje_pago_empleador)
+  if (contrato.error || !contrato.data || ausencias.error) return null
+
+  const lista: AusenciaSubsidio[] = (ausencias.data ?? [])
+    .filter((a) => esAusenciaDeSubsidio(a.sgrh_cat_tipos_ausencia) && a.aus_fecha_fin)
+    .map((a) => ({
+      inicio: a.aus_fecha_inicio,
+      fin: a.aus_fecha_fin,
+      tipo: parametrosDeTipo(a.sgrh_cat_tipos_ausencia!),
+    }))
+  const tipo =
+    (rango && tipoDeLaFila(lista, rango)) ||
+    (!respaldo.error && respaldo.data ? parametrosDeTipo(respaldo.data) : null)
+  if (!tipo) return null
+
+  const contratoFila = contratoDeLaFila(foto, {
+    salarioBaseMensual: Number(contrato.data.lab_salario_base ?? 0),
+    salarioRealMensual: contrato.data.lab_salario_real ?? null,
+    horasSemanales: null,
+  })
+  const montos = subsidioPatronoEnVivo(dias.empleador, contratoFila, tipo)
   return {
-    ndt_monto_incapacidad: montoIncapacidadEnVivo(
-      diasEmpleador,
-      contratoDeLaFila(foto, {
-        salarioBaseMensual: Number(contrato.data.lab_salario_base ?? 0),
-        salarioRealMensual: contrato.data.lab_salario_real ?? null,
-        horasSemanales: null,
-      }),
-      porcentaje
-    ),
-    ndt_porcentaje_incapacidad: porcentaje,
+    ndt_monto_incapacidad: montos.montoEmpleador,
+    ndt_porcentaje_incapacidad: tipo.porcentajePagoEmpleador,
+    ndt_cuota_obrera_incapacidad: montos.cuotaObrera,
+    ndt_porcentaje_cuota_obrera_incapacidad: montos.porcentajeCuotaObrera,
+    ndt_subsidio_ccss_estimado: rango
+      ? subsidioCcssEstimado(lista, rango, contratoFila, dias.ccss)
+      : null,
   }
 }
 
@@ -449,6 +514,7 @@ export async function marcarDetallePagado(
       ndt_horas_asistencia,
       ndt_horas_extra_asistencia,
       ndt_dias_incapacidad_empleador,
+      ndt_dias_incapacidad_ccss,
       ndt_salario_base_contrato,
       ndt_salario_real_contrato,
       ndt_horas_semanales_contrato,
@@ -476,6 +542,41 @@ export async function marcarDetallePagado(
   }
 
   const periodo = detalle.sgrh_nomina_periodo
+
+  // Las tres lecturas que verifican un pago (el contrato, si ya va en una
+  // liquidación y las marcas del periodo) no dependen entre sí: se piden
+  // juntas y cada verificación de abajo espera la suya, en el mismo orden de
+  // siempre y con los mismos mensajes. Antes iban una detrás de otra.
+  const lecturasPago =
+    pagado && periodo
+      ? {
+          contrato: Promise.resolve(
+            supabase
+              .from('sgrh_historial_laboral')
+              .select('lab_fecha_inicio, lab_fecha_fin')
+              .eq('lab_id', detalle.ndt_historial_laboral_id)
+              .maybeSingle<{ lab_fecha_inicio: string | null; lab_fecha_fin: string | null }>()
+          ),
+          cubiertas: liquidacionesQueCubren(supabase, [detalle.ndt_historial_laboral_id], {
+            anio: periodo.npe_periodo_anio,
+            mes: periodo.npe_periodo_mes,
+            quincena: periodo.npe_quincena,
+          }),
+          horas:
+            periodo.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo
+              ? getHorasDelPeriodo(supabase, {
+                  historialLaboralIds: [detalle.ndt_historial_laboral_id],
+                  fechaInicio: periodo.npe_fecha_inicio_periodo,
+                  fechaFin: periodo.npe_fecha_fin_periodo,
+                })
+              : null,
+        }
+      : null
+  // Si una verificación anterior corta, las demás lecturas quedan sin esperar:
+  // que un fallo de ellas no termine como rechazo sin manejar.
+  if (lecturasPago) {
+    for (const lectura of Object.values(lecturasPago)) lectura?.catch(() => {})
+  }
 
   // Desmarcar una quincena que ya se usó para pagar algo fuera de la planilla
   // dejaba ese pago con un monto que ya no corresponde: el aguinaldo pagado
@@ -510,11 +611,7 @@ export async function marcarDetallePagado(
 
     // Tampoco una quincena que cae fuera del contrato: a alguien que ingresó
     // en mayo no se le paga diciembre anterior (auditoría, hallazgo 3).
-    const { data: contrato, error: errContrato } = await supabase
-      .from('sgrh_historial_laboral')
-      .select('lab_fecha_inicio, lab_fecha_fin')
-      .eq('lab_id', detalle.ndt_historial_laboral_id)
-      .maybeSingle<{ lab_fecha_inicio: string | null; lab_fecha_fin: string | null }>()
+    const { data: contrato, error: errContrato } = await lecturasPago!.contrato
     if (errContrato) {
       return { ok: false, error: 'No se pudo verificar el contrato del empleado.' }
     }
@@ -536,11 +633,7 @@ export async function marcarDetallePagado(
   // que no estaban pagados por planilla (salario pendiente). Marcar pagada
   // una de esas quincenas los pagaba dos veces.
   if (pagado && periodo) {
-    const cubiertas = await liquidacionesQueCubren(supabase, [detalle.ndt_historial_laboral_id], {
-      anio: periodo.npe_periodo_anio,
-      mes: periodo.npe_periodo_mes,
-      quincena: periodo.npe_quincena,
-    })
+    const cubiertas = await lecturasPago!.cubiertas
     if (!cubiertas.ok) {
       return { ok: false, error: 'No se pudo verificar si el empleado ya fue liquidado.' }
     }
@@ -563,11 +656,7 @@ export async function marcarDetallePagado(
   // algo quedo mal.
   let totales: TotalesPeriodo | undefined
   if (pagado && periodo?.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo) {
-    const horas = await getHorasDelPeriodo(supabase, {
-      historialLaboralIds: [detalle.ndt_historial_laboral_id],
-      fechaInicio: periodo.npe_fecha_inicio_periodo,
-      fechaFin: periodo.npe_fecha_fin_periodo,
-    })
+    const horas = (await lecturasPago!.horas)!
 
     totales = horas.ok ? horas.data.get(detalle.ndt_historial_laboral_id) : undefined
     // Solo los que de verdad dejan las horas cortas. Un día con marcas pero
@@ -666,28 +755,40 @@ export async function marcarDetallePagado(
   // La incapacidad que paga el patrono se congela con el pago: el comprobante
   // ya emitido no puede cambiar si después cambia el salario o el porcentaje
   // del catálogo. Al desmarcar vuelve a calcularse en vivo.
-  let incapacidad: {
-    ndt_monto_incapacidad: number | null
-    ndt_porcentaje_incapacidad: number | null
-  } = {
-    ndt_monto_incapacidad: null,
-    ndt_porcentaje_incapacidad: null,
-  }
-  if (pagado && Number(detalle.ndt_dias_incapacidad_empleador ?? 0) > 0) {
+  // Con la cuota obrera y el estimado de la CCSS (ver lib/subsidio.ts). Una
+  // fila con días que solo paga la CCSS también se congela: su estimado sale
+  // en el comprobante.
+  let incapacidad: IncapacidadCongelada = INCAPACIDAD_SIN_CONGELAR
+  if (
+    pagado &&
+    (Number(detalle.ndt_dias_incapacidad_empleador ?? 0) > 0 ||
+      Number(detalle.ndt_dias_incapacidad_ccss ?? 0) > 0)
+  ) {
+    const p = detalle.sgrh_nomina_periodo
     const congelada = await incapacidadAlPagar(
       supabase,
       detalle.ndt_historial_laboral_id,
-      Number(detalle.ndt_dias_incapacidad_empleador),
+      {
+        empleador: Number(detalle.ndt_dias_incapacidad_empleador ?? 0),
+        ccss: Number(detalle.ndt_dias_incapacidad_ccss ?? 0),
+      },
+      p?.npe_fecha_inicio_periodo && p.npe_fecha_fin_periodo
+        ? { inicio: p.npe_fecha_inicio_periodo, fin: p.npe_fecha_fin_periodo }
+        : null,
       detalle
     )
-    if (!congelada) {
+    // Sin días del patrono no hay plata de la empresa en juego: si la lectura
+    // falla se paga igual, sin congelar (como antes), y solo se pierde el
+    // estimado informativo.
+    const diasDelPatrono = Number(detalle.ndt_dias_incapacidad_empleador ?? 0) > 0
+    if (!congelada && diasDelPatrono) {
       return {
         ok: false,
         error:
           'No se pudo calcular el monto de la incapacidad para guardarlo con el pago. Volvé a intentarlo.',
       }
     }
-    incapacidad = congelada
+    if (congelada) incapacidad = congelada
   }
 
   // La incapacidad a cargo del patrono también es plata que se paga: una fila
@@ -738,20 +839,24 @@ export async function marcarDetallePagado(
     }
   }
 
-  await sincronizarComprobante(supabase, ndtId, pagado)
-
-  if (detalle.sgrh_nomina_periodo) {
-    await acumularProvisionAguinaldo(
-      supabase,
-      detalle.ndt_historial_laboral_id,
-      detalle.sgrh_nomina_periodo.npe_periodo_mes,
-      detalle.sgrh_nomina_periodo.npe_periodo_anio,
-      detalle.ndt_salario_bruto,
-      pagado ? 1 : -1
-    )
-  }
-
-  await sincronizarEstadoPeriodo(supabase, detalle.ndt_nomina_periodo_id)
+  // Lo que sigue al pago toca tres tablas distintas (comprobantes,
+  // provisiones y el estado del periodo), es de mejor esfuerzo y ninguna
+  // parte usa lo que devuelve otra: va en paralelo. El correo espera a las
+  // tres porque lee el código del comprobante.
+  await Promise.all([
+    sincronizarComprobante(supabase, ndtId, pagado),
+    detalle.sgrh_nomina_periodo
+      ? acumularProvisionAguinaldo(
+          supabase,
+          detalle.ndt_historial_laboral_id,
+          detalle.sgrh_nomina_periodo.npe_periodo_mes,
+          detalle.sgrh_nomina_periodo.npe_periodo_anio,
+          detalle.ndt_salario_bruto,
+          pagado ? 1 : -1
+        )
+      : null,
+    sincronizarEstadoPeriodo(supabase, detalle.ndt_nomina_periodo_id),
+  ])
 
   // El comprobante se le manda al empleado apenas queda pagado. Va al final,
   // con todo ya guardado: el PDF sale de lo que quedó en la base (código de

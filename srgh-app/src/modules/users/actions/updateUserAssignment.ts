@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { editarAsignacionSchema, type EditarAsignacionInput } from '@/modules/users/types'
 import { syncUserSucursales } from '@/modules/users/lib/syncUserSucursales'
+import { kioskAssignmentGuard } from '@/modules/users/lib/kioskAssignmentGuard'
 
 export type UpdateUserAssignmentResult = { ok: true } | { ok: false; error: string }
 
@@ -54,6 +55,13 @@ export async function updateUserAssignment(
   if (uerReadError || !asignacion) {
     return { ok: false, error: 'Usuario no encontrado.' }
   }
+  const kioskError = await kioskAssignmentGuard(admin, {
+    usrId,
+    rolId: parsed.data.rol_id,
+    sucursalIds: parsed.data.sucursal_ids,
+    empleadoId: parsed.data.empleado_id,
+  })
+  if (kioskError) return { ok: false, error: kioskError }
 
   if (parsed.data.sucursal_ids.length > 0) {
     const { data: sucursales, error: sucError } = await admin

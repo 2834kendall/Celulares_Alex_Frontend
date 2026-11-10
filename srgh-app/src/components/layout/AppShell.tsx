@@ -6,8 +6,9 @@ import { X } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { NavLinks } from '@/components/layout/NavLinks'
 import { UserMenu } from '@/components/layout/UserMenu'
-import { SucursalSwitcher } from '@/components/layout/SucursalSwitcher'
-import type { SucursalConApariencia } from '@/lib/empresa/list-sucursales'
+import { ContextoBanner, ContextoSwitcher } from '@/components/layout/ContextoSwitcher'
+import type { MarcaApariencia } from '@/lib/empresa/get-marca-tema'
+import { shellIdentity } from '@/lib/empresa/marca-label'
 import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
 import { cn } from '@/lib/utils/cn'
 import { CompanyIdentity } from '@/components/layout/CompanyIdentity'
@@ -26,31 +27,24 @@ interface AppShellProps {
   rol: string | null
   /** Nombre real de la empresa (cargado server-side desde sgrh_empresas). */
   empresaNombre: string
-  /** URL firmada del logo de la empresa, o null para mostrar la inicial. */
+  /** URL firmada del logo (de la marca, o el de la empresa), o null para mostrar la inicial. */
   logoUrl?: string | null
+  /** Marca que pinta el shell (la elegida o la propia), o null = vista de empresa. */
+  marcaNombre?: string | null
   /** Sucursal asignada al usuario, o null si no tiene una fija (p.ej. ADMIN). */
   sucursalNombre: string | null
-  /** Color de acento de la sucursal (hex), o null para usar el default del sistema. */
+  /** Color de acento (marca → empresa), o null para usar el default del sistema. */
   colorAcento: string | null
-  /** Color de fondo de la barra lateral (hex), o null para usar el default del sistema. */
+  /** Color de fondo de la barra lateral (marca → empresa), o null para el default. */
   colorSidebar: string | null
-  /** Sucursales de la empresa con permiso EMPRESAS_WRITE; vacio para el resto. */
-  sucursales?: SucursalConApariencia[]
-  /** Sucursal actualmente en preview (ver SucursalSwitcher), o null. */
-  sucursalPreviewId?: number | null
+  /** Marcas que la cuenta puede elegir; vacio si no tiene selector. */
+  marcas?: MarcaApariencia[]
+  /** Marca elegida en el selector (ver ContextoSwitcher), o null = todas. */
+  marcaContextoId?: number | null
   /** Formato de hora de la empresa (Configuración → General). Solo presentación. */
   formatoHora?: FormatoHora
   children: React.ReactNode
 }
-
-/**
- * Id estable del contenedor raiz: el formulario de apariencia en
- * Configuracion lo usa para previsualizar colores en vivo (con
- * `document.getElementById(APP_SHELL_ROOT_ID)`) sobrescribiendo las MISMAS
- * variables inline antes de guardar — nada de contexto/estado global para
- * un caso tan puntual.
- */
-export const APP_SHELL_ROOT_ID = 'app-shell-root'
 
 /** Hamburguesa animada: las 3 lineas se transforman en una X al abrir. */
 function BurgerIcon({ open }: { open: boolean }) {
@@ -89,11 +83,12 @@ export function AppShell({
   rol,
   empresaNombre,
   logoUrl = null,
+  marcaNombre = null,
   sucursalNombre,
   colorAcento,
   colorSidebar,
-  sucursales = [],
-  sucursalPreviewId = null,
+  marcas = [],
+  marcaContextoId = null,
   formatoHora = FORMATO_HORA_DEFAULT,
   children,
 }: AppShellProps) {
@@ -112,7 +107,11 @@ export function AppShell({
     rememberReturnPath(`${window.location.pathname}${window.location.search}`)
   }, [pathname])
 
-  // Estilo de apariencia por sucursal: si no personalizo un color, no se
+  // Identidad del shell: la marca (si hay) con su sucursal debajo; si no, la
+  // empresa. Ver shellIdentity.
+  const identidad = shellIdentity(empresaNombre, marcaNombre, sucursalNombre)
+
+  // Estilo de apariencia (marca → empresa): si no hay un color, no se
   // sobrescribe nada y gana el default declarado en globals.css.
   const shellStyle = {
     ...(colorAcento ? deriveBrandTokens(colorAcento) : {}),
@@ -139,7 +138,7 @@ export function AppShell({
 
   return (
     <div
-      id={APP_SHELL_ROOT_ID}
+      id="app-shell-root"
       className="flex min-h-screen flex-col bg-[var(--page-bg)] text-slate-900"
       style={shellStyle}
     >
@@ -170,8 +169,8 @@ export function AppShell({
           size="sm"
           compact
           logoUrl={logoUrl}
-          empresaNombre={empresaNombre}
-          sucursalNombre={sucursalNombre}
+          empresaNombre={identidad.nombre}
+          sucursalNombre={identidad.detalle}
         />
 
         <TopbarBrand
@@ -179,15 +178,17 @@ export function AppShell({
           collapsed={!sidebarOpen}
           onToggle={() => setSidebarOpen((v) => !v)}
           logoUrl={logoUrl}
-          empresaNombre={empresaNombre}
-          sucursalNombre={sucursalNombre}
+          empresaNombre={identidad.nombre}
+          sucursalNombre={identidad.detalle}
         />
 
         <div className="ml-auto flex shrink-0 items-center gap-3">
-          <SucursalSwitcher sucursales={sucursales} sucursalPreviewId={sucursalPreviewId} />
+          <ContextoSwitcher marcas={marcas} marcaContextoId={marcaContextoId} />
           <UserMenu email={email} rol={rol} />
         </div>
       </header>
+
+      {marcaContextoId !== null && marcaNombre && <ContextoBanner marcaNombre={marcaNombre} />}
 
       {/* Drawer de navegacion movil */}
       {drawerOpen && (
@@ -210,8 +211,8 @@ export function AppShell({
                 <CompanyIdentity
                   size="sm"
                   logoUrl={logoUrl}
-                  empresaNombre={empresaNombre}
-                  sucursalNombre={sucursalNombre}
+                  empresaNombre={identidad.nombre}
+                  sucursalNombre={identidad.detalle}
                 />
               )}
               {/*
@@ -239,17 +240,13 @@ export function AppShell({
             </div>
 
             {/*
-              Version de ancho completo del selector de sucursal: el
+              Version de ancho completo del selector de marca: el
               telefono no tiene lugar para el disparador compacto del
-              header (ver el `hidden sm:flex` de SucursalSwitcher), asi que
-              vive aca, en el drawer, donde si sobra espacio. Mismo permiso,
+              header (ver el `hidden sm:flex` de ContextoSwitcher), asi que
+              vive aca, en el drawer, donde si sobra espacio. Misma condicion,
               mismos datos — nunca se muestran los dos disparadores a la vez.
             */}
-            <SucursalSwitcher
-              sucursales={sucursales}
-              sucursalPreviewId={sucursalPreviewId}
-              variant="block"
-            />
+            <ContextoSwitcher marcas={marcas} marcaContextoId={marcaContextoId} variant="block" />
 
             <div className="flex-1 overflow-y-auto p-3">
               {settingsMode ? (

@@ -1,5 +1,7 @@
 'use client'
 
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+
 import { type FormEvent, useState } from 'react'
 import { X } from 'lucide-react'
 import { TimeSelect } from '@/components/ui/TimeSelect'
@@ -153,6 +155,23 @@ export function CustomHoursModal({
 
   const [isSaving, setIsSaving] = useState(false)
 
+  const guard = useUnsavedChanges({
+    label: 'el horario personalizado',
+    value: {
+      startTime,
+      endTime,
+      branchId,
+      hasLunch,
+      lunchStart,
+      lunchEnd,
+      hasBreak,
+      breakStart,
+      breakEnd,
+      applyToDates,
+    },
+    busy: isSaving,
+  })
+
   function toggleDate(date: string) {
     setApplyToDates((prev) =>
       prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date]
@@ -194,7 +213,7 @@ export function CustomHoursModal({
           </div>
 
           <IconButton
-            onClick={onClose}
+            onClick={() => guard.confirmLeave(onClose)}
 
             aria-label="Cerrar modal"
           >
@@ -202,7 +221,11 @@ export function CustomHoursModal({
           </IconButton>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <form
+          ref={(element) => guard.bindRoot(element)}
+          onSubmit={handleSubmit}
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
             <div>
               <label className={LABEL} htmlFor="custom-start">
@@ -307,7 +330,7 @@ export function CustomHoursModal({
           </div>
 
           <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 px-4 py-3">
-            <Button onClick={onClose} variant="secondary" size="md">
+            <Button onClick={() => guard.confirmLeave(onClose)} variant="secondary" size="md">
               Cancelar
             </Button>
             <Button type="submit" disabled={isSaving || applyToDates.length === 0} size="md">

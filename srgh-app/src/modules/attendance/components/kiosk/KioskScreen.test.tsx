@@ -181,6 +181,31 @@ describe('<KioskScreen />', () => {
       expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
     })
 
+    it('reconocer un rostro solo ofrece la entrada; no registra una marca automaticamente', async () => {
+      await renderRecognized()
+      expect(await screen.findByRole('button', { name: 'Entrada' })).toBeEnabled()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+      expect(await getQueuedMarks()).toHaveLength(0)
+      expect(screen.queryByText('Entrada registrada')).not.toBeInTheDocument()
+    })
+
+    it('un doble toque mientras se guarda envia una sola marca', async () => {
+      let finish!: (value: { ok: true }) => void
+      mockRegisterKioskMark.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      await renderRecognized()
+      const user = userEvent.setup()
+      await user.dblClick(await screen.findByRole('button', { name: 'Entrada' }))
+      expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1)
+      await act(async () => finish({ ok: true }))
+      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1)
+    })
+
     it('marca con el ticket facial, las coordenadas y el dispositivo', async () => {
       mockGetCurrentCoordinates.mockResolvedValue({ latitud: 9.9333, longitud: -84.0833 })
       mockRegisterKioskMark.mockResolvedValue({ ok: true })
@@ -190,16 +215,31 @@ describe('<KioskScreen />', () => {
       await user.click(await screen.findByRole('button', { name: 'Entrada' }))
 
       await waitFor(() =>
-        expect(mockRegisterKioskMark).toHaveBeenCalledWith({
-          employeeId: 10,
-          tipo: 'entrada',
-          latitud: 9.9333,
-          longitud: -84.0833,
-          dispositivoId: 'device-123',
-          ticketFacial: TICKET,
-        })
+        expect(mockRegisterKioskMark).toHaveBeenCalledWith(
+          expect.objectContaining({
+            employeeId: 10,
+            tipo: 'entrada',
+            latitud: 9.9333,
+            longitud: -84.0833,
+            dispositivoId: 'device-123',
+            ticketFacial: TICKET,
+            operationId: expect.any(String),
+            fechaHora: expect.any(String),
+          })
+        )
       )
       expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+    })
+
+    it('permite marcar aunque el GPS no haya respondido', async () => {
+      mockGetCurrentCoordinates.mockReturnValue(new Promise(() => {}))
+      mockRegisterKioskMark.mockResolvedValue({ ok: true })
+      await renderRecognized()
+      await userEvent.click(await screen.findByRole('button', { name: 'Entrada' }))
+      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(mockRegisterKioskMark).toHaveBeenCalledWith(
+        expect.objectContaining({ latitud: null, longitud: null })
+      )
     })
 
     it('tras el exito vuelve a la camara a los 3 segundos', async () => {
@@ -262,6 +302,47 @@ describe('<KioskScreen />', () => {
   })
 
   describe('cuando Face ID no alcanza', () => {
+    it('una solicitud interrumpida no se confunde con un error de camara y permite volver a reconocer', async () => {
+      mockVerifyFace.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(MATCH)
+      render(<KioskScreen employees={employees} />)
+      await emitEmbedding()
+
+      expect(screen.getByText('No pudimos verificarte')).toBeInTheDocument()
+      expect(screen.getByText(/No se pudo completar la verificacion/)).toBeInTheDocument()
+      expect(screen.queryByText('La camara no esta disponible')).not.toBeInTheDocument()
+      expect(mockGetKioskMarkOptions).not.toHaveBeenCalled()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Intentar de nuevo' }))
+      expect(screen.getByTestId('face-scan')).toBeInTheDocument()
+      await emitEmbedding()
+      expect(await screen.findByRole('button', { name: 'Entrada' })).toBeEnabled()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+    })
+
+    it('mientras la verificacion esta pendiente no muestra marcas ni registra asistencia', async () => {
+      let finish!: (value: typeof MATCH) => void
+      mockVerifyFace.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      render(<KioskScreen employees={employees} />)
+      let pending!: Promise<void>
+      act(() => {
+        pending = faceScanProps!.onEmbedding(PAYLOAD) as Promise<void>
+      })
+      expect(screen.getByText('Verificando tu rostro…')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+      await act(async () => {
+        finish(MATCH)
+        await pending
+      })
+      expect(await screen.findByRole('button', { name: 'Entrada' })).toBeEnabled()
+      expect(mockRegisterKioskMark).not.toHaveBeenCalled()
+    })
+
     it('DENIED: no reconocido, pide avisar al encargado, sin forma de marcar', async () => {
       mockVerifyFace.mockResolvedValue({ ok: true, status: 'DENIED' })
       render(<KioskScreen employees={employees} />)

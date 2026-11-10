@@ -1,7 +1,8 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FileText, Loader2 } from 'lucide-react'
 import {
@@ -30,8 +31,10 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
   const {
     register,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<TipoAusenciaInput>({
+    unsavedLabel: 'el tipo de ausencia',
     resolver: zodResolver(tipoAusenciaSchema),
     defaultValues: tipo
       ? {
@@ -40,6 +43,7 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
           tau_requiere_documento_ccss: tipo.tau_requiere_documento_ccss,
           tau_paga_empleador_dias: tipo.tau_paga_empleador_dias,
           tau_porcentaje_pago_empleador: tipo.tau_porcentaje_pago_empleador,
+          tau_porcentaje_cuota_obrera: tipo.tau_porcentaje_cuota_obrera ?? 0,
           tau_paga_ccss_desde_dia: tipo.tau_paga_ccss_desde_dia ?? undefined,
           tau_porcentaje_subsidio_ccss: tipo.tau_porcentaje_subsidio_ccss ?? undefined,
           tau_descuenta_vacaciones: tipo.tau_descuenta_vacaciones,
@@ -53,6 +57,7 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
           tau_requiere_documento_ccss: false,
           tau_paga_empleador_dias: 0,
           tau_porcentaje_pago_empleador: 0,
+          tau_porcentaje_cuota_obrera: 0,
           tau_paga_ccss_desde_dia: undefined,
           tau_porcentaje_subsidio_ccss: undefined,
           tau_descuenta_vacaciones: false,
@@ -75,6 +80,7 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
     }
 
     // revalidatePath('/settings', 'layout') en el server action ya refresca la ruta.
+    guard.acceptChanges()
     onSuccess?.()
   }
 
@@ -82,10 +88,11 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
     name:
       | 'tau_paga_empleador_dias'
       | 'tau_porcentaje_pago_empleador'
+      | 'tau_porcentaje_cuota_obrera'
       | 'tau_paga_ccss_desde_dia'
       | 'tau_porcentaje_subsidio_ccss',
     label: string,
-    props: { min: number; max: number; placeholder?: string; help?: string }
+    props: { min: number; max: number; step?: number; placeholder?: string; help?: string }
   ) => (
     <div>
       <label className={LABEL} htmlFor={name}>
@@ -94,10 +101,10 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
       <input
         id={name}
         type="number"
-        inputMode="numeric"
+        inputMode={props.step && props.step < 1 ? 'decimal' : 'numeric'}
         min={props.min}
         max={props.max}
-        step={1}
+        step={props.step ?? 1}
         disabled={isSubmitting}
         aria-invalid={!!errors[name]}
         {...register(name, { valueAsNumber: true })}
@@ -128,7 +135,12 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
   )
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-4"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>
@@ -181,10 +193,20 @@ export function TipoAusenciaForm({ tipo, onSuccess }: TipoAusenciaFormProps) {
           })}
           {numberField('tau_porcentaje_pago_empleador', '% del salario', { min: 0, max: 100 })}
         </div>
+        {numberField('tau_porcentaje_cuota_obrera', 'Cuota obrera CCSS que se rebaja (%)', {
+          min: 0,
+          max: 100,
+          step: 0.01,
+          help: 'Se le rebaja a lo que paga el patrono en esta ausencia (ej. 10.83). 0 = no se rebaja nada. Confirmalo con el contador: en la licencia de maternidad las fuentes no coinciden.',
+        })}
       </fieldset>
 
       <fieldset className="space-y-3">
         <legend className={LABEL}>Subsidio de la CCSS / INS (opcional)</legend>
+        <p className="text-[11px] text-slate-500">
+          Informativo: el comprobante muestra un estimado de lo que paga la CCSS esos días. La
+          empresa no lo paga.
+        </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {numberField('tau_paga_ccss_desde_dia', 'Paga desde el día', {
             min: 1,

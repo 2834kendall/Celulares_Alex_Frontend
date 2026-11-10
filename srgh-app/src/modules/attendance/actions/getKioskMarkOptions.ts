@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireKioskAccess } from '@/modules/attendance/lib/kioskAccess'
+import type { ManagedKioskMeta } from '@/modules/attendance/lib/liveKioskAccess'
 import { allowedNextMarks, isExitWindowOpen, type MarkType } from '@/modules/attendance/lib/marks'
 import {
   absenceBlocksMarkMessage,
@@ -33,11 +34,8 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
   }
 
   const claims = await requireKioskAccess()
-  const meta = claims.app_metadata as {
-    usr_id?: number
-    empresa_id?: number
-    sucursal_ids?: number[] | null
-  }
+  const meta = claims.app_metadata as ManagedKioskMeta
+  if (meta.kiosk_error) return { ok: false, error: meta.kiosk_error }
 
   if (!meta.empresa_id) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
@@ -61,7 +59,10 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
     return { ok: false, error: 'No tienes turno asignado en esta sucursal hoy.' }
   }
 
-  const ausencia = await findApprovedAbsence(admin, turno.employmentHistoryId, hoy)
+  const [ausencia, jornada] = await Promise.all([
+    findApprovedAbsence(admin, turno.employmentHistoryId, hoy),
+    loadDayJourney(admin, turno.employmentHistoryId, hoy),
+  ])
 
   if (!ausencia.ok) {
     return { ok: false, error: ausencia.error }
@@ -70,8 +71,6 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
   if (ausencia.tipo) {
     return { ok: false, error: absenceBlocksMarkMessage(ausencia.tipo) }
   }
-
-  const jornada = await loadDayJourney(admin, turno.employmentHistoryId, hoy)
 
   if (!jornada.ok) {
     return { ok: false, error: jornada.error }

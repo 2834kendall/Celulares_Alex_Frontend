@@ -1,11 +1,19 @@
 -- =====================================================================
--- Seed de sistema: roles
+-- Seed de sistema: PLANTILLAS de roles
 -- =====================================================================
--- Esto NO es data de demo: es configuración. La aplicación asume que estos
--- códigos existen, y sin ellos nadie puede iniciar sesión de forma útil.
+-- Esto NO es data de demo: es configuración. Pero estas filas ya no son los
+-- roles que usan las cuentas: son PLANTILLAS (rol_empresa_id NULL).
+-- `sgrh_private.instanciar_roles_empresa(<empresa>)` le da a cada empresa su
+-- propia copia de las que necesita, con los mismos permisos, y le pasa sus
+-- cuentas. Desde ahí cada empresa edita sus roles en Configuración → Roles y
+-- permisos sin tocar a las demás. Cambiar una plantilla acá solo afecta a las
+-- empresas que se instancien DESPUÉS. La única plantilla que se asigna tal
+-- cual es KIOSCO (la cuenta de la tablet). Detalle:
+-- src/modules/settings/docs/roles.md.
 --
--- ── El modelo real de producción ────────────────────────────────────────
--- Solo cuatro roles nacen activos, y son los que el negocio usa:
+-- ── Las plantillas que nacen activas ─────────────────────────────────────
+-- Solo cuatro roles nacen activos, y son los que el negocio usa (cada empresa
+-- recibe una copia de ADMIN, GERENTE y EMPLEADO; KIOSCO no se copia):
 --
 --   ADMIN     toda su empresa (uer_sucursal_id NULL → sin restricción)
 --   GERENTE   una sucursal    (uer_sucursal_id con valor → RLS lo acota)

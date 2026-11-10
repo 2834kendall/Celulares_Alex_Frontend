@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { brandConfig, loginScreenContent } from '@/modules/auth/constants'
+import { brandConfig } from '@/modules/auth/constants'
+import { SystemLogo } from '@/components/ui/SystemLogo'
 
 /**
  * Frame shared by the public auth screens: an illustrated panel plus the
@@ -22,14 +23,9 @@ export function AuthShell({ scene, children }: { scene: ReactNode; children: Rea
       <section className="relative flex min-h-0 flex-1 flex-col overflow-clip bg-brand-50 px-5 pt-5 text-(--login-ink) auth-wide:min-h-dvh auth-wide:w-[54%] auth-wide:flex-none auth-wide:px-8 auth-wide:pt-8 xl:px-12 xl:pt-12 auth-short:px-6 auth-short:pt-5">
         <div className="absolute inset-0 bg-[radial-gradient(var(--color-brand-200)_1px,transparent_1px)] bg-[size:22px_22px] opacity-60 [mask-image:linear-gradient(to_bottom,black,transparent_70%)]" />
 
-        <div className="relative flex items-center gap-2.5">
-          <span
-            className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg font-bold text-white auth-short:h-8 auth-short:w-8 auth-short:text-base ${brandConfig.accent}`}
-          >
-            {brandConfig.logo}
-          </span>
-          <h1 className="text-xl font-black tracking-tight">{loginScreenContent.title}</h1>
-        </div>
+        <h1 className="relative w-fit">
+          <SystemLogo priority className="w-16 auth-short:w-12" />
+        </h1>
 
         {/* The scene is absolutely positioned inside this box (see the scene
             components), so it scales to the space left instead of asking for

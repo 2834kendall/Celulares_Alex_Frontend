@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { PERMISOS } from './catalog'
-import { ZONAS, zonasVisibles, visibleNavSections } from './zones'
+import {
+  PERMISOS_DATOS_POR_MARCA,
+  tieneDatosPorMarca,
+  ZONAS,
+  zonasVisibles,
+  visibleNavSections,
+} from './zones'
 
 const EMPLEADO_LIKE = [
   PERMISOS.ASISTENCIA_WRITE,
@@ -67,5 +73,27 @@ describe('zonasVisibles', () => {
   it('perfil EMPLEADO ve Inicio, Asistencia y Nómina', () => {
     const zonas = zonasVisibles(EMPLEADO_LIKE)
     expect(zonas.map((z) => z.key)).toEqual(['dashboard', 'attendance', 'payroll'])
+  })
+})
+
+describe('tieneDatosPorMarca', () => {
+  it.each(PERMISOS_DATOS_POR_MARCA)('%s abre un listado filtrado', (permiso) => {
+    expect(tieneDatosPorMarca([permiso])).toBe(true)
+  })
+
+  it.each([
+    PERMISOS.MI_HORARIO_READ,
+    PERMISOS.ASISTENCIA_KIOSCO,
+    PERMISOS.CATALOGOS_WRITE,
+    // Nómina es un placeholder con solo este permiso: no hay nada que filtrar.
+    PERMISOS.COMPROBANTES_READ,
+    // Abre Asistencia, pero sus marcas piden ASISTENCIA_READ.
+    PERMISOS.AUSENCIAS_WRITE,
+  ])('%s solo no da selector', (permiso) => {
+    expect(tieneDatosPorMarca([permiso])).toBe(false)
+  })
+
+  it('sin permisos no hay datos que filtrar', () => {
+    expect(tieneDatosPorMarca([])).toBe(false)
   })
 })

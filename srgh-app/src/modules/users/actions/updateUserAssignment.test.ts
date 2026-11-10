@@ -32,7 +32,11 @@ const OK = { data: null, error: null }
 const SUCURSAL_OK = { data: [{ suc_id: 2 }], error: null }
 
 function mockAdmin(responses: Parameters<typeof createSupabaseAdminClientMock>[0]) {
-  const admin = createSupabaseAdminClientMock(responses)
+  const admin = createSupabaseAdminClientMock({
+    sgrh_cat_roles: { data: { rol_id: 13 }, error: null },
+    sgrh_kioscos: { data: null, error: null },
+    ...responses,
+  })
   mockCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>)
   return admin
 }

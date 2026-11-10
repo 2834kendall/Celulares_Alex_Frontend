@@ -54,34 +54,34 @@ export function ConfirmDialog({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="animate-fade-in w-full max-w-[19rem] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/5 outline-none"
+        className="animate-fade-in w-full max-w-lg rounded-2xl bg-white p-5 sm:p-7 shadow-2xl ring-1 ring-slate-900/5 outline-none"
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-4">
           {tone === 'danger' ? (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+              <AlertTriangle className="h-5 w-5" aria-hidden="true" />
             </div>
           ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+              <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
             </div>
           )}
           <div className="min-w-0">
-            <h3 id={titleId} className="text-sm font-bold text-slate-900">
+            <h3 id={titleId} className="text-base font-bold text-slate-900 sm:text-lg">
               {title}
             </h3>
-            <p id={messageId} className="mt-1 text-xs leading-5 text-slate-500">
+            <p id={messageId} className="mt-2 text-sm leading-6 text-slate-500">
               {message}
             </p>
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
           {/* autoFocus deja el foco en la opcion no destructiva al abrir. */}
-          <Button variant="secondary" size="md" onClick={onCancel} autoFocus>
+          <Button variant="secondary" size="lg" onClick={onCancel} autoFocus>
             Cancelar
           </Button>
-          <Button variant={tone} size="md" onClick={onConfirm}>
+          <Button variant={tone} size="lg" onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </div>

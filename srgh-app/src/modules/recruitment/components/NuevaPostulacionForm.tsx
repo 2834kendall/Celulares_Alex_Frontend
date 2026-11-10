@@ -1,8 +1,10 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { useForm, type Resolver } from 'react-hook-form'
+import { type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, Send } from 'lucide-react'
 import { postulacionSchema, type PostulacionInput } from '@/modules/recruitment/types'
@@ -33,15 +35,25 @@ export function NuevaPostulacionForm({
     register,
     control,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<PostulacionInput>({
+    unsavedLabel: 'la postulación',
     resolver: zodResolver(postulacionSchema) as Resolver<PostulacionInput>,
     defaultValues: { pos_observaciones: '' },
   })
 
   async function onSubmit(input: PostulacionInput) {
     setServerError(null)
-    const result = await createPostulacion(candidatoId, input)
+    let result: Awaited<ReturnType<typeof createPostulacion>>
+    try {
+      result = await createPostulacion(candidatoId, input)
+    } catch {
+      setServerError(
+        'No se pudo confirmar el registro. Revisá las postulaciones antes de reintentar.'
+      )
+      return
+    }
 
     if (!result.ok) {
       setServerError(result.error)
@@ -49,11 +61,17 @@ export function NuevaPostulacionForm({
     }
 
     toast.success('Postulación creada.')
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

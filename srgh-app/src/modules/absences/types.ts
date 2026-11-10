@@ -43,6 +43,13 @@ export const tipoAusenciaSchema = z
       .min(0, 'Mínimo 0 días.')
       .max(365, 'Máximo 365 días.'),
     tau_porcentaje_pago_empleador: percent('Indique el porcentaje que paga el patrono.'),
+    // Cuota obrera CCSS que se le rebaja a lo que paga el patrono (ej. 10.83
+    // en la licencia de maternidad, si el contador dice que corresponde).
+    // Vacío = 0: no se rebaja nada, como antes.
+    tau_porcentaje_cuota_obrera: z.preprocess(
+      (value) => (value === '' || value == null || Number.isNaN(value) ? 0 : value),
+      percent('Porcentaje inválido.')
+    ),
     tau_paga_ccss_desde_dia: optionalNumber(
       z.number().int('Tiene que ser un número entero.').min(1, 'Mínimo el día 1.').max(365)
     ),

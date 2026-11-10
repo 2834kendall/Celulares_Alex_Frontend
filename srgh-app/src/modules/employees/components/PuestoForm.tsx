@@ -1,7 +1,8 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Briefcase, Loader2 } from 'lucide-react'
 import { puestoSchema, type PuestoInput, type PuestoRow } from '@/modules/employees/types'
@@ -24,8 +25,10 @@ export function PuestoForm({ puesto, onSuccess }: PuestoFormProps) {
   const {
     register,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting },
   } = useForm<PuestoInput>({
+    unsavedLabel: 'el puesto',
     resolver: zodResolver(puestoSchema),
     defaultValues: puesto
       ? {
@@ -53,11 +56,17 @@ export function PuestoForm({ puesto, onSuccess }: PuestoFormProps) {
     }
 
     // revalidatePath('/settings', 'layout') en el server action ya refresca la ruta.
+    guard.acceptChanges()
     onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form
+      ref={(element) => guard.bindRoot(element)}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-3"
+      noValidate
+    >
       {serverError && (
         <Alert>
           <div>{serverError}</div>

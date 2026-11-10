@@ -8,9 +8,10 @@ import {
   Building2,
   ChevronRight,
   LayoutDashboard,
-  Palette,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
+  Store,
   type LucideIcon,
 } from 'lucide-react'
 import { FADE, NAV_ICONS, NavGroupHeading, navItemClass } from '@/components/layout/NavLinks'
@@ -22,8 +23,9 @@ import { DEFAULT_RETURN_PATH, readReturnPath } from '@/modules/settings/lib/retu
 /** Los ajustes de Empresa no son zonas del menú principal: íconos propios. */
 const COMPANY_ICONS: Record<string, LucideIcon> = {
   profile: Building2,
+  branches: Store,
+  roles: ShieldCheck,
   general: SlidersHorizontal,
-  appearance: Palette,
 }
 
 /* Filas que se reducen al ícono en el riel: la etiqueta se recorta, no salta de línea. */

@@ -101,10 +101,50 @@ describe('getPeriodoDetail (server action)', () => {
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 
+  // El comprobante y el correo al pagar necesitan una fila, no el periodo
+  // entero: se filtra en la consulta y lo demás (marcas, líneas, cuentas) se
+  // lee solo para esa fila.
+  it('con soloDetalleId trae solo esa fila del periodo', async () => {
+    mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    })
+
+    const result = await getPeriodoDetail(7, { soloDetalleId: 21 })
+
+    expect(result.ok && result.data.detalles.map((d) => d.id)).toEqual([21])
+    const client = (await mockCreateClient.mock.results[0].value) as ReturnType<
+      typeof createSupabaseClientMock
+    >
+    const i = client.from.mock.calls.findIndex(([t]) => t === 'sgrh_nomina_detalle')
+    const consulta = client.from.mock.results[i].value as { eq: ReturnType<typeof vi.fn> }
+    expect(consulta.eq.mock.calls).toEqual([
+      ['ndt_nomina_periodo_id', 7],
+      ['ndt_id', 21],
+    ])
+    expect(mockGetHorasDelPeriodo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ historialLaboralIds: [9] })
+    )
+  })
+
+  it('un soloDetalleId inválido se rechaza sin consultar', async () => {
+    const result = await getPeriodoDetail(7, { soloDetalleId: -1 })
+
+    expect(result).toEqual({ ok: false, error: 'Detalle inválido.', notFound: true })
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+
   it('marca notFound cuando RLS no devuelve la fila', async () => {
     mockTables({
       sgrh_nomina_periodo: { data: null, error: null },
       sgrh_nomina_detalle: { data: [], error: null },
+      // El periodo, sus filas y el % de incapacidad se leen juntos.
+      sgrh_cat_tipos_ausencia: { data: null, error: null },
     })
 
     const result = await getPeriodoDetail(7)
@@ -411,7 +451,11 @@ describe('getPeriodoDetail (server action)', () => {
         diasEmpleador: 3,
         diasCcss: 2,
         porcentajePagoEmpleador: 50,
+        montoEmpleador: 25000,
+        porcentajeCuotaObrera: 0,
+        cuotaObrera: 0,
         monto: 25000,
+        subsidioCcssEstimado: null,
         tipoNombre: null,
       })
       // Y el total a pagar la incluye. Antes el comprobante la sumaba por su
@@ -528,7 +572,11 @@ describe('getPeriodoDetail (server action)', () => {
       diasEmpleador: 3,
       diasCcss: 2,
       porcentajePagoEmpleador: 50,
+      montoEmpleador: 20000,
+      porcentajeCuotaObrera: 0,
+      cuotaObrera: 0,
       monto: 20000,
+      subsidioCcssEstimado: null,
       tipoNombre: null,
     })
     expect(result.data.detalles[0].totalAPagar).toBe(467500) // 447500 + 20000
@@ -717,5 +765,132 @@ describe('getPeriodoDetail (server action)', () => {
     if (result.ok) {
       expect(result.data.detalles[0].diasPorRevisar).toEqual([])
     }
+  })
+
+  describe('licencia de maternidad: % y cuota obrera de SU tipo de ausencia', () => {
+    // Licencia del 20/06 al 19/10: cubre toda la quincena del 01 al 15/07.
+    const MATERNIDAD = {
+      aus_historial_laboral_id: 9,
+      aus_fecha_inicio: '2026-06-20',
+      aus_fecha_fin: '2026-10-19',
+      sgrh_cat_tipos_ausencia: {
+        tau_codigo: 'INC_MAT',
+        tau_paga_empleador_dias: 120,
+        tau_nombre: 'Incapacidad por Maternidad',
+        tau_requiere_documento_ccss: true,
+        tau_es_intradia: false,
+        tau_porcentaje_pago_empleador: 50,
+        tau_porcentaje_cuota_obrera: 10.83,
+        tau_porcentaje_subsidio_ccss: 50,
+        tau_paga_ccss_desde_dia: 1,
+      },
+    }
+    const TABLAS = {
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      // El de respaldo (INC_ENF) no rebaja nada: si se usara, no habría cuota.
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_ausencias: { data: [MATERNIDAD], error: null },
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+      sgrh_empleado_datos_pago: { data: [], error: null },
+    }
+
+    it('sin pagar: rebaja la cuota del tipo y estima lo que paga la CCSS', async () => {
+      mockTables({
+        ...TABLAS,
+        sgrh_nomina_detalle: {
+          data: [{ ...DETALLE_ROW, ndt_dias_incapacidad_empleador: 15 }],
+          error: null,
+        },
+      })
+
+      const result = await getPeriodoDetail(7)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      // 15 días × 500.000 / 30 × 50 % = 125.000; cuota 10,83 % = 13.537,50.
+      expect(result.data.detalles[0].incapacidad).toEqual({
+        diasEmpleador: 15,
+        diasCcss: 0,
+        porcentajePagoEmpleador: 50,
+        montoEmpleador: 125000,
+        porcentajeCuotaObrera: 10.83,
+        cuotaObrera: 13537.5,
+        monto: 111462.5,
+        // La CCSS paga el otro 50 % los mismos 15 días.
+        subsidioCcssEstimado: 125000,
+        tipoNombre: 'Incapacidad por Maternidad',
+      })
+      expect(result.data.detalles[0].totalAPagar).toBe(558962.5) // 447500 + 111462,50
+    })
+
+    it('pagada: usa la cuota y el estimado congelados, aunque el tipo cambie después', async () => {
+      mockTables({
+        ...TABLAS,
+        // Hoy el tipo ya no rebaja nada: la fila pagada no cambia.
+        sgrh_ausencias: {
+          data: [
+            {
+              ...MATERNIDAD,
+              sgrh_cat_tipos_ausencia: {
+                ...MATERNIDAD.sgrh_cat_tipos_ausencia,
+                tau_porcentaje_cuota_obrera: 0,
+              },
+            },
+          ],
+          error: null,
+        },
+        sgrh_nomina_detalle: {
+          data: [
+            {
+              ...DETALLE_ROW,
+              ndt_pagado: true,
+              ndt_dias_incapacidad_empleador: 15,
+              ndt_monto_incapacidad: 125000,
+              ndt_porcentaje_incapacidad: 50,
+              ndt_cuota_obrera_incapacidad: 13537.5,
+              ndt_porcentaje_cuota_obrera_incapacidad: 10.83,
+              ndt_subsidio_ccss_estimado: 125000,
+            },
+          ],
+          error: null,
+        },
+      })
+
+      const result = await getPeriodoDetail(7)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.detalles[0].incapacidad).toMatchObject({
+        montoEmpleador: 125000,
+        porcentajeCuotaObrera: 10.83,
+        cuotaObrera: 13537.5,
+        monto: 111462.5,
+        subsidioCcssEstimado: 125000,
+      })
+      expect(result.data.detalles[0].totalAPagar).toBe(558962.5)
+    })
+
+    it('si no encuentra la ausencia, usa INC_ENF como antes (sin cuota)', async () => {
+      mockTables({
+        ...TABLAS,
+        sgrh_ausencias: { data: null, error: { message: 'boom' } },
+        sgrh_nomina_detalle: {
+          data: [{ ...DETALLE_ROW, ndt_dias_incapacidad_empleador: 3 }],
+          error: null,
+        },
+      })
+
+      const result = await getPeriodoDetail(7)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.detalles[0].incapacidad).toMatchObject({
+        montoEmpleador: 25000,
+        cuotaObrera: 0,
+        monto: 25000,
+        subsidioCcssEstimado: null,
+      })
+    })
   })
 })

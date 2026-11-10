@@ -2,10 +2,12 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { ACCESO_EVALUACIONES } from '@/lib/permissions/zones'
 import { averageScore, parseNotes } from '@/modules/evaluations/lib/scoring'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 import type { BranchOption, CollaboratorRow, EvaluationDetail } from '@/modules/evaluations/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface EmployeeJoin {
   emp_nombre: string
@@ -21,7 +23,11 @@ interface HistoryRow {
   lab_sucursal_id: number
   sgrh_empleados: EmployeeJoin | null
   sgrh_cat_puestos: { pue_nombre: string | null } | null
-  sgrh_sucursales: { suc_id: number; suc_nombre: string } | null
+  sgrh_sucursales: {
+    suc_id: number
+    suc_nombre: string
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 interface ResultJoin {
@@ -103,24 +109,29 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
   }
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
 
-  const [historyResult, evaluationsResult] = await Promise.all([
-    supabase
-      .from('sgrh_historial_laboral')
-      .select(
-        `
+  let contratos = supabase
+    .from('sgrh_historial_laboral')
+    .select(
+      `
         lab_id,
         lab_empleado_id,
         lab_sucursal_id,
         sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_foto_path ),
         sgrh_cat_puestos ( pue_nombre ),
-        sgrh_sucursales ( suc_id, suc_nombre )
+        sgrh_sucursales ( suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
       `
-      )
-      .eq('lab_empresa_id', empresaId)
-      .is('lab_fecha_fin', null)
-      .returns<HistoryRow[]>(),
+    )
+    .eq('lab_empresa_id', empresaId)
+    .is('lab_fecha_fin', null)
+  if (filtro.sucursalIds) contratos = contratos.in('lab_sucursal_id', filtro.sucursalIds)
+
+  const [historyResult, evaluationsResult] = await Promise.all([
+    contratos.returns<HistoryRow[]>(),
     supabase
       .from('sgrh_evaluaciones')
       .select(
@@ -184,7 +195,7 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
         fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,
         position: h.sgrh_cat_puestos?.pue_nombre ?? null,
         branchId: h.lab_sucursal_id,
-        branchName: h.sgrh_sucursales?.suc_nombre ?? 'Sin sucursal',
+        branchName: sucursalLabel(h.sgrh_sucursales) ?? 'Sin sucursal',
         evaluation: history[0] ?? null,
         history,
       }

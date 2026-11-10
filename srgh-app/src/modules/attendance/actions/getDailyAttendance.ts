@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
@@ -181,10 +182,17 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
   // alcance y se revisa mas abajo, en el mismo punto de siempre. Cada viaje a
   // Supabase cuesta ~200 ms desde CR, asi que todo lo que no depende de un
   // resultado anterior va en la misma tanda.
-  const [sucursalIds, tiposResult] = await Promise.all([
+  const [alcance, tiposResult, filtro] = await Promise.all([
     meta.usr_id ? getUsuarioSucursalScope(supabase, meta.usr_id) : Promise.resolve(null),
     loadTardinessTypes(supabase, meta.empresa_id),
+    getFiltroMarca(),
   ])
+
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
+  // Con una marca elegida se ve como un gerente de esas tiendas: el descuento de
+  // trasladados de abajo sirve igual.
+  const sucursalIds = filtro.sucursalIds ?? alcance
 
   let marksQuery = supabase
     .from('sgrh_marcas_asistencia')

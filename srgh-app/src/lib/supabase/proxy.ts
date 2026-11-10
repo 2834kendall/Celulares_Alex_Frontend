@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { Database } from '@/types/database.types'
 import { env } from '@/lib/env'
+import { sessionCookieOptions } from '@/lib/supabase/cookieOptions'
 
 export async function updateSession(request: NextRequest) {
   const supabaseResponse = NextResponse.next({
@@ -24,6 +25,7 @@ export async function updateSession(request: NextRequest) {
           )
         },
       },
+      cookieOptions: sessionCookieOptions,
     }
   )
 

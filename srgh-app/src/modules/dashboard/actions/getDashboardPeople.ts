@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getStorageProvider } from '@/lib/storage'
 import { TTL_FOTO } from '@/lib/storage/containers'
@@ -15,6 +16,7 @@ import {
   type UpcomingBirthday,
 } from '@/modules/dashboard/lib/birthdays'
 import type { SgrhJwtClaims } from '@/types/auth'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface EmpleadoRow {
   emp_id: number
@@ -29,7 +31,10 @@ interface EmpleadoRow {
 interface HistorialActivoRow {
   lab_empleado_id: number
   sgrh_cat_puestos: { pue_nombre: string | null } | null
-  sgrh_sucursales: { suc_nombre: string | null } | null
+  sgrh_sucursales: {
+    suc_nombre: string | null
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 export interface DashboardPeople {
@@ -88,6 +93,18 @@ export async function getDashboardPeople(): Promise<DashboardPeople> {
     return hidden
   }
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return hidden
+
+  let contratos = supabase
+    .from('sgrh_historial_laboral')
+    .select(
+      'lab_empleado_id, sgrh_cat_puestos ( pue_nombre ), sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )'
+    )
+    .eq('lab_empresa_id', meta.empresa_id)
+    .is('lab_fecha_fin', null)
+  if (filtro.sucursalIds) contratos = contratos.in('lab_sucursal_id', filtro.sucursalIds)
+
   const [{ data: empleados, error: errEmpleados }, { data: historiales, error: errHistorial }] =
     await Promise.all([
       supabase
@@ -96,12 +113,7 @@ export async function getDashboardPeople(): Promise<DashboardPeople> {
           'emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_fecha_nacimiento, emp_fecha_ingreso_original, emp_foto_path'
         )
         .returns<EmpleadoRow[]>(),
-      supabase
-        .from('sgrh_historial_laboral')
-        .select('lab_empleado_id, sgrh_cat_puestos ( pue_nombre ), sgrh_sucursales ( suc_nombre )')
-        .eq('lab_empresa_id', meta.empresa_id)
-        .is('lab_fecha_fin', null)
-        .returns<HistorialActivoRow[]>(),
+      contratos.returns<HistorialActivoRow[]>(),
     ])
 
   if (errEmpleados || errHistorial) {
@@ -132,7 +144,7 @@ export async function getDashboardPeople(): Promise<DashboardPeople> {
       id: empleado.emp_id,
       nombre: fullName(empleado),
       puesto: contrato?.sgrh_cat_puestos?.pue_nombre ?? null,
-      sucursal: contrato?.sgrh_sucursales?.suc_nombre ?? null,
+      sucursal: sucursalLabel(contrato?.sgrh_sucursales) ?? null,
       fotoUrl: empleado.emp_foto_path ? (fotoUrls[empleado.emp_foto_path] ?? null) : null,
       fechaNacimiento: empleado.emp_fecha_nacimiento,
       fechaIngreso: empleado.emp_fecha_ingreso_original,

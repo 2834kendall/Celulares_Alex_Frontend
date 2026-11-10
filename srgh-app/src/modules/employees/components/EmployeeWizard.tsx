@@ -1,8 +1,10 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { FormProvider, useForm, type Path, type Resolver } from 'react-hook-form'
+import { FormProvider, type Path, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowLeft, ArrowRight, Loader2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -239,6 +241,10 @@ export function EmployeeWizard({
   const [documentos, setDocumentos] = useState<DocumentoPendiente[]>([])
 
   const methods = useForm<OnboardingEmpleadoInput>({
+    unsavedLabel: 'el alta del empleado',
+    unsavedBusy: reintentando,
+    unsavedExtra: { foto, documentos, crearUsuario },
+    unsavedHasFiles: Boolean(foto || documentos.length),
     // z.preprocess vuelve `unknown` el lado input del schema; el formulario
     // trabaja con el tipo de salida (''→null ya resuelto por el resolver).
     resolver: zodResolver(onboardingEmpleadoSchema) as Resolver<OnboardingEmpleadoInput>,
@@ -283,6 +289,7 @@ export function EmployeeWizard({
     trigger,
     setValue,
     getValues,
+    guard,
     formState: { isSubmitting },
   } = methods
 
@@ -401,6 +408,7 @@ export function EmployeeWizard({
     }
 
     toast.success('Empleado creado correctamente.')
+    guard.acceptChanges()
     router.push(`/employees/${result.empId}`)
   }
 
@@ -412,6 +420,7 @@ export function EmployeeWizard({
 
       <FormProvider {...methods}>
         <form
+          ref={(element) => guard.bindRoot(element)}
           // El form solo puede enviarse desde el último paso; en los anteriores
           // cualquier submit accidental (Enter, activación por defecto) se anula.
           onSubmit={isLastStep ? handleSubmit(onSubmit) : (e) => e.preventDefault()}

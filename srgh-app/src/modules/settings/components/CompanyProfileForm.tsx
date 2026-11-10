@@ -1,7 +1,9 @@
 'use client'
 
+import { useForm } from '@/hooks/useProtectedForm'
+
 import { useState } from 'react'
-import { FormProvider, useForm } from 'react-hook-form'
+import { FormProvider } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -45,6 +47,7 @@ export function CompanyProfileForm({
   const [serverError, setServerError] = useState<string | null>(null)
 
   const methods = useForm<CompanyProfileInput, unknown, CompanyProfileData>({
+    unsavedLabel: 'los datos de la empresa',
     resolver: zodResolver(companyProfileSchema),
     defaultValues: {
       org_nombre_social: profile.org_nombre_social,
@@ -60,6 +63,7 @@ export function CompanyProfileForm({
   const {
     register,
     handleSubmit,
+    guard,
     formState: { errors, isSubmitting, isDirty },
   } = methods
   const err = (path: string) => getFieldError(errors, path)
@@ -73,6 +77,7 @@ export function CompanyProfileForm({
     }
     toast.success('Datos de la empresa actualizados.')
     // La acción revalida: el panel recibe los datos nuevos al volver a lectura.
+    guard.acceptChanges()
     onSuccess()
   }
 
@@ -81,7 +86,12 @@ export function CompanyProfileForm({
       {/* @container: AddressFields reparte sus columnas con container queries
           (@sm/@2xl), igual que en el formulario del empleado. Sin un ancestro
           @container la grilla se desarma. */}
-      <form onSubmit={handleSubmit(onSubmit)} noValidate className="@container space-y-4">
+      <form
+        ref={(element) => guard.bindRoot(element)}
+        onSubmit={handleSubmit(onSubmit)}
+        noValidate
+        className="@container space-y-4"
+      >
         {serverError && <Alert>{serverError}</Alert>}
 
         <section className={`${CARD} space-y-3 p-4`} aria-labelledby="company-identity">
@@ -166,7 +176,12 @@ export function CompanyProfileForm({
         </section>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => guard.confirmLeave(onCancel)}
+            disabled={isSubmitting}
+          >
             Cancelar
           </Button>
           <Button type="submit" disabled={!isDirty || isSubmitting}>

@@ -109,7 +109,11 @@ function escenario(
   over: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]> = {}
 ) {
   return mockSupabase({
-    sgrh_nomina_detalle: [{ data: { ...DETALLE, ...detalle }, error: null }, OK],
+    sgrh_nomina_detalle: [
+      { data: { ...DETALLE, ...detalle }, error: null },
+      // El UPDATE (solo si sigue sin pagar) devuelve la fila.
+      { data: [{ ndt_id: DETALLE.ndt_id }], error: null },
+    ],
     sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
     sgrh_historial_laboral: {
       data: {
@@ -205,6 +209,27 @@ describe('refrescarHorasAsistencia (server action)', () => {
       baseConservado: false,
     })
     expect(llamadas(client, 'sgrh_nomina_detalle', 'update')).toEqual([])
+  })
+
+  it('si la fila se marcó pagada mientras se recalculaba, no la toca', async () => {
+    const client = escenario(
+      {},
+      {
+        sgrh_nomina_detalle: [
+          { data: { ...DETALLE }, error: null },
+          // El UPDATE con ndt_pagado = false ya no encuentra la fila.
+          { data: [], error: null },
+        ],
+      }
+    )
+
+    const result = await refrescarHorasAsistencia(50)
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('se le marcó el pago mientras se recalculaba')
+    // Ni líneas ni banco de horas: la fila quedó como se pagó.
+    expect(llamadas(client, 'sgrh_nomina_linea_ingreso', 'insert')).toEqual([])
+    expect(llamadas(client, 'sgrh_banco_horas_movimientos', 'insert')).toEqual([])
   })
 
   it('trae las horas nuevas, recalcula la fila y actualiza la foto', async () => {
