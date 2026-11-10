@@ -39,7 +39,8 @@ export async function requireSettingsSection(id: string) {
  */
 export async function redirectToFirstSetting(moduleId?: SettingsModuleId): Promise<never> {
   const { permisos } = await readPermisos()
-  // Apariencia es visible para todo el que entra a la zona, así que /settings
-  // siempre tiene destino. Un módulo sin hojas visibles vuelve a /settings.
+  // Puestos es visible para todo el que entra a la zona (en solo lectura sin
+  // CATALOGOS_WRITE), así que /settings siempre tiene destino. Un módulo sin
+  // hojas visibles vuelve a /settings.
   redirect(firstVisibleHref(permisos, moduleId) ?? '/settings')
 }

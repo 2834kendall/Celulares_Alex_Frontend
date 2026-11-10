@@ -40,7 +40,7 @@ describe('relativeLuminance', () => {
 
 /**
  * Los mismos seis acentos que ofrece el formulario de apariencia
- * (ver ACCENT_PRESETS en SucursalAppearanceForm). Son los unicos colores
+ * (ver ACCENT_PRESETS en AppearanceForm). Son los unicos colores
  * que el producto propone, asi que son los que tienen que cumplir AA.
  */
 const PRESETS_ACENTO = ['#0891b2', '#1e40af', '#166534', '#9f1239', '#5b21b6', '#334155']

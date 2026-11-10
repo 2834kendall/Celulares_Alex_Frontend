@@ -1,54 +1,61 @@
-import { getSucursalTema } from '@/lib/empresa/get-sucursal-tema'
-import {
-  listSucursalesConApariencia,
-  type SucursalConApariencia,
-} from '@/lib/empresa/list-sucursales'
-import { getSucursalPreviewId } from '@/lib/empresa/sucursal-preview'
+import { getEmpresaShell } from '@/lib/empresa/get-empresa-shell'
+import { getMarcaTema, type MarcaApariencia } from '@/lib/empresa/get-marca-tema'
+import { listMarcasConApariencia } from '@/lib/empresa/list-marcas'
+import { getMarcaPreviewId } from '@/lib/empresa/marca-preview'
 import { PERMISOS } from '@/lib/permissions/catalog'
 
 export interface ShellTheme {
+  /** Marca que pinta el shell (la propia o la del preview), o null = vista de empresa. */
+  marcaNombre: string | null
+  /** Sucursal propia del usuario; null en preview o si opera a nivel empresa. */
   sucursalNombre: string | null
   colorAcento: string | null
   colorSidebar: string | null
-  /** Sucursales de la empresa con permiso EMPRESAS_WRITE; vacio para el resto. */
-  sucursales: SucursalConApariencia[]
-  /** Sucursal actualmente en preview (ver sucursal-preview.ts), o null. */
-  sucursalPreviewId: number | null
+  /** RUTA del logo de la marca, o null para usar el de la empresa. */
+  logoPath: string | null
+  /** Marcas activas de la empresa con permiso EMPRESAS_WRITE; vacío para el resto. */
+  marcas: MarcaApariencia[]
+  /** Marca actualmente en preview (ver marca-preview.ts), o null. */
+  marcaPreviewId: number | null
 }
 
 /**
- * Tema OFICIAL que pinta el shell ahora mismo: la sucursal fija del usuario,
- * salvo que haya una sucursal en preview (selector de la barra superior), que
- * gana. Fuente unica — la usan `(dashboard)/layout.tsx` (para pintar
- * AppShell) y `settings/page.tsx` (para poder RESTAURAR estos mismos colores
- * cuando se sale del formulario de apariencia de una sucursal).
+ * Tema OFICIAL que pinta el shell ahora mismo. Orden:
  *
- * Antes cada uno calculaba esto por su lado: `(dashboard)/layout.tsx` si
- * consideraba la cookie de preview, `settings/page.tsx` no. Eso es lo que
- * dejaba la previsualizacion en vivo del formulario de apariencia "pegada"
- * al salir — no habia forma de saber a que colores volver porque
- * `settings/page.tsx` nunca supo que colores estaba pintando el shell
- * realmente.
+ *   marca en preview (selector de la barra superior, solo EMPRESAS_WRITE)
+ *   → marca propia (sucursal de la cuenta, o la del contrato vigente)
+ *   → tema de la empresa
+ *   → colores del sistema (null)
+ *
+ * Cada color cae por separado: una marca que solo personalizó el acento
+ * hereda la barra lateral de la empresa.
+ *
+ * Fuente única: la usa `(dashboard)/layout.tsx` para pintar AppShell.
  */
 export async function resolveShellTheme(
   usrId: number | null | undefined,
+  empId: number | null | undefined,
   permisos: string[]
 ): Promise<ShellTheme> {
   const administraEmpresa = permisos.includes(PERMISOS.EMPRESAS_WRITE)
 
-  const [tema, sucursales, previewId] = await Promise.all([
-    getSucursalTema(usrId),
-    administraEmpresa ? listSucursalesConApariencia() : Promise.resolve([]),
-    administraEmpresa ? getSucursalPreviewId() : Promise.resolve(null),
+  const [tema, marcas, previewId, empresa] = await Promise.all([
+    getMarcaTema(usrId, empId),
+    administraEmpresa ? listMarcasConApariencia() : Promise.resolve([]),
+    administraEmpresa ? getMarcaPreviewId() : Promise.resolve(null),
+    getEmpresaShell(),
   ])
 
-  const previewSucursal = previewId ? (sucursales.find((s) => s.id === previewId) ?? null) : null
+  const preview = previewId ? (marcas.find((m) => m.id === previewId) ?? null) : null
+  const marca = preview ?? tema.marca
 
   return {
-    sucursalNombre: previewSucursal?.nombre ?? tema.sucursalNombre,
-    colorAcento: previewSucursal?.colorAcento ?? tema.colorAcento,
-    colorSidebar: previewSucursal?.colorSidebar ?? tema.colorSidebar,
-    sucursales,
-    sucursalPreviewId: previewSucursal?.id ?? null,
+    marcaNombre: marca?.nombre ?? null,
+    sucursalNombre: preview ? null : tema.sucursalNombre,
+    colorAcento: marca?.colorAcento ?? empresa?.org_color_acento ?? null,
+    colorSidebar: marca?.colorSidebar ?? empresa?.org_color_sidebar ?? null,
+    logoPath: marca?.logoPath ?? null,
+    marcas,
+    marcaPreviewId: preview?.id ?? null,
   }
 }

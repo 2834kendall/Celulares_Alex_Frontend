@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
   }
   graphql_public: {
     Tables: {
@@ -1054,8 +1054,8 @@ export type Database = {
           tau_nombre: string
           tau_paga_ccss_desde_dia: number | null
           tau_paga_empleador_dias: number
-          tau_porcentaje_pago_empleador: number
           tau_porcentaje_cuota_obrera: number
+          tau_porcentaje_pago_empleador: number
           tau_porcentaje_subsidio_ccss: number | null
           tau_referencia_legal: string | null
           tau_requiere_documento_ccss: boolean
@@ -1069,8 +1069,8 @@ export type Database = {
           tau_nombre: string
           tau_paga_ccss_desde_dia?: number | null
           tau_paga_empleador_dias?: number
-          tau_porcentaje_pago_empleador?: number
           tau_porcentaje_cuota_obrera?: number
+          tau_porcentaje_pago_empleador?: number
           tau_porcentaje_subsidio_ccss?: number | null
           tau_referencia_legal?: string | null
           tau_requiere_documento_ccss?: boolean
@@ -1084,8 +1084,8 @@ export type Database = {
           tau_nombre?: string
           tau_paga_ccss_desde_dia?: number | null
           tau_paga_empleador_dias?: number
-          tau_porcentaje_pago_empleador?: number
           tau_porcentaje_cuota_obrera?: number
+          tau_porcentaje_pago_empleador?: number
           tau_porcentaje_subsidio_ccss?: number | null
           tau_referencia_legal?: string | null
           tau_requiere_documento_ccss?: boolean
@@ -1338,6 +1338,51 @@ export type Database = {
           },
         ]
       }
+      sgrh_config_auditoria: {
+        Row: {
+          aud_accion: string
+          aud_created_at: string
+          aud_empresa_id: number
+          aud_entidad: string
+          aud_id: number
+          aud_referencia: string
+          aud_usuario_id: number
+        }
+        Insert: {
+          aud_accion: string
+          aud_created_at?: string
+          aud_empresa_id: number
+          aud_entidad: string
+          aud_id?: never
+          aud_referencia: string
+          aud_usuario_id: number
+        }
+        Update: {
+          aud_accion?: string
+          aud_created_at?: string
+          aud_empresa_id?: number
+          aud_entidad?: string
+          aud_id?: never
+          aud_referencia?: string
+          aud_usuario_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_config_auditoria_aud_empresa_id_fkey"
+            columns: ["aud_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_config_auditoria_aud_usuario_id_fkey"
+            columns: ["aud_usuario_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+        ]
+      }
       sgrh_direcciones: {
         Row: {
           dir_codigo_postal: string
@@ -1572,6 +1617,8 @@ export type Database = {
           org_activa: boolean
           org_actividad_economica_ciiu: string | null
           org_cedula_juridica: string
+          org_color_acento: string | null
+          org_color_sidebar: string | null
           org_created_at: string
           org_dia_pago_1: number | null
           org_dia_pago_2: number | null
@@ -1591,6 +1638,8 @@ export type Database = {
           org_activa?: boolean
           org_actividad_economica_ciiu?: string | null
           org_cedula_juridica: string
+          org_color_acento?: string | null
+          org_color_sidebar?: string | null
           org_created_at?: string
           org_dia_pago_1?: number | null
           org_dia_pago_2?: number | null
@@ -1610,6 +1659,8 @@ export type Database = {
           org_activa?: boolean
           org_actividad_economica_ciiu?: string | null
           org_cedula_juridica?: string
+          org_color_acento?: string | null
+          org_color_sidebar?: string | null
           org_created_at?: string
           org_dia_pago_1?: number | null
           org_dia_pago_2?: number | null
@@ -1861,6 +1912,70 @@ export type Database = {
           },
         ]
       }
+      sgrh_kioscos: {
+        Row: {
+          kio_created_at: string
+          kio_email: string
+          kio_empresa_id: number
+          kio_estado: string
+          kio_id: string
+          kio_nombre: string
+          kio_sucursal_id: number
+          kio_ultima_actividad: string | null
+          kio_updated_at: string
+          kio_usuario_id: number | null
+          kio_version: number
+        }
+        Insert: {
+          kio_created_at?: string
+          kio_email: string
+          kio_empresa_id: number
+          kio_estado?: string
+          kio_id?: string
+          kio_nombre: string
+          kio_sucursal_id: number
+          kio_ultima_actividad?: string | null
+          kio_updated_at?: string
+          kio_usuario_id?: number | null
+          kio_version?: number
+        }
+        Update: {
+          kio_created_at?: string
+          kio_email?: string
+          kio_empresa_id?: number
+          kio_estado?: string
+          kio_id?: string
+          kio_nombre?: string
+          kio_sucursal_id?: number
+          kio_ultima_actividad?: string | null
+          kio_updated_at?: string
+          kio_usuario_id?: number | null
+          kio_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_kioscos_kio_empresa_id_fkey"
+            columns: ["kio_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_kioscos_kio_sucursal_id_fkey"
+            columns: ["kio_sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_sucursales"
+            referencedColumns: ["suc_id"]
+          },
+          {
+            foreignKeyName: "sgrh_kioscos_kio_usuario_id_fkey"
+            columns: ["kio_usuario_id"]
+            isOneToOne: true
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+        ]
+      }
       sgrh_liquidaciones: {
         Row: {
           liq_aguinaldo_proporcional: number
@@ -1972,7 +2087,6 @@ export type Database = {
       sgrh_marcas_asistencia: {
         Row: {
           mar_created_at: string
-          mar_operacion_id: string | null
           mar_dispositivo_id: string | null
           mar_distancia_geocerca_metros: number | null
           mar_fecha_hora: string
@@ -1982,6 +2096,7 @@ export type Database = {
           mar_longitud_marcada: number | null
           mar_metodo_verificacion: string
           mar_observacion: string | null
+          mar_operacion_id: string | null
           mar_registrado_por_id: number | null
           mar_sucursal_id: number
           mar_tardia_justificacion: string | null
@@ -1992,7 +2107,6 @@ export type Database = {
         }
         Insert: {
           mar_created_at?: string
-          mar_operacion_id?: string | null
           mar_dispositivo_id?: string | null
           mar_distancia_geocerca_metros?: number | null
           mar_fecha_hora: string
@@ -2002,6 +2116,7 @@ export type Database = {
           mar_longitud_marcada?: number | null
           mar_metodo_verificacion: string
           mar_observacion?: string | null
+          mar_operacion_id?: string | null
           mar_registrado_por_id?: number | null
           mar_sucursal_id: number
           mar_tardia_justificacion?: string | null
@@ -2012,7 +2127,6 @@ export type Database = {
         }
         Update: {
           mar_created_at?: string
-          mar_operacion_id?: string | null
           mar_dispositivo_id?: string | null
           mar_distancia_geocerca_metros?: number | null
           mar_fecha_hora?: string
@@ -2022,6 +2136,7 @@ export type Database = {
           mar_longitud_marcada?: number | null
           mar_metodo_verificacion?: string
           mar_observacion?: string | null
+          mar_operacion_id?: string | null
           mar_registrado_por_id?: number | null
           mar_sucursal_id?: number
           mar_tardia_justificacion?: string | null
@@ -2061,9 +2176,54 @@ export type Database = {
           },
         ]
       }
+      sgrh_marcas_comerciales: {
+        Row: {
+          mco_activa: boolean
+          mco_color_acento: string | null
+          mco_color_sidebar: string | null
+          mco_created_at: string
+          mco_empresa_id: number
+          mco_id: number
+          mco_logo_path: string | null
+          mco_nombre: string
+          mco_updated_at: string
+        }
+        Insert: {
+          mco_activa?: boolean
+          mco_color_acento?: string | null
+          mco_color_sidebar?: string | null
+          mco_created_at?: string
+          mco_empresa_id: number
+          mco_id?: never
+          mco_logo_path?: string | null
+          mco_nombre: string
+          mco_updated_at?: string
+        }
+        Update: {
+          mco_activa?: boolean
+          mco_color_acento?: string | null
+          mco_color_sidebar?: string | null
+          mco_created_at?: string
+          mco_empresa_id?: number
+          mco_id?: never
+          mco_logo_path?: string | null
+          mco_nombre?: string
+          mco_updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_marcas_comerciales_mco_empresa_id_fkey"
+            columns: ["mco_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       sgrh_nomina_detalle: {
         Row: {
           ndt_created_at: string
+          ndt_cuota_obrera_incapacidad: number | null
           ndt_dias_ausencia_sin_goce: number
           ndt_dias_incapacidad_ccss: number
           ndt_dias_incapacidad_empleador: number
@@ -2085,20 +2245,20 @@ export type Database = {
           ndt_monto_incapacidad: number | null
           ndt_nomina_periodo_id: number
           ndt_pagado: boolean
-          ndt_porcentaje_incapacidad: number | null
-          ndt_cuota_obrera_incapacidad: number | null
           ndt_porcentaje_cuota_obrera_incapacidad: number | null
-          ndt_subsidio_ccss_estimado: number | null
+          ndt_porcentaje_incapacidad: number | null
           ndt_salario_base_contrato: number | null
           ndt_salario_bruto: number
           ndt_salario_neto: number
           ndt_salario_por_hora: number
           ndt_salario_real_contrato: number | null
+          ndt_subsidio_ccss_estimado: number | null
           ndt_total_cargas_patronales: number
           ndt_total_deducciones_obreras: number
         }
         Insert: {
           ndt_created_at?: string
+          ndt_cuota_obrera_incapacidad?: number | null
           ndt_dias_ausencia_sin_goce?: number
           ndt_dias_incapacidad_ccss?: number
           ndt_dias_incapacidad_empleador?: number
@@ -2120,20 +2280,20 @@ export type Database = {
           ndt_monto_incapacidad?: number | null
           ndt_nomina_periodo_id: number
           ndt_pagado?: boolean
-          ndt_porcentaje_incapacidad?: number | null
-          ndt_cuota_obrera_incapacidad?: number | null
           ndt_porcentaje_cuota_obrera_incapacidad?: number | null
-          ndt_subsidio_ccss_estimado?: number | null
+          ndt_porcentaje_incapacidad?: number | null
           ndt_salario_base_contrato?: number | null
           ndt_salario_bruto?: number
           ndt_salario_neto?: number
           ndt_salario_por_hora?: number
           ndt_salario_real_contrato?: number | null
+          ndt_subsidio_ccss_estimado?: number | null
           ndt_total_cargas_patronales?: number
           ndt_total_deducciones_obreras?: number
         }
         Update: {
           ndt_created_at?: string
+          ndt_cuota_obrera_incapacidad?: number | null
           ndt_dias_ausencia_sin_goce?: number
           ndt_dias_incapacidad_ccss?: number
           ndt_dias_incapacidad_empleador?: number
@@ -2155,15 +2315,14 @@ export type Database = {
           ndt_monto_incapacidad?: number | null
           ndt_nomina_periodo_id?: number
           ndt_pagado?: boolean
-          ndt_porcentaje_incapacidad?: number | null
-          ndt_cuota_obrera_incapacidad?: number | null
           ndt_porcentaje_cuota_obrera_incapacidad?: number | null
-          ndt_subsidio_ccss_estimado?: number | null
+          ndt_porcentaje_incapacidad?: number | null
           ndt_salario_base_contrato?: number | null
           ndt_salario_bruto?: number
           ndt_salario_neto?: number
           ndt_salario_por_hora?: number
           ndt_salario_real_contrato?: number | null
+          ndt_subsidio_ccss_estimado?: number | null
           ndt_total_cargas_patronales?: number
           ndt_total_deducciones_obreras?: number
         }
@@ -2488,6 +2647,9 @@ export type Database = {
       sgrh_pagos_extraordinarios: {
         Row: {
           pex_anio_aguinaldo: number | null
+          pex_anulado_en: string | null
+          pex_anulado_por: number | null
+          pex_anulado_por_nombre: string | null
           pex_codigo_verificacion: string
           pex_created_at: string
           pex_deducciones: number
@@ -2499,17 +2661,17 @@ export type Database = {
           pex_metodo_pago: string | null
           pex_monto_bruto: number
           pex_monto_neto: number
+          pex_motivo_anulacion: string | null
           pex_observaciones: string | null
           pex_pagado_en: string
-          pex_anulado_en: string | null
-          pex_anulado_por: number | null
-          pex_anulado_por_nombre: string | null
-          pex_motivo_anulacion: string | null
           pex_referencia_bancaria: string | null
           pex_tipo: string
         }
         Insert: {
           pex_anio_aguinaldo?: number | null
+          pex_anulado_en?: string | null
+          pex_anulado_por?: number | null
+          pex_anulado_por_nombre?: string | null
           pex_codigo_verificacion: string
           pex_created_at?: string
           pex_deducciones?: number
@@ -2521,17 +2683,17 @@ export type Database = {
           pex_metodo_pago?: string | null
           pex_monto_bruto: number
           pex_monto_neto: number
+          pex_motivo_anulacion?: string | null
           pex_observaciones?: string | null
           pex_pagado_en?: string
-          pex_anulado_en?: string | null
-          pex_anulado_por?: number | null
-          pex_anulado_por_nombre?: string | null
-          pex_motivo_anulacion?: string | null
           pex_referencia_bancaria?: string | null
           pex_tipo: string
         }
         Update: {
           pex_anio_aguinaldo?: number | null
+          pex_anulado_en?: string | null
+          pex_anulado_por?: number | null
+          pex_anulado_por_nombre?: string | null
           pex_codigo_verificacion?: string
           pex_created_at?: string
           pex_deducciones?: number
@@ -2543,16 +2705,20 @@ export type Database = {
           pex_metodo_pago?: string | null
           pex_monto_bruto?: number
           pex_monto_neto?: number
+          pex_motivo_anulacion?: string | null
           pex_observaciones?: string | null
           pex_pagado_en?: string
-          pex_anulado_en?: string | null
-          pex_anulado_por?: number | null
-          pex_anulado_por_nombre?: string | null
-          pex_motivo_anulacion?: string | null
           pex_referencia_bancaria?: string | null
           pex_tipo?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "sgrh_pagos_extraordinarios_pex_anulado_por_fkey"
+            columns: ["pex_anulado_por"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
           {
             foreignKeyName: "sgrh_pagos_extraordinarios_pex_historial_laboral_id_fkey"
             columns: ["pex_historial_laboral_id"]
@@ -2760,18 +2926,6 @@ export type Database = {
           },
         ]
       }
-      sgrh_kioscos: {
-        Row: { kio_id: string; kio_empresa_id: number; kio_sucursal_id: number; kio_nombre: string; kio_email: string; kio_usuario_id: number | null; kio_estado: string; kio_version: number; kio_ultima_actividad: string | null; kio_created_at: string; kio_updated_at: string }
-        Insert: never
-        Update: never
-        Relationships: []
-      }
-      sgrh_config_auditoria: {
-        Row: { aud_id: number; aud_empresa_id: number; aud_usuario_id: number; aud_entidad: string; aud_referencia: string; aud_accion: string; aud_created_at: string }
-        Insert: never
-        Update: never
-        Relationships: []
-      }
       sgrh_programacion_semanal: {
         Row: {
           prg_creado_por_id: number | null
@@ -2970,6 +3124,7 @@ export type Database = {
           suc_id: number
           suc_latitud: number | null
           suc_longitud: number | null
+          suc_marca_id: number | null
           suc_nombre: string
           suc_radio_geocerca_metros: number
           suc_telefono: string | null
@@ -2986,6 +3141,7 @@ export type Database = {
           suc_id?: never
           suc_latitud?: number | null
           suc_longitud?: number | null
+          suc_marca_id?: number | null
           suc_nombre: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
@@ -3002,6 +3158,7 @@ export type Database = {
           suc_id?: never
           suc_latitud?: number | null
           suc_longitud?: number | null
+          suc_marca_id?: number | null
           suc_nombre?: string
           suc_radio_geocerca_metros?: number
           suc_telefono?: string | null
@@ -3013,6 +3170,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "sgrh_empresas"
             referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_sucursales_marca_fkey"
+            columns: ["suc_marca_id", "suc_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_marcas_comerciales"
+            referencedColumns: ["mco_id", "mco_empresa_id"]
           },
           {
             foreignKeyName: "sgrh_sucursales_suc_direccion_id_fkey"
@@ -3128,53 +3292,9 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      sgrh_assert_branch_admin: {
-        Args: { p_actor: string; p_empresa: number; p_kioscos?: boolean }
-        Returns: number
-      }
-      sgrh_assert_roles_admin: {
-        Args: { p_actor: string; p_empresa: number }
-        Returns: number
-      }
-      sgrh_save_role: {
-        Args: {
-          p_actor: string
-          p_empresa: number
-          p_id: number | null
-          p_nombre: string
-          p_descripcion: string | null
-          p_sucursal: number | null
-          p_permisos: string[]
-        }
-        Returns: number
-      }
-      sgrh_customize_role_for_branch: {
-        Args: { p_actor: string; p_empresa: number; p_rol_base: number; p_sucursal: number }
-        Returns: Json
-      }
-      sgrh_delete_role: {
-        Args: { p_actor: string; p_empresa: number; p_id: number }
-        Returns: string
-      }
-      sgrh_save_branch: {
-        Args: { p_actor: string; p_empresa: number; p_id: number | null; p_data: Json; p_direccion: Json }
-        Returns: number
-      }
-      sgrh_manage_kiosk: {
-        Args: { p_actor: string; p_empresa: number; p_action: string; p_id: string | null; p_data: Json }
-        Returns: string
-      }
-      sgrh_kiosk_context: {
-        Args: { p_auth: string; p_empresa: number }
-        Returns: Json
-      }
       actualizar_perfil_empresa: {
         Args: { p_datos: Json; p_direccion: Json }
         Returns: undefined
-      }
-      registrar_marca_kiosco_atomica: {
-        Args: { p_marca: Json; p_snapshot: Json; p_empresa_id: number }
-        Returns: string
       }
       anular_pago_extraordinario: {
         Args: { p_motivo: string; p_pex_id: number }
@@ -3234,7 +3354,76 @@ export type Database = {
         Args: { p_lab_id: number; p_liquidacion: Json }
         Returns: number
       }
+      registrar_marca_kiosco_atomica: {
+        Args: { p_empresa_id: number; p_marca: Json; p_snapshot: Json }
+        Returns: string
+      }
       revertir_terminacion: { Args: { p_lab_id: number }; Returns: undefined }
+      sgrh_assert_branch_admin: {
+        Args: { p_actor: string; p_empresa: number; p_kioscos?: boolean }
+        Returns: number
+      }
+      sgrh_assert_roles_admin: {
+        Args: { p_actor: string; p_empresa: number }
+        Returns: number
+      }
+      sgrh_customize_role_for_branch: {
+        Args: {
+          p_actor: string
+          p_empresa: number
+          p_rol_base: number
+          p_sucursal: number
+        }
+        Returns: Json
+      }
+      sgrh_delete_brand: {
+        Args: { p_actor: string; p_empresa: number; p_id: number }
+        Returns: string
+      }
+      sgrh_delete_role: {
+        Args: { p_actor: string; p_empresa: number; p_id: number }
+        Returns: string
+      }
+      sgrh_kiosk_context: {
+        Args: { p_auth: string; p_empresa: number }
+        Returns: Json
+      }
+      sgrh_manage_kiosk: {
+        Args: {
+          p_action: string
+          p_actor: string
+          p_data: Json
+          p_empresa: number
+          p_id: string
+        }
+        Returns: string
+      }
+      sgrh_save_branch: {
+        Args: {
+          p_actor: string
+          p_data: Json
+          p_direccion: Json
+          p_empresa: number
+          p_id: number
+        }
+        Returns: number
+      }
+      sgrh_save_brand: {
+        Args: { p_actor: string; p_data: Json; p_empresa: number; p_id: number }
+        Returns: number
+      }
+      sgrh_save_role: {
+        Args: {
+          p_actor: string
+          p_descripcion: string | null
+          p_empresa: number
+          p_id: number | null
+          p_nombre: string
+          p_permisos: string[]
+          p_sucursal: number | null
+        }
+        Returns: number
+      }
       sucursal_visible: { Args: { p_sucursal_id: number }; Returns: boolean }
       terminar_contrato: {
         Args: {

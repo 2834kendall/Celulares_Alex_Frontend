@@ -6,6 +6,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import { hoursBetween } from '@/modules/schedules/lib/hours'
 import type { SgrhJwtClaims } from '@/types/auth'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface ScheduleJoin {
   hor_id: number
@@ -21,6 +22,7 @@ interface ScheduleJoin {
 
 interface BranchJoin {
   suc_nombre: string
+  sgrh_marcas_comerciales?: { mco_nombre: string } | null
 }
 
 interface AssignmentRow {
@@ -85,7 +87,7 @@ export async function getMySchedule(weekStartISO: string): Promise<GetMySchedule
       prg_es_feriado,
       prg_observaciones,
       prg_sucursal_id,
-      sgrh_sucursales ( suc_nombre ),
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_horarios ( hor_id, hor_nombre, hor_color, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo, hor_hora_inicio_break, hor_hora_fin_break ),
       prg_hora_entrada_custom,
       prg_hora_salida_custom,
@@ -170,7 +172,7 @@ export async function getMySchedule(weekStartISO: string): Promise<GetMySchedule
       endTime: isCustom ? assignment.prg_hora_salida_custom : (schedule?.hor_hora_salida ?? null),
       hours,
       observaciones: assignment.prg_observaciones,
-      branchName: assignment.sgrh_sucursales?.suc_nombre ?? null,
+      branchName: sucursalLabel(assignment.sgrh_sucursales) ?? null,
     }
   })
 

@@ -37,14 +37,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const rol = typeof meta.rol === 'string' ? meta.rol : null
 
   // Nombre real de la empresa del tenant (RLS devuelve solo la del JWT) y el
-  // tema oficial del shell — sucursal fija propia, salvo que haya una
-  // sucursal en preview desde el selector de la barra superior.
-  const [empresaNombre, theme, formatoHora, logoUrl] = await Promise.all([
+  // tema oficial del shell — la marca propia (sucursal de la cuenta o del
+  // contrato vigente), salvo que haya una marca en preview desde el selector
+  // de la barra superior; sin marca, el tema de la empresa.
+  const [empresaNombre, theme, formatoHora] = await Promise.all([
     getEmpresaNombre(),
-    resolveShellTheme(meta.usr_id, permisos),
+    resolveShellTheme(meta.usr_id, meta.emp_id, permisos),
     getFormatoHora(),
-    getEmpresaLogoUrl(),
   ])
+  // Depende de la marca resuelta: el logo de la marca, o el de la empresa.
+  const logoUrl = await getEmpresaLogoUrl(theme.logoPath)
 
   return (
     <AppShell
@@ -53,11 +55,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
       rol={rol}
       empresaNombre={empresaNombre}
       logoUrl={logoUrl}
+      marcaNombre={theme.marcaNombre}
       sucursalNombre={theme.sucursalNombre}
       colorAcento={theme.colorAcento}
       colorSidebar={theme.colorSidebar}
-      sucursales={theme.sucursales}
-      sucursalPreviewId={theme.sucursalPreviewId}
+      marcas={theme.marcas}
+      marcaPreviewId={theme.marcaPreviewId}
       formatoHora={formatoHora}
     >
       {children}

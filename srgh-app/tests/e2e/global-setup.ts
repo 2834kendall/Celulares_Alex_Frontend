@@ -2,6 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 
+const PIXEL_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+
 export default async function setup() {
   // Never accept a project ref, DB URL or arbitrary container from the caller.
   const container = 'supabase_db_sgrh105-e2e'
@@ -21,10 +24,16 @@ export default async function setup() {
     readFileSync('.e2e/connection.json', 'utf8').replace(/^\uFEFF/, '')
   ) as Record<string, string>
   if (local.API_URL !== 'http://127.0.0.1:55421') throw new Error('Unexpected test API')
-  const storage = createClient(
-    local.API_URL,
-    local.SECRET_KEY || local.SERVICE_ROLE_KEY
-  ).storage.from('cv-candidatos')
+  const client = createClient(local.API_URL, local.SECRET_KEY || local.SERVICE_ROLE_KEY)
+  // The company logo that fixtures.sql references: the general view shows it.
+  const logo = await client.storage
+    .from('logos-empresa')
+    .upload('1051/logo/e2e-empresa.png', Buffer.from(PIXEL_PNG, 'base64'), {
+      contentType: 'image/png',
+      upsert: true,
+    })
+  if (logo.error) throw logo.error
+  const storage = client.storage.from('cv-candidatos')
   const prefix = '1051/candidatos/1051'
   const listed = await storage.list(prefix)
   if (listed.error) throw listed.error

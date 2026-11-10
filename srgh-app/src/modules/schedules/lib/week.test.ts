@@ -7,6 +7,12 @@ import {
   shiftWeekISO,
   toISODate,
 } from './week'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
+
+vi.mock('@/modules/attendance/lib/time', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/modules/attendance/lib/time')>()
+  return { ...actual, todayInCostaRica: vi.fn(actual.todayInCostaRica) }
+})
 
 describe('toISODate', () => {
   it('formatea usando el calendario local, sin desplazamiento UTC', () => {
@@ -59,15 +65,46 @@ describe('currentMondayISO', () => {
     vi.useRealTimers()
   })
 
+  // Instantes con zona explícita: con la hora local, el resultado dependía de la máquina.
   it('devuelve el lunes de la semana actual', () => {
     // 2026-01-07 es miercoles
-    vi.setSystemTime(new Date(2026, 0, 7))
+    vi.setSystemTime(new Date('2026-01-07T18:00:00Z'))
     expect(currentMondayISO()).toBe('2026-01-05')
   })
 
   it('retrocede correctamente cuando hoy es domingo', () => {
-    vi.setSystemTime(new Date(2026, 0, 11))
+    vi.setSystemTime(new Date('2026-01-11T18:00:00Z'))
     expect(currentMondayISO()).toBe('2026-01-05')
+  })
+
+  it('un lunes es el inicio de su propia semana', () => {
+    vi.setSystemTime(new Date('2026-01-05T18:00:00Z'))
+    expect(currentMondayISO()).toBe('2026-01-05')
+  })
+
+  /*
+   * La regresión la encontró el E2E en CI: domingo 6:54 p. m. en Costa Rica, con el
+   * servidor en UTC ya es lunes. La pantalla saltaba a la semana siguiente y los turnos
+   * de hoy desaparecían. Este test falla en cualquier máquina si la fecha no sale de
+   * Costa Rica; los dos de abajo solo muestran el bug con el proceso en UTC, como en CI.
+   */
+  it('la semana sale del día de Costa Rica, no del reloj del proceso', () => {
+    vi.setSystemTime(new Date('2026-01-07T18:00:00Z'))
+    vi.mocked(todayInCostaRica).mockReturnValueOnce('2026-11-04')
+    expect(currentMondayISO()).toBe('2026-11-02')
+  })
+
+  it('el domingo en la noche de Costa Rica sigue en esa semana, aunque en UTC ya sea lunes', () => {
+    vi.setSystemTime(new Date('2026-11-09T00:54:00Z'))
+    expect(currentMondayISO()).toBe('2026-11-02')
+  })
+
+  it('la semana nueva empieza a la medianoche de Costa Rica, no a la de UTC', () => {
+    vi.setSystemTime(new Date('2026-11-09T05:59:00Z'))
+    expect(currentMondayISO()).toBe('2026-11-02')
+
+    vi.setSystemTime(new Date('2026-11-09T06:00:00Z'))
+    expect(currentMondayISO()).toBe('2026-11-09')
   })
 })
 

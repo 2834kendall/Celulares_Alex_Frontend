@@ -6,6 +6,7 @@ import { ACCESO_EVALUACIONES } from '@/lib/permissions/zones'
 import { averageScore, parseNotes } from '@/modules/evaluations/lib/scoring'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 import type { BranchOption, CollaboratorRow, EvaluationDetail } from '@/modules/evaluations/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface EmployeeJoin {
   emp_nombre: string
@@ -21,7 +22,11 @@ interface HistoryRow {
   lab_sucursal_id: number
   sgrh_empleados: EmployeeJoin | null
   sgrh_cat_puestos: { pue_nombre: string | null } | null
-  sgrh_sucursales: { suc_id: number; suc_nombre: string } | null
+  sgrh_sucursales: {
+    suc_id: number
+    suc_nombre: string
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
 }
 
 interface ResultJoin {
@@ -115,7 +120,7 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
         lab_sucursal_id,
         sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_foto_path ),
         sgrh_cat_puestos ( pue_nombre ),
-        sgrh_sucursales ( suc_id, suc_nombre )
+        sgrh_sucursales ( suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
       `
       )
       .eq('lab_empresa_id', empresaId)
@@ -184,7 +189,7 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
         fotoUrl: employee?.emp_foto_path ? (fotoUrls[employee.emp_foto_path] ?? null) : null,
         position: h.sgrh_cat_puestos?.pue_nombre ?? null,
         branchId: h.lab_sucursal_id,
-        branchName: h.sgrh_sucursales?.suc_nombre ?? 'Sin sucursal',
+        branchName: sucursalLabel(h.sgrh_sucursales) ?? 'Sin sucursal',
         evaluation: history[0] ?? null,
         history,
       }

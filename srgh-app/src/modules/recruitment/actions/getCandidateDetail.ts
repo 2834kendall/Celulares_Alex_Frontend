@@ -11,6 +11,7 @@ import type {
   PostulacionEtapaItem,
   PuntajeCriterioItem,
 } from '@/modules/recruitment/types'
+import { sucursalLabel } from '@/lib/empresa/marca-label'
 
 interface CandidatoQueryRow {
   cdt_id: number
@@ -38,7 +39,10 @@ interface PostulacionQueryRow {
   pos_empleado_id: number | null
   pos_etapa_actual_id: number | null
   sgrh_cat_puestos: { pue_nombre: string } | null
-  sgrh_sucursales: { suc_nombre: string } | null
+  sgrh_sucursales: {
+    suc_nombre: string
+    sgrh_marcas_comerciales?: { mco_nombre: string } | null
+  } | null
   sgrh_cat_etapas_seleccion: {
     eta_id: number
     eta_nombre: string
@@ -125,7 +129,7 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
       pos_id, pos_estado_final, pos_fecha_postula, pos_fecha_cierre, pos_motivo_descarte,
       pos_observaciones, pos_puntaje_promedio, pos_empleado_id, pos_etapa_actual_id,
       sgrh_cat_puestos ( pue_nombre ),
-      sgrh_sucursales ( suc_nombre ),
+      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_etapas_seleccion ( eta_id, eta_nombre, eta_color )
     `
       )
@@ -240,7 +244,7 @@ export async function getCandidateDetail(candidatoId: number): Promise<GetCandid
       pos_puntaje_promedio: row.pos_puntaje_promedio,
       pos_empleado_id: row.pos_empleado_id,
       puestoNombre: row.sgrh_cat_puestos?.pue_nombre ?? '—',
-      sucursalNombre: row.sgrh_sucursales?.suc_nombre ?? null,
+      sucursalNombre: sucursalLabel(row.sgrh_sucursales) ?? null,
       etapaActual,
       etapas: etapasPorPostulacion.get(row.pos_id) ?? [],
       puntajes: puntajesPorPostulacion.get(row.pos_id) ?? [],

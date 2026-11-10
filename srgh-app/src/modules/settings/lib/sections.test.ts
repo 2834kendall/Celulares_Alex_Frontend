@@ -26,7 +26,6 @@ describe('visibleTree / visibleLeaves', () => {
       'branches',
       'roles',
       'general',
-      'appearance',
       'positions',
       'tardiness-types',
       'absence-types',
@@ -35,7 +34,7 @@ describe('visibleTree / visibleLeaves', () => {
     ])
   })
 
-  it('sin EMPRESAS_WRITE no ve Datos de la empresa ni General', () => {
+  it('sin EMPRESAS_WRITE no ve ningún ajuste de la empresa', () => {
     expect(ids([PERMISOS.CATALOGOS_WRITE])).not.toContain('profile')
     expect(ids([PERMISOS.CATALOGOS_WRITE])).not.toContain('general')
   })
@@ -65,12 +64,12 @@ describe('visibleTree / visibleLeaves', () => {
 })
 
 describe('firstVisibleHref', () => {
-  it('sin módulo: el primer ajuste visible (Datos de la empresa para un admin)', () => {
+  it('sin módulo: el primer ajuste visible (Empresa para un admin)', () => {
     expect(firstVisibleHref(ADMIN)).toBe('/settings/profile')
   })
 
-  it('sin EMPRESAS_WRITE arranca en Apariencia', () => {
-    expect(firstVisibleHref(SOLO_USUARIOS)).toBe('/settings/appearance')
+  it('sin EMPRESAS_WRITE arranca en el primer módulo (Puestos)', () => {
+    expect(firstVisibleHref(SOLO_USUARIOS)).toBe('/settings/employees/positions')
   })
 
   it('con módulo: su primer ajuste visible', () => {
@@ -81,8 +80,8 @@ describe('firstVisibleHref', () => {
     expect(firstVisibleHref(SOLO_USUARIOS, 'recruitment')).toBeNull()
   })
 
-  it('/settings siempre tiene destino: Apariencia es visible para todos', () => {
-    expect(firstVisibleHref([])).toBe('/settings/appearance')
+  it('/settings siempre tiene destino: Puestos es visible para todos', () => {
+    expect(firstVisibleHref([])).toBe('/settings/employees/positions')
   })
 })
 
@@ -104,8 +103,30 @@ describe('searchSettings', () => {
   const found = (query: string, permisos = ADMIN) =>
     searchSettings(query, permisos).map(({ leaf }) => leaf.id)
 
-  it('sin consulta devuelve todos los visibles', () => {
-    expect(found('  ')).toEqual(ids(ADMIN))
+  it('sin consulta devuelve todos los visibles, con las pestañas de Empresa', () => {
+    expect(found('  ')).toEqual([
+      'profile',
+      'appearance',
+      'brands',
+      ...ids(ADMIN).filter((id) => id !== 'profile'),
+    ])
+  })
+
+  it('las pestañas se encuentran por sí solas y llevan a su pestaña', () => {
+    const [marcas] = searchSettings('marca comercial', ADMIN)
+    expect(marcas.path).toBe('Empresa / Marcas')
+    expect(marcas.leaf.href).toBe('/settings/profile?tab=marcas')
+
+    const [apariencia] = searchSettings('acento', ADMIN)
+    expect(apariencia.path).toBe('Empresa / Apariencia')
+    expect(apariencia.leaf.href).toBe('/settings/profile?tab=apariencia')
+  })
+
+  // El tema afecta a todas las tiendas: entrar a Configuración con otro permiso
+  // no alcanza para editarlo, ni encontrarlo.
+  it('las pestañas de Empresa no aparecen sin EMPRESAS_WRITE', () => {
+    expect(found('acento', [PERMISOS.CATALOGOS_WRITE])).toEqual([])
+    expect(found('marca comercial', [PERMISOS.CATALOGOS_WRITE])).toEqual([])
   })
 
   it('ignora mayúsculas y tildes', () => {

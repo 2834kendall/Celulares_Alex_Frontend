@@ -71,6 +71,32 @@ Mobile emulation does not establish physical-device, Firefox or WebKit support.
 - Evaluation-note updates confirm the owned row through real PostgREST; foreign
   and missing evaluations return no row, and a kiosk session cannot update notes.
 
+`brands.spec.ts` (Desktop Chrome only, 15 more scenarios, 31 in total) covers commercial
+brands with real roles:
+
+- The general view shows the company logo, name and theme.
+- Creating a brand rejects duplicates; a branch requires a brand, and "Agregar
+  sucursal" preselects the one it came from. The branch list keeps the brand filter
+  in the URL, through creating a branch and going back.
+- A brand with no branches can be deleted and frees its name; one with branches
+  explains why not.
+- A lost connection or an expired session never traps a dialog and always says so;
+  losing the permission mid-session redirects without claiming a failure.
+- Editing a brand once recolors both of its stores, seen by two real managers,
+  and the colors survive client navigation and reload. Saving does not move the
+  top bar selector: it offers to.
+- A brand inherits unset colors and the logo from the company, also after saving
+  through the real form; the company theme is editable and reaches those brands.
+- The top bar selector changes the theme only: listings stay identical. While it
+  is on, a banner says so.
+- GERENTE and EMPLEADO get no selector, ignore a forged preview cookie and cannot
+  open the brand screens. EMPLEADO gets the brand of the current contract, and a
+  borrowed shift in another brand does not change it.
+- Another company's brand cannot be opened, nor previewed through a forged cookie.
+- A brand with active branches cannot be deactivated; an inactive one is not offered.
+- Brand logo upload and removal, against real Storage.
+- "Marca · Sucursal" labels through real PostgREST embedding.
+
 The kiosk and evaluation persistence specs are HTTP/database integration, not
 browser interaction.
 Facial camera/inference is not bypassed to manufacture a successful browser mark.

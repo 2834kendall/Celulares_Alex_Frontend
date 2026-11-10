@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { PhotoDropzone } from '@/components/ui/PhotoDropzone'
 import { Button } from '@/components/ui/Button'
 import { SPINNER } from '@/components/ui/styles'
+import { isNextNavigation } from '@/lib/utils/isNextNavigation'
 
 type ActionResult = { ok: true } | { ok: false; error: string }
 
@@ -71,8 +72,21 @@ export function ImageUploadModal({
     setSaving(true)
     const formData = new FormData()
     formData.set('file', file)
-    const result = await onSave(formData)
-    setSaving(false)
+    let result: ActionResult
+    try {
+      result = await onSave(formData)
+    } catch (e) {
+      if (!isNextNavigation(e)) {
+        setError(
+          'No se pudo confirmar el guardado. Revisá la conexión y reintentá; la imagen sigue seleccionada.'
+        )
+      }
+      return
+    } finally {
+      // Con `busy` en true, el aviso de cambios no deja salir: si no se libera en
+      // todos los caminos, el modal queda trabado hasta recargar.
+      setSaving(false)
+    }
     if (!result.ok) {
       setError(result.error)
       return
@@ -85,9 +99,18 @@ export function ImageUploadModal({
   async function handleRemove() {
     setError(null)
     setRemoving(true)
-    const result = await onRemove()
-    setRemoving(false)
-    setConfirmRemove(false)
+    let result: ActionResult
+    try {
+      result = await onRemove()
+    } catch (e) {
+      if (!isNextNavigation(e)) {
+        setError('No se pudo confirmar el cambio. Revisá la conexión y reintentá.')
+      }
+      return
+    } finally {
+      setRemoving(false)
+      setConfirmRemove(false)
+    }
     if (!result.ok) {
       setError(result.error)
       return
