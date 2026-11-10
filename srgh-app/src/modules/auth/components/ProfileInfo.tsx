@@ -1,6 +1,7 @@
 import { Briefcase, Building2, Mail } from 'lucide-react'
 import { BreakableEmail } from '@/components/ui/BreakableEmail'
-import { Avatar, initialsOfEmail } from '@/components/ui/Avatar'
+import { Avatar } from '@/components/ui/Avatar'
+import { initialsOfEmail } from '@/lib/utils/initials'
 
 interface ProfileInfoProps {
   email: string

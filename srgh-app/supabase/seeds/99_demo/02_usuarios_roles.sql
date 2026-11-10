@@ -75,6 +75,8 @@ SELECT
   jsonb_build_object('rol_demo', r.rol_codigo),
   '', '', '', ''
 FROM public.sgrh_cat_roles r
+-- Solo las plantillas: las copias de cada empresa no llevan cuenta de demo.
+WHERE r.rol_empresa_id IS NULL
 ON CONFLICT (id) DO NOTHING;
 
 -- ─── 2. Identidades (login por email/password) ──────────────────────────────
@@ -139,6 +141,15 @@ WHERE e.org_cedula_juridica = '3-102-866597'
     WHERE x.uer_usuario_id = usr.usr_id
       AND x.uer_empresa_id = e.org_id
   );
+
+-- ─── 3b. Roles propios de la empresa demo ───────────────────────────────────
+-- Las cuentas se vincularon a las plantillas; esto le da a la empresa su copia
+-- de cada una y pasa las cuentas a ellas (ver supabase/seeds/01_sistema/01_roles.sql).
+-- Re-ejecutable: en una segunda corrida no crea nada.
+
+SELECT sgrh_private.instanciar_roles_empresa(e.org_id)
+FROM public.sgrh_empresas e
+WHERE e.org_cedula_juridica = '3-102-866597';
 
 -- ─── 4. Vincular la cuenta EMPLEADO a un empleado real, si existe ───────────
 -- No-op mientras no haya empleados. Crear uno desde la UI y volver a correr

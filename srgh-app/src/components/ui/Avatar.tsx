@@ -65,15 +65,6 @@ export function initialsOf(nombre: string): string {
  * sucursal (ver `deriveBrandTokens`): sin foto, el círculo acompaña al tema
  * elegido en vez de imponer un color fijo.
  */
-/**
- * Iniciales de una cuenta identificada por correo: las dos primeras letras,
- * que es lo único estable que tiene un correo (no hay apellido que separar).
- * Vivía duplicada tal cual en `UserMenu` y en `ProfileInfo`.
- */
-export function initialsOfEmail(email: string): string {
-  return email.slice(0, 2).toUpperCase() || '?'
-}
-
 export function Avatar({ fotoUrl, nombre, size = 'md', className = '', iniciales }: AvatarProps) {
   const [imgFailed, setImgFailed] = useState(false)
   const sizeClasses = SIZE_CLASSES[size]

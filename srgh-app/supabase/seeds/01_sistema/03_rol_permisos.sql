@@ -1,9 +1,13 @@
 -- =====================================================================
--- Seed de sistema: matriz rol → permiso
+-- Seed de sistema: matriz plantilla → permiso
 -- =====================================================================
--- El archivo más importante del repo desde el punto de vista de seguridad:
--- decide qué puede hacer cada rol. Lo lee custom_access_token_hook para armar
--- el claim `permisos` del JWT en cada login.
+-- Define con qué permisos NACE cada rol de una empresa. Ya no decide los
+-- permisos de nadie en curso: las cuentas usan la copia de su empresa
+-- (ver 01_roles.sql), que la empresa edita desde Configuración, y este seed no
+-- la toca. Un cambio acá solo llega a las empresas que se instancien después;
+-- para repartir un permiso nuevo a las empresas existentes hace falta una
+-- migración que elija los roles por permiso (src/modules/settings/docs/roles.md).
+-- La excepción es KIOSCO, que se asigna tal cual: su fila sigue mandando.
 --
 -- Se siembra de forma DECLARATIVA (lista de pares + join por código) en vez
 -- de con sgrh_private.asignar_permisos(): así el diff de un PR muestra

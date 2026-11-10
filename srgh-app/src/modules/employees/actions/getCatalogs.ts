@@ -1,6 +1,7 @@
 'use server'
 
 import { unstable_cache } from 'next/cache'
+import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requirePermission } from '@/lib/auth/require-permission'
@@ -290,20 +291,38 @@ export async function getTiposDocumento(): Promise<GetCatalogoResult> {
   return toResult(await fetchTiposDocumento())
 }
 
-/** Roles activos del sistema — solo para el paso de usuario del onboarding. */
+/**
+ * Roles asignables: los vigentes de la empresa del JWT (Configuración → Roles
+ * y permisos). Las filas sin empresa son plantillas para sembrar empresas
+ * nuevas y no se ofrecen (el rol del kiosco tampoco: está inactivo y se asigna
+ * desde Sucursales y kioscos). Un rol vale para toda la empresa: la sucursal
+ * la decide la cuenta, no el rol.
+ */
 export async function getRoles(): Promise<GetCatalogoResult> {
-  await requirePermission(PERMISOS.USUARIOS_WRITE)
+  const claims = await requirePermission(PERMISOS.USUARIOS_WRITE)
+  const empresa = z
+    .number()
+    .int()
+    .positive()
+    .safeParse((claims.app_metadata as { empresa_id?: unknown })?.empresa_id)
+  if (!empresa.success) {
+    return { ok: false, error: CATALOG_ERROR }
+  }
 
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_cat_roles')
     .select('rol_id, rol_nombre')
     .eq('rol_activo', true)
+    .eq('rol_empresa_id', empresa.data)
     .order('rol_nombre', { ascending: true })
 
   if (error) {
     return { ok: false, error: CATALOG_ERROR }
   }
 
-  return { ok: true, data: data.map((r) => ({ id: r.rol_id, nombre: r.rol_nombre })) }
+  return {
+    ok: true,
+    data: data.map((r) => ({ id: r.rol_id, nombre: r.rol_nombre })),
+  }
 }

@@ -273,6 +273,9 @@ test('a brand inherits unset colors and the logo from the company', async ({ pag
   await page.getByRole('button', { name: `Colores de ${DOS.name}` }).click()
   await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
   await expect(page.getByText('Apariencia actualizada.')).toBeVisible()
+  // The toast sits over the brand button in the top bar. Clicking through it leaves
+  // the mouse on the toast, which pauses its auto-dismiss: wait for it to go first.
+  await expect(page.getByText('Apariencia actualizada.')).toBeHidden()
 
   await chooseView(page, DOS.name)
   await expectIdentity(page, DOS.name, COMPANY.name)
@@ -381,6 +384,8 @@ test('a brand logo uploads to real Storage and falls back to the company when re
   })
   await dialog.getByRole('button', { name: 'Guardar', exact: true }).click()
   await expect(page.getByText('Logo actualizado.')).toBeVisible()
+  // Same as above: the toast covers the brand button until it goes away.
+  await expect(page.getByText('Logo actualizado.')).toBeHidden()
 
   await chooseView(page, UNO.name)
   await expectLogo(page, `Logo de ${UNO.name}`, `/marcas/${UNO.id}/`)

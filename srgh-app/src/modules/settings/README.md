@@ -12,6 +12,7 @@ de Configuración (`lib/returnPath.ts`, en sessionStorage), búsqueda y dos grup
 |         | Empresa: Apariencia (tema)      | `/settings/profile?tab=apariencia`                                                            |
 |         | Empresa: Marcas (logo, colores) | `/settings/profile?tab=marcas` ([marcas](docs/marcas.md), [selector](docs/contexto-marca.md)) |
 |         | Sucursales y kioscos            | `/settings/branches` ([detalle](docs/sucursales-y-kioscos.md))                                |
+|         | Roles y permisos                | `/settings/roles` ([detalle](docs/roles.md))                                                  |
 |         | General (formato de hora)       | `/settings/general`                                                                           |
 | Módulos | Puestos                         | `/settings/employees/positions`                                                               |
 |         | Tipos de tardía                 | `/settings/attendance/tardiness-types`                                                        |
@@ -43,6 +44,16 @@ de Configuración (`lib/returnPath.ts`, en sessionStorage), búsqueda y dos grup
   `org_logo_url` guarda la **RUTA, no una URL**: se firma en cada carga (`getEmpresaLogoUrl`) y
   se muestra con `<CompanyLogo/>`. La subida usa `ImageUploadModal` + `PhotoDropzone`
   (`components/ui`), compartidos con la foto del empleado.
+
+## Roles y permisos (`ROLES_WRITE`)
+
+- **Cada empresa tiene sus roles.** Las filas sin empresa son plantillas que siembran empresas
+  nuevas; la única que se asigna tal cual es la del kiosco. Una empresa nueva necesita
+  `sgrh_private.instanciar_roles_empresa`.
+- **Un rol vale para toda la empresa**: no se ata a una sucursal. El alcance por tienda lo
+  decide la cuenta (`uer_sucursal_id`).
+- Todas las reglas (no repartir lo que uno no tiene, no quitarse `ROLES_WRITE`, eliminar) viven en las RPC y en el trigger `uer_rol_empresa`, y las prueba
+  `roles/migration.test.ts`. Detalle en [docs/roles.md](docs/roles.md).
 
 ## Trampas
 
