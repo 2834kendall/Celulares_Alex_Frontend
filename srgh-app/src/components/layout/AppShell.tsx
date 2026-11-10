@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { NavLinks } from '@/components/layout/NavLinks'
 import { UserMenu } from '@/components/layout/UserMenu'
-import { MarcaPreviewBanner, MarcaSwitcher } from '@/components/layout/MarcaSwitcher'
+import { ContextoBanner, ContextoSwitcher } from '@/components/layout/ContextoSwitcher'
 import type { MarcaApariencia } from '@/lib/empresa/get-marca-tema'
 import { shellIdentity } from '@/lib/empresa/marca-label'
 import { ICON_CONTROL_BASE } from '@/components/ui/IconButton'
@@ -29,7 +29,7 @@ interface AppShellProps {
   empresaNombre: string
   /** URL firmada del logo (de la marca, o el de la empresa), o null para mostrar la inicial. */
   logoUrl?: string | null
-  /** Marca que pinta el shell (propia o en preview), o null = vista de empresa. */
+  /** Marca que pinta el shell (la elegida o la propia), o null = vista de empresa. */
   marcaNombre?: string | null
   /** Sucursal asignada al usuario, o null si no tiene una fija (p.ej. ADMIN). */
   sucursalNombre: string | null
@@ -37,10 +37,10 @@ interface AppShellProps {
   colorAcento: string | null
   /** Color de fondo de la barra lateral (marca → empresa), o null para el default. */
   colorSidebar: string | null
-  /** Marcas de la empresa con permiso EMPRESAS_WRITE; vacio para el resto. */
+  /** Marcas que la cuenta puede elegir; vacio si no tiene selector. */
   marcas?: MarcaApariencia[]
-  /** Marca actualmente en preview (ver MarcaSwitcher), o null. */
-  marcaPreviewId?: number | null
+  /** Marca elegida en el selector (ver ContextoSwitcher), o null = todas. */
+  marcaContextoId?: number | null
   /** Formato de hora de la empresa (Configuración → General). Solo presentación. */
   formatoHora?: FormatoHora
   children: React.ReactNode
@@ -88,7 +88,7 @@ export function AppShell({
   colorAcento,
   colorSidebar,
   marcas = [],
-  marcaPreviewId = null,
+  marcaContextoId = null,
   formatoHora = FORMATO_HORA_DEFAULT,
   children,
 }: AppShellProps) {
@@ -183,12 +183,12 @@ export function AppShell({
         />
 
         <div className="ml-auto flex shrink-0 items-center gap-3">
-          <MarcaSwitcher marcas={marcas} marcaPreviewId={marcaPreviewId} />
+          <ContextoSwitcher marcas={marcas} marcaContextoId={marcaContextoId} />
           <UserMenu email={email} rol={rol} />
         </div>
       </header>
 
-      {marcaPreviewId !== null && marcaNombre && <MarcaPreviewBanner marcaNombre={marcaNombre} />}
+      {marcaContextoId !== null && marcaNombre && <ContextoBanner marcaNombre={marcaNombre} />}
 
       {/* Drawer de navegacion movil */}
       {drawerOpen && (
@@ -242,11 +242,11 @@ export function AppShell({
             {/*
               Version de ancho completo del selector de marca: el
               telefono no tiene lugar para el disparador compacto del
-              header (ver el `hidden sm:flex` de MarcaSwitcher), asi que
-              vive aca, en el drawer, donde si sobra espacio. Mismo permiso,
+              header (ver el `hidden sm:flex` de ContextoSwitcher), asi que
+              vive aca, en el drawer, donde si sobra espacio. Misma condicion,
               mismos datos — nunca se muestran los dos disparadores a la vez.
             */}
-            <MarcaSwitcher marcas={marcas} marcaPreviewId={marcaPreviewId} variant="block" />
+            <ContextoSwitcher marcas={marcas} marcaContextoId={marcaContextoId} variant="block" />
 
             <div className="flex-1 overflow-y-auto p-3">
               {settingsMode ? (

@@ -1,16 +1,13 @@
 'use client'
 
-import { useTransition } from 'react'
-import { useRouter } from 'next/navigation'
-import { Loader2, Palette } from 'lucide-react'
-import { toast } from 'sonner'
+import { Loader2, Store } from 'lucide-react'
 import { SelectMenu } from '@/components/ui/SelectMenu'
-import { setMarcaPreview } from '@/modules/settings/actions/setMarcaPreview'
+import { useElegirMarca } from '@/components/layout/useElegirMarca'
 import type { MarcaApariencia } from '@/lib/empresa/get-marca-tema'
 
-interface MarcaSwitcherProps {
+interface ContextoSwitcherProps {
   marcas: MarcaApariencia[]
-  marcaPreviewId: number | null
+  marcaContextoId: number | null
   /**
    * `pill` es el disparador compacto de la barra superior (solo `sm:` en
    * adelante — en un telefono no hay lugar junto al hamburguesa, el titulo Y
@@ -22,59 +19,37 @@ interface MarcaSwitcherProps {
   variant?: 'pill' | 'block'
 }
 
-const SIN_VISTA_PREVIA = '__sin_vista_previa__'
-const ETIQUETA = 'Vista previa del tema'
-
-/** Cambia la marca en preview y repinta el shell. `null` sale de la vista previa. */
-function useElegirMarca() {
-  const router = useRouter()
-  const [pending, startTransition] = useTransition()
-
-  function elegir(marcaId: number | null) {
-    startTransition(async () => {
-      const result = await setMarcaPreview(marcaId)
-      if (!result.ok) {
-        toast.error(result.error)
-        return
-      }
-      router.refresh()
-    })
-  }
-
-  return { pending, elegir }
-}
+const TODAS = '__todas_las_marcas__'
+const ETIQUETA = 'Marca'
 
 /**
- * Selector de vista previa — SOLO para quien administra la empresa
- * (EMPRESAS_WRITE).
+ * Selector de marca: filtra los listados y pinta el tema de la marca elegida.
  *
- * Permite a un ADMIN (que no tiene marca propia) ver la app con el tema de
- * una marca navegando la app real. Persiste la eleccion en una cookie
- * server-side (ver marca-preview.ts).
- *
- * Ojo, y esto es lo importante: es pura cosmetica. Cambia el nombre, el logo y
- * los colores que pinta el shell, nunca el alcance de los datos — las policies
- * de RLS siguen leyendo unicamente el JWT real, jamas esta cookie. Por eso la
- * etiqueta dice "tema" y no "marca", y MarcaPreviewBanner lo avisa mientras
- * esta activa: el nombre de la marca arriba se lee como un filtro.
+ * Solo aparece si las tiendas de la cuenta abarcan dos o más marcas (ver
+ * contexto-activo.ts). Elegir una marca solo achica lo que ya se ve: las policies
+ * de RLS siguen leyendo únicamente el JWT, jamás esta cookie.
  */
-export function MarcaSwitcher({ marcas, marcaPreviewId, variant = 'pill' }: MarcaSwitcherProps) {
+export function ContextoSwitcher({
+  marcas,
+  marcaContextoId,
+  variant = 'pill',
+}: ContextoSwitcherProps) {
   const { pending, elegir } = useElegirMarca()
 
   if (marcas.length === 0) return null
 
-  const onChange = (value: string) => elegir(value === SIN_VISTA_PREVIA ? null : Number(value))
+  const onChange = (value: string) => elegir(value === TODAS ? null : Number(value))
   const options = [
-    { value: SIN_VISTA_PREVIA, label: 'Sin vista previa' },
+    { value: TODAS, label: 'Todas las marcas' },
     ...marcas.map((m) => ({ value: String(m.id), label: m.nombre })),
   ]
-  const currentValue = marcaPreviewId ? String(marcaPreviewId) : SIN_VISTA_PREVIA
+  const currentValue = marcaContextoId ? String(marcaContextoId) : TODAS
 
   if (variant === 'block') {
     return (
       <div className="border-b border-[var(--sidebar-border)] px-4 py-3">
         <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--sidebar-text)]">
-          <Palette className="h-3 w-3 shrink-0" aria-hidden="true" />
+          <Store className="h-3 w-3 shrink-0" aria-hidden="true" />
           {ETIQUETA}
         </p>
         <SelectMenu
@@ -100,7 +75,7 @@ export function MarcaSwitcher({ marcas, marcaPreviewId, variant = 'pill' }: Marc
           aria-hidden="true"
         />
       ) : (
-        <Palette className="h-3.5 w-3.5 shrink-0 text-[var(--sidebar-text)]" aria-hidden="true" />
+        <Store className="h-3.5 w-3.5 shrink-0 text-[var(--sidebar-text)]" aria-hidden="true" />
       )}
       <span className="hidden whitespace-nowrap text-xs font-semibold text-[var(--sidebar-text)] lg:inline">
         {ETIQUETA}
@@ -118,8 +93,8 @@ export function MarcaSwitcher({ marcas, marcaPreviewId, variant = 'pill' }: Marc
   )
 }
 
-/** Mientras hay una vista previa activa: deja claro que los datos no cambiaron. */
-export function MarcaPreviewBanner({ marcaNombre }: { marcaNombre: string }) {
+/** Mientras hay una marca elegida: los listados y sus totales son solo de ella. */
+export function ContextoBanner({ marcaNombre }: { marcaNombre: string }) {
   const { pending, elegir } = useElegirMarca()
 
   return (
@@ -128,8 +103,8 @@ export function MarcaPreviewBanner({ marcaNombre }: { marcaNombre: string }) {
       className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-sm text-amber-900"
     >
       <span>
-        Estás viendo el tema de <strong className="font-semibold">{marcaNombre}</strong>. Los datos
-        siguen siendo de todas las marcas.
+        Viendo solo <strong className="font-semibold">{marcaNombre}</strong>. Los totales son de
+        esta marca.
       </span>
       <button
         type="button"
@@ -137,7 +112,7 @@ export function MarcaPreviewBanner({ marcaNombre }: { marcaNombre: string }) {
         disabled={pending}
         className="font-semibold underline outline-none focus-visible:ring-2 focus-visible:ring-amber-600 disabled:opacity-60 pointer-coarse:min-h-11"
       >
-        Salir de la vista previa
+        Ver todas
       </button>
     </div>
   )

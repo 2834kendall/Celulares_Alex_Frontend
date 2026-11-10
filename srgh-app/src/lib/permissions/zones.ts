@@ -35,6 +35,32 @@ export const ACCESO_CONFIGURACION: Permiso[] = [
   PERMISOS.USUARIOS_WRITE,
 ]
 
+/**
+ * Permisos que abren algún listado que se filtra por marca: dan derecho al
+ * selector de la barra superior si las tiendas de la cuenta abarcan dos marcas.
+ *
+ * Sale de lo que pide cada lectura filtrada, NO de las zonas: con solo
+ * COMPROBANTES_READ, Nómina es un placeholder, y AUSENCIAS_WRITE abre Asistencia
+ * sin dejar leer sus marcas. Ahí el selector no tendría nada que filtrar.
+ */
+export const PERMISOS_DATOS_POR_MARCA: Permiso[] = [
+  PERMISOS.EMPLEADOS_READ,
+  PERMISOS.ASISTENCIA_READ,
+  PERMISOS.AUSENCIAS_READ,
+  PERMISOS.HORARIOS_READ,
+  PERMISOS.HORARIOS_WRITE,
+  PERMISOS.NOMINA_READ,
+  PERMISOS.NOMINA_WRITE,
+  PERMISOS.RECLUTAMIENTO_READ,
+  PERMISOS.EVALUACIONES_READ,
+  PERMISOS.EVALUACIONES_WRITE,
+  PERMISOS.EMPRESAS_WRITE,
+]
+
+export function tieneDatosPorMarca(permisos: readonly string[]): boolean {
+  return PERMISOS_DATOS_POR_MARCA.some((permiso) => permisos.includes(permiso))
+}
+
 /** Grupos rotulados del menu principal. El orden de este arreglo es el del menu. */
 export type ZoneGroupId = 'people' | 'operations' | 'administration'
 

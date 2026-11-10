@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageUploadModal } from '@/components/ui/ImageUploadModal'
 import { Modal } from '@/components/ui/Modal'
-import { setMarcaPreview } from '@/modules/settings/actions/setMarcaPreview'
+import { useElegirMarca } from '@/components/layout/useElegirMarca'
 import { AppearanceForm } from '@/modules/settings/components/AppearanceForm'
 import { isNextNavigation } from '@/lib/utils/isNextNavigation'
 import { BrandCard } from './BrandCard'
@@ -23,8 +23,18 @@ type Dialogo = { tipo: 'nueva' } | { tipo: 'editar' | 'colores' | 'logo' | 'elim
  * Marcas de la empresa como tarjetas. Hay pocas y tienen pocos datos, así que
  * no llevan pantalla propia: cada acción abre su modal.
  */
-export function BrandsPanel({ data, empresa }: { data: BrandSettings; empresa: BrandsEmpresa }) {
+export function BrandsPanel({
+  data,
+  empresa,
+  marcasElegibles,
+}: {
+  data: BrandSettings
+  empresa: BrandsEmpresa
+  /** Ids del selector de la barra: sin selector, o una marca sin tiendas, no se ofrece. */
+  marcasElegibles: number[]
+}) {
   const router = useRouter()
+  const { elegir } = useElegirMarca()
   const [dialogo, setDialogo] = useState<Dialogo | null>(null)
   const cerrar = () => setDialogo(null)
 
@@ -32,23 +42,6 @@ export function BrandsPanel({ data, empresa }: { data: BrandSettings; empresa: B
     dialogo && dialogo.tipo !== 'nueva'
       ? (data.brands.find((b) => b.mco_id === dialogo.id) ?? null)
       : null
-
-  async function verApp(id: number) {
-    let result: Awaited<ReturnType<typeof setMarcaPreview>>
-    try {
-      result = await setMarcaPreview(id)
-    } catch (error) {
-      if (!isNextNavigation(error)) {
-        toast.error('No se pudo cambiar la vista previa. Revisá la conexión y reintentá.')
-      }
-      return
-    }
-    if (!result.ok) {
-      toast.error(result.error)
-      return
-    }
-    router.refresh()
-  }
 
   async function eliminar(id: number) {
     // Se cierra antes de esperar: un segundo clic no borra dos veces.
@@ -101,7 +94,7 @@ export function BrandsPanel({ data, empresa }: { data: BrandSettings; empresa: B
               onEdit={() => setDialogo({ tipo: 'editar', id: b.mco_id })}
               onColors={() => setDialogo({ tipo: 'colores', id: b.mco_id })}
               onDelete={() => setDialogo({ tipo: 'eliminar', id: b.mco_id })}
-              onViewApp={() => void verApp(b.mco_id)}
+              onViewApp={marcasElegibles.includes(b.mco_id) ? () => elegir(b.mco_id) : undefined}
             />
           ))}
         </ul>
@@ -134,10 +127,10 @@ export function BrandsPanel({ data, empresa }: { data: BrandSettings; empresa: B
             onSaved={cerrar}
             onCancel={cerrar}
             savedAction={
-              brand.mco_activa
+              marcasElegibles.includes(brand.mco_id)
                 ? {
-                    label: 'Ver la app con esta marca',
-                    onClick: () => void verApp(brand.mco_id),
+                    label: 'Ver solo esta marca',
+                    onClick: () => elegir(brand.mco_id),
                   }
                 : undefined
             }

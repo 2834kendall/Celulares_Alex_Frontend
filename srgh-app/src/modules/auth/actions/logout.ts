@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { MARCA_CONTEXTO_COOKIE } from '@/lib/empresa/marca-contexto-cookie'
 import { DASHBOARD_PREFS_COOKIE } from '@/modules/dashboard/lib/prefsCookie'
 
 export type LogoutResult = { ok: true } | { ok: false; error: string }
@@ -32,10 +33,10 @@ export type LogoutResult = { ok: true } | { ok: false; error: string }
  *    revalidacion hecha en una Server Action purga ese cache del cliente al
  *    volver la respuesta, antes de que el boton navegue.
  *
- * 4. Se borra la cookie del dashboard, que guarda { u: usrId, p: prefs }. No
- *    es sensible por si misma —nombres y tamaños de paneles— pero lleva el id
- *    del usuario anterior y sobrevivia al logout en una maquina compartida.
- *    La de preview de sucursal no se toca: no identifica a nadie.
+ * 4. Se borran las cookies del dashboard y de la marca elegida. Guardan el id del
+ *    usuario ({ u: usrId, ... }), y sobrevivian al logout en una maquina
+ *    compartida. Cada una se ignora si la lee otra cuenta: eso es lo que cubre una
+ *    sesion que vence sin pasar por aca.
  */
 export async function logout(): Promise<LogoutResult> {
   const supabase = await createClient()
@@ -49,7 +50,9 @@ export async function logout(): Promise<LogoutResult> {
     }
   }
 
-  ;(await cookies()).delete(DASHBOARD_PREFS_COOKIE)
+  const store = await cookies()
+  store.delete(DASHBOARD_PREFS_COOKIE)
+  store.delete(MARCA_CONTEXTO_COOKIE)
 
   revalidatePath('/', 'layout')
   return { ok: true }
