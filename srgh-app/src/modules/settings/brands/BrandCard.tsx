@@ -39,7 +39,8 @@ interface BrandCardProps {
   onEdit: () => void
   onColors: () => void
   onDelete: () => void
-  onViewApp: () => void
+  /** Sin esto no se ofrece: la cuenta no puede elegir esta marca en el selector. */
+  onViewApp?: () => void
 }
 
 /**
@@ -151,7 +152,7 @@ export function BrandCard({
             </Button>
             {menuOpen && (
               <div className="animate-menu-pop absolute bottom-full right-0 z-20 mb-2 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                {brand.mco_activa && (
+                {onViewApp && (
                   <button
                     type="button"
                     onClick={() => {
@@ -160,7 +161,7 @@ export function BrandCard({
                     }}
                     className="block min-h-9 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100 pointer-coarse:min-h-11"
                   >
-                    Ver la app con esta marca
+                    Ver solo esta marca
                   </button>
                 )}
                 <button

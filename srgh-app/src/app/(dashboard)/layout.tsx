@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AppShell } from '@/components/layout/AppShell'
@@ -37,13 +38,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const email = typeof data.claims.email === 'string' ? data.claims.email : 'Usuario autenticado'
 
   // Nombre real de la empresa del tenant (RLS devuelve solo la del JWT) y el
-  // tema oficial del shell — la marca propia (sucursal de la cuenta o del
-  // contrato vigente), salvo que haya una marca en preview desde el selector
-  // de la barra superior; sin marca, el tema de la empresa. El rol se muestra
-  // por su nombre: el código del JWT es un identificador, no un texto.
+  // tema oficial del shell — la marca elegida en el selector de la barra superior
+  // o, sin selector, la propia (sucursal de la cuenta o del contrato vigente); sin
+  // marca, el tema de la empresa. El rol se muestra por su nombre: el código del
+  // JWT es un identificador, no un texto.
   const [empresaNombre, theme, formatoHora, rol] = await Promise.all([
     getEmpresaNombre(),
-    resolveShellTheme(meta.usr_id, meta.emp_id, permisos),
+    resolveShellTheme(meta.usr_id, meta.emp_id),
     getFormatoHora(),
     getRolNombre(typeof meta.rol === 'string' ? meta.rol : null),
   ])
@@ -62,10 +63,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
       colorAcento={theme.colorAcento}
       colorSidebar={theme.colorSidebar}
       marcas={theme.marcas}
-      marcaPreviewId={theme.marcaPreviewId}
+      marcaContextoId={theme.marcaContextoId}
       formatoHora={formatoHora}
     >
-      {children}
+      {/* Al cambiar de marca se vuelve a montar la página: un filtro o una selección
+          en estado de cliente no pueden quedar con datos de la marca anterior. */}
+      <Fragment key={theme.marcaContextoId ?? 'todas'}>{children}</Fragment>
     </AppShell>
   )
 }

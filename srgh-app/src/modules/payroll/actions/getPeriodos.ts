@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import type { PeriodoListItem } from '@/modules/payroll/types'
@@ -34,9 +35,12 @@ export type GetPeriodosResult = { ok: true; data: PeriodoListItem[] } | { ok: fa
 export async function getPeriodos(): Promise<GetPeriodosResult> {
   await requirePermission(PERMISOS.NOMINA_READ)
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
 
-  const { data, error } = await supabase
+  let consulta = supabase
     .from('sgrh_nomina_periodo')
     .select(
       `
@@ -55,7 +59,9 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
     .order('npe_periodo_anio', { ascending: false })
     .order('npe_periodo_mes', { ascending: false })
     .order('npe_quincena', { ascending: false })
-    .returns<PeriodoQueryRow[]>()
+  if (filtro.sucursalIds) consulta = consulta.in('npe_sucursal_id', filtro.sucursalIds)
+
+  const { data, error } = await consulta.returns<PeriodoQueryRow[]>()
 
   if (error) {
     return { ok: false, error: 'No se pudieron cargar los periodos de nómina.' }

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { test, expect, type Browser, type Page } from '@playwright/test'
 import { deriveBrandTokens } from '../../src/lib/utils/color'
 
@@ -76,7 +77,31 @@ async function expectLogo(page: Page, alt: string, srcPart: string) {
 const BRANDS_TAB = '/settings/profile?tab=marcas'
 
 const switcher = (page: Page) =>
-  page.locator('header').getByRole('button', { name: 'Vista previa del tema' })
+  page.locator('header').getByRole('button', { name: 'Marca', exact: true })
+
+/** The selector cookie as the app writes it, for this account and any brand. */
+function contextCookie(account: Account, marcaId: number, url: string) {
+  const usrId = execFileSync(
+    'docker',
+    [
+      'exec',
+      'supabase_db_sgrh105-e2e',
+      'psql',
+      '-U',
+      'postgres',
+      '-d',
+      'postgres',
+      '-tAc',
+      `SELECT usr_id FROM sgrh_usuarios WHERE usr_email='${account}@e2e.sgrh.local'`,
+    ],
+    { encoding: 'utf8' }
+  ).trim()
+  return {
+    name: 'sgrh_marca_contexto',
+    value: encodeURIComponent(JSON.stringify({ u: Number(usrId), m: marcaId })),
+    url,
+  }
+}
 
 async function chooseView(page: Page, option: string) {
   await switcher(page).click()
@@ -118,7 +143,7 @@ test('the general view shows the company logo, name and theme', async ({ page })
   await expectIdentity(page, COMPANY.name)
   await expectTheme(page, COMPANY)
   await expectLogo(page, COMPANY.logo, '/logo/e2e-empresa')
-  await expect(switcher(page)).toHaveText(/Sin vista previa/)
+  await expect(switcher(page)).toHaveText(/Todas las marcas/)
 })
 
 test('creating a brand rejects a duplicate name and a branch joins the brand it came from', async ({
@@ -212,10 +237,10 @@ test('editing a brand once recolors both of its stores', async ({ page, browser 
   await saveColors(page, nuevo.accent, nuevo.sidebar)
 
   // Saving no longer moves the top bar selector: the brand is one explicit click away.
-  await expect(switcher(page)).toHaveText(/Sin vista previa/)
-  await page.getByRole('button', { name: 'Ver la app con esta marca', exact: true }).click()
+  await expect(switcher(page)).toHaveText(/Todas las marcas/)
+  await page.getByRole('button', { name: 'Ver solo esta marca', exact: true }).click()
   await expect(switcher(page)).toHaveText(new RegExp(TIENDAS.name))
-  await expect(page.getByRole('status').getByText(/Los datos siguen siendo/)).toBeVisible()
+  await expect(page.getByRole('status').getByText(/Los totales son de esta marca/)).toBeVisible()
 
   // The historic bug of this form: "I change the colors, go to Inicio and the
   // old ones come back". It only showed on CLIENT navigation, so a page.goto
@@ -255,26 +280,7 @@ test('a brand inherits unset colors and the logo from the company', async ({ pag
   await expectLogo(page, `Logo de ${DOS.name}`, '/logo/e2e-empresa')
 })
 
-test('the top bar selector changes the theme only, never the data', async ({ page }) => {
-  await login(page, 'admin')
-  await page.goto('/employees')
-  const rows = page.locator('table tbody tr')
-  await expect(rows.first()).toContainText('Empleado E2E')
-  const before = await rows.allTextContents()
-
-  // The employee works in a store of Marca Uno: choosing Dos must not hide them.
-  await chooseView(page, DOS.name)
-  await expectIdentity(page, DOS.name)
-  await page.reload()
-  await expectIdentity(page, DOS.name)
-  await expect.poll(() => rows.allTextContents()).toEqual(before)
-
-  await chooseView(page, 'Sin vista previa')
-  await expectIdentity(page, COMPANY.name)
-  await expectTheme(page, COMPANY)
-})
-
-test('a manager gets the brand with no selector, no forged preview and no brand screens', async ({
+test('a manager of one store gets the brand with no selector, no forged brand and no brand screens', async ({
   page,
   context,
 }) => {
@@ -282,9 +288,9 @@ test('a manager gets the brand with no selector, no forged preview and no brand 
   await expectIdentity(page, TIENDAS.name, 'Mall E2E')
   await expect(switcher(page)).toHaveCount(0)
 
-  // A preview cookie only counts for whoever administers the company.
+  // With a single store there is nothing to choose: a cookie cannot change that.
   const before = await shellToken(page, '--sidebar-bg')
-  await context.addCookies([{ name: 'sgrh_marca_preview', value: String(UNO.id), url: page.url() }])
+  await context.addCookies([contextCookie('gerente', UNO.id, page.url())])
   await page.reload()
   await expectIdentity(page, TIENDAS.name, 'Mall E2E')
   expect(await shellToken(page, '--sidebar-bg')).toBe(before)
@@ -311,7 +317,7 @@ test('an employee gets the brand of the contract, and a borrowed shift does not 
   await expectTheme(page, UNO)
 })
 
-test('another company cannot open a brand nor preview it through a forged cookie', async ({
+test('another company cannot open a brand nor choose it through a forged cookie', async ({
   page,
   context,
 }) => {
@@ -320,9 +326,7 @@ test('another company cannot open a brand nor preview it through a forged cookie
   await expect(page.getByText(UNO.name, { exact: true })).toBeVisible()
   await expect(page.getByText(AJENA.name)).toHaveCount(0)
 
-  await context.addCookies([
-    { name: 'sgrh_marca_preview', value: String(AJENA.id), url: page.url() },
-  ])
+  await context.addCookies([contextCookie('admin', AJENA.id, page.url())])
   await page.goto('/dashboard')
   await expectIdentity(page, COMPANY.name)
   await expectTheme(page, COMPANY)

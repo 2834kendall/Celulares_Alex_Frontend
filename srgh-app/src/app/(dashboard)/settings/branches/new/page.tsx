@@ -16,7 +16,8 @@ export default async function NewBranchPage({
   // sugerencia de UI: el formulario la ignora si no es una marca activa de la
   // lista, y la RPC revalida la empresa igual.
   const defaultBrandId = marca && /^\d+$/.test(marca) ? Number(marca) : undefined
-  const listQuery = defaultBrandId ? `?marca=${defaultBrandId}` : ''
+  // `todas` es explícito: sin parámetro, el listado aplicaría la marca de la barra superior.
+  const listQuery = defaultBrandId || marca === 'todas' ? `?marca=${marca}` : ''
   const error = !brands.ok ? brands.error : !t.ok ? t.error : null
   return (
     <div className="space-y-6">

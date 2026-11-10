@@ -76,7 +76,7 @@ describe('getAusenciasForWeek (server action)', () => {
   it('mapea las ausencias solapadas con la semana en exito', async () => {
     mockCreateClient.mockResolvedValue(
       createSupabaseClientMock({
-        sgrh_historial_laboral: { data: [{ lab_id: 1 }], error: null },
+        sgrh_historial_laboral: { data: [{ lab_id: 1, lab_sucursal_id: 5 }], error: null },
         sgrh_ausencias: {
           data: [
             {
@@ -107,6 +107,7 @@ describe('getAusenciasForWeek (server action)', () => {
         {
           ausenciaId: 9,
           employmentHistoryId: 1,
+          sucursalContratoId: 5,
           tipoAusenciaId: 3,
           fechaInicio: '2026-01-06',
           fechaFin: '2026-01-08',

@@ -4,6 +4,12 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
 import type { GetMonthlyAttendanceSummaryInput } from '@/modules/attendance/types'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -448,5 +454,51 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
     expect(result.data[0].justifiedAbsences).toEqual([
       { date: '2026-07-05', tipoNombre: 'Cita Médica' },
     ])
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getMonthlyAttendanceSummary con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, usr_id: 999 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  function conMes() {
+    const vacio = { data: [], error: null }
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: null }], error: null },
+      sgrh_historial_laboral: vacio,
+      sgrh_cat_tipos_tardia: vacio,
+      sgrh_programacion_semanal: vacio,
+      sgrh_ausencias: vacio,
+      sgrh_marcas_asistencia: vacio,
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    return (tabla: string) =>
+      client.from.mock.results.find((_r, i) => client.from.mock.calls[i][0] === tabla)!.value
+  }
+
+  it('acota turnos y plantilla a las tiendas de la marca', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    const consulta = conMes()
+
+    await getMonthlyAttendanceSummary(validInput)
+
+    expect(consulta('sgrh_programacion_semanal').in).toHaveBeenCalledWith('prg_sucursal_id', [5, 6])
+    expect(consulta('sgrh_historial_laboral').in).toHaveBeenCalledWith('lab_sucursal_id', [5, 6])
+  })
+
+  it('si no se pudo leer el filtro da error', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getMonthlyAttendanceSummary(validInput)).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

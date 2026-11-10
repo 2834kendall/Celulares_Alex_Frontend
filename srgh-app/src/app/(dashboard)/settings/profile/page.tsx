@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Alert } from '@/components/ui/Alert'
 import { CARD } from '@/components/ui/styles'
+import { getSelectorMarca } from '@/lib/empresa/contexto-activo'
 import { getEmpresaLogoUrl } from '@/lib/empresa/get-empresa-logo'
 import { getEmpresaShell } from '@/lib/empresa/get-empresa-shell'
 import { getTerritorio } from '@/modules/employees/actions/getCatalogs'
@@ -50,10 +51,11 @@ async function AparienciaTab() {
 }
 
 async function MarcasTab() {
-  const [r, empresa, logoUrl] = await Promise.all([
+  const [r, empresa, logoUrl, selector] = await Promise.all([
     getBrandSettings(),
     getEmpresaShell(),
     getEmpresaLogoUrl(),
+    getSelectorMarca(),
   ])
   if (!r.ok) {
     return (
@@ -73,6 +75,7 @@ async function MarcasTab() {
         sidebar: empresa?.org_color_sidebar ?? DEFAULT_SIDEBAR,
         logoUrl,
       }}
+      marcasElegibles={selector.marcas.map((marca) => marca.id)}
     />
   )
 }

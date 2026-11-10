@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { redirect } from 'next/navigation'
-import { setMarcaPreview } from '@/modules/settings/actions/setMarcaPreview'
+import { setContextoMarca } from '@/modules/settings/actions/setContextoMarca'
 import { BrandsPanel } from './BrandsPanel'
 import { deleteBrand, saveBrand, saveBrandApariencia } from './actions'
 import type { Brand, BrandsEmpresa } from './types'
@@ -16,7 +16,7 @@ vi.mock('next/navigation', async (importOriginal) => ({
   usePathname: () => '/settings/profile',
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
-vi.mock('@/modules/settings/actions/setMarcaPreview', () => ({ setMarcaPreview: vi.fn() }))
+vi.mock('@/modules/settings/actions/setContextoMarca', () => ({ setContextoMarca: vi.fn() }))
 vi.mock('./actions', () => ({
   deleteBrand: vi.fn(),
   removeBrandLogo: vi.fn(),
@@ -61,8 +61,13 @@ const CON_SUCURSALES = marca({
 const SIN_SUCURSALES = marca({ mco_id: 2, mco_nombre: 'Por error' })
 const INACTIVA = marca({ mco_id: 3, mco_nombre: 'Vieja', mco_activa: false })
 
-function renderPanel(brands: Brand[] = [CON_SUCURSALES, SIN_SUCURSALES, INACTIVA]) {
-  return render(<BrandsPanel data={{ brands }} empresa={EMPRESA} />)
+function renderPanel(
+  brands: Brand[] = [CON_SUCURSALES, SIN_SUCURSALES, INACTIVA],
+  marcasElegibles: number[] = [CON_SUCURSALES.mco_id]
+) {
+  return render(
+    <BrandsPanel data={{ brands }} empresa={EMPRESA} marcasElegibles={marcasElegibles} />
+  )
 }
 
 const tarjeta = (nombre: string) =>
@@ -101,7 +106,7 @@ beforeEach(() => {
   vi.mocked(deleteBrand).mockResolvedValue({ ok: true })
   vi.mocked(saveBrand).mockResolvedValue({ ok: true, data: 1 })
   vi.mocked(saveBrandApariencia).mockResolvedValue({ ok: true })
-  vi.mocked(setMarcaPreview).mockResolvedValue({ ok: true })
+  vi.mocked(setContextoMarca).mockResolvedValue({ ok: true })
 })
 
 describe('BrandsPanel — tarjetas', () => {
@@ -229,63 +234,76 @@ describe('BrandsPanel — eliminar', () => {
   })
 })
 
-describe('BrandsPanel — ver la app con una marca', () => {
+describe('BrandsPanel — ver solo una marca', () => {
   it('es una acción explícita del menú', async () => {
     renderPanel()
     await abrirMenu('Celulares Alex')
-    await userEvent.click(screen.getByRole('button', { name: 'Ver la app con esta marca' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Ver solo esta marca' }))
 
-    await waitFor(() => expect(setMarcaPreview).toHaveBeenCalledWith(1))
-    expect(refresh).toHaveBeenCalled()
+    await waitFor(() => expect(setContextoMarca).toHaveBeenCalledWith(1))
   })
 
   it('si se cae la red, avisa', async () => {
-    vi.mocked(setMarcaPreview).mockRejectedValue(new TypeError('Failed to fetch'))
+    vi.mocked(setContextoMarca).mockRejectedValue(new TypeError('Failed to fetch'))
     renderPanel()
     await abrirMenu('Celulares Alex')
-    await userEvent.click(screen.getByRole('button', { name: 'Ver la app con esta marca' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Ver solo esta marca' }))
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Revisá la conexión'))
     })
-    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('una redirección no se informa como falla', async () => {
-    vi.mocked(setMarcaPreview).mockRejectedValue(errorDeRedireccion())
+    vi.mocked(setContextoMarca).mockRejectedValue(errorDeRedireccion())
     renderPanel()
     await abrirMenu('Celulares Alex')
-    await userEvent.click(screen.getByRole('button', { name: 'Ver la app con esta marca' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Ver solo esta marca' }))
 
-    await esperarRechazo(vi.mocked(setMarcaPreview))
+    await esperarRechazo(vi.mocked(setContextoMarca))
     expect(toast.error).not.toHaveBeenCalled()
   })
 
-  it('una marca inactiva no se ofrece', async () => {
+  it.each([
+    ['inactiva', 'Vieja'],
+    ['sin tiendas', 'Por error'],
+  ])('una marca %s no se ofrece', async (_caso, nombre) => {
     renderPanel()
-    await abrirMenu('Vieja')
-    expect(
-      screen.queryByRole('button', { name: 'Ver la app con esta marca' })
-    ).not.toBeInTheDocument()
+    await abrirMenu(nombre)
+    expect(screen.queryByRole('button', { name: 'Ver solo esta marca' })).not.toBeInTheDocument()
   })
 
-  // Guardar ya no mueve el selector: cambiaba el tema de toda la app sin avisar.
-  it('guardar colores no cambia la vista previa, solo la ofrece', async () => {
+  it('sin selector, como en una empresa de una sola marca, no se ofrece', async () => {
+    renderPanel([CON_SUCURSALES], [])
+    await abrirMenu('Celulares Alex')
+    expect(screen.queryByRole('button', { name: 'Ver solo esta marca' })).not.toBeInTheDocument()
+  })
+
+  it('guardar colores no cambia la marca elegida, solo la ofrece', async () => {
     renderPanel()
     await userEvent.click(screen.getByRole('button', { name: 'Colores de Celulares Alex' }))
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
 
     await waitFor(() => expect(saveBrandApariencia).toHaveBeenCalled())
-    expect(setMarcaPreview).not.toHaveBeenCalled()
+    expect(setContextoMarca).not.toHaveBeenCalled()
     expect(toast.success).toHaveBeenCalledWith(
       'Apariencia actualizada.',
       expect.objectContaining({
-        action: expect.objectContaining({ label: 'Ver la app con esta marca' }),
+        action: expect.objectContaining({ label: 'Ver solo esta marca' }),
       })
     )
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: /Colores/ })).not.toBeInTheDocument()
     )
+  })
+
+  it('al guardar una marca que no se puede elegir, no ofrece verla', async () => {
+    renderPanel([CON_SUCURSALES], [])
+    await userEvent.click(screen.getByRole('button', { name: 'Colores de Celulares Alex' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    expect(vi.mocked(toast.success).mock.calls[0][1]?.action).toBeUndefined()
   })
 })
 

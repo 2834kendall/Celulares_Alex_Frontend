@@ -35,7 +35,8 @@ export async function checkMonthlyInfractions(): Promise<CheckMonthlyInfractions
     meta.empresa_id,
     meta.usr_id,
     start,
-    end
+    end,
+    null // Sin la marca elegida: la advertencia cuenta todo el mes de cada persona.
   )
 
   if (!gathered.ok) {

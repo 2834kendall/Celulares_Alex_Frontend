@@ -21,6 +21,10 @@ siembran en `supabase/seeds/01_sistema/` y solo sirven para darle roles a una em
 `tiene_permiso()` lee el array `permisos` del JWT en memoria: cero consultas por fila evaluada
 (antes eran dos JOINs). Ver [auth y JWT](auth-y-jwt.md).
 
+**Una condición se comprueba con permisos o con datos, nunca con el código de un rol.** Cada
+empresa crea, modifica y elimina sus roles; lo fijo son los permisos. Tampoco vale razonar "ese rol
+no tiene ese permiso". Quedan comparaciones con `KIOSCO`, que es del sistema y no se edita.
+
 ## Roles
 
 Con los que nace cada empresa:
@@ -33,8 +37,6 @@ Con los que nace cada empresa:
 | `KIOSCO` | con valor | solo los empleados activos de su sucursal, y solo para marcar |
 
 - **El alcance lo decide `uer_sucursal_id`, no el rol.**
-- **Ningún código condiciona por un rol**: cada empresa los renombra, rearma y crea. Lo único
-  fijo son los permisos. La excepción es `KIOSCO`, que es del sistema y no se edita.
 - `SUPERADMIN` se eliminó, y `EMPLEADO` no tiene permisos a propósito. El porqué está en
   [RLS y alcance](../../srgh-app/supabase/docs/rls-y-alcance.md).
 

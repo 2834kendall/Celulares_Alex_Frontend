@@ -9,19 +9,28 @@ import type { Branch, BranchSettings } from './types'
 
 const TODAS = 'todas'
 
-export function BranchesPanel({ data }: { data: BranchSettings }) {
+export function BranchesPanel({
+  data,
+  marcaContextoId = null,
+}: {
+  data: BranchSettings
+  /** Marca elegida en la barra superior: aplica si la URL no dice otra cosa. */
+  marcaContextoId?: number | null
+}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('todas')
   const brands = data.brands ?? []
   // La marca vive en la URL: desde una marca se llega con el filtro puesto, y
-  // volver atrás desde una sucursal lo conserva.
-  const marcaParam = searchParams.get('marca')
+  // volver atrás desde una sucursal lo conserva. Con una marca elegida arriba,
+  // "Todas" tiene que quedar escrito en la URL: sin parámetro volvería a mandar esa marca.
+  const marcaParam = searchParams.get('marca') ?? (marcaContextoId ? String(marcaContextoId) : null)
   const brand = brands.some((m) => String(m.id) === marcaParam) ? (marcaParam as string) : TODAS
-  const listQuery = brand === TODAS ? '' : `?marca=${brand}`
+  const todasQuery = marcaContextoId ? `?marca=${TODAS}` : ''
+  const listQuery = brand === TODAS ? todasQuery : `?marca=${brand}`
   const setBrand = (value: string) =>
-    router.replace(value === TODAS ? '/settings/branches' : `/settings/branches?marca=${value}`, {
+    router.replace(`/settings/branches${value === TODAS ? todasQuery : `?marca=${value}`}`, {
       scroll: false,
     })
   const brandName = (id: number | null) => brands.find((m) => m.id === id)?.nombre ?? ''

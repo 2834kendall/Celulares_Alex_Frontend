@@ -64,6 +64,14 @@ describe('logout (server action)', () => {
     expect(deleteCookie).toHaveBeenCalledWith('sgrh-dashboard')
   })
 
+  it('borra la marca elegida: la siguiente cuenta no hereda el filtro', async () => {
+    clientCon({ error: null })
+
+    await logout()
+
+    expect(deleteCookie).toHaveBeenCalledWith('sgrh_marca_contexto')
+  })
+
   it('si signOut falla, lo dice y NO finge que salio', async () => {
     // Antes el error se descartaba y se navegaba igual: la persona aterrizaba
     // en /login con las cookies todavia vivas.
