@@ -70,6 +70,8 @@ interface CandidatoRow {
 export interface AguinaldoDeRelacion {
   /** Contrato al que se le registra el pago: el más reciente de la relación. */
   labId: number
+  /** Sucursal de ese contrato: por ella se filtra la fila cuando hay una marca elegida. */
+  sucursalId: number | null
   /** Todos los contratos de la relación. */
   labIds: number[]
   empleadoNombre: string
@@ -261,6 +263,7 @@ export async function calcularAguinaldosDelCiclo(
 
     data.push({
       labId: candidato.lab_id,
+      sucursalId: candidato.lab_sucursal_id,
       labIds,
       empleadoNombre: [emp.emp_nombre, emp.emp_apellido_1, emp.emp_apellido_2]
         .filter(Boolean)

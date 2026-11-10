@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { puedeLeerAusencias, sucursalesVisibles } from '@/modules/payroll/lib/derechosData'
 import { calcularAguinaldosDelCiclo } from '@/modules/payroll/lib/aguinaldoData'
@@ -33,11 +34,17 @@ export type GetProvisionesAguinaldoResult =
  * todo el año: de enero a noviembre es el que se está acumulando, y en
  * diciembre es el que hay que pagar antes del día 20. Las quincenas de
  * diciembre ya cuentan para el ciclo siguiente.
+ *
+ * La marca elegida filtra DESPUÉS de calcular. Pasarla como `visibles` dejaría a
+ * una persona trasladada con `sucursalesOcultas`: monto de menos y sin poder pagar.
  */
 export async function getProvisionesAguinaldo(
   anioCiclo?: number
 ): Promise<GetProvisionesAguinaldoResult> {
   const claims = await requirePermission(PERMISOS.NOMINA_READ)
+
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
 
   const supabase = await createClient()
   // Año de Costa Rica: desde las 18:00 del 31 de diciembre, el del servidor
@@ -50,7 +57,12 @@ export async function getProvisionesAguinaldo(
   ])
   if (!resultado.ok) return resultado
 
-  const items: AguinaldoItem[] = resultado.data.map((a) => ({
+  const { sucursalIds } = filtro
+  const filas = sucursalIds
+    ? resultado.data.filter((a) => a.sucursalId !== null && sucursalIds.includes(a.sucursalId))
+    : resultado.data
+
+  const items: AguinaldoItem[] = filas.map((a) => ({
     historialLaboralId: a.labId,
     empleadoNombre: a.empleadoNombre,
     empleadoCedula: a.empleadoCedula,

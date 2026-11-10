@@ -3,6 +3,12 @@ import { getLiquidaciones } from './getLiquidaciones'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
@@ -321,5 +327,67 @@ describe('getLiquidaciones (server action)', () => {
         'no aplica por el motivo de salida (Renuncia Voluntaria)'
       )
     }
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getLiquidaciones con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(
+      {} as unknown as Awaited<ReturnType<typeof requirePermission>>
+    )
+  })
+
+  const liquidacion = (id: number, contrato: { lab_sucursal_id: number } | null) => ({
+    ...RUBROS,
+    liq_id: id,
+    liq_fecha_salida: '2026-06-30',
+    liq_total: 1,
+    liq_neto: 1,
+    liq_pagado: false,
+    liq_fecha_pago: null,
+    liq_created_at: '2026-06-30T10:00:00',
+    sgrh_pagos_extraordinarios: [],
+    sgrh_cat_motivos_salida: null,
+    sgrh_historial_laboral: contrato && {
+      ...contrato,
+      sgrh_empleados: {
+        emp_nombre: 'Ana',
+        emp_apellido_1: 'Mora',
+        emp_apellido_2: null,
+        emp_numero_identificacion: '1',
+      },
+    },
+  })
+
+  it('deja solo las de los contratos de sus tiendas', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    mockSupabase([
+      liquidacion(1, { lab_sucursal_id: 5 }),
+      liquidacion(2, { lab_sucursal_id: 9 }),
+      liquidacion(3, null),
+    ])
+
+    const result = await getLiquidaciones()
+
+    expect(result.ok && result.data.map((l) => l.liqId)).toEqual([1])
+  })
+
+  it('sin marca muestra todas', async () => {
+    mockSupabase([liquidacion(1, { lab_sucursal_id: 5 }), liquidacion(2, { lab_sucursal_id: 9 })])
+
+    const result = await getLiquidaciones()
+
+    expect(result.ok && result.data).toHaveLength(2)
+  })
+
+  it('si no se pudo leer el filtro da error', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getLiquidaciones()).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

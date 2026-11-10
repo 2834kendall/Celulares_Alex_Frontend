@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { leerPaginado } from '@/modules/payroll/lib/paginado'
 import type { ContratoPorLiquidarItem } from '@/modules/payroll/types'
@@ -62,11 +63,14 @@ function tieneContratoPosterior(row: ContratoTerminadoRow): boolean {
 export async function getContratosPorLiquidar(): Promise<GetContratosPorLiquidarResult> {
   await requirePermission(PERMISOS.NOMINA_WRITE)
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
   // Por páginas: los contratos cerrados se acumulan (los liquidados se
   // descartan recién acá) y PostgREST corta en 1000 filas sin avisar.
-  const { data, error } = await leerPaginado<ContratoTerminadoRow>((desde, hasta) =>
-    supabase
+  const { data, error } = await leerPaginado<ContratoTerminadoRow>((desde, hasta) => {
+    let consulta = supabase
       .from('sgrh_historial_laboral')
       .select(
         `
@@ -83,10 +87,9 @@ export async function getContratosPorLiquidar(): Promise<GetContratosPorLiquidar
       `
       )
       .not('lab_fecha_fin', 'is', null)
-      .order('lab_id')
-      .range(desde, hasta)
-      .returns<ContratoTerminadoRow[]>()
-  )
+    if (filtro.sucursalIds) consulta = consulta.in('lab_sucursal_id', filtro.sucursalIds)
+    return consulta.order('lab_id').range(desde, hasta).returns<ContratoTerminadoRow[]>()
+  })
 
   if (error) {
     return { ok: false, error: 'No se pudieron cargar los contratos por liquidar.' }
