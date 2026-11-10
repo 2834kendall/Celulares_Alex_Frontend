@@ -9,28 +9,32 @@ tablas, así que agregar o cambiar un rol no exige tocar ninguna policy.
 | tabla | contiene |
 |---|---|
 | `sgrh_cat_permisos` | el catálogo de permisos |
-| `sgrh_cat_roles` | los roles (`rol_activo` dice si se pueden asignar) |
+| `sgrh_cat_roles` | los roles de cada empresa (`rol_empresa_id`) y las plantillas (sin empresa) |
 | `sgrh_rol_permisos` | la matriz rol → permiso |
 | `sgrh_usuarios_empresa_rol` | qué rol tiene cada usuario en cada empresa, y en qué sucursal |
 
-Todo eso se siembra en `supabase/seeds/01_sistema/` (es configuración, no datos de demo) con el
-helper `sgrh_private.asignar_permisos`, que es convergente.
+**Cada empresa tiene sus roles** y los edita desde Configuración → Roles y permisos
+([detalle](../../srgh-app/src/modules/settings/docs/roles.md)). Las plantillas y su matriz se
+siembran en `supabase/seeds/01_sistema/` y solo sirven para darle roles a una empresa nueva
+(`sgrh_private.instanciar_roles_empresa`).
 
 `tiene_permiso()` lee el array `permisos` del JWT en memoria: cero consultas por fila evaluada
 (antes eran dos JOINs). Ver [auth y JWT](auth-y-jwt.md).
 
 ## Roles
 
-| rol | `uer_sucursal_id` | ve |
+Con los que nace cada empresa:
+
+| plantilla | `uer_sucursal_id` | ve |
 |---|---|---|
 | `ADMIN` | `NULL` | toda su empresa |
 | `GERENTE` | con valor | solo su sucursal (tablas operativas) |
-| `EMPLEADO` | — | solo lo suyo. **Cero permisos, a propósito** |
+| `EMPLEADO` | — | solo lo suyo. **Sin permisos de datos, a propósito** |
 | `KIOSCO` | con valor | solo los empleados activos de su sucursal, y solo para marcar |
 
 - **El alcance lo decide `uer_sucursal_id`, no el rol.**
-- Hay 8 roles más sembrados con su matriz (RRHH, SUPERVISOR, CONTADOR…) pero inactivos.
-  **Activar uno es un `UPDATE`**: ninguna regla puede asumir que no existen.
+- **Ningún código condiciona por un rol**: cada empresa los renombra, rearma y crea. Lo único
+  fijo son los permisos. La excepción es `KIOSCO`, que es del sistema y no se edita.
 - `SUPERADMIN` se eliminó, y `EMPLEADO` no tiene permisos a propósito. El porqué está en
   [RLS y alcance](../../srgh-app/supabase/docs/rls-y-alcance.md).
 
@@ -46,9 +50,14 @@ helper `sgrh_private.asignar_permisos`, que es convergente.
 
 ## Agregar un permiso
 
-1. **Nace en la base**: una migración o seed que lo agregue a `sgrh_cat_permisos` y lo asigne
-   a los roles que corresponda (convergente, por código, nunca por id).
-2. Agregarlo a `lib/permissions/catalog.ts`.
+1. **Nace en la base**: una migración que lo agregue a `sgrh_cat_permisos` y lo reparta.
+   **Los roles de las empresas se eligen por permiso** («todo rol con `NOMINA_WRITE` recibe
+   `NOMINA_EXPORT`»), nunca por código: los códigos son generados y cada empresa arma sus
+   roles. Agregarlo también a las plantillas en `seeds/01_sistema/03_rol_permisos.sql`, para
+   las empresas nuevas.
+2. Agregarlo a `lib/permissions/catalog.ts` y a la pantalla de roles
+   (`modules/settings/roles/permissions.ts`; si escribir exige ver, también a `REQUISITOS` y a
+   `sgrh_private.permiso_requisitos()`).
 3. Usarlo en las policies de su tabla, en el guard y en la UI.
 4. **Quien ya tiene sesión no lo ve hasta volver a entrar**: el token se emite con los permisos
    del momento.
@@ -62,8 +71,8 @@ ofrecerlo en una pantalla de gestión de roles.
   mío" no dependen de permisos, las de permiso sí ven a todos.
 - **Una policy con `OR tiene_permiso('X')` sin chequeo de empresa** es un hueco entre empresas.
   Ya pasó tres veces.
-- **Los seeds solo agregan**: quitar un permiso de un rol en el seed no lo revoca en una base
-  que ya lo tenía. Hay que revocarlo a mano.
+- **El seed de permisos ya no toca a nadie**: define las plantillas. Agregar o quitar ahí
+  solo cambia a las empresas que se instancien después.
 - **No hay alcance "solo lo mío" por permiso.** Todo permiso de lectura es de toda la empresa,
   acotado solo por la sucursal del usuario. "Un supervisor que ve solo a su equipo" no se arma
   con permisos.

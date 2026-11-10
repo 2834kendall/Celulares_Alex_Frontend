@@ -18,24 +18,34 @@
 
 ## Roles
 
-Cuatro activos. **El alcance lo decide `uer_sucursal_id`, no el rol:**
+**Cada empresa tiene sus propios roles** y los edita en Configuración → Roles y permisos. Las
+filas de `sgrh_cat_roles` sin empresa son **plantillas**: siembran una empresa nueva
+(`sgrh_private.instanciar_roles_empresa`) y no dan permisos a nadie. La excepción es
+`KIOSCO`, que se asigna tal cual. Modelo y reglas:
+[roles](../../src/modules/settings/docs/roles.md).
 
-| rol        | `uer_sucursal_id` | ve                                                            |
+Cada empresa nace con estas cuatro. **El alcance lo decide `uer_sucursal_id`, no el rol:**
+
+| plantilla  | `uer_sucursal_id` | ve                                                            |
 | ---------- | ----------------- | ------------------------------------------------------------- |
 | `ADMIN`    | `NULL`            | toda su empresa                                               |
 | `GERENTE`  | con valor         | solo su sucursal (tablas operativas)                          |
-| `EMPLEADO` | —                 | solo lo suyo. **Cero permisos, a propósito**                  |
+| `EMPLEADO` | —                 | solo lo suyo. **Solo `MI_HORARIO_READ`, a propósito**         |
 | `KIOSCO`   | con valor         | solo los empleados activos de su sucursal, y solo para marcar |
 
-- Los otros 8 (RRHH, SUPERVISOR, CONTADOR…) tienen su matriz sembrada, pero
-  `rol_activo = false`: no son asignables. **Activar uno es un `UPDATE`**, así que ninguna
-  regla puede asumir que no existen.
+- Las otras 8 plantillas (RRHH, SUPERVISOR, CONTADOR…) tienen su matriz sembrada pero
+  `rol_activo = false`: una empresa solo las recibe si ya las usaba. Cada empresa puede crear
+  roles nuevos con cualquier combinación de permisos, **así que ninguna regla puede asumir
+  qué permisos tiene un rol, ni condicionar por su código**.
+- **Escritura**: `authenticated` no escribe ni `sgrh_cat_roles` ni `sgrh_rol_permisos`. Solo
+  las RPC de roles, que revalidan `ROLES_WRITE` en vivo.
 - **`SUPERADMIN` se eliminó**: tenía los mismos 27 permisos que `ADMIN`, y la RLS lo acotaba al
   `empresa_id` de su JWT igual que a todos. Prometía acceso entre empresas y daba una sola.
   Multi-empresa = varias filas en `sgrh_usuarios_empresa_rol`.
-- **`EMPLEADO` no tiene permisos, y no es un descuido**: su acceso pasa por las ramas
+- **`EMPLEADO` no tiene permisos de datos, y no es un descuido**: su acceso pasa por las ramas
   `emp_id = get_emp_id()` de las policies. Darle un permiso le abriría los datos de toda la
-  empresa.
+  empresa. Ahora cada empresa puede hacerlo desde la pantalla de roles: es una decisión de
+  la empresa, y la pantalla muestra a qué zonas da acceso cada permiso.
 
 ## Trampas de policies, grants y funciones
 
