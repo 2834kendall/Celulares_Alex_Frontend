@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { ACCESO_EVALUACIONES } from '@/lib/permissions/zones'
 import { averageScore, parseNotes } from '@/modules/evaluations/lib/scoring'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
@@ -108,13 +109,15 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
   }
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
 
-  const [historyResult, evaluationsResult] = await Promise.all([
-    supabase
-      .from('sgrh_historial_laboral')
-      .select(
-        `
+  let contratos = supabase
+    .from('sgrh_historial_laboral')
+    .select(
+      `
         lab_id,
         lab_empleado_id,
         lab_sucursal_id,
@@ -122,10 +125,13 @@ export async function getEvaluationsOverview(): Promise<GetEvaluationsOverviewRe
         sgrh_cat_puestos ( pue_nombre ),
         sgrh_sucursales ( suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
       `
-      )
-      .eq('lab_empresa_id', empresaId)
-      .is('lab_fecha_fin', null)
-      .returns<HistoryRow[]>(),
+    )
+    .eq('lab_empresa_id', empresaId)
+    .is('lab_fecha_fin', null)
+  if (filtro.sucursalIds) contratos = contratos.in('lab_sucursal_id', filtro.sucursalIds)
+
+  const [historyResult, evaluationsResult] = await Promise.all([
+    contratos.returns<HistoryRow[]>(),
     supabase
       .from('sgrh_evaluaciones')
       .select(

@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { fetchStageColumns } from '@/modules/recruitment/lib/stageColumns'
 import type { EtapaSeleccionItem } from '@/modules/recruitment/types'
@@ -59,12 +60,14 @@ export type GetPostulacionesBoardResult =
 export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResult> {
   await requirePermission(PERMISOS.RECLUTAMIENTO_READ)
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
-  const [{ data, error }, stages] = await Promise.all([
-    supabase
-      .from('sgrh_postulaciones')
-      .select(
-        `
+  let postulaciones = supabase
+    .from('sgrh_postulaciones')
+    .select(
+      `
       pos_id,
       pos_candidato_id,
       pos_fecha_postula,
@@ -75,10 +78,14 @@ export async function getPostulacionesBoard(): Promise<GetPostulacionesBoardResu
       sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_etapas_seleccion ( eta_nombre, eta_color )
     `
-      )
-      .eq('pos_estado_final', 'en_proceso')
-      .order('pos_fecha_postula', { ascending: true })
-      .returns<PostulacionQueryRow[]>(),
+    )
+    .eq('pos_estado_final', 'en_proceso')
+    .order('pos_fecha_postula', { ascending: true })
+  // Una postulación sin tienda solo sale en "Todas".
+  if (filtro.sucursalIds) postulaciones = postulaciones.in('pos_sucursal_id', filtro.sucursalIds)
+
+  const [{ data, error }, stages] = await Promise.all([
+    postulaciones.returns<PostulacionQueryRow[]>(),
     fetchStageColumns(supabase),
   ])
 
