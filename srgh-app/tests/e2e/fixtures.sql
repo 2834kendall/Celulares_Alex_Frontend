@@ -63,6 +63,29 @@ FROM (VALUES
 JOIN sgrh_usuarios usr ON usr.usr_email=cuenta.email
 JOIN sgrh_cat_roles rol ON rol.rol_codigo=cuenta.rol
 WHERE NOT EXISTS (SELECT 1 FROM sgrh_usuarios_empresa_rol existing WHERE existing.uer_usuario_id=usr.usr_id AND existing.uer_empresa_id=1051);
+-- Each company gets its own copy of the role templates and its accounts move to it
+-- (supabase/seeds/01_sistema/01_roles.sql). Re-runnable: a second run creates nothing.
+SELECT sgrh_private.instanciar_roles_empresa(org_id) FROM sgrh_empresas WHERE org_id IN (1051, 1052);
+-- Roles. Every run resets them: roles.spec.ts creates "Rol E2E ..." roles and edits
+-- the company's copy of Gerente, and a test that fails halfway must not leak into
+-- the next run.
+-- 1. Whatever is not the copy of a template goes away (the roles a test created).
+DELETE FROM sgrh_rol_permisos WHERE rpe_rol_id IN (
+  SELECT r.rol_id FROM sgrh_cat_roles r WHERE r.rol_empresa_id IN (1051,1052) AND NOT EXISTS (
+    SELECT 1 FROM sgrh_cat_roles t WHERE t.rol_empresa_id IS NULL AND r.rol_codigo='EMPRESA_'||r.rol_empresa_id||'_'||t.rol_codigo));
+DELETE FROM sgrh_cat_roles r WHERE r.rol_empresa_id IN (1051,1052) AND NOT EXISTS (
+  SELECT 1 FROM sgrh_cat_roles t WHERE t.rol_empresa_id IS NULL AND r.rol_codigo='EMPRESA_'||r.rol_empresa_id||'_'||t.rol_codigo);
+-- 2. The copies get back the name and the permissions of their template.
+UPDATE sgrh_cat_roles c SET rol_nombre=t.rol_nombre, rol_descripcion=t.rol_descripcion, rol_activo=true
+FROM sgrh_cat_roles t
+WHERE t.rol_empresa_id IS NULL AND c.rol_empresa_id IN (1051,1052) AND c.rol_codigo='EMPRESA_'||c.rol_empresa_id||'_'||t.rol_codigo;
+DELETE FROM sgrh_rol_permisos rp USING sgrh_cat_roles c WHERE rp.rpe_rol_id=c.rol_id AND c.rol_empresa_id IN (1051,1052);
+INSERT INTO sgrh_rol_permisos (rpe_rol_id, rpe_permiso_id)
+SELECT c.rol_id, rp.rpe_permiso_id
+FROM sgrh_cat_roles c
+JOIN sgrh_cat_roles t ON t.rol_empresa_id IS NULL AND c.rol_codigo='EMPRESA_'||c.rol_empresa_id||'_'||t.rol_codigo
+JOIN sgrh_rol_permisos rp ON rp.rpe_rol_id=t.rol_id
+WHERE c.rol_empresa_id IN (1051,1052);
 
 INSERT INTO sgrh_candidatos (cdt_id, cdt_empresa_id, cdt_nombre, cdt_apellido_1, cdt_email)
 OVERRIDING SYSTEM VALUE VALUES

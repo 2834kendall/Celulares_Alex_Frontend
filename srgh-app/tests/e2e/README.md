@@ -97,6 +97,31 @@ brands with real roles:
 - Brand logo upload and removal, against real Storage.
 - "Marca · Sucursal" labels through real PostgREST embedding.
 
+`roles.spec.ts` (Desktop Chrome only, 8 more scenarios, 39 in total) covers roles per
+company. Every outcome is read back from the database with the service client, and
+`fixtures.sql` resets the roles of both companies on each run:
+
+- Each company has its own copy of the role templates, with the template's
+  permissions, and its accounts use the copy.
+- The roles screen lists the company roles and the kiosk, never a template; the top
+  bar and the profile show the name of the role, not the generated code of the JWT.
+- The kiosk role is read-only, and nobody removes role administration from their own
+  role.
+- A template and a role of another company cannot be opened.
+- A browser session cannot run the role RPCs nor write the role tables directly.
+- Editing a role changes that company only, and the real hook gives the new
+  permissions to the next session of an account that holds it.
+- A created role rejects a duplicate name, is offered when inviting a user (no
+  template, no kiosk) and can be deleted.
+- A role is never tied to a branch: managers of two branches share one, the editor
+  offers no branch, the list has no per-branch tabs, and a role in use cannot be
+  deleted.
+
+The form is server-rendered before React takes it over, so the spec waits for the
+field to be hydrated before acting on it (`hydrated()` in the spec).
+"Nobody grants what they do not have" needs an administrator with a trimmed role and
+is covered against a real Postgres in `src/modules/settings/roles/migration.test.ts`.
+
 The kiosk and evaluation persistence specs are HTTP/database integration, not
 browser interaction.
 Facial camera/inference is not bypassed to manufacture a successful browser mark.
