@@ -94,7 +94,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({ ok: true, data: [], tipos: DEFAULT_TARDINESS_TYPES })
@@ -104,7 +105,14 @@ describe('gatherMonthlyAttendanceDays', () => {
   it('no consulta la sucursal fija si no hay usuarioId', async () => {
     const client = createSupabaseClientMock(mocks({}))
 
-    await gatherMonthlyAttendanceDays(asClient(client), 1, undefined, '2026-07-01', '2026-07-31')
+    await gatherMonthlyAttendanceDays(
+      asClient(client),
+      1,
+      undefined,
+      '2026-07-01',
+      '2026-07-31',
+      null
+    )
 
     expect(client.from).not.toHaveBeenCalledWith('sgrh_usuarios_empresa_rol')
   })
@@ -119,7 +127,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({ ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' })
@@ -135,7 +144,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los colaboradores.' })
@@ -156,7 +166,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({
@@ -183,7 +194,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({ ok: true, data: [], tipos: DEFAULT_TARDINESS_TYPES })
@@ -214,7 +226,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({
@@ -273,7 +286,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result.ok && result.tipos).toEqual([
@@ -296,7 +310,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los tipos de tardia.' })
@@ -323,7 +338,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2099-01-31'
+      '2099-01-31',
+      null
     )
 
     expect(result).toEqual({
@@ -357,7 +373,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({
@@ -391,7 +408,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({
@@ -456,7 +474,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result.ok).toBe(true)
@@ -478,7 +497,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({
@@ -504,7 +524,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2099-01-31'
+      '2099-01-31',
+      null
     )
 
     expect(result).toEqual({
@@ -524,7 +545,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({ ok: true, data: [], tipos: DEFAULT_TARDINESS_TYPES })
@@ -540,7 +562,8 @@ describe('gatherMonthlyAttendanceDays', () => {
       1,
       5,
       '2026-07-01',
-      '2026-07-31'
+      '2026-07-31',
+      null
     )
 
     expect(result).toEqual({ ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' })

@@ -34,3 +34,23 @@ export function buildAusenciaOverlayEntries(
 
   return entries
 }
+
+/**
+ * Ausencias que lista el panel cuando hay una marca elegida. Solo el panel: la matriz
+ * las recibe todas, porque de ellas depende el bloqueo de cada celda.
+ *
+ * Con matriz, las de quienes salen en ella (turnos prestados incluidos). Quien lee
+ * ausencias sin poder leer la matriz no tiene esas filas: va la sucursal del contrato.
+ */
+export function ausenciasDelPanel(
+  ausencias: AusenciaWeekRow[],
+  sucursalIds: number[] | null,
+  contratosDeLaMatriz: number[] | null
+): AusenciaWeekRow[] {
+  if (!sucursalIds) return ausencias
+  return ausencias.filter((ausencia) =>
+    contratosDeLaMatriz
+      ? contratosDeLaMatriz.includes(ausencia.employmentHistoryId)
+      : ausencia.sucursalContratoId !== null && sucursalIds.includes(ausencia.sucursalContratoId)
+  )
+}

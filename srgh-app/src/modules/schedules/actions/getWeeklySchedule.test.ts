@@ -3,6 +3,12 @@ import { getWeeklySchedule } from './getWeeklySchedule'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -357,6 +363,88 @@ describe('getWeeklySchedule (server action)', () => {
     expect(mon.hours).toBeCloseTo(7.8333, 3)
     // 9h de jornada - 1h de almuerzo - 0min de break (8min < 10min pagados) = 8h
     expect(tue.hours).toBe(8)
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getWeeklySchedule con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  const contrato = (id: number, sucursal: number) => ({
+    lab_id: id,
+    lab_empleado_id: id * 10,
+    lab_sucursal_id: sucursal,
+    sgrh_empleados: { emp_id: id * 10, emp_nombre: `Persona ${id}`, emp_apellido_1: 'Prueba' },
+    sgrh_cat_puestos: null,
+    sgrh_sucursales: { suc_id: sucursal, suc_nombre: `Tienda ${sucursal}` },
+  })
+  const turno = (labId: number, sucursal: number) => ({
+    prg_id: labId,
+    prg_historial_laboral_id: labId,
+    prg_fecha: '2026-01-06',
+    prg_es_dia_libre: true,
+    prg_horario_id: null,
+    prg_sucursal_id: sucursal,
+    sgrh_sucursales: { suc_id: sucursal, suc_nombre: `Tienda ${sucursal}` },
+    sgrh_cat_horarios: null,
+  })
+  const TIENDAS = [
+    { suc_id: 5, suc_nombre: 'Tienda 5' },
+    { suc_id: 9, suc_nombre: 'Tienda 9' },
+  ]
+
+  function conMatriz() {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: {
+          data: [contrato(1, 5), contrato(2, 9), contrato(3, 9)],
+          error: null,
+        },
+        sgrh_sucursales: { data: TIENDAS, error: null },
+        // La 2 es de otra marca y cubre un turno en la 5; la 3 solo trabaja en la suya.
+        sgrh_programacion_semanal: { data: [turno(2, 5), turno(3, 9)], error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+  }
+
+  it('muestra a quien tiene la base en la marca y a quien cubre un turno ahí', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    conMatriz()
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok && result.data.map((r) => r.employmentHistoryId)).toEqual([1, 2])
+  })
+
+  it('la lista de tiendas sigue completa: se puede asignar en otra marca', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    conMatriz()
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok && result.sucursales.map((s) => s.id)).toEqual([5, 9])
+  })
+
+  it('sin marca muestra a todos', async () => {
+    conMatriz()
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok && result.data).toHaveLength(3)
+  })
+
+  it('si no se pudo leer el filtro da error', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getWeeklySchedule(WEEK_START)).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })
 

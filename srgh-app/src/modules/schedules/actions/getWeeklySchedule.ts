@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getWeekDates } from '@/modules/schedules/lib/week'
 import { hoursBetween } from '@/modules/schedules/lib/hours'
@@ -124,6 +125,9 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
   }
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const weekDates = getWeekDates(weekStartISO)
   const supabase = await createClient()
 
@@ -149,6 +153,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
       .is('lab_fecha_fin', null)
       .returns<EmploymentHistoryRow[]>(),
     // Catalogo completo de sucursales de la empresa (no solo las de casa de los empleados).
+    // La marca elegida NO lo acota: un dia se puede asignar en una tienda de otra marca.
     supabase
       .from('sgrh_sucursales')
       .select('suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre )')
@@ -219,7 +224,23 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
     assignmentByCell.set(`${a.prg_historial_laboral_id}|${a.prg_fecha}`, a)
   }
 
-  const data: EmployeeWeekRow[] = employmentHistory.map((h) => {
+  // Con una marca elegida: quien tiene la base en ella, o trabaja ahí algún día de la
+  // semana (un turno prestado). Sin este segundo caso desaparecería de su tienda.
+  const { sucursalIds } = filtro
+  const contratosConTurno = new Set(
+    sucursalIds
+      ? (assignments ?? [])
+          .filter((a) => sucursalIds.includes(a.prg_sucursal_id))
+          .map((a) => a.prg_historial_laboral_id)
+      : []
+  )
+  const visibles = sucursalIds
+    ? employmentHistory.filter(
+        (h) => sucursalIds.includes(h.lab_sucursal_id) || contratosConTurno.has(h.lab_id)
+      )
+    : employmentHistory
+
+  const data: EmployeeWeekRow[] = visibles.map((h) => {
     const employee = h.sgrh_empleados
     const position = h.sgrh_cat_puestos
     const fullName = employee

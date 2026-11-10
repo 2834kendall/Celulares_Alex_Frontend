@@ -3,6 +3,12 @@ import { getDailyAttendance } from './getDailyAttendance'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -476,5 +482,58 @@ describe('getDailyAttendance (server action)', () => {
     const result = await getDailyAttendance(DATE)
 
     expect(result.ok && result.data[0].ausencia).toBe('Incapacidad por Enfermedad')
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getDailyAttendance con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, usr_id: 999 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  it('acota turnos, marcas y plantilla a las tiendas de la marca', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    const client = useClient(createSupabaseClientMock(mocks({ sucursalId: null })))
+
+    await getDailyAttendance(DATE)
+
+    expect(callOn(client, 'sgrh_marcas_asistencia').in).toHaveBeenCalledWith(
+      'mar_sucursal_id',
+      [5, 6]
+    )
+    expect(callOn(client, 'sgrh_programacion_semanal').in).toHaveBeenCalledWith(
+      'prg_sucursal_id',
+      [5, 6]
+    )
+    expect(callOn(client, 'sgrh_historial_laboral').in).toHaveBeenCalledWith(
+      'lab_sucursal_id',
+      [5, 6]
+    )
+  })
+
+  it('sin marca sigue usando el alcance de la cuenta', async () => {
+    const client = useClient(createSupabaseClientMock(mocks({ sucursalId: 100 })))
+
+    await getDailyAttendance(DATE)
+
+    expect(callOn(client, 'sgrh_marcas_asistencia').in).toHaveBeenCalledWith(
+      'mar_sucursal_id',
+      [100]
+    )
+  })
+
+  it('si no se pudo leer el filtro da error, no toda la empresa', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+    useClient(createSupabaseClientMock(mocks({ sucursalId: null })))
+
+    expect(await getDailyAttendance(DATE)).toEqual({
+      ok: false,
+      error: 'No se pudo aplicar el filtro de marca.',
+    })
   })
 })
