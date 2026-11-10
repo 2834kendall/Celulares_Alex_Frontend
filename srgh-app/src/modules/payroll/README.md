@@ -32,6 +32,8 @@ Rutas: `/payroll`, `/payroll/new`, `/payroll/[id]`, `/payroll/concepts`,
 - **Liquidar es definitivo**, y pagarla es un paso aparte que no recalcula.
 - **El aguinaldo y la liquidación se calculan con las quincenas pagadas**, cada una con su
   propio salario, no con el salario de hoy.
+- **El selector de marca elige filas, nunca cambia un cálculo**: filtra después de calcular
+  ([selector de marca](../settings/docs/contexto-marca.md)).
 
 ## Datos
 

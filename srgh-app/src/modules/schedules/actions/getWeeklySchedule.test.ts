@@ -3,6 +3,12 @@ import { getWeeklySchedule } from './getWeeklySchedule'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -258,8 +264,8 @@ describe('getWeeklySchedule (server action)', () => {
       assignmentId: 3,
       isDayOff: false,
       hours: 8.5,
-      customStartTime: '09:00:00',
-      customEndTime: '18:00:00',
+      customStartTime: '09:00',
+      customEndTime: '18:00',
       branchId: 200,
       branchName: 'Norte',
     })
@@ -357,5 +363,147 @@ describe('getWeeklySchedule (server action)', () => {
     expect(mon.hours).toBeCloseTo(7.8333, 3)
     // 9h de jornada - 1h de almuerzo - 0min de break (8min < 10min pagados) = 8h
     expect(tue.hours).toBe(8)
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getWeeklySchedule con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  const contrato = (id: number, sucursal: number) => ({
+    lab_id: id,
+    lab_empleado_id: id * 10,
+    lab_sucursal_id: sucursal,
+    sgrh_empleados: { emp_id: id * 10, emp_nombre: `Persona ${id}`, emp_apellido_1: 'Prueba' },
+    sgrh_cat_puestos: null,
+    sgrh_sucursales: { suc_id: sucursal, suc_nombre: `Tienda ${sucursal}` },
+  })
+  const turno = (labId: number, sucursal: number) => ({
+    prg_id: labId,
+    prg_historial_laboral_id: labId,
+    prg_fecha: '2026-01-06',
+    prg_es_dia_libre: true,
+    prg_horario_id: null,
+    prg_sucursal_id: sucursal,
+    sgrh_sucursales: { suc_id: sucursal, suc_nombre: `Tienda ${sucursal}` },
+    sgrh_cat_horarios: null,
+  })
+  const TIENDAS = [
+    { suc_id: 5, suc_nombre: 'Tienda 5' },
+    { suc_id: 9, suc_nombre: 'Tienda 9' },
+  ]
+
+  function conMatriz() {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: {
+          data: [contrato(1, 5), contrato(2, 9), contrato(3, 9)],
+          error: null,
+        },
+        sgrh_sucursales: { data: TIENDAS, error: null },
+        // La 2 es de otra marca y cubre un turno en la 5; la 3 solo trabaja en la suya.
+        sgrh_programacion_semanal: { data: [turno(2, 5), turno(3, 9)], error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+  }
+
+  it('muestra a quien tiene la base en la marca y a quien cubre un turno ahí', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    conMatriz()
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok && result.data.map((r) => r.employmentHistoryId)).toEqual([1, 2])
+  })
+
+  it('la lista de tiendas sigue completa: se puede asignar en otra marca', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    conMatriz()
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok && result.sucursales.map((s) => s.id)).toEqual([5, 9])
+  })
+
+  it('sin marca muestra a todos', async () => {
+    conMatriz()
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok && result.data).toHaveLength(3)
+  })
+
+  it('si no se pudo leer el filtro da error', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getWeeklySchedule(WEEK_START)).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
+  })
+})
+
+describe('getWeeklySchedule con horas personalizadas', () => {
+  it('las entrega sin segundos: las acciones de escritura exigen HH:mm', async () => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: {
+          data: [
+            {
+              lab_id: 1,
+              lab_empleado_id: 10,
+              lab_sucursal_id: 5,
+              sgrh_empleados: { emp_id: 10, emp_nombre: 'Ana', emp_apellido_1: 'Perez' },
+              sgrh_cat_puestos: null,
+              sgrh_sucursales: { suc_id: 5, suc_nombre: 'Centro' },
+            },
+          ],
+          error: null,
+        },
+        sgrh_sucursales: { data: [{ suc_id: 5, suc_nombre: 'Centro' }], error: null },
+        sgrh_programacion_semanal: {
+          data: [
+            {
+              prg_id: 1,
+              prg_historial_laboral_id: 1,
+              prg_fecha: '2026-01-06',
+              prg_es_dia_libre: false,
+              prg_horario_id: null,
+              prg_sucursal_id: 5,
+              sgrh_sucursales: { suc_id: 5, suc_nombre: 'Centro' },
+              sgrh_cat_horarios: null,
+              // Asi las devuelve Postgres.
+              prg_hora_entrada_custom: '08:00:00',
+              prg_hora_salida_custom: '16:30:00',
+              prg_hora_inicio_almuerzo_custom: '12:00:00',
+              prg_hora_fin_almuerzo_custom: '13:00:00',
+              prg_hora_inicio_break_custom: null,
+              prg_hora_fin_break_custom: null,
+            },
+          ],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok && result.data[0].days[1]).toMatchObject({
+      customStartTime: '08:00',
+      customEndTime: '16:30',
+      customLunchStart: '12:00',
+      customLunchEnd: '13:00',
+      customBreakStart: null,
+      customBreakEnd: null,
+    })
   })
 })

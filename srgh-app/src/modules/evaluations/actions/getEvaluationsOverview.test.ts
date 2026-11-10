@@ -4,6 +4,12 @@ import { createClient } from '@/lib/supabase/server'
 import { requireAnyPermission } from '@/lib/auth/require-permission'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 import { createSupabaseQueryMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requireAnyPermission: vi.fn() }))
@@ -156,5 +162,41 @@ describe('evaluation overview', () => {
       fotoUrl: null,
     })
     expect(JSON.stringify(result)).not.toContain('1/empleados/1/photo.jpg')
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('evaluation overview with a chosen brand', () => {
+  it('reads only the contracts of that brand', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    const queries = setup([history])
+
+    await getEvaluationsOverview()
+
+    expect(queries.get('sgrh_historial_laboral')?.in).toHaveBeenCalledWith(
+      'lab_sucursal_id',
+      [5, 6]
+    )
+  })
+
+  it('without a brand it does not narrow', async () => {
+    const queries = setup([history])
+
+    await getEvaluationsOverview()
+
+    expect(queries.get('sgrh_historial_laboral')?.in).not.toHaveBeenCalled()
+  })
+
+  it('fails instead of showing everybody when the filter could not be read', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+    setup([history])
+
+    expect(await getEvaluationsOverview()).toEqual({
+      ok: false,
+      error: 'No se pudo aplicar el filtro de marca.',
+    })
+    expect(createClient).not.toHaveBeenCalled()
   })
 })

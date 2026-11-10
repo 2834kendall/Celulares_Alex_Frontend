@@ -3,6 +3,12 @@ import { getProvisionesAguinaldo } from './getProvisionesAguinaldo'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
@@ -614,5 +620,62 @@ describe('getProvisionesAguinaldo (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data.items[0]).toMatchObject({ fechaSalida: '2026-12-05', monto: 430000 })
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getProvisionesAguinaldo con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    conPermisos(['NOMINA_READ', 'AUSENCIAS_READ'])
+  })
+
+  // Trasladada de la tienda 9 a la 5 a mitad del ciclo: una sola fila, con lo de ambas.
+  const trasladada = {
+    ...candidato(2, 'Trasladada', '2026-06-01', {
+      ingreso: '2020-01-15',
+      contratos: [
+        { ...contrato(1, '2020-01-15', '2026-05-31'), lab_sucursal_id: 9 },
+        { ...contrato(2, '2026-06-01'), lab_sucursal_id: 5 },
+      ],
+    }),
+    lab_sucursal_id: 5,
+  }
+  const deOtraMarca = { ...candidato(3, 'Otra', '2020-01-15'), lab_sucursal_id: 9 }
+
+  function conCiclo() {
+    const quincenas = ciclo2026(1).map((fila, i) =>
+      i < 12 ? fila : { ...fila, ndt_historial_laboral_id: 2 }
+    )
+    mockSupabase({
+      sgrh_historial_laboral: { data: [trasladada, deOtraMarca], error: null },
+      sgrh_nomina_detalle: { data: [...quincenas, ...ciclo2026(3)], error: null },
+    })
+  }
+
+  it('filtra después de calcular: el monto sale completo y se puede pagar', async () => {
+    conCiclo()
+    const sinFiltro = await getProvisionesAguinaldo(2026)
+    const montoCompleto =
+      sinFiltro.ok && sinFiltro.data.items.find((i) => i.historialLaboralId === 2)?.monto
+    expect(montoCompleto).toBe(430000)
+
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    conCiclo()
+    const result = await getProvisionesAguinaldo(2026)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items.map((i) => i.historialLaboralId)).toEqual([2])
+    expect(result.data.items[0]).toMatchObject({ monto: montoCompleto, sucursalesOcultas: false })
+  })
+
+  it('si no se pudo leer el filtro da error', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getProvisionesAguinaldo(2026)).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

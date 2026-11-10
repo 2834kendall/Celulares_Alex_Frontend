@@ -14,7 +14,8 @@ export default async function BranchPage({
   const [{ id }, { marca }] = await Promise.all([params, searchParams])
   if (!/^\d+$/.test(id)) notFound()
   // Filtro del listado del que se vino, para volver a él.
-  const listQuery = marca && /^\d+$/.test(marca) ? `?marca=${marca}` : ''
+  // `todas` es explícito: sin parámetro, el listado aplicaría la marca de la barra superior.
+  const listQuery = marca && /^(\d+|todas)$/.test(marca) ? `?marca=${marca}` : ''
   const [r, t] = await Promise.all([getBranchSettings(), getTerritorio()])
   if (!r.ok || !t.ok)
     return (

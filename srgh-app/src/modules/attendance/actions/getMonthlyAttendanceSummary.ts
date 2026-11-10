@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import {
   classifyDay,
@@ -104,6 +105,9 @@ export async function getMonthlyAttendanceSummary(
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
   }
 
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
   const { start, end } = monthBoundsInCostaRica(parsed.data.fecha)
 
@@ -112,7 +116,8 @@ export async function getMonthlyAttendanceSummary(
     meta.empresa_id,
     meta.usr_id,
     start,
-    end
+    end,
+    filtro.sucursalIds
   )
 
   if (!gathered.ok) {

@@ -71,7 +71,7 @@ Mobile emulation does not establish physical-device, Firefox or WebKit support.
 - Evaluation-note updates confirm the owned row through real PostgREST; foreign
   and missing evaluations return no row, and a kiosk session cannot update notes.
 
-`brands.spec.ts` (Desktop Chrome only, 15 more scenarios, 31 in total) covers commercial
+`brands.spec.ts` (Desktop Chrome only, 14 scenarios) covers commercial
 brands with real roles:
 
 - The general view shows the company logo, name and theme.
@@ -87,15 +87,31 @@ brands with real roles:
   top bar selector: it offers to.
 - A brand inherits unset colors and the logo from the company, also after saving
   through the real form; the company theme is editable and reaches those brands.
-- The top bar selector changes the theme only: listings stay identical. While it
-  is on, a banner says so.
-- GERENTE and EMPLEADO get no selector, ignore a forged preview cookie and cannot
-  open the brand screens. EMPLEADO gets the brand of the current contract, and a
+- A manager of one store and an employee get no selector, ignore a forged cookie and
+  cannot open the brand screens. An employee gets the brand of the current contract, and a
   borrowed shift in another brand does not change it.
-- Another company's brand cannot be opened, nor previewed through a forged cookie.
+- Another company's brand cannot be opened, nor chosen through a forged cookie.
 - A brand with active branches cannot be deactivated; an inactive one is not offered.
 - Brand logo upload and removal, against real Storage.
 - "Marca · Sucursal" labels through real PostgREST embedding.
+
+`brand-context.spec.ts` (Desktop Chrome only, 16 scenarios, 46 in total with the rest) covers the
+top bar selector that filters data. Its accounts use INVENTED roles with chosen permissions, so
+nothing depends on a known role:
+
+- Choosing a brand narrows employees, evaluations, recruitment, attendance, periods and branches,
+  and paints its theme; "Todas" brings everything back. The choice survives a reload.
+- Who gets the selector, by permission and stores. A forged cookie is ignored, the next account in
+  the browser does not inherit the filter, logout deletes it and losing the permission turns it off.
+- A borrowed shift shows in the matrix and attendance of the store where it is worked, not in the
+  employees of that brand. An absence on it still blocks the cell, and pasting does not overwrite it.
+- A shift can still move to a store of another brand with a filter on. The kiosk is face-only and
+  lists nobody, so this checks the stored shift and the attendance panel of the destination.
+- A transferred person keeps the whole aguinaldo under a brand.
+- With no connection it warns; with unsaved changes it asks first; on a phone it lives in the menu.
+
+`today` shifts are seeded when the run starts: a run crossing midnight in Costa Rica fails those
+scenarios. Run it again.
 
 The kiosk and evaluation persistence specs are HTTP/database integration, not
 browser interaction.

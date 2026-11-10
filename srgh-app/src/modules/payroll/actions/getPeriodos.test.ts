@@ -3,6 +3,12 @@ import { getPeriodos } from './getPeriodos'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { createSupabaseClientMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -93,5 +99,49 @@ describe('getPeriodos (server action)', () => {
       expect(result.data[0].sucursalNombre).toBe('—')
       expect(result.data[0].totalEmpleados).toBe(0)
     }
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('getPeriodos con una marca elegida', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(CLAIMS)
+  })
+
+  function conPeriodos() {
+    const client = createSupabaseClientMock({
+      sgrh_nomina_periodo: { data: [PERIODO_BASE], error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    return client.from.mock.results
+  }
+
+  it('lee solo los periodos de sus tiendas', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    const resultados = conPeriodos()
+
+    await getPeriodos()
+
+    expect(resultados[0].value.in).toHaveBeenCalledWith('npe_sucursal_id', [5, 6])
+  })
+
+  it('sin marca no acota', async () => {
+    const resultados = conPeriodos()
+
+    await getPeriodos()
+
+    expect(resultados[0].value.in).not.toHaveBeenCalled()
+  })
+
+  it('si no se pudo leer el filtro da error, no todos los periodos', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+
+    expect((await getPeriodos()).ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

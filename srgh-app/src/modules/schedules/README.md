@@ -30,6 +30,9 @@ descanso, y **en qué sucursal trabaja ese día**.
   distinta de la sucursal base del contrato (`lab_sucursal_id`), que dice en qué planilla se
   paga (ver [contratos](../employees/docs/contratos.md)). El kiosco lista a la gente por la
   programación del día, no por la sucursal base.
+- **El selector de marca achica la matriz, no lo que se puede asignar**: la lista de tiendas sigue
+  completa, y quien cubre un turno sale también en la marca donde lo cubre
+  ([selector de marca](../settings/docs/contexto-marca.md)).
 - **Toda sucursal que llega del cliente se valida contra la empresa del JWT**
   (`lib/validateBranches.ts`) antes de escribir.
 - **Horas personalizadas:** la salida tiene que ser posterior a la entrada, y lo mismo el fin

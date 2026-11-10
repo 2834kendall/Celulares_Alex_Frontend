@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from '@/modules/payroll/lib/bancoHoras'
 import { periodoLabel } from '@/modules/payroll/lib/format'
@@ -21,6 +22,7 @@ interface MovimientoRow {
   bhm_observaciones: string | null
   bhm_liquidacion_id: number | null
   sgrh_historial_laboral: {
+    lab_sucursal_id: number | null
     lab_fecha_inicio: string
     sgrh_empleados: {
       emp_nombre: string
@@ -58,6 +60,10 @@ export type GetBancoHorasResult =
  */
 export async function getBancoHoras(): Promise<GetBancoHorasResult> {
   await requirePermission(PERMISOS.NOMINA_READ)
+
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
 
   // El multiplicador de la hora extra sale del catálogo (HORAS_EXTRA), que es
@@ -88,6 +94,7 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
       bhm_observaciones,
       bhm_liquidacion_id,
       sgrh_historial_laboral (
+        lab_sucursal_id,
         lab_fecha_inicio,
         sgrh_empleados (
           emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion,
@@ -109,7 +116,16 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
     return { ok: false, error: 'No se pudo cargar el banco de horas.' }
   }
 
-  const items: BancoHorasItem[] = (data ?? []).map((row) => {
+  // En memoria: filtrar en la consulta sobre un join sin !inner devuelve la fila
+  // con el join en null ("Empleado no disponible"), y los mocks no lo detectan.
+  const { sucursalIds } = filtro
+  const filas = sucursalIds
+    ? (data ?? []).filter((row) =>
+        sucursalIds.includes(row.sgrh_historial_laboral?.lab_sucursal_id ?? Number.NaN)
+      )
+    : (data ?? [])
+
+  const items: BancoHorasItem[] = filas.map((row) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados
     const nombre = empleado
       ? [empleado.emp_nombre, empleado.emp_apellido_1, empleado.emp_apellido_2]

@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import type { LiquidacionListItem } from '@/modules/payroll/types'
 import {
@@ -45,6 +46,7 @@ interface LiquidacionRow {
     mot_genera_cesantia: boolean
   } | null
   sgrh_historial_laboral: {
+    lab_sucursal_id: number | null
     sgrh_empleados: {
       emp_nombre: string
       emp_apellido_1: string
@@ -76,6 +78,10 @@ export type GetLiquidacionesResult =
  */
 export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
   await requirePermission(PERMISOS.NOMINA_READ)
+
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+
   const supabase = await createClient()
 
   const consulta = supabase
@@ -110,6 +116,7 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
       sgrh_pagos_extraordinarios ( pex_id, pex_fecha_pago, ${SELECT_ANULACION} ),
       sgrh_cat_motivos_salida ( mot_nombre, mot_genera_preaviso, mot_genera_cesantia ),
       sgrh_historial_laboral (
+        lab_sucursal_id,
         sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal )
       )
     `
@@ -125,7 +132,15 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
     return { ok: false, error: 'No se pudo cargar el historial de liquidaciones.' }
   }
 
-  const items: LiquidacionListItem[] = (data ?? []).map((row) => {
+  // En memoria, por lo mismo que getBancoHoras: el join no es !inner.
+  const { sucursalIds } = filtro
+  const filas = sucursalIds
+    ? (data ?? []).filter((row) =>
+        sucursalIds.includes(row.sgrh_historial_laboral?.lab_sucursal_id ?? Number.NaN)
+      )
+    : (data ?? [])
+
+  const items: LiquidacionListItem[] = filas.map((row) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados
     // Puede haber varios pagos: los anulados por error quedan en el historial
     // y solo uno está vigente (índice único parcial).

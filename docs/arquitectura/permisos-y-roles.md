@@ -19,6 +19,10 @@ helper `sgrh_private.asignar_permisos`, que es convergente.
 `tiene_permiso()` lee el array `permisos` del JWT en memoria: cero consultas por fila evaluada
 (antes eran dos JOINs). Ver [auth y JWT](auth-y-jwt.md).
 
+**Una condición se comprueba con permisos o con datos, nunca con el código de un rol.** Los roles se
+van a poder crear, modificar y eliminar; lo fijo son los permisos. Tampoco vale razonar "ese rol no
+tiene ese permiso". Quedan comparaciones con `KIOSCO` por resolver antes de permitir editar ese rol.
+
 ## Roles
 
 | rol | `uer_sucursal_id` | ve |

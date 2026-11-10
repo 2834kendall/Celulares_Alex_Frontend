@@ -9,8 +9,8 @@ Una empresa puede operar varias marcas con identidad propia ("Celulares Alex", "
 cada marca agrupa varias tiendas físicas: **Empresa → Marca → Sucursal**.
 
 - **Es agrupación + identidad visual** (nombre, colores, logo). **No es un límite de alcance**:
-  no entra al JWT ni a ninguna policy. La RLS operativa sigue siendo por sucursal
-  (`sucursal_visible()`), y el alcance lo sigue decidiendo `uer_sucursal_id`.
+  no entra al JWT ni a ninguna policy. La RLS sigue siendo por sucursal (`sucursal_visible()`), y
+  el alcance lo sigue decidiendo `uer_sucursal_id`.
 - **Los empleados son de la empresa**: alguien de una marca puede trabajar un turno en una
   tienda de otra si el horario lo dice. Ninguna relación con la sucursal cambió (historial
   laboral, marcas de asistencia, programación, planilla, kioscos).
@@ -21,8 +21,8 @@ cada marca agrupa varias tiendas físicas: **Empresa → Marca → Sucursal**.
 
 Pestaña de Empresa, no sección propia: hay pocas marcas y tienen pocos datos. Cada marca es una
 tarjeta (`BrandCard`) que muestra su identidad como se ve en la app, con lo heredado incluido, y
-cada acción abre un modal: logo, editar (nombre y estado) y colores; en el menú `⋯`, ver la app
-con esa marca y eliminar. No hay página por marca.
+cada acción abre un modal: logo, editar (nombre y estado) y colores; en el menú `⋯`, ver solo esa
+marca (si está en el selector) y eliminar. No hay página por marca.
 
 Las sucursales de una marca no se listan acá: la tarjeta enlaza a `/settings/branches?marca=<id>`.
 Ese filtro vive en la URL y lo conservan "Nueva sucursal", la ficha y sus botones de volver.
@@ -48,7 +48,8 @@ Ese filtro vive en la URL y lo conservan "Nueva sucursal", la ficha y sus botone
 `lib/empresa/resolve-shell-theme.ts` es la fuente única:
 
 ```
-marca en preview (solo EMPRESAS_WRITE)
+marca elegida en el selector
+  → si tiene selector y está en "Todas": tema de la empresa
   → marca propia
   → tema de la empresa (Configuración → Empresa → Apariencia)
   → colores del sistema
@@ -64,22 +65,13 @@ marca en preview (solo EMPRESAS_WRITE)
 - **Logo**: el de la marca, o si no tiene, el de la empresa. Mismo bucket `logos-empresa`, en la
   ruta `<empresa_id>/marcas/<mco_id>/<uuid>`. Un CHECK de la columna y la RPC exigen ese prefijo.
 - **Apariencia** (pestaña de Empresa) edita el **tema de la empresa**, y solo la ve
-  `EMPRESAS_WRITE`. Entre los roles activos no le quita nada a nadie: GERENTE y EMPLEADO nunca
-  entraron a Configuración. Es para los roles inactivos con acceso a la zona sin ese permiso.
+  `EMPRESAS_WRITE`.
 - **Elegir colores no pinta la app**: `AppearanceForm` muestra una maqueta (`ThemePreview`) con
-  los tokens en su propio contenedor. Antes pintaba el shell real en vivo, y el marco quedaba con
-  el color de prueba, mezclado con el nombre y el logo de otra marca.
+  los tokens en su propio contenedor.
 
 ## Selector de la barra superior
 
-`MarcaSwitcher` ("Vista previa del tema", cookie `sgrh_marca_preview`) lista las marcas activas y
-**solo cambia el tema**. Todavía no filtra datos: eso queda para un ticket aparte. La cookie nunca
-entra en una query de datos ni en una policy. Reemplaza a la cookie de sucursal: con otro nombre,
-una cookie vieja (que guardaba un id de sucursal) no se lee como id de marca.
-
-- **El nombre de la marca arriba se lee como un filtro**, y no lo es: mientras hay una vista previa,
-  `MarcaPreviewBanner` avisa que los datos siguen siendo de todas las marcas.
-- **Guardar colores no mueve el selector.** El aviso de guardado ofrece "Ver la app con esta marca".
+Filtra los listados y pinta el tema de la marca elegida: [selector de marca](contexto-marca.md).
 
 ## Cómo se muestra una sucursal
 

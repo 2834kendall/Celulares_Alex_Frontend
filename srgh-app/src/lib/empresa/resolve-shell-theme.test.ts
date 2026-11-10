@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveShellTheme } from './resolve-shell-theme'
+import { getSelectorMarca } from './contexto-activo'
 import { getMarcaTema, SIN_MARCA, type MarcaApariencia } from './get-marca-tema'
-import { listMarcasConApariencia } from './list-marcas'
-import { getMarcaPreviewId } from './marca-preview'
 import { getEmpresaShell, type EmpresaShellRow } from './get-empresa-shell'
 
 // Sin `importOriginal`: el módulo real importa el cliente de Supabase, que
@@ -11,8 +10,7 @@ vi.mock('./get-marca-tema', () => ({
   getMarcaTema: vi.fn(),
   SIN_MARCA: { sucursalId: null, sucursalNombre: null, marca: null },
 }))
-vi.mock('./list-marcas', () => ({ listMarcasConApariencia: vi.fn() }))
-vi.mock('./marca-preview', () => ({ getMarcaPreviewId: vi.fn() }))
+vi.mock('./contexto-activo', () => ({ getSelectorMarca: vi.fn() }))
 vi.mock('./get-empresa-shell', () => ({ getEmpresaShell: vi.fn() }))
 
 const ALEX: MarcaApariencia = {
@@ -45,79 +43,79 @@ function empresa(colores: Partial<EmpresaShellRow> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getMarcaTema).mockResolvedValue(SIN_MARCA)
-  vi.mocked(listMarcasConApariencia).mockResolvedValue([ALEX, INFINITY])
-  vi.mocked(getMarcaPreviewId).mockResolvedValue(null)
+  vi.mocked(getSelectorMarca).mockResolvedValue({ marcas: [], marcaElegida: null })
   empresa()
 })
 
+const MALL = { sucursalId: 10, sucursalNombre: 'Mall', marca: ALEX }
+
 describe('resolveShellTheme', () => {
-  it('sin marca (ADMIN), pinta el tema de la empresa', async () => {
-    const theme = await resolveShellTheme(1, null, ['EMPRESAS_WRITE'])
+  it('sin marca, pinta el tema de la empresa', async () => {
+    const theme = await resolveShellTheme(1, null)
     expect(theme).toMatchObject({
       marcaNombre: null,
       colorAcento: '#166534',
       colorSidebar: '#eef1f4',
       logoPath: null,
-      marcaPreviewId: null,
+      marcaContextoId: null,
     })
-    expect(theme.marcas).toEqual([ALEX, INFINITY])
   })
 
-  it('con marca propia, pinta la marca y hereda de la empresa el color que no personalizó', async () => {
-    vi.mocked(getMarcaTema).mockResolvedValue({
-      sucursalId: 10,
-      sucursalNombre: 'Mall',
-      marca: ALEX,
-    })
-    const theme = await resolveShellTheme(1, 5, [])
+  it('sin selector, pinta su marca y hereda de la empresa el color que no personalizó', async () => {
+    vi.mocked(getMarcaTema).mockResolvedValue(MALL)
+    const theme = await resolveShellTheme(1, 5)
     expect(theme).toMatchObject({
       marcaNombre: 'Celulares Alex',
       sucursalNombre: 'Mall',
       colorAcento: '#9f1239',
       colorSidebar: '#eef1f4',
       logoPath: '1/marcas/1/a.png',
+      marcas: [],
     })
   })
 
   it('sin tema de empresa, cae a los colores del sistema (null)', async () => {
     empresa({ org_color_acento: null, org_color_sidebar: null })
-    const theme = await resolveShellTheme(1, null, [])
+    const theme = await resolveShellTheme(1, null)
     expect(theme.colorAcento).toBeNull()
     expect(theme.colorSidebar).toBeNull()
   })
 
-  it('la marca en preview gana sobre la propia y no muestra la sucursal propia', async () => {
-    vi.mocked(getMarcaTema).mockResolvedValue({
-      sucursalId: 10,
-      sucursalNombre: 'Mall',
-      marca: ALEX,
+  it('la marca elegida gana sobre la propia y no muestra la sucursal propia', async () => {
+    vi.mocked(getMarcaTema).mockResolvedValue(MALL)
+    vi.mocked(getSelectorMarca).mockResolvedValue({
+      marcas: [ALEX, INFINITY],
+      marcaElegida: INFINITY,
     })
-    vi.mocked(getMarcaPreviewId).mockResolvedValue(2)
-    const theme = await resolveShellTheme(1, 5, ['EMPRESAS_WRITE'])
+    const theme = await resolveShellTheme(1, 5)
     expect(theme).toMatchObject({
       marcaNombre: 'Infinity',
       sucursalNombre: null,
       colorAcento: '#1e40af',
-      marcaPreviewId: 2,
+      marcaContextoId: 2,
+      marcas: [ALEX, INFINITY],
     })
   })
 
-  it('ignora un preview que no es una marca activa de la lista', async () => {
-    vi.mocked(getMarcaPreviewId).mockResolvedValue(99)
-    const theme = await resolveShellTheme(1, null, ['EMPRESAS_WRITE'])
-    expect(theme.marcaPreviewId).toBeNull()
-    expect(theme.marcaNombre).toBeNull()
-  })
-
-  it('sin EMPRESAS_WRITE no lista marcas ni lee la cookie de preview', async () => {
-    const theme = await resolveShellTheme(1, 5, ['MI_HORARIO_READ'])
-    expect(theme.marcas).toEqual([])
-    expect(listMarcasConApariencia).not.toHaveBeenCalled()
-    expect(getMarcaPreviewId).not.toHaveBeenCalled()
+  it('con selector en "Todas" pinta la empresa, aunque tenga marca propia', async () => {
+    // Ve datos de varias marcas: pintar la de su primera tienda parecería un filtro.
+    vi.mocked(getMarcaTema).mockResolvedValue(MALL)
+    vi.mocked(getSelectorMarca).mockResolvedValue({
+      marcas: [ALEX, INFINITY],
+      marcaElegida: null,
+    })
+    const theme = await resolveShellTheme(1, 5)
+    expect(theme).toMatchObject({
+      marcaNombre: null,
+      sucursalNombre: null,
+      colorAcento: '#166534',
+      logoPath: null,
+      marcaContextoId: null,
+    })
   })
 
   it('pasa usr_id y emp_id a la resolución de la marca propia', async () => {
-    await resolveShellTheme(7, 5, [])
+    await resolveShellTheme(7, 5)
     expect(getMarcaTema).toHaveBeenCalledWith(7, 5)
   })
 })

@@ -1,4 +1,5 @@
 import { requirePermission } from '@/lib/auth/require-permission'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getEmployees } from '@/modules/employees/actions/getEmployees'
 import { getRoles, getSucursales } from '@/modules/employees/actions/getCatalogs'
@@ -48,10 +49,24 @@ export default async function EmployeesPage() {
     permisos.includes(PERMISOS.RECLUTAMIENTO_READ) ||
     permisos.includes(PERMISOS.RECLUTAMIENTO_WRITE)
 
-  const [employeesResult, usuariosContent] = await Promise.all([
+  const [employeesResult, usersTab, filtro] = await Promise.all([
     getEmployees(),
     canManageUsers ? loadUsersTab() : Promise.resolve(null),
+    getFiltroMarca(),
   ])
+
+  // Una cuenta de nivel empresa no pertenece a ninguna marca: esta pestaña no se filtra.
+  const usuariosContent =
+    usersTab && filtro.estado === 'filtrado' ? (
+      <div className="space-y-3">
+        <Alert tone="info" size="md">
+          Las cuentas de usuario no se filtran por marca.
+        </Alert>
+        {usersTab}
+      </div>
+    ) : (
+      usersTab
+    )
 
   const header = <EmployeesHeader canWrite={canWrite} canAccessRecruitment={canAccessRecruitment} />
 

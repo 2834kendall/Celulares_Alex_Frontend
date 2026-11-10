@@ -143,17 +143,27 @@ export type GatherMonthlyAttendanceResult =
  * (createClient esta memoizado), asi que la segunda llamada reutiliza el
  * resultado de la primera en vez de repetir las ~7 consultas. Los llamadores
  * solo LEEN el resultado: no mutarlo, lo comparten.
+ *
+ * `filtroSucursalIds` es OBLIGATORIO a proposito: `cache` distingue por cantidad de
+ * argumentos, asi que si un llamador lo omitiera ya no compartirian resultado ni sin
+ * filtro. checkMonthlyInfractions pasa siempre `null`: con la marca elegida contaria
+ * de menos para la advertencia del mes.
  */
 export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAttendanceDays(
   supabase: SupabaseServerClient,
   empresaId: number,
   usuarioId: number | undefined,
   start: string,
-  end: string
+  end: string,
+  filtroSucursalIds: number[] | null
 ): Promise<GatherMonthlyAttendanceResult> {
   // Alcance y catalogo no dependen uno del otro.
   const [sucursalScope, tiposResult] = await Promise.all([
-    usuarioId ? getUsuarioSucursalScope(supabase, usuarioId) : Promise.resolve(null),
+    filtroSucursalIds
+      ? Promise.resolve(filtroSucursalIds)
+      : usuarioId
+        ? getUsuarioSucursalScope(supabase, usuarioId)
+        : Promise.resolve(null),
     loadTardinessTypes(supabase, empresaId),
   ])
 
