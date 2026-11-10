@@ -258,8 +258,8 @@ describe('getWeeklySchedule (server action)', () => {
       assignmentId: 3,
       isDayOff: false,
       hours: 8.5,
-      customStartTime: '09:00:00',
-      customEndTime: '18:00:00',
+      customStartTime: '09:00',
+      customEndTime: '18:00',
       branchId: 200,
       branchName: 'Norte',
     })
@@ -357,5 +357,65 @@ describe('getWeeklySchedule (server action)', () => {
     expect(mon.hours).toBeCloseTo(7.8333, 3)
     // 9h de jornada - 1h de almuerzo - 0min de break (8min < 10min pagados) = 8h
     expect(tue.hours).toBe(8)
+  })
+})
+
+describe('getWeeklySchedule con horas personalizadas', () => {
+  it('las entrega sin segundos: las acciones de escritura exigen HH:mm', async () => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: {
+          data: [
+            {
+              lab_id: 1,
+              lab_empleado_id: 10,
+              lab_sucursal_id: 5,
+              sgrh_empleados: { emp_id: 10, emp_nombre: 'Ana', emp_apellido_1: 'Perez' },
+              sgrh_cat_puestos: null,
+              sgrh_sucursales: { suc_id: 5, suc_nombre: 'Centro' },
+            },
+          ],
+          error: null,
+        },
+        sgrh_sucursales: { data: [{ suc_id: 5, suc_nombre: 'Centro' }], error: null },
+        sgrh_programacion_semanal: {
+          data: [
+            {
+              prg_id: 1,
+              prg_historial_laboral_id: 1,
+              prg_fecha: '2026-01-06',
+              prg_es_dia_libre: false,
+              prg_horario_id: null,
+              prg_sucursal_id: 5,
+              sgrh_sucursales: { suc_id: 5, suc_nombre: 'Centro' },
+              sgrh_cat_horarios: null,
+              // Asi las devuelve Postgres.
+              prg_hora_entrada_custom: '08:00:00',
+              prg_hora_salida_custom: '16:30:00',
+              prg_hora_inicio_almuerzo_custom: '12:00:00',
+              prg_hora_fin_almuerzo_custom: '13:00:00',
+              prg_hora_inicio_break_custom: null,
+              prg_hora_fin_break_custom: null,
+            },
+          ],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getWeeklySchedule(WEEK_START)
+
+    expect(result.ok && result.data[0].days[1]).toMatchObject({
+      customStartTime: '08:00',
+      customEndTime: '16:30',
+      customLunchStart: '12:00',
+      customLunchEnd: '13:00',
+      customBreakStart: null,
+      customBreakEnd: null,
+    })
   })
 })
