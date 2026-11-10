@@ -93,3 +93,134 @@ OVERRIDING SYSTEM VALUE VALUES
   (1051,1051,'Mensual',1051,1051,(SELECT usr_id FROM sgrh_usuarios WHERE usr_email='admin@e2e.sgrh.local'),'2026-11-06','Noviembre 2026','completada',8,'original'),
   (1052,1052,'Mensual',NULL,1052,(SELECT usr_id FROM sgrh_usuarios WHERE usr_email='admin@e2e.sgrh.local'),'2026-11-06','Noviembre 2026','completada',8,'foreign evaluation')
 ON CONFLICT (eve_id) DO UPDATE SET eve_observaciones=EXCLUDED.eve_observaciones;
+
+-- ---------------------------------------------------------------------------
+-- The selector that filters by brand (brand-context.spec.ts)
+-- ---------------------------------------------------------------------------
+-- Invented roles, on purpose: nothing may depend on a known role, because roles
+-- can be created and edited. Permissions are reset on every run.
+INSERT INTO sgrh_cat_roles (rol_codigo, rol_nombre, rol_descripcion, rol_activo)
+SELECT codigo, codigo, 'Rol inventado para E2E', true
+FROM (VALUES ('E2E_OPERADOR'), ('E2E_SOLO_PERSONAL'), ('E2E_NOMINA'), ('E2E_TEMPORAL')) AS r(codigo)
+WHERE NOT EXISTS (SELECT 1 FROM sgrh_cat_roles existing WHERE existing.rol_codigo=r.codigo);
+DELETE FROM sgrh_rol_permisos WHERE rpe_rol_id IN (SELECT rol_id FROM sgrh_cat_roles WHERE rol_codigo LIKE 'E2E\_%');
+INSERT INTO sgrh_rol_permisos (rpe_rol_id, rpe_permiso_id)
+SELECT r.rol_id, p.per_id
+FROM (VALUES
+  ('E2E_OPERADOR','ASISTENCIA_READ'),
+  ('E2E_OPERADOR','HISTORIAL_READ'),
+  ('E2E_OPERADOR','EMPLEADOS_READ'),
+  ('E2E_SOLO_PERSONAL','MI_HORARIO_READ'),
+  ('E2E_NOMINA','NOMINA_READ'),
+  ('E2E_NOMINA','NOMINA_WRITE'),
+  ('E2E_NOMINA','AUSENCIAS_READ'),
+  ('E2E_NOMINA','HISTORIAL_READ'),
+  ('E2E_NOMINA','EMPLEADOS_READ'),
+  ('E2E_TEMPORAL','ASISTENCIA_READ'),
+  ('E2E_TEMPORAL','MI_HORARIO_READ')
+) AS m(rol, permiso)
+JOIN sgrh_cat_roles r ON r.rol_codigo=m.rol
+JOIN sgrh_cat_permisos p ON p.per_codigo=m.permiso;
+
+INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, confirmation_token, recovery_token, email_change_token_new, email_change)
+SELECT '00000000-0000-0000-0000-000000000000', md5('sgrh105-' || code)::uuid, 'authenticated', 'authenticated',
+  lower(code) || '@e2e.sgrh.local', extensions.crypt('Sgrh105OnlyLocal!', extensions.gen_salt('bf')),
+  now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, '', '', '', ''
+FROM (VALUES ('ASIST2M'), ('ASIST1M'), ('ASISTEMPRESA'), ('PERSONAL2M'), ('NOMINA2M'), ('TEMPORAL'), ('ADMIN2')) AS roles(code)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
+SELECT id::text, id, jsonb_build_object('sub',id::text,'email',email,'email_verified',true), 'email', now(), now()
+FROM auth.users WHERE email IN ('asist2m@e2e.sgrh.local','asist1m@e2e.sgrh.local','asistempresa@e2e.sgrh.local','personal2m@e2e.sgrh.local','nomina2m@e2e.sgrh.local','temporal@e2e.sgrh.local','admin2@e2e.sgrh.local')
+ON CONFLICT (provider_id, provider) DO NOTHING;
+INSERT INTO sgrh_usuarios_empresa_rol (uer_usuario_id, uer_empresa_id, uer_sucursal_id, uer_rol_id)
+SELECT usr.usr_id, cuenta.empresa, cuenta.sucursal, rol.rol_id
+FROM (VALUES
+  -- Stores of two brands (Uno and Dos).
+  ('asist2m@e2e.sgrh.local',1051,'E2E_OPERADOR',1051),
+  ('asist2m@e2e.sgrh.local',1051,'E2E_OPERADOR',1055),
+  ('personal2m@e2e.sgrh.local',1051,'E2E_SOLO_PERSONAL',1051),
+  ('personal2m@e2e.sgrh.local',1051,'E2E_SOLO_PERSONAL',1055),
+  ('nomina2m@e2e.sgrh.local',1051,'E2E_NOMINA',1051),
+  ('nomina2m@e2e.sgrh.local',1051,'E2E_NOMINA',1055),
+  ('temporal@e2e.sgrh.local',1051,'E2E_TEMPORAL',1051),
+  ('temporal@e2e.sgrh.local',1051,'E2E_TEMPORAL',1055),
+  -- Two stores of the same brand: nothing to choose.
+  ('asist1m@e2e.sgrh.local',1051,'E2E_OPERADOR',1053),
+  ('asist1m@e2e.sgrh.local',1051,'E2E_OPERADOR',1054),
+  -- Company level, without EMPRESAS_WRITE.
+  ('asistempresa@e2e.sgrh.local',1051,'E2E_OPERADOR',NULL),
+  -- A company with a single brand.
+  ('admin2@e2e.sgrh.local',1052,'ADMIN',NULL)
+) AS cuenta(email, empresa, rol, sucursal)
+JOIN sgrh_usuarios usr ON usr.usr_email=cuenta.email
+JOIN sgrh_cat_roles rol ON rol.rol_codigo=cuenta.rol
+WHERE NOT EXISTS (
+  SELECT 1 FROM sgrh_usuarios_empresa_rol existing
+  WHERE existing.uer_usuario_id=usr.usr_id AND existing.uer_empresa_id=cuenta.empresa
+    AND existing.uer_sucursal_id IS NOT DISTINCT FROM cuenta.sucursal
+);
+
+INSERT INTO sgrh_empleados (emp_id, emp_tipo_identificacion_id, emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_fecha_ingreso_original, emp_direccion_id)
+OVERRIDING SYSTEM VALUE
+SELECT e.id, (SELECT min(tid_id) FROM sgrh_cat_tipos_identificacion), 'E2E105100' || e.id, e.nombre, 'Prueba', '2024-01-01', 1051
+FROM (VALUES (1052,'Noelia Tiendas'), (1053,'Priscila Prestada'), (1054,'Teresa Trasladada'), (1055,'Elena Exempleada')) AS e(id, nombre)
+ON CONFLICT (emp_id) DO NOTHING;
+INSERT INTO sgrh_historial_laboral (lab_id, lab_empleado_id, lab_empresa_id, lab_sucursal_id, lab_puesto_id, lab_tipo_jornada_id, lab_tipo_contrato_id, lab_salario_base, lab_salario_real, lab_fecha_inicio, lab_fecha_fin)
+OVERRIDING SYSTEM VALUE
+SELECT c.lab, c.emp, 1051, c.suc, 1051, (SELECT min(tjo_id) FROM sgrh_cat_tipos_jornada), (SELECT min(tco_id) FROM sgrh_cat_tipos_contrato), 400000, 400000, c.inicio::date, c.fin::date
+FROM (VALUES
+  (1052,1052,1053,'2024-01-01',NULL),
+  (1053,1053,1053,'2024-01-01',NULL),
+  -- Teresa: from Uno to Dos in June, one working relationship.
+  (1054,1054,1051,'2024-01-01','2026-05-31'),
+  (1055,1054,1055,'2026-06-01',NULL),
+  -- Elena: an old contract in Dos, the LAST one in Uno.
+  (1056,1055,1055,'2024-01-01','2024-12-31'),
+  (1057,1055,1051,'2025-01-01','2026-03-31')
+) AS c(lab, emp, suc, inicio, fin)
+ON CONFLICT (lab_id) DO NOTHING;
+
+-- Noelia works in her store. Priscila (Tiendas) covers today in Dos, with a sick leave
+-- that same day, and last week she worked in Dos at other hours: the week to paste.
+DELETE FROM sgrh_ausencias WHERE aus_historial_laboral_id=1053;
+DELETE FROM sgrh_programacion_semanal WHERE prg_historial_laboral_id IN (1052,1053);
+INSERT INTO sgrh_programacion_semanal (prg_id, prg_empleado_id, prg_sucursal_id, prg_historial_laboral_id, prg_fecha, prg_hora_entrada_custom, prg_hora_salida_custom)
+OVERRIDING SYSTEM VALUE
+SELECT t.id, t.emp, t.suc, t.lab, t.fecha, t.entrada::time, t.salida::time
+FROM (SELECT (now() AT TIME ZONE 'America/Costa_Rica')::date AS hoy) d,
+LATERAL (
+  SELECT date_trunc('week', d.hoy)::date AS lunes
+) l,
+LATERAL (VALUES
+  (1052,1052,1053,1052,d.hoy,'08:00','16:00'),
+  (1053,1053,1055,1053,d.hoy,'08:00','16:00'),
+  (1054,1053,1055,1053,d.hoy - 7,'09:00','15:00'),
+  (1056,1053,1055,1053,l.lunes - 7 + CASE WHEN d.hoy = l.lunes THEN 1 ELSE 0 END,'09:00','15:00')
+) AS t(id, emp, suc, lab, fecha, entrada, salida);
+INSERT INTO sgrh_ausencias (aus_id, aus_historial_laboral_id, aus_tipo_ausencia_id, aus_fecha_inicio, aus_fecha_fin, aus_estado)
+OVERRIDING SYSTEM VALUE
+SELECT 1051, 1053, tau_id, (now() AT TIME ZONE 'America/Costa_Rica')::date, (now() AT TIME ZONE 'America/Costa_Rica')::date, 'aprobada'
+FROM sgrh_cat_tipos_ausencia WHERE tau_codigo='INC_ENF';
+
+-- Paid fortnights of Teresa in each store: her aguinaldo adds both, 360000 / 12.
+INSERT INTO sgrh_nomina_periodo (npe_id, npe_empresa_id, npe_sucursal_id, npe_periodo_mes, npe_periodo_anio, npe_quincena, npe_fecha_inicio_periodo, npe_fecha_fin_periodo, npe_estado)
+OVERRIDING SYSTEM VALUE VALUES
+  (1051,1051,1051,3,2026,1,'2026-03-01','2026-03-15','pagado'),
+  (1052,1051,1055,9,2026,1,'2026-09-01','2026-09-15','pagado')
+ON CONFLICT DO NOTHING;
+INSERT INTO sgrh_nomina_detalle (ndt_id, ndt_nomina_periodo_id, ndt_historial_laboral_id, ndt_fecha_registro, ndt_salario_bruto, ndt_pagado)
+OVERRIDING SYSTEM VALUE VALUES
+  (1051,1051,1054,'2026-03-15',120000,true),
+  (1052,1052,1055,'2026-09-15',240000,true)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO sgrh_candidatos (cdt_id, cdt_empresa_id, cdt_nombre, cdt_apellido_1, cdt_email)
+OVERRIDING SYSTEM VALUE VALUES
+  (1053,1051,'Clara Tiendas','Prueba','clara@e2e.sgrh.local'),
+  (1054,1051,'Uma Marcauno','Prueba','uma@e2e.sgrh.local')
+ON CONFLICT (cdt_id) DO NOTHING;
+INSERT INTO sgrh_postulaciones (pos_id, pos_candidato_id, pos_puesto_id, pos_empresa_id, pos_sucursal_id)
+OVERRIDING SYSTEM VALUE VALUES
+  (1053,1053,1051,1051,1053),
+  (1054,1054,1051,1051,1051)
+ON CONFLICT (pos_id) DO NOTHING;
