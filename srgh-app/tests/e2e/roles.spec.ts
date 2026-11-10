@@ -377,7 +377,7 @@ test('a created role rejects a duplicate name, is offered when inviting a user a
   await expect(page.getByText('Rol eliminado.')).toBeVisible()
   await expect(page).toHaveURL(/\/settings\/roles(\?.*)?$/)
   expect(await roleByName(1051, CREATED)).toBeNull()
-  expect(await offeredRoles(page)).toEqual([ADMIN, EMPLEADO, GERENTE].sort())
+  expect(await offeredRoles(page)).toEqual([ADMIN, EMPLEADO, GERENTE, ...INVENTED].sort())
 })
 
 test('a role is never tied to a branch, and one in use cannot be deleted', async ({ page }) => {
