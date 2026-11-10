@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Avatar, initialsOfEmail } from '@/components/ui/Avatar'
+import { Avatar } from '@/components/ui/Avatar'
+import { initialsOfEmail } from '@/lib/utils/initials'
 import Link from 'next/link'
 import { UserRound } from 'lucide-react'
 import { LogoutButton } from '@/modules/auth/components/LogoutButton'
