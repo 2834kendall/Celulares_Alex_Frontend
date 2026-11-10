@@ -28,6 +28,11 @@ const GERENTE = 'Gerente de Sucursal'
 const EMPLEADO = 'Empleado'
 const KIOSCO = 'Kiosco de asistencia'
 const CREATED = 'Rol E2E Cajero'
+/**
+ * The roles brand-context.spec.ts invents for company 1051 (fixtures.sql). They are
+ * roles of the company like any other, so the list and the invite form show them.
+ */
+const INVENTED = ['E2E_OPERADOR', 'E2E_SOLO_PERSONAL', 'E2E_NOMINA', 'E2E_TEMPORAL']
 
 type Account = 'admin' | 'gerente' | 'gerente2'
 
@@ -201,8 +206,9 @@ test('the roles screen lists the company roles and the kiosk, and the session sh
   const kiosk = list.getByRole('listitem').filter({ hasText: KIOSCO })
   await expect(kiosk.getByText('No asignable')).toBeVisible()
   await expect(kiosk.getByRole('link', { name: 'Ver permisos' })).toBeVisible()
-  // Three company roles plus the kiosk: no inactive template reaches the screen.
-  await expect(list.getByRole('listitem')).toHaveCount(4)
+  // Three copies, the four roles brand-context.spec.ts invents for this company, and
+  // the kiosk: no inactive template reaches the screen.
+  await expect(list.getByRole('listitem')).toHaveCount(3 + INVENTED.length + 1)
   await expect(list).not.toContainText('Encargado de Recursos Humanos')
 
   await page.goto('/profile')
@@ -363,7 +369,7 @@ test('a created role rejects a duplicate name, is offered when inviting a user a
   await expect(page).toHaveURL(/\/settings\/roles\/new$/)
 
   // Inviting a user offers the company roles: no template, no kiosk.
-  expect(await offeredRoles(page)).toEqual([ADMIN, EMPLEADO, GERENTE, CREATED].sort())
+  expect(await offeredRoles(page)).toEqual([ADMIN, EMPLEADO, GERENTE, CREATED, ...INVENTED].sort())
 
   await openRole(page, created!.rol_id, CREATED)
   await page.getByRole('button', { name: 'Eliminar rol' }).click()
@@ -393,5 +399,7 @@ test('a role is never tied to a branch, and one in use cannot be deleted', async
   // The list is one list: no tabs per branch.
   await page.goto('/settings/roles')
   await expect(page.getByRole('tablist')).toHaveCount(0)
-  await expect(page.getByRole('list', { name: 'Roles' }).getByRole('listitem')).toHaveCount(4)
+  await expect(page.getByRole('list', { name: 'Roles' }).getByRole('listitem')).toHaveCount(
+    3 + INVENTED.length + 1
+  )
 })

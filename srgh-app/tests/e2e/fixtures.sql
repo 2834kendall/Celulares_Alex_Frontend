@@ -70,10 +70,11 @@ SELECT sgrh_private.instanciar_roles_empresa(org_id) FROM sgrh_empresas WHERE or
 -- the company's copy of Gerente, and a test that fails halfway must not leak into
 -- the next run.
 -- 1. Whatever is not the copy of a template goes away (the roles a test created).
+--    The invented roles of brand-context.spec.ts (E2E_...) stay: accounts hold them.
 DELETE FROM sgrh_rol_permisos WHERE rpe_rol_id IN (
-  SELECT r.rol_id FROM sgrh_cat_roles r WHERE r.rol_empresa_id IN (1051,1052) AND NOT EXISTS (
+  SELECT r.rol_id FROM sgrh_cat_roles r WHERE r.rol_empresa_id IN (1051,1052) AND r.rol_codigo NOT LIKE 'E2E\_%' AND NOT EXISTS (
     SELECT 1 FROM sgrh_cat_roles t WHERE t.rol_empresa_id IS NULL AND r.rol_codigo='EMPRESA_'||r.rol_empresa_id||'_'||t.rol_codigo));
-DELETE FROM sgrh_cat_roles r WHERE r.rol_empresa_id IN (1051,1052) AND NOT EXISTS (
+DELETE FROM sgrh_cat_roles r WHERE r.rol_empresa_id IN (1051,1052) AND r.rol_codigo NOT LIKE 'E2E\_%' AND NOT EXISTS (
   SELECT 1 FROM sgrh_cat_roles t WHERE t.rol_empresa_id IS NULL AND r.rol_codigo='EMPRESA_'||r.rol_empresa_id||'_'||t.rol_codigo);
 -- 2. The copies get back the name and the permissions of their template.
 UPDATE sgrh_cat_roles c SET rol_nombre=t.rol_nombre, rol_descripcion=t.rol_descripcion, rol_activo=true
@@ -122,10 +123,15 @@ ON CONFLICT (eve_id) DO UPDATE SET eve_observaciones=EXCLUDED.eve_observaciones;
 -- ---------------------------------------------------------------------------
 -- Invented roles, on purpose: nothing may depend on a known role, because roles
 -- can be created and edited. Permissions are reset on every run.
-INSERT INTO sgrh_cat_roles (rol_codigo, rol_nombre, rol_descripcion, rol_activo)
-SELECT codigo, codigo, 'Rol inventado para E2E', true
+-- They are roles OF company 1051, as if it had created them: a row without a
+-- company is a template, which an account of a company cannot hold once the
+-- company has its own copy, and which instanciar_roles_empresa would copy.
+-- The role reset above leaves them alone (their codes start with E2E_).
+INSERT INTO sgrh_cat_roles (rol_codigo, rol_nombre, rol_descripcion, rol_activo, rol_empresa_id)
+SELECT codigo, codigo, 'Rol inventado para E2E', true, 1051
 FROM (VALUES ('E2E_OPERADOR'), ('E2E_SOLO_PERSONAL'), ('E2E_NOMINA'), ('E2E_TEMPORAL')) AS r(codigo)
 WHERE NOT EXISTS (SELECT 1 FROM sgrh_cat_roles existing WHERE existing.rol_codigo=r.codigo);
+UPDATE sgrh_cat_roles SET rol_empresa_id=1051, rol_activo=true WHERE rol_codigo LIKE 'E2E\_%';
 DELETE FROM sgrh_rol_permisos WHERE rpe_rol_id IN (SELECT rol_id FROM sgrh_cat_roles WHERE rol_codigo LIKE 'E2E\_%');
 INSERT INTO sgrh_rol_permisos (rpe_rol_id, rpe_permiso_id)
 SELECT r.rol_id, p.per_id
@@ -172,8 +178,8 @@ FROM (VALUES
   ('asist1m@e2e.sgrh.local',1051,'E2E_OPERADOR',1054),
   -- Company level, without EMPRESAS_WRITE.
   ('asistempresa@e2e.sgrh.local',1051,'E2E_OPERADOR',NULL),
-  -- A company with a single brand.
-  ('admin2@e2e.sgrh.local',1052,'ADMIN',NULL)
+  -- A company with a single brand. Its own copy of the template, not the template.
+  ('admin2@e2e.sgrh.local',1052,'EMPRESA_1052_ADMIN',NULL)
 ) AS cuenta(email, empresa, rol, sucursal)
 JOIN sgrh_usuarios usr ON usr.usr_email=cuenta.email
 JOIN sgrh_cat_roles rol ON rol.rol_codigo=cuenta.rol
