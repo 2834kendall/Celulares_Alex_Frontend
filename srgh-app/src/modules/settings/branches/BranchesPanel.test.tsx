@@ -136,3 +136,54 @@ describe('branch listing — filtro de marca en la URL', () => {
     expect(screen.getByRole('option', { name: 'Vieja (inactiva)' })).toBeInTheDocument()
   })
 })
+
+describe('branch listing with a brand chosen in the top bar', () => {
+  const nombres = () =>
+    screen
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+      .join(' ')
+
+  it('applies that brand when the URL says nothing', () => {
+    render(<BranchesPanel data={CON_MARCAS} marcaContextoId={2} />)
+    expect(nombres()).toContain('Centro')
+    expect(nombres()).not.toContain('Mall')
+  })
+
+  it('the URL wins over the top bar', () => {
+    search = 'marca=1'
+    render(<BranchesPanel data={CON_MARCAS} marcaContextoId={2} />)
+    expect(nombres()).toContain('Mall')
+    expect(nombres()).not.toContain('Centro')
+  })
+
+  it('an explicit "todas" shows every branch, also the ones without a brand', () => {
+    search = 'marca=todas'
+    render(<BranchesPanel data={CON_MARCAS} marcaContextoId={2} />)
+    expect(nombres()).toContain('Mall')
+    expect(nombres()).toContain('Centro')
+    expect(nombres()).toContain('Huérfana')
+  })
+
+  it('choosing "Todas las marcas" writes it, or the top bar would win again', async () => {
+    render(<BranchesPanel data={CON_MARCAS} marcaContextoId={2} />)
+    await userEvent.selectOptions(screen.getByLabelText(/marca/i), 'Todas las marcas')
+    expect(replace).toHaveBeenCalledWith('/settings/branches?marca=todas', { scroll: false })
+  })
+
+  it('the detail links keep "todas" so that going back stays there', () => {
+    search = 'marca=todas'
+    render(<BranchesPanel data={CON_MARCAS} marcaContextoId={2} />)
+    expect(screen.getByRole('link', { name: /Mall/ })).toHaveAttribute(
+      'href',
+      '/settings/branches/10?marca=todas'
+    )
+  })
+
+  it('without a brand above, the URL stays clean', async () => {
+    search = 'marca=1'
+    render(<BranchesPanel data={CON_MARCAS} />)
+    await userEvent.selectOptions(screen.getByLabelText(/marca/i), 'Todas las marcas')
+    expect(replace).toHaveBeenCalledWith('/settings/branches', { scroll: false })
+  })
+})

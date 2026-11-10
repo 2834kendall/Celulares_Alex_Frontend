@@ -9,6 +9,12 @@ import {
 } from './getDashboardExtras'
 import { createClient } from '@/lib/supabase/server'
 import { createSupabaseQueryMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 
@@ -256,4 +262,39 @@ describe('dashboard optional loaders authorization and failures', () => {
       expect(await load()).toBeNull()
     }
   )
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('dashboard roster with a chosen brand', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('holds only the contracts of that brand', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    const { queries } = withRows({ sgrh_historial_laboral: roster })
+
+    await getExpiringContracts(today)
+
+    expect(queries.get('sgrh_historial_laboral')?.in).toHaveBeenCalledWith(
+      'lab_sucursal_id',
+      [5, 6]
+    )
+  })
+
+  it('does not narrow without a brand', async () => {
+    const { queries } = withRows({ sgrh_historial_laboral: roster })
+
+    await getExpiringContracts(today)
+
+    expect(queries.get('sgrh_historial_laboral')?.in).not.toHaveBeenCalled()
+  })
+
+  it('the panel says it could not load when the filter could not be read', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+    const { from } = withRows({ sgrh_historial_laboral: roster })
+
+    expect(await getExpiringContracts(today)).toBeNull()
+    expect(from).not.toHaveBeenCalled()
+  })
 })

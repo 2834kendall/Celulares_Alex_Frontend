@@ -2,6 +2,7 @@
 
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { fullName } from '@/modules/employees/lib/format'
 import {
@@ -69,13 +70,17 @@ const getSession = cache(async () => {
 /**
  * Contracts in force with who holds them, by employment history id. Shared
  * by the three loaders below — `cache` makes it one query per request, no
- * matter how many of their panels are on.
+ * matter how many of their panels are on. With a brand chosen it only holds that
+ * brand, and the panels built on it follow: what is outside the roster is dropped.
  */
 const getRoster = cache(async (): Promise<Map<number, RosterPerson> | null> => {
   const { supabase, empresaId } = await getSession()
   if (!empresaId) return null
 
-  const { data, error } = await supabase
+  const filtro = await getFiltroMarca()
+  if (filtro.estado === 'error') return null
+
+  let contratos = supabase
     .from('sgrh_historial_laboral')
     .select(
       `
@@ -89,7 +94,9 @@ const getRoster = cache(async (): Promise<Map<number, RosterPerson> | null> => {
     )
     .eq('lab_empresa_id', empresaId)
     .is('lab_fecha_fin', null)
-    .returns<RosterRow[]>()
+  if (filtro.sucursalIds) contratos = contratos.in('lab_sucursal_id', filtro.sucursalIds)
+
+  const { data, error } = await contratos.returns<RosterRow[]>()
 
   if (error) return null
 

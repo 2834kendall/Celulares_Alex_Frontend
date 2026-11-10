@@ -3,6 +3,12 @@ import { getDashboardPeople } from './getDashboardPeople'
 import { createClient } from '@/lib/supabase/server'
 import { getStorageProvider } from '@/lib/storage'
 import { createSupabaseQueryMock } from '@/test/supabaseMock'
+import { getFiltroMarca } from '@/lib/empresa/contexto-activo'
+
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/storage', () => ({ getStorageProvider: vi.fn() }))
@@ -111,5 +117,38 @@ describe('dashboard people loader', () => {
     expect(result.newHires).toHaveLength(2)
     expect(JSON.stringify(result)).not.toContain('1990')
     expect(JSON.stringify(result)).not.toContain('former.jpg')
+  })
+})
+
+const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
+const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
+
+describe('dashboard people with a chosen brand', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('counts only the contracts of that brand', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
+    const { contracts } = setup({ employees: [employee(1)], contracts: [contract(1, 'Mall')] })
+
+    const people = await getDashboardPeople()
+
+    expect(contracts.in).toHaveBeenCalledWith('lab_sucursal_id', [5, 6])
+    expect(people.activeCount).toBe(1)
+  })
+
+  it('does not narrow without a brand', async () => {
+    const { contracts } = setup({ employees: [employee(1)], contracts: [contract(1, 'Mall')] })
+
+    await getDashboardPeople()
+
+    expect(contracts.in).not.toHaveBeenCalled()
+  })
+
+  it('degrades instead of showing everybody when the filter could not be read', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_ERROR)
+    const { from } = setup({ employees: [employee(1)], contracts: [contract(1, 'Mall')] })
+
+    expect((await getDashboardPeople()).canSee).toBe(false)
+    expect(from).not.toHaveBeenCalled()
   })
 })
