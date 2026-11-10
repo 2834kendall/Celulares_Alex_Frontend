@@ -5,6 +5,7 @@ import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { resolveShellTheme } from '@/lib/empresa/resolve-shell-theme'
 import { getFormatoHora } from '@/lib/empresa/get-formato-hora'
 import { getEmpresaLogoUrl } from '@/lib/empresa/get-empresa-logo'
+import { getRolNombre } from '@/lib/empresa/get-rol-nombre'
 import type { SgrhJwtClaims } from '@/types/auth'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,16 +35,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   const email = typeof data.claims.email === 'string' ? data.claims.email : 'Usuario autenticado'
-  const rol = typeof meta.rol === 'string' ? meta.rol : null
 
   // Nombre real de la empresa del tenant (RLS devuelve solo la del JWT) y el
   // tema oficial del shell — la marca propia (sucursal de la cuenta o del
   // contrato vigente), salvo que haya una marca en preview desde el selector
-  // de la barra superior; sin marca, el tema de la empresa.
-  const [empresaNombre, theme, formatoHora] = await Promise.all([
+  // de la barra superior; sin marca, el tema de la empresa. El rol se muestra
+  // por su nombre: el código del JWT es un identificador, no un texto.
+  const [empresaNombre, theme, formatoHora, rol] = await Promise.all([
     getEmpresaNombre(),
     resolveShellTheme(meta.usr_id, meta.emp_id, permisos),
     getFormatoHora(),
+    getRolNombre(typeof meta.rol === 'string' ? meta.rol : null),
   ])
   // Depende de la marca resuelta: el logo de la marca, o el de la empresa.
   const logoUrl = await getEmpresaLogoUrl(theme.logoPath)
