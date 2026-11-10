@@ -42,7 +42,6 @@ import {
   uncheckPermission,
   type PermissionGroupIcon,
 } from './permissions'
-import { BranchVersions } from './BranchVersions'
 import { roleSchema, type RoleInput, type RoleSummary, type RolesSettings } from './types'
 
 const ICONS: Record<PermissionGroupIcon, LucideIcon> = {
@@ -82,9 +81,9 @@ interface RoleEditorProps {
  */
 export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
   const router = useRouter()
-  // Solo el Kiosco es de solo lectura (cuenta de tablet con su permiso especial).
-  const readOnly = role?.sistema === true && !role.asignable
-  const esSistema = role?.sistema === true
+  // El único rol sin empresa que llega acá es el del kiosco (cuenta de tablet
+  // con su permiso especial): se ve, no se edita.
+  const readOnly = role?.sistema === true
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -105,12 +104,10 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
   })
 
   const permisos = useWatch({ control, name: 'permisos' }) ?? []
-  const sucursalId = useWatch({ control, name: 'sucursalId' })
   const selected = new Set(permisos)
 
   const actorPerms = new Set(data.actorPermisos)
   const esRolPropio = role !== undefined && role.id === data.actorRolId
-  const sucursalesOpciones = data.sucursales.filter((s) => s.activa || s.id === role?.sucursalId)
 
   /** Por qué una casilla no se puede tocar (null = se puede). */
   function lockReason(code: Permiso): string | null {
@@ -189,15 +186,10 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
   const busy = isSubmitting || deleting
 
   const title = role ? role.nombre : base ? `Copia de ${base.nombre}` : 'Nuevo rol'
-  const esVersion = role?.baseId != null
-  const canDelete = role !== undefined && !esSistema && (role.usuarios === 0 || esVersion)
+  const canDelete = role !== undefined && !readOnly && role.usuarios === 0
   const description = readOnly
     ? 'Rol de la cuenta del kiosco: no se edita.'
-    : esSistema
-      ? 'Rol del sistema: los cambios aplican en todas las sucursales. Para cambiarlo solo en una, usá «Permisos por sucursal».'
-      : esVersion
-        ? `Versión de «${role?.baseNombre ?? 'otro rol'}» solo para ${role?.sucursalNombre ?? 'una sucursal'}: sus cambios no afectan a las demás tiendas.`
-        : 'Marcá los permisos del rol. Al marcar «Editar» o «Aprobar» se marca «Ver» solo; al desmarcar «Ver», se desmarca lo que depende de él.'
+    : 'Marcá los permisos del rol. Al marcar «Editar» o «Aprobar» se marca «Ver» solo; al desmarcar «Ver», se desmarca lo que depende de él. Los cambios son solo de tu empresa.'
 
   return (
     <div className="space-y-6">
@@ -207,7 +199,7 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
         backHref="/settings/roles"
         backLabel="Volver a roles y permisos"
         actions={
-          esSistema && role && !readOnly ? (
+          role && !readOnly ? (
             <Link
               href={`/settings/roles/new?desde=${role.id}`}
               className={cn(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES.lg, 'min-h-11')}
@@ -265,43 +257,8 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
                   <p className="mt-1 text-xs text-rose-700">{errors.descripcion.message}</p>
                 )}
               </div>
-              {!readOnly && !esSistema && (
-                <div className="sm:col-span-2">
-                  <label htmlFor="rol-sucursal" className={FIELD_LABEL}>
-                    Sucursal
-                  </label>
-                  <select
-                    id="rol-sucursal"
-                    className={cn(INPUT_CLASSES, 'min-h-11 sm:max-w-sm')}
-                    value={
-                      sucursalId === null || sucursalId === undefined ? '' : String(sucursalId)
-                    }
-                    onChange={(e) =>
-                      setValue('sucursalId', e.target.value ? Number(e.target.value) : null, {
-                        shouldDirty: true,
-                      })
-                    }
-                    aria-describedby="rol-sucursal-ayuda"
-                  >
-                    <option value="">Toda la empresa</option>
-                    {sucursalesOpciones.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.activa ? s.nombre : `${s.nombre} (inactiva)`}
-                      </option>
-                    ))}
-                  </select>
-                  <p id="rol-sucursal-ayuda" className="mt-1 text-xs text-slate-500">
-                    Un rol de sucursal solo se asigna a cuentas de esa sucursal, así que cambiarlo
-                    no afecta a las demás tiendas.
-                  </p>
-                </div>
-              )}
             </div>
           </section>
-
-          {role && role.asignable && role.sucursalId === null && (
-            <BranchVersions role={role} data={data} />
-          )}
 
           <section aria-labelledby="rol-permisos" className={CARD}>
             <div className="flex flex-wrap items-center gap-3">
@@ -384,14 +341,8 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
             })}
           </section>
 
-          {esSistema && !readOnly && (
-            <Alert tone="warning">
-              Es un rol del sistema, compartido con las demás empresas que usan SGRH: al guardar, el
-              cambio les aplica también a ellas.
-            </Alert>
-          )}
           {error && <Alert tone="error">{error}</Alert>}
-          {role && !readOnly && !esSistema && !canDelete && (
+          {role && !readOnly && !canDelete && (
             <p className="text-xs text-slate-500">
               Para eliminar este rol, primero asigná otro rol a sus {role.usuarios}{' '}
               {role.usuarios === 1 ? 'usuario' : 'usuarios'} desde Usuarios.
@@ -421,7 +372,7 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
               >
                 Cancelar
               </Button>
-              {role && !esSistema && (
+              {role && (
                 <Button
                   type="button"
                   variant="danger"
@@ -499,12 +450,8 @@ export function RoleEditor({ data, role, base, initial }: RoleEditorProps) {
 
       {confirmDelete && role && (
         <ConfirmDialog
-          title={esVersion ? 'Quitar la versión de la sucursal' : 'Eliminar rol'}
-          message={
-            esVersion && role.usuarios > 0
-              ? `¿Eliminar «${role.nombre}»? Sus ${role.usuarios} ${role.usuarios === 1 ? 'usuario vuelve' : 'usuarios vuelven'} a «${role.baseNombre ?? 'el rol original'}» con sus permisos.`
-              : `¿Eliminar «${role.nombre}»? Dejará de poder asignarse. Esta acción no se puede deshacer.`
-          }
+          title="Eliminar rol"
+          message={`¿Eliminar «${role.nombre}»? Dejará de poder asignarse. Esta acción no se puede deshacer.`}
           confirmLabel="Eliminar"
           onCancel={() => setConfirmDelete(false)}
           onConfirm={onDelete}

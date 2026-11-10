@@ -989,58 +989,38 @@ export type Database = {
       sgrh_cat_roles: {
         Row: {
           rol_activo: boolean
-          rol_base_id: number | null
           rol_codigo: string
           rol_descripcion: string | null
           rol_empresa_id: number | null
           rol_id: number
           rol_nombre: string
-          rol_sucursal_id: number | null
           rol_updated_at: string | null
         }
         Insert: {
           rol_activo?: boolean
-          rol_base_id?: number | null
           rol_codigo: string
           rol_descripcion?: string | null
           rol_empresa_id?: number | null
           rol_id?: never
           rol_nombre: string
-          rol_sucursal_id?: number | null
           rol_updated_at?: string | null
         }
         Update: {
           rol_activo?: boolean
-          rol_base_id?: number | null
           rol_codigo?: string
           rol_descripcion?: string | null
           rol_empresa_id?: number | null
           rol_id?: never
           rol_nombre?: string
-          rol_sucursal_id?: number | null
           rol_updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "sgrh_cat_roles_rol_base_id_fkey"
-            columns: ["rol_base_id"]
-            isOneToOne: false
-            referencedRelation: "sgrh_cat_roles"
-            referencedColumns: ["rol_id"]
-          },
           {
             foreignKeyName: "sgrh_cat_roles_rol_empresa_id_fkey"
             columns: ["rol_empresa_id"]
             isOneToOne: false
             referencedRelation: "sgrh_empresas"
             referencedColumns: ["org_id"]
-          },
-          {
-            foreignKeyName: "sgrh_cat_roles_rol_sucursal_id_fkey"
-            columns: ["rol_sucursal_id"]
-            isOneToOne: false
-            referencedRelation: "sgrh_sucursales"
-            referencedColumns: ["suc_id"]
           },
         ]
       }
@@ -3367,15 +3347,6 @@ export type Database = {
         Args: { p_actor: string; p_empresa: number }
         Returns: number
       }
-      sgrh_customize_role_for_branch: {
-        Args: {
-          p_actor: string
-          p_empresa: number
-          p_rol_base: number
-          p_sucursal: number
-        }
-        Returns: Json
-      }
       sgrh_delete_brand: {
         Args: { p_actor: string; p_empresa: number; p_id: number }
         Returns: string
@@ -3420,7 +3391,6 @@ export type Database = {
           p_id: number | null
           p_nombre: string
           p_permisos: string[]
-          p_sucursal: number | null
         }
         Returns: number
       }

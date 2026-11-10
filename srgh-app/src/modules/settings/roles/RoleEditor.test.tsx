@@ -3,13 +3,12 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UnsavedChangesProvider } from '@/components/ui/UnsavedChangesProvider'
 import { RoleEditor } from './RoleEditor'
-import { customizeRoleForBranch, deleteRole, saveRole } from './actions'
+import { deleteRole, saveRole } from './actions'
 import type { RoleInput, RoleSummary, RolesSettings } from './types'
 
 vi.mock('./actions', () => ({
   saveRole: vi.fn(),
   deleteRole: vi.fn(),
-  customizeRoleForBranch: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 vi.mock('nextjs-nav-guard', () => ({
@@ -57,10 +56,6 @@ const supervisor: RoleSummary = {
   descripcion: 'Encargado de piso',
   sistema: false,
   asignable: true,
-  sucursalId: 10,
-  sucursalNombre: 'Tienda Infinity',
-  baseId: null,
-  baseNombre: null,
   permisos: ['EMPLEADOS_READ', 'HORARIOS_READ'],
   usuarios: 4,
 }
@@ -69,10 +64,6 @@ function data(over: Partial<RolesSettings> = {}): RolesSettings {
   return {
     propios: [supervisor],
     sistema: [],
-    sucursales: [
-      { id: 10, nombre: 'Tienda Infinity', activa: true },
-      { id: 11, nombre: 'Celulares Alex', activa: true },
-    ],
     actorRolId: 1,
     actorPermisos: TODOS,
     ...over,
@@ -82,7 +73,6 @@ function data(over: Partial<RolesSettings> = {}): RolesSettings {
 const inicial = (role: RoleSummary): RoleInput => ({
   nombre: role.nombre,
   descripcion: role.descripcion ?? '',
-  sucursalId: role.sucursalId,
   permisos: role.permisos,
 })
 
@@ -94,8 +84,7 @@ function setup(props: Partial<React.ComponentProps<typeof RoleEditor>> = {}) {
         data={props.data ?? data()}
         role={role}
         initial={
-          props.initial ??
-          (role ? inicial(role) : { nombre: '', descripcion: '', sucursalId: null, permisos: [] })
+          props.initial ?? (role ? inicial(role) : { nombre: '', descripcion: '', permisos: [] })
         }
       />
     </UnsavedChangesProvider>
@@ -143,20 +132,25 @@ describe('RoleEditor', () => {
     expect(box('Ver mi horario')).toBeEnabled()
   })
 
-  it('guarda con la sucursal elegida y vuelve al listado', async () => {
+  it('guarda los permisos marcados y vuelve al listado', async () => {
     vi.mocked(saveRole).mockResolvedValue({ ok: true, data: 40 })
     setup()
-    await userEvent.selectOptions(screen.getByLabelText('Sucursal'), 'Celulares Alex')
+    await userEvent.click(box('Ver nómina'))
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
     await waitFor(() =>
       expect(saveRole).toHaveBeenCalledWith(40, {
         nombre: 'Supervisor de Tienda',
         descripcion: 'Encargado de piso',
-        sucursalId: 11,
-        permisos: ['EMPLEADOS_READ', 'HORARIOS_READ'],
+        permisos: ['EMPLEADOS_READ', 'HORARIOS_READ', 'NOMINA_READ'],
       })
     )
     expect(push).toHaveBeenCalledWith('/settings/roles')
+  })
+
+  it('un rol no se ata a una sucursal: el editor no ofrece elegirla', () => {
+    setup()
+    expect(screen.queryByLabelText('Sucursal')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Permisos por sucursal' })).not.toBeInTheDocument()
   })
 
   it('muestra el error de la RPC sin salir de la pantalla', async () => {
@@ -182,95 +176,11 @@ describe('RoleEditor', () => {
     expect(push).toHaveBeenCalledWith('/settings/roles')
   })
 
-  it('un rol del sistema se edita, sin sucursal ni eliminar, con aviso de alcance', async () => {
-    vi.mocked(saveRole).mockResolvedValue({ ok: true, data: 4 })
-    const gerente = {
-      ...supervisor,
-      id: 4,
-      nombre: 'Gerente de Sucursal',
-      sistema: true,
-      sucursalId: null,
-      sucursalNombre: null,
-    }
-    setup({ role: gerente, data: data({ propios: [], sistema: [gerente] }) })
-    expect(box('Ver empleados')).toBeEnabled()
-    expect(
-      screen.queryByLabelText('Sucursal', { selector: '#rol-sucursal' })
-    ).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Eliminar rol' })).not.toBeInTheDocument()
-    expect(screen.getByText(/compartido con las demás empresas/)).toBeInTheDocument()
-    await userEvent.click(box('Ver nómina'))
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
-    await waitFor(() =>
-      expect(saveRole).toHaveBeenCalledWith(4, expect.objectContaining({ sucursalId: null }))
-    )
-  })
-
   it('el rol del kiosco se ve en solo lectura', () => {
-    const kiosco = {
-      ...supervisor,
-      id: 13,
-      nombre: 'Kiosco',
-      sistema: true,
-      asignable: false,
-      sucursalId: null,
-      sucursalNombre: null,
-    }
+    const kiosco = { ...supervisor, id: 13, nombre: 'Kiosco', sistema: true, asignable: false }
     setup({ role: kiosco, data: data({ propios: [], sistema: [kiosco] }) })
     expect(box('Ver empleados')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument()
-  })
-
-  it('un rol del sistema se personaliza para una sucursal y abre la versión', async () => {
-    vi.mocked(customizeRoleForBranch).mockResolvedValue({
-      ok: true,
-      data: { id: 77, creado: true, movidos: 2, omitidos: 0 },
-    })
-    const gerente = {
-      ...supervisor,
-      id: 4,
-      nombre: 'Gerente de Sucursal',
-      sistema: true,
-      sucursalId: null,
-      sucursalNombre: null,
-    }
-    setup({ role: gerente, data: data({ propios: [], sistema: [gerente] }) })
-    const panel = screen.getByRole('region', { name: 'Permisos por sucursal' })
-    await userEvent.selectOptions(within(panel).getByLabelText('Sucursal'), 'Celulares Alex')
-    await userEvent.click(
-      within(panel).getByRole('button', { name: 'Personalizar para esta sucursal' })
-    )
-    await waitFor(() => expect(customizeRoleForBranch).toHaveBeenCalledWith(4, 11))
-    expect(push).toHaveBeenCalledWith('/settings/roles/77')
-  })
-
-  it('lista las versiones existentes y no ofrece repetir esa sucursal', () => {
-    const gerente = {
-      ...supervisor,
-      id: 4,
-      nombre: 'Gerente de Sucursal',
-      sistema: true,
-      sucursalId: null,
-      sucursalNombre: null,
-    }
-    const version = { ...supervisor, id: 50, baseId: 4, baseNombre: 'Gerente de Sucursal' }
-    setup({ role: gerente, data: data({ propios: [version], sistema: [gerente] }) })
-    const panel = screen.getByRole('region', { name: 'Permisos por sucursal' })
-    expect(within(panel).getByRole('link', { name: /Tienda Infinity/ })).toHaveAttribute(
-      'href',
-      '/settings/roles/50'
-    )
-    const opciones = within(within(panel).getByLabelText('Sucursal')).getAllByRole('option')
-    expect(opciones.map((o) => o.textContent)).toEqual(['Celulares Alex'])
-  })
-
-  it('una versión de sucursal con usuarios se puede quitar: vuelven al rol base', async () => {
-    vi.mocked(deleteRole).mockResolvedValue({ ok: true, data: 'eliminado' })
-    const version = { ...supervisor, baseId: 4, baseNombre: 'Gerente de Sucursal' }
-    setup({ role: version, data: data({ propios: [version] }) })
-    await userEvent.click(screen.getByRole('button', { name: 'Eliminar rol' }))
-    expect(screen.getByText(/vuelven a «Gerente de Sucursal»/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Eliminar' }))
-    await waitFor(() => expect(deleteRole).toHaveBeenCalledWith(40))
+    expect(screen.queryByRole('button', { name: 'Eliminar rol' })).not.toBeInTheDocument()
   })
 })

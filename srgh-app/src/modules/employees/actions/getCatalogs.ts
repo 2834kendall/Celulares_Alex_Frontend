@@ -292,11 +292,11 @@ export async function getTiposDocumento(): Promise<GetCatalogoResult> {
 }
 
 /**
- * Roles asignables — los del sistema activos y los propios de la empresa del
- * JWT (Configuración → Roles y permisos). La RLS ya oculta los de otras
- * empresas; el filtro explícito es defensa en profundidad. Un rol de sucursal
- * se rotula con su sucursal: el trigger `uer_rol_empresa` rechaza asignarlo a
- * una cuenta de otra sucursal.
+ * Roles asignables: los vigentes de la empresa del JWT (Configuración → Roles
+ * y permisos). Las filas sin empresa son plantillas para sembrar empresas
+ * nuevas y no se ofrecen (el rol del kiosco tampoco: está inactivo y se asigna
+ * desde Sucursales y kioscos). Un rol vale para toda la empresa: la sucursal
+ * la decide la cuenta, no el rol.
  */
 export async function getRoles(): Promise<GetCatalogoResult> {
   const claims = await requirePermission(PERMISOS.USUARIOS_WRITE)
@@ -312,18 +312,10 @@ export async function getRoles(): Promise<GetCatalogoResult> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('sgrh_cat_roles')
-    .select('rol_id, rol_nombre, rol_sucursal_id, sgrh_sucursales ( suc_nombre )')
+    .select('rol_id, rol_nombre')
     .eq('rol_activo', true)
-    .or(`rol_empresa_id.is.null,rol_empresa_id.eq.${empresa.data}`)
+    .eq('rol_empresa_id', empresa.data)
     .order('rol_nombre', { ascending: true })
-    .returns<
-      {
-        rol_id: number
-        rol_nombre: string
-        rol_sucursal_id: number | null
-        sgrh_sucursales: { suc_nombre: string } | null
-      }[]
-    >()
 
   if (error) {
     return { ok: false, error: CATALOG_ERROR }
@@ -331,11 +323,6 @@ export async function getRoles(): Promise<GetCatalogoResult> {
 
   return {
     ok: true,
-    data: data.map((r) => ({
-      id: r.rol_id,
-      nombre: r.sgrh_sucursales?.suc_nombre
-        ? `${r.rol_nombre} · solo ${r.sgrh_sucursales.suc_nombre}`
-        : r.rol_nombre,
-    })),
+    data: data.map((r) => ({ id: r.rol_id, nombre: r.rol_nombre })),
   }
 }

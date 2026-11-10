@@ -2,9 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Building2, Copy, Layers, Lock, Plus, Search, Store } from 'lucide-react'
+import { Copy, Lock, Plus, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
-import { Tabs, type TabDefinition } from '@/components/ui/Tabs'
 import { normalizeSearchText } from '@/components/ui/SearchSelect'
 import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '@/components/ui/Button'
 import { cn } from '@/lib/utils/cn'
@@ -17,13 +16,7 @@ const assignable = new Set<string>(ASSIGNABLE_PERMISSIONS)
 const linkButton = (variant: 'primary' | 'secondary') =>
   cn(BUTTON_BASE, BUTTON_VARIANTS[variant], BUTTON_SIZES.lg, 'min-h-11')
 
-/**
- * `enPestana`: la tarjeta está dentro de la pestaña de su sucursal (o de
- * «Toda la empresa»), que ya dice dónde aplica: no se repite la sucursal ni
- * «Versión de…», y la versión de un rol se ve con el nombre del rol base.
- */
-function RoleCard({ role, enPestana = false }: { role: RoleSummary; enPestana?: boolean }) {
-  const nombre = enPestana && role.baseNombre ? role.baseNombre : role.nombre
+function RoleCard({ role }: { role: RoleSummary }) {
   const permisos = role.permisos.filter((p) => assignable.has(p)).length
   return (
     <li
@@ -36,27 +29,17 @@ function RoleCard({ role, enPestana = false }: { role: RoleSummary; enPestana?: 
         <div className="flex flex-wrap items-center gap-2">
           {!role.asignable && <Lock aria-hidden="true" className="h-4 w-4 text-slate-500" />}
           {!role.asignable ? (
-            <span className="break-words font-bold text-slate-900">{nombre}</span>
+            <span className="break-words font-bold text-slate-900">{role.nombre}</span>
           ) : (
             <Link
               href={`/settings/roles/${role.id}`}
               className="break-words font-bold text-slate-900 hover:underline"
             >
-              {nombre}
+              {role.nombre}
             </Link>
-          )}
-          {!role.sistema && !enPestana && (
-            <Badge tone={role.sucursalId ? 'blue' : 'slate'}>
-              {role.sucursalNombre ?? (role.sucursalId ? 'Sucursal' : 'Toda la empresa')}
-            </Badge>
           )}
           {!role.asignable && <Badge tone="slate">No asignable</Badge>}
         </div>
-        {role.baseNombre && !enPestana && (
-          <p className="mt-1 text-sm text-slate-600">
-            Versión de «{role.baseNombre}» para esta sucursal
-          </p>
-        )}
         {role.descripcion && <p className="mt-1 text-sm text-slate-600">{role.descripcion}</p>}
       </div>
       <dl className="flex shrink-0 gap-7">
@@ -106,131 +89,26 @@ function RoleCard({ role, enPestana = false }: { role: RoleSummary; enPestana?: 
 /** El rol coincide si su nombre contiene el texto, sin distinguir mayúsculas ni tildes. */
 function matches(role: RoleSummary, query: string): boolean {
   const q = normalizeSearchText(query.trim())
-  return (
-    q === '' ||
-    normalizeSearchText(role.nombre).includes(q) ||
-    normalizeSearchText(role.baseNombre ?? '').includes(q)
-  )
-}
-
-function RoleList({
-  roles,
-  vacio,
-  enPestana = false,
-}: {
-  roles: RoleSummary[]
-  vacio: string
-  enPestana?: boolean
-}) {
-  if (roles.length === 0)
-    return (
-      <p
-        role="status"
-        className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600"
-      >
-        {vacio}
-      </p>
-    )
-  return (
-    <ul className="space-y-3">
-      {roles.map((r) => (
-        <RoleCard key={r.id} role={r} enPestana={enPestana} />
-      ))}
-    </ul>
-  )
+  return q === '' || normalizeSearchText(role.nombre).includes(q)
 }
 
 /**
- * Roles como aplican en una sucursal: cada rol general (del sistema o de toda
- * la empresa) se reemplaza por su versión de esa sucursal si existe, y al final
- * van los roles creados solo para ella. Así un rol personalizado aparece una
- * vez, no dos.
- */
-function rolesDeSucursal(
-  sucursalId: number,
-  generales: RoleSummary[],
-  propios: RoleSummary[]
-): RoleSummary[] {
-  const deLaSucursal = propios.filter((r) => r.sucursalId === sucursalId)
-  const versionDe = new Map(
-    deLaSucursal.filter((r) => r.baseId !== null).map((r) => [r.baseId as number, r])
-  )
-  return [
-    ...generales.map((r) => versionDe.get(r.id) ?? r),
-    ...deLaSucursal.filter((r) => r.baseId === null),
-  ]
-}
-
-/** Pestañas globales del sistema: la elegida queda en `?tab=` y sobrevive a recargar. */
-function roleTabs(data: RolesSettings, query: string): TabDefinition<string>[] {
-  const filtrar = (list: RoleSummary[]) => list.filter((r) => matches(r, query))
-  const count = (list: RoleSummary[]) => ` (${list.length})`
-  // Los del sistema primero, los creados en la empresa después.
-  const generales = [...data.sistema, ...data.propios.filter((r) => r.sucursalId === null)]
-  const todas = filtrar([...data.sistema, ...data.propios])
-  const empresa = filtrar(generales)
-  const sucursales = data.sucursales.filter(
-    (s) => s.activa || data.propios.some((r) => r.sucursalId === s.id)
-  )
-
-  return [
-    {
-      id: 'todas',
-      label: `Todas${count(todas)}`,
-      icon: Layers,
-      content: <RoleList roles={todas} vacio="Ningún rol se llama así. Probá con otra palabra." />,
-    },
-    {
-      id: 'empresa',
-      label: `Toda la empresa${count(empresa)}`,
-      shortLabel: 'Empresa',
-      icon: Building2,
-      content: (
-        <RoleList
-          roles={empresa}
-          enPestana
-          vacio="Ningún rol de toda la empresa coincide con la búsqueda."
-        />
-      ),
-    },
-    ...sucursales.map((s) => {
-      const roles = filtrar(
-        rolesDeSucursal(
-          s.id,
-          generales.filter((r) => r.asignable),
-          data.propios
-        )
-      )
-      return {
-        id: `sucursal-${s.id}`,
-        label: `${s.nombre}${count(roles)}`,
-        icon: Store,
-        content: (
-          <RoleList
-            roles={roles}
-            enPestana
-            vacio={`Ningún rol de ${s.nombre} coincide con la búsqueda.`}
-          />
-        ),
-      }
-    }),
-  ]
-}
-
-/**
- * Listado de roles en pestañas: todos, los de toda la empresa y los de cada
- * sucursal (como aplican ahí). El buscador filtra dentro de la pestaña.
+ * Listado de roles con buscador: los de la empresa y, al final, el del kiosco
+ * (el único sin empresa que llega a la pantalla).
+ *
+ * Los roles valen para toda la empresa: no hay filtro por sucursal porque el
+ * rol no decide la tienda — eso lo decide la sucursal de cada cuenta.
  */
 export function RolesPanel({ data }: { data: RolesSettings }) {
   const [query, setQuery] = useState('')
+  const roles = [...data.propios, ...data.sistema].filter((r) => matches(r, query))
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <p className="max-w-prose text-sm text-slate-600">
           Un rol es un paquete de permisos. Cada usuario tiene uno, y su sucursal decide hasta dónde
-          alcanza. Los roles del sistema aplican en todas las sucursales; para cambiar uno solo en
-          una sucursal, abrilo y usá «Permisos por sucursal».
+          alcanza. Los roles son de tu empresa: cambiarlos no afecta a otras.
         </p>
         <Link href="/settings/roles/new" className={linkButton('primary')}>
           <Plus aria-hidden="true" className="h-4 w-4" />
@@ -254,7 +132,20 @@ export function RolesPanel({ data }: { data: RolesSettings }) {
         />
       </label>
 
-      <Tabs idPrefix="roles" ariaLabel="Filtrar roles por sucursal" tabs={roleTabs(data, query)} />
+      {roles.length === 0 ? (
+        <p
+          role="status"
+          className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600"
+        >
+          Ningún rol se llama así. Probá con otra palabra.
+        </p>
+      ) : (
+        <ul aria-label="Roles" className="space-y-3">
+          {roles.map((r) => (
+            <RoleCard key={r.id} role={r} />
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

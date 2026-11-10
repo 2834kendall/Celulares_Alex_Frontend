@@ -6,7 +6,7 @@ import { getRolesSettings } from '@/modules/settings/roles/actions'
 import { RoleEditor } from '@/modules/settings/roles/RoleEditor'
 import { sortPermissions } from '@/modules/settings/roles/permissions'
 
-/** Editar un rol propio, o ver (solo lectura) uno del sistema. */
+/** Editar un rol de la empresa, o ver (solo lectura) el del kiosco. */
 export default async function RolePage({ params }: { params: Promise<{ id: string }> }) {
   await requireSettingsSection('roles')
   const { id } = await params
@@ -31,7 +31,6 @@ export default async function RolePage({ params }: { params: Promise<{ id: strin
       initial={{
         nombre: role.nombre,
         descripcion: role.descripcion ?? '',
-        sucursalId: role.sucursalId,
         permisos: sortPermissions(role.permisos),
       }}
     />

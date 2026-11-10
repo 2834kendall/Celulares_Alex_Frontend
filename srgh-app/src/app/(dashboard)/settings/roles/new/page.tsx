@@ -32,13 +32,12 @@ export default async function NewRolePage({
     ? {
         nombre: `Copia de ${base.nombre}`.slice(0, 60),
         descripcion: base.descripcion ?? '',
-        sucursalId: base.sucursalId,
-        // Un rol del sistema puede traer combinaciones viejas (o el permiso
-        // del kiosco): la copia arranca ya con las dependencias completas y
-        // solo con lo asignable.
+        // Un rol copiado de una plantilla vieja puede traer combinaciones que
+        // hoy no se permiten: la copia arranca ya con las dependencias
+        // completas y solo con lo asignable.
         permisos: withRequirements(base.permisos),
       }
-    : { nombre: '', descripcion: '', sucursalId: null, permisos: [] }
+    : { nombre: '', descripcion: '', permisos: [] }
 
   return <RoleEditor key={baseId ?? 'nuevo'} data={r.data} base={base} initial={initial} />
 }

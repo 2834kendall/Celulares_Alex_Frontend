@@ -166,13 +166,8 @@ describe('getCatalogs (server actions)', () => {
     const client = mockClient({
       sgrh_cat_roles: {
         data: [
-          { rol_id: 6, rol_nombre: 'Empleado', rol_sucursal_id: null, sgrh_sucursales: null },
-          {
-            rol_id: 40,
-            rol_nombre: 'Supervisor',
-            rol_sucursal_id: 10,
-            sgrh_sucursales: { suc_nombre: 'Tienda Infinity' },
-          },
+          { rol_id: 6, rol_nombre: 'Empleado' },
+          { rol_id: 40, rol_nombre: 'Supervisor' },
         ],
         error: null,
       },
@@ -184,13 +179,15 @@ describe('getCatalogs (server actions)', () => {
       ok: true,
       data: [
         { id: 6, nombre: 'Empleado' },
-        { id: 40, nombre: 'Supervisor · solo Tienda Infinity' },
+        { id: 40, nombre: 'Supervisor' },
       ],
     })
     expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.USUARIOS_WRITE)
-    // Solo los del sistema y los propios de la empresa del JWT.
+    // Solo los de la empresa del JWT: las plantillas sin empresa no se ofrecen.
     const query = client.from.mock.results[0].value
-    expect(query.or).toHaveBeenCalledWith('rol_empresa_id.is.null,rol_empresa_id.eq.1')
+    expect(query.eq).toHaveBeenCalledWith('rol_empresa_id', 1)
+    expect(query.eq).toHaveBeenCalledWith('rol_activo', true)
+    expect(query.or).not.toHaveBeenCalled()
   })
 
   it('getRoles falla cerrado si el JWT no trae empresa', async () => {
