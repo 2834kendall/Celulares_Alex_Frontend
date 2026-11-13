@@ -150,10 +150,16 @@ jobs:
   # archivo), asi que el job duraba la suma de todas: era el mas lento del CI.
   # Se reparten en shards y cada uno levanta su propio Supabase: ninguno
   # comparte base con otro, y Playwright mantiene juntas y en orden las
-  # pruebas de un mismo archivo. Mas de 3 no rinde: cada shard paga ~2.5 min
-  # fijos de arranque (Supabase, navegador, dependencias).
+  # pruebas de un mismo archivo.
+  #
+  # Por que 4: Playwright corta por archivo completo y en orden. Con 3, los
+  # dos archivos mas pesados (brand-context y brands) caian juntos en el
+  # shard 1 (30 de 54 pruebas, medido); con 4 queda cada uno solo. Mas no
+  # rinde: el piso es el archivo mas grande (~100 s) mas los ~2.5 min fijos
+  # de arranque de cada shard (Supabase, navegador, dependencias). Si la
+  # suite crece, conviene volver a mirar el reparto en el log de cada shard.
   e2e:
-    name: Browser & Supabase integration (shard ${{ matrix.shard }}/3)
+    name: Browser & Supabase integration (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -162,7 +168,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -200,7 +206,7 @@ jobs:
       # Sin `--` antes del flag, igual que en los tests unitarios: pnpm 11 se
       # lo traga y cada shard correria la suite completa.
       - name: Browser and HTTP integration tests
-        run: pnpm test:e2e --shard=${{ matrix.shard }}/3
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/4
       # start.log va incluido para poder ver en que se va el arranque de
       # Supabase (descarga de imagenes vs. migraciones).
       - name: Publish browser report
