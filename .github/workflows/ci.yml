@@ -183,9 +183,15 @@ jobs:
         run: pnpm install --frozen-lockfile --prefer-offline
       - name: Prepare isolated Supabase project
         run: pnpm test:e2e:prepare
+      # Cada linea del log lleva la hora: sin eso no se distingue cuanto del
+      # arranque es descarga de imagenes y cuanto migraciones. `pipefail` hace
+      # que un fallo de `supabase start` siga tumbando el paso aunque su
+      # salida pase por el bucle.
       - name: Start isolated services
         run: |
-          pnpm exec supabase start --workdir .e2e --exclude=studio --exclude=imgproxy --exclude=realtime --exclude=edge-runtime --exclude=vector --exclude=logflare > .e2e/start.log 2>&1
+          set -o pipefail
+          pnpm exec supabase start --workdir .e2e --exclude=studio --exclude=imgproxy --exclude=realtime --exclude=edge-runtime --exclude=vector --exclude=logflare 2>&1 \
+            | while IFS= read -r line; do printf '%(%H:%M:%S)T %s\n' -1 "$line"; done > .e2e/start.log
           pnpm exec supabase status --workdir .e2e --output json > .e2e/connection.json
       # El binario de Chromium se cachea; la clave cambia con el lockfile, que
       # es donde queda fijada la version de Playwright.
@@ -221,9 +227,10 @@ jobs:
             srgh-app/.e2e/start.log
           retention-days: 14
           if-no-files-found: warn
-      - name: Stop only the isolated test services
-        if: always()
-        run: pnpm exec supabase stop --workdir .e2e --project-id sgrh105-e2e
+      # Sin paso de `supabase stop`: el runner de GitHub se destruye al
+      # terminar el job y apagar los contenedores costaba ~12 s por shard. En
+      # local si hace falta (ver tests/e2e/README.md), y habria que volver a
+      # ponerlo si algun dia se usan runners propios.
 
   # Compila la app. Atrapa lo que lint, typecheck y tests
   # no ven: limites Server/Client mal puestos, imports que solo revientan al
