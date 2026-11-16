@@ -183,6 +183,14 @@ jobs:
         run: pnpm install --frozen-lockfile --prefer-offline
       - name: Prepare isolated Supabase project
         run: pnpm test:e2e:prepare
+      # Los puertos del stack aislado (55420-55429) caen dentro del rango
+      # efimero de Linux (32768-60999): una conexion saliente cualquiera, por
+      # ejemplo al bajar imagenes, puede tomar uno justo antes de que Docker lo
+      # publique, y el arranque falla con "address already in use" (paso en
+      # dev con a0c5c30, puerto 55424). Reservarlos los saca del reparto
+      # automatico sin impedir que Docker los use.
+      - name: Reserve the isolated stack ports
+        run: sudo sysctl -w net.ipv4.ip_local_reserved_ports=55420-55429
       # Cada linea del log lleva la hora: sin eso no se distingue cuanto del
       # arranque es descarga de imagenes y cuanto migraciones. `pipefail` hace
       # que un fallo de `supabase start` siga tumbando el paso aunque su
