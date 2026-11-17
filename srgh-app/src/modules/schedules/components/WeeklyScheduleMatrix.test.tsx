@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { WeeklyScheduleMatrix } from './WeeklyScheduleMatrix'
 import { assignDaySchedule } from '@/modules/schedules/actions/assignDaySchedule'
 import { assignCustomScheduleBulk } from '@/modules/schedules/actions/assignCustomScheduleBulk'
+import { assignSplitSchedule } from '@/modules/schedules/actions/assignSplitSchedule'
 import { clearDayAssignment } from '@/modules/schedules/actions/clearDayAssignment'
 import { pasteWeeklySchedule } from '@/modules/schedules/actions/pasteWeeklySchedule'
 import { getScheduleSuggestion } from '@/modules/schedules/actions/getScheduleSuggestion'
@@ -35,6 +36,9 @@ vi.mock('@/modules/schedules/actions/assignCustomScheduleBulk', () => ({
   assignCustomScheduleBulk: vi.fn(),
 }))
 
+vi.mock('@/modules/schedules/actions/assignSplitSchedule', () => ({
+  assignSplitSchedule: vi.fn(),
+}))
 vi.mock('@/modules/schedules/actions/clearDayAssignment', () => ({
   clearDayAssignment: vi.fn(),
 }))
@@ -49,6 +53,7 @@ vi.mock('@/modules/schedules/actions/getScheduleSuggestion', () => ({
 
 const mockAssignDaySchedule = vi.mocked(assignDaySchedule)
 const mockAssignCustomScheduleBulk = vi.mocked(assignCustomScheduleBulk)
+const mockAssignSplitSchedule = vi.mocked(assignSplitSchedule)
 const mockClearDayAssignment = vi.mocked(clearDayAssignment)
 const mockPasteWeeklySchedule = vi.mocked(pasteWeeklySchedule)
 const mockGetScheduleSuggestion = vi.mocked(getScheduleSuggestion)
@@ -58,6 +63,15 @@ const WEEK_DATES = getWeekDates(WEEK_START)
 
 const schedules: ScheduleRow[] = [
   { hor_id: 1, hor_nombre: 'Turno A', hor_activo: true } as ScheduleRow,
+  {
+    hor_id: 9,
+    hor_nombre: 'Partida',
+    hor_activo: true,
+    hor_hora_entrada: '07:00:00',
+    hor_hora_salida: '11:00:00',
+    hor_hora_entrada_2: '16:00:00',
+    hor_hora_salida_2: '20:00:00',
+  } as ScheduleRow,
 ]
 
 const sucursales: SucursalOption[] = [
@@ -498,5 +512,550 @@ describe('<WeeklyScheduleMatrix />', () => {
         ],
       })
     )
+  })
+
+  describe('varios tramos en un dia (SGRH-110)', () => {
+    // Lunes: 8-12 en Central y 13-17 en Norte, ambas sucursales ya usadas.
+    function twoTramoRow(): EmployeeWeekRow {
+      return makeRow({
+        weeklyTotal: 8,
+        days: makeDays({
+          0: {
+            assignmentId: 7,
+            scheduleId: 1,
+            scheduleName: 'Turno A',
+            hours: 4,
+            branchId: 100,
+            branchName: 'Sucursal Central',
+            extraTramos: [
+              {
+                date: WEEK_DATES[0],
+                assignmentId: 8,
+                scheduleId: 2,
+                scheduleName: 'Turno B',
+                startTime: '13:00:00',
+                endTime: '17:00:00',
+                isDayOff: false,
+                hours: 4,
+                branchId: 200,
+                branchName: 'Sucursal Norte',
+              },
+            ],
+          },
+        }),
+      })
+    }
+
+    it('muestra cada tramo del dia con su horario', () => {
+      renderMatrix([twoTramoRow()])
+
+      expect(screen.getAllByText('Turno A').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Turno B').length).toBeGreaterThan(0)
+      // Un selector de sucursal por tramo (vista movil + vista de escritorio).
+      expect(screen.getAllByLabelText('Sucursal de Ana Perez el Lunes')).toHaveLength(4)
+    })
+
+    it('la etiqueta de horas del dia suma todos los tramos (vista movil)', () => {
+      renderMatrix([twoTramoRow()])
+
+      expect(screen.getAllByText('8 h').length).toBeGreaterThan(0)
+    })
+
+    it('quitar el horario de un tramo extra borra solo esa fila', async () => {
+      mockClearDayAssignment.mockResolvedValue({ ok: true })
+      renderMatrix([twoTramoRow()])
+
+      // Orden en el DOM: tramo 1 y tramo 2 de la vista movil, luego los de escritorio.
+      const selects = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
+      await chooseFrom(selects[1], 'Asignar horario')
+
+      await waitFor(() => expect(mockClearDayAssignment).toHaveBeenCalledWith(8))
+      expect(mockClearDayAssignment).toHaveBeenCalledTimes(1)
+    })
+
+    it('agrega un segundo tramo en otra sucursal con el horario elegido', async () => {
+      mockAssignDaySchedule.mockResolvedValue({ ok: true })
+      const user = userEvent.setup()
+      renderMatrix([
+        makeRow({
+          days: makeDays({
+            0: { assignmentId: 7, scheduleId: 1, scheduleName: 'Turno A', branchId: 100 },
+          }),
+        }),
+      ])
+
+      await user.click(screen.getAllByLabelText('Agregar tramo para Ana Perez el Lunes')[0])
+
+      // La sucursal propuesta es la primera que todavia no tiene tramo ese dia.
+      const [branchSelect] = screen.getAllByLabelText(
+        'Sucursal del nuevo tramo de Ana Perez el Lunes'
+      )
+      expect(branchSelect).toHaveTextContent('Sucursal Norte')
+
+      const [scheduleSelect] = screen.getAllByLabelText(
+        'Horario del nuevo tramo de Ana Perez el Lunes'
+      )
+      await chooseFrom(scheduleSelect, 'Turno A')
+
+      await waitFor(() =>
+        expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+          expect.objectContaining({
+            assignmentId: null,
+            branchId: 200,
+            date: WEEK_DATES[0],
+            scheduleId: 1,
+            isDayOff: false,
+          })
+        )
+      )
+      // El tramo existente no se toca.
+      expect(mockAssignDaySchedule).toHaveBeenCalledTimes(1)
+    })
+
+    it('elegir "Personalizado" en el tramo nuevo abre el modal sin guardar nada', async () => {
+      const user = userEvent.setup()
+      renderMatrix([
+        makeRow({
+          days: makeDays({
+            0: { assignmentId: 7, scheduleId: 1, scheduleName: 'Turno A', branchId: 100 },
+          }),
+        }),
+      ])
+
+      await user.click(screen.getAllByLabelText('Agregar tramo para Ana Perez el Lunes')[0])
+      const [scheduleSelect] = screen.getAllByLabelText(
+        'Horario del nuevo tramo de Ana Perez el Lunes'
+      )
+      await chooseFrom(scheduleSelect, 'Personalizado')
+
+      expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+      expect(await screen.findByText('Horario personalizado')).toBeInTheDocument()
+    })
+
+    it('cancelar descarta el tramo nuevo sin guardar', async () => {
+      const user = userEvent.setup()
+      renderMatrix([
+        makeRow({
+          days: makeDays({
+            0: { assignmentId: 7, scheduleId: 1, scheduleName: 'Turno A', branchId: 100 },
+          }),
+        }),
+      ])
+
+      await user.click(screen.getAllByLabelText('Agregar tramo para Ana Perez el Lunes')[0])
+      await user.click(screen.getAllByRole('button', { name: 'Cancelar' })[0])
+
+      expect(
+        screen.queryAllByLabelText('Horario del nuevo tramo de Ana Perez el Lunes')
+      ).toHaveLength(0)
+      expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+    })
+
+    it('no ofrece agregar tramo cuando todas las sucursales ya tienen uno', () => {
+      renderMatrix([twoTramoRow()])
+
+      expect(screen.queryAllByLabelText('Agregar tramo para Ana Perez el Lunes')).toHaveLength(0)
+    })
+
+    it.each([
+      ['un dia sin asignar', makeDays()],
+      ['un dia de descanso', makeDays({ 0: { assignmentId: 7, isDayOff: true, branchId: 100 } })],
+    ])('no ofrece agregar tramo en %s', (_name, days) => {
+      renderMatrix([makeRow({ days })])
+
+      expect(screen.queryAllByLabelText('Agregar tramo para Ana Perez el Lunes')).toHaveLength(0)
+    })
+
+    it('sin permiso de escritura no ofrece agregar tramo', () => {
+      renderMatrix(
+        [
+          makeRow({
+            days: makeDays({
+              0: { assignmentId: 7, scheduleId: 1, scheduleName: 'Turno A', branchId: 100 },
+            }),
+          }),
+        ],
+        false
+      )
+
+      expect(screen.queryAllByLabelText('Agregar tramo para Ana Perez el Lunes')).toHaveLength(0)
+    })
+
+    it('una ausencia bloquea el dia entero y oculta los tramos', () => {
+      renderMatrix([twoTramoRow()], true, [
+        {
+          employmentHistoryId: 1,
+          date: WEEK_DATES[0],
+          tipoNombre: 'Incapacidad',
+          isIntraday: false,
+        },
+      ])
+
+      expect(screen.getAllByText('Incapacidad').length).toBeGreaterThan(0)
+      expect(screen.queryAllByText('Turno B')).toHaveLength(0)
+      expect(screen.queryAllByLabelText('Agregar tramo para Ana Perez el Lunes')).toHaveLength(0)
+    })
+
+    describe('copiar, pegar y sugerir', () => {
+      const pasteButton = () =>
+        screen.getByRole('button', { name: 'Pegar el horario copiado en esta vista' })
+      const copyButton = () =>
+        screen.getByRole('button', { name: 'Copiar el horario de esta vista' })
+
+      it('pegar lleva los dos tramos, cada uno con su sucursal', async () => {
+        const user = userEvent.setup()
+        mockPasteWeeklySchedule.mockResolvedValue({ ok: true })
+        renderMatrix([twoTramoRow()])
+
+        await user.click(copyButton())
+        await user.click(pasteButton())
+
+        await waitFor(() => expect(mockPasteWeeklySchedule).toHaveBeenCalledTimes(1))
+        const { employees } = mockPasteWeeklySchedule.mock.calls[0][0]
+        const monday = employees[0].days.find((day) => day.date === WEEK_DATES[0])
+
+        expect(monday).toMatchObject({
+          assignmentId: 7,
+          branchId: 100,
+          scheduleId: 1,
+          isDayOff: false,
+          extraTramos: [{ branchId: 200, scheduleId: 2 }],
+          // El destino ya tenia ese tramo extra: se reemplaza, no se duplica.
+          replaceTramoIds: [8],
+        })
+      })
+
+      it('un dia de un solo tramo se pega como siempre, sin campos de tramos', async () => {
+        const user = userEvent.setup()
+        mockPasteWeeklySchedule.mockResolvedValue({ ok: true })
+        renderMatrix([
+          makeRow({
+            days: makeDays({ 0: { assignmentId: 7, scheduleId: 1, scheduleName: 'Turno A' } }),
+          }),
+        ])
+
+        await user.click(copyButton())
+        await user.click(pasteButton())
+
+        await waitFor(() => expect(mockPasteWeeklySchedule).toHaveBeenCalledTimes(1))
+        const monday = mockPasteWeeklySchedule.mock.calls[0][0].employees[0].days[0]
+        expect(monday).not.toHaveProperty('extraTramos')
+        expect(monday).not.toHaveProperty('replaceTramoIds')
+      })
+
+      it('pegar un dia de un tramo sobre uno de dos manda reemplazar el tramo extra del destino', async () => {
+        const user = userEvent.setup()
+        mockPasteWeeklySchedule.mockResolvedValue({ ok: true })
+
+        // Semana origen: lunes de un solo tramo. Se copia y se desmonta.
+        const first = renderMatrix([
+          makeRow({
+            days: makeDays({ 0: { assignmentId: 1, scheduleId: 1, scheduleName: 'Turno A' } }),
+          }),
+        ])
+        await user.click(copyButton())
+        first.unmount()
+
+        // Semana destino: el mismo colaborador con dos tramos el lunes.
+        renderMatrix([twoTramoRow()])
+        await user.click(pasteButton())
+
+        await waitFor(() => expect(mockPasteWeeklySchedule).toHaveBeenCalledTimes(1))
+        const monday = mockPasteWeeklySchedule.mock.calls[0][0].employees[0].days[0]
+        expect(monday).toMatchObject({ assignmentId: 7, scheduleId: 1, replaceTramoIds: [8] })
+        expect(monday).not.toHaveProperty('extraTramos')
+      })
+
+      it('pegar un dia de dos tramos sobre uno sin asignar los crea', async () => {
+        const user = userEvent.setup()
+        mockPasteWeeklySchedule.mockResolvedValue({ ok: true })
+
+        const first = renderMatrix([twoTramoRow()])
+        await user.click(copyButton())
+        first.unmount()
+
+        renderMatrix([makeRow()])
+        await user.click(pasteButton())
+
+        await waitFor(() => expect(mockPasteWeeklySchedule).toHaveBeenCalledTimes(1))
+        const monday = mockPasteWeeklySchedule.mock.calls[0][0].employees[0].days.find(
+          (day) => day.date === WEEK_DATES[0]
+        )
+        expect(monday).toMatchObject({
+          assignmentId: null,
+          branchId: 100,
+          extraTramos: [{ branchId: 200, scheduleId: 2 }],
+        })
+        expect(monday).not.toHaveProperty('replaceTramoIds')
+      })
+
+      it('un dia bloqueado por ausencia no se toca al pegar', async () => {
+        const user = userEvent.setup()
+        mockPasteWeeklySchedule.mockResolvedValue({ ok: true })
+        const ausencia = {
+          employmentHistoryId: 1,
+          date: WEEK_DATES[0],
+          tipoNombre: 'Incapacidad',
+          isIntraday: false,
+        }
+
+        const first = renderMatrix([twoTramoRow()])
+        await user.click(copyButton())
+        first.unmount()
+
+        renderMatrix([twoTramoRow()], true, [ausencia])
+        await user.click(pasteButton())
+
+        // El resto de la semana (sin asignar en el origen) si se pega; el lunes bloqueado, no.
+        await waitFor(() => expect(mockPasteWeeklySchedule).toHaveBeenCalledTimes(1))
+        const dates = mockPasteWeeklySchedule.mock.calls[0][0].employees[0].days.map(
+          (day) => day.date
+        )
+        expect(dates).not.toContain(WEEK_DATES[0])
+        expect(dates).toHaveLength(6)
+      })
+
+      it('generar sugerido aplica los dos tramos de un dia con su sucursal', async () => {
+        const user = userEvent.setup()
+        mockGetScheduleSuggestion.mockResolvedValue({
+          ok: true,
+          byEmployment: {
+            1: [
+              {
+                scheduleId: 1,
+                isDayOff: false,
+                branchId: 100,
+                extraTramos: [{ scheduleId: 2, isDayOff: false, branchId: 200 }],
+              },
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+            ],
+          },
+        })
+        mockPasteWeeklySchedule.mockResolvedValue({ ok: true })
+        renderMatrix([makeRow()])
+
+        await user.click(
+          screen.getByRole('button', { name: 'Generar horario sugerido segun el historial' })
+        )
+
+        await waitFor(() => expect(mockPasteWeeklySchedule).toHaveBeenCalledTimes(1))
+        const monday = mockPasteWeeklySchedule.mock.calls[0][0].employees[0].days[0]
+        expect(monday).toMatchObject({
+          branchId: 100,
+          scheduleId: 1,
+          extraTramos: [{ branchId: 200, scheduleId: 2 }],
+        })
+      })
+    })
+  })
+
+  describe('jornada partida (SGRH-110)', () => {
+    const partidaDay = {
+      assignmentId: 7,
+      scheduleId: 9,
+      scheduleName: 'Partida',
+      startTime: '07:00:00',
+      endTime: '11:00:00',
+      secondStartTime: '16:00:00',
+      secondEndTime: '20:00:00',
+      hours: 8,
+      branchId: 100,
+    }
+
+    it('muestra los dos bloques en la celda', () => {
+      renderMatrix([makeRow({ weeklyTotal: 8, days: makeDays({ 0: partidaDay }) })])
+
+      expect(screen.getAllByText('07:00 - 11:00 · 16:00 - 20:00').length).toBeGreaterThan(0)
+    })
+
+    it('un dia con jornada partida no deja agregar mas tramos', () => {
+      renderMatrix([makeRow({ weeklyTotal: 8, days: makeDays({ 0: partidaDay }) })])
+
+      expect(screen.queryAllByLabelText('Agregar tramo para Ana Perez el Lunes')).toHaveLength(0)
+    })
+
+    it('el mismo dia con un horario de un solo bloque si deja agregar tramo', () => {
+      renderMatrix([
+        makeRow({
+          days: makeDays({ 0: { assignmentId: 7, scheduleId: 1, scheduleName: 'Turno A' } }),
+        }),
+      ])
+
+      expect(
+        screen.getAllByLabelText('Agregar tramo para Ana Perez el Lunes').length
+      ).toBeGreaterThan(0)
+    })
+
+    it('no ofrece la plantilla partida en un tramo nuevo', async () => {
+      const user = userEvent.setup()
+      renderMatrix([
+        makeRow({
+          days: makeDays({ 0: { assignmentId: 7, scheduleId: 1, scheduleName: 'Turno A' } }),
+        }),
+      ])
+
+      await user.click(screen.getAllByLabelText('Agregar tramo para Ana Perez el Lunes')[0])
+      const [scheduleSelect] = screen.getAllByLabelText(
+        'Horario del nuevo tramo de Ana Perez el Lunes'
+      )
+      await user.click(scheduleSelect)
+
+      expect(await screen.findByRole('option', { name: 'Turno A' })).toBeInTheDocument()
+      expect(screen.queryByRole('option', { name: 'Partida' })).not.toBeInTheDocument()
+    })
+
+    it('no ofrece la plantilla partida en un dia que ya tiene varios tramos', async () => {
+      const user = userEvent.setup()
+      renderMatrix([
+        makeRow({
+          days: makeDays({
+            0: {
+              assignmentId: 7,
+              scheduleId: 1,
+              scheduleName: 'Turno A',
+              branchId: 100,
+              extraTramos: [
+                {
+                  date: WEEK_DATES[0],
+                  assignmentId: 8,
+                  scheduleId: 1,
+                  scheduleName: 'Turno A',
+                  startTime: '13:00:00',
+                  endTime: '17:00:00',
+                  isDayOff: false,
+                  hours: 4,
+                  branchId: 200,
+                  branchName: 'Sucursal Norte',
+                },
+              ],
+            },
+          }),
+        }),
+      ])
+
+      const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
+      await user.click(select)
+
+      expect(await screen.findByRole('option', { name: 'Turno A' })).toBeInTheDocument()
+      expect(screen.queryByRole('option', { name: 'Partida' })).not.toBeInTheDocument()
+    })
+
+    it('en un dia de un solo tramo la plantilla partida si se ofrece', async () => {
+      const user = userEvent.setup()
+      renderMatrix([makeRow()])
+
+      const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
+      await user.click(select)
+
+      expect(await screen.findByRole('option', { name: 'Partida' })).toBeInTheDocument()
+    })
+
+    describe('plantilla con sucursal por bloque', () => {
+      const conSucursales = (first: number | null, second: number | null): ScheduleRow[] => [
+        schedules[0],
+        { ...schedules[1], hor_sucursal_id: first, hor_sucursal_id_2: second } as ScheduleRow,
+      ]
+
+      function renderConPlantilla(plantillas: ScheduleRow[], rows = [makeRow()]) {
+        return render(
+          <WeeklyScheduleMatrix
+            weekStartISO={WEEK_START}
+            weekDates={WEEK_DATES}
+            rows={rows}
+            sucursales={sucursales}
+            schedules={plantillas}
+            canWrite
+            ausencias={[]}
+          />
+        )
+      }
+
+      it('con sucursales distintas reparte el dia en dos tramos sin preguntar nada', async () => {
+        mockAssignSplitSchedule.mockResolvedValue({ ok: true })
+        renderConPlantilla(conSucursales(100, 200))
+
+        const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
+        await chooseFrom(select, 'Partida')
+
+        await waitFor(() =>
+          expect(mockAssignSplitSchedule).toHaveBeenCalledWith({
+            assignmentId: null,
+            employmentHistoryId: 1,
+            employeeId: 10,
+            date: WEEK_DATES[0],
+            scheduleId: 9,
+          })
+        )
+        expect(mockAssignDaySchedule).not.toHaveBeenCalled()
+      })
+
+      it('reemplaza el tramo que ya tenia el dia', async () => {
+        mockAssignSplitSchedule.mockResolvedValue({ ok: true })
+        renderConPlantilla(conSucursales(100, 200), [
+          makeRow({
+            days: makeDays({ 0: { assignmentId: 7, scheduleId: 1, scheduleName: 'Turno A' } }),
+          }),
+        ])
+
+        const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
+        await chooseFrom(select, 'Partida')
+
+        await waitFor(() =>
+          expect(mockAssignSplitSchedule).toHaveBeenCalledWith(
+            expect.objectContaining({ assignmentId: 7, scheduleId: 9 })
+          )
+        )
+      })
+
+      it('con la misma sucursal en los dos bloques es un solo tramo en esa sucursal', async () => {
+        mockAssignDaySchedule.mockResolvedValue({ ok: true })
+        renderConPlantilla(conSucursales(200, 200))
+
+        const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
+        await chooseFrom(select, 'Partida')
+
+        await waitFor(() =>
+          expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+            expect.objectContaining({ scheduleId: 9, branchId: 200 })
+          )
+        )
+        expect(mockAssignSplitSchedule).not.toHaveBeenCalled()
+      })
+
+      it('sin sucursales en la plantilla usa la sucursal del dia', async () => {
+        mockAssignDaySchedule.mockResolvedValue({ ok: true })
+        renderConPlantilla(conSucursales(null, null))
+
+        const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
+        await chooseFrom(select, 'Partida')
+
+        await waitFor(() =>
+          expect(mockAssignDaySchedule).toHaveBeenCalledWith(
+            expect.objectContaining({ scheduleId: 9, branchId: 100 })
+          )
+        )
+        expect(mockAssignSplitSchedule).not.toHaveBeenCalled()
+      })
+
+      it('muestra el error del servidor si falla el reparto', async () => {
+        mockAssignSplitSchedule.mockResolvedValue({
+          ok: false,
+          error: 'Se guardó el primer bloque, pero no el segundo.',
+        })
+        renderConPlantilla(conSucursales(100, 200))
+
+        const [select] = screen.getAllByLabelText('Asignar horario para Ana Perez el Lunes')
+        await chooseFrom(select, 'Partida')
+
+        expect(
+          await screen.findByText('Se guardó el primer bloque, pero no el segundo.')
+        ).toBeInTheDocument()
+      })
+    })
   })
 })

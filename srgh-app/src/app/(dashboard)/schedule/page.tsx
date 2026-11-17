@@ -128,6 +128,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
           <SchedulesList
             schedules={schedulesResult.data}
             shiftTypes={shiftTypesResult.data}
+            sucursales={weeklyScheduleResult?.sucursales ?? []}
             canWrite={canWrite}
           />
         }

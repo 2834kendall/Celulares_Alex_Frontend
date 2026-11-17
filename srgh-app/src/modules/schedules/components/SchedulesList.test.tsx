@@ -109,6 +109,53 @@ describe('<SchedulesList />', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('En uso.')
   })
 
+  it('una jornada partida muestra las dos entradas y las dos salidas', () => {
+    render(
+      <SchedulesList
+        schedules={[
+          makeSchedule({
+            hor_nombre: 'Partida',
+            hor_hora_entrada: '07:00:00',
+            hor_hora_salida: '11:00:00',
+            hor_hora_entrada_2: '16:00:00',
+            hor_hora_salida_2: '20:00:00',
+          } as Partial<ScheduleRow>),
+        ]}
+        shiftTypes={shiftTypes}
+        canWrite={true}
+      />
+    )
+
+    expect(tabla().getByText('07:00 · 16:00')).toBeInTheDocument()
+    expect(tabla().getByText('11:00 · 20:00')).toBeInTheDocument()
+    // El nombre de la plantilla y la columna de almuerzo, que en jornada partida dice "Partida".
+    expect(tabla().getAllByText('Partida')).toHaveLength(2)
+  })
+
+  it('una jornada partida con sucursal por bloque las muestra: Infinity → Alex', () => {
+    render(
+      <SchedulesList
+        schedules={[
+          makeSchedule({
+            hor_nombre: 'Partida',
+            hor_hora_entrada_2: '16:00:00',
+            hor_hora_salida_2: '20:00:00',
+            hor_sucursal_id: 10,
+            hor_sucursal_id_2: 20,
+          } as Partial<ScheduleRow>),
+        ]}
+        shiftTypes={shiftTypes}
+        sucursales={[
+          { id: 10, nombre: 'Infinity' },
+          { id: 20, nombre: 'Alex' },
+        ]}
+        canWrite={true}
+      />
+    )
+
+    expect(tabla().getByText('Partida: Infinity → Alex')).toBeInTheDocument()
+  })
+
   it('muestra los contadores de total y activas', () => {
     render(
       <SchedulesList

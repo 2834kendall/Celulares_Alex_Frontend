@@ -104,13 +104,30 @@ export function MyWeekWidget({
             <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
               {selected === todayIndex ? 'Hoy' : WEEKDAY_NAMES[selected]}
             </p>
-            <p className="mt-0.5 text-sm font-bold text-slate-900">
-              {detailLabel ?? <RangoHora inicio={detail.startTime} fin={detail.endTime} />}
-            </p>
-            {!detailLabel && (
-              <p className="mt-0.5 truncate text-xs text-slate-500">
-                {[detail.scheduleName, detail.branchName].filter(Boolean).join(' · ')}
-              </p>
+            {detailLabel ? (
+              <p className="mt-0.5 text-sm font-bold text-slate-900">{detailLabel}</p>
+            ) : (
+              /* SGRH-110: un dia puede traer varios tramos (p. ej. manana en
+                 una sucursal y tarde en otra); se listan todos. */
+              [detail, ...(detail.extraTramos ?? [])].map((tramo, index) => (
+                <div
+                  key={`${tramo.branchName ?? ''}-${index}`}
+                  className={index > 0 ? 'mt-1.5' : ''}
+                >
+                  <p className="mt-0.5 text-sm font-bold text-slate-900">
+                    <RangoHora inicio={tramo.startTime} fin={tramo.endTime} />
+                    {tramo.secondStartTime && tramo.secondEndTime && (
+                      <>
+                        {' · '}
+                        <RangoHora inicio={tramo.secondStartTime} fin={tramo.secondEndTime} />
+                      </>
+                    )}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">
+                    {[tramo.scheduleName, tramo.branchName].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+              ))
             )}
           </div>
 

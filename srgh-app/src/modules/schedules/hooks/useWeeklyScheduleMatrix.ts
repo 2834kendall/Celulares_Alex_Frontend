@@ -3,13 +3,21 @@
 import { useMemo, useState } from 'react'
 import { assignDaySchedule } from '@/modules/schedules/actions/assignDaySchedule'
 import { assignCustomScheduleBulk } from '@/modules/schedules/actions/assignCustomScheduleBulk'
+import { assignSplitSchedule } from '@/modules/schedules/actions/assignSplitSchedule'
 import { clearDayAssignment } from '@/modules/schedules/actions/clearDayAssignment'
 import type { DayAssignment, EmployeeWeekRow } from '@/modules/schedules/actions/getWeeklySchedule'
 import type { ScheduleRow } from '@/modules/schedules/types'
 import type { CustomHoursValues } from '@/modules/schedules/components/CustomHoursModal'
 import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
+import { dayHours, tramosOf } from '@/modules/schedules/lib/segments'
+import { hasSecondBlock } from '@/modules/schedules/lib/hours'
 
-export type DayAssignmentWithAusencia = DayAssignment & { ausencia: AusenciaOverlayEntry | null }
+// Cada tramo del dia (el primero y los extra, SGRH-110) lleva la ausencia que
+// cae sobre esa fecha: una incapacidad bloquea todos los tramos del dia.
+export interface DayAssignmentWithAusencia extends Omit<DayAssignment, 'extraTramos'> {
+  ausencia: AusenciaOverlayEntry | null
+  extraTramos?: DayAssignmentWithAusencia[]
+}
 export type EmployeeWeekRowWithAusencia = Omit<EmployeeWeekRow, 'days'> & {
   days: DayAssignmentWithAusencia[]
 }
@@ -19,6 +27,37 @@ interface UseWeeklyScheduleMatrixParams {
   schedules: ScheduleRow[]
   canWrite: boolean
   ausencias?: AusenciaOverlayEntry[]
+}
+
+function withAusencia(
+  day: DayAssignment,
+  ausencia: AusenciaOverlayEntry | null
+): DayAssignmentWithAusencia {
+  const isBlocked = Boolean(ausencia && !ausencia.isIntraday)
+  const { extraTramos, ...own } = day
+  const result: DayAssignmentWithAusencia = {
+    ...own,
+    ausencia,
+    hours: isBlocked ? 0 : own.hours,
+  }
+  if (extraTramos && extraTramos.length > 0) {
+    result.extraTramos = extraTramos.map((extra) => withAusencia(extra, ausencia))
+  }
+  return result
+}
+
+/**
+ * Fila existente que debe actualizar "horas personalizadas" en una fecha dada:
+ * el tramo de esa sucursal si lo hay; si el dia tiene un solo tramo, ese (asi
+ * se comportaba antes de los tramos); si tiene varios y ninguno es de esa
+ * sucursal, ninguno: se crea uno nuevo en vez de pisar el de otra sucursal.
+ */
+function existingTramoId(day: DayAssignment | undefined, branchId: number): number | null {
+  if (!day) return null
+  const existing = tramosOf(day).filter((tramo) => tramo.assignmentId != null)
+  const match = existing.find((tramo) => tramo.branchId === branchId)
+  if (match) return match.assignmentId
+  return existing.length === 1 ? existing[0].assignmentId : null
 }
 
 function getAssignmentValue(assignment: DayAssignment) {
@@ -45,7 +84,6 @@ export function useWeeklyScheduleMatrix({
     row: EmployeeWeekRowWithAusencia
     assignment: DayAssignmentWithAusencia
   } | null>(null)
-
   const activeSchedules = useMemo(
     () => schedules.filter((schedule) => schedule.hor_activo),
     [schedules]
@@ -72,10 +110,10 @@ export function useWeeklyScheduleMatrix({
       const days = row.days.map((day) => {
         const ausencia = overlayByCell.get(`${row.employmentHistoryId}|${day.date}`) ?? null
         const isBlocked = Boolean(ausencia && !ausencia.isIntraday)
-        if (isBlocked && day.hours > 0) {
-          weeklyTotal -= day.hours
+        if (isBlocked) {
+          weeklyTotal -= dayHours(day)
         }
-        return { ...day, ausencia, hours: isBlocked ? 0 : day.hours }
+        return withAusencia(day, ausencia)
       })
       return { ...row, days, weeklyTotal }
     })
@@ -104,8 +142,18 @@ export function useWeeklyScheduleMatrix({
       values.applyToDates.length > 0 ? values.applyToDates : [customModalFor.assignment.date]
 
     const days = applyToDates.map((date) => {
-      const existing = row.days.find((d) => d.date === date)
-      return { assignmentId: existing?.assignmentId ?? null, date }
+      // La fecha desde la que se abrio el modal usa el tramo exacto que se
+      // edito (o ninguno, si es un tramo nuevo); las demas, el que corresponda.
+      if (date === customModalFor.assignment.date) {
+        return { assignmentId: customModalFor.assignment.assignmentId, date }
+      }
+      return {
+        assignmentId: existingTramoId(
+          row.days.find((d) => d.date === date),
+          values.branchId
+        ),
+        date,
+      }
     })
 
     setSavingCell(`${row.employmentHistoryId}-${applyToDates.join(',')}`)
@@ -212,6 +260,35 @@ export function useWeeklyScheduleMatrix({
       return
     }
 
+    // Una plantilla partida con una sucursal por bloque (SGRH-110) manda sobre la
+    // sucursal de la celda: con sucursales distintas el dia se reparte en dos
+    // tramos; con la misma, es un solo tramo en esa sucursal.
+    const chosenSchedule = scheduleId ? schedules.find((s) => s.hor_id === scheduleId) : undefined
+    const templateFirst = chosenSchedule?.hor_sucursal_id
+    const templateSecond = chosenSchedule?.hor_sucursal_id_2
+    const hasTemplateBranches = Boolean(
+      chosenSchedule && hasSecondBlock(chosenSchedule) && templateFirst && templateSecond
+    )
+
+    if (chosenSchedule && hasTemplateBranches && templateFirst !== templateSecond) {
+      setSavingCell(cellKey)
+
+      const splitResult = await assignSplitSchedule({
+        assignmentId: assignment.assignmentId,
+        employmentHistoryId: row.employmentHistoryId,
+        employeeId: row.employeeId,
+        date: assignment.date,
+        scheduleId: chosenSchedule.hor_id,
+      })
+
+      setSavingCell(null)
+
+      if (!splitResult.ok) {
+        setServerError(splitResult.error)
+      }
+      return
+    }
+
     setSavingCell(cellKey)
 
     const result = await assignDaySchedule({
@@ -222,7 +299,7 @@ export function useWeeklyScheduleMatrix({
       // que se movió a otra sucursal (cubrir un turno) lo devolvía a la de
       // casa sin avisar, y el kiosco donde iba a trabajar ya no lo dejaba
       // marcar. Un día sin fila ya trae la sucursal de casa.
-      branchId: assignment.branchId,
+      branchId: hasTemplateBranches ? templateFirst! : assignment.branchId,
       date: assignment.date,
       scheduleId,
       isDayOff: isFreeDay,
