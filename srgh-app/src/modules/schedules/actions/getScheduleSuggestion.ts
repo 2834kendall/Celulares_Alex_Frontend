@@ -3,11 +3,20 @@
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { compareByStart } from '@/modules/schedules/lib/dayAssignment'
 import { isValidISODate } from '@/modules/schedules/lib/week'
 
 export interface SuggestedDay {
   scheduleId: number | null
   isDayOff: boolean
+  /**
+   * Solo en dias de varios tramos (SGRH-110): ahi la sucursal es parte de lo
+   * que se sugiere (manana en una tienda, tarde en otra). En un dia de un solo
+   * tramo no se opina de sucursal y se usa la de casa de cada colaborador.
+   */
+  branchId?: number
+  /** Los demas tramos del dia; el primero lo describen los campos de arriba. */
+  extraTramos?: SuggestedDay[]
 }
 
 export type ScheduleSuggestionResult =
@@ -16,10 +25,15 @@ export type ScheduleSuggestionResult =
 interface HistoryRow {
   prg_historial_laboral_id: number
   prg_fecha: string
+  prg_sucursal_id: number
   prg_es_dia_libre: boolean
   prg_horario_id: number | null
   prg_hora_entrada_custom: string | null
+  sgrh_cat_horarios: { hor_hora_entrada: string | null } | null
 }
+
+/** Tope de filas de historial que se leen (las mas recientes primero). */
+const HISTORY_LIMIT = 5000
 
 /** Lunes=0 ... domingo=6, igual que week.ts. */
 function weekdayIndex(dateISO: string): number {
@@ -27,13 +41,73 @@ function weekdayIndex(dateISO: string): number {
   return day === 0 ? 6 : day - 1
 }
 
+interface Tramo {
+  scheduleId: number
+  branchId: number
+  start: string | null
+}
+
 /**
- * Sugiere, por colaborador y dia de la semana, el turno que mas se repite en
+ * Lo que "se hizo" un dia, como una clave comparable y lo que se sugeriria:
+ *  - descanso: "LIBRE";
+ *  - un tramo: "H<horario>" (sin sucursal, como siempre);
+ *  - varios tramos: "H<horario>@<sucursal>|..." en orden de hora de inicio.
+ * Devuelve null si el dia no sirve para sugerir (ver getScheduleSuggestion).
+ */
+function summarizeDay(rows: HistoryRow[]): { key: string; day: SuggestedDay } | null {
+  // Un dia con horas a medida en cualquiera de sus tramos no tiene un horario
+  // "tipico" que resumir: no vota, ni siquiera con sus otros tramos.
+  if (rows.some((row) => Boolean(row.prg_hora_entrada_custom))) return null
+
+  if (rows.some((row) => row.prg_es_dia_libre)) {
+    // Un descanso convive con nada; si el historial trae un dia incoherente, no se adivina.
+    return rows.length === 1 ? { key: 'LIBRE', day: { scheduleId: null, isDayOff: true } } : null
+  }
+
+  const tramos: Tramo[] = rows
+    .filter((row) => row.prg_horario_id != null)
+    .map((row) => ({
+      scheduleId: row.prg_horario_id!,
+      branchId: row.prg_sucursal_id,
+      start: row.sgrh_cat_horarios?.hor_hora_entrada ?? null,
+    }))
+    // Mismo orden que ve la matriz: por hora de inicio; el resto, determinista.
+    .sort(
+      (a, b) =>
+        compareByStart(a.start, b.start) || a.scheduleId - b.scheduleId || a.branchId - b.branchId
+    )
+
+  if (tramos.length === 0) return null
+
+  if (tramos.length === 1) {
+    return {
+      key: `H${tramos[0].scheduleId}`,
+      day: { scheduleId: tramos[0].scheduleId, isDayOff: false },
+    }
+  }
+
+  const [first, ...rest] = tramos.map((tramo): SuggestedDay => ({
+    scheduleId: tramo.scheduleId,
+    isDayOff: false,
+    branchId: tramo.branchId,
+  }))
+
+  return {
+    key: tramos.map((tramo) => `H${tramo.scheduleId}@${tramo.branchId}`).join('|'),
+    day: { ...first, extraTramos: rest },
+  }
+}
+
+/**
+ * Sugiere, por colaborador y dia de la semana, el dia que mas se repite en
  * su historial (o descanso, si eso es lo mas frecuente) — para prellenar una
- * semana nueva sin arrancar de cero. Los dias personalizados (horas a
- * medida) no participan del conteo: no hay un "horario tipico" que resuma
- * horas sueltas, asi que ese dia queda sin sugerencia en vez de inventar
- * una.
+ * semana nueva sin arrancar de cero.
+ *
+ * Se vota por DIA completo, no por fila: un dia de dos tramos (8-12 en una
+ * sucursal y 13-17 en otra, SGRH-110) cuenta un voto como ese par de tramos,
+ * y se sugiere el par completo. Los dias con horas a medida (en cualquier
+ * tramo) no participan del conteo: no hay un "horario tipico" que resuma
+ * horas sueltas, asi que ese dia queda sin sugerencia en vez de inventar una.
  */
 export async function getScheduleSuggestion(
   employmentHistoryIds: number[],
@@ -55,42 +129,47 @@ export async function getScheduleSuggestion(
   const { data, error } = await supabase
     .from('sgrh_programacion_semanal')
     .select(
-      'prg_historial_laboral_id, prg_fecha, prg_es_dia_libre, prg_horario_id, prg_hora_entrada_custom'
+      `prg_historial_laboral_id, prg_fecha, prg_sucursal_id, prg_es_dia_libre, prg_horario_id,
+       prg_hora_entrada_custom, sgrh_cat_horarios ( hor_hora_entrada )`
     )
     .in('prg_historial_laboral_id', employmentHistoryIds)
     .lt('prg_fecha', beforeDateISO)
     .order('prg_fecha', { ascending: false })
-    .limit(5000)
+    .limit(HISTORY_LIMIT)
     .returns<HistoryRow[]>()
 
   if (error) {
     return { ok: false, error: 'No se pudo cargar el historial de horarios.' }
   }
 
-  // votos[empId][weekday] = Map<clave, {count, day}> — clave "LIBRE" o "H<id>".
+  // Si se llego al tope, el dia mas antiguo pudo quedar cortado a la mitad (un
+  // tramo leido y otro no): se descarta entero en vez de votar con un dia incompleto.
+  const oldestDate = data.length >= HISTORY_LIMIT ? data[data.length - 1].prg_fecha : null
+  const history = oldestDate ? data.filter((row) => row.prg_fecha !== oldestDate) : data
+
+  // Filas de cada colaborador+fecha, en el orden en que aparecen (de mas reciente a mas antiguo).
+  const rowsByDay = new Map<string, HistoryRow[]>()
+  for (const row of history) {
+    const dayKey = `${row.prg_historial_laboral_id}|${row.prg_fecha}`
+    const rows = rowsByDay.get(dayKey)
+    if (rows) rows.push(row)
+    else rowsByDay.set(dayKey, [row])
+  }
+
+  // votos[empId][weekday] = Map<clave del dia, {count, day}>
   const votes = new Map<number, Map<number, Map<string, { count: number; day: SuggestedDay }>>>()
 
-  for (const row of data) {
-    const isCustom = Boolean(row.prg_hora_entrada_custom)
-    if (isCustom) continue
+  for (const rows of rowsByDay.values()) {
+    const summary = summarizeDay(rows)
+    if (!summary) continue
 
-    const key = row.prg_es_dia_libre
-      ? 'LIBRE'
-      : row.prg_horario_id != null
-        ? `H${row.prg_horario_id}`
-        : null
-    if (key == null) continue
+    const { prg_historial_laboral_id: employmentHistoryId, prg_fecha: date } = rows[0]
+    const weekday = weekdayIndex(date)
 
-    const weekday = weekdayIndex(row.prg_fecha)
-    const day: SuggestedDay = {
-      scheduleId: row.prg_es_dia_libre ? null : row.prg_horario_id,
-      isDayOff: row.prg_es_dia_libre,
-    }
-
-    let byWeekday = votes.get(row.prg_historial_laboral_id)
+    let byWeekday = votes.get(employmentHistoryId)
     if (!byWeekday) {
       byWeekday = new Map()
-      votes.set(row.prg_historial_laboral_id, byWeekday)
+      votes.set(employmentHistoryId, byWeekday)
     }
 
     let byKey = byWeekday.get(weekday)
@@ -99,14 +178,14 @@ export async function getScheduleSuggestion(
       byWeekday.set(weekday, byKey)
     }
 
-    const existing = byKey.get(key)
-    // Los resultados vienen ordenados de mas reciente a mas antiguo: el
-    // primer voto de cada clave ya es el mas reciente, asi que un empate en
-    // conteo lo gana quien se vio primero (no hace falta comparar fechas).
+    const existing = byKey.get(summary.key)
+    // Los dias se recorren de mas reciente a mas antiguo: el primer voto de
+    // cada clave ya es el mas reciente, asi que un empate en conteo lo gana
+    // quien se vio primero (no hace falta comparar fechas).
     if (existing) {
       existing.count += 1
     } else {
-      byKey.set(key, { count: 1, day })
+      byKey.set(summary.key, { count: 1, day: summary.day })
     }
   }
 

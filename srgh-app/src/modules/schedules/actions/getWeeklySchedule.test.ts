@@ -507,3 +507,267 @@ describe('getWeeklySchedule con horas personalizadas', () => {
     })
   })
 })
+
+describe('getWeeklySchedule con varios tramos en un dia (SGRH-110)', () => {
+  const historial = {
+    lab_id: 1,
+    lab_empleado_id: 10,
+    lab_sucursal_id: 100,
+    sgrh_empleados: {
+      emp_id: 10,
+      emp_nombre: 'Ana',
+      emp_apellido_1: 'Perez',
+      emp_apellido_2: null,
+    },
+    sgrh_cat_puestos: { pue_nombre: 'Cajera' },
+    sgrh_sucursales: { suc_id: 100, suc_nombre: 'Central' },
+  }
+
+  const sucursales = {
+    data: [
+      { suc_id: 100, suc_nombre: 'Central' },
+      { suc_id: 200, suc_nombre: 'Norte' },
+    ],
+    error: null,
+  }
+
+  /** Un tramo con horas propias, sin almuerzo ni receso. */
+  const tramo = (
+    id: number,
+    fecha: string,
+    sucursalId: number,
+    entrada: string,
+    salida: string
+  ) => ({
+    prg_id: id,
+    prg_historial_laboral_id: 1,
+    prg_fecha: fecha,
+    prg_es_dia_libre: false,
+    prg_horario_id: null,
+    prg_sucursal_id: sucursalId,
+    sgrh_sucursales: {
+      suc_id: sucursalId,
+      suc_nombre: sucursalId === 100 ? 'Central' : 'Norte',
+    },
+    sgrh_cat_horarios: null,
+    prg_hora_entrada_custom: entrada,
+    prg_hora_salida_custom: salida,
+    prg_hora_inicio_almuerzo_custom: null,
+    prg_hora_fin_almuerzo_custom: null,
+    prg_hora_inicio_break_custom: null,
+    prg_hora_fin_break_custom: null,
+  })
+
+  async function semana(filas: unknown[]) {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: { data: [historial], error: null },
+        sgrh_sucursales: sucursales,
+        sgrh_programacion_semanal: { data: filas, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    const result = await getWeeklySchedule(WEEK_START)
+    if (!result.ok) throw new Error(result.error)
+    return result.data[0]
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  it('el primer tramo describe el dia y los demas van en extraTramos', async () => {
+    const ana = await semana([
+      tramo(1, '2026-01-06', 100, '08:00:00', '12:00:00'),
+      tramo(2, '2026-01-06', 200, '13:00:00', '17:00:00'),
+    ])
+
+    const martes = ana.days[1]
+
+    expect(martes).toMatchObject({
+      assignmentId: 1,
+      branchId: 100,
+      branchName: 'Central',
+      startTime: '08:00:00',
+      endTime: '12:00:00',
+      hours: 4,
+    })
+    expect(martes.extraTramos).toHaveLength(1)
+    expect(martes.extraTramos![0]).toMatchObject({
+      date: '2026-01-06',
+      assignmentId: 2,
+      branchId: 200,
+      branchName: 'Norte',
+      startTime: '13:00:00',
+      endTime: '17:00:00',
+      customStartTime: '13:00',
+      customEndTime: '17:00',
+      hours: 4,
+    })
+  })
+
+  it('el total semanal suma las horas de todos los tramos', async () => {
+    const ana = await semana([
+      tramo(1, '2026-01-06', 100, '08:00:00', '12:00:00'),
+      tramo(2, '2026-01-06', 200, '13:00:00', '17:00:00'),
+      tramo(3, '2026-01-07', 100, '08:00:00', '16:00:00'),
+    ])
+
+    expect(ana.weeklyTotal).toBe(16)
+  })
+
+  it('ordena los tramos por hora de inicio, sin importar el orden en que lleguen', async () => {
+    const ana = await semana([
+      tramo(9, '2026-01-06', 200, '13:00:00', '17:00:00'),
+      tramo(1, '2026-01-06', 100, '08:00:00', '12:00:00'),
+    ])
+
+    expect(ana.days[1].assignmentId).toBe(1)
+    expect(ana.days[1].extraTramos?.map((t) => t.assignmentId)).toEqual([9])
+  })
+
+  it('ordena con las horas de la plantilla cuando el tramo no es personalizado', async () => {
+    const deLaPlantilla = {
+      ...tramo(2, '2026-01-06', 200, '00:00:00', '00:00:00'),
+      prg_horario_id: 7,
+      prg_hora_entrada_custom: null,
+      prg_hora_salida_custom: null,
+      sgrh_cat_horarios: {
+        hor_id: 7,
+        hor_nombre: 'Tarde',
+        hor_hora_entrada: '13:00:00',
+        hor_hora_salida: '17:00:00',
+        hor_hora_inicio_almuerzo: '15:00:00',
+        hor_hora_fin_almuerzo: '15:00:00',
+        hor_hora_inicio_break: null,
+        hor_hora_fin_break: null,
+      },
+    }
+
+    const ana = await semana([deLaPlantilla, tramo(1, '2026-01-06', 100, '08:00:00', '12:00:00')])
+
+    expect(ana.days[1].assignmentId).toBe(1)
+    expect(ana.days[1].extraTramos?.[0]).toMatchObject({
+      assignmentId: 2,
+      scheduleId: 7,
+      scheduleName: 'Tarde',
+      startTime: '13:00:00',
+    })
+  })
+
+  it('un dia con un solo tramo no trae extraTramos', async () => {
+    const ana = await semana([tramo(1, '2026-01-06', 100, '08:00:00', '12:00:00')])
+
+    expect(ana.days[1]).not.toHaveProperty('extraTramos')
+    expect(ana.days[0]).not.toHaveProperty('extraTramos')
+  })
+
+  it('quien trabaja un tramo en la marca elegida aparece aunque su base sea otra', async () => {
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce({ estado: 'ok', sucursalIds: [200] } as never)
+
+    const ana = await semana([
+      tramo(1, '2026-01-06', 100, '08:00:00', '12:00:00'),
+      tramo(2, '2026-01-06', 200, '13:00:00', '17:00:00'),
+    ])
+
+    // Ana tiene su base en Central (100), pero el segundo tramo es en Norte (200).
+    expect(ana.employeeId).toBe(10)
+    expect(ana.days[1].extraTramos).toHaveLength(1)
+  })
+})
+
+describe('getWeeklySchedule con jornada partida (SGRH-110)', () => {
+  const historial = {
+    lab_id: 1,
+    lab_empleado_id: 10,
+    lab_sucursal_id: 100,
+    sgrh_empleados: {
+      emp_id: 10,
+      emp_nombre: 'Ana',
+      emp_apellido_1: 'Perez',
+      emp_apellido_2: null,
+    },
+    sgrh_cat_puestos: { pue_nombre: 'Cajera' },
+    sgrh_sucursales: { suc_id: 100, suc_nombre: 'Central' },
+  }
+
+  const fila = (extra: Record<string, unknown> = {}) => ({
+    prg_id: 1,
+    prg_historial_laboral_id: 1,
+    prg_fecha: '2026-01-06',
+    prg_es_dia_libre: false,
+    prg_horario_id: 8,
+    prg_sucursal_id: 100,
+    sgrh_sucursales: { suc_id: 100, suc_nombre: 'Central' },
+    sgrh_cat_horarios: {
+      hor_id: 8,
+      hor_nombre: 'Partida',
+      hor_hora_entrada: '07:00:00',
+      hor_hora_salida: '11:00:00',
+      hor_hora_inicio_almuerzo: '11:00:00',
+      hor_hora_fin_almuerzo: '16:00:00',
+      hor_hora_inicio_break: null,
+      hor_hora_fin_break: null,
+      hor_hora_entrada_2: '16:00:00',
+      hor_hora_salida_2: '20:00:00',
+    },
+    prg_hora_entrada_custom: null,
+    prg_hora_salida_custom: null,
+    prg_hora_inicio_almuerzo_custom: null,
+    prg_hora_fin_almuerzo_custom: null,
+    prg_hora_inicio_break_custom: null,
+    prg_hora_fin_break_custom: null,
+    ...extra,
+  })
+
+  async function semana(filas: unknown[]) {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_historial_laboral: { data: [historial], error: null },
+        sgrh_sucursales: { data: [{ suc_id: 100, suc_nombre: 'Central' }], error: null },
+        sgrh_programacion_semanal: { data: filas, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    const result = await getWeeklySchedule(WEEK_START)
+    if (!result.ok) throw new Error(result.error)
+    return result.data[0]
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  it('expone el segundo bloque, suma las dos partes y sigue siendo un solo tramo', async () => {
+    const ana = await semana([fila()])
+
+    expect(ana.days[1]).toMatchObject({
+      scheduleId: 8,
+      startTime: '07:00:00',
+      endTime: '11:00:00',
+      secondStartTime: '16:00:00',
+      secondEndTime: '20:00:00',
+      hours: 8,
+    })
+    expect(ana.days[1]).not.toHaveProperty('extraTramos')
+    expect(ana.weeklyTotal).toBe(8)
+  })
+
+  it('con horas propias del dia no hay segundo bloque', async () => {
+    const ana = await semana([
+      fila({ prg_hora_entrada_custom: '09:00:00', prg_hora_salida_custom: '13:00:00' }),
+    ])
+
+    expect(ana.days[1]).toMatchObject({ secondStartTime: null, secondEndTime: null, hours: 4 })
+  })
+
+  it('un dia libre no trae segundo bloque ni horas', async () => {
+    const ana = await semana([fila({ prg_es_dia_libre: true, sgrh_cat_horarios: null })])
+
+    expect(ana.days[1]).toMatchObject({ isDayOff: true, secondStartTime: null, hours: 0 })
+  })
+})

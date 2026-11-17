@@ -9,7 +9,7 @@ import {
   parseOptionalTime,
   type AssignCustomScheduleBulkInput,
 } from '@/modules/schedules/types'
-import { upsertDayAssignment } from '@/modules/schedules/lib/dayAssignment'
+import { describeAssignmentError, upsertDayAssignment } from '@/modules/schedules/lib/dayAssignment'
 import { branchesBelongToEmpresa } from '@/modules/schedules/lib/validateBranches'
 
 export type AssignCustomScheduleBulkResult = { ok: true } | { ok: false; error: string }
@@ -78,7 +78,13 @@ export async function assignCustomScheduleBulk(
   const failed = results.find((r) => r.error)
 
   if (failed) {
-    return { ok: false, error: 'No se pudo guardar la asignacion en todos los dias.' }
+    return {
+      ok: false,
+      error: describeAssignmentError(
+        failed.error,
+        'No se pudo guardar la asignacion en todos los dias.'
+      ),
+    }
   }
 
   revalidatePath('/schedule')
