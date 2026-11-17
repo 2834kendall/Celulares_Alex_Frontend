@@ -319,9 +319,15 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     return { ok: true, date: dateISO, data: [] }
   }
 
+  // Con varios tramos el mismo dia (SGRH-110: uno por sucursal) la fila
+  // muestra el que empieza primero: es contra el que se mide la entrada.
   const assignmentByHistoryId = new Map<number, DayAssignment>()
   for (const a of assignments.data) {
-    assignmentByHistoryId.set(a.employmentHistoryId, a)
+    const previo = assignmentByHistoryId.get(a.employmentHistoryId)
+    const empiezaAntes =
+      a.expectedStart !== null &&
+      (previo?.expectedStart == null || a.expectedStart < previo.expectedStart)
+    if (!previo || empiezaAntes) assignmentByHistoryId.set(a.employmentHistoryId, a)
   }
 
   const marksByHistoryId = new Map<number, RawMark[]>()

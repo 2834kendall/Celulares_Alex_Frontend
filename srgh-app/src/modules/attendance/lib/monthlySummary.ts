@@ -330,11 +330,25 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
   // es ausencia todavia — recien se sabe al cerrarse esa ventana.
   const nowTime = timeOfDay(nowInCostaRica())
 
+  // Un dia puede tener varios tramos (SGRH-110: uno por sucursal). Para la
+  // asistencia del mes es UN dia: cuenta el tramo que empieza primero, que es
+  // contra el que se mide la primera entrada. Sin esto, faltar un dia de dos
+  // tramos contaba como dos ausencias.
+  const inicioDe = (a: AssignmentRow) =>
+    a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
   const assignmentsByHist = new Map<number, AssignmentRow[]>()
   for (const a of assignments ?? []) {
     if (a.prg_fecha > today) continue
     const list = assignmentsByHist.get(a.prg_historial_laboral_id) ?? []
-    list.push(a)
+    const mismoDia = list.findIndex((b) => b.prg_fecha === a.prg_fecha)
+    if (mismoDia === -1) {
+      list.push(a)
+    } else if (
+      inicioDe(a) &&
+      (!inicioDe(list[mismoDia]) || inicioDe(a) < inicioDe(list[mismoDia]))
+    ) {
+      list[mismoDia] = a
+    }
     assignmentsByHist.set(a.prg_historial_laboral_id, list)
   }
 
