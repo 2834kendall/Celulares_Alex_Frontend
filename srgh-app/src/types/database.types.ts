@@ -786,13 +786,17 @@ export type Database = {
           hor_duracion_break_min: number
           hor_empresa_id: number
           hor_hora_entrada: string
+          hor_hora_entrada_2: string | null
           hor_hora_fin_almuerzo: string
           hor_hora_fin_break: string | null
           hor_hora_inicio_almuerzo: string
           hor_hora_inicio_break: string | null
           hor_hora_salida: string
+          hor_hora_salida_2: string | null
           hor_id: number
           hor_nombre: string
+          hor_sucursal_id: number | null
+          hor_sucursal_id_2: number | null
           hor_tipo_jornada_id: number
         }
         Insert: {
@@ -802,13 +806,17 @@ export type Database = {
           hor_duracion_break_min?: number
           hor_empresa_id: number
           hor_hora_entrada: string
+          hor_hora_entrada_2?: string | null
           hor_hora_fin_almuerzo: string
           hor_hora_fin_break?: string | null
           hor_hora_inicio_almuerzo: string
           hor_hora_inicio_break?: string | null
           hor_hora_salida: string
+          hor_hora_salida_2?: string | null
           hor_id?: never
           hor_nombre: string
+          hor_sucursal_id?: number | null
+          hor_sucursal_id_2?: number | null
           hor_tipo_jornada_id: number
         }
         Update: {
@@ -818,13 +826,17 @@ export type Database = {
           hor_duracion_break_min?: number
           hor_empresa_id?: number
           hor_hora_entrada?: string
+          hor_hora_entrada_2?: string | null
           hor_hora_fin_almuerzo?: string
           hor_hora_fin_break?: string | null
           hor_hora_inicio_almuerzo?: string
           hor_hora_inicio_break?: string | null
           hor_hora_salida?: string
+          hor_hora_salida_2?: string | null
           hor_id?: never
           hor_nombre?: string
+          hor_sucursal_id?: number | null
+          hor_sucursal_id_2?: number | null
           hor_tipo_jornada_id?: number
         }
         Relationships: [
@@ -834,6 +846,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "sgrh_empresas"
             referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_cat_horarios_hor_sucursal_id_fkey"
+            columns: ["hor_sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_sucursales"
+            referencedColumns: ["suc_id"]
+          },
+          {
+            foreignKeyName: "sgrh_cat_horarios_hor_sucursal_id_2_fkey"
+            columns: ["hor_sucursal_id_2"]
+            isOneToOne: false
+            referencedRelation: "sgrh_sucursales"
+            referencedColumns: ["suc_id"]
           },
           {
             foreignKeyName: "sgrh_cat_hor_tipo_jornada_id_fkey"
