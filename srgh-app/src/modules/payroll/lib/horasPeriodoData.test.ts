@@ -537,3 +537,107 @@ describe('getHorasDelPeriodo', () => {
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los feriados del periodo.' })
   })
 })
+
+// SGRH-110: varios tramos el mismo día y plantillas con jornada partida.
+describe('getHorasDelPeriodo: días de varios bloques', () => {
+  const UN_DIA = { historialLaboralIds: [5], fechaInicio: '2026-07-06', fechaFin: '2026-07-06' }
+  const marcasPorBloque = (bloques: [string, string][]) =>
+    bloques.flatMap(([e, s]) => [
+      marca('2026-07-06', 'entrada', e),
+      marca('2026-07-06', 'salida', s),
+    ])
+  const leer = async (programacion: unknown[], marcas: unknown[]) => {
+    const r = await getHorasDelPeriodo(
+      supabase({
+        sgrh_programacion_semanal: { data: programacion, error: null },
+        sgrh_marcas_asistencia: { data: marcas, error: null },
+        sgrh_ausencias: { data: [], error: null },
+      }),
+      UN_DIA
+    )
+    if (!r.ok) throw new Error(r.error)
+    return r.data.get(5)!
+  }
+  const tramo = (entrada: string, salida: string) =>
+    programado('2026-07-06', {
+      prg_hora_entrada_custom: entrada,
+      prg_hora_salida_custom: salida,
+      sgrh_cat_horarios: null,
+    })
+
+  // Antes la última fila del día pisaba a la otra: se medía solo 13–17 y el
+  // día salía en 0 h.
+  it('dos tramos en sucursales distintas: suma los dos', async () => {
+    const t = await leer(
+      [tramo('08:00', '12:00'), tramo('13:00', '17:00')],
+      marcasPorBloque([
+        ['08:00:00', '12:00:00'],
+        ['13:00:00', '17:00:00'],
+      ])
+    )
+    expect(t).toMatchObject({ horasEsperadas: 8, horasOrdinarias: 8, horasExtra: 0 })
+    expect(t.diasConProblema).toEqual([])
+  })
+
+  it('el orden en que llegan los tramos no importa', async () => {
+    const t = await leer(
+      [tramo('13:00', '17:00'), tramo('08:00', '12:00')],
+      marcasPorBloque([
+        ['08:00:00', '12:00:00'],
+        ['13:00:00', '17:00:00'],
+      ])
+    )
+    expect(t).toMatchObject({ horasEsperadas: 8, horasOrdinarias: 8 })
+  })
+
+  // Antes se medía contra el primer bloque (7–11): 4 h esperadas.
+  it('plantilla partida: lee el segundo bloque', async () => {
+    const t = await leer(
+      [
+        programado('2026-07-06', {
+          sgrh_cat_horarios: {
+            ...HORARIO_8H,
+            hor_hora_entrada: '07:00:00',
+            hor_hora_salida: '11:00:00',
+            hor_hora_inicio_almuerzo: '11:00:00',
+            hor_hora_fin_almuerzo: '16:00:00',
+            hor_hora_entrada_2: '16:00:00',
+            hor_hora_salida_2: '20:00:00',
+          },
+        }),
+      ],
+      marcasPorBloque([
+        ['07:00:00', '11:00:00'],
+        ['16:00:00', '20:00:00'],
+      ])
+    )
+    expect(t).toMatchObject({ horasEsperadas: 8, horasOrdinarias: 8, horasExtra: 0 })
+  })
+
+  it('con horas propias en entrada y salida, la plantilla partida no agrega su segundo bloque', async () => {
+    const t = await leer(
+      [
+        programado('2026-07-06', {
+          prg_hora_entrada_custom: '08:00:00',
+          prg_hora_salida_custom: '12:00:00',
+          sgrh_cat_horarios: {
+            ...HORARIO_8H,
+            hor_hora_entrada_2: '16:00:00',
+            hor_hora_salida_2: '20:00:00',
+          },
+        }),
+      ],
+      []
+    )
+    // 8–12 con el almuerzo de la plantilla (12–13) afuera: 4 h.
+    expect(t.horasEsperadas).toBe(4)
+  })
+
+  it('un día de un solo tramo queda igual que antes', async () => {
+    const t = await leer(
+      [programado('2026-07-06')],
+      [marca('2026-07-06', 'entrada', '08:00:00'), marca('2026-07-06', 'salida', '17:00:00')]
+    )
+    expect(t).toMatchObject({ horasEsperadas: 8, horasOrdinarias: 8, horasExtra: 0 })
+  })
+})
