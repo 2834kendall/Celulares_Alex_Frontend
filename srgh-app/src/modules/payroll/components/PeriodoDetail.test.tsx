@@ -5,6 +5,7 @@ import { PeriodoDetail } from './PeriodoDetail'
 import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla'
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
 import { reenviarComprobante } from '@/modules/payroll/actions/reenviarComprobante'
+import { pagarTodosDelPeriodo } from '@/modules/payroll/actions/pagarTodosDelPeriodo'
 import { toast } from 'sonner'
 import { formatCRC } from '@/modules/payroll/lib/format'
 import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
@@ -30,6 +31,9 @@ vi.mock('@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia', () => ({
 vi.mock('@/modules/payroll/actions/quitarFilaPlanilla', () => ({
   quitarFilaPlanilla: vi.fn(),
 }))
+vi.mock('@/modules/payroll/actions/pagarTodosDelPeriodo', () => ({
+  pagarTodosDelPeriodo: vi.fn(),
+}))
 vi.mock('./DetalleEditForm', () => ({ DetalleEditForm: () => null }))
 vi.mock('./RegistrarIncapacidadForm', () => ({ RegistrarIncapacidadForm: () => null }))
 
@@ -37,6 +41,8 @@ function fila(over: Partial<DetalleNominaItem>): DetalleNominaItem {
   return {
     id: 1,
     historialLaboralId: 1,
+    sucursalId: 2,
+    sucursalNombre: null,
     empleadoNombre: 'Ana Mora',
     empleadoCedula: '1-1111-1111',
     empleadoEmail: 'ana@correo.com',
@@ -89,6 +95,8 @@ function periodo(detalles: DetalleNominaItem[], over: Partial<PeriodoDetalle> = 
     fechaPago: null,
     observaciones: null,
     sucursalNombre: 'Norte',
+    porEmpresa: false,
+    filasOcultas: 0,
     detalles,
     ...over,
   } satisfies PeriodoDetalle
@@ -476,5 +484,179 @@ describe('PeriodoDetail: confirmar antes de pagar o desmarcar', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Desmarcar pago' }))
     expect(marcarDetallePagado).toHaveBeenCalledWith(1, false)
+  })
+})
+
+describe('PeriodoDetail: periodo de toda la empresa', () => {
+  const CENTRO = fila({
+    id: 1,
+    historialLaboralId: 1,
+    empleadoNombre: 'Ana Mora',
+    sucursalId: 2,
+    sucursalNombre: 'Centro',
+    totalAPagar: 100000,
+  })
+  const MALL = fila({
+    id: 2,
+    historialLaboralId: 2,
+    empleadoNombre: 'Luis Vega',
+    sucursalId: 5,
+    sucursalNombre: 'Mall',
+    totalAPagar: 50000,
+    pagado: true,
+  })
+  const MALL_2 = fila({
+    id: 3,
+    historialLaboralId: 3,
+    empleadoNombre: 'Eva Solís',
+    sucursalId: 5,
+    sucursalNombre: 'Mall',
+    totalAPagar: 70000,
+  })
+  const empresa = (detalles: DetalleNominaItem[], over: Partial<PeriodoDetalle> = {}) =>
+    periodo(detalles, { porEmpresa: true, sucursalNombre: 'Toda la empresa', ...over })
+
+  it('muestra la sucursal de cada fila y los subtotales por sucursal', () => {
+    render(
+      <PeriodoDetail periodo={empresa([CENTRO, MALL, MALL_2])} canWrite conceptosManuales={[]} />
+    )
+
+    const tabla = screen.getByRole('table')
+    expect(within(tabla).getByRole('columnheader', { name: 'Sucursal' })).toBeInTheDocument()
+    expect(within(tabla).getAllByText('Mall').length).toBeGreaterThan(0)
+    expect(screen.getByText('Por sucursal')).toBeInTheDocument()
+    // Mall: dos empleados, uno pagado, 50.000 + 70.000.
+    expect(screen.getByText(/2 empleado\(s\) · 1 pagado\(s\)/)).toHaveTextContent(monto(120000))
+  })
+
+  it('el filtro por sucursal acota la tabla y los totales', async () => {
+    render(
+      <PeriodoDetail periodo={empresa([CENTRO, MALL, MALL_2])} canWrite conceptosManuales={[]} />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Filtrar por sucursal' }))
+    await userEvent.click(
+      within(screen.getByRole('option', { name: 'Centro' })).getByRole('button')
+    )
+
+    const filasTabla = within(screen.getByRole('table')).getAllByRole('row')
+    // Encabezado, una fila y totales.
+    expect(filasTabla).toHaveLength(3)
+    expect(screen.getByText('Neto a pagar (Centro)')).toBeInTheDocument()
+    expect(within(filasTabla[1]).getByText('Ana Mora')).toBeInTheDocument()
+  })
+
+  it('una sola sucursal no muestra el filtro', () => {
+    render(<PeriodoDetail periodo={empresa([CENTRO])} canWrite conceptosManuales={[]} />)
+
+    expect(screen.queryByText('Por sucursal')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByRole('table')).getByRole('columnheader', { name: 'Sucursal' })
+    ).toBeInTheDocument()
+  })
+
+  it('avisa cuando hay filas que la cuenta no ve', () => {
+    render(
+      <PeriodoDetail
+        periodo={empresa([CENTRO], { filasOcultas: 4 })}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+
+    expect(
+      screen.getByText('Este periodo tiene 4 fila(s) más que no se muestran acá')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Neto a pagar (de tus sucursales)')).toBeInTheDocument()
+  })
+
+  it('un periodo de una sucursal no muestra la columna ni el aviso', () => {
+    render(<PeriodoDetail periodo={periodo([CENTRO, MALL_2])} canWrite conceptosManuales={[]} />)
+
+    expect(
+      within(screen.getByRole('table')).queryByRole('columnheader', { name: 'Sucursal' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Por sucursal')).not.toBeInTheDocument()
+  })
+})
+
+describe('PeriodoDetail: pagar a todos', () => {
+  const PENDIENTE_1 = fila({
+    id: 1,
+    historialLaboralId: 1,
+    empleadoNombre: 'Ana Mora',
+    totalAPagar: 100000,
+  })
+  const PENDIENTE_2 = fila({
+    id: 2,
+    historialLaboralId: 2,
+    empleadoNombre: 'Luis Vega',
+    totalAPagar: 50000,
+  })
+  const PAGADA = fila({ id: 3, historialLaboralId: 3, empleadoNombre: 'Eva Solís', pagado: true })
+
+  it('pide confirmación con el total de los que faltan y paga al confirmar', async () => {
+    vi.mocked(pagarTodosDelPeriodo).mockResolvedValue({
+      ok: true,
+      pagados: 2,
+      noPagados: [],
+      enLiquidacion: 0,
+      correosNoEnviados: 0,
+    })
+    render(
+      <PeriodoDetail
+        periodo={periodo([PENDIENTE_1, PENDIENTE_2, PAGADA])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar a todos' }))
+    const dialogo = screen.getByRole('alertdialog', {
+      name: '¿Desea pagarle a los 2 empleado(s) que faltan?',
+    })
+    expect(dialogo).toHaveTextContent(monto(150000))
+    await userEvent.click(within(dialogo).getByRole('button', { name: 'Sí, pagar a todos' }))
+
+    expect(pagarTodosDelPeriodo).toHaveBeenCalledWith(7, null)
+    expect(toast.success).toHaveBeenCalledWith('2 pago(s) registrados.')
+  })
+
+  it('lista los que no se pudieron pagar con su motivo', async () => {
+    vi.mocked(pagarTodosDelPeriodo).mockResolvedValue({
+      ok: true,
+      pagados: 1,
+      noPagados: [{ nombre: 'Luis Vega', motivo: 'Tiene marcas incompletas.' }],
+      enLiquidacion: 0,
+      correosNoEnviados: 0,
+    })
+    render(
+      <PeriodoDetail
+        periodo={periodo([PENDIENTE_1, PENDIENTE_2])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar a todos' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Sí, pagar a todos' }))
+
+    expect(
+      await screen.findByText('1 pago(s) no se pudieron registrar con «Pagar a todos»')
+    ).toBeInTheDocument()
+    expect(toast.warning).toHaveBeenCalled()
+  })
+
+  it('sin pendientes, o sin permiso, no se ofrece', () => {
+    const { unmount } = render(
+      <PeriodoDetail periodo={periodo([PAGADA])} canWrite conceptosManuales={[]} />
+    )
+    expect(screen.queryByRole('button', { name: 'Pagar a todos' })).not.toBeInTheDocument()
+    unmount()
+
+    render(
+      <PeriodoDetail periodo={periodo([PENDIENTE_1])} canWrite={false} conceptosManuales={[]} />
+    )
+    expect(screen.queryByRole('button', { name: 'Pagar a todos' })).not.toBeInTheDocument()
   })
 })

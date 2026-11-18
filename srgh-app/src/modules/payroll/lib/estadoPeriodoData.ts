@@ -11,14 +11,9 @@ import 'server-only'
 import type { createClient } from '@/lib/supabase/server'
 import { hoyLocal } from '@/modules/payroll/lib/fechas'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
+import { leerFilasEstado } from '@/modules/payroll/lib/filasEstado'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
-
-interface FilaEstadoRow {
-  ndt_historial_laboral_id: number
-  ndt_pagado: boolean
-  ndt_fecha_pago: string | null
-}
 
 interface PeriodoRefRow {
   npe_periodo_anio: number
@@ -43,6 +38,11 @@ interface PeriodoRefRow {
  * habría ningún pago que desmarcar y el periodo quedaría trabado. Por la misma
  * razón un periodo sin filas nunca pasa a 'pagado' solo.
  *
+ * Las filas se leen con nomina_filas_estado y no con una consulta directa:
+ * en un periodo de toda la empresa, una cuenta de una sucursal solo ve sus
+ * filas, y con eso marcaría 'pagado' el periodo entero al terminar las suyas
+ * mientras otra sucursal sigue sin pagar.
+ *
  * Si no se puede leer el periodo o las liquidaciones, la fila impaga cuenta
  * como pendiente: ante la duda el periodo queda abierto, nunca cerrado de
  * más. Es mejor esfuerzo: no lanza.
@@ -51,12 +51,8 @@ export async function sincronizarEstadoPeriodo(
   supabase: SupabaseServerClient,
   periodoId: number
 ): Promise<void> {
-  const [{ data: filas }, { data: periodo }] = await Promise.all([
-    supabase
-      .from('sgrh_nomina_detalle')
-      .select('ndt_historial_laboral_id, ndt_pagado, ndt_fecha_pago')
-      .eq('ndt_nomina_periodo_id', periodoId)
-      .returns<FilaEstadoRow[]>(),
+  const [filas, { data: periodo }] = await Promise.all([
+    leerFilasEstado(supabase, periodoId),
     supabase
       .from('sgrh_nomina_periodo')
       .select('npe_periodo_anio, npe_periodo_mes, npe_quincena')
@@ -64,7 +60,7 @@ export async function sincronizarEstadoPeriodo(
       .maybeSingle<PeriodoRefRow>(),
   ])
 
-  const lista = Array.isArray(filas) ? filas : []
+  const lista = filas.ok ? filas.data : []
   const impagas = lista.filter((f) => !f.ndt_pagado)
 
   let cubiertas = new Set<number>()

@@ -12,6 +12,8 @@ vi.mock('@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia', () => ({
   cargarEmpleadosDesdeAsistencia: vi.fn(),
 }))
 
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/empresa/contexto-activo', () => ({ getFiltroMarca: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
@@ -37,12 +39,30 @@ const INPUT: CrearPeriodoInput = {
   npe_observaciones: null,
 }
 
-function mockInsert(result: { data: unknown; error: unknown }) {
-  mockCreateClient.mockResolvedValue(
-    createSupabaseClientMock({ sgrh_nomina_periodo: result }) as unknown as Awaited<
-      ReturnType<typeof createClient>
-    >
-  )
+type Respuesta = { data: unknown; error: unknown }
+
+/**
+ * `periodo`: lo que devuelve sgrh_nomina_periodo (el insert y, si hace falta,
+ * la búsqueda del que ya existía). `porEmpresa`: org_nomina_por_empresa.
+ */
+function mockInsert(periodo: Respuesta | Respuesta[], porEmpresa: boolean | null = false) {
+  const client = createSupabaseClientMock({
+    sgrh_nomina_periodo: periodo,
+    sgrh_empresas:
+      porEmpresa === null
+        ? { data: null, error: { message: 'boom' } }
+        : { data: { org_nomina_por_empresa: porEmpresa }, error: null },
+  })
+  mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
+  return client
+}
+
+/** El objeto que se mandó a insertar en sgrh_nomina_periodo. */
+function insertado(client: ReturnType<typeof mockInsert>) {
+  const i = client.from.mock.calls.findIndex(([t]) => t === 'sgrh_nomina_periodo')
+  if (i === -1) return undefined
+  const builder = client.from.mock.results[i].value as { insert: ReturnType<typeof vi.fn> }
+  return builder.insert.mock.calls[0]?.[0]
 }
 
 describe('createPeriodo (server action)', () => {
@@ -183,5 +203,91 @@ describe('createPeriodo (server action)', () => {
       expect(result.empleadosCargados).toBe(0)
       expect(result.avisoCarga).toContain('no tiene empleados activos')
     }
+  })
+
+  it('si no puede leer el modelo de la empresa, no crea nada', async () => {
+    const client = mockInsert({ data: { npe_id: 5 }, error: null }, null)
+
+    const result = await createPeriodo(INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'No se pudo leer la configuración de nómina de la empresa.',
+    })
+    expect(insertado(client)).toBeUndefined()
+  })
+
+  it('con un periodo por sucursal, la sucursal es obligatoria', async () => {
+    const client = mockInsert({ data: { npe_id: 5 }, error: null })
+
+    const result = await createPeriodo({ ...INPUT, npe_sucursal_id: null })
+
+    expect(result).toEqual({ ok: false, error: 'La sucursal es obligatoria.' })
+    expect(insertado(client)).toBeUndefined()
+  })
+
+  describe('con un periodo por empresa', () => {
+    it('crea el periodo sin sucursal, aunque el formulario mande una', async () => {
+      const client = mockInsert({ data: { npe_id: 7 }, error: null }, true)
+
+      const result = await createPeriodo(INPUT)
+
+      expect(result).toEqual({ ok: true, periodoId: 7, ...CARGA_OK })
+      expect(insertado(client)).toMatchObject({ npe_sucursal_id: null, npe_empresa_id: 1 })
+    })
+
+    it('acepta el formulario sin sucursal', async () => {
+      mockInsert({ data: { npe_id: 7 }, error: null }, true)
+
+      const result = await createPeriodo({ ...INPUT, npe_sucursal_id: null })
+
+      expect(result.ok).toBe(true)
+    })
+
+    // Otra cuenta (de otra sucursal) ya creó la quincena: es la misma para
+    // toda la empresa, así que se va a esa en vez de dar error.
+    it('si la quincena ya existe, devuelve ese periodo sin cargar a nadie', async () => {
+      const client = mockInsert(
+        [
+          { data: null, error: { code: '23505', message: 'duplicate' } },
+          { data: { npe_id: 31 }, error: null },
+        ],
+        true
+      )
+
+      const result = await createPeriodo(INPUT)
+
+      expect(result).toEqual({
+        ok: true,
+        periodoId: 31,
+        empleadosCargados: 0,
+        sinAsistencia: 0,
+        avisoCarga: null,
+        yaExistia: true,
+      })
+      expect(mockCargar).not.toHaveBeenCalled()
+      const busqueda = client.from.mock.results.filter(
+        (_, i) => client.from.mock.calls[i][0] === 'sgrh_nomina_periodo'
+      )[1].value as { eq: ReturnType<typeof vi.fn> }
+      expect(busqueda.eq.mock.calls).toEqual([
+        ['npe_periodo_anio', 2026],
+        ['npe_periodo_mes', 7],
+        ['npe_quincena', 1],
+      ])
+    })
+
+    it('si choca y no encuentra el existente, da el error de duplicado', async () => {
+      mockInsert(
+        [
+          { data: null, error: { code: '23505', message: 'duplicate' } },
+          { data: null, error: null },
+        ],
+        true
+      )
+
+      const result = await createPeriodo(INPUT)
+
+      expect(result).toEqual({ ok: false, error: 'Ya existe un periodo para ese mes y quincena.' })
+    })
   })
 })

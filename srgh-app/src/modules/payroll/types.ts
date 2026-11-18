@@ -48,8 +48,15 @@ export interface PeriodoListItem {
   /** Derivado: el periodo ya terminó y todavía no está pagado. No se guarda. */
   atrasado: boolean
   fechaPago: string | null
+  /** Sucursal del periodo, o "Toda la empresa" si el periodo no tiene. */
   sucursalNombre: string
+  /** Filas que ve la cuenta (y, con una marca elegida, solo las de esa marca). */
   totalEmpleados: number
+  /**
+   * La cuenta puede eliminarlo. Un periodo de toda la empresa solo lo borra
+   * una cuenta sin sucursal asignada (ver deletePeriodo).
+   */
+  puedeEliminar: boolean
 }
 
 /**
@@ -61,6 +68,13 @@ export interface PeriodoListItem {
 export interface DetalleNominaItem {
   id: number
   historialLaboralId: number
+  /** Sucursal de la fila (ndt_sucursal_id). */
+  sucursalId: number | null
+  /**
+   * Nombre de esa sucursal. Solo viene en un periodo de toda la empresa; en
+   * uno por sucursal es la del periodo (PeriodoDetalle.sucursalNombre).
+   */
+  sucursalNombre: string | null
   empleadoNombre: string
   empleadoCedula: string
   /**
@@ -211,7 +225,19 @@ export interface PeriodoDetalle {
   atrasado: boolean
   fechaPago: string | null
   observaciones: string | null
+  /**
+   * Sucursal del periodo. En un periodo de toda la empresa: "Toda la
+   * empresa", o la sucursal de la fila cuando se pidió una sola (comprobante).
+   */
   sucursalNombre: string
+  /** El periodo es de toda la empresa: cada fila lleva su sucursal. */
+  porEmpresa: boolean
+  /**
+   * Filas del periodo que no están en `detalles`: son de sucursales que la
+   * cuenta no ve, o de otra marca que la elegida en el selector. Los totales
+   * de la pantalla no las incluyen.
+   */
+  filasOcultas: number
   detalles: DetalleNominaItem[]
 }
 
@@ -242,10 +268,14 @@ function fechaPeriodoOpcional(mensaje: string) {
 
 export const crearPeriodoSchema = z
   .object({
+    // null = periodo de toda la empresa. Si la empresa todavía trabaja con un
+    // periodo por sucursal, createPeriodo lo exige (acá no se sabe cuál de los
+    // dos modelos aplica). Sin elegir nada llega undefined y sigue fallando.
     npe_sucursal_id: z
       .number({ error: 'La sucursal es obligatoria' })
       .int()
-      .positive('Debe seleccionar una sucursal válida'),
+      .positive('Debe seleccionar una sucursal válida')
+      .nullable(),
 
     npe_periodo_mes: z
       .number({ error: 'El mes es obligatorio' })

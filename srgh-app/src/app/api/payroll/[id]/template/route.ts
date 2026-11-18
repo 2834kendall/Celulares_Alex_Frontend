@@ -8,13 +8,15 @@ import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { periodoLabel } from '@/modules/payroll/lib/format'
 import type { ConceptoPlanillaColumna } from '@/modules/payroll/lib/planilla'
 import { sucursalLabel } from '@/lib/empresa/marca-label'
+import { alcanceDelPeriodo, etiquetasDeSucursales } from '@/modules/payroll/lib/alcancePlanilla'
 
 interface PeriodoRow {
   npe_id: number
   npe_periodo_mes: number
   npe_periodo_anio: number
   npe_quincena: number
-  npe_sucursal_id: number
+  /** null = periodo de toda la empresa (ver lib/alcancePlanilla.ts). */
+  npe_sucursal_id: number | null
   npe_fecha_inicio_periodo: string | null
   npe_fecha_fin_periodo: string | null
   sgrh_sucursales: {
@@ -25,8 +27,11 @@ interface PeriodoRow {
 
 /**
  * Descarga la plantilla Excel del periodo, prellenada con los empleados
- * activos de la sucursal. Quien la descarga va a subirla después, por eso
- * el permiso exigido es NOMINA_WRITE.
+ * activos de su alcance: la sucursal del periodo o, en un periodo de toda la
+ * empresa, las sucursales que ve la cuenta (solo las de la marca elegida, si
+ * hay una). Ese alcance queda sellado en el archivo, y la subida no toca a
+ * nadie de fuera de él. Quien la descarga va a subirla después, por eso el
+ * permiso exigido es NOMINA_WRITE.
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -36,7 +41,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Periodo inválido.' }, { status: 400 })
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
 
   const supabase = await createClient()
 
@@ -64,9 +69,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'El periodo no existe o no es visible.' }, { status: 404 })
   }
 
+  const alcance = await alcanceDelPeriodo(supabase, claims, periodo.npe_sucursal_id)
+  if (!alcance.ok) {
+    return NextResponse.json({ error: alcance.error }, { status: 500 })
+  }
+
   // Incluye a quien ya tiene fila en el periodo aunque su contrato haya
   // terminado después: si no, su fila trababa la subida (ver getEmpleadosActivos).
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+  const empleadosResult = await getEmpleadosActivos(supabase, alcance.sucursalIds, {
     periodoId,
     finPeriodo: periodo.npe_fecha_fin_periodo,
   })
@@ -76,12 +86,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (empleadosResult.data.length === 0) {
     return NextResponse.json(
       {
-        error:
-          'La sucursal de este periodo no tiene empleados con contrato activo. Verifica el historial laboral antes de generar la planilla.',
+        error: alcance.porEmpresa
+          ? 'No hay empleados con contrato activo en las sucursales que ves de este periodo. Verifica el historial laboral antes de generar la planilla.'
+          : 'La sucursal de este periodo no tiene empleados con contrato activo. Verifica el historial laboral antes de generar la planilla.',
       },
       { status: 422 }
     )
   }
+
+  // Rótulo de la sucursal de cada fila (solo informativo).
+  const etiquetas = await etiquetasDeSucursales(
+    supabase,
+    empleadosResult.data.map((e) => e.sucursalId)
+  )
 
   // Conceptos activos del catálogo: cada uno de tipo "monto manual" (ingreso
   // o deducción) se convierte en una columna editable de la plantilla.
@@ -136,6 +153,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const guardado = guardadas.data.get(empleado.labId)
     return {
       ...empleado,
+      sucursalNombre: etiquetas.get(empleado.sucursalId) ?? null,
       ...(guardado ? { guardado } : {}),
       ...(totales
         ? { horas: { lectura: totales, diasPorRevisar: totales.diasQueBloquean.length } }
@@ -148,13 +166,20 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     periodo.npe_periodo_anio,
     periodo.npe_quincena
   )}`
-  const subtitulo = `Sucursal: ${sucursalLabel(periodo.sgrh_sucursales) ?? '—'} · Montos por quincena en colones`
+  const sucursalesDeLaPlantilla = alcance.porEmpresa
+    ? [...new Set(empleadosResult.data.map((e) => etiquetas.get(e.sucursalId)))]
+        .filter((nombre): nombre is string => Boolean(nombre))
+        .sort((a, b) => a.localeCompare(b, 'es'))
+        .join(', ') || '—'
+    : (sucursalLabel(periodo.sgrh_sucursales) ?? '—')
+  const subtitulo = `${alcance.porEmpresa ? 'Sucursales' : 'Sucursal'}: ${sucursalesDeLaPlantilla} · Montos por quincena en colones`
 
   const buffer = await buildPlanillaTemplate(
     {
       titulo,
       subtitulo,
       periodoId,
+      sucursalIds: alcance.sucursalIds,
       quincena: {
         anio: periodo.npe_periodo_anio,
         mes: periodo.npe_periodo_mes,

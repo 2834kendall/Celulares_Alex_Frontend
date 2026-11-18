@@ -100,6 +100,35 @@ export function contratosFueraDeAlcance(
   )
 }
 
+/**
+ * De los contratos pedidos, los que tienen quincenas de planilla en una
+ * sucursal que el usuario no ve (función nomina_contratos_con_filas_ocultas).
+ *
+ * contratosFueraDeAlcance mira la sucursal ACTUAL de cada contrato, y eso no
+ * alcanza: un traslado cambia la sucursal del contrato en el lugar, y las
+ * quincenas de antes se quedan en la sucursal vieja. Para una cuenta de la
+ * sucursal nueva el contrato "es suyo", pero la RLS le esconde esas
+ * quincenas y el aguinaldo sale de menos (hasta en ₡0) sin ningún aviso.
+ *
+ * `rango` (fechas 'YYYY-MM-DD') acota a los periodos de esos meses. Una
+ * cuenta de toda la empresa no tiene nada oculto: no se consulta. null = no
+ * se pudo consultar.
+ */
+export async function contratosConFilasOcultas(
+  supabase: SupabaseServerClient,
+  labIds: readonly number[],
+  visibles: readonly number[] | null,
+  rango?: { desde: string; hasta: string }
+): Promise<Set<number> | null> {
+  if (visibles === null || labIds.length === 0) return new Set()
+  const { data, error } = await supabase.rpc('nomina_contratos_con_filas_ocultas', {
+    p_lab_ids: [...labIds],
+    ...(rango ? { p_desde: rango.desde, p_hasta: rango.hasta } : {}),
+  })
+  if (error) return null
+  return new Set(Array.isArray(data) ? (data as number[]) : [])
+}
+
 /** Mensaje para cuando la relación tiene contratos en sucursales que el usuario no ve. */
 export const ERROR_SUCURSAL_NO_VISIBLE =
   'Este empleado trabajó en una sucursal que tu usuario no ve (por ejemplo, antes de un traslado): su planilla y sus ausencias de allá no se pueden leer, y el monto saldría de menos. Pedile a alguien con acceso a todas sus sucursales que lo calcule.'

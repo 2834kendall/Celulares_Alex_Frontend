@@ -28,10 +28,15 @@ const BORRAR_FECHA =
 
 interface PeriodoFormProps {
   sucursales: CatalogoItem[]
+  /**
+   * La empresa trabaja con un periodo por quincena para todas sus sucursales:
+   * no se elige sucursal.
+   */
+  porEmpresa?: boolean
 }
 
 /** Alta de un periodo de planilla (nace en estado 'borrador'). */
-export function PeriodoForm({ sucursales }: PeriodoFormProps) {
+export function PeriodoForm({ sucursales, porEmpresa = false }: PeriodoFormProps) {
   const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
 
@@ -54,6 +59,7 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
     resolver: zodResolver(crearPeriodoSchema) as Resolver<CrearPeriodoInput>,
     mode: 'onTouched',
     defaultValues: {
+      ...(porEmpresa ? { npe_sucursal_id: null } : {}),
       npe_periodo_mes: mesInicial,
       npe_periodo_anio: anioInicial,
       npe_quincena: quincenaInicial,
@@ -103,7 +109,11 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
     // El periodo ya existe pase lo que pase; lo que puede fallar es la carga
     // de los empleados, y eso se avisa sin tratarlo como un error de creación.
     if (result.avisoAusencias) toast.warning(result.avisoAusencias)
-    if (result.avisoCarga) {
+    if (result.yaExistia) {
+      toast.info(
+        'Esa quincena ya tiene periodo, así que te llevamos a él. Si falta gente de tus sucursales, usá "Agregar empleados que falten".'
+      )
+    } else if (result.avisoCarga) {
       toast.warning(`Periodo creado, pero no se cargaron los empleados: ${result.avisoCarga}`)
     } else if (result.empleadosCargados === 0) {
       toast.success('Periodo de nómina creado.')
@@ -137,23 +147,30 @@ export function PeriodoForm({ sucursales }: PeriodoFormProps) {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label htmlFor="npe_sucursal_id" className={LABEL}>
-              Sucursal
-            </label>
-            <ControlledSelectMenu
-              control={control}
-              name="npe_sucursal_id"
-              id="npe_sucursal_id"
-              parse={parseNumber}
-              placeholder="Selecciona una sucursal"
-              invalid={!!errors.npe_sucursal_id}
-              options={sucursales.map((s) => ({ value: String(s.id), label: s.nombre }))}
-            />
-            {errors.npe_sucursal_id && (
-              <p className={ERROR_CLASSES}>{errors.npe_sucursal_id.message}</p>
-            )}
-          </div>
+          {porEmpresa ? (
+            <p className="text-xs leading-relaxed text-slate-500 sm:col-span-2">
+              El periodo es de toda la empresa: se cargan los empleados de las sucursales que ves.
+              Si la quincena ya tiene periodo, te llevamos a él.
+            </p>
+          ) : (
+            <div className="sm:col-span-2">
+              <label htmlFor="npe_sucursal_id" className={LABEL}>
+                Sucursal
+              </label>
+              <ControlledSelectMenu
+                control={control}
+                name="npe_sucursal_id"
+                id="npe_sucursal_id"
+                parse={parseNumber}
+                placeholder="Selecciona una sucursal"
+                invalid={!!errors.npe_sucursal_id}
+                options={sucursales.map((s) => ({ value: String(s.id), label: s.nombre }))}
+              />
+              {errors.npe_sucursal_id && (
+                <p className={ERROR_CLASSES}>{errors.npe_sucursal_id.message}</p>
+              )}
+            </div>
+          )}
 
           <div>
             <label htmlFor="npe_periodo_mes" className={LABEL}>

@@ -2,7 +2,7 @@
 
 ## Qué hace
 
-Planilla quincenal por sucursal (armada desde la asistencia, corregible por Excel o a mano),
+Planilla quincenal de toda la empresa, con la sucursal en cada fila (armada desde la asistencia, corregible por Excel o a mano),
 pagos con comprobante y correo, banco de horas extra, aguinaldo y liquidación según el Código
 de Trabajo de Costa Rica. Es el módulo más grande del repo: un tercio del código de `src/`.
 
@@ -38,7 +38,9 @@ Rutas: `/payroll`, `/payroll/new`, `/payroll/[id]`, `/payroll/concepts`,
 ## Datos
 
 Policies base en `20260101000600_rls_policies.sql`. `NOMINA_READ` lee y `NOMINA_WRITE`
-escribe. Los períodos se acotan por `sucursal_visible(npe_sucursal_id)`. El propio empleado ve
+escribe. Las filas de planilla, sus líneas y sus comprobantes se acotan por la sucursal de la
+fila (`ndt_sucursal_id IN sucursales_visibles()`, migración `20261117130000`); el encabezado
+del período es de la empresa ([planilla](docs/planilla.md#quién-ve-qué)). El propio empleado ve
 sus filas, líneas y comprobantes por la rama `get_emp_id()`. Las tablas de cada tema están en
 su documento.
 

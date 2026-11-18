@@ -5,6 +5,10 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { filasConHorasDeBancoResueltas } from '@/modules/payroll/lib/dependenciasDetalle'
+import {
+  ERROR_SOLO_CUENTA_DE_EMPRESA,
+  esCuentaDeEmpresa,
+} from '@/modules/payroll/lib/alcancePlanilla'
 
 export type DeletePeriodoResult = { ok: true } | { ok: false; error: string }
 
@@ -27,6 +31,11 @@ interface DetalleRow {
  * Como un periodo en estado 'pagado' es exactamente aquel donde todos están
  * pagados, esa misma regla lo cubre: no hace falta mirar npe_estado aparte.
  *
+ * Un periodo de toda la empresa (sin sucursal) solo lo borra una cuenta de
+ * toda la empresa: una cuenta de una sucursal ve nada más sus filas, y no
+ * puede decidir sobre las de las otras. La base lo repite (RLS y
+ * eliminar_periodo_nomina).
+ *
  * El borrado lo hace la función eliminar_periodo_nomina en una sola
  * transacción, en el orden que imponen las llaves foráneas que apuntan a
  * sgrh_nomina_detalle: el banco de horas (dos veces), las comisiones, los
@@ -37,21 +46,24 @@ export async function deletePeriodo(periodoId: number): Promise<DeletePeriodoRes
     return { ok: false, error: 'Periodo inválido.' }
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
   const supabase = await createClient()
 
   // RLS ya limita a la empresa y sucursal visibles del JWT.
   const { data: periodo, error: errPeriodo } = await supabase
     .from('sgrh_nomina_periodo')
-    .select('npe_id')
+    .select('npe_id, npe_sucursal_id')
     .eq('npe_id', periodoId)
-    .maybeSingle<{ npe_id: number }>()
+    .maybeSingle<{ npe_id: number; npe_sucursal_id: number | null }>()
 
   if (errPeriodo) {
     return { ok: false, error: 'No se pudo cargar el periodo.' }
   }
   if (!periodo) {
     return { ok: false, error: 'El periodo no existe o no es visible.' }
+  }
+  if (periodo.npe_sucursal_id === null && !esCuentaDeEmpresa(claims)) {
+    return { ok: false, error: ERROR_SOLO_CUENTA_DE_EMPRESA }
   }
 
   const { data: detalles, error: errDetalles } = await supabase

@@ -210,4 +210,49 @@ describe('deletePeriodo (server action)', () => {
 
     expect(result).toEqual({ ok: false, error: 'No se pudo eliminar el periodo.' })
   })
+
+  describe('periodo de toda la empresa', () => {
+    const EMPRESA = { data: { npe_id: 9, npe_sucursal_id: null }, error: null }
+
+    it('una cuenta con sucursal asignada no lo puede eliminar', async () => {
+      mockRequirePermission.mockResolvedValue({
+        app_metadata: { sucursal_ids: [2] },
+      } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+      const client = mockSupabase({ sgrh_nomina_periodo: EMPRESA })
+
+      const result = await deletePeriodo(9)
+
+      expect(result).toEqual({
+        ok: false,
+        error:
+          'Este periodo es de toda la empresa: solo lo puede eliminar una cuenta sin sucursal asignada.',
+      })
+      expect(client.rpc).not.toHaveBeenCalled()
+      expect(client.from).not.toHaveBeenCalledWith('sgrh_nomina_detalle')
+    })
+
+    it('una cuenta de toda la empresa sí', async () => {
+      const client = mockSupabase({
+        sgrh_nomina_periodo: EMPRESA,
+        sgrh_nomina_detalle: { data: [], error: null },
+      })
+
+      const result = await deletePeriodo(9)
+
+      expect(result).toEqual({ ok: true })
+      expect(client.rpc).toHaveBeenCalledWith('eliminar_periodo_nomina', { p_npe_id: 9 })
+    })
+
+    it('una cuenta de sucursal sí elimina un periodo de su sucursal', async () => {
+      mockRequirePermission.mockResolvedValue({
+        app_metadata: { sucursal_ids: [2] },
+      } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+      mockSupabase({
+        sgrh_nomina_periodo: { data: { npe_id: 9, npe_sucursal_id: 2 }, error: null },
+        sgrh_nomina_detalle: { data: [], error: null },
+      })
+
+      expect(await deletePeriodo(9)).toEqual({ ok: true })
+    })
+  })
 })

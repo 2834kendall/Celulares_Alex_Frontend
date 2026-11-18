@@ -429,6 +429,54 @@ describe('procesarLiquidacion (server action)', () => {
     expect(llamadaRpc(client)).toBeUndefined()
   })
 
+  // Traslado en el MISMO contrato (editar_contrato): el contrato ya es de la
+  // sucursal 2, pero quincenas de antes quedaron en la 1, que esta cuenta no
+  // ve. El promedio saldría de menos: no se liquida.
+  it('usuario de sucursal: no liquida si hay quincenas del contrato en otra sucursal', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {
+        permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE', 'AUSENCIAS_READ'],
+        sucursal_ids: [2],
+      },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const client = escenario({
+      sgrh_historial_laboral: { data: { ...HISTORIAL, lab_sucursal_id: 2 }, error: null },
+    })
+    client.rpc.mockImplementation(async (fn: string) =>
+      fn === 'nomina_contratos_con_filas_ocultas'
+        ? { data: [HISTORIAL.lab_id], error: null }
+        : GUARDADA
+    )
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('sucursal que tu usuario no ve')
+    expect(llamadaRpc(client)).toBeUndefined()
+  })
+
+  it('usuario de sucursal sin quincenas ocultas: liquida normal', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {
+        permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE', 'AUSENCIAS_READ'],
+        sucursal_ids: [2],
+      },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const client = escenario({
+      sgrh_historial_laboral: { data: { ...HISTORIAL, lab_sucursal_id: 2 }, error: null },
+    })
+    client.rpc.mockImplementation(async (fn: string) =>
+      fn === 'nomina_contratos_con_filas_ocultas' ? { data: [], error: null } : GUARDADA
+    )
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(true)
+    expect(client.rpc).toHaveBeenCalledWith('nomina_contratos_con_filas_ocultas', {
+      p_lab_ids: [HISTORIAL.lab_id],
+    })
+  })
+
   describe('mutuo acuerdo (Art. 86 CT): la cesantía se paga solo si se pactó', () => {
     it('sin decir si se pactó, no calcula ni guarda nada', async () => {
       const client = escenario({ sgrh_cat_motivos_salida: { data: MOTIVO_MUTUO, error: null } })

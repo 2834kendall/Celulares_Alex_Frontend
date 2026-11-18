@@ -31,6 +31,12 @@ import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { DetalleNominaItem, IncapacidadItem, PeriodoDetalle } from '@/modules/payroll/types'
 import { liquidacionesQueCubren } from '@/modules/payroll/lib/liquidacionData'
 import { sucursalLabel } from '@/lib/empresa/marca-label'
+import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
+import {
+  ETIQUETA_TODA_LA_EMPRESA,
+  etiquetasDeSucursales,
+  leerFilasEstado,
+} from '@/modules/payroll/lib/alcancePlanilla'
 
 interface PeriodoRow {
   npe_id: number
@@ -42,6 +48,8 @@ interface PeriodoRow {
   npe_estado: string
   npe_fecha_pago: string | null
   npe_observaciones: string | null
+  /** null = periodo de toda la empresa. */
+  npe_sucursal_id?: number | null
   sgrh_sucursales: {
     suc_nombre: string | null
     sgrh_marcas_comerciales?: { mco_nombre: string } | null
@@ -51,6 +59,7 @@ interface PeriodoRow {
 interface DetalleRow {
   ndt_id: number
   ndt_historial_laboral_id: number
+  ndt_sucursal_id?: number | null
   ndt_salario_bruto: number
   ndt_total_deducciones_obreras: number
   ndt_total_cargas_patronales: number
@@ -124,6 +133,11 @@ export type GetPeriodoDetailResult =
 /**
  * Cabecera del periodo + planilla (un detalle por empleado).
  * RLS garantiza que solo se ven periodos de la empresa del JWT.
+ *
+ * En un periodo de toda la empresa la RLS deja ver solo las filas de las
+ * sucursales de la cuenta, y si hay una marca elegida en el selector se
+ * muestran solo las de esa marca. Cuántas quedan fuera va en `filasOcultas`.
+ * Con `soloDetalleId` (un comprobante) la marca no se aplica.
  */
 export async function getPeriodoDetail(
   periodoId: number,
@@ -152,6 +166,7 @@ export async function getPeriodoDetail(
       `
       ndt_id,
       ndt_historial_laboral_id,
+      ndt_sucursal_id,
       ndt_salario_bruto,
       ndt_total_deducciones_obreras,
       ndt_total_cargas_patronales,
@@ -206,6 +221,7 @@ export async function getPeriodoDetail(
         npe_estado,
         npe_fecha_pago,
         npe_observaciones,
+        npe_sucursal_id,
         sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
       `
       )
@@ -236,7 +252,21 @@ export async function getPeriodoDetail(
     return { ok: false, error: 'No se pudo cargar la planilla del periodo.' }
   }
 
-  const filas = detalles ?? []
+  // Periodo de toda la empresa con una marca elegida: solo las filas de las
+  // sucursales de esa marca. Se filtra acá y no en la consulta porque recién
+  // ahora se sabe de qué modelo es el periodo (se leyeron juntos).
+  const porEmpresa = periodo.npe_sucursal_id === null
+  let filas = detalles ?? []
+  if (porEmpresa && soloDetalleId === undefined) {
+    const filtro = await getFiltroMarca()
+    if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
+    if (filtro.estado === 'filtrado') {
+      const deLaMarca = new Set(filtro.sucursalIds)
+      filas = filas.filter(
+        (d: DetalleRow) => typeof d.ndt_sucursal_id === 'number' && deLaMarca.has(d.ndt_sucursal_id)
+      )
+    }
+  }
   const idsDetalle = filas.map((d: DetalleRow) => d.ndt_id)
   const hayFechas = Boolean(periodo.npe_fecha_inicio_periodo && periodo.npe_fecha_fin_periodo)
   const labsConSubsidio = filas
@@ -267,6 +297,8 @@ export async function getPeriodoDetail(
     { data: ausencias, error: errAusencias },
     cubiertas,
     datosPagoDescifrados,
+    etiquetasSucursal,
+    filasDelPeriodo,
   ] = await Promise.all([
     filas.length > 0 && hayFechas
       ? getHorasDelPeriodo(supabase, {
@@ -324,6 +356,19 @@ export async function getPeriodoDetail(
         })
       : null,
     empIds.length > 0 ? leerDatosPago(supabase, empIds) : null,
+    // Nombre de la sucursal de cada fila: solo hace falta cuando el periodo
+    // no tiene una propia.
+    porEmpresa
+      ? etiquetasDeSucursales(
+          supabase,
+          filas
+            .map((d: DetalleRow) => d.ndt_sucursal_id)
+            .filter((id): id is number => typeof id === 'number')
+        )
+      : null,
+    // Cuántas filas tiene el periodo en total, para avisar si esta vista no
+    // las muestra todas. Informativo: si falla, no se avisa.
+    porEmpresa && soloDetalleId === undefined ? leerFilasEstado(supabase, periodoId) : null,
   ])
 
   // Montos crudos por concepto (para poder editarlos sin re-subir el Excel, y
@@ -619,6 +664,11 @@ export async function getPeriodoDetail(
     return {
       id: row.ndt_id,
       historialLaboralId: row.ndt_historial_laboral_id,
+      sucursalId: row.ndt_sucursal_id ?? null,
+      sucursalNombre:
+        typeof row.ndt_sucursal_id === 'number'
+          ? (etiquetasSucursal?.get(row.ndt_sucursal_id) ?? null)
+          : null,
       empleadoNombre: nombre,
       empleadoCedula: empleado?.emp_numero_identificacion ?? '—',
       empleadoEmail: empleado?.emp_email_personal?.trim() || null,
@@ -682,7 +732,15 @@ export async function getPeriodoDetail(
       atrasado: periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo),
       fechaPago: periodo.npe_fecha_pago,
       observaciones: periodo.npe_observaciones,
-      sucursalNombre: sucursalLabel(periodo.sgrh_sucursales) ?? '—',
+      sucursalNombre: porEmpresa
+        ? // Un comprobante (una sola fila) dice la sucursal de esa fila.
+          ((soloDetalleId !== undefined ? items[0]?.sucursalNombre : null) ??
+          ETIQUETA_TODA_LA_EMPRESA)
+        : (sucursalLabel(periodo.sgrh_sucursales) ?? '—'),
+      porEmpresa,
+      filasOcultas: filasDelPeriodo?.ok
+        ? Math.max(0, filasDelPeriodo.data.length - items.length)
+        : 0,
       detalles: items,
     },
   }

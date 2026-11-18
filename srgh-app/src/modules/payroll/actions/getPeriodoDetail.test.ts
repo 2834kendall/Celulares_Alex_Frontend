@@ -15,6 +15,10 @@ vi.mock('@/modules/payroll/lib/horasPeriodoData', () => ({ getHorasDelPeriodo: v
 // planillaExcel.test.ts). El descifrado real vive en fieldCrypto.core.test.ts.
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/crypto/fieldCrypto', () => ({ decryptField: vi.fn() }))
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'No se pudo aplicar el filtro de marca.',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
@@ -35,12 +39,14 @@ const PERIODO_ROW = {
   npe_estado: 'borrador',
   npe_fecha_pago: null,
   npe_observaciones: null,
+  npe_sucursal_id: 2,
   sgrh_sucursales: { suc_nombre: 'Central' },
 }
 
 const DETALLE_ROW = {
   ndt_id: 21,
   ndt_historial_laboral_id: 9,
+  ndt_sucursal_id: 2,
   ndt_salario_bruto: 500000,
   ndt_total_deducciones_obreras: 52500,
   ndt_total_cargas_patronales: 133000,
@@ -69,9 +75,12 @@ const DETALLE_ROW = {
 // consulta en paralelo con la planilla.
 const TIPO_AUSENCIA_ROW = { data: { tau_porcentaje_pago_empleador: 50 }, error: null }
 
-function mockTables(responses: Record<string, { data: unknown; error: unknown }>) {
-  mockCreateClient.mockResolvedValue(
-    createSupabaseClientMock({
+function mockTables(
+  responses: Record<string, { data: unknown; error: unknown }>,
+  rpcResponses: Record<string, { data: unknown; error: unknown }> = {}
+) {
+  const client = createSupabaseClientMock(
+    {
       // La acción consulta esta tabla en todos los casos; los tests que no la
       // declaran no deberían tener que enumerarla.
       sgrh_comprobantes_pago: { data: [], error: null },
@@ -81,8 +90,11 @@ function mockTables(responses: Record<string, { data: unknown; error: unknown }>
       // De qué ausencia son los días de subsidio. Por defecto ninguna.
       sgrh_ausencias: { data: [], error: null },
       ...responses,
-    }) as unknown as Awaited<ReturnType<typeof createClient>>
+    },
+    { rpcResponses }
   )
+  mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
+  return client
 }
 
 describe('getPeriodoDetail (server action)', () => {
@@ -241,10 +253,15 @@ describe('getPeriodoDetail (server action)', () => {
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.data.sucursalNombre).toBe('Central')
+      expect(result.data.porEmpresa).toBe(false)
+      expect(result.data.filasOcultas).toBe(0)
       expect(result.data.detalles).toEqual([
         {
           id: 21,
           historialLaboralId: 9,
+          sucursalId: 2,
+          // Periodo de una sucursal: el nombre va en el periodo, no en la fila.
+          sucursalNombre: null,
           empleadoNombre: 'Ana Mora',
           empleadoCedula: '1-1111-1111',
           // Sin los espacios con que se haya guardado: es adonde va el comprobante.
@@ -892,5 +909,170 @@ describe('getPeriodoDetail (server action)', () => {
         subsidioCcssEstimado: null,
       })
     })
+  })
+})
+
+describe('getPeriodoDetail: periodo de toda la empresa', () => {
+  const EMPRESA = { ...PERIODO_ROW, npe_sucursal_id: null, sgrh_sucursales: null }
+  const fila = (ndt: number, lab: number, sucursal: number) => ({
+    ...DETALLE_ROW,
+    ndt_id: ndt,
+    ndt_historial_laboral_id: lab,
+    ndt_sucursal_id: sucursal,
+  })
+  const estado = (n: number) => ({
+    nomina_filas_estado: {
+      data: Array.from({ length: n }, (_, i) => ({
+        ndt_historial_laboral_id: 100 + i,
+        ndt_pagado: false,
+        ndt_fecha_pago: null,
+      })),
+      error: null,
+    },
+  })
+  const SUCURSALES = {
+    data: [
+      { suc_id: 2, suc_nombre: 'Centro', sgrh_marcas_comerciales: { mco_nombre: 'Alex' } },
+      { suc_id: 5, suc_nombre: 'Mall', sgrh_marcas_comerciales: null },
+    ],
+    error: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(CLAIMS)
+    mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map() })
+    mockDecryptField.mockImplementation(async (stored) => ({ ok: true, value: stored }))
+  })
+
+  it('cada fila trae su sucursal y el periodo se rotula "Toda la empresa"', async () => {
+    mockTables(
+      {
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_nomina_detalle: { data: [fila(21, 9, 2), fila(22, 10, 5)], error: null },
+        sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+        sgrh_empleado_datos_pago: { data: [], error: null },
+        sgrh_nomina_linea_ingreso: { data: [], error: null },
+        sgrh_nomina_linea_deduccion: { data: [], error: null },
+        sgrh_sucursales: SUCURSALES,
+      },
+      estado(2)
+    )
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok && result.data.porEmpresa).toBe(true)
+    expect(result.ok && result.data.sucursalNombre).toBe('Toda la empresa')
+    expect(result.ok && result.data.detalles.map((d) => [d.id, d.sucursalNombre])).toEqual([
+      [21, 'Alex · Centro'],
+      [22, 'Mall'],
+    ])
+    expect(result.ok && result.data.filasOcultas).toBe(0)
+  })
+
+  // Una cuenta de la sucursal 2 ve una de las tres filas del periodo.
+  it('cuenta las filas que la cuenta no ve', async () => {
+    mockTables(
+      {
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_nomina_detalle: { data: [fila(21, 9, 2)], error: null },
+        sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+        sgrh_empleado_datos_pago: { data: [], error: null },
+        sgrh_nomina_linea_ingreso: { data: [], error: null },
+        sgrh_nomina_linea_deduccion: { data: [], error: null },
+        sgrh_sucursales: SUCURSALES,
+      },
+      estado(3)
+    )
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok && result.data.filasOcultas).toBe(2)
+  })
+
+  it('con una marca elegida muestra solo las filas de esa marca', async () => {
+    const { getFiltroMarca } = await import('@/lib/empresa/contexto-activo')
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce({
+      estado: 'filtrado',
+      marcaId: 1,
+      sucursalIds: [5],
+    })
+    mockTables(
+      {
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_nomina_detalle: { data: [fila(21, 9, 2), fila(22, 10, 5)], error: null },
+        sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+        sgrh_empleado_datos_pago: { data: [], error: null },
+        sgrh_nomina_linea_ingreso: { data: [], error: null },
+        sgrh_nomina_linea_deduccion: { data: [], error: null },
+        sgrh_sucursales: SUCURSALES,
+      },
+      estado(2)
+    )
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok && result.data.detalles.map((d) => d.id)).toEqual([22])
+    expect(result.ok && result.data.filasOcultas).toBe(1)
+  })
+
+  it('si no se pudo leer el filtro de marca da error, no todas las filas', async () => {
+    const { getFiltroMarca } = await import('@/lib/empresa/contexto-activo')
+    vi.mocked(getFiltroMarca).mockResolvedValueOnce({ estado: 'error', sucursalIds: null })
+    mockTables(
+      {
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_nomina_detalle: { data: [fila(21, 9, 2)], error: null },
+        sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+        sgrh_empleado_datos_pago: { data: [], error: null },
+        sgrh_nomina_linea_ingreso: { data: [], error: null },
+        sgrh_nomina_linea_deduccion: { data: [], error: null },
+      },
+      estado(1)
+    )
+
+    expect((await getPeriodoDetail(7)).ok).toBe(false)
+  })
+
+  // El comprobante dice la sucursal del empleado, no "Toda la empresa", y no
+  // depende de la marca elegida.
+  it('una sola fila (comprobante) lleva la sucursal de la fila', async () => {
+    const { getFiltroMarca } = await import('@/lib/empresa/contexto-activo')
+    const client = mockTables(
+      {
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_nomina_detalle: { data: [fila(22, 10, 5)], error: null },
+        sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+        sgrh_empleado_datos_pago: { data: [], error: null },
+        sgrh_nomina_linea_ingreso: { data: [], error: null },
+        sgrh_nomina_linea_deduccion: { data: [], error: null },
+        sgrh_sucursales: SUCURSALES,
+      },
+      estado(2)
+    )
+
+    const result = await getPeriodoDetail(7, { soloDetalleId: 22 })
+
+    expect(result.ok && result.data.sucursalNombre).toBe('Mall')
+    expect(getFiltroMarca).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('en un periodo de una sucursal no pregunta por la marca ni por las demás filas', async () => {
+    const { getFiltroMarca } = await import('@/lib/empresa/contexto-activo')
+    const client = mockTables({
+      sgrh_nomina_periodo: { data: PERIODO_ROW, error: null },
+      sgrh_nomina_detalle: { data: [DETALLE_ROW], error: null },
+      sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+      sgrh_empleado_datos_pago: { data: [], error: null },
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_nomina_linea_deduccion: { data: [], error: null },
+    })
+
+    await getPeriodoDetail(7)
+
+    expect(getFiltroMarca).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalled()
+    expect(client.from.mock.calls.map((c) => c[0])).not.toContain('sgrh_sucursales')
   })
 })

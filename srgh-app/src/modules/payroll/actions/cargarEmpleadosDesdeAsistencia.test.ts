@@ -14,6 +14,11 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 vi.mock('@/modules/payroll/lib/planillaData', () => ({ getEmpleadosActivos: vi.fn() }))
 vi.mock('@/modules/payroll/lib/horasPeriodoData', () => ({ getHorasDelPeriodo: vi.fn() }))
+// El selector de marca lee cookies; solo cuenta en un periodo de toda la empresa.
+vi.mock('@/lib/empresa/contexto-activo', () => ({
+  ERROR_FILTRO_MARCA: 'error de marca',
+  getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
+}))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
@@ -84,37 +89,52 @@ function totales(over: Record<string, unknown> = {}) {
   }
 }
 
+type Respuesta = { data: unknown; error: unknown }
+
+/** Lo que devuelve nomina_filas_estado: quiénes ya están en el periodo. */
+const yaEnPeriodo = (...labs: number[]): Respuesta => ({
+  data: labs.map((l) => ({ ndt_historial_laboral_id: l, ndt_pagado: false, ndt_fecha_pago: null })),
+  error: null,
+})
+
 function mockSupabase(
-  responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
+  responses: Record<string, Respuesta | Respuesta[]>,
+  filasDelPeriodo: Respuesta = yaEnPeriodo()
 ) {
-  const client = createSupabaseClientMock({
-    // Sin incapacidades ni licencias registradas (aplicarAusenciasAFilasNuevas).
-    sgrh_ausencias: { data: [], error: null },
-    ...responses,
-  })
+  const client = createSupabaseClientMock(
+    {
+      // Sin incapacidades ni licencias registradas (aplicarAusenciasAFilasNuevas).
+      sgrh_ausencias: { data: [], error: null },
+      ...responses,
+    },
+    { rpcResponses: { nomina_filas_estado: filasDelPeriodo } }
+  )
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
 
-/** Periodo vacío al que se le van a cargar los empleados. */
+/**
+ * Periodo vacío al que se le van a cargar los empleados. `filasDelPeriodo` es
+ * quiénes ya están (nomina_filas_estado): por defecto, nadie.
+ */
 function escenario(
-  over: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]> = {}
+  over: Record<string, Respuesta | Respuesta[]> = {},
+  filasDelPeriodo?: Respuesta
 ) {
-  return mockSupabase({
-    sgrh_nomina_periodo: { data: PERIODO, error: null },
-    sgrh_nomina_detalle: [
-      // Quiénes ya están en el periodo: nadie.
-      { data: [], error: null },
+  return mockSupabase(
+    {
+      sgrh_nomina_periodo: { data: PERIODO, error: null },
       // El insert devuelve las filas creadas.
-      { data: [{ ndt_id: 70, ndt_historial_laboral_id: 5 }], error: null },
-    ],
-    sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
-    sgrh_nomina_linea_ingreso: [OK, OK],
-    sgrh_nomina_linea_patronal: { data: null, error: null },
-    sgrh_nomina_linea_deduccion: [OK, OK],
-    sgrh_banco_horas_movimientos: { data: null, error: null },
-    ...over,
-  })
+      sgrh_nomina_detalle: { data: [{ ndt_id: 70, ndt_historial_laboral_id: 5 }], error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_nomina_linea_ingreso: [OK, OK],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [OK, OK],
+      sgrh_banco_horas_movimientos: { data: null, error: null },
+      ...over,
+    },
+    filasDelPeriodo
+  )
 }
 
 function llamadas(
@@ -146,6 +166,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           salarioBaseMensual: 600000,
           salarioRealMensual: 645000,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -192,7 +213,8 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       avisoAusencias: null,
     })
     // Solo contratos que empezaron antes de que termine la quincena.
-    expect(mockEmpleados).toHaveBeenCalledWith(expect.anything(), expect.any(Number), {
+    // Periodo de una sucursal: su alcance es esa sucursal.
+    expect(mockEmpleados).toHaveBeenCalledWith(expect.anything(), [2], {
       finPeriodo: '2026-09-15',
     })
 
@@ -284,12 +306,10 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
   // El caso de un periodo que ya se armó y al que entró alguien nuevo: no se
   // puede rehacer a los que ya están, sus montos pueden estar editados a mano.
   it('solo agrega a los que faltan, sin tocar a los que ya están', async () => {
-    const client = escenario({
-      sgrh_nomina_detalle: [
-        { data: [{ ndt_historial_laboral_id: 5 }], error: null },
-        { data: [{ ndt_id: 71, ndt_historial_laboral_id: 6 }], error: null },
-      ],
-    })
+    const client = escenario(
+      { sgrh_nomina_detalle: { data: [{ ndt_id: 71, ndt_historial_laboral_id: 6 }], error: null } },
+      yaEnPeriodo(5)
+    )
     mockEmpleados.mockResolvedValue({
       ok: true,
       data: [
@@ -300,6 +320,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           salarioBaseMensual: 600000,
           salarioRealMensual: 645000,
           horasSemanales: 48,
+          sucursalId: 2,
         },
         {
           labId: 6,
@@ -308,6 +329,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           salarioBaseMensual: 400000,
           salarioRealMensual: 400000,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -338,9 +360,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
   })
 
   it('no escribe nada si ya están todos', async () => {
-    const client = escenario({
-      sgrh_nomina_detalle: { data: [{ ndt_historial_laboral_id: 5 }], error: null },
-    })
+    const client = escenario({}, yaEnPeriodo(5))
 
     const result = await cargarEmpleadosDesdeAsistencia(9)
 
@@ -400,6 +420,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           salarioBaseMensual: 600000,
           salarioRealMensual: 645000,
           horasSemanales: 48,
+          sucursalId: 2,
         },
         {
           // Mismo empleado, contrato viejo sin cerrar.
@@ -409,6 +430,7 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
           salarioBaseMensual: 600000,
           salarioRealMensual: 645000,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -421,5 +443,88 @@ describe('cargarEmpleadosDesdeAsistencia (server action)', () => {
       expect(result.error).toContain('dos veces')
     }
     expect(llamadas(client, 'sgrh_nomina_detalle', 'insert')).toHaveLength(0)
+  })
+
+  // Pedro tiene su fila de esta quincena en una sucursal que la cuenta no ve
+  // (lo trasladaron después). La RLS esconde esa fila; si se le creyera, se lo
+  // intentaría cargar otra vez y el índice único tumbaría la carga entera.
+  it('no vuelve a cargar a quien ya está en el periodo en una sucursal que no se ve', async () => {
+    const client = escenario({}, yaEnPeriodo(5))
+
+    const result = await cargarEmpleadosDesdeAsistencia(9)
+
+    expect(result).toMatchObject({ ok: true, agregados: 0, yaEstaban: 1 })
+    expect(client.rpc).toHaveBeenCalledWith('nomina_filas_estado', { p_npe_id: 9 })
+    expect(llamadas(client, 'sgrh_nomina_detalle', 'insert')).toEqual([])
+  })
+
+  it('si no puede saber quién ya está en el periodo, no carga a nadie', async () => {
+    const client = escenario({}, { data: null, error: { message: 'boom' } })
+
+    const result = await cargarEmpleadosDesdeAsistencia(9)
+
+    expect(result).toEqual({ ok: false, error: 'No se pudo revisar quién ya está en el periodo.' })
+    expect(llamadas(client, 'sgrh_nomina_detalle', 'insert')).toEqual([])
+  })
+
+  describe('periodo de toda la empresa', () => {
+    const EMPRESA = { ...PERIODO, npe_sucursal_id: null }
+    const cuenta = (sucursalIds?: number[]) =>
+      mockRequirePermission.mockResolvedValue({
+        app_metadata: {
+          usr_id: 7,
+          empresa_id: 1,
+          ...(sucursalIds ? { sucursal_ids: sucursalIds } : {}),
+        },
+      } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+
+    it('carga a los empleados de las sucursales que ve la cuenta', async () => {
+      cuenta([2, 4])
+      escenario({
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_sucursales: { data: [{ suc_id: 2 }, { suc_id: 4 }], error: null },
+      })
+
+      const result = await cargarEmpleadosDesdeAsistencia(9)
+
+      expect(result.ok).toBe(true)
+      expect(mockEmpleados).toHaveBeenCalledWith(expect.anything(), [2, 4], {
+        finPeriodo: '2026-09-15',
+      })
+    })
+
+    it('con una marca elegida, solo las sucursales de esa marca', async () => {
+      const { getFiltroMarca } = await import('@/lib/empresa/contexto-activo')
+      vi.mocked(getFiltroMarca).mockResolvedValueOnce({
+        estado: 'filtrado',
+        marcaId: 3,
+        sucursalIds: [4, 9],
+      })
+      cuenta()
+      escenario({
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_sucursales: { data: [{ suc_id: 2 }, { suc_id: 4 }, { suc_id: 9 }], error: null },
+      })
+
+      await cargarEmpleadosDesdeAsistencia(9)
+
+      expect(mockEmpleados).toHaveBeenCalledWith(expect.anything(), [4, 9], expect.anything())
+    })
+
+    it('sin empleados en sus sucursales lo dice así', async () => {
+      cuenta([2])
+      escenario({
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_sucursales: { data: [{ suc_id: 2 }], error: null },
+      })
+      mockEmpleados.mockResolvedValue({ ok: true, data: [] })
+
+      const result = await cargarEmpleadosDesdeAsistencia(9)
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'No hay empleados con contrato activo en las sucursales que ves de este periodo.',
+      })
+    })
   })
 })

@@ -26,13 +26,21 @@ const LIQ_DE_9 = {
   sgrh_historial_laboral: { lab_empleado_id: 501 },
 }
 
-function cliente(tablas: Record<string, Respuesta | Respuesta[]>) {
-  const mock = createSupabaseClientMock({
-    sgrh_nomina_periodo: { data: PERIODO, error: null },
-    sgrh_historial_laboral: { data: CONTRATOS, error: null },
-    sgrh_liquidaciones: { data: [], error: null },
-    ...tablas,
-  })
+/**
+ * `filas` es lo que devuelve nomina_filas_estado: TODAS las filas del periodo,
+ * también las de sucursales que la cuenta no ve. El estado se calcula con eso
+ * y no con una lectura directa de la tabla (que la RLS recorta).
+ */
+function cliente(tablas: Record<string, Respuesta | Respuesta[]>, filas?: Respuesta) {
+  const mock = createSupabaseClientMock(
+    {
+      sgrh_nomina_periodo: { data: PERIODO, error: null },
+      sgrh_historial_laboral: { data: CONTRATOS, error: null },
+      sgrh_liquidaciones: { data: [], error: null },
+      ...tablas,
+    },
+    { rpcResponses: filas ? { nomina_filas_estado: filas } : {} }
+  )
   return { mock, supabase: mock as unknown as Cliente }
 }
 
@@ -66,12 +74,10 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('todas pagadas por planilla: pagado con la fecha de pago más reciente', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: {
-        data: [pagada(9, '2026-07-15'), pagada(10, '2026-07-18')],
-        error: null,
-      },
-    })
+    const { mock, supabase } = cliente(
+      {},
+      { data: [pagada(9, '2026-07-15'), pagada(10, '2026-07-18')], error: null }
+    )
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -81,9 +87,10 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('una fila impaga sin liquidación: vuelve a borrador', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: { data: [pagada(9, '2026-07-15'), impaga(10)], error: null },
-    })
+    const { mock, supabase } = cliente(
+      {},
+      { data: [pagada(9, '2026-07-15'), impaga(10)], error: null }
+    )
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -91,10 +98,10 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('la única impaga la paga una liquidación: pagado con la fecha de la planilla', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: { data: [impaga(9), pagada(10, '2026-07-15')], error: null },
-      sgrh_liquidaciones: { data: [LIQ_DE_9], error: null },
-    })
+    const { mock, supabase } = cliente(
+      { sgrh_liquidaciones: { data: [LIQ_DE_9], error: null } },
+      { data: [impaga(9), pagada(10, '2026-07-15')], error: null }
+    )
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -104,10 +111,10 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('si TODAS van en liquidaciones queda en borrador: no habría pago que desmarcar para reabrirlo', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: { data: [impaga(9)], error: null },
-      sgrh_liquidaciones: { data: [LIQ_DE_9], error: null },
-    })
+    const { mock, supabase } = cliente(
+      { sgrh_liquidaciones: { data: [LIQ_DE_9], error: null } },
+      { data: [impaga(9)], error: null }
+    )
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -115,12 +122,10 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('una fila pagada sin fecha guardada: pagado con la fecha de hoy', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: {
-        data: [{ ...pagada(10, '2026-07-15'), ndt_fecha_pago: null }],
-        error: null,
-      },
-    })
+    const { mock, supabase } = cliente(
+      {},
+      { data: [{ ...pagada(10, '2026-07-15'), ndt_fecha_pago: null }], error: null }
+    )
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -130,13 +135,15 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('una liquidación que paga otra quincena no cuenta', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: { data: [impaga(9), pagada(10, '2026-07-15')], error: null },
-      sgrh_liquidaciones: {
-        data: [{ ...LIQ_DE_9, liq_fecha_salida: '2026-06-10' }],
-        error: null,
+    const { mock, supabase } = cliente(
+      {
+        sgrh_liquidaciones: {
+          data: [{ ...LIQ_DE_9, liq_fecha_salida: '2026-06-10' }],
+          error: null,
+        },
       },
-    })
+      { data: [impaga(9), pagada(10, '2026-07-15')], error: null }
+    )
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -144,10 +151,10 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('si no se pueden leer las liquidaciones, el periodo queda abierto', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: { data: [impaga(9), pagada(10, '2026-07-15')], error: null },
-      sgrh_liquidaciones: { data: null, error: { message: 'boom' } },
-    })
+    const { mock, supabase } = cliente(
+      { sgrh_liquidaciones: { data: null, error: { message: 'boom' } } },
+      { data: [impaga(9), pagada(10, '2026-07-15')], error: null }
+    )
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -155,9 +162,10 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('si la búsqueda de liquidaciones revienta, no lanza y el periodo queda abierto', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: { data: [impaga(9), pagada(10, '2026-07-15')], error: null },
-    })
+    const { mock, supabase } = cliente(
+      {},
+      { data: [impaga(9), pagada(10, '2026-07-15')], error: null }
+    )
     const fromOriginal = mock.from.getMockImplementation()!
     mock.from.mockImplementation((tabla: string) => {
       if (tabla === 'sgrh_historial_laboral') throw new Error('red caída')
@@ -169,11 +177,37 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('si no se encuentra el periodo, una impaga no se da por resuelta', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_periodo: { data: null, error: null },
-      sgrh_nomina_detalle: { data: [impaga(9)], error: null },
-      sgrh_liquidaciones: { data: [LIQ_DE_9], error: null },
-    })
+    const { mock, supabase } = cliente(
+      {
+        sgrh_nomina_periodo: { data: null, error: null },
+        sgrh_liquidaciones: { data: [LIQ_DE_9], error: null },
+      },
+      { data: [impaga(9)], error: null }
+    )
+
+    await sincronizarEstadoPeriodo(supabase, 7)
+
+    expect(updatesDelPeriodo(mock)).toEqual([{ npe_estado: 'borrador', npe_fecha_pago: null }])
+  })
+
+  // Periodo de toda la empresa: la cuenta de una sucursal terminó de pagar a
+  // los suyos (la RLS le muestra solo esos), pero otra sucursal sigue sin
+  // pagar. Antes el periodo entero pasaba a "pagado".
+  it('cuenta las filas de sucursales que la cuenta no ve', async () => {
+    const { mock, supabase } = cliente(
+      // Lo que la RLS deja leer directo: solo la fila pagada.
+      { sgrh_nomina_detalle: { data: [pagada(9, '2026-07-15')], error: null } },
+      { data: [pagada(9, '2026-07-15'), impaga(10)], error: null }
+    )
+
+    await sincronizarEstadoPeriodo(supabase, 7)
+
+    expect(mock.rpc).toHaveBeenCalledWith('nomina_filas_estado', { p_npe_id: 7 })
+    expect(updatesDelPeriodo(mock)).toEqual([{ npe_estado: 'borrador', npe_fecha_pago: null }])
+  })
+
+  it('si no se pueden leer las filas, el periodo queda abierto', async () => {
+    const { mock, supabase } = cliente({}, { data: null, error: { message: 'boom' } })
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -181,7 +215,7 @@ describe('sincronizarEstadoPeriodo', () => {
   })
 
   it('un periodo sin filas nunca pasa a pagado', async () => {
-    const { mock, supabase } = cliente({ sgrh_nomina_detalle: { data: [], error: null } })
+    const { mock, supabase } = cliente({}, { data: [], error: null })
 
     await sincronizarEstadoPeriodo(supabase, 7)
 
@@ -191,32 +225,34 @@ describe('sincronizarEstadoPeriodo', () => {
 
 describe('sincronizarPeriodosDeLaSalida', () => {
   it('recalcula solo los periodos del mes de salida con una fila impaga', async () => {
-    const { mock, supabase } = cliente({
-      sgrh_nomina_detalle: [
-        // 1.ª consulta: filas impagas de la relación laboral.
-        {
-          data: [
-            {
-              ndt_nomina_periodo_id: 7,
-              sgrh_nomina_periodo: { npe_periodo_anio: 2026, npe_periodo_mes: 7 },
-            },
-            {
-              ndt_nomina_periodo_id: 7,
-              sgrh_nomina_periodo: { npe_periodo_anio: 2026, npe_periodo_mes: 7 },
-            },
-            // Otro mes: no se toca.
-            {
-              ndt_nomina_periodo_id: 3,
-              sgrh_nomina_periodo: { npe_periodo_anio: 2026, npe_periodo_mes: 5 },
-            },
-          ],
-          error: null,
-        },
-        // 2.ª: las filas del periodo 7.
-        { data: [impaga(9), pagada(10, '2026-07-15')], error: null },
-      ],
-      sgrh_liquidaciones: { data: [LIQ_DE_9], error: null },
-    })
+    const { mock, supabase } = cliente(
+      {
+        sgrh_nomina_detalle: [
+          // 1.ª consulta: filas impagas de la relación laboral.
+          {
+            data: [
+              {
+                ndt_nomina_periodo_id: 7,
+                sgrh_nomina_periodo: { npe_periodo_anio: 2026, npe_periodo_mes: 7 },
+              },
+              {
+                ndt_nomina_periodo_id: 7,
+                sgrh_nomina_periodo: { npe_periodo_anio: 2026, npe_periodo_mes: 7 },
+              },
+              // Otro mes: no se toca.
+              {
+                ndt_nomina_periodo_id: 3,
+                sgrh_nomina_periodo: { npe_periodo_anio: 2026, npe_periodo_mes: 5 },
+              },
+            ],
+            error: null,
+          },
+        ],
+        sgrh_liquidaciones: { data: [LIQ_DE_9], error: null },
+      },
+      // Las filas del periodo 7.
+      { data: [impaga(9), pagada(10, '2026-07-15')], error: null }
+    )
 
     await sincronizarPeriodosDeLaSalida(supabase, [9], '2026-07-10')
 

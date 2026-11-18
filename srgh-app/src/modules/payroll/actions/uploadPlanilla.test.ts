@@ -181,6 +181,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [],
       errors: [{ fila: 5, mensaje: 'El campo "BASE" no es un número válido.' }],
     })
@@ -199,6 +200,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('9-999-999', { BASE: 100000 })],
       errors: [],
     })
@@ -221,6 +223,7 @@ describe('uploadPlanilla (server action)', () => {
           {
             ndt_id: 10,
             ndt_historial_laboral_id: 55,
+            ndt_sucursal_id: 2,
             ndt_horas_ordinarias_diurnas: 88,
             ndt_horas_extra_al_50: 0,
             ndt_salario_por_hora: 0,
@@ -245,6 +248,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_nomina_linea_deduccion: { data: [], error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -258,6 +262,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -282,7 +287,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
       sgrh_nomina_detalle: [
         { data: [], error: null },
-        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60 }], error: null },
+        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60, ndt_sucursal_id: 2 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: OK,
       sgrh_nomina_linea_patronal: { data: null, error: null },
@@ -292,6 +297,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('NEW', { BASE: 50000 })],
       errors: [],
     })
@@ -305,6 +311,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 100000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -359,7 +366,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
       sgrh_nomina_detalle: [
         { data: [], error: null },
-        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60 }], error: null },
+        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60, ndt_sucursal_id: 2 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: OK,
       sgrh_nomina_linea_patronal: { data: null, error: null },
@@ -367,6 +374,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('NEW', { BASE: 183333.33, AJUSTE: 99999 })],
       errors: [],
     })
@@ -380,6 +388,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 400000,
           salarioRealMensual: 430000,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -425,7 +434,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
       sgrh_nomina_detalle: [
         { data: [], error: null },
-        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60 }], error: null },
+        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60, ndt_sucursal_id: 2 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: OK,
       sgrh_nomina_linea_patronal: { data: null, error: null },
@@ -433,6 +442,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('NEW', { BASE: 50000 }, { horasTrabajadas: 84, horasExtra: 3 })],
       errors: [],
     })
@@ -446,6 +456,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 100000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -482,7 +493,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
       sgrh_nomina_detalle: [
         { data: [], error: null },
-        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60 }], error: null },
+        { data: [{ ndt_id: 99, ndt_historial_laboral_id: 60, ndt_sucursal_id: 2 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: OK,
       sgrh_nomina_linea_patronal: { data: null, error: null },
@@ -491,6 +502,7 @@ describe('uploadPlanilla (server action)', () => {
     })
     // El archivo trae 90 h donde las marcas decian 84.
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('NEW', { BASE: 50000 }, { horasTrabajadas: 90, horasExtra: 3 })],
       errors: [],
     })
@@ -504,6 +516,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 100000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -535,6 +548,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 20,
               ndt_historial_laboral_id: 70,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -566,6 +580,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('CHG', { BASE: 300000 })],
       errors: [],
     })
@@ -579,6 +594,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 600000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -610,6 +626,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 20,
               ndt_historial_laboral_id: 70,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -642,6 +659,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('CHG', { BASE: 300000 })],
       errors: [],
     })
@@ -655,6 +673,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 600000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -707,6 +726,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 20,
               ndt_historial_laboral_id: 70,
+              ndt_sucursal_id: 2,
               ndt_pagado: true,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
@@ -738,6 +758,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('CHG', { BASE: 300000 })],
       errors: [],
     })
@@ -751,6 +772,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 600000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -780,6 +802,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 30,
               ndt_historial_laboral_id: 71,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -814,6 +837,7 @@ describe('uploadPlanilla (server action)', () => {
     })
     // Mismo BASE, pero ahora sí se reportan horas y salario por hora (antes en 0).
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('HORAS', { BASE: 100000 }, { horasTrabajadas: 96, salarioPorHora: 2500 })],
       errors: [],
     })
@@ -827,6 +851,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -855,6 +880,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 10,
               ndt_historial_laboral_id: 55,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -865,6 +891,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 20,
               ndt_historial_laboral_id: 66,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -894,6 +921,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -907,6 +935,16 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
+        },
+        {
+          labId: 66,
+          cedula: 'OUT',
+          nombre: 'Beto',
+          salarioBaseMensual: 200000,
+          salarioRealMensual: null,
+          horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -924,7 +962,8 @@ describe('uploadPlanilla (server action)', () => {
       enLiquidacionSinTocar: [],
     })
     // Con el periodo: así entra también quien terminó y todavía tiene fila acá.
-    expect(mockGetEmpleadosActivos).toHaveBeenCalledWith(expect.anything(), 2, {
+    // El alcance de la plantilla: la sucursal del periodo.
+    expect(mockGetEmpleadosActivos).toHaveBeenCalledWith(expect.anything(), [2], {
       periodoId: 1,
       // El fixture no trae fechas: sin fin de periodo no se filtra por ingreso.
       finPeriodo: undefined,
@@ -945,6 +984,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 10,
               ndt_historial_laboral_id: 55,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -955,6 +995,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 20,
               ndt_historial_laboral_id: 66,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -984,6 +1025,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -997,6 +1039,16 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
+        },
+        {
+          labId: 66,
+          cedula: 'OUT',
+          nombre: 'Beto',
+          salarioBaseMensual: 200000,
+          salarioRealMensual: null,
+          horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1023,6 +1075,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 10,
               ndt_historial_laboral_id: 55,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -1033,6 +1086,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 20,
               ndt_historial_laboral_id: 66,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -1062,6 +1116,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -1075,6 +1130,16 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
+        },
+        {
+          labId: 66,
+          cedula: 'OUT',
+          nombre: 'Beto',
+          salarioBaseMensual: 200000,
+          salarioRealMensual: null,
+          horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1110,7 +1175,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: conceptosConPrestamo, error: null },
       sgrh_nomina_detalle: [
         { data: [], error: null },
-        { data: [{ ndt_id: 100, ndt_historial_laboral_id: 80 }], error: null },
+        { data: [{ ndt_id: 100, ndt_historial_laboral_id: 80, ndt_sucursal_id: 2 }], error: null },
       ],
       sgrh_nomina_linea_ingreso: OK,
       sgrh_nomina_linea_patronal: { data: null, error: null },
@@ -1118,6 +1183,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('CONPRESTAMO', { BASE: 200000, PRESTAMO: 15000 })],
       errors: [],
     })
@@ -1131,6 +1197,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 400000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1174,6 +1241,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 10,
               ndt_historial_laboral_id: 55,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -1210,6 +1278,7 @@ describe('uploadPlanilla (server action)', () => {
     })
     // El Excel viene con exactamente los mismos valores que ya estaban.
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -1223,6 +1292,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1252,6 +1322,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 10,
               ndt_historial_laboral_id: 55,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -1287,6 +1358,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -1300,6 +1372,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1320,6 +1393,7 @@ describe('uploadPlanilla (server action)', () => {
       sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
     })
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -1333,6 +1407,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1357,6 +1432,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 10,
               ndt_historial_laboral_id: 55,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -1390,6 +1466,7 @@ describe('uploadPlanilla (server action)', () => {
     })
     // El Excel viene con exactamente los mismos valores que ya estaban.
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -1403,6 +1480,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1432,6 +1510,7 @@ describe('uploadPlanilla (server action)', () => {
           {
             ndt_id: 20,
             ndt_historial_laboral_id: 66,
+            ndt_sucursal_id: 2,
             ndt_pagado: true,
             ndt_horas_ordinarias_diurnas: 88,
             ndt_horas_extra_al_50: 0,
@@ -1449,6 +1528,7 @@ describe('uploadPlanilla (server action)', () => {
     })
     // El Excel solo trae a Ana; Beto (que ya cobro) quedo fuera.
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('KEEP', { BASE: 100000 })],
       errors: [],
     })
@@ -1462,6 +1542,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
         {
           labId: 66,
@@ -1470,6 +1551,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 200000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1492,6 +1574,7 @@ describe('uploadPlanilla (server action)', () => {
     const FILA_BETO = {
       ndt_id: 20,
       ndt_historial_laboral_id: 66,
+      ndt_sucursal_id: 2,
       ndt_pagado: false,
       ndt_horas_ordinarias_diurnas: 88,
       ndt_horas_extra_al_50: 0,
@@ -1501,15 +1584,18 @@ describe('uploadPlanilla (server action)', () => {
       ndt_salario_neto: 89170,
     }
 
-    // Ana sigue igual (sin cambios); Beto ya no está en el Excel ni entre los
-    // activos: se liquidó.
+    // Ana sigue igual (sin cambios); Beto ya no está en el Excel: se liquidó.
+    // Como tiene fila en el periodo, getEmpleadosActivos lo trae igual.
     function escenarioBeto(liquidaciones: { data: unknown; error: unknown }) {
       const client = mockSupabase({
         sgrh_nomina_periodo: { data: PERIODO_VENCIDO, error: null },
         sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
         sgrh_nomina_detalle: [
           {
-            data: [{ ...FILA_BETO, ndt_id: 10, ndt_historial_laboral_id: 55 }, FILA_BETO],
+            data: [
+              { ...FILA_BETO, ndt_id: 10, ndt_historial_laboral_id: 55, ndt_sucursal_id: 2 },
+              FILA_BETO,
+            ],
             error: null,
           },
           OK,
@@ -1536,6 +1622,7 @@ describe('uploadPlanilla (server action)', () => {
         },
       })
       mockParsePlanillaWorkbook.mockResolvedValue({
+        alcance: [2],
         rows: [fila('KEEP', { BASE: 100000 })],
         errors: [],
       })
@@ -1549,6 +1636,16 @@ describe('uploadPlanilla (server action)', () => {
             salarioBaseMensual: 200000,
             salarioRealMensual: null,
             horasSemanales: 48,
+            sucursalId: 2,
+          },
+          {
+            labId: 66,
+            cedula: 'OUT',
+            nombre: 'Beto',
+            salarioBaseMensual: 200000,
+            salarioRealMensual: null,
+            horasSemanales: 48,
+            sucursalId: 2,
           },
         ],
       })
@@ -1584,6 +1681,7 @@ describe('uploadPlanilla (server action)', () => {
         error: null,
       })
       mockParsePlanillaWorkbook.mockResolvedValue({
+        alcance: [2],
         rows: [fila('KEEP', { BASE: 100000 }), fila('OUT', { BASE: 150000 })],
         errors: [],
       })
@@ -1597,6 +1695,7 @@ describe('uploadPlanilla (server action)', () => {
             salarioBaseMensual: 200000,
             salarioRealMensual: null,
             horasSemanales: 48,
+            sucursalId: 2,
           },
           {
             labId: 66,
@@ -1605,6 +1704,7 @@ describe('uploadPlanilla (server action)', () => {
             salarioBaseMensual: 200000,
             salarioRealMensual: null,
             horasSemanales: 48,
+            sucursalId: 2,
           },
         ],
       })
@@ -1641,6 +1741,7 @@ describe('uploadPlanilla (server action)', () => {
     const FILA_ANA = {
       ndt_id: 10,
       ndt_historial_laboral_id: 55,
+      ndt_sucursal_id: 2,
       ndt_pagado: false,
       ndt_horas_ordinarias_diurnas: 88,
       ndt_horas_extra_al_50: 0,
@@ -1652,6 +1753,7 @@ describe('uploadPlanilla (server action)', () => {
     const FILA_VACIA = {
       ndt_id: 30,
       ndt_historial_laboral_id: 77,
+      ndt_sucursal_id: 2,
       ndt_pagado: false,
       ndt_horas_ordinarias_diurnas: 0,
       ndt_horas_extra_al_50: 0,
@@ -1684,6 +1786,7 @@ describe('uploadPlanilla (server action)', () => {
         sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
       })
       mockParsePlanillaWorkbook.mockResolvedValue({
+        alcance: [2],
         rows: [fila('KEEP', { BASE: 100000 })],
         errors: [],
       })
@@ -1697,6 +1800,16 @@ describe('uploadPlanilla (server action)', () => {
             salarioBaseMensual: 200000,
             salarioRealMensual: null,
             horasSemanales: 48,
+            sucursalId: 2,
+          },
+          {
+            labId: 77,
+            cedula: 'OUT',
+            nombre: 'Carla',
+            salarioBaseMensual: 200000,
+            salarioRealMensual: null,
+            horasSemanales: 48,
+            sucursalId: 2,
           },
         ],
       })
@@ -1758,6 +1871,7 @@ describe('uploadPlanilla (server action)', () => {
             {
               ndt_id: 20,
               ndt_historial_laboral_id: 70,
+              ndt_sucursal_id: 2,
               ndt_horas_ordinarias_diurnas: 88,
               ndt_horas_extra_al_50: 0,
               ndt_salario_por_hora: 0,
@@ -1805,6 +1919,7 @@ describe('uploadPlanilla (server action)', () => {
     })
     // El Excel sube el salario base; HORAS_EXTRA no es columna del archivo.
     mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
       rows: [fila('BANCO', { BASE: 300000 })],
       errors: [],
     })
@@ -1818,6 +1933,7 @@ describe('uploadPlanilla (server action)', () => {
           salarioBaseMensual: 600000,
           salarioRealMensual: null,
           horasSemanales: 48,
+          sucursalId: 2,
         },
       ],
     })
@@ -1853,5 +1969,306 @@ describe('uploadPlanilla (server action)', () => {
     expect(deducciones).toContainEqual(
       expect.objectContaining({ ded_concepto_id: 6, ded_monto: 35739 })
     )
+  })
+})
+
+// ── Alcance de la plantilla ────────────────────────────────────────────────
+// Con el periodo por empresa, la plantilla de una sucursal o de una marca no
+// trae a los empleados de las demás. Sin el alcance sellado, subirla tomaba a
+// todos esos como "salieron del Excel" y borraba sus filas.
+describe('uploadPlanilla: alcance de la plantilla', () => {
+  const PERIODO_EMPRESA = { ...PERIODO_BORRADOR, npe_sucursal_id: null }
+  const previa = (ndt: number, lab: number, sucursal: number) => ({
+    ndt_id: ndt,
+    ndt_historial_laboral_id: lab,
+    ndt_sucursal_id: sucursal,
+    ndt_pagado: false,
+    ndt_horas_ordinarias_diurnas: 88,
+    ndt_horas_extra_al_50: 0,
+    ndt_salario_por_hora: 0,
+    ndt_salario_bruto: 100000,
+    ndt_total_deducciones_obreras: 10830,
+    ndt_salario_neto: 89170,
+  })
+  const empleado = (labId: number, cedula: string, sucursalId = 2) => ({
+    labId,
+    cedula,
+    nombre: `Empleado ${labId}`,
+    salarioBaseMensual: 200000,
+    salarioRealMensual: null,
+    horasSemanales: 48,
+    sucursalId,
+  })
+  const cuenta = (sucursalIds?: number[]) =>
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {
+        usr_id: 5,
+        empresa_id: 1,
+        ...(sucursalIds ? { sucursal_ids: sucursalIds } : {}),
+      },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+
+  /** Periodo de toda la empresa con una fila de la sucursal 2 y otra de la 5. */
+  function escenarioEmpresa(sucursalesDeLaCuenta: number[]) {
+    return mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_EMPRESA, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+      sgrh_sucursales: { data: sucursalesDeLaCuenta.map((id) => ({ suc_id: id })), error: null },
+      sgrh_nomina_detalle: [
+        { data: [previa(10, 55, 2), previa(20, 66, 5)], error: null },
+        { data: [{ ndt_id: 30, ndt_historial_laboral_id: 77 }], error: null },
+      ],
+      sgrh_nomina_linea_ingreso: [
+        {
+          data: [
+            {
+              ing_nomina_detalle_id: 10,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+            {
+              ing_nomina_detalle_id: 20,
+              ing_monto: 100000,
+              sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+            },
+          ],
+          error: null,
+        },
+        OK,
+      ],
+      sgrh_nomina_linea_patronal: { data: null, error: null },
+      sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetFotoAsistencia.mockResolvedValue({ estado: 'sin_fechas' })
+  })
+
+  // La plantilla de la sucursal 2 trae solo a Ana (55). Carlos (66) es de la
+  // sucursal 5 y no venía en el archivo: no se toca.
+  it('no saca del periodo a nadie de fuera del alcance del archivo', async () => {
+    cuenta()
+    const client = escenarioEmpresa([2, 5])
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
+      rows: [fila('ANA', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({ ok: true, data: [empleado(55, 'ANA')] })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toMatchObject({ ok: true, eliminados: 0, sinCambios: 1 })
+    expect(client.rpc).not.toHaveBeenCalledWith('eliminar_filas_planilla', expect.anything())
+    expect(mockGetEmpleadosActivos).toHaveBeenCalledWith(expect.anything(), [2], expect.anything())
+  })
+
+  // Doble seguro: aunque la lista de contratos trajera a alguien cuya fila es
+  // de otra sucursal, la fila no cuenta como "salió del Excel".
+  it('una fila de otra sucursal no se saca aunque su contrato se pueda leer', async () => {
+    cuenta()
+    const client = escenarioEmpresa([2, 5])
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
+      rows: [fila('ANA', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [empleado(55, 'ANA'), empleado(66, 'CARLOS', 5)],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toMatchObject({ ok: true, eliminados: 0 })
+    expect(client.rpc).not.toHaveBeenCalledWith('eliminar_filas_planilla', expect.anything())
+  })
+
+  it('dentro del alcance, quien salió del archivo sí se saca', async () => {
+    cuenta()
+    const client = escenarioEmpresa([2, 5])
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2, 5],
+      rows: [fila('ANA', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [empleado(55, 'ANA'), empleado(66, 'CARLOS', 5)],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toMatchObject({ ok: true, eliminados: 1 })
+    expect(client.rpc).toHaveBeenCalledWith('eliminar_filas_planilla', { p_ndt_ids: [20] })
+  })
+
+  // La cuenta de Carlos ya no ve la sucursal 5 (se la quitaron después de
+  // bajar la plantilla de toda la empresa): el archivo no se acepta.
+  it('rechaza un archivo con sucursales que la cuenta ya no ve', async () => {
+    cuenta([2])
+    const client = escenarioEmpresa([2])
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2, 5],
+      rows: [fila('ANA', { BASE: 100000 })],
+      errors: [],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Descargá la plantilla de nuevo')
+    expect(mockGetEmpleadosActivos).not.toHaveBeenCalled()
+    expect(argumentos(client, 'sgrh_nomina_detalle', 'insert')).toEqual([])
+  })
+
+  it('en un periodo de una sucursal, rechaza la plantilla de otra sucursal', async () => {
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [3],
+      rows: [fila('ANA', { BASE: 100000 })],
+      errors: [],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(false)
+    expect(mockGetEmpleadosActivos).not.toHaveBeenCalled()
+  })
+
+  it('una fila del alcance cuyo contrato la cuenta no puede leer no se saca', async () => {
+    cuenta()
+    const client = escenarioEmpresa([2, 5])
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2, 5],
+      rows: [fila('ANA', { BASE: 100000 })],
+      errors: [],
+    })
+    // El contrato 66 se trasladó a una sucursal que la cuenta no ve: no vino en
+    // la plantilla ni lo trae getEmpleadosActivos.
+    mockGetEmpleadosActivos.mockResolvedValue({ ok: true, data: [empleado(55, 'ANA')] })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toMatchObject({ ok: true, eliminados: 0 })
+    expect(client.rpc).not.toHaveBeenCalledWith('eliminar_filas_planilla', expect.anything())
+  })
+
+  it('nombra al trasladado que ya tiene fila en otra sucursal en vez de decir "sin contrato"', async () => {
+    cuenta()
+    escenarioEmpresa([2, 5])
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [2],
+      rows: [fila('ANA', { BASE: 100000 }), fila('PEDRO', { BASE: 100000 })],
+      errors: [],
+    })
+    mockGetEmpleadosActivos.mockResolvedValue({
+      ok: true,
+      data: [empleado(55, 'ANA')],
+      enOtraSucursal: [{ ...empleado(88, 'PEDRO'), nombre: 'Pedro Mora' }],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('Pedro Mora')
+      expect(result.error).toContain('otra sucursal')
+    }
+  })
+
+  describe('una cédula con dos contratos en el periodo (reingreso)', () => {
+    function dosContratos() {
+      cuenta()
+      return mockSupabase({
+        sgrh_nomina_periodo: { data: PERIODO_EMPRESA, error: null },
+        sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+        sgrh_sucursales: { data: [{ suc_id: 2 }], error: null },
+        sgrh_nomina_detalle: [
+          { data: [previa(10, 55, 2)], error: null },
+          { data: [{ ndt_id: 31, ndt_historial_laboral_id: 56 }], error: null },
+        ],
+        sgrh_nomina_linea_ingreso: [
+          {
+            data: [
+              {
+                ing_nomina_detalle_id: 10,
+                ing_monto: 100000,
+                sgrh_cat_conceptos_nomina: { con_codigo: 'BASE' },
+              },
+            ],
+            error: null,
+          },
+          OK,
+        ],
+        sgrh_nomina_linea_patronal: { data: null, error: null },
+        sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK],
+      })
+    }
+
+    it('resuelve cada fila por su contrato', async () => {
+      const client = dosContratos()
+      mockGetEmpleadosActivos.mockResolvedValue({
+        ok: true,
+        data: [empleado(55, 'ANA'), empleado(56, 'ANA')],
+      })
+      mockParsePlanillaWorkbook.mockResolvedValue({
+        alcance: [2],
+        rows: [
+          { ...fila('ANA', { BASE: 100000 }), contratoId: 55 },
+          { ...fila('ANA', { BASE: 50000 }), contratoId: 56 },
+        ],
+        errors: [],
+      })
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result).toMatchObject({ ok: true, nuevos: 1, sinCambios: 1, eliminados: 0 })
+      const insertadas = argumentos(client, 'sgrh_nomina_detalle', 'insert')[0] as Record<
+        string,
+        unknown
+      >[]
+      expect(insertadas.map((f) => f.ndt_historial_laboral_id)).toEqual([56])
+    })
+
+    it('sin el contrato no adivina cuál es', async () => {
+      const client = dosContratos()
+      mockGetEmpleadosActivos.mockResolvedValue({
+        ok: true,
+        data: [empleado(55, 'ANA'), empleado(56, 'ANA')],
+      })
+      mockParsePlanillaWorkbook.mockResolvedValue({
+        alcance: [2],
+        rows: [{ ...fila('ANA', { BASE: 100000 }), contratoId: null }],
+        errors: [],
+      })
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('más de un contrato')
+      expect(argumentos(client, 'sgrh_nomina_detalle', 'insert')).toEqual([])
+    })
+
+    // Con un solo contrato manda la cédula: una fila copiada con otra cédula no
+    // arrastra el contrato de la fila original.
+    it('con un solo contrato manda la cédula, no el id de la columna oculta', async () => {
+      dosContratos()
+      mockGetEmpleadosActivos.mockResolvedValue({ ok: true, data: [empleado(55, 'ANA')] })
+      mockParsePlanillaWorkbook.mockResolvedValue({
+        alcance: [2],
+        rows: [{ ...fila('ANA', { BASE: 100000 }), contratoId: 999 }],
+        errors: [],
+      })
+
+      const result = await uploadPlanilla(buildFormData())
+
+      expect(result).toMatchObject({ ok: true, sinCambios: 1 })
+    })
   })
 })

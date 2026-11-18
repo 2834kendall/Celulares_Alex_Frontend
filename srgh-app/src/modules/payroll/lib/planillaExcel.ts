@@ -35,15 +35,20 @@ import { round2 } from './numeros'
 
 const SHEET_NAME = 'Planilla'
 
-// Hoja oculta con la procedencia del archivo: de qué periodo salió y con qué
-// catálogo se armó. Sin esto, la subida no puede distinguir "el usuario borró
-// una columna" de "este concepto se creó después de descargar la plantilla",
-// y ante la duda contaba 0 en silencio.
+// Hoja oculta con la procedencia del archivo: de qué periodo salió, con qué
+// catálogo se armó y qué sucursales incluye. Sin esto, la subida no puede
+// distinguir "el usuario borró una columna" de "este concepto se creó después
+// de descargar la plantilla", y ante la duda contaba 0 en silencio.
+//
+// El alcance (versión 2) es lo que impide que subir la plantilla de una
+// sucursal o de una marca borre a los empleados de las demás: la subida solo
+// considera que "salió del archivo" quien es de una sucursal del alcance.
 const META_SHEET_NAME = '_sgrh'
-const META_VERSION = 1
+const META_VERSION = 2
 const META_LABEL_VERSION = 'version'
 const META_LABEL_PERIODO = 'periodoId'
 const META_LABEL_CATALOGO = 'catalogo'
+const META_LABEL_ALCANCE = 'alcance'
 const HEADER_ROW = 4
 const MONEY_FORMAT = '#,##0.00'
 const HOURS_FORMAT = '0.00'
@@ -53,6 +58,11 @@ const COLOR_CALCULADO_FILL = 'FFF1F5F9'
 
 const LABEL_CEDULA = 'Cédula'
 const LABEL_EMPLEADO = 'Empleado'
+const LABEL_SUCURSAL = 'Sucursal'
+// Columna oculta, al final: el id del contrato de cada fila. Distingue dos
+// contratos de la misma persona en el mismo periodo (uno terminado y su
+// reingreso), que por cédula son indistinguibles.
+const LABEL_CONTRATO = 'Contrato (no tocar)'
 const LABEL_HORAS = 'Horas trabajadas'
 const LABEL_HORAS_EXTRA = 'Horas extra'
 const LABEL_SALARIO_HORA = 'Salario por hora'
@@ -62,8 +72,12 @@ const LABEL_TOTAL_NETO = 'Total neto'
 const LABEL_REVISAR = 'Días por revisar'
 
 export interface EmpleadoPlantilla {
+  /** Id del contrato: va en la columna oculta de la fila. */
+  labId: number
   cedula: string
   nombre: string
+  /** Nombre de la sucursal de la fila (informativo; la subida no lo lee). */
+  sucursalNombre?: string | null
   /** Salario base mensual del contrato: base ÷ 30 por día de la quincena. */
   salarioBaseMensual: number
   /** Salario real mensual: el objetivo de la quincena es la mitad. */
@@ -145,6 +159,11 @@ export interface PlantillaInfo {
   subtitulo: string
   /** Periodo al que pertenece la plantilla; se sella en la hoja oculta. */
   periodoId: number
+  /**
+   * Sucursales que incluye la plantilla (el alcance con que se descargó); se
+   * sellan en la hoja oculta.
+   */
+  sucursalIds: number[]
   /** Qué quincena es: define los días de salario base (ver diasDeLaQuincena). */
   quincena: QuincenaRef
 }
@@ -186,6 +205,8 @@ export async function buildPlanillaTemplate(
   meta.getCell('B2').value = info.periodoId
   meta.getCell('A3').value = META_LABEL_CATALOGO
   meta.getCell('B3').value = firmaCatalogo(conceptos)
+  meta.getCell('A4').value = META_LABEL_ALCANCE
+  meta.getCell('B4').value = textoAlcance(info.sucursalIds)
 
   const { ingresoManual, deduccionManual, horasExtra, deduccionPorcentual } =
     agruparConceptosPlanilla(conceptos)
@@ -193,6 +214,7 @@ export async function buildPlanillaTemplate(
   const headers: { label: string; editable: boolean }[] = [
     { label: LABEL_CEDULA, editable: false },
     { label: LABEL_EMPLEADO, editable: false },
+    { label: LABEL_SUCURSAL, editable: false },
     { label: LABEL_HORAS, editable: true },
     { label: LABEL_HORAS_EXTRA, editable: true },
     { label: LABEL_SALARIO_HORA, editable: true },
@@ -211,13 +233,15 @@ export async function buildPlanillaTemplate(
     })),
     { label: LABEL_TOTAL_DEDUCCIONES, editable: false },
     { label: LABEL_TOTAL_NETO, editable: false },
+    { label: LABEL_CONTRATO, editable: false },
   ]
 
   const colCedula = 1
-  const colHoras = 3
-  const colHorasExtra = 4
-  const colSalarioHora = 5
-  const colIngresoInicio = 6
+  const colSucursal = 3
+  const colHoras = 4
+  const colHorasExtra = 5
+  const colSalarioHora = 6
+  const colIngresoInicio = 7
   const colDeduccionManualInicio = colIngresoInicio + ingresoManual.length
   const colHorasExtraInicio = colDeduccionManualInicio + deduccionManual.length
   const colRevisar = colHorasExtraInicio + horasExtra.length
@@ -225,13 +249,14 @@ export async function buildPlanillaTemplate(
   const colDeduccionPctInicio = colTotalBruto + 1
   const colTotalDeducciones = colDeduccionPctInicio + deduccionPorcentual.length
   const colTotalNeto = colTotalDeducciones + 1
+  const colContrato = colTotalNeto + 1
 
   ws.getCell('A1').value = info.titulo
   ws.getCell('A1').font = { bold: true, size: 14 }
   ws.getCell('A2').value = info.subtitulo
   ws.getCell('A2').font = { color: { argb: 'FF64748B' }, size: 10 }
   ws.getCell('A3').value =
-    'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues columnas — las columnas grises se calculan solas.'
+    'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues o borres columnas (tampoco las ocultas) — las columnas grises se calculan solas.'
   ws.getCell('A3').font = { color: { argb: 'FFB45309' }, size: 10 }
 
   const headerRow = ws.getRow(HEADER_ROW)
@@ -253,6 +278,8 @@ export async function buildPlanillaTemplate(
     const row = ws.getRow(rowNumber)
     row.getCell(colCedula).value = emp.cedula
     row.getCell(2).value = emp.nombre
+    row.getCell(colSucursal).value = emp.sucursalNombre ?? ''
+    row.getCell(colContrato).value = emp.labId
     // La misma cuenta que usa "cargar empleados desde asistencia", compartida
     // en lib/prellenadoAsistencia.ts: si cada camino tuviera la suya, armar la
     // planilla por el archivo o por el botón daría montos distintos para la
@@ -422,8 +449,9 @@ export async function buildPlanillaTemplate(
   // celda — iterar `ws.columns` puede fallar silenciosamente o lanzar.
   headers.forEach((h, index) => {
     ws.getColumn(index + 1).width =
-      index === 1 ? 28 : Math.max(16, Math.min(26, h.label.length + 2))
+      index === 1 || index === colSucursal - 1 ? 28 : Math.max(16, Math.min(26, h.label.length + 2))
   })
+  ws.getColumn(colContrato).hidden = true
 
   const buffer = await wb.xlsx.writeBuffer()
   return new Uint8Array(buffer)
@@ -432,6 +460,29 @@ export async function buildPlanillaTemplate(
 export interface ParsePlanillaResult {
   rows: PlanillaRowInput[]
   errors: PlanillaRowError[]
+  /** Sucursales selladas en la plantilla. Vacío si hubo errores de archivo. */
+  alcance: number[]
+}
+
+/** El alcance tal como se sella en la hoja oculta: ids ordenados, "1,2,5". */
+function textoAlcance(sucursalIds: number[]): string {
+  return [...new Set(sucursalIds)].sort((a, b) => a - b).join(',')
+}
+
+/** Lee el alcance sellado. null si falta o no son ids válidos. */
+function leerAlcance(valor: RawCell): number[] | null {
+  const texto = valor === null || valor === undefined ? '' : String(valor).trim()
+  if (!texto) return null
+  const ids = texto.split(',').map((parte) => Number(parte.trim()))
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) return null
+  return [...new Set(ids)].sort((a, b) => a - b)
+}
+
+/** Id de contrato de la columna oculta. null si la celda está vacía o no es un id. */
+function leerContratoId(valor: RawCell): number | null {
+  if (valor === null || valor === undefined || valor === '') return null
+  const id = typeof valor === 'number' ? valor : Number(String(valor).trim())
+  return Number.isInteger(id) && id > 0 ? id : null
 }
 
 /** Valor plano de una celda: resuelve fórmulas a su resultado y texto enriquecido a string. */
@@ -485,41 +536,52 @@ function locateColumn(headerRow: ExcelJS.Row, label: string, maxCol: number): nu
 /**
  * Verifica que el archivo sea la plantilla que este sistema genero, para este
  * periodo, y con el catalogo que esta vigente ahora. Devuelve el error a
- * reportar, o null si todo cuadra.
+ * reportar, o el alcance (sucursales) sellado en el archivo si todo cuadra.
  */
 function validarProcedencia(
   wb: ExcelJS.Workbook,
   conceptos: ConceptoPlanillaColumna[],
   periodoId: number
-): PlanillaRowError | null {
+): { error: PlanillaRowError } | { alcance: number[] } {
+  const error = (mensaje: string) => ({ error: { fila: 0, mensaje } })
   const meta = wb.getWorksheet(META_SHEET_NAME)
 
+  // Una plantilla de antes de que el archivo llevara su alcance: no dice de
+  // qué sucursales es, así que no se puede saber a quién sacar y a quién no.
+  if (meta && cellValue(meta.getCell('B1')) === 1) {
+    return error(
+      'Esta plantilla se descargó antes de una actualización del sistema y ya no se puede subir. Descarga la plantilla de nuevo y vuelve a llenarla.'
+    )
+  }
+
   if (!meta || cellValue(meta.getCell('B1')) !== META_VERSION) {
-    return {
-      fila: 0,
-      mensaje:
-        'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descarga la plantilla de este periodo y vuelve a intentar.',
-    }
+    return error(
+      'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descarga la plantilla de este periodo y vuelve a intentar.'
+    )
   }
 
   const periodoDelArchivo = Number(cellValue(meta.getCell('B2')))
   if (periodoDelArchivo !== periodoId) {
-    return {
-      fila: 0,
-      mensaje: `Esta plantilla es del periodo ${periodoDelArchivo}, no del que estás subiendo. Descarga la plantilla de este periodo.`,
-    }
+    return error(
+      `Esta plantilla es del periodo ${periodoDelArchivo}, no del que estás subiendo. Descarga la plantilla de este periodo.`
+    )
   }
 
   const catalogoDelArchivo = String(cellValue(meta.getCell('B3')) ?? '')
   if (catalogoDelArchivo !== firmaCatalogo(conceptos)) {
-    return {
-      fila: 0,
-      mensaje:
-        'Los conceptos de nómina cambiaron desde que se descargó esta plantilla, así que sus columnas ya no corresponden. Descarga la plantilla de nuevo y vuelve a llenarla.',
-    }
+    return error(
+      'Los conceptos de nómina cambiaron desde que se descargó esta plantilla, así que sus columnas ya no corresponden. Descarga la plantilla de nuevo y vuelve a llenarla.'
+    )
   }
 
-  return null
+  const alcance = leerAlcance(cellValue(meta.getCell('B4')))
+  if (!alcance) {
+    return error(
+      'El archivo perdió la información de las sucursales que incluye. Descarga la plantilla de nuevo y vuelve a llenarla.'
+    )
+  }
+
+  return { alcance }
 }
 
 /**
@@ -542,6 +604,7 @@ export async function parsePlanillaWorkbook(
   } catch {
     return {
       rows: [],
+      alcance: [],
       errors: [
         {
           fila: 0,
@@ -555,13 +618,18 @@ export async function parsePlanillaWorkbook(
   const ws =
     wb.getWorksheet(SHEET_NAME) ?? wb.worksheets.find((hoja) => hoja.name !== META_SHEET_NAME)
   if (!ws) {
-    return { rows: [], errors: [{ fila: 0, mensaje: 'El archivo no tiene hojas legibles.' }] }
+    return {
+      rows: [],
+      alcance: [],
+      errors: [{ fila: 0, mensaje: 'El archivo no tiene hojas legibles.' }],
+    }
   }
 
-  const errorArchivo = validarProcedencia(wb, conceptos, periodoId)
-  if (errorArchivo) {
-    return { rows: [], errors: [errorArchivo] }
+  const procedencia = validarProcedencia(wb, conceptos, periodoId)
+  if ('error' in procedencia) {
+    return { rows: [], alcance: [], errors: [procedencia.error] }
   }
+  const { alcance } = procedencia
 
   const { ingresoManual, deduccionManual } = agruparConceptosPlanilla(conceptos)
   const columnasMontoDef = [...ingresoManual, ...deduccionManual]
@@ -574,6 +642,7 @@ export async function parsePlanillaWorkbook(
   const colHoras = locateColumn(headerRow, LABEL_HORAS, maxCol)
   const colHorasExtra = locateColumn(headerRow, LABEL_HORAS_EXTRA, maxCol)
   const colSalarioHora = locateColumn(headerRow, LABEL_SALARIO_HORA, maxCol)
+  const colContrato = locateColumn(headerRow, LABEL_CONTRATO, maxCol)
 
   const columnasMonto = columnasMontoDef.map((c) => ({
     codigo: c.con_codigo,
@@ -593,6 +662,7 @@ export async function parsePlanillaWorkbook(
     colHoras === null ||
     colHorasExtra === null ||
     colSalarioHora === null ||
+    colContrato === null ||
     columnasMonto.some((c) => c.columna === null)
   ) {
     const faltantes = [
@@ -600,11 +670,13 @@ export async function parsePlanillaWorkbook(
       colHoras === null ? LABEL_HORAS : null,
       colHorasExtra === null ? LABEL_HORAS_EXTRA : null,
       colSalarioHora === null ? LABEL_SALARIO_HORA : null,
+      colContrato === null ? `${LABEL_CONTRATO} (columna oculta)` : null,
       ...columnasMonto.filter((c) => c.columna === null).map((c) => c.etiqueta),
     ].filter((etiqueta): etiqueta is string => etiqueta !== null)
 
     return {
       rows: [],
+      alcance: [],
       errors: [
         {
           fila: headerRowNumber,
@@ -616,7 +688,10 @@ export async function parsePlanillaWorkbook(
 
   const rows: PlanillaRowInput[] = []
   const errors: PlanillaRowError[] = []
-  const cedulasVistas = new Set<string>()
+  // Una cédula puede venir dos veces solo si son dos contratos distintos de
+  // la misma persona (cada fila con su id de contrato). Cualquier otra
+  // repetición es un error del archivo.
+  const contratosPorCedula = new Map<string, Set<number | null>>()
 
   for (let rowNumber = headerRowNumber + 1; rowNumber <= ws.rowCount; rowNumber += 1) {
     const row = ws.getRow(rowNumber)
@@ -643,14 +718,16 @@ export async function parsePlanillaWorkbook(
       continue
     }
 
-    if (cedulasVistas.has(result.row.cedula)) {
+    const contratoId = leerContratoId(cellValue(row.getCell(colContrato)))
+    const vistos = contratosPorCedula.get(result.row.cedula)
+    if (vistos && (contratoId === null || vistos.has(null) || vistos.has(contratoId))) {
       errors.push({ fila: rowNumber, mensaje: `Cédula repetida: ${result.row.cedula}.` })
       continue
     }
 
-    cedulasVistas.add(result.row.cedula)
-    rows.push(result.row)
+    contratosPorCedula.set(result.row.cedula, (vistos ?? new Set()).add(contratoId))
+    rows.push({ ...result.row, contratoId })
   }
 
-  return { rows, errors }
+  return { rows, errors, alcance }
 }

@@ -1,4 +1,6 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { periodoFusionadoEn } from '@/modules/payroll/lib/alcancePlanilla'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getPeriodoDetail } from '@/modules/payroll/actions/getPeriodoDetail'
@@ -32,6 +34,9 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
 
   if (!detailResult.ok) {
     if (detailResult.notFound) {
+      // Un enlace a un periodo por sucursal que se fusionó en el de la empresa.
+      const actual = await periodoFusionadoEn(await createClient(), periodoId)
+      if (actual !== null) redirect(`/payroll/${actual}`)
       notFound()
     }
     return (
@@ -61,7 +66,11 @@ export default async function PeriodoDetailPage({ params }: PeriodoDetailPagePro
       />
 
       {canWrite && (
-        <PlanillaImport periodoId={detailResult.data.id} estado={detailResult.data.estado} />
+        <PlanillaImport
+          periodoId={detailResult.data.id}
+          estado={detailResult.data.estado}
+          porEmpresa={detailResult.data.porEmpresa}
+        />
       )}
 
       <PeriodoDetail
