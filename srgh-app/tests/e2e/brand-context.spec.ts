@@ -84,6 +84,21 @@ async function expectNames(page: Page, present: string[], absent: string[]) {
   }
 }
 
+// The two payroll periods of fixtures.sql, as the list names them.
+const MARCH = 'Marzo 2026 · 1ª quincena'
+const SEPTEMBER = 'Septiembre 2026 · 1ª quincena'
+
+/** Each period is "Toda la empresa", and its Empleados cell counts only the brand's rows. */
+async function expectPeriodRows(page: Page, employees: Record<string, string>) {
+  const table = page.getByRole('table')
+  for (const [period, count] of Object.entries(employees)) {
+    const row = table.getByRole('row').filter({ hasText: period })
+    await expect(row).toHaveCount(1)
+    await expect(row.getByRole('cell').nth(1)).toHaveText('Toda la empresa')
+    await expect(row.getByRole('cell').nth(3)).toHaveText(count)
+  }
+}
+
 const shellToken = (page: Page, token: string) =>
   page
     .locator('#app-shell-root')
@@ -122,9 +137,12 @@ test('choosing a brand narrows every list and paints it, and "Todas" brings ever
   await page.goto('/attendance')
   await expectNames(page, [NOELIA], [EMPLEADO, TERESA])
 
+  // Payroll periods belong to the whole company: the brand only narrows whose
+  // rows they count. Tiendas has nobody in either one.
   await page.goto('/payroll')
   await expect(page.getByText(`${DOS.name} · Otra E2E`)).toHaveCount(0)
   await expect(page.getByText(`${UNO.name} · Sucursal E2E Uno`)).toHaveCount(0)
+  await expectPeriodRows(page, { [MARCH]: '0', [SEPTEMBER]: '0' })
 
   await page.goto('/settings/branches')
   await expectNames(page, ['Mall E2E', 'Centro E2E'], ['Otra E2E', 'Sucursal E2E Uno'])
@@ -134,8 +152,9 @@ test('choosing a brand narrows every list and paints it, and "Todas" brings ever
   // The former employee counts for the brand of her LAST contract.
   await expectNames(page, [EMPLEADO, ELENA], [NOELIA, TERESA])
 
+  // March was paid in Uno (Teresa, before moving to Dos); September in Dos.
   await page.goto('/payroll')
-  await expectNames(page, [`${UNO.name} · Sucursal E2E Uno`], [`${DOS.name} · Otra E2E`])
+  await expectPeriodRows(page, { [MARCH]: '1', [SEPTEMBER]: '0' })
 
   await chooseBrand(page, DOS.name)
   await page.goto('/employees')
