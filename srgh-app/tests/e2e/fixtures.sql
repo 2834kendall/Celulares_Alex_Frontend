@@ -232,10 +232,12 @@ SELECT 1051, 1053, tau_id, (now() AT TIME ZONE 'America/Costa_Rica')::date, (now
 FROM sgrh_cat_tipos_ausencia WHERE tau_codigo='INC_ENF';
 
 -- Paid fortnights of Teresa in each store: her aguinaldo adds both, 360000 / 12.
+-- Payroll periods belong to the whole company (npe_sucursal_id NULL); each row
+-- gets the branch of its contract from the database (ndt_sucursal_id).
 INSERT INTO sgrh_nomina_periodo (npe_id, npe_empresa_id, npe_sucursal_id, npe_periodo_mes, npe_periodo_anio, npe_quincena, npe_fecha_inicio_periodo, npe_fecha_fin_periodo, npe_estado)
 OVERRIDING SYSTEM VALUE VALUES
-  (1051,1051,1051,3,2026,1,'2026-03-01','2026-03-15','pagado'),
-  (1052,1051,1055,9,2026,1,'2026-09-01','2026-09-15','pagado')
+  (1051,1051,NULL,3,2026,1,'2026-03-01','2026-03-15','pagado'),
+  (1052,1051,NULL,9,2026,1,'2026-09-01','2026-09-15','pagado')
 ON CONFLICT DO NOTHING;
 INSERT INTO sgrh_nomina_detalle (ndt_id, ndt_nomina_periodo_id, ndt_historial_laboral_id, ndt_fecha_registro, ndt_salario_bruto, ndt_pagado)
 OVERRIDING SYSTEM VALUE VALUES
