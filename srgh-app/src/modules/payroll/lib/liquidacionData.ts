@@ -37,6 +37,7 @@ import {
   SELECT_CONTRATO,
   aContrato,
   cargarAusencias,
+  contratosConFilasOcultas,
   contratosFueraDeAlcance,
   cargarQuincenas,
   juntarAusencias,
@@ -195,6 +196,15 @@ export async function calcularBasesLiquidacion(
     return { ok: false, error: ERROR_SUCURSAL_NO_VISIBLE }
   }
   const labIds = relacion.map((c) => c.labId)
+  // Un traslado deja las quincenas de antes en la sucursal vieja aunque el
+  // contrato ya sea de esta: la RLS las esconde y el promedio saldría de menos.
+  const conFilasOcultas = await contratosConFilasOcultas(supabase, labIds, visibles)
+  if (conFilasOcultas === null) {
+    return { ok: false, error: 'No se pudo revisar en qué sucursales trabajó el empleado.' }
+  }
+  if (conFilasOcultas.size > 0) {
+    return { ok: false, error: ERROR_SUCURSAL_NO_VISIBLE }
+  }
   const inicioRelacion = inicioDeLaRelacion(ingresoOriginal, historial.lab_id, contratos)
 
   const quincenasResult = await cargarQuincenas(supabase, relacion)

@@ -39,6 +39,7 @@ import {
   aContrato,
   cargarAusencias,
   cargarQuincenas,
+  contratosConFilasOcultas,
   contratosFueraDeAlcance,
   juntarAusencias,
   juntarQuincenas,
@@ -173,7 +174,7 @@ export async function calcularAguinaldosDelCiclo(
   // arriba, no entre sí: se leen juntos (antes, uno detrás de otro, y las
   // quincenas y ausencias van paginadas). Los errores se revisan en el mismo
   // orden de siempre.
-  const [quincenasResult, ausenciasResult, pagosYProvisiones] = await Promise.all([
+  const [quincenasResult, ausenciasResult, pagosYProvisiones, conFilasOcultas] = await Promise.all([
     cargarQuincenas(supabase, todosLosContratos),
     cargarAusencias(supabase, todosLosIds),
     todosLosIds.length > 0
@@ -201,9 +202,18 @@ export async function calcularAguinaldosDelCiclo(
             >(),
         ])
       : null,
+    // Quincenas del ciclo en sucursales que la cuenta no ve: un traslado deja
+    // las de antes en la sucursal vieja aunque el contrato ya sea de esta.
+    contratosConFilasOcultas(supabase, todosLosIds, visibles, {
+      desde: `${anio - 1}-12-01`,
+      hasta: `${anio}-11-30`,
+    }),
   ])
   if (!quincenasResult.ok) return { ok: false, error: quincenasResult.error }
   if (!ausenciasResult.ok) return { ok: false, error: ausenciasResult.error }
+  if (conFilasOcultas === null) {
+    return { ok: false, error: 'No se pudo revisar en qué sucursales trabajó cada empleado.' }
+  }
 
   // Todos los pagos de cada contrato, también los anulados: el vigente es el
   // que cuenta como pagado; los anulados quedan para el historial.
@@ -275,13 +285,14 @@ export async function calcularAguinaldosDelCiclo(
       ausenciasSinTipo: ausencias.sinTipo,
       // Solo importan los contratos que tocan el ciclo: un traslado de hace
       // años no esconde ninguna quincena de este aguinaldo.
-      sucursalesOcultas: contratosFueraDeAlcance(
-        relacion.filter(
-          (c) =>
-            c.fechaInicio <= `${anio}-11-30` && (!c.fechaFin || c.fechaFin >= `${anio - 1}-12-01`)
-        ),
-        visibles
-      ),
+      sucursalesOcultas:
+        contratosFueraDeAlcance(
+          relacion.filter(
+            (c) =>
+              c.fechaInicio <= `${anio}-11-30` && (!c.fechaFin || c.fechaFin >= `${anio - 1}-12-01`)
+          ),
+          visibles
+        ) || labIds.some((id) => conFilasOcultas.has(id)),
       pagado: pago !== null || provisionPagada !== null,
       fechaPago: pago?.pex_fecha_pago ?? provisionPagada?.pra_fecha_pago_aguinaldo ?? null,
       pagoId: pago?.pex_id ?? null,

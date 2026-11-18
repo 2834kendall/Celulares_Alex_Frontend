@@ -60,30 +60,41 @@ const SIN_PROBLEMAS = {
   dias: [],
 }
 
+/**
+ * `filasDelPeriodo`: lo que devuelve nomina_filas_estado al recalcular el
+ * estado del periodo (TODAS sus filas, también las que la cuenta no ve).
+ */
 function mockSupabase(
-  responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
+  responses: Record<
+    string,
+    { data: unknown; error: unknown } | { data: unknown; error: unknown }[]
+  >,
+  filasDelPeriodo?: { data: unknown; error: unknown }
 ) {
-  const client = createSupabaseClientMock({
-    // Sin comprobante previo: la acción emite uno al marcar el pago. Los
-    // tests que quieran otro escenario lo declaran ellos.
-    sgrh_comprobantes_pago: { data: null, error: null },
-    // Verificación del BASE contra la asistencia. Por defecto no hay nada que
-    // verificar (contrato sin salario): cada test que quiera probarla la
-    // declara.
-    sgrh_nomina_linea_ingreso: { data: [], error: null },
-    sgrh_historial_laboral: {
-      data: { lab_salario_base: 0, sgrh_cat_tipos_jornada: null },
-      error: null,
+  const client = createSupabaseClientMock(
+    {
+      // Sin comprobante previo: la acción emite uno al marcar el pago. Los
+      // tests que quieran otro escenario lo declaran ellos.
+      sgrh_comprobantes_pago: { data: null, error: null },
+      // Verificación del BASE contra la asistencia. Por defecto no hay nada que
+      // verificar (contrato sin salario): cada test que quiera probarla la
+      // declara.
+      sgrh_nomina_linea_ingreso: { data: [], error: null },
+      sgrh_historial_laboral: {
+        data: { lab_salario_base: 0, sgrh_cat_tipos_jornada: null },
+        error: null,
+      },
+      // Sin liquidación: el contrato sigue activo.
+      sgrh_liquidaciones: { data: null, error: null },
+      // Aguinaldo del ciclo sin pagar: desmarcar está permitido.
+      sgrh_pagos_extraordinarios: { data: [], error: null },
+      // Sin ausencias de subsidio en el periodo: la incapacidad usa el tipo de
+      // respaldo (INC_ENF). Los tests del tipo de la ausencia la declaran.
+      sgrh_ausencias: { data: [], error: null },
+      ...responses,
     },
-    // Sin liquidación: el contrato sigue activo.
-    sgrh_liquidaciones: { data: null, error: null },
-    // Aguinaldo del ciclo sin pagar: desmarcar está permitido.
-    sgrh_pagos_extraordinarios: { data: [], error: null },
-    // Sin ausencias de subsidio en el periodo: la incapacidad usa el tipo de
-    // respaldo (INC_ENF). Los tests del tipo de la ausencia la declaran.
-    sgrh_ausencias: { data: [], error: null },
-    ...responses,
-  })
+    filasDelPeriodo ? { rpcResponses: { nomina_filas_estado: filasDelPeriodo } } : {}
+  )
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -753,22 +764,24 @@ describe('marcarDetallePagado (server action)', () => {
   })
 
   it('el periodo pasa a "pagado" cuando el último empleado queda marcado (todos pagados)', async () => {
-    const client = mockSupabase({
-      sgrh_nomina_detalle: [
-        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        ACTUALIZADA,
-        // Tras marcar este, TODOS los empleados del periodo quedan pagados.
-        {
-          data: [
-            { ndt_pagado: true, ndt_fecha_pago: '2026-07-20' },
-            { ndt_pagado: true, ndt_fecha_pago: '2026-07-28' },
-          ],
-          error: null,
-        },
-      ],
-      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
-      sgrh_nomina_periodo: OK,
-    })
+    const client = mockSupabase(
+      {
+        sgrh_nomina_detalle: [
+          { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+          ACTUALIZADA,
+        ],
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+      },
+      // Tras marcar este, TODOS los empleados del periodo quedan pagados.
+      {
+        data: [
+          { ndt_historial_laboral_id: 77, ndt_pagado: true, ndt_fecha_pago: '2026-07-20' },
+          { ndt_historial_laboral_id: 78, ndt_pagado: true, ndt_fecha_pago: '2026-07-28' },
+        ],
+        error: null,
+      }
+    )
 
     const result = await marcarDetallePagado(1, true)
 
@@ -787,22 +800,25 @@ describe('marcarDetallePagado (server action)', () => {
   })
 
   it('el periodo se queda en "borrador" si todavía falta pagarle a otro empleado', async () => {
-    const client = mockSupabase({
-      sgrh_nomina_detalle: [
-        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        ACTUALIZADA,
-        // Este empleado ya quedó pagado, pero otro del mismo periodo no.
-        {
-          data: [
-            { ndt_pagado: true, ndt_fecha_pago: '2026-07-28' },
-            { ndt_pagado: false, ndt_fecha_pago: null },
-          ],
-          error: null,
-        },
-      ],
-      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
-      sgrh_nomina_periodo: OK,
-    })
+    const client = mockSupabase(
+      {
+        sgrh_nomina_detalle: [
+          { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+          ACTUALIZADA,
+        ],
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: OK,
+      },
+      // Este empleado ya quedó pagado, pero otro del mismo periodo no (puede ser
+      // de una sucursal que la cuenta no ve: el estado cuenta todas las filas).
+      {
+        data: [
+          { ndt_historial_laboral_id: 77, ndt_pagado: true, ndt_fecha_pago: '2026-07-28' },
+          { ndt_historial_laboral_id: 78, ndt_pagado: false, ndt_fecha_pago: null },
+        ],
+        error: null,
+      }
+    )
 
     const result = await marcarDetallePagado(1, true)
 
@@ -822,46 +838,54 @@ describe('marcarDetallePagado (server action)', () => {
   // La fila impaga de alguien ya liquidado no se puede pagar por planilla
   // (va en la liquidación): no puede dejar el periodo abierto para siempre.
   it('una fila impaga que ya paga una liquidación no impide cerrar el periodo', async () => {
-    const client = mockSupabase({
-      sgrh_nomina_detalle: [
-        { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
-        ACTUALIZADA,
-        {
-          data: [
-            { ndt_historial_laboral_id: 77, ndt_pagado: true, ndt_fecha_pago: '2026-06-20' },
-            { ndt_historial_laboral_id: 88, ndt_pagado: false, ndt_fecha_pago: null },
-          ],
-          error: null,
-        },
-      ],
-      sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
-      sgrh_nomina_periodo: [
-        { data: { npe_periodo_anio: 2026, npe_periodo_mes: 6, npe_quincena: 1 }, error: null },
-        OK,
-      ],
-      sgrh_historial_laboral: [
-        // marcarDetallePagado: ¿este contrato (77) ya fue liquidado? No.
-        { data: [{ lab_id: 77, lab_empleado_id: 1, lab_fecha_inicio: '2020-01-01' }], error: null },
-        // Lo mismo para el 88 al recalcular el periodo, y la verificación del BASE.
-        { data: [{ lab_id: 88, lab_empleado_id: 2, lab_fecha_inicio: '2020-01-01' }], error: null },
-      ],
-      sgrh_liquidaciones: [
-        { data: [], error: null },
-        { data: [], error: null },
-        {
-          data: [
-            {
-              liq_id: 40,
-              liq_historial_laboral_id: 88,
-              liq_fecha_salida: '2026-06-10',
-              liq_dias_trabajados_mes: 10,
-              sgrh_historial_laboral: { lab_empleado_id: 2 },
-            },
-          ],
-          error: null,
-        },
-      ],
-    })
+    const client = mockSupabase(
+      {
+        sgrh_nomina_detalle: [
+          { data: { ...DETALLE_BASE, ndt_pagado: false }, error: null },
+          ACTUALIZADA,
+        ],
+        sgrh_provisiones_anuales: [{ data: null, error: null }, OK],
+        sgrh_nomina_periodo: [
+          { data: { npe_periodo_anio: 2026, npe_periodo_mes: 6, npe_quincena: 1 }, error: null },
+          OK,
+        ],
+        sgrh_historial_laboral: [
+          // marcarDetallePagado: ¿este contrato (77) ya fue liquidado? No.
+          {
+            data: [{ lab_id: 77, lab_empleado_id: 1, lab_fecha_inicio: '2020-01-01' }],
+            error: null,
+          },
+          // Lo mismo para el 88 al recalcular el periodo, y la verificación del BASE.
+          {
+            data: [{ lab_id: 88, lab_empleado_id: 2, lab_fecha_inicio: '2020-01-01' }],
+            error: null,
+          },
+        ],
+        sgrh_liquidaciones: [
+          { data: [], error: null },
+          { data: [], error: null },
+          {
+            data: [
+              {
+                liq_id: 40,
+                liq_historial_laboral_id: 88,
+                liq_fecha_salida: '2026-06-10',
+                liq_dias_trabajados_mes: 10,
+                sgrh_historial_laboral: { lab_empleado_id: 2 },
+              },
+            ],
+            error: null,
+          },
+        ],
+      },
+      {
+        data: [
+          { ndt_historial_laboral_id: 77, ndt_pagado: true, ndt_fecha_pago: '2026-06-20' },
+          { ndt_historial_laboral_id: 88, ndt_pagado: false, ndt_fecha_pago: null },
+        ],
+        error: null,
+      }
+    )
 
     const result = await marcarDetallePagado(1, true)
 

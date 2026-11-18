@@ -515,6 +515,13 @@ export interface PlanillaRowInput {
   salarioPorHora: number
   /** Monto por código de concepto — solo conceptos monto_manual_ingreso / monto_manual_deduccion. */
   montos: Record<string, number>
+  /**
+   * Id del contrato que trae la fila en la columna oculta de la plantilla
+   * (lo pone parsePlanillaWorkbook). null si la fila se agregó a mano. Solo
+   * desempata cuando la cédula tiene más de un contrato en el periodo: quién
+   * es la persona lo dice la cédula.
+   */
+  contratoId?: number | null
 }
 
 export type ParseRowResult =

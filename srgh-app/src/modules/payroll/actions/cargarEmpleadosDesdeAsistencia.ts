@@ -26,6 +26,7 @@ import {
 import { camposFotoAsistencia } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal, hoyLocal } from '@/modules/payroll/lib/fechas'
 import { aplicarAusenciasAFilasNuevas } from '@/modules/payroll/lib/ausenciaNominaSync'
+import { alcanceDelPeriodo, leerFilasEstado } from '@/modules/payroll/lib/alcancePlanilla'
 
 export type CargarEmpleadosResult =
   | {
@@ -46,7 +47,8 @@ export type CargarEmpleadosResult =
 interface PeriodoRow {
   npe_id: number
   npe_estado: string
-  npe_sucursal_id: number
+  /** null = periodo de toda la empresa (ver lib/alcancePlanilla.ts). */
+  npe_sucursal_id: number | null
   npe_periodo_mes: number
   npe_periodo_anio: number
   npe_quincena: number
@@ -60,8 +62,10 @@ interface DetalleInsertadoRow {
 }
 
 /**
- * Llena el periodo con los empleados activos de la sucursal, con las horas que
- * dicen las marcas del kiosco.
+ * Llena el periodo con los empleados activos de su alcance, con las horas que
+ * dicen las marcas del kiosco. El alcance es la sucursal del periodo, o —en
+ * un periodo de toda la empresa— las sucursales que ve la cuenta, acotadas a
+ * la marca elegida en el selector si hay una (ver lib/alcancePlanilla.ts).
  *
  * Hasta ahora crear un periodo dejaba una cabecera vacía y la ÚNICA forma de
  * meterle gente era descargar la plantilla de Excel y volver a subirla. Quien
@@ -107,7 +111,12 @@ export async function cargarEmpleadosDesdeAsistencia(
     return { ok: false, error: 'Solo se puede cargar empleados en un periodo en borrador.' }
   }
 
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+  const alcance = await alcanceDelPeriodo(supabase, claims, periodo.npe_sucursal_id)
+  if (!alcance.ok) {
+    return { ok: false, error: alcance.error }
+  }
+
+  const empleadosResult = await getEmpleadosActivos(supabase, alcance.sucursalIds, {
     finPeriodo: periodo.npe_fecha_fin_periodo,
   })
   if (!empleadosResult.ok) {
@@ -116,25 +125,27 @@ export async function cargarEmpleadosDesdeAsistencia(
   if (empleadosResult.data.length === 0) {
     return {
       ok: false,
-      error: 'La sucursal de este periodo no tiene empleados con contrato activo.',
+      error: alcance.porEmpresa
+        ? 'No hay empleados con contrato activo en las sucursales que ves de este periodo.'
+        : 'La sucursal de este periodo no tiene empleados con contrato activo.',
     }
   }
 
-  const { data: yaEnPeriodo, error: errExistentes } = await supabase
-    .from('sgrh_nomina_detalle')
-    .select('ndt_historial_laboral_id')
-    .eq('ndt_nomina_periodo_id', periodoId)
-    .returns<{ ndt_historial_laboral_id: number }[]>()
-
-  if (errExistentes) {
+  // Quién ya está en el periodo se le pregunta a nomina_filas_estado y no a
+  // la tabla: en un periodo de toda la empresa, alguien trasladado puede
+  // tener su fila en una sucursal que esta cuenta no ve. Con la consulta
+  // directa parecería que falta, y cargarlo de nuevo choca con el índice
+  // único (un contrato, una fila por periodo) y tumba la carga entera.
+  const yaEnPeriodo = await leerFilasEstado(supabase, periodoId)
+  if (!yaEnPeriodo.ok) {
     return { ok: false, error: 'No se pudo revisar quién ya está en el periodo.' }
   }
 
-  // La base no impide que un empleado tenga dos contratos abiertos a la vez
-  // (falta un índice único parcial sobre lab_empleado_id WHERE lab_fecha_fin
-  // IS NULL). Si pasa, esta carga le arma DOS filas de planilla a la misma
-  // persona y se le paga la quincena dos veces, sin que nada lo avise: las dos
-  // filas son válidas por separado.
+  // Un empleado con dos contratos abiertos a la vez (la base lo impide desde
+  // el índice ux_historial_un_contrato_vigente, pero puede haber datos de
+  // antes): esta carga le armaría DOS filas de planilla a la misma persona y
+  // se le pagaría la quincena dos veces, sin que nada lo avise: las dos filas
+  // son válidas por separado.
   //
   // No se puede arreglar desde acá —el contrato duplicado hay que cerrarlo en
   // Historial Laboral— pero sí se puede no pagarlo: se corta y se nombra a
@@ -148,11 +159,11 @@ export async function cargarEmpleadosDesdeAsistencia(
   if (duplicados.size > 0) {
     return {
       ok: false,
-      error: `Estos empleados tienen más de un contrato activo en la sucursal (${[...duplicados].join(', ')}), así que la planilla les crearía una fila por contrato y se les pagaría dos veces. Cerrá el contrato viejo en Historial Laboral y volvé a intentarlo.`,
+      error: `Estos empleados tienen más de un contrato activo (${[...duplicados].join(', ')}), así que la planilla les crearía una fila por contrato y se les pagaría dos veces. Cerrá el contrato viejo en Historial Laboral y volvé a intentarlo.`,
     }
   }
 
-  const existentes = new Set((yaEnPeriodo ?? []).map((d) => d.ndt_historial_laboral_id))
+  const existentes = new Set(yaEnPeriodo.data.map((d) => d.ndt_historial_laboral_id))
   const faltantes = empleadosResult.data.filter((e) => !existentes.has(e.labId))
 
   if (faltantes.length === 0) {

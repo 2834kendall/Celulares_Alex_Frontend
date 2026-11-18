@@ -42,7 +42,8 @@ import {
   prellenarDesdeAsistencia,
   type ContratoPago,
 } from '@/modules/payroll/lib/prellenadoAsistencia'
-import { getEmpleadosActivos } from '@/modules/payroll/lib/planillaData'
+import { getEmpleadosActivos, type EmpleadoActivo } from '@/modules/payroll/lib/planillaData'
+import { alcanceDelPeriodo } from '@/modules/payroll/lib/alcancePlanilla'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { filaSinNadaQuePagar } from '@/modules/payroll/lib/filaSinNadaQuePagar'
@@ -81,6 +82,7 @@ function calcularConAjenas(
 interface DetalleExistenteRow {
   ndt_id: number
   ndt_historial_laboral_id: number
+  ndt_sucursal_id: number
   ndt_pagado: boolean
   ndt_horas_ordinarias_diurnas: number
   ndt_horas_extra_al_50: number
@@ -183,6 +185,13 @@ export type UploadPlanillaResult =
  * ndt_pagado ni fechas); solo se inserta, actualiza o elimina lo que
  * realmente cambió.
  *
+ * El archivo trae sellado su ALCANCE: las sucursales con que se descargó la
+ * plantilla (ver lib/planillaExcel.ts). Todo lo que hace la subida queda
+ * dentro de él: solo acepta empleados de esas sucursales y solo considera
+ * que "salió del archivo" una fila de esas sucursales. Sin eso, en un periodo
+ * de toda la empresa, subir la plantilla de una sucursal o de una marca
+ * borraría las filas de todas las demás.
+ *
  * Los montos SIEMPRE se recalculan en el servidor con
  * calcularPlanillaPorConceptos — el mismo motor dinámico que usa la edición
  * manual del detalle. No hay conceptos fijos quemados en código: cualquier
@@ -263,7 +272,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   const codigosManuales = [...ingresoManual, ...deduccionManual].map((c) => c.con_codigo)
 
   // 3. Leer y validar el Excel
-  const { rows, errors } = await parsePlanillaWorkbook(
+  const { rows, errors, alcance } = await parsePlanillaWorkbook(
     await file.arrayBuffer(),
     conceptos,
     periodoId
@@ -280,10 +289,30 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return { ok: false, error: 'El archivo no tiene filas de empleados.' }
   }
 
-  // 4. Resolver cédulas contra los contratos activos de la sucursal
-  // Incluye a quien ya tiene fila en el periodo aunque su contrato haya
-  // terminado después (ver getEmpleadosActivos).
-  const empleadosResult = await getEmpleadosActivos(supabase, periodo.npe_sucursal_id, {
+  // 3b. El alcance del archivo tiene que caber en lo que esta cuenta puede
+  // tocar en este periodo: la sucursal del periodo, o las que ve en un
+  // periodo de toda la empresa. La marca elegida en el selector no cuenta
+  // acá: manda lo que quedó sellado al descargar.
+  const permitido = await alcanceDelPeriodo(supabase, claims, periodo.npe_sucursal_id, {
+    conMarca: false,
+  })
+  if (!permitido.ok) {
+    return { ok: false, error: permitido.error }
+  }
+  const sucursalesPermitidas = new Set(permitido.sucursalIds)
+  if (alcance.length === 0 || alcance.some((id) => !sucursalesPermitidas.has(id))) {
+    return {
+      ok: false,
+      error:
+        'Esta plantilla incluye sucursales que no son de este periodo o que tu usuario ya no tiene asignadas. Descargá la plantilla de nuevo y volvé a llenarla.',
+    }
+  }
+  const enAlcance = new Set(alcance)
+
+  // 4. Resolver cada fila contra los contratos del alcance. Incluye a quien
+  // ya tiene fila en el periodo aunque su contrato haya terminado después
+  // (ver getEmpleadosActivos).
+  const empleadosResult = await getEmpleadosActivos(supabase, alcance, {
     periodoId,
     finPeriodo: periodo.npe_fecha_fin_periodo,
   })
@@ -291,14 +320,68 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return { ok: false, error: empleadosResult.error }
   }
 
-  const porCedula = new Map(empleadosResult.data.map((e) => [e.cedula, e]))
-  const desconocidas = rows.filter((r) => !porCedula.has(r.cedula)).map((r) => r.cedula)
+  // Quién es cada fila lo dice la cédula. El id de contrato de la columna
+  // oculta solo desempata cuando la cédula tiene más de un contrato en este
+  // periodo (uno terminado con fila y su reingreso): así una fila copiada y
+  // pegada con otra cédula no arrastra el contrato de la fila original.
+  const porCedula = new Map<string, EmpleadoActivo[]>()
+  for (const e of empleadosResult.data) {
+    porCedula.set(e.cedula, [...(porCedula.get(e.cedula) ?? []), e])
+  }
+  const enOtraSucursal = new Map(
+    (empleadosResult.enOtraSucursal ?? []).map((e) => [e.cedula, e.nombre])
+  )
+
+  const empleadoDeFila = new Map<PlanillaRowInput, EmpleadoActivo>()
+  const desconocidas: string[] = []
+  const trasladados: string[] = []
+  const ambiguas: string[] = []
+  const repetidas: string[] = []
+  const labsResueltos = new Set<number>()
+  for (const row of rows) {
+    const candidatos = porCedula.get(row.cedula) ?? []
+    const empleado =
+      candidatos.length === 1
+        ? candidatos[0]
+        : candidatos.find((c) => c.labId === (row.contratoId ?? null))
+    if (candidatos.length === 0) {
+      if (enOtraSucursal.has(row.cedula)) trasladados.push(enOtraSucursal.get(row.cedula)!)
+      else desconocidas.push(row.cedula)
+    } else if (!empleado) {
+      ambiguas.push(row.cedula)
+    } else if (labsResueltos.has(empleado.labId)) {
+      repetidas.push(row.cedula)
+    } else {
+      labsResueltos.add(empleado.labId)
+      empleadoDeFila.set(row, empleado)
+    }
+  }
+  if (trasladados.length > 0) {
+    return {
+      ok: false,
+      error: `Estos empleados ya tienen su fila de esta quincena en otra sucursal (se trasladaron después): ${trasladados.slice(0, 5).join(', ')}. No van en esta plantilla: quitalos del archivo.`,
+    }
+  }
   if (desconocidas.length > 0) {
     return {
       ok: false,
-      error: `Cédulas sin contrato activo en la sucursal para esta quincena (o que ingresaron después de que terminó): ${desconocidas.slice(0, 5).join(', ')}.`,
+      error: `Cédulas sin contrato activo en ${permitido.porEmpresa ? 'las sucursales de esta plantilla' : 'la sucursal'} para esta quincena (o que ingresaron después de que terminó): ${desconocidas.slice(0, 5).join(', ')}.`,
     }
   }
+  if (ambiguas.length > 0) {
+    return {
+      ok: false,
+      error: `Estas cédulas tienen más de un contrato en este periodo y el archivo no dice cuál es cada fila: ${ambiguas.slice(0, 5).join(', ')}. Descargá la plantilla de nuevo.`,
+    }
+  }
+  if (repetidas.length > 0) {
+    return {
+      ok: false,
+      error: `Cédula repetida: ${repetidas.slice(0, 5).join(', ')}.`,
+    }
+  }
+  /** El contrato de una fila del archivo (todas quedaron resueltas arriba). */
+  const empleadoDe = (row: PlanillaRowInput): EmpleadoActivo => empleadoDeFila.get(row)!
 
   // 4b. Lo que dicen las marcas de asistencia para este periodo. Es la foto
   // que se guarda junto con cada fila: mandan las marcas, pero el Excel puede
@@ -335,7 +418,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     quincena: periodo.npe_quincena,
   }
   for (const row of rows) {
-    const empleado = porCedula.get(row.cedula)!
+    const empleado = empleadoDe(row)
     const lectura =
       lecturaAsistencia.estado === 'ok'
         ? (lecturaAsistencia.totales.get(empleado.labId) ?? null)
@@ -391,10 +474,10 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   }
 
   // 5. Planilla ya guardada en el periodo (para comparar, no para borrar de una vez)
-  const { data: detallesPrevios, error: errPrevios } = await supabase
+  const { data: detallesDelPeriodo, error: errPrevios } = await supabase
     .from('sgrh_nomina_detalle')
     .select(
-      'ndt_id, ndt_historial_laboral_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto, ndt_total_cargas_patronales, ndt_horas_asistencia, ndt_horas_extra_asistencia, ndt_dias_incapacidad_empleador'
+      'ndt_id, ndt_historial_laboral_id, ndt_sucursal_id, ndt_pagado, ndt_horas_ordinarias_diurnas, ndt_horas_extra_al_50, ndt_salario_por_hora, ndt_salario_bruto, ndt_total_deducciones_obreras, ndt_salario_neto, ndt_total_cargas_patronales, ndt_horas_asistencia, ndt_horas_extra_asistencia, ndt_dias_incapacidad_empleador'
     )
     .eq('ndt_nomina_periodo_id', periodoId)
     .returns<DetalleExistenteRow[]>()
@@ -403,20 +486,27 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return { ok: false, error: 'No se pudo revisar la planilla existente.' }
   }
 
+  // De acá en adelante "la planilla guardada" son solo las filas del alcance
+  // del archivo. Las de otras sucursales del mismo periodo no se comparan, no
+  // se actualizan y —sobre todo— no cuentan como "salieron del Excel".
+  const detallesPrevios = (detallesDelPeriodo ?? []).filter((d: DetalleExistenteRow) =>
+    enAlcance.has(d.ndt_sucursal_id)
+  )
+
   const ndtIdPorLab = new Map<number, number>(
-    (detallesPrevios ?? []).map((d: DetalleExistenteRow): [number, number] => [
+    detallesPrevios.map((d: DetalleExistenteRow): [number, number] => [
       d.ndt_historial_laboral_id,
       d.ndt_id,
     ])
   )
-  const idsPrevios = (detallesPrevios ?? []).map((d: DetalleExistenteRow) => d.ndt_id)
+  const idsPrevios = detallesPrevios.map((d: DetalleExistenteRow) => d.ndt_id)
 
   // Valores previos de cada ndt_id (horas, salario por hora, montos por
   // concepto manual), para reconstruir qué había y compararlo contra el
   // Excel. Los códigos ausentes cuentan como 0, igual que un campo vacío.
   const valoresPreviosPorNdt = new Map<number, ValoresPrevios>()
   if (idsPrevios.length > 0) {
-    for (const d of detallesPrevios ?? []) {
+    for (const d of detallesPrevios) {
       const montos: Record<string, number> = {}
       for (const codigo of codigosManuales) montos[codigo] = 0
       valoresPreviosPorNdt.set(d.ndt_id, {
@@ -494,7 +584,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   // Filas impagas cuyo salario ya pagó una liquidación (salario pendiente
   // del mes de salida). Se averigua una sola vez: sirve para no reescribirlas
   // y para dejar sacarlas de un periodo vencido (paso 7).
-  const labsImpagosPrevios = (detallesPrevios ?? [])
+  const labsImpagosPrevios = detallesPrevios
     .filter((d: DetalleExistenteRow) => !d.ndt_pagado)
     .map((d: DetalleExistenteRow) => d.ndt_historial_laboral_id)
   let cubiertasPorLiquidacion = new Set<number>()
@@ -523,7 +613,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
   const labIdsEnExcel = new Set<number>()
   for (const row of rows) {
-    const labId = porCedula.get(row.cedula)!.labId
+    const labId = empleadoDe(row).labId
     labIdsEnExcel.add(labId)
     const ndtId = ndtIdPorLab.get(labId)
 
@@ -585,20 +675,28 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       // (con las marcas de hoy, o con otras horas) le cambiaba el monto a una
       // fila con comprobante emitido y aguinaldo ya acumulado con el bruto
       // viejo. Se deja como está y se avisa.
-      pagadasSinTocar.push(porCedula.get(row.cedula)!.nombre)
+      pagadasSinTocar.push(empleadoDe(row).nombre)
     } else if (cubiertasPorLiquidacion.has(labId)) {
       // Su salario de esta quincena ya va en la liquidación: la fila no se
       // paga por planilla ni se puede editar en pantalla. Antes el Excel la
       // reescribía igual.
-      enLiquidacionSinTocar.push(porCedula.get(row.cedula)!.nombre)
+      enLiquidacionSinTocar.push(empleadoDe(row).nombre)
     } else {
       filasActualizar.push({ row, ndtId, totales })
     }
   }
 
-  // Empleados que ya tenían planilla en el periodo pero salieron del Excel
-  const salieronDelExcel = (detallesPrevios ?? []).filter(
-    (d: DetalleExistenteRow) => !labIdsEnExcel.has(d.ndt_historial_laboral_id)
+  // Empleados que ya tenían planilla en el periodo (dentro del alcance) pero
+  // salieron del Excel.
+  //
+  // Una fila cuyo contrato esta cuenta no puede leer no entra acá: es la de
+  // alguien que se trasladó a una sucursal que la cuenta no ve, así que no
+  // pudo venir en la plantilla. No se toca; antes trababa la subida ("volvé a
+  // incluirlo en el archivo", cuando no había forma de incluirlo).
+  const labsLegibles = new Set(empleadosResult.data.map((e) => e.labId))
+  const salieronDelExcel = detallesPrevios.filter(
+    (d: DetalleExistenteRow) =>
+      !labIdsEnExcel.has(d.ndt_historial_laboral_id) && labsLegibles.has(d.ndt_historial_laboral_id)
   )
 
   // Hay dos filas que NO se pueden borrar así:
@@ -741,8 +839,8 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
           ndt_horas_ordinarias_diurnas: row.horasTrabajadas,
           ndt_horas_extra_al_50: row.horasExtra,
           ndt_salario_por_hora: row.salarioPorHora,
-          ...fotoDelContrato(contratoDe(porCedula.get(row.cedula)!)),
-          ...fotoDe(porCedula.get(row.cedula)!.labId, row, valoresPreviosPorNdt.get(ndtId) ?? null),
+          ...fotoDelContrato(contratoDe(empleadoDe(row))),
+          ...fotoDe(empleadoDe(row).labId, row, valoresPreviosPorNdt.get(ndtId) ?? null),
         })
         .eq('ndt_id', ndtId)
         // Solo si sigue sin pagar: alguien pudo marcarla pagada mientras se
@@ -757,7 +855,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
       if (!Array.isArray(actualizada) || actualizada.length === 0) {
         // Se pagó en el medio: queda como se pagó, igual que las que ya venían
         // pagadas.
-        return { tipo: 'pagada', nombre: porCedula.get(row.cedula)!.nombre }
+        return { tipo: 'pagada', nombre: empleadoDe(row).nombre }
       }
 
       // reemplazarLineasDetalle borra y reinserta, conservando los metadatos de
@@ -774,7 +872,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
 
       const { error: errBanco } = await sincronizarMovimientoBancoHoras(supabase, {
         ndtId,
-        historialLaboralId: porCedula.get(row.cedula)!.labId,
+        historialLaboralId: empleadoDe(row).labId,
         horasExtra: row.horasExtra,
         salarioPorHora: row.salarioPorHora,
       })
@@ -798,7 +896,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     const hoy = hoyLocal()
     const totalesPorFila = new Map(
       filasNuevas.map((row) => [
-        row.cedula,
+        row,
         calcularPlanillaPorConceptos(conceptos, {
           montos: row.montos,
           horasTrabajadas: row.horasTrabajadas,
@@ -809,10 +907,10 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     )
 
     const detalles = filasNuevas.map((row) => {
-      const totales = totalesPorFila.get(row.cedula)!
+      const totales = totalesPorFila.get(row)!
       return {
         ndt_nomina_periodo_id: periodoId,
-        ndt_historial_laboral_id: porCedula.get(row.cedula)!.labId,
+        ndt_historial_laboral_id: empleadoDe(row).labId,
         ndt_salario_bruto: totales.salarioBruto,
         ndt_total_deducciones_obreras: totales.totalDeducciones,
         ndt_total_cargas_patronales: totales.totalCargasPatronales,
@@ -825,9 +923,9 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         ndt_horas_extra_al_50: row.horasExtra,
         ndt_salario_por_hora: row.salarioPorHora,
         ndt_fecha_registro: hoy,
-        ...fotoDelContrato(contratoDe(porCedula.get(row.cedula)!)),
+        ...fotoDelContrato(contratoDe(empleadoDe(row))),
         // Fila nueva: no hay nada anterior contra lo cual comparar.
-        ...fotoDe(porCedula.get(row.cedula)!.labId, row, null),
+        ...fotoDe(empleadoDe(row).labId, row, null),
       }
     })
 
@@ -853,10 +951,10 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     const { error: errLineasNuevas } = await insertarLineasFilasNuevas(
       supabase,
       filasNuevas.flatMap((row) => {
-        const labId = porCedula.get(row.cedula)!.labId
+        const labId = empleadoDe(row).labId
         const ndtId = ndtIdPorLabNuevo.get(labId)
         if (!ndtId) return []
-        const { lineas, lineasPatronales } = totalesPorFila.get(row.cedula)!
+        const { lineas, lineasPatronales } = totalesPorFila.get(row)!
         return [
           {
             ndtId,

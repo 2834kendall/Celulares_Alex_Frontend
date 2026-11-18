@@ -10,6 +10,7 @@ vi.mock('@/lib/empresa/contexto-activo', () => ({
   getFiltroMarca: vi.fn(async () => ({ estado: 'sin-filtro', sucursalIds: null })),
 }))
 
+vi.mock('server-only', () => ({}))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
 
@@ -29,6 +30,7 @@ const PERIODO_BASE = {
   npe_fecha_fin_periodo: '2026-07-15',
   npe_estado: 'borrador',
   npe_fecha_pago: null,
+  npe_sucursal_id: 2,
   sgrh_sucursales: { suc_nombre: 'Central' },
   sgrh_nomina_detalle: [{ count: 4 }],
 }
@@ -77,6 +79,7 @@ describe('getPeriodos (server action)', () => {
           fechaPago: null,
           sucursalNombre: 'Central',
           totalEmpleados: 4,
+          puedeEliminar: true,
         },
       ],
     })
@@ -100,6 +103,50 @@ describe('getPeriodos (server action)', () => {
       expect(result.data[0].totalEmpleados).toBe(0)
     }
   })
+
+  // Periodo de toda la empresa: sin sucursal, y solo lo borra una cuenta sin
+  // sucursal asignada.
+  it('un periodo sin sucursal se rotula "Toda la empresa"', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_nomina_periodo: {
+          data: [{ ...PERIODO_BASE, npe_sucursal_id: null, sgrh_sucursales: null }],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getPeriodos()
+
+    expect(result.ok && result.data[0]).toMatchObject({
+      sucursalNombre: 'Toda la empresa',
+      puedeEliminar: true,
+    })
+  })
+
+  it('una cuenta de sucursal no puede eliminar el periodo de la empresa, pero sí uno de su sucursal', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, sucursal_ids: [2] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_nomina_periodo: {
+          data: [
+            { ...PERIODO_BASE, npe_id: 8, npe_sucursal_id: null, sgrh_sucursales: null },
+            PERIODO_BASE,
+          ],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getPeriodos()
+
+    expect(result.ok && result.data.map((p) => [p.id, p.puedeEliminar])).toEqual([
+      [8, false],
+      [7, true],
+    ])
+  })
 })
 
 const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
@@ -121,13 +168,21 @@ describe('getPeriodos con una marca elegida', () => {
     return client.from.mock.results
   }
 
-  it('lee solo los periodos de sus tiendas', async () => {
+  // Los periodos por sucursal, solo los de la marca. Los de toda la empresa
+  // salen siempre, contando nada más las filas de la marca.
+  it('lee los periodos de sus tiendas y los de toda la empresa, contando solo sus filas', async () => {
     vi.mocked(getFiltroMarca).mockResolvedValueOnce(FILTRO_MARCA)
     const resultados = conPeriodos()
 
     await getPeriodos()
 
-    expect(resultados[0].value.in).toHaveBeenCalledWith('npe_sucursal_id', [5, 6])
+    expect(resultados[0].value.or).toHaveBeenCalledWith(
+      'npe_sucursal_id.is.null,npe_sucursal_id.in.(5,6)'
+    )
+    expect(resultados[0].value.in).toHaveBeenCalledWith(
+      'sgrh_nomina_detalle.ndt_sucursal_id',
+      [5, 6]
+    )
   })
 
   it('sin marca no acota', async () => {
@@ -136,6 +191,7 @@ describe('getPeriodos con una marca elegida', () => {
     await getPeriodos()
 
     expect(resultados[0].value.in).not.toHaveBeenCalled()
+    expect(resultados[0].value.or).not.toHaveBeenCalled()
   })
 
   it('si no se pudo leer el filtro da error, no todos los periodos', async () => {

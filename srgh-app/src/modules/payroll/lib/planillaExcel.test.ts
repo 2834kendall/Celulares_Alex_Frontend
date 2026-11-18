@@ -87,6 +87,7 @@ function lectura(ordinarias: number, programadas: number, extra = 0): HorasDeAsi
 // base: la Q1 paga base ÷ 30 × 15 = la mitad, sin ajuste.
 const EMPLEADOS = [
   {
+    labId: 101,
     cedula: '1-1111-1111',
     nombre: 'Ana Mora',
     salarioBaseMensual: 600000,
@@ -94,6 +95,7 @@ const EMPLEADOS = [
     horas: { lectura: lectura(96, 96), diasPorRevisar: 0 },
   },
   {
+    labId: 102,
     cedula: '2-2222-2222',
     nombre: 'Beto Solís',
     salarioBaseMensual: 300000,
@@ -108,6 +110,7 @@ const INFO = {
   titulo: 'Planilla de prueba',
   subtitulo: 'Sucursal Central',
   periodoId: PERIODO_ID,
+  sucursalIds: [3, 1],
   quincena: { anio: 2026, mes: 8, quincena: 1 },
 }
 
@@ -118,7 +121,7 @@ describe('buildPlanillaTemplate con la fila ya guardada en el periodo', () => {
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buffer.buffer)
     const fila = wb.getWorksheet('Planilla')!.getRow(5)
-    return [3, 4, 5, 6, 7, 8].map((c) => fila.getCell(c).value)
+    return [4, 5, 6, 7, 8, 9].map((c) => fila.getCell(c).value)
   }
   const ANA = EMPLEADOS[0]
   const GUARDADO = {
@@ -336,13 +339,14 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     const ws = wb.getWorksheet('Planilla')!
 
     const headerRow = ws.getRow(4)
-    const headerLabels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(
+    const headerLabels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(
       (col) => headerRow.getCell(col).value
     )
 
     expect(headerLabels).toEqual([
       'Cédula',
       'Empleado',
+      'Sucursal',
       'Horas trabajadas',
       'Horas extra',
       'Salario por hora',
@@ -355,18 +359,21 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
       'Rebajo CCSS (10.83%, calculado)',
       'Total deducciones',
       'Total neto',
+      'Contrato (no tocar)',
     ])
+    // El id del contrato va en una columna oculta.
+    expect(ws.getColumn(16).hidden).toBe(true)
 
     // Fila del primer empleado (Ana, salario base mensual 600000)
     const fila5 = ws.getRow(5)
     expect(fila5.getCell(1).value).toBe('1-1111-1111')
     expect(fila5.getCell(2).value).toBe('Ana Mora')
-    expect(fila5.getCell(3).value).toBe(96) // horas de las marcas
-    expect(fila5.getCell(4).value).toBe(0) // horas extra
-    expect(fila5.getCell(5).value).toBe(2500) // salario real 600000 / 30 / 8
-    expect(fila5.getCell(6).value).toBe(300000) // BASE = 600000 / 30 x 15
-    expect(fila5.getCell(7).value).toBe(0) // COMISION en cero por defecto
-    expect(fila5.getCell(8).value).toBe(0) // PRESTAMO en cero por defecto
+    expect(fila5.getCell(4).value).toBe(96) // horas de las marcas
+    expect(fila5.getCell(5).value).toBe(0) // horas extra
+    expect(fila5.getCell(6).value).toBe(2500) // salario real 600000 / 30 / 8
+    expect(fila5.getCell(7).value).toBe(300000) // BASE = 600000 / 30 x 15
+    expect(fila5.getCell(8).value).toBe(0) // COMISION en cero por defecto
+    expect(fila5.getCell(9).value).toBe(0) // PRESTAMO en cero por defecto
   })
 
   it('lee de vuelta los valores prellenados sin que el usuario edite nada', async () => {
@@ -382,6 +389,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
       horasExtra: 0,
       salarioPorHora: 2500,
       montos: { BASE: 300000, COMISION: 0, PRESTAMO: 0 },
+      contratoId: 101,
     })
     expect(rows[1]).toEqual({
       cedula: '2-2222-2222',
@@ -389,6 +397,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
       horasExtra: 0,
       salarioPorHora: 1250, // 300000 / 30 / 8
       montos: { BASE: 150000, COMISION: 0, PRESTAMO: 0 },
+      contratoId: 102,
     })
   })
 
@@ -401,10 +410,10 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     // Simula que el usuario edita la fila de Ana: le pone comisión, un
     // préstamo, y reporta 96 horas trabajadas (8 de extra).
     const fila5 = ws.getRow(5)
-    fila5.getCell(3).value = 96 // horas trabajadas
-    fila5.getCell(4).value = 8 // horas extra
-    fila5.getCell(7).value = 26250 // comisión
-    fila5.getCell(8).value = 10000 // préstamo
+    fila5.getCell(4).value = 96 // horas trabajadas
+    fila5.getCell(5).value = 8 // horas extra
+    fila5.getCell(8).value = 26250 // comisión
+    fila5.getCell(9).value = 10000 // préstamo
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { rows, errors } = await parsePlanillaWorkbook(
@@ -421,6 +430,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
       horasExtra: 8,
       salarioPorHora: 2500,
       montos: { BASE: 300000, COMISION: 26250, PRESTAMO: 10000 },
+      contratoId: 101,
     })
   })
 
@@ -430,9 +440,9 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     await wb.xlsx.load(buffer.buffer)
     const ws = wb.getWorksheet('Planilla')!
 
-    // "Total neto" (columna 14) trae una fórmula; forzamos un valor rarísimo
+    // "Total neto" (columna 15) trae una fórmula; forzamos un valor rarísimo
     // ahí para probar que el parseo ni siquiera la mira.
-    ws.getRow(5).getCell(14).value = 999999999
+    ws.getRow(5).getCell(15).value = 999999999
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { rows } = await parsePlanillaWorkbook(
@@ -451,7 +461,7 @@ describe('buildPlanillaTemplate + parsePlanillaWorkbook (round trip)', () => {
     await wb.xlsx.load(buffer.buffer)
     const ws = wb.getWorksheet('Planilla')!
 
-    ws.getRow(5).getCell(7).value = -500 // comisión negativa
+    ws.getRow(5).getCell(8).value = -500 // comisión negativa
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { rows, errors } = await parsePlanillaWorkbook(
@@ -524,7 +534,7 @@ describe('parsePlanillaWorkbook: archivos que no corresponden', () => {
 
     // Alguien borra el encabezado de "Horas trabajadas" al editar. Antes esto
     // guardaba a TODA la sucursal con 0 horas y respondía "Planilla guardada".
-    ws.getRow(4).getCell(3).value = null
+    ws.getRow(4).getCell(4).value = null
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { rows, errors } = await parsePlanillaWorkbook(
@@ -544,7 +554,7 @@ describe('parsePlanillaWorkbook: archivos que no corresponden', () => {
     await wb.xlsx.load(buffer.buffer)
     const ws = wb.getWorksheet('Planilla')!
 
-    ws.getRow(4).getCell(8).value = null // encabezado "Préstamo"
+    ws.getRow(4).getCell(9).value = null // encabezado "Préstamo"
 
     const buffer2 = await wb.xlsx.writeBuffer()
     const { errors } = await parsePlanillaWorkbook(
@@ -572,17 +582,17 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
     const ws = await leerFila({ horas: { lectura: lectura(48, 96), diasPorRevisar: 2 } })
     const fila = ws.getRow(5)
 
-    expect(fila.getCell(3).value).toBe(48) // horas trabajadas reales
-    expect(fila.getCell(5).value).toBe(2500) // valor hora del salario real
-    expect(fila.getCell(6).value).toBe(150000) // mitad del horario = mitad de la base
-    expect(fila.getCell(10).value).toBe(2) // días por revisar
+    expect(fila.getCell(4).value).toBe(48) // horas trabajadas reales
+    expect(fila.getCell(6).value).toBe(2500) // valor hora del salario real
+    expect(fila.getCell(7).value).toBe(150000) // mitad del horario = mitad de la base
+    expect(fila.getCell(11).value).toBe(2) // días por revisar
   })
 
   it('las horas extra van aparte y no suben la base', async () => {
     const ws = await leerFila({ horas: { lectura: lectura(96, 96, 6), diasPorRevisar: 0 } })
 
-    expect(ws.getRow(5).getCell(6).value).toBe(300000)
-    expect(ws.getRow(5).getCell(4).value).toBe(6)
+    expect(ws.getRow(5).getCell(7).value).toBe(300000)
+    expect(ws.getRow(5).getCell(5).value).toBe(6)
   })
 
   // Regla del negocio: sin horas programadas el cumplimiento es 0.
@@ -590,8 +600,8 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
     const ws = await leerFila({ horas: undefined })
     const fila = ws.getRow(5)
 
-    expect(fila.getCell(3).value).toBe(0)
-    expect(fila.getCell(6).value).toBe(0)
+    expect(fila.getCell(4).value).toBe(0)
+    expect(fila.getCell(7).value).toBe(0)
   })
 
   it('prellena el ajuste hasta el salario real, en una columna gris', async () => {
@@ -618,10 +628,113 @@ describe('buildPlanillaTemplate: horas reales de asistencia', () => {
     )
 
     // Columnas de ingreso manual: BASE (6), COMISION (7), AJUSTE (8).
-    expect(ws.getRow(4).getCell(8).value).toBe('Ajuste')
-    expect(ws.getRow(5).getCell(6).value).toBe(200000)
-    expect(ws.getRow(5).getCell(8).value).toBe(15000)
-    const relleno = ws.getRow(5).getCell(8).fill as { fgColor?: { argb?: string } }
+    expect(ws.getRow(4).getCell(9).value).toBe('Ajuste')
+    expect(ws.getRow(5).getCell(7).value).toBe(200000)
+    expect(ws.getRow(5).getCell(9).value).toBe(15000)
+    const relleno = ws.getRow(5).getCell(9).fill as { fgColor?: { argb?: string } }
     expect(relleno.fgColor?.argb).toBe('FFF1F5F9')
+  })
+})
+
+// ── Alcance de la plantilla ────────────────────────────────────────────────
+// Con un periodo para toda la empresa, la plantilla de una sucursal (o de una
+// marca) no trae a los empleados de las demás. La subida tiene que saber de
+// qué sucursales es el archivo para no tomar como "salió del Excel" a nadie
+// de fuera de ellas.
+describe('parsePlanillaWorkbook: alcance sellado', () => {
+  /** Reabre el archivo, aplica `cambio` y lo vuelve a leer. */
+  async function editarYLeer(
+    buffer: Uint8Array<ArrayBuffer>,
+    cambio: (wb: ExcelJS.Workbook) => void
+  ) {
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    cambio(wb)
+    const buffer2 = await wb.xlsx.writeBuffer()
+    return parsePlanillaWorkbook(new Uint8Array(buffer2).buffer, CONCEPTOS, PERIODO_ID)
+  }
+
+  it('devuelve las sucursales con que se descargó, ordenadas y sin repetir', async () => {
+    const buffer = await buildPlanillaTemplate(
+      { ...INFO, sucursalIds: [5, 2, 5] },
+      EMPLEADOS,
+      CONCEPTOS
+    )
+    const { alcance, errors } = await parsePlanillaWorkbook(buffer.buffer, CONCEPTOS, PERIODO_ID)
+    expect(errors).toEqual([])
+    expect(alcance).toEqual([2, 5])
+  })
+
+  it('pone la sucursal de cada fila en su columna', async () => {
+    const buffer = await buildPlanillaTemplate(
+      INFO,
+      [{ ...EMPLEADOS[0], sucursalNombre: 'Marca · Centro' }],
+      CONCEPTOS
+    )
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    expect(wb.getWorksheet('Planilla')!.getRow(5).getCell(3).value).toBe('Marca · Centro')
+  })
+
+  it('rechaza una plantilla de antes del alcance (versión 1)', async () => {
+    const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)
+    const { rows, errors, alcance } = await editarYLeer(buffer, (wb) => {
+      wb.getWorksheet('_sgrh')!.getCell('B1').value = 1
+    })
+    expect(rows).toEqual([])
+    expect(alcance).toEqual([])
+    expect(errors[0].mensaje).toContain('antes de una actualización del sistema')
+  })
+
+  it('rechaza el archivo si se perdió o se alteró el alcance', async () => {
+    const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)
+    for (const valor of [null, '', '1,abc', '0', '-2']) {
+      const { rows, errors } = await editarYLeer(buffer, (wb) => {
+        wb.getWorksheet('_sgrh')!.getCell('B4').value = valor
+      })
+      expect(rows).toEqual([])
+      expect(errors[0].mensaje).toContain('información de las sucursales')
+    }
+  })
+
+  it('rechaza el archivo si se borra la columna oculta del contrato', async () => {
+    const buffer = await buildPlanillaTemplate(INFO, EMPLEADOS, CONCEPTOS)
+    const { rows, errors } = await editarYLeer(buffer, (wb) => {
+      wb.getWorksheet('Planilla')!.getRow(4).getCell(16).value = null
+    })
+    expect(rows).toEqual([])
+    expect(errors[0].mensaje).toContain('Contrato (no tocar)')
+  })
+
+  it('acepta la misma cédula en dos filas solo si son dos contratos distintos', async () => {
+    // Un contrato terminado con fila en el periodo y su reingreso.
+    const dos = [
+      { ...EMPLEADOS[0], labId: 101 },
+      { ...EMPLEADOS[0], labId: 109 },
+    ]
+    const buffer = await buildPlanillaTemplate(INFO, dos, CONCEPTOS)
+    const ok = await parsePlanillaWorkbook(buffer.buffer, CONCEPTOS, PERIODO_ID)
+    expect(ok.errors).toEqual([])
+    expect(ok.rows.map((r) => r.contratoId)).toEqual([101, 109])
+
+    // Mismo contrato dos veces, o una de las dos sin contrato: repetida.
+    for (const segundo of [101, null]) {
+      const { rows, errors } = await editarYLeer(buffer, (wb) => {
+        wb.getWorksheet('Planilla')!.getRow(6).getCell(16).value = segundo
+      })
+      expect(rows).toHaveLength(1)
+      expect(errors[0].mensaje).toContain('Cédula repetida')
+    }
+  })
+
+  it('una fila agregada a mano llega sin contrato', async () => {
+    const buffer = await buildPlanillaTemplate(INFO, [EMPLEADOS[0]], CONCEPTOS)
+    const { rows, errors } = await editarYLeer(buffer, (wb) => {
+      const fila = wb.getWorksheet('Planilla')!.getRow(6)
+      fila.getCell(1).value = '3-3333-3333'
+      ;[4, 5, 6, 7, 8, 9].forEach((c) => (fila.getCell(c).value = 0))
+    })
+    expect(errors).toEqual([])
+    expect(rows.find((r) => r.cedula === '3-3333-3333')?.contratoId).toBeNull()
   })
 })

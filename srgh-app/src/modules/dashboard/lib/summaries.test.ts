@@ -156,6 +156,7 @@ function periodo(id: number, overrides: Partial<PeriodoListItem>): PeriodoListIt
     fechaPago: null,
     sucursalNombre: 'San José',
     totalEmpleados: 12,
+    puedeEliminar: true,
     ...overrides,
   }
 }

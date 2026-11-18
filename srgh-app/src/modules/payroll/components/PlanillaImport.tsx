@@ -10,6 +10,8 @@ import { SPINNER } from '@/components/ui/styles'
 interface PlanillaImportProps {
   periodoId: number
   estado: string
+  /** Periodo de toda la empresa: la plantilla trae las sucursales que ve la cuenta. */
+  porEmpresa?: boolean
 }
 
 /**
@@ -17,7 +19,7 @@ interface PlanillaImportProps {
  * Solo se renderiza para usuarios con NOMINA_WRITE; la subida se bloquea
  * fuera del estado borrador (el servidor lo re-verifica de todas formas).
  */
-export function PlanillaImport({ periodoId, estado }: PlanillaImportProps) {
+export function PlanillaImport({ periodoId, estado, porEmpresa = false }: PlanillaImportProps) {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
@@ -112,7 +114,9 @@ export function PlanillaImport({ periodoId, estado }: PlanillaImportProps) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-slate-900">Planilla en Excel</p>
           <p className="text-xs text-slate-500">
-            Descarga la plantilla con los empleados de la sucursal, llena los montos y súbela.
+            {porEmpresa
+              ? 'Descarga la plantilla con los empleados de las sucursales que ves, llena los montos y súbela. La subida solo toca a los empleados de esas sucursales.'
+              : 'Descarga la plantilla con los empleados de la sucursal, llena los montos y súbela.'}
             {!esBorrador && ' Este periodo ya no está en borrador: la subida está deshabilitada.'}
           </p>
         </div>

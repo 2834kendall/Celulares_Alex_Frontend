@@ -7,6 +7,10 @@ import { deletePeriodo } from '@/modules/payroll/actions/deletePeriodo'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/modules/payroll/actions/deletePeriodo', () => ({ deletePeriodo: vi.fn() }))
+vi.mock('@/modules/payroll/actions/recalcularEstadoPeriodos', () => ({
+  recalcularEstadoPeriodos: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 function periodo(id: number, over: Partial<PeriodoListItem> = {}): PeriodoListItem {
   return {
@@ -22,6 +26,7 @@ function periodo(id: number, over: Partial<PeriodoListItem> = {}): PeriodoListIt
     observaciones: null,
     sucursalNombre: 'Norte',
     totalEmpleados: 3,
+    puedeEliminar: true,
     ...over,
   } as PeriodoListItem
 }
@@ -115,5 +120,30 @@ describe('<PeriodosList /> tarjetas de filtro', () => {
     ).toBeInTheDocument()
     expect(deletePeriodo).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Sí, eliminar' })).toBeInTheDocument()
+  })
+})
+
+describe('PeriodosList: periodo de toda la empresa', () => {
+  it('no ofrece eliminar un periodo que la cuenta no puede borrar', () => {
+    render(<PeriodosList periodos={[periodo(1, { puedeEliminar: false }), periodo(2)]} canWrite />)
+
+    expect(screen.queryByRole('button', { name: /Eliminar Enero/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Eliminar Febrero/ })).toBeInTheDocument()
+  })
+
+  it('"Recalcular estado de los periodos" solo con el permiso de mantenimiento', async () => {
+    const { recalcularEstadoPeriodos } =
+      await import('@/modules/payroll/actions/recalcularEstadoPeriodos')
+    vi.mocked(recalcularEstadoPeriodos).mockResolvedValue({ ok: true, revisados: 4, cambiaron: 1 })
+    const { unmount } = render(<PeriodosList periodos={PERIODOS} canWrite />)
+    expect(
+      screen.queryByRole('button', { name: 'Recalcular estado de los periodos' })
+    ).not.toBeInTheDocument()
+    unmount()
+
+    render(<PeriodosList periodos={PERIODOS} canWrite puedeRecalcularEstados />)
+    await userEvent.click(screen.getByRole('button', { name: 'Recalcular estado de los periodos' }))
+
+    expect(recalcularEstadoPeriodos).toHaveBeenCalledTimes(1)
   })
 })

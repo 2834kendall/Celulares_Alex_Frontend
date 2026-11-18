@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
@@ -9,6 +9,8 @@ import { getConceptos } from '@/modules/payroll/actions/getConceptos'
 import { formatCRC, formatDate, formatHoras, periodoLabel } from '@/modules/payroll/lib/format'
 import { armarContenidoComprobante } from '@/modules/payroll/lib/comprobanteContenido'
 import { PrintComprobanteButton } from '@/modules/payroll/components/PrintComprobanteButton'
+import { createClient } from '@/lib/supabase/server'
+import { periodoFusionadoEn } from '@/modules/payroll/lib/alcancePlanilla'
 
 interface ComprobantePageProps {
   params: Promise<{ periodoId: string; detalleId: string }>
@@ -56,12 +58,14 @@ export default async function ComprobantePage({ params }: ComprobantePageProps) 
     getConceptos(),
   ])
 
-  if (!detailResult.ok) {
-    notFound()
-  }
-
-  const detalle = detailResult.data.detalles.find((d) => d.id === detalleId)
-  if (!detalle) {
+  // La fila conserva su id al fusionarse los periodos: un enlace viejo solo
+  // tiene mal el periodo. Se busca en qué periodo quedó y se redirige.
+  const detalle = detailResult.ok
+    ? detailResult.data.detalles.find((d) => d.id === detalleId)
+    : undefined
+  if (!detailResult.ok || !detalle) {
+    const actual = await periodoFusionadoEn(await createClient(), periodoId)
+    if (actual !== null) redirect(`/comprobante/${actual}/${detalleId}`)
     notFound()
   }
 

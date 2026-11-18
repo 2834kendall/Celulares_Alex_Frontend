@@ -7,6 +7,7 @@ import { PayrollHeader } from '@/modules/payroll/components/PayrollHeader'
 import { PeriodosList } from '@/modules/payroll/components/PeriodosList'
 import { BuscarComprobante } from '@/modules/payroll/components/BuscarComprobante'
 import { Alert } from '@/components/ui/Alert'
+import { esCuentaDeEmpresa } from '@/modules/payroll/lib/alcancePlanilla'
 
 export default async function PayrollPage() {
   const claims = await requireAnyPermission(ACCESO_NOMINA)
@@ -33,7 +34,11 @@ export default async function PayrollPage() {
       <PayrollHeader canWrite={canWrite} canManageConceptos={canManageConceptos} />
       <BuscarComprobante />
       {periodosResult.ok ? (
-        <PeriodosList periodos={periodosResult.data} canWrite={canWrite} />
+        <PeriodosList
+          periodos={periodosResult.data}
+          canWrite={canWrite}
+          puedeRecalcularEstados={canWrite && esCuentaDeEmpresa(claims)}
+        />
       ) : (
         <Alert size="md">{periodosResult.error}</Alert>
       )}

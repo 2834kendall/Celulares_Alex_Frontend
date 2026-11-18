@@ -2,7 +2,7 @@
 
 import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -46,6 +46,8 @@ import { refrescarHorasAsistencia } from '@/modules/payroll/actions/refrescarHor
 import { recalcularPeriodoDesdeAsistencia } from '@/modules/payroll/actions/recalcularPeriodoDesdeAsistencia'
 import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
 import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla'
+import { pagarTodosDelPeriodo } from '@/modules/payroll/actions/pagarTodosDelPeriodo'
+import { SelectMenu } from '@/components/ui/SelectMenu'
 import { AvisoDesplegable } from './AvisoDesplegable'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetalleEditForm } from './DetalleEditForm'
@@ -314,6 +316,39 @@ export function PeriodoDetail({
   } | null>(null)
 
   const puedeEditar = canWrite && periodo.estado === 'borrador'
+
+  // Periodo de toda la empresa: las filas son de varias sucursales. El filtro
+  // acota la tabla, los avisos y los totales a una; "Todas" es lo que ve la
+  // cuenta (sus sucursales y, con una marca elegida, las de esa marca).
+  const [sucursalFiltro, setSucursalFiltro] = useState<number | null>(null)
+  const [pagandoTodos, setPagandoTodos] = useState(false)
+  const [confirmandoPagarTodos, setConfirmandoPagarTodos] = useState(false)
+  const [noPagados, setNoPagados] = useState<{ nombre: string; motivo: string }[]>([])
+  const sucursalesDelPeriodo = useMemo(() => {
+    const porId = new Map<number, string>()
+    for (const d of periodo.detalles) {
+      if (d.sucursalId !== null && !porId.has(d.sucursalId)) {
+        porId.set(d.sucursalId, d.sucursalNombre ?? `Sucursal ${d.sucursalId}`)
+      }
+    }
+    return [...porId.entries()]
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+  }, [periodo.detalles])
+  const variasSucursales = periodo.porEmpresa && sucursalesDelPeriodo.length > 1
+  // Si la sucursal filtrada ya no tiene filas (se quitó la última), vuelve a "Todas".
+  const sucursalActiva =
+    variasSucursales && sucursalesDelPeriodo.some((s) => s.id === sucursalFiltro)
+      ? sucursalFiltro
+      : null
+  const detallesVista =
+    sucursalActiva === null
+      ? periodo.detalles
+      : periodo.detalles.filter((d) => d.sucursalId === sucursalActiva)
+  const nombreSucursalActiva =
+    sucursalesDelPeriodo.find((s) => s.id === sucursalActiva)?.nombre ?? null
+  /** Columnas de la tabla de escritorio: una más cuando se muestra la sucursal. */
+  const columnasTabla = periodo.porEmpresa ? 11 : 10
   // Con alguna fila para quitar, las demás dejan el hueco de ese botón para
   // que las acciones queden alineadas en columna.
   const hayFilasVacias = puedeEditar && periodo.detalles.some(filaVacia)
@@ -356,8 +391,9 @@ export function PeriodoDetail({
   }
 
   /**
-   * Trae a los empleados activos de la sucursal que todavía no están en el
-   * periodo, con las horas de la asistencia. A los que ya están no les toca
+   * Trae a los empleados activos que todavía no están en el periodo (de la
+   * sucursal del periodo o, en uno de toda la empresa, de las que ve la
+   * cuenta), con las horas de la asistencia. A los que ya están no les toca
    * nada: sus montos pueden estar editados a mano.
    */
   async function handleCargarEmpleados() {
@@ -371,7 +407,11 @@ export function PeriodoDetail({
     }
 
     if (result.agregados === 0) {
-      toast.info('Todos los empleados activos de la sucursal ya están en este periodo.')
+      toast.info(
+        periodo.porEmpresa
+          ? 'Todos los empleados activos de las sucursales que ves ya están en este periodo.'
+          : 'Todos los empleados activos de la sucursal ya están en este periodo.'
+      )
       return
     }
 
@@ -381,6 +421,44 @@ export function PeriodoDetail({
         : ''
     toast.success(`${result.agregados} empleado(s) agregados desde la asistencia.${aviso}`)
     if (result.avisoAusencias) toast.warning(result.avisoAusencias)
+    router.refresh()
+  }
+
+  /**
+   * Paga de una vez a todos los que faltan en la vista actual. Cada fila pasa
+   * por las mismas revisiones que su botón de pagar; las que no pasan quedan
+   * sin pagar y se listan con su motivo.
+   */
+  async function handlePagarTodos() {
+    setConfirmandoPagarTodos(false)
+    setPagandoTodos(true)
+    const result = await pagarTodosDelPeriodo(periodo.id, sucursalActiva)
+    setPagandoTodos(false)
+
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+
+    setNoPagados(result.noPagados)
+    const partes = [`${result.pagados} pago(s) registrados.`]
+    if (result.correosNoEnviados > 0) {
+      partes.push(
+        `A ${result.correosNoEnviados} no se le pudo enviar el comprobante por correo: reenvialo desde su fila.`
+      )
+    }
+    if (result.noPagados.length > 0) {
+      partes.push(
+        `${result.noPagados.length} no se pudieron pagar: el detalle está arriba de la tabla.`
+      )
+    }
+    if (result.noPagados.length > 0 || result.correosNoEnviados > 0) {
+      toast.warning(partes.join(' '), { duration: 15_000 })
+    } else if (result.pagados === 0) {
+      toast.info('No había pagos pendientes en esta vista.')
+    } else {
+      toast.success(partes.join(' '))
+    }
     router.refresh()
   }
 
@@ -478,11 +556,27 @@ export function PeriodoDetail({
   // Filas cuyo salario ya va en una liquidación (salario pendiente del mes
   // de salida): no se pagan por esta planilla, así que no suman a los
   // totales ni generan avisos de "corregí antes de pagar".
-  const enLiquidacion = periodo.detalles.filter((d) => d.liquidacionQueLaPaga !== null)
-  const filasDelPago = periodo.detalles.filter((d) => d.liquidacionQueLaPaga === null)
+  const enLiquidacion = detallesVista.filter((d) => d.liquidacionQueLaPaga !== null)
+  const filasDelPago = detallesVista.filter((d) => d.liquidacionQueLaPaga === null)
+  const pendientesDePago = filasDelPago.filter((d) => !d.pagado)
+  // Subtotales por sucursal (siempre de todo lo que ve la cuenta, sin el
+  // filtro de arriba): cuántos hay, cuántos faltan y cuánto suma cada una.
+  const subtotalesPorSucursal = variasSucursales
+    ? sucursalesDelPeriodo.map((s) => {
+        const filas = periodo.detalles.filter(
+          (d) => d.sucursalId === s.id && d.liquidacionQueLaPaga === null
+        )
+        return {
+          ...s,
+          empleados: filas.length,
+          pagados: filas.filter((d) => d.pagado).length,
+          totalAPagar: filas.reduce((sum, d) => sum + d.totalAPagar, 0),
+        }
+      })
+    : []
 
-  // Los totales se calculan sobre todos los detalles del periodo, no solo
-  // sobre la página visible — son un resumen del periodo completo.
+  // Los totales se calculan sobre todos los detalles de la vista (el periodo,
+  // o la sucursal filtrada), no solo sobre la página visible.
   const totalBruto = filasDelPago.reduce((sum, d) => sum + d.salarioBruto, 0)
   // Empleados a los que no se les puede marcar el pago todavía: sus marcas del
   // periodo están incompletas, así que las horas calculadas están cortas.
@@ -528,7 +622,7 @@ export function PeriodoDetail({
   const totalAPagar = filasDelPago.reduce((sum, d) => sum + d.totalAPagar, 0)
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
-    periodo.detalles,
+    detallesVista,
     8
   )
 
@@ -739,25 +833,33 @@ export function PeriodoDetail({
     )
   }
 
+  // Si la vista no es todo el periodo (sucursales que la cuenta no ve, otra
+  // marca, o el filtro de sucursal), los totales lo dicen.
+  const deLaVista =
+    nombreSucursalActiva !== null
+      ? ` (${nombreSucursalActiva})`
+      : periodo.filasOcultas > 0
+        ? ' (de tus sucursales)'
+        : ''
   const resumen = [
     {
       key: 'empleados',
       icon: Users,
-      label: 'Empleados en planilla',
-      value: String(periodo.detalles.length),
+      label: `Empleados en planilla${deLaVista}`,
+      value: String(detallesVista.length),
       tone: 'bg-brand-50 text-brand-600',
     },
     {
       key: 'bruto',
       icon: Banknote,
-      label: 'Salario bruto total',
+      label: `Salario bruto total${deLaVista}`,
       value: formatCRC(totalBruto),
       tone: 'bg-slate-100 text-slate-600',
     },
     {
       key: 'neto',
       icon: CalendarDays,
-      label: 'Neto a pagar',
+      label: `Neto a pagar${deLaVista}`,
       value: formatCRC(totalNeto),
       tone: 'bg-emerald-50 text-emerald-600',
     },
@@ -795,6 +897,67 @@ export function PeriodoDetail({
           </p>
         )}
       </div>
+
+      {periodo.filasOcultas > 0 && (
+        <AvisoDesplegable
+          tono="blue"
+          titulo={`Este periodo tiene ${periodo.filasOcultas} fila(s) más que no se muestran acá`}
+        >
+          <p className="text-xs leading-relaxed text-blue-800">
+            Son de sucursales que tu usuario no tiene asignadas, o de otra marca que la elegida en
+            el selector. Los empleados, los avisos y los totales de esta pantalla son solo de lo que
+            ves. El periodo pasa a «pagado» cuando están pagadas todas sus filas, también esas.
+          </p>
+        </AvisoDesplegable>
+      )}
+
+      {variasSucursales && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-900">Por sucursal</p>
+            <SelectMenu
+              ariaLabel="Filtrar por sucursal"
+              value={sucursalActiva === null ? 'todas' : String(sucursalActiva)}
+              onChange={(valor) => setSucursalFiltro(valor === 'todas' ? null : Number(valor))}
+              className="min-w-0 basis-56"
+              options={[
+                { value: 'todas', label: 'Todas las sucursales' },
+                ...sucursalesDelPeriodo.map((s) => ({ value: String(s.id), label: s.nombre })),
+              ]}
+            />
+          </div>
+          <ul className="mt-3 divide-y divide-slate-100 text-xs">
+            {subtotalesPorSucursal.map((s) => (
+              <li
+                key={s.id}
+                className="flex flex-wrap items-baseline justify-between gap-x-4 py-1.5"
+              >
+                <span className="font-semibold text-slate-800">{s.nombre}</span>
+                <span className="tabular-nums text-slate-600">
+                  {s.empleados} empleado(s) · {s.pagados} pagado(s) ·{' '}
+                  <span className="font-semibold text-slate-900">{formatCRC(s.totalAPagar)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {noPagados.length > 0 && (
+        <AvisoDesplegable
+          tono="amber"
+          titulo={`${noPagados.length} pago(s) no se pudieron registrar con «Pagar a todos»`}
+        >
+          <ul className="space-y-1 text-xs text-amber-900">
+            {noPagados.map((n) => (
+              <li key={n.nombre}>
+                <span className="font-semibold">{n.nombre}</span>{' '}
+                <span className="text-amber-700">— {n.motivo}</span>
+              </li>
+            ))}
+          </ul>
+        </AvisoDesplegable>
+      )}
 
       {enLiquidacion.length > 0 && (
         <AvisoDesplegable
@@ -978,8 +1141,9 @@ export function PeriodoDetail({
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
           <p className="text-sm font-semibold text-slate-700">Planilla vacía</p>
           <p className="mt-1 text-xs leading-relaxed text-slate-500">
-            Crear el periodo no trae a nadie: hay que cargar los empleados de la sucursal. Con el
-            botón se traen con las horas que dicen las marcas del kiosco; también podés descargar la
+            Crear el periodo no trae a nadie: hay que cargar los empleados
+            {periodo.porEmpresa ? ' de las sucursales que ves' : ' de la sucursal'}. Con el botón se
+            traen con las horas que dicen las marcas del kiosco; también podés descargar la
             plantilla de Excel, revisarla y subirla.
           </p>
           {puedeEditar && (
@@ -1025,11 +1189,31 @@ export function PeriodoDetail({
                 )}
                 Recalcular desde asistencia
               </button>
+              {pendientesDePago.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmandoPagarTodos(true)}
+                  disabled={pagandoTodos}
+                  title="Marca el pago de todos los que faltan en esta vista. Cada fila pasa por las mismas revisiones que su botón de pagar."
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                >
+                  {pagandoTodos ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Banknote className="h-3.5 w-3.5" />
+                  )}
+                  Pagar a todos
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleCargarEmpleados}
                 disabled={cargandoEmpleados}
-                title="Agrega a los empleados activos de la sucursal que falten, con las horas de la asistencia. No toca a los que ya están."
+                title={
+                  periodo.porEmpresa
+                    ? 'Agrega a los empleados activos de las sucursales que ves que falten, con las horas de la asistencia. No toca a los que ya están.'
+                    : 'Agrega a los empleados activos de la sucursal que falten, con las horas de la asistencia. No toca a los que ya están.'
+                }
                 className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
               >
                 {cargandoEmpleados ? (
@@ -1060,6 +1244,9 @@ export function PeriodoDetail({
                       {d.empleadoNombre}
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-400">{textoCuenta(d)}</p>
+                    {periodo.porEmpresa && d.sucursalNombre && (
+                      <p className="mt-0.5 text-[11px] text-slate-500">{d.sucursalNombre}</p>
+                    )}
                   </div>
                   <EstadoPago detalle={d} />
                 </div>
@@ -1164,6 +1351,7 @@ export function PeriodoDetail({
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">
                   <th className={TABLE_TH}>Empleado</th>
+                  {periodo.porEmpresa && <th className={TABLE_TH}>Sucursal</th>}
                   <th
                     className={TABLE_TH_RIGHT}
                     title="Horas de la quincena según las marcas de asistencia, y las que pasan de la jornada programada"
@@ -1212,6 +1400,11 @@ export function PeriodoDetail({
                           {textoCuenta(d)}
                         </p>
                       </td>
+                      {periodo.porEmpresa && (
+                        <td className="px-3 py-2 text-xs text-slate-600">
+                          {d.sucursalNombre ?? '—'}
+                        </td>
+                      )}
                       <td
                         className="px-3 py-2 text-right text-slate-600"
                         title={`Valor de la hora: ${formatCRC(d.salarioPorHora)}`}
@@ -1276,14 +1469,14 @@ export function PeriodoDetail({
                     </tr>
                     {viendoHorasId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
-                        <td colSpan={10} className="px-4 py-4">
+                        <td colSpan={columnasTabla} className="px-4 py-4">
                           <DesgloseHoras detalle={d} />
                         </td>
                       </tr>
                     )}
                     {puedeEditar && !d.pagado && editandoId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
-                        <td colSpan={10} className="px-4 py-4">
+                        <td colSpan={columnasTabla} className="px-4 py-4">
                           <div className="mb-3 flex items-center gap-2">
                             <Pencil className="h-3.5 w-3.5 text-brand-600" />
                             <p className="text-xs font-bold text-slate-800">
@@ -1304,7 +1497,7 @@ export function PeriodoDetail({
                     )}
                     {canWrite && registrandoIncapacidadId === d.id && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
-                        <td colSpan={10} className="px-4 py-4">
+                        <td colSpan={columnasTabla} className="px-4 py-4">
                           <RegistrarIncapacidadForm
                             historialLaboralId={d.historialLaboralId}
                             empleadoNombre={d.empleadoNombre}
@@ -1320,6 +1513,7 @@ export function PeriodoDetail({
               <tfoot>
                 <tr className="border-t border-slate-100 bg-slate-50/60 text-sm font-bold text-slate-900">
                   <td className="px-3 py-2">Totales</td>
+                  {periodo.porEmpresa && <td className="px-3 py-2" />}
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatHoras(totalHoras)} h
                     {totalHorasExtra > 0 && (
@@ -1385,6 +1579,24 @@ export function PeriodoDetail({
           tone={confirmandoPago.pagado ? 'danger' : 'primary'}
           onCancel={() => setConfirmandoPago(null)}
           onConfirm={() => void handleTogglePagado(confirmandoPago)}
+        />
+      )}
+
+      {confirmandoPagarTodos && (
+        <ConfirmDialog
+          title={`¿Desea pagarle a los ${pendientesDePago.length} empleado(s) que faltan?`}
+          message={`Se registrará el pago de ${formatCRC(
+            pendientesDePago.reduce((sum, d) => sum + d.totalAPagar, 0)
+          )} a ${pendientesDePago.length} empleado(s)${
+            nombreSucursalActiva ? ` de ${nombreSucursalActiva}` : ''
+          }, uno por uno y con las mismas revisiones que el botón de cada fila. Los que tengan algo por corregir (marcas incompletas, horas desactualizadas, fila en ₡0) quedan sin pagar y se listan al terminar. ${
+            correoConfigurado
+              ? 'A cada uno se le envía su comprobante por correo, si tiene uno registrado.'
+              : 'El envío de comprobantes por correo no está configurado: habrá que entregarlos impresos.'
+          }`}
+          confirmLabel="Sí, pagar a todos"
+          onCancel={() => setConfirmandoPagarTodos(false)}
+          onConfirm={() => void handlePagarTodos()}
         />
       )}
 

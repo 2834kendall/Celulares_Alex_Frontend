@@ -7,6 +7,7 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 import { sucursalLabel } from '@/lib/empresa/marca-label'
+import { ETIQUETA_TODA_LA_EMPRESA, esCuentaDeEmpresa } from '@/modules/payroll/lib/alcancePlanilla'
 
 interface PeriodoQueryRow {
   npe_id: number
@@ -17,6 +18,8 @@ interface PeriodoQueryRow {
   npe_fecha_fin_periodo: string | null
   npe_estado: string
   npe_fecha_pago: string | null
+  /** null = periodo de toda la empresa. */
+  npe_sucursal_id?: number | null
   sgrh_sucursales: {
     suc_nombre: string | null
     sgrh_marcas_comerciales?: { mco_nombre: string } | null
@@ -31,9 +34,14 @@ export type GetPeriodosResult = { ok: true; data: PeriodoListItem[] } | { ok: fa
  * Periodos de planilla de la empresa, del más reciente al más antiguo.
  * RLS (nomina_periodo_select) ya limita a la empresa del JWT y exige
  * NOMINA_READ — el requirePermission de aquí solo corta antes y barato.
+ *
+ * Con una marca elegida en el selector: de los periodos por sucursal, solo
+ * los de esa marca; los de toda la empresa salen siempre, contando nada más
+ * las filas de esa marca.
  */
 export async function getPeriodos(): Promise<GetPeriodosResult> {
-  await requirePermission(PERMISOS.NOMINA_READ)
+  const claims = await requirePermission(PERMISOS.NOMINA_READ)
+  const cuentaDeEmpresa = esCuentaDeEmpresa(claims)
 
   const filtro = await getFiltroMarca()
   if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
@@ -52,6 +60,7 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
       npe_fecha_fin_periodo,
       npe_estado,
       npe_fecha_pago,
+      npe_sucursal_id,
       sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_nomina_detalle ( count )
     `
@@ -59,7 +68,14 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
     .order('npe_periodo_anio', { ascending: false })
     .order('npe_periodo_mes', { ascending: false })
     .order('npe_quincena', { ascending: false })
-  if (filtro.sucursalIds) consulta = consulta.in('npe_sucursal_id', filtro.sucursalIds)
+  if (filtro.sucursalIds) {
+    const ids = filtro.sucursalIds.join(',')
+    consulta = consulta
+      .or(`npe_sucursal_id.is.null,npe_sucursal_id.in.(${ids})`)
+      // El conteo de filas, solo las de la marca (en un periodo por sucursal
+      // ya lo son todas).
+      .in('sgrh_nomina_detalle.ndt_sucursal_id', filtro.sucursalIds)
+  }
 
   const { data, error } = await consulta.returns<PeriodoQueryRow[]>()
 
@@ -77,10 +93,13 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
     estado: row.npe_estado,
     atrasado: periodoAtrasado(row.npe_estado, row.npe_fecha_fin_periodo),
     fechaPago: row.npe_fecha_pago,
-    sucursalNombre: sucursalLabel(row.sgrh_sucursales) ?? '—',
+    sucursalNombre:
+      sucursalLabel(row.sgrh_sucursales) ??
+      (row.npe_sucursal_id === null ? ETIQUETA_TODA_LA_EMPRESA : '—'),
     // Antes se traía el id de cada fila de cada periodo solo para contarlas:
     // la lista crecía con cada quincena pagada. Ahora la base devuelve el número.
     totalEmpleados: row.sgrh_nomina_detalle?.[0]?.count ?? 0,
+    puedeEliminar: row.npe_sucursal_id !== null || cuentaDeEmpresa,
   }))
 
   return { ok: true, data: periodos }

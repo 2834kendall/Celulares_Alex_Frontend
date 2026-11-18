@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, CalendarDays, FileClock, Loader2, Trash2 } from 'lucide-react'
+import { AlertTriangle, CalendarDays, FileClock, Loader2, RefreshCw, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 import {
   ESTADO_LABELS,
@@ -24,14 +25,45 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { SPINNER } from '@/components/ui/styles'
 import { useCrudList } from '@/modules/payroll/hooks/useCrudList'
 import { deletePeriodo } from '@/modules/payroll/actions/deletePeriodo'
+import { recalcularEstadoPeriodos } from '@/modules/payroll/actions/recalcularEstadoPeriodos'
 
 interface PeriodosListProps {
   periodos: PeriodoListItem[]
   canWrite?: boolean
+  /**
+   * Muestra "Recalcular estado de los periodos" (mantenimiento). Solo para
+   * una cuenta de toda la empresa con permiso de escritura.
+   */
+  puedeRecalcularEstados?: boolean
 }
 
-export function PeriodosList({ periodos, canWrite = false }: PeriodosListProps) {
+export function PeriodosList({
+  periodos,
+  canWrite = false,
+  puedeRecalcularEstados = false,
+}: PeriodosListProps) {
   const router = useRouter()
+  const [recalculando, setRecalculando] = useState(false)
+
+  /**
+   * Rehace el estado (borrador / pagado) de todos los periodos a partir de sus
+   * filas. Hace falta una vez después de pasar a un periodo por empresa.
+   */
+  async function handleRecalcularEstados() {
+    setRecalculando(true)
+    const result = await recalcularEstadoPeriodos()
+    setRecalculando(false)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(
+      result.cambiaron === 0
+        ? `Se revisaron ${result.revisados} periodo(s): todos tenían el estado correcto.`
+        : `Se revisaron ${result.revisados} periodo(s) y ${result.cambiaron} cambiaron de estado.`
+    )
+    router.refresh()
+  }
   const { deletingId, confirmingId, deleteError, requestDelete, cancelDelete, confirmDelete } =
     useCrudList<PeriodoListItem>(async (id) => {
       const result = await deletePeriodo(id)
@@ -142,6 +174,22 @@ export function PeriodosList({ periodos, canWrite = false }: PeriodosListProps) 
             ...anios.map((a) => ({ value: String(a), label: String(a) })),
           ]}
         />
+        {puedeRecalcularEstados && total > 0 && (
+          <button
+            type="button"
+            onClick={handleRecalcularEstados}
+            disabled={recalculando}
+            title="Vuelve a calcular si cada periodo está en borrador o pagado, a partir de los pagos de sus filas. No cambia montos ni pagos."
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:opacity-50"
+          >
+            {recalculando ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Recalcular estado de los periodos
+          </button>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -251,24 +299,29 @@ export function PeriodosList({ periodos, canWrite = false }: PeriodosListProps) 
                         {/*
                           stopPropagation: la fila entera navega al detalle, y
                           sin esto pedir el borrado tambien abriria el periodo.
+                          Un periodo de toda la empresa solo lo borra una
+                          cuenta sin sucursal asignada: a las demas no se les
+                          ofrece.
                         */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            requestDelete(p.id)
-                          }}
-                          disabled={deletingId === p.id}
-                          aria-label={`Eliminar ${periodoLabel(p.mes, p.anio, p.quincena)}`}
-                          title="Eliminar periodo"
-                          className="rounded-lg p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500 disabled:opacity-50"
-                        >
-                          {deletingId === p.id ? (
-                            <Loader2 className={SPINNER} />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                        </button>
+                        {p.puedeEliminar && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              requestDelete(p.id)
+                            }}
+                            disabled={deletingId === p.id}
+                            aria-label={`Eliminar ${periodoLabel(p.mes, p.anio, p.quincena)}`}
+                            title="Eliminar periodo"
+                            className="rounded-lg p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500 disabled:opacity-50"
+                          >
+                            {deletingId === p.id ? (
+                              <Loader2 className={SPINNER} />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
                       </td>
                     )}
                   </tr>
