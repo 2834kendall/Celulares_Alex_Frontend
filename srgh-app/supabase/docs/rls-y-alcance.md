@@ -8,7 +8,7 @@
   condiciones que **siempre** van juntas: la sucursal es de la empresa del JWT, y el usuario
   no está adscrito a ninguna o es la suya.
 - Se aplica sobre la **sucursal del registro** (`mar_sucursal_id`, `prg_sucursal_id`,
-  `npe_sucursal_id`), nunca sobre la sucursal actual del empleado. Por eso un traslado no mueve
+  `ndt_sucursal_id` de la fila de planilla), nunca sobre la sucursal actual del empleado. Por eso un traslado no mueve
   el historial entre sucursales, ni se lo quita al gerente que era responsable entonces.
 - **El expediente (`sgrh_empleados`) es de la empresa**: una persona no le pertenece a una
   sucursal.

@@ -1606,6 +1606,7 @@ export type Database = {
           org_email_corporativo: string | null
           org_formato_hora: string
           org_horas_anular_pago: number
+          org_nomina_por_empresa: boolean
           org_id: number
           org_logo_url: string | null
           org_nombre_fantasia: string | null
@@ -1627,6 +1628,7 @@ export type Database = {
           org_email_corporativo?: string | null
           org_formato_hora?: string
           org_horas_anular_pago?: number
+          org_nomina_por_empresa?: boolean
           org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
@@ -1648,6 +1650,7 @@ export type Database = {
           org_email_corporativo?: string | null
           org_formato_hora?: string
           org_horas_anular_pago?: number
+          org_nomina_por_empresa?: boolean
           org_id?: never
           org_logo_url?: string | null
           org_nombre_fantasia?: string | null
@@ -2233,6 +2236,7 @@ export type Database = {
           ndt_salario_por_hora: number
           ndt_salario_real_contrato: number | null
           ndt_subsidio_ccss_estimado: number | null
+          ndt_sucursal_id: number
           ndt_total_cargas_patronales: number
           ndt_total_deducciones_obreras: number
         }
@@ -2268,6 +2272,7 @@ export type Database = {
           ndt_salario_por_hora?: number
           ndt_salario_real_contrato?: number | null
           ndt_subsidio_ccss_estimado?: number | null
+          ndt_sucursal_id?: number
           ndt_total_cargas_patronales?: number
           ndt_total_deducciones_obreras?: number
         }
@@ -2303,6 +2308,7 @@ export type Database = {
           ndt_salario_por_hora?: number
           ndt_salario_real_contrato?: number | null
           ndt_subsidio_ccss_estimado?: number | null
+          ndt_sucursal_id?: number
           ndt_total_cargas_patronales?: number
           ndt_total_deducciones_obreras?: number
         }
@@ -2490,7 +2496,7 @@ export type Database = {
           npe_periodo_anio: number
           npe_periodo_mes: number
           npe_quincena: number
-          npe_sucursal_id: number
+          npe_sucursal_id: number | null
         }
         Insert: {
           npe_aprobado_por_id?: number | null
@@ -2506,7 +2512,7 @@ export type Database = {
           npe_periodo_anio: number
           npe_periodo_mes: number
           npe_quincena?: number
-          npe_sucursal_id: number
+          npe_sucursal_id?: number | null
         }
         Update: {
           npe_aprobado_por_id?: number | null
@@ -2522,7 +2528,7 @@ export type Database = {
           npe_periodo_anio?: number
           npe_periodo_mes?: number
           npe_quincena?: number
-          npe_sucursal_id?: number
+          npe_sucursal_id?: number | null
         }
         Relationships: [
           {
@@ -3306,6 +3312,23 @@ export type Database = {
         Args: { p_npe_id: number }
         Returns: undefined
       }
+      nomina_contratos_con_filas_ocultas: {
+        Args: { p_desde?: string; p_hasta?: string; p_lab_ids: number[] }
+        Returns: number[]
+      }
+      nomina_filas_estado: {
+        Args: { p_npe_id: number }
+        Returns: {
+          ndt_fecha_pago: string | null
+          ndt_historial_laboral_id: number
+          ndt_pagado: boolean
+        }[]
+      }
+      nomina_periodo_actual: {
+        Args: { p_npe_id: number }
+        Returns: number | null
+      }
+      sucursales_visibles: { Args: never; Returns: number[] }
       get_emp_id: { Args: never; Returns: number }
       get_empresa_id: { Args: never; Returns: number }
       get_rol: { Args: never; Returns: string }
