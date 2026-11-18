@@ -16,9 +16,11 @@ import {
 import { findWorkableDayResult } from '@/modules/attendance/lib/workingDay'
 import {
   absenceBlocksMarkMessage,
+  bloquesDelDia,
   findApprovedAbsence,
   loadDayJourney,
   resolveKioskSucursalIds,
+  salidaDelBloqueActual,
 } from '@/modules/attendance/lib/dayJourney'
 import {
   allowedNextMarks,
@@ -229,24 +231,39 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   //
   // Se mira el dia del EVENTO: una marca encolada ayer se valida contra lo
   // que se marco ayer.
-  const jornada = await loadDayJourney(admin, historial.lab_id, fechaEvento)
+  // Un dia de varios bloques (SGRH-110: un tramo por sucursal, o una
+  // plantilla con jornada partida) se marca bloque por bloque: entrada y
+  // salida en cada uno.
+  const delDia = await bloquesDelDia(admin, historial.lab_id, fechaEvento)
+
+  if (!delDia.ok) {
+    return { ok: false, error: 'No se pudo validar la secuencia de marcas.' }
+  }
+
+  const jornada = await loadDayJourney(admin, historial.lab_id, fechaEvento, delDia.bloques.length)
 
   if (!jornada.ok) {
     return { ok: false, error: 'No se pudo validar la secuencia de marcas.' }
   }
 
+  const salidaEsperada = salidaDelBloqueActual(
+    delDia.bloques,
+    jornada.salidas,
+    assignment.expectedEnd
+  )
+
   // Se mide contra la hora del EVENTO, para que una marca que estuvo en la
   // cola offline se juzgue por cuando se hizo y no por cuando se sincronizo.
   // El almuerzo no tiene ventana: se toma a cualquier hora (SGRH-95).
   const horaEvento = timeOfDay(fechaHora ?? nowInCostaRica())
-  const salidaAbierta = isExitWindowOpen(horaEvento, assignment.expectedEnd)
+  const salidaAbierta = isExitWindowOpen(horaEvento, salidaEsperada)
 
   // Una salida antes de tiempo casi siempre es un toque por error, y cierra
   // el dia: despues de marcarla no queda nada por marcar.
   if (tipo === 'salida' && !salidaAbierta) {
     return {
       ok: false,
-      error: describeExitWindow(assignment.expectedEnd!),
+      error: describeExitWindow(salidaEsperada!),
       definitivo: true,
     }
   }

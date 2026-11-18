@@ -31,6 +31,9 @@ interface HorarioCatalogo {
   hor_hora_fin_almuerzo: string | null
   hor_hora_inicio_break: string | null
   hor_hora_fin_break: string | null
+  /** Segundo bloque de una jornada partida (SGRH-110). Ausentes = un solo bloque. */
+  hor_hora_entrada_2?: string | null
+  hor_hora_salida_2?: string | null
 }
 
 interface ProgramacionRow {
@@ -134,11 +137,11 @@ function rangoDeFechas(inicio: string, fin: string): string[] {
 }
 
 /**
- * Horario del día: el del catálogo, con los `_custom` de la programación
- * pisándolo campo por campo. Un día sin horario asignado y sin custom no tiene
- * jornada que cumplir.
+ * Horario de UNA fila de programación (un tramo): el del catálogo, con los
+ * `_custom` pisándolo campo por campo. Un tramo sin horario asignado y sin
+ * custom no tiene jornada que cumplir.
  */
-function horarioDelDia(row: ProgramacionRow): HorarioDia | null {
+function horarioDelTramo(row: ProgramacionRow): HorarioDia | null {
   const cat = row.sgrh_cat_horarios
   const entrada = row.prg_hora_entrada_custom ?? cat?.hor_hora_entrada ?? null
   const salida = row.prg_hora_salida_custom ?? cat?.hor_hora_salida ?? null
@@ -152,6 +155,87 @@ function horarioDelDia(row: ProgramacionRow): HorarioDia | null {
     finAlmuerzo: row.prg_hora_fin_almuerzo_custom ?? cat?.hor_hora_fin_almuerzo ?? null,
     inicioBreak: row.prg_hora_inicio_break_custom ?? cat?.hor_hora_inicio_break ?? null,
     finBreak: row.prg_hora_fin_break_custom ?? cat?.hor_hora_fin_break ?? null,
+  }
+}
+
+const minutos = (hora: string) => {
+  const [h, m] = hora.split(':').map(Number)
+  return h * 60 + m
+}
+
+/**
+ * Bloques de trabajo de un tramo: uno, o dos si usa una plantilla con jornada
+ * partida (hor_hora_entrada_2). Con horas propias en entrada Y salida es
+ * siempre un solo bloque, el mismo criterio del trigger de traslapes
+ * (sgrh_private.prg_validar_tramos).
+ */
+function bloquesDelTramo(
+  row: ProgramacionRow,
+  horario: HorarioDia
+): { inicio: string; fin: string; horario: HorarioDia }[] {
+  const cat = row.sgrh_cat_horarios
+  const propias = row.prg_hora_entrada_custom !== null && row.prg_hora_salida_custom !== null
+  const bloques = [{ inicio: horario.entrada, fin: horario.salida, horario }]
+  if (!propias && cat?.hor_hora_entrada_2 && cat?.hor_hora_salida_2) {
+    bloques.push({ inicio: cat.hor_hora_entrada_2, fin: cat.hor_hora_salida_2, horario })
+  }
+  return bloques
+}
+
+/**
+ * Horario del DÍA a partir de todas sus filas de programación.
+ *
+ * Desde SGRH-110 un día puede tener varios tramos (uno por sucursal: de 8 a 12
+ * en una y de 13 a 17 en otra) y una plantilla puede tener dos bloques (7–11 y
+ * 16–20). Antes se tomaba UNA fila por día —la última que llegaba— y una sola
+ * franja de entrada a salida: el día se medía contra un solo bloque y se
+ * pagaba la mitad (o nada) de lo trabajado.
+ *
+ * Ahora el día va de la entrada del primer bloque a la salida del último, y lo
+ * que hay entre bloques es un hueco sin pago (HorarioDia.huecos), igual que un
+ * almuerzo. Un día de un solo bloque queda exactamente como antes.
+ */
+function horarioDelDia(rows: ProgramacionRow[]): HorarioDia | null {
+  // Sin filtrar el día libre: no convive con otros tramos (trigger de
+  // SGRH-110), así que es siempre la única fila y queda como antes.
+  const bloques = rows.flatMap((r) => {
+    const h = horarioDelTramo(r)
+    return h ? bloquesDelTramo(r, h) : []
+  })
+  if (bloques.length === 0) return null
+  if (bloques.length === 1) return bloques[0].horario
+
+  // Un bloque que cruza la medianoche no se puede ordenar contra otros con
+  // una resta de horas (el trigger tampoco los valida): queda el primero.
+  if (bloques.some((b) => minutos(b.fin) <= minutos(b.inicio))) return bloques[0].horario
+
+  const ordenados = [...bloques].sort((a, b) => minutos(a.inicio) - minutos(b.inicio))
+  const primero = ordenados[0].horario
+  const huecos: { inicio: string; fin: string }[] = []
+  for (let i = 1; i < ordenados.length; i += 1) {
+    const anterior = ordenados[i - 1]
+    const actual = ordenados[i]
+    if (minutos(actual.inicio) > minutos(anterior.fin)) {
+      huecos.push({ inicio: anterior.fin, fin: actual.inicio })
+    }
+    // El almuerzo de los tramos que no son el primero también es sin pago.
+    const h = actual.horario
+    if (h !== primero && h.inicioAlmuerzo && h.finAlmuerzo) {
+      huecos.push({ inicio: h.inicioAlmuerzo, fin: h.finAlmuerzo })
+    }
+  }
+  const ultimo = ordenados.reduce((max, b) => (minutos(b.fin) > minutos(max.fin) ? b : max))
+  const conReceso =
+    ordenados.find((b) => b.horario.inicioBreak && b.horario.finBreak)?.horario ?? primero
+
+  return {
+    ...primero,
+    entrada: ordenados[0].inicio,
+    salida: ultimo.fin,
+    // El receso: el del primer bloque que lo tenga.
+    inicioBreak: conReceso.inicioBreak,
+    finBreak: conReceso.finBreak,
+    huecos,
   }
 }
 
@@ -271,9 +355,12 @@ export async function getHorasDelPeriodo(
 
   const clave = (labId: number, fecha: string) => `${labId}|${fecha}`
 
-  const programacionPorDia = new Map<string, ProgramacionRow>()
+  // Todas las filas de cada día: desde SGRH-110 un día puede tener un tramo
+  // por sucursal. Antes la última pisaba a las demás.
+  const programacionPorDia = new Map<string, ProgramacionRow[]>()
   for (const row of programacion) {
-    programacionPorDia.set(clave(row.prg_historial_laboral_id, row.prg_fecha), row)
+    const k = clave(row.prg_historial_laboral_id, row.prg_fecha)
+    programacionPorDia.set(k, [...(programacionPorDia.get(k) ?? []), row])
   }
 
   const marcasPorDia = new Map<string, RawMark[]>()
@@ -354,8 +441,8 @@ export async function getHorasDelPeriodo(
 
   for (const labId of historialLaboralIds) {
     const horarioDe = (fecha: string) => {
-      const prog = programacionPorDia.get(clave(labId, fecha))
-      return prog ? horarioDelDia(prog) : null
+      const filas = programacionPorDia.get(clave(labId, fecha))
+      return filas ? horarioDelDia(filas) : null
     }
 
     const arrastradasPorDia = new Map<string, RawMark[]>(
@@ -371,7 +458,8 @@ export async function getHorasDelPeriodo(
 
     const dias: DiaProgramado[] = fechas.map((fecha) => {
       const k = clave(labId, fecha)
-      const prog = programacionPorDia.get(k)
+      const filas = programacionPorDia.get(k) ?? []
+      const prog = filas.length > 0 ? filas : null
 
       const propias = (marcasPorDia.get(k) ?? []).filter((m) => !yaConsumidas.has(m.id))
 
@@ -379,8 +467,9 @@ export async function getHorasDelPeriodo(
         fecha,
         horario: prog ? horarioDelDia(prog) : null,
         marcas: [...propias, ...(arrastradasPorDia.get(fecha) ?? [])],
-        esDiaLibre: prog?.prg_es_dia_libre ?? false,
-        esFeriado: (prog?.prg_es_feriado ?? false) || fechasFeriado.has(fecha),
+        // Un día libre no convive con otros tramos (trigger de SGRH-110).
+        esDiaLibre: filas.some((f) => f.prg_es_dia_libre),
+        esFeriado: filas.some((f) => f.prg_es_feriado) || fechasFeriado.has(fecha),
         tieneAusenciaAprobada: ausenciaPorDia.has(k),
         ausencia: ausenciaPorDia.get(k) ?? null,
         // Sin fila de programación no se sabe si el día era libre o si a

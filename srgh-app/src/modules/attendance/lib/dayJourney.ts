@@ -14,7 +14,13 @@ interface MarkDbRow {
 }
 
 export type LoadDayJourneyResult =
-  | { ok: true; journey: DayJourney; snapshot: [number, string, string][] }
+  | {
+      ok: true
+      journey: DayJourney
+      snapshot: [number, string, string][]
+      /** Salidas ya marcadas ese dia: cuantos bloques quedaron cerrados. */
+      salidas: number
+    }
   | { ok: false; error: string }
 
 /**
@@ -29,7 +35,15 @@ export type LoadDayJourneyResult =
 export async function loadDayJourney(
   supabase: SupabaseServerClient | SupabaseAdminClient,
   employmentHistoryId: number,
-  dateISO: string
+  dateISO: string,
+  /**
+   * Bloques de trabajo del dia (ver bloquesDelDia). Con dos o mas, cada
+   * bloque tiene su entrada y su salida (SGRH-110): despues de cerrar uno que
+   * no es el ultimo, la jornada que se valida es la del bloque siguiente, que
+   * empieza vacia. Sin esto, la salida del primer bloque cerraba el dia y la
+   * persona no podia marcar la entrada del segundo.
+   */
+  bloques: number = 1
 ): Promise<LoadDayJourneyResult> {
   const { data, error } = await supabase
     .from('sgrh_marcas_asistencia')
@@ -49,9 +63,18 @@ export async function loadDayJourney(
     if (tipo.success) marks.push({ id: m.mar_id, tipo: tipo.data, fechaHora: m.mar_fecha_hora })
   }
 
+  const ordenadas = [...marks].sort((a, b) => a.fechaHora.localeCompare(b.fechaHora))
+  const salidas = ordenadas.filter((m) => m.tipo === 'salida')
+  const ultimaSalida = salidas[salidas.length - 1]
+  const delBloqueActual =
+    bloques > 1 && ultimaSalida && salidas.length < bloques
+      ? ordenadas.filter((m) => m.fechaHora > ultimaSalida.fechaHora)
+      : marks
+
   return {
     ok: true,
-    journey: groupIntoDayJourney(marks),
+    journey: groupIntoDayJourney(delBloqueActual),
+    salidas: salidas.length,
     snapshot: [...(data ?? [])]
       .sort((a, b) => a.mar_id - b.mar_id)
       .map((m) => [m.mar_id, m.mar_tipo, m.mar_fecha_hora.replace('T', ' ').slice(0, 19)]),
@@ -71,6 +94,83 @@ export async function resolveKioskSucursalIds(
   if (meta.sucursal_ids && meta.sucursal_ids.length > 0) return meta.sucursal_ids
   if (!meta.usr_id) return null
   return getUsuarioSucursalScope(supabase, meta.usr_id)
+}
+
+interface BloqueProgramacionRow {
+  prg_es_dia_libre: boolean
+  prg_hora_entrada_custom: string | null
+  prg_hora_salida_custom: string | null
+  sgrh_cat_horarios: {
+    hor_hora_entrada: string
+    hor_hora_salida: string
+    hor_hora_entrada_2: string | null
+    hor_hora_salida_2: string | null
+  } | null
+}
+
+export type BloquesDelDiaResult =
+  { ok: true; bloques: { inicio: string; fin: string }[] } | { ok: false; error: string }
+
+/**
+ * Bloques de trabajo de UN contrato en UN dia, en TODAS sus sucursales y en
+ * orden (SGRH-110): un tramo por sucursal, y dos bloques si el tramo usa una
+ * plantilla con jornada partida. Con horas propias en entrada y salida, un
+ * tramo es un solo bloque (mismo criterio del trigger de traslapes).
+ *
+ * Con el cliente ADMIN: la RLS de programacion solo deja ver las sucursales
+ * del usuario, y el kiosco tiene que saber si queda un bloque en otra tienda.
+ */
+export async function bloquesDelDia(
+  admin: SupabaseAdminClient,
+  employmentHistoryId: number,
+  dateISO: string
+): Promise<BloquesDelDiaResult> {
+  const { data, error } = await admin
+    .from('sgrh_programacion_semanal')
+    .select(
+      `prg_es_dia_libre, prg_hora_entrada_custom, prg_hora_salida_custom,
+       sgrh_cat_horarios ( hor_hora_entrada, hor_hora_salida, hor_hora_entrada_2, hor_hora_salida_2 )`
+    )
+    .eq('prg_historial_laboral_id', employmentHistoryId)
+    .eq('prg_fecha', dateISO)
+    .returns<BloqueProgramacionRow[]>()
+
+  if (error) {
+    return { ok: false, error: 'No se pudo cargar la programacion del dia.' }
+  }
+
+  const hhmm = (h: string) => h.slice(0, 5)
+  const bloques = (data ?? [])
+    .filter((r) => !r.prg_es_dia_libre)
+    .flatMap((r) => {
+      const cat = r.sgrh_cat_horarios
+      if (r.prg_hora_entrada_custom && r.prg_hora_salida_custom) {
+        return [{ inicio: hhmm(r.prg_hora_entrada_custom), fin: hhmm(r.prg_hora_salida_custom) }]
+      }
+      const entrada = r.prg_hora_entrada_custom ?? cat?.hor_hora_entrada ?? null
+      const salida = r.prg_hora_salida_custom ?? cat?.hor_hora_salida ?? null
+      if (!entrada || !salida) return []
+      const primero = { inicio: hhmm(entrada), fin: hhmm(salida) }
+      return cat?.hor_hora_entrada_2 && cat.hor_hora_salida_2
+        ? [primero, { inicio: hhmm(cat.hor_hora_entrada_2), fin: hhmm(cat.hor_hora_salida_2) }]
+        : [primero]
+    })
+    .sort((a, b) => a.inicio.localeCompare(b.inicio))
+
+  return { ok: true, bloques }
+}
+
+/**
+ * Hora de salida que vale para la ventana de salida del kiosco: la del bloque
+ * en curso cuando el dia tiene varios, la del turno cuando tiene uno.
+ */
+export function salidaDelBloqueActual(
+  bloques: { inicio: string; fin: string }[],
+  salidasMarcadas: number,
+  salidaDelTurno: string | null
+): string | null {
+  if (bloques.length <= 1) return salidaDelTurno
+  return bloques[Math.min(salidasMarcadas, bloques.length - 1)].fin
 }
 
 export type ApprovedAbsenceResult = { ok: true; tipo: string | null } | { ok: false; error: string }

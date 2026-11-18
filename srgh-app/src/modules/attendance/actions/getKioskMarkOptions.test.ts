@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getKioskMarkOptions } from './getKioskMarkOptions'
 import { createClient } from '@/lib/supabase/server'
 import { requireAnyPermission as requirePermission } from '@/lib/auth/require-permission'
@@ -208,5 +208,73 @@ describe('getKioskMarkOptions (server action)', () => {
     })
 
     vi.useRealTimers()
+  })
+
+  describe('un dia de dos tramos (SGRH-110)', () => {
+    // 08-12 en la sucursal 100 y 13-17 en la 200, horas propias.
+    const TRAMO_1 = {
+      ...TURNO.data[0],
+      prg_hora_entrada_custom: '08:00:00',
+      prg_hora_salida_custom: '12:00:00',
+      sgrh_cat_horarios: null,
+    }
+    const TRAMO_2 = {
+      ...TRAMO_1,
+      prg_sucursal_id: 200,
+      prg_hora_entrada_custom: '13:00:00',
+      prg_hora_salida_custom: '17:00:00',
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    function aLas(utc: string, marcas: [number, string, string][]) {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(`2026-08-14T${utc}:00Z`))
+      const client = createSupabaseClientMock({
+        sgrh_programacion_semanal: { data: [TRAMO_1, TRAMO_2], error: null },
+        sgrh_marcas_asistencia: { data: marcas.map((m) => marca(...m)), error: null },
+      })
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+      clienteActual = client
+    }
+
+    it('cerrado el primer tramo ofrece la entrada del segundo', async () => {
+      aLas('18:55', [
+        [1, 'entrada', '08:00:00'],
+        [2, 'salida', '12:00:00'],
+      ]) // 12:55 en Costa Rica
+
+      expect(await getKioskMarkOptions(10)).toEqual({ ok: true, allowed: ['entrada'] })
+    })
+
+    it('la salida del segundo tramo se abre cerca de su hora, no de la del primero', async () => {
+      const marcas: [number, string, string][] = [
+        [1, 'entrada', '08:00:00'],
+        [2, 'salida', '12:00:00'],
+        [3, 'entrada', '13:00:00'],
+      ]
+      aLas('20:00', marcas) // 14:00 en Costa Rica
+      const temprano = await getKioskMarkOptions(10)
+      expect(temprano.ok && temprano.allowed).not.toContain('salida')
+
+      aLas('22:50', marcas) // 16:50 en Costa Rica
+      const aTiempo = await getKioskMarkOptions(10)
+      expect(aTiempo.ok && aTiempo.allowed).toContain('salida')
+    })
+
+    it('con la salida del ultimo tramo no ofrece nada mas', async () => {
+      aLas('23:30', [
+        [1, 'entrada', '08:00:00'],
+        [2, 'salida', '12:00:00'],
+        [3, 'entrada', '13:00:00'],
+        [4, 'salida', '17:00:00'],
+      ]) // 17:30 en Costa Rica
+
+      expect(await getKioskMarkOptions(10)).toEqual({ ok: true, allowed: [] })
+    })
   })
 })
