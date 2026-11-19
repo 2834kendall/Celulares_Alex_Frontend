@@ -37,6 +37,7 @@ import {
   etiquetasDeSucursales,
   leerFilasEstado,
 } from '@/modules/payroll/lib/alcancePlanilla'
+import { leerEmpleadosQueFaltan } from '@/modules/payroll/lib/empleadosFaltantesData'
 
 interface PeriodoRow {
   npe_id: number
@@ -143,7 +144,7 @@ export async function getPeriodoDetail(
   periodoId: number,
   opciones: { soloDetalleId?: number } = {}
 ): Promise<GetPeriodoDetailResult> {
-  await requirePermission(PERMISOS.NOMINA_READ)
+  const claims = await requirePermission(PERMISOS.NOMINA_READ)
 
   if (!Number.isInteger(periodoId) || periodoId <= 0) {
     return { ok: false, error: 'Periodo inválido.', notFound: true }
@@ -370,6 +371,21 @@ export async function getPeriodoDetail(
     // las muestra todas. Informativo: si falla, no se avisa.
     porEmpresa && soloDetalleId === undefined ? leerFilasEstado(supabase, periodoId) : null,
   ])
+
+  // Quién falta en un periodo de toda la empresa que todavía se puede cargar.
+  // Informativo: si no se puede calcular, la pantalla sale sin el aviso.
+  const empleadosFaltantes =
+    porEmpresa &&
+    soloDetalleId === undefined &&
+    periodo.npe_estado === 'borrador' &&
+    filasDelPeriodo?.ok
+      ? await leerEmpleadosQueFaltan(
+          supabase,
+          claims,
+          { fechaFin: periodo.npe_fecha_fin_periodo },
+          filasDelPeriodo.data
+        )
+      : null
 
   // Montos crudos por concepto (para poder editarlos sin re-subir el Excel, y
   // para mostrar el desglose en el comprobante). Es información
@@ -741,6 +757,7 @@ export async function getPeriodoDetail(
       filasOcultas: filasDelPeriodo?.ok
         ? Math.max(0, filasDelPeriodo.data.length - items.length)
         : 0,
+      ...(empleadosFaltantes && empleadosFaltantes.total > 0 ? { empleadosFaltantes } : {}),
       detalles: items,
     },
   }

@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { crearPeriodoSchema, type CrearPeriodoInput } from '@/modules/payroll/types'
 import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
-import { leerNominaPorEmpresa } from '@/modules/payroll/lib/alcancePlanilla'
+import { esCuentaDeEmpresa, leerNominaPorEmpresa } from '@/modules/payroll/lib/alcancePlanilla'
 
 export type CreatePeriodoResult =
   | {
@@ -25,6 +25,12 @@ export type CreatePeriodoResult =
        * se cargó a nadie, `periodoId` es el que ya existía.
        */
       yaExistia?: boolean
+      /**
+       * Periodo de toda la empresa creado por una cuenta de sucursal: solo se
+       * cargó la gente de sus sucursales; el resto lo agrega una cuenta de toda
+       * la empresa.
+       */
+      soloSusSucursales?: boolean
     }
   | { ok: false; error: string }
 
@@ -131,5 +137,6 @@ export async function createPeriodo(input: CrearPeriodoInput): Promise<CreatePer
     sinAsistencia: carga.ok ? carga.sinAsistencia : 0,
     avisoCarga: carga.ok ? null : carga.error,
     avisoAusencias: carga.ok ? (carga.avisoAusencias ?? null) : null,
+    ...(porEmpresa && !esCuentaDeEmpresa(claims) ? { soloSusSucursales: true } : {}),
   }
 }

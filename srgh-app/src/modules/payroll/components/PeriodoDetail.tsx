@@ -284,6 +284,12 @@ function filaVacia(d: DetalleNominaItem): boolean {
   )
 }
 
+/** "Ana Mora, Luis Soto y 3 más" para el aviso de empleados que faltan. */
+function nombresQueFaltan(f: { total: number; nombres: string[] }): string {
+  const resto = f.total - f.nombres.length
+  return resto > 0 ? `${f.nombres.join(', ')} y ${resto} más` : f.nombres.join(', ')
+}
+
 /**
  * Cabecera del periodo + tabla de planilla. La edición manual de ingresos
  * (BASE, FERIADO, COMISION, HORAS_EXTRA, AJUSTE) solo se ofrece mientras el
@@ -910,6 +916,39 @@ export function PeriodoDetail({
           </p>
         </AvisoDesplegable>
       )}
+
+      {puedeEditar &&
+        periodo.porEmpresa &&
+        periodo.detalles.length > 0 &&
+        periodo.empleadosFaltantes && (
+          <AvisoDesplegable
+            tono="amber"
+            titulo={
+              periodo.empleadosFaltantes.total === 1
+                ? 'Falta 1 empleado activo en este periodo'
+                : `Faltan ${periodo.empleadosFaltantes.total} empleados activos en este periodo`
+            }
+          >
+            <p className="text-xs leading-relaxed text-amber-800">
+              {nombresQueFaltan(periodo.empleadosFaltantes)}. Con contrato activo en las sucursales
+              que ves, pero sin fila en esta planilla. «Agregar empleados que falten» los trae con
+              las horas de la asistencia y no toca a los que ya están.
+            </p>
+            <button
+              type="button"
+              onClick={handleCargarEmpleados}
+              disabled={cargandoEmpleados}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 outline-none transition hover:underline disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+            >
+              {cargandoEmpleados ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Users className="h-3.5 w-3.5" />
+              )}
+              Agregar empleados que falten
+            </button>
+          </AvisoDesplegable>
+        )}
 
       {variasSucursales && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

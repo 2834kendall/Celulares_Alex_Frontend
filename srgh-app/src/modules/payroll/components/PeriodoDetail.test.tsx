@@ -6,6 +6,7 @@ import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
 import { reenviarComprobante } from '@/modules/payroll/actions/reenviarComprobante'
 import { pagarTodosDelPeriodo } from '@/modules/payroll/actions/pagarTodosDelPeriodo'
+import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
 import { toast } from 'sonner'
 import { formatCRC } from '@/modules/payroll/lib/format'
 import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
@@ -568,6 +569,94 @@ describe('PeriodoDetail: periodo de toda la empresa', () => {
       screen.getByText('Este periodo tiene 4 fila(s) más que no se muestran acá')
     ).toBeInTheDocument()
     expect(screen.getByText('Neto a pagar (de tus sucursales)')).toBeInTheDocument()
+  })
+
+  describe('aviso de empleados que faltan', () => {
+    const faltan = { total: 3, nombres: ['Ana Ruiz', 'Beto Mora'] }
+
+    it('dice cuántos faltan y quiénes, y trae un botón para agregarlos', async () => {
+      vi.mocked(cargarEmpleadosDesdeAsistencia).mockResolvedValue({
+        ok: true,
+        agregados: 3,
+        yaEstaban: 1,
+        sinAsistencia: 0,
+        sinSalario: [],
+      })
+      render(
+        <PeriodoDetail
+          periodo={empresa([CENTRO], { empleadosFaltantes: faltan })}
+          canWrite
+          conceptosManuales={[]}
+        />
+      )
+
+      const aviso = screen.getByRole('button', {
+        name: /Faltan 3 empleados activos en este periodo/,
+      })
+      await userEvent.click(aviso)
+      expect(screen.getByText(/Ana Ruiz, Beto Mora y 1 más/)).toBeInTheDocument()
+
+      // Dentro del aviso hay un segundo botón "Agregar empleados que falten".
+      const botones = screen.getAllByRole('button', { name: 'Agregar empleados que falten' })
+      expect(botones).toHaveLength(2)
+      await userEvent.click(botones[0])
+      expect(cargarEmpleadosDesdeAsistencia).toHaveBeenCalledWith(7)
+    })
+
+    it('con uno solo, habla en singular', () => {
+      render(
+        <PeriodoDetail
+          periodo={empresa([CENTRO], { empleadosFaltantes: { total: 1, nombres: ['Zoe Mora'] } })}
+          canWrite
+          conceptosManuales={[]}
+        />
+      )
+
+      expect(screen.getByText('Falta 1 empleado activo en este periodo')).toBeInTheDocument()
+    })
+
+    it('sin faltantes no hay aviso', () => {
+      render(<PeriodoDetail periodo={empresa([CENTRO])} canWrite conceptosManuales={[]} />)
+
+      expect(screen.queryByText(/empleados? activos? en este periodo/)).not.toBeInTheDocument()
+    })
+
+    it('sin permiso de escritura no se ofrece agregar a nadie', () => {
+      render(
+        <PeriodoDetail
+          periodo={empresa([CENTRO], { empleadosFaltantes: faltan })}
+          canWrite={false}
+          conceptosManuales={[]}
+        />
+      )
+
+      expect(screen.queryByText(/empleados activos en este periodo/)).not.toBeInTheDocument()
+    })
+
+    it('con la planilla vacía no se duplica: ya está el botón de cargar empleados', () => {
+      render(
+        <PeriodoDetail
+          periodo={empresa([], { empleadosFaltantes: faltan })}
+          canWrite
+          conceptosManuales={[]}
+        />
+      )
+
+      expect(screen.queryByText(/empleados activos en este periodo/)).not.toBeInTheDocument()
+      expect(screen.getByText('Cargar empleados desde asistencia')).toBeInTheDocument()
+    })
+
+    it('un periodo ya pagado no lo ofrece', () => {
+      render(
+        <PeriodoDetail
+          periodo={empresa([CENTRO], { empleadosFaltantes: faltan, estado: 'pagado' })}
+          canWrite
+          conceptosManuales={[]}
+        />
+      )
+
+      expect(screen.queryByText(/empleados activos en este periodo/)).not.toBeInTheDocument()
+    })
   })
 
   it('un periodo de una sucursal no muestra la columna ni el aviso', () => {

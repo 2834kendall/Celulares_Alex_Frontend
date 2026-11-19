@@ -126,6 +126,12 @@ export function PeriodoForm({ sucursales, porEmpresa = false }: PeriodoFormProps
         `Periodo creado con ${result.empleadosCargados} empleado(s) y sus horas de asistencia.${sinHorario}`
       )
     }
+    // El periodo es de toda la empresa, pero esta cuenta solo carga lo suyo.
+    if (result.soloSusSucursales) {
+      toast.info(
+        'El periodo es de toda la empresa y solo se cargó la gente de tus sucursales. El resto lo agrega una cuenta de toda la empresa.'
+      )
+    }
 
     guard.acceptChanges()
     router.push(`/payroll/${result.periodoId}`)
