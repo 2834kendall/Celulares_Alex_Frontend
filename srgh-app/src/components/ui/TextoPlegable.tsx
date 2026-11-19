@@ -80,7 +80,9 @@ export function TextoPlegable({ children, className }: TextoPlegableProps) {
       <span
         id={idTexto}
         ref={textoRef}
-        className={cn('block min-w-0 flex-1', !abierto && 'line-clamp-2')}
+        // `line-clamp-2` ya fija su propio display: con `block` al lado lo pisaba y el
+        // texto nunca se recogía.
+        className={cn('min-w-0 flex-1', abierto ? 'block' : 'line-clamp-2')}
       >
         {children}
       </span>

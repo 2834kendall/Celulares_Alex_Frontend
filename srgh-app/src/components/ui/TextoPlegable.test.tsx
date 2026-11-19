@@ -44,6 +44,8 @@ describe('TextoPlegable', () => {
       const boton = screen.getByRole('button')
       expect(boton.getAttribute('aria-expanded')).toBe('false')
       expect(screen.getByText('Texto muy largo de prueba').className).toContain('line-clamp-2')
+      // `block` pisaría el display de line-clamp y el texto no se recogería.
+      expect(screen.getByText('Texto muy largo de prueba').className).not.toMatch(/\bblock\b/)
 
       fireEvent.click(boton)
       expect(boton.getAttribute('aria-expanded')).toBe('true')
