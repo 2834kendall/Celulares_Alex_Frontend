@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 
 import { Fragment, useMemo, useState } from 'react'
@@ -898,9 +899,9 @@ export function PeriodoDetail({
           </p>
         )}
         {periodo.observaciones && (
-          <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+          <TextoPlegable className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
             {periodo.observaciones}
-          </p>
+          </TextoPlegable>
         )}
       </div>
 

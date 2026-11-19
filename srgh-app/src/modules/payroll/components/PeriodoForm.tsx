@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useForm } from '@/hooks/useProtectedForm'
 
 import { useEffect, useState } from 'react'
@@ -147,17 +148,17 @@ export function PeriodoForm({ sucursales, porEmpresa = false }: PeriodoFormProps
       {serverError && (
         <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-          <p>{serverError}</p>
+          <TextoPlegable className="flex-1">{serverError}</TextoPlegable>
         </div>
       )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {porEmpresa ? (
-            <p className="text-xs leading-relaxed text-slate-500 sm:col-span-2">
+            <TextoPlegable className="text-xs leading-relaxed text-slate-500 sm:col-span-2">
               El periodo es de toda la empresa: se cargan los empleados de las sucursales que ves.
               Si la quincena ya tiene periodo, te llevamos a él.
-            </p>
+            </TextoPlegable>
           ) : (
             <div className="sm:col-span-2">
               <label htmlFor="npe_sucursal_id" className={LABEL}>
@@ -293,11 +294,11 @@ export function PeriodoForm({ sucursales, porEmpresa = false }: PeriodoFormProps
             {sinFechas ? (
               <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-                <p>
+                <TextoPlegable className="flex-1">
                   Sin fechas, el periodo no puede leer las marcas de asistencia: no va a calcular
                   horas ni va a avisar si alguien tiene marcas incompletas. Podés guardarlo así y
                   ponerlas después.
-                </p>
+                </TextoPlegable>
               </div>
             ) : (
               <p className="text-[11px] text-slate-400">

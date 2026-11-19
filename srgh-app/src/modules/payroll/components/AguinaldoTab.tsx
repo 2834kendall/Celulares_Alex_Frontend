@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -262,7 +263,7 @@ export function AguinaldoTab({
 
       <div className="flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-800">
         <Gift className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <p>
+        <TextoPlegable className="flex-1">
           <span className="font-semibold">{nombreAguinaldo(anio)}</span>: cubre del 1 de diciembre
           de {anio - 1} al 30 de noviembre de {anio} y se paga desde el 1 de diciembre de {anio} (a
           más tardar el 20).{' '}
@@ -271,7 +272,7 @@ export function AguinaldoTab({
           Monto: salario de cada quincena pagada ÷ 12. La licencia de maternidad cuenta como
           salario; las incapacidades no (son subsidio). Hace falta un mes laborado continuo al 30 de
           noviembre. El pago queda con su propio comprobante y no toca la planilla.
-        </p>
+        </TextoPlegable>
       </div>
 
       {pendientesAnterior && pendientesAnterior.cantidad > 0 && (
@@ -280,12 +281,12 @@ export function AguinaldoTab({
           className="flex flex-wrap items-start gap-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950"
         >
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-          <p className="min-w-0 flex-1">
+          <TextoPlegable className="flex-1">
             Quedan <span className="font-semibold">{pendientesAnterior.cantidad}</span> empleado(s)
             con el {nombreAguinaldo(pendientesAnterior.anio).toLowerCase()} sin pagar (
             {formatCRC(pendientesAnterior.monto)}). Se debía pagar a más tardar el 20 de diciembre
             de {pendientesAnterior.anio}.
-          </p>
+          </TextoPlegable>
           <Link
             href={`/payroll/aguinaldo-liquidacion?anio=${pendientesAnterior.anio}`}
             className="shrink-0 font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-950"
@@ -296,10 +297,10 @@ export function AguinaldoTab({
       )}
 
       {!puedeLeerAusencias && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <TextoPlegable className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           Tu usuario no puede leer Ausencias: los montos no incluyen licencias de maternidad y no se
           puede pagar. Pedile a un administrador el permiso AUSENCIAS_READ.
-        </p>
+        </TextoPlegable>
       )}
 
       {items.length === 0 ? (

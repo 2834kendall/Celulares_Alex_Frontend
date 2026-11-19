@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Clock, Loader2 } from 'lucide-react'
@@ -138,13 +139,13 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
     <div className="@container space-y-3">
       <div className="flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-800">
         <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <p>
+        <TextoPlegable className="flex-1">
           Cuando un empleado trabaja más de las horas normales de la quincena, esas horas de más
           quedan pendientes acá (ya no se pagan solas en la misma planilla). Podés pagarlas —se
           agregan al periodo actual en borrador del empleado, con CCSS incluido— o compensarlas como
           registro. Si te arrepentís, desde el historial podés devolverlas al banco mientras esa
           quincena siga sin pagarse.
-        </p>
+        </TextoPlegable>
       </div>
 
       <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">

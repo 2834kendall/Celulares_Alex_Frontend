@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useForm } from 'react-hook-form'
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 
@@ -337,12 +338,12 @@ export function LiquidacionTab({
                 </p>
               )}
               {esPlazoFijoArt31 && (
-                <p className="col-span-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-800">
+                <TextoPlegable className="col-span-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-800">
                   {contratoElegido.tipoContrato?.nombre}: por ser terminado por el patrono no lleva
                   preaviso ni cesantía, sino la indemnización del Art. 31 del Código de Trabajo (un
                   día de salario por cada siete trabajados; mínimo 3 días, o 22 si se pactó por seis
                   meses o más).
-                </p>
+                </TextoPlegable>
               )}
             </dl>
           )}

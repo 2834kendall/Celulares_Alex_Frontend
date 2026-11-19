@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useForm } from '@/hooks/useProtectedForm'
 
 import { useState } from 'react'
@@ -160,10 +161,10 @@ export function RegistrarIncapacidadForm({
         </div>
       </div>
 
-      <p className="rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+      <TextoPlegable className="rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
         Los primeros 3 días (por mes calendario) los paga la empresa al 50% del salario. Del día 4
         en adelante los paga la CCSS por fuera de esta planilla.
-      </p>
+      </TextoPlegable>
 
       <div className="flex items-center justify-end gap-2">
         <button

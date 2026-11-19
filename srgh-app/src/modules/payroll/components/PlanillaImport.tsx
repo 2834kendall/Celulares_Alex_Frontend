@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, FileDown, FileUp, Loader2 } from 'lucide-react'
@@ -113,12 +114,12 @@ export function PlanillaImport({ periodoId, estado, porEmpresa = false }: Planil
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-slate-900">Planilla en Excel</p>
-          <p className="text-xs text-slate-500">
+          <TextoPlegable className="text-xs text-slate-500">
             {porEmpresa
               ? 'Descarga la plantilla con los empleados de las sucursales que ves, llena los montos y súbela. La subida solo toca a los empleados de esas sucursales.'
               : 'Descarga la plantilla con los empleados de la sucursal, llena los montos y súbela.'}
             {!esBorrador && ' Este periodo ya no está en borrador: la subida está deshabilitada.'}
-          </p>
+          </TextoPlegable>
         </div>
 
         <button
@@ -154,7 +155,7 @@ export function PlanillaImport({ periodoId, estado, porEmpresa = false }: Planil
       {error && (
         <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-          <p>{error}</p>
+          <TextoPlegable className="flex-1">{error}</TextoPlegable>
         </div>
       )}
     </div>
