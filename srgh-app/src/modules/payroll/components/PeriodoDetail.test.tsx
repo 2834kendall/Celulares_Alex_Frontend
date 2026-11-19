@@ -711,6 +711,24 @@ describe('PeriodoDetail: pagar a todos', () => {
     expect(toast.success).toHaveBeenCalledWith('2 pago(s) registrados.')
   })
 
+  // Una fila en ₡0 SÍ se paga cuando está justificada (incapacidad, ausencia
+  // sin goce, no vino ningún día): el aviso no puede decir que no se paga.
+  it('el aviso dice que quedan sin pagar las filas en ₡0 SIN justificar', async () => {
+    render(
+      <PeriodoDetail
+        periodo={periodo([PENDIENTE_1, PENDIENTE_2])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar a todos' }))
+
+    const dialogo = screen.getByRole('alertdialog')
+    expect(dialogo).toHaveTextContent('fila en ₡0 sin justificar')
+    expect(dialogo).not.toHaveTextContent(/fila en ₡0\)/)
+  })
+
   it('lista los que no se pudieron pagar con su motivo', async () => {
     vi.mocked(pagarTodosDelPeriodo).mockResolvedValue({
       ok: true,

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { PeriodosList } from './PeriodosList'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 import { deletePeriodo } from '@/modules/payroll/actions/deletePeriodo'
+import { toast } from 'sonner'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/modules/payroll/actions/deletePeriodo', () => ({ deletePeriodo: vi.fn() }))
@@ -134,7 +135,12 @@ describe('PeriodosList: periodo de toda la empresa', () => {
   it('"Recalcular estado de los periodos" solo con el permiso de mantenimiento', async () => {
     const { recalcularEstadoPeriodos } =
       await import('@/modules/payroll/actions/recalcularEstadoPeriodos')
-    vi.mocked(recalcularEstadoPeriodos).mockResolvedValue({ ok: true, revisados: 4, cambiaron: 1 })
+    vi.mocked(recalcularEstadoPeriodos).mockResolvedValue({
+      ok: true,
+      revisados: 4,
+      cambiaron: 1,
+      cambiaronFechaPago: 0,
+    })
     const { unmount } = render(<PeriodosList periodos={PERIODOS} canWrite />)
     expect(
       screen.queryByRole('button', { name: 'Recalcular estado de los periodos' })
@@ -145,5 +151,45 @@ describe('PeriodosList: periodo de toda la empresa', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Recalcular estado de los periodos' }))
 
     expect(recalcularEstadoPeriodos).toHaveBeenCalledTimes(1)
+  })
+
+  describe('el aviso de "Recalcular estado de los periodos"', () => {
+    async function recalcular(resultado: { cambiaron: number; cambiaronFechaPago: number }) {
+      const { recalcularEstadoPeriodos } =
+        await import('@/modules/payroll/actions/recalcularEstadoPeriodos')
+      vi.mocked(recalcularEstadoPeriodos).mockResolvedValue({
+        ok: true,
+        revisados: 6,
+        ...resultado,
+      })
+      render(<PeriodosList periodos={PERIODOS} canWrite puedeRecalcularEstados />)
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Recalcular estado de los periodos' })
+      )
+    }
+
+    it('sin cambios dice que todo estaba bien', async () => {
+      await recalcular({ cambiaron: 0, cambiaronFechaPago: 0 })
+
+      expect(toast.success).toHaveBeenCalledWith(
+        'Se revisaron 6 periodo(s): todos tenían el estado y la fecha de pago correctos.'
+      )
+    })
+
+    it('un cambio solo de fecha de pago se informa (antes pasaba en silencio)', async () => {
+      await recalcular({ cambiaron: 0, cambiaronFechaPago: 2 })
+
+      expect(toast.success).toHaveBeenCalledWith(
+        'Se revisaron 6 periodo(s) y 2 cambiaron de fecha de pago.'
+      )
+    })
+
+    it('estado y fecha juntos', async () => {
+      await recalcular({ cambiaron: 1, cambiaronFechaPago: 2 })
+
+      expect(toast.success).toHaveBeenCalledWith(
+        'Se revisaron 6 periodo(s) y 1 cambió de estado y 2 cambiaron de fecha de pago.'
+      )
+    })
   })
 })

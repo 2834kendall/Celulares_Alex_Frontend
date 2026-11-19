@@ -16,7 +16,7 @@ import {
   type TipoSubsidioRow,
 } from '@/modules/payroll/lib/subsidio'
 import { round2 } from '@/modules/payroll/lib/numeros'
-import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
+import { atrasadoParaLaCuenta, periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import { getHorasDelPeriodo } from '@/modules/payroll/lib/horasPeriodoData'
 import { lecturaUtilizable } from '@/modules/payroll/lib/horasPeriodo'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
@@ -34,6 +34,7 @@ import { sucursalLabel } from '@/lib/empresa/marca-label'
 import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import {
   ETIQUETA_TODA_LA_EMPRESA,
+  esCuentaDeEmpresa,
   etiquetasDeSucursales,
   leerFilasEstado,
 } from '@/modules/payroll/lib/alcancePlanilla'
@@ -745,7 +746,10 @@ export async function getPeriodoDetail(
       fechaInicio: periodo.npe_fecha_inicio_periodo,
       fechaFin: periodo.npe_fecha_fin_periodo,
       estado: periodo.npe_estado,
-      atrasado: periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo),
+      atrasado: atrasadoParaLaCuenta(
+        periodoAtrasado(periodo.npe_estado, periodo.npe_fecha_fin_periodo),
+        { porEmpresa, cuentaDeEmpresa: esCuentaDeEmpresa(claims), filasVisibles: items.length }
+      ),
       fechaPago: periodo.npe_fecha_pago,
       observaciones: periodo.npe_observaciones,
       sucursalNombre: porEmpresa

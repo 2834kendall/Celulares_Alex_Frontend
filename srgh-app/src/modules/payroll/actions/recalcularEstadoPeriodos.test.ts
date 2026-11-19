@@ -64,8 +64,60 @@ describe('recalcularEstadoPeriodos', () => {
 
     const result = await recalcularEstadoPeriodos()
 
-    expect(result).toEqual({ ok: true, revisados: 3, cambiaron: 1 })
+    expect(result).toEqual({ ok: true, revisados: 3, cambiaron: 1, cambiaronFechaPago: 0 })
     expect(mockSincronizar.mock.calls.map((c) => c[1])).toEqual([1, 2, 3])
+  })
+
+  // La fecha sale del pago más reciente de sus filas: puede moverse aunque el
+  // estado siga igual, y eso también se informa.
+  it('cuenta aparte los periodos que cambiaron de fecha de pago con el mismo estado', async () => {
+    cuenta()
+    cliente([
+      {
+        data: [
+          { npe_id: 1, npe_estado: 'pagado', npe_fecha_pago: '2026-07-10' },
+          { npe_id: 2, npe_estado: 'borrador', npe_fecha_pago: null },
+          { npe_id: 3, npe_estado: 'pagado', npe_fecha_pago: '2026-07-20' },
+          { npe_id: 4, npe_estado: 'pagado', npe_fecha_pago: '2026-07-25' },
+        ],
+        error: null,
+      },
+      {
+        data: [
+          { npe_id: 1, npe_estado: 'pagado', npe_fecha_pago: '2026-07-12' },
+          { npe_id: 2, npe_estado: 'pagado', npe_fecha_pago: '2026-07-14' },
+          { npe_id: 3, npe_estado: 'pagado', npe_fecha_pago: '2026-07-20' },
+          { npe_id: 4, npe_estado: 'borrador', npe_fecha_pago: null },
+        ],
+        error: null,
+      },
+    ])
+
+    const result = await recalcularEstadoPeriodos()
+
+    // 2 y 4 cambiaron de estado (su fecha cambió con él); solo el 1 cambió de
+    // fecha con el mismo estado; el 3 no cambió.
+    expect(result).toEqual({ ok: true, revisados: 4, cambiaron: 2, cambiaronFechaPago: 1 })
+  })
+
+  // Un mock devuelve lo que se le diga: sin pedir la columna, la fecha llegaría
+  // vacía en las dos lecturas y nunca se vería un cambio.
+  it('pide la fecha de pago de cada periodo, antes y después', async () => {
+    cuenta()
+    const client = cliente([
+      { data: [{ npe_id: 1, npe_estado: 'pagado', npe_fecha_pago: '2026-07-10' }], error: null },
+      { data: [{ npe_id: 1, npe_estado: 'pagado', npe_fecha_pago: '2026-07-10' }], error: null },
+    ])
+
+    await recalcularEstadoPeriodos()
+
+    const pedidos = client.from.mock.results.flatMap(
+      (r) => (r.value as { select: { mock: { calls: unknown[][] } } }).select.mock.calls
+    )
+    expect(pedidos.map((c) => String(c[0]))).toEqual([
+      'npe_id, npe_estado, npe_fecha_pago',
+      'npe_id, npe_estado, npe_fecha_pago',
+    ])
   })
 
   it('si no puede leer los periodos, no recalcula nada', async () => {

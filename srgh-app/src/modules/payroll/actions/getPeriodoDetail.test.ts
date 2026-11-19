@@ -1207,3 +1207,58 @@ describe('getPeriodoDetail: empleados que faltan en un periodo de toda la empres
     expect(result.ok && result.data.empleadosFaltantes).toBeUndefined()
   })
 })
+
+describe('getPeriodoDetail: atraso visto por la cuenta', () => {
+  const EMPRESA = { ...PERIODO_ROW, npe_sucursal_id: null, sgrh_sucursales: null }
+  const ESTADO = {
+    nomina_filas_estado: {
+      data: [{ ndt_historial_laboral_id: 100, ndt_pagado: false, ndt_fecha_pago: null }],
+      error: null,
+    },
+  }
+  const detalle = (filas: unknown[], claims: Record<string, unknown>) => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: claims,
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    mockTables(
+      {
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_nomina_detalle: { data: filas, error: null },
+        sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+        sgrh_empleado_datos_pago: { data: [], error: null },
+        sgrh_nomina_linea_ingreso: { data: [], error: null },
+        sgrh_nomina_linea_deduccion: { data: [], error: null },
+        sgrh_sucursales: { data: [], error: null },
+      },
+      ESTADO
+    )
+    return getPeriodoDetail(7)
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map() })
+    mockDecryptField.mockImplementation(async (stored) => ({ ok: true, value: stored }))
+  })
+
+  it('una cuenta de sucursal sin filas suyas no ve atrasado el periodo de la empresa', async () => {
+    const result = await detalle([], { empresa_id: 1, sucursal_ids: [2] })
+
+    expect(result.ok && result.data.atrasado).toBe(false)
+  })
+
+  it('con filas suyas sí', async () => {
+    const result = await detalle([{ ...DETALLE_ROW, ndt_sucursal_id: 2 }], {
+      empresa_id: 1,
+      sucursal_ids: [2],
+    })
+
+    expect(result.ok && result.data.atrasado).toBe(true)
+  })
+
+  it('una cuenta de toda la empresa lo ve atrasado', async () => {
+    const result = await detalle([], { empresa_id: 1 })
+
+    expect(result.ok && result.data.atrasado).toBe(true)
+  })
+})

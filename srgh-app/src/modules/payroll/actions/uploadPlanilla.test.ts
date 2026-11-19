@@ -194,6 +194,30 @@ describe('uploadPlanilla (server action)', () => {
     }
   })
 
+  // Un error de todo el archivo (plantilla vieja) lleva fila 0: no es una fila.
+  it('un error de todo el archivo no dice "fila 0"', async () => {
+    mockSupabase({
+      sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },
+      sgrh_cat_conceptos_nomina: { data: CONCEPTOS, error: null },
+    })
+    mockParsePlanillaWorkbook.mockResolvedValue({
+      alcance: [],
+      rows: [],
+      errors: [
+        { fila: 0, mensaje: 'Esta plantilla es de una versión anterior: descargala de nuevo.' },
+        { fila: 5, mensaje: 'El campo "BASE" no es un número válido.' },
+      ],
+    })
+
+    const result = await uploadPlanilla(buildFormData())
+
+    expect(result).toEqual({
+      ok: false,
+      error:
+        'El archivo tiene errores — Esta plantilla es de una versión anterior: descargala de nuevo. · fila 5: El campo "BASE" no es un número válido.',
+    })
+  })
+
   it('rechaza cédulas sin contrato activo en la sucursal', async () => {
     mockSupabase({
       sgrh_nomina_periodo: { data: PERIODO_BORRADOR, error: null },

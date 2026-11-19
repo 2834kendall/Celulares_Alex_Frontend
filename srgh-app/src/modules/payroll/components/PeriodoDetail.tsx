@@ -1628,7 +1628,7 @@ export function PeriodoDetail({
             pendientesDePago.reduce((sum, d) => sum + d.totalAPagar, 0)
           )} a ${pendientesDePago.length} empleado(s)${
             nombreSucursalActiva ? ` de ${nombreSucursalActiva}` : ''
-          }, uno por uno y con las mismas revisiones que el botón de cada fila. Los que tengan algo por corregir (marcas incompletas, horas desactualizadas, fila en ₡0) quedan sin pagar y se listan al terminar. ${
+          }, uno por uno y con las mismas revisiones que el botón de cada fila. Los que tengan algo por corregir (marcas incompletas, horas desactualizadas, fila en ₡0 sin justificar) quedan sin pagar y se listan al terminar. ${
             correoConfigurado
               ? 'A cada uno se le envía su comprobante por correo, si tiene uno registrado.'
               : 'El envío de comprobantes por correo no está configurado: habrá que entregarlos impresos.'

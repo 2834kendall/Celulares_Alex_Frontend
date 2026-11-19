@@ -57,10 +57,17 @@ export function PeriodosList({
       toast.error(result.error)
       return
     }
+    const verbo = (n: number) => (n === 1 ? 'cambió' : 'cambiaron')
+    const cambios = [
+      result.cambiaron > 0 ? `${result.cambiaron} ${verbo(result.cambiaron)} de estado` : null,
+      result.cambiaronFechaPago > 0
+        ? `${result.cambiaronFechaPago} ${verbo(result.cambiaronFechaPago)} de fecha de pago`
+        : null,
+    ].filter(Boolean)
     toast.success(
-      result.cambiaron === 0
-        ? `Se revisaron ${result.revisados} periodo(s): todos tenían el estado correcto.`
-        : `Se revisaron ${result.revisados} periodo(s) y ${result.cambiaron} cambiaron de estado.`
+      cambios.length === 0
+        ? `Se revisaron ${result.revisados} periodo(s): todos tenían el estado y la fecha de pago correctos.`
+        : `Se revisaron ${result.revisados} periodo(s) y ${cambios.join(' y ')}.`
     )
     router.refresh()
   }

@@ -14,12 +14,19 @@ export type RecalcularEstadoPeriodosResult =
       revisados: number
       /** De esos, cuántos cambiaron de estado (borrador ↔ pagado). */
       cambiaron: number
+      /**
+       * Cuántos siguieron con el mismo estado pero cambiaron de fecha de pago
+       * (la fecha sale del pago más reciente de sus filas). Los que cambiaron
+       * de estado no se cuentan acá: su fecha cambió con el estado.
+       */
+      cambiaronFechaPago: number
     }
   | { ok: false; error: string }
 
 interface PeriodoEstadoRow {
   npe_id: number
   npe_estado: string
+  npe_fecha_pago: string | null
 }
 
 /**
@@ -49,7 +56,7 @@ export async function recalcularEstadoPeriodos(): Promise<RecalcularEstadoPeriod
   const leer = () =>
     supabase
       .from('sgrh_nomina_periodo')
-      .select('npe_id, npe_estado')
+      .select('npe_id, npe_estado, npe_fecha_pago')
       .order('npe_id', { ascending: true })
       .returns<PeriodoEstadoRow[]>()
 
@@ -72,9 +79,13 @@ export async function recalcularEstadoPeriodos(): Promise<RecalcularEstadoPeriod
     }
   }
 
-  const estadoAntes = new Map(antes.map((p) => [p.npe_id, p.npe_estado]))
-  const cambiaron = despues.filter((p) => estadoAntes.get(p.npe_id) !== p.npe_estado).length
+  const filaAntes = new Map(antes.map((p) => [p.npe_id, p]))
+  const cambioEstado = (p: PeriodoEstadoRow) => filaAntes.get(p.npe_id)?.npe_estado !== p.npe_estado
+  const cambioFecha = (p: PeriodoEstadoRow) =>
+    (filaAntes.get(p.npe_id)?.npe_fecha_pago ?? null) !== (p.npe_fecha_pago ?? null)
+  const cambiaron = despues.filter(cambioEstado).length
+  const cambiaronFechaPago = despues.filter((p) => !cambioEstado(p) && cambioFecha(p)).length
 
   revalidatePath('/payroll')
-  return { ok: true, revisados: antes.length, cambiaron }
+  return { ok: true, revisados: antes.length, cambiaron, cambiaronFechaPago }
 }

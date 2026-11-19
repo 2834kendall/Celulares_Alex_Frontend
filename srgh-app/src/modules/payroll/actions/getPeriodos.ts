@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
+import { atrasadoParaLaCuenta, periodoAtrasado } from '@/modules/payroll/lib/estadoPeriodo'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 import { sucursalLabel } from '@/lib/empresa/marca-label'
 import { ETIQUETA_TODA_LA_EMPRESA, esCuentaDeEmpresa } from '@/modules/payroll/lib/alcancePlanilla'
@@ -83,24 +83,32 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
     return { ok: false, error: 'No se pudieron cargar los periodos de nómina.' }
   }
 
-  const periodos: PeriodoListItem[] = (data ?? []).map((row) => ({
-    id: row.npe_id,
-    mes: row.npe_periodo_mes,
-    anio: row.npe_periodo_anio,
-    quincena: row.npe_quincena,
-    fechaInicio: row.npe_fecha_inicio_periodo,
-    fechaFin: row.npe_fecha_fin_periodo,
-    estado: row.npe_estado,
-    atrasado: periodoAtrasado(row.npe_estado, row.npe_fecha_fin_periodo),
-    fechaPago: row.npe_fecha_pago,
-    sucursalNombre:
-      sucursalLabel(row.sgrh_sucursales) ??
-      (row.npe_sucursal_id === null ? ETIQUETA_TODA_LA_EMPRESA : '—'),
+  const periodos: PeriodoListItem[] = (data ?? []).map((row) => {
     // Antes se traía el id de cada fila de cada periodo solo para contarlas:
     // la lista crecía con cada quincena pagada. Ahora la base devuelve el número.
-    totalEmpleados: row.sgrh_nomina_detalle?.[0]?.count ?? 0,
-    puedeEliminar: row.npe_sucursal_id !== null || cuentaDeEmpresa,
-  }))
+    const totalEmpleados = row.sgrh_nomina_detalle?.[0]?.count ?? 0
+    return {
+      id: row.npe_id,
+      mes: row.npe_periodo_mes,
+      anio: row.npe_periodo_anio,
+      quincena: row.npe_quincena,
+      fechaInicio: row.npe_fecha_inicio_periodo,
+      fechaFin: row.npe_fecha_fin_periodo,
+      estado: row.npe_estado,
+      atrasado: atrasadoParaLaCuenta(periodoAtrasado(row.npe_estado, row.npe_fecha_fin_periodo), {
+        porEmpresa: row.npe_sucursal_id === null,
+        cuentaDeEmpresa,
+        // La RLS deja contar solo las filas de las sucursales de la cuenta.
+        filasVisibles: totalEmpleados,
+      }),
+      fechaPago: row.npe_fecha_pago,
+      sucursalNombre:
+        sucursalLabel(row.sgrh_sucursales) ??
+        (row.npe_sucursal_id === null ? ETIQUETA_TODA_LA_EMPRESA : '—'),
+      totalEmpleados,
+      puedeEliminar: row.npe_sucursal_id !== null || cuentaDeEmpresa,
+    }
+  })
 
   return { ok: true, data: periodos }
 }
