@@ -1624,9 +1624,13 @@ export function PeriodoDetail({
       {confirmandoPagarTodos && (
         <ConfirmDialog
           title={`¿Desea pagarle a los ${pendientesDePago.length} empleado(s) que faltan?`}
-          message={`Se registrará el pago de ${formatCRC(
-            pendientesDePago.reduce((sum, d) => sum + d.totalAPagar, 0)
-          )} a ${pendientesDePago.length} empleado(s)${
+          message={`${
+            pendientesDePago.every((d) => d.totalAPagar === 0)
+              ? 'Todas estas filas están en ₡0: solo se pagan las que tengan el ₡0 justificado (incapacidad, ausencia sin goce, no vino ningún día) y las demás quedan sin pagar. Si falta el salario en algún contrato, corrígelo y usá "Recalcular desde asistencia" antes. Se intentará pagar a'
+              : `Se registrará el pago de ${formatCRC(
+                  pendientesDePago.reduce((sum, d) => sum + d.totalAPagar, 0)
+                )} a`
+          } ${pendientesDePago.length} empleado(s)${
             nombreSucursalActiva ? ` de ${nombreSucursalActiva}` : ''
           }, uno por uno y con las mismas revisiones que el botón de cada fila. Los que tengan algo por corregir (marcas incompletas, horas desactualizadas, fila en ₡0 sin justificar) quedan sin pagar y se listan al terminar. ${
             correoConfigurado

@@ -711,6 +711,30 @@ describe('PeriodoDetail: pagar a todos', () => {
     expect(toast.success).toHaveBeenCalledWith('2 pago(s) registrados.')
   })
 
+  it('si todas las filas están en ₡0 no dice que se registrará un pago de ₡0', async () => {
+    const EN_CERO_1 = fila({
+      id: 11,
+      historialLaboralId: 11,
+      empleadoNombre: 'Ana Mora',
+      totalAPagar: 0,
+    })
+    const EN_CERO_2 = fila({
+      id: 12,
+      historialLaboralId: 12,
+      empleadoNombre: 'Luis Vega',
+      totalAPagar: 0,
+    })
+    render(
+      <PeriodoDetail periodo={periodo([EN_CERO_1, EN_CERO_2])} canWrite conceptosManuales={[]} />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar a todos' }))
+    const dialogo = screen.getByRole('alertdialog')
+    expect(dialogo).toHaveTextContent('Todas estas filas están en ₡0')
+    expect(dialogo).toHaveTextContent('Se intentará pagar a 2 empleado(s)')
+    expect(dialogo).not.toHaveTextContent('Se registrará el pago de')
+  })
+
   // Una fila en ₡0 SÍ se paga cuando está justificada (incapacidad, ausencia
   // sin goce, no vino ningún día): el aviso no puede decir que no se paga.
   it('el aviso dice que quedan sin pagar las filas en ₡0 SIN justificar', async () => {
