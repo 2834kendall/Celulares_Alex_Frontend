@@ -6,6 +6,10 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { aplicarHorasExtraEnDetalle } from '@/modules/payroll/lib/horasExtraDetalle'
 import { formatCRC } from '@/modules/payroll/lib/format'
+import {
+  ERROR_OTRA_SUCURSAL,
+  sucursalVisibleParaLaCuenta,
+} from '@/modules/payroll/lib/sucursalCuenta'
 
 export type RevertirBancoHorasResult = { ok: true } | { ok: false; error: string }
 
@@ -15,6 +19,7 @@ interface MovimientoRow {
   bhm_monto_pagado: number | null
   bhm_nomina_detalle_pago_id: number | null
   bhm_liquidacion_id?: number | null
+  sgrh_historial_laboral?: { lab_sucursal_id: number } | null
 }
 
 interface DetallePagoRow {
@@ -52,12 +57,14 @@ export async function revertirBancoHoras(bhmId: number): Promise<RevertirBancoHo
     return { ok: false, error: 'Movimiento inválido.' }
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
   const supabase = await createClient()
 
   const { data: movimiento, error: errMovimiento } = await supabase
     .from('sgrh_banco_horas_movimientos')
-    .select('bhm_id, bhm_estado, bhm_monto_pagado, bhm_nomina_detalle_pago_id, bhm_liquidacion_id')
+    .select(
+      'bhm_id, bhm_estado, bhm_monto_pagado, bhm_nomina_detalle_pago_id, bhm_liquidacion_id, sgrh_historial_laboral ( lab_sucursal_id )'
+    )
     .eq('bhm_id', bhmId)
     .maybeSingle<MovimientoRow>()
 
@@ -66,6 +73,11 @@ export async function revertirBancoHoras(bhmId: number): Promise<RevertirBancoHo
   }
   if (!movimiento) {
     return { ok: false, error: 'El movimiento no existe o no es visible.' }
+  }
+  // La RLS deja leer el banco de toda la empresa: la sucursal del contrato se
+  // revisa acá.
+  if (!sucursalVisibleParaLaCuenta(claims, movimiento.sgrh_historial_laboral?.lab_sucursal_id)) {
+    return { ok: false, error: ERROR_OTRA_SUCURSAL }
   }
   if (movimiento.bhm_estado === 'pendiente') {
     return { ok: false, error: 'Estas horas ya están pendientes en el banco.' }

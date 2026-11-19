@@ -18,6 +18,7 @@
 export const SELECT_LIQUIDACION_DEL_MOVIMIENTO = `
   bhm_created_at,
   sgrh_historial_laboral (
+    lab_sucursal_id,
     lab_fecha_inicio,
     sgrh_empleados (
       sgrh_historial_laboral ( sgrh_liquidaciones ( liq_id, liq_fecha_salida ) )
@@ -36,6 +37,8 @@ interface LiquidacionRow {
 export interface MovimientoConLiquidaciones {
   bhm_created_at: string
   sgrh_historial_laboral: {
+    /** Sucursal del contrato: decide qué cuenta puede resolver el movimiento. */
+    lab_sucursal_id?: number | null
     lab_fecha_inicio: string
     sgrh_empleados: {
       sgrh_historial_laboral:
