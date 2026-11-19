@@ -6,6 +6,7 @@ import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activ
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { leerPaginado } from '@/modules/payroll/lib/paginado'
 import type { ContratoPorLiquidarItem } from '@/modules/payroll/types'
+import { sucursalesVisibles } from '@/modules/payroll/lib/sucursalCuenta'
 
 export type GetContratosPorLiquidarResult =
   { ok: true; data: ContratoPorLiquidarItem[] } | { ok: false; error: string }
@@ -61,7 +62,10 @@ function tieneContratoPosterior(row: ContratoTerminadoRow): boolean {
  * hasta que llega su último día: lab_fecha_fin sigue en null hasta entonces.
  */
 export async function getContratosPorLiquidar(): Promise<GetContratosPorLiquidarResult> {
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
+  // El historial se lee para toda la empresa: una cuenta de sucursal solo ve
+  // (y liquida) los contratos de sus sucursales.
+  const visibles = sucursalesVisibles(claims)
 
   const filtro = await getFiltroMarca()
   if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
@@ -88,6 +92,7 @@ export async function getContratosPorLiquidar(): Promise<GetContratosPorLiquidar
       )
       .not('lab_fecha_fin', 'is', null)
     if (filtro.sucursalIds) consulta = consulta.in('lab_sucursal_id', filtro.sucursalIds)
+    if (visibles !== null) consulta = consulta.in('lab_sucursal_id', visibles)
     return consulta.order('lab_id').range(desde, hasta).returns<ContratoTerminadoRow[]>()
   })
 

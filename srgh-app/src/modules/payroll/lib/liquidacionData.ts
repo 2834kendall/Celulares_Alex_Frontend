@@ -48,6 +48,10 @@ import { anioCicloAguinaldo, quincenaPagadaEnLiquidacion } from './liquidacion'
 import { parseFechaLocal } from './fechas'
 import { formatCRC, periodoLabel, rangoAguinaldo } from './format'
 import { calcularMontoSugeridoBancoHoras, factorHorasExtra } from './bancoHoras'
+import {
+  ERROR_OTRA_SUCURSAL,
+  sucursalVisibleParaLaCuenta,
+} from '@/modules/payroll/lib/sucursalCuenta'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -94,7 +98,12 @@ export type CargarHistorialResult =
  */
 export async function cargarHistorialParaLiquidacion(
   supabase: SupabaseServerClient,
-  historialLaboralId: number
+  historialLaboralId: number,
+  /**
+   * La cuenta que liquida. El historial se lee para toda la empresa (RLS), así
+   * que una cuenta de sucursal solo liquida contratos de sus sucursales.
+   */
+  claims: { app_metadata?: unknown }
 ): Promise<CargarHistorialResult> {
   const { data: historial, error } = await supabase
     .from('sgrh_historial_laboral')
@@ -104,6 +113,9 @@ export async function cargarHistorialParaLiquidacion(
 
   if (error) return { ok: false, error: 'No se pudo cargar el historial laboral del empleado.' }
   if (!historial) return { ok: false, error: 'El empleado no existe o no es visible.' }
+  if (!sucursalVisibleParaLaCuenta(claims, historial.lab_sucursal_id)) {
+    return { ok: false, error: ERROR_OTRA_SUCURSAL }
+  }
   if (!historial.lab_fecha_fin) {
     return {
       ok: false,

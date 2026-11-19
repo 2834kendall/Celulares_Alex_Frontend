@@ -119,7 +119,11 @@ export async function procesarLiquidacion(
 
   const supabase = await createClient()
 
-  const historialResult = await cargarHistorialParaLiquidacion(supabase, data.historialLaboralId)
+  const historialResult = await cargarHistorialParaLiquidacion(
+    supabase,
+    data.historialLaboralId,
+    claims
+  )
   if (!historialResult.ok) return historialResult
   const historial = historialResult.data
   // Último día trabajado, tal como lo registró RRHH al terminar el contrato.

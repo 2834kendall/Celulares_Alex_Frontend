@@ -9,6 +9,7 @@ import {
   anulacionDe,
   type AnulacionRow,
 } from '@/modules/payroll/lib/anulacionPagos'
+import { sucursalVisibleParaLaCuenta } from '@/modules/payroll/lib/sucursalCuenta'
 
 interface PagoRow extends AnulacionRow {
   pex_id: number
@@ -23,6 +24,7 @@ interface PagoRow extends AnulacionRow {
   pex_codigo_verificacion: string
   pex_observaciones: string | null
   sgrh_historial_laboral: {
+    lab_sucursal_id?: number
     sgrh_empleados: {
       emp_nombre: string
       emp_apellido_1: string
@@ -44,7 +46,7 @@ export type GetPagoExtraordinarioResult =
 export async function getPagoExtraordinario(pagoId: number): Promise<GetPagoExtraordinarioResult> {
   if (!Number.isInteger(pagoId) || pagoId <= 0) return { ok: false, error: 'Pago inválido.' }
 
-  await requirePermission(PERMISOS.NOMINA_READ)
+  const claims = await requirePermission(PERMISOS.NOMINA_READ)
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -53,7 +55,7 @@ export async function getPagoExtraordinario(pagoId: number): Promise<GetPagoExtr
       `pex_id, pex_tipo, pex_anio_aguinaldo, pex_liquidacion_id, pex_monto_bruto, pex_deducciones,
        pex_monto_neto, pex_lineas, pex_fecha_pago, pex_codigo_verificacion, pex_observaciones,
        ${SELECT_ANULACION},
-       sgrh_historial_laboral ( sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal ) ),
+       sgrh_historial_laboral ( lab_sucursal_id, sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal ) ),
        sgrh_liquidaciones ( liq_fecha_salida, sgrh_cat_motivos_salida ( mot_nombre ) )`
     )
     .eq('pex_id', pagoId)
@@ -61,6 +63,11 @@ export async function getPagoExtraordinario(pagoId: number): Promise<GetPagoExtr
 
   if (error) return { ok: false, error: 'No se pudo cargar el pago.' }
   if (!data) return { ok: false, error: 'El pago no existe o no es visible.' }
+  // La RLS deja leer los pagos de toda la empresa: la sucursal del contrato
+  // se revisa acá, con el mismo mensaje que si no existiera.
+  if (!sucursalVisibleParaLaCuenta(claims, data.sgrh_historial_laboral?.lab_sucursal_id)) {
+    return { ok: false, error: 'El pago no existe o no es visible.' }
+  }
 
   const emp = data.sgrh_historial_laboral?.sgrh_empleados
   return {

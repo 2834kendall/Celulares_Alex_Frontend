@@ -7,6 +7,7 @@ import {
   confusionesEnCodigo,
   normalizarCodigoVerificacion,
 } from '@/modules/payroll/lib/comprobante'
+import { sucursalVisibleParaLaCuenta } from '@/modules/payroll/lib/sucursalCuenta'
 
 export type BuscarComprobanteResult = { ok: true; href: string } | { ok: false; error: string }
 
@@ -49,7 +50,7 @@ export async function buscarComprobante(codigo: string): Promise<BuscarComproban
     }
   }
 
-  await requirePermission(PERMISOS.NOMINA_READ)
+  const claims = await requirePermission(PERMISOS.NOMINA_READ)
   const supabase = await createClient()
 
   const { data: planilla, error: errPlanilla } = await supabase
@@ -70,14 +71,19 @@ export async function buscarComprobante(codigo: string): Promise<BuscarComproban
 
   const { data: extraordinario, error: errExtraordinario } = await supabase
     .from('sgrh_pagos_extraordinarios')
-    .select('pex_id')
+    .select('pex_id, sgrh_historial_laboral ( lab_sucursal_id )')
     .eq('pex_codigo_verificacion', normalizado)
-    .maybeSingle<{ pex_id: number }>()
+    .maybeSingle<{ pex_id: number; sgrh_historial_laboral?: { lab_sucursal_id: number } | null }>()
 
   if (errExtraordinario) {
     return { ok: false, error: 'No se pudo buscar el comprobante.' }
   }
-  if (extraordinario) {
+  // Aguinaldo y liquidación: la RLS los deja ver a toda la empresa, así que la
+  // sucursal del contrato se revisa acá.
+  if (
+    extraordinario &&
+    sucursalVisibleParaLaCuenta(claims, extraordinario.sgrh_historial_laboral?.lab_sucursal_id)
+  ) {
     return { ok: true, href: `/comprobante/extraordinario/${extraordinario.pex_id}` }
   }
 
