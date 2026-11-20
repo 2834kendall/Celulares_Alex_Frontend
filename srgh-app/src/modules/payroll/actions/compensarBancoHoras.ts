@@ -11,6 +11,10 @@ import {
   liquidacionQueDejoElMovimiento,
   type MovimientoConLiquidaciones,
 } from '@/modules/payroll/lib/bancoHorasLiquidado'
+import {
+  ERROR_OTRA_SUCURSAL,
+  sucursalVisibleParaLaCuenta,
+} from '@/modules/payroll/lib/sucursalCuenta'
 
 const LARGO_MINIMO_NOTA = 5
 const LARGO_MAXIMO_NOTA = 500
@@ -59,6 +63,11 @@ export async function compensarBancoHoras(
   }
   if (!movimiento) {
     return { ok: false, error: 'El movimiento no existe o no es visible.' }
+  }
+  // La RLS deja leer el banco de toda la empresa: la sucursal del contrato se
+  // revisa acá.
+  if (!sucursalVisibleParaLaCuenta(claims, movimiento.sgrh_historial_laboral?.lab_sucursal_id)) {
+    return { ok: false, error: ERROR_OTRA_SUCURSAL }
   }
   if (movimiento.bhm_estado !== 'pendiente') {
     return { ok: false, error: 'Este movimiento ya fue resuelto (pagado o compensado).' }

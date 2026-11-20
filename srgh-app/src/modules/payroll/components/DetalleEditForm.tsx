@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useForm } from '@/hooks/useProtectedForm'
 
 import { useState } from 'react'
@@ -121,10 +122,10 @@ export function DetalleEditForm({
       )}
 
       {conceptosManuales.length === 0 ? (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <TextoPlegable className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           No hay conceptos manuales activos en el catálogo (tipo &quot;monto manual&quot;). Crea al
           menos uno en &quot;Conceptos de nómina&quot; para poder cargar montos aquí.
-        </p>
+        </TextoPlegable>
       ) : (
         <div className="space-y-3">
           {grupos.map(({ tipo, items }) => {
@@ -186,12 +187,12 @@ export function DetalleEditForm({
       )}
 
       {conceptoAjuste && (
-        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
+        <TextoPlegable className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
           <span className="font-semibold">{conceptoAjuste.con_nombre}:</span>{' '}
           {formatCRC(detalle.montosPorConcepto[CODIGO_AJUSTE] ?? 0)}. Lo calcula el sistema al
           guardar (salario real ÷ 2 menos la base de la quincena, según el cumplimiento del
           horario); no se edita a mano.
-        </p>
+        </TextoPlegable>
       )}
 
       <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -278,10 +279,10 @@ export function DetalleEditForm({
 
       <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-        <p>
+        <TextoPlegable className="flex-1">
           Las horas extra (por encima del tope normal de la quincena) y las deducciones porcentuales
           (ej. CCSS) se calculan solas a partir de estos datos y del catálogo de conceptos.
-        </p>
+        </TextoPlegable>
       </div>
 
       <div className="flex items-center justify-end gap-2">

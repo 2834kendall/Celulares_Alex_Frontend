@@ -11,6 +11,10 @@ import {
   type ResultadoEnvioComprobante,
 } from '@/modules/payroll/lib/envioComprobante'
 import type { LineaPagoExtraordinario } from '@/modules/payroll/types'
+import {
+  ERROR_OTRA_SUCURSAL,
+  sucursalVisibleParaLaCuenta,
+} from '@/modules/payroll/lib/sucursalCuenta'
 
 export type PagarLiquidacionResult =
   | {
@@ -43,6 +47,8 @@ interface LiquidacionRow {
   liq_deducciones_obreras: number
   liq_neto: number | null
   liq_observaciones: string | null
+  /** Sucursal del contrato liquidado: decide quién puede pagarla. */
+  sgrh_historial_laboral: { lab_sucursal_id: number } | null
 }
 
 /**
@@ -62,7 +68,7 @@ export async function pagarLiquidacion(liqId: number): Promise<PagarLiquidacionR
     return { ok: false, error: 'Liquidación inválida.' }
   }
 
-  await requirePermission(PERMISOS.NOMINA_WRITE)
+  const claims = await requirePermission(PERMISOS.NOMINA_WRITE)
   const supabase = await createClient()
 
   const { data: liq, error: errLiq } = await supabase
@@ -72,13 +78,19 @@ export async function pagarLiquidacion(liqId: number): Promise<PagarLiquidacionR
        liq_salario_proporcional, liq_aguinaldo_proporcional, liq_dias_vacaciones_pendientes,
        liq_vacaciones_pagadas, liq_horas_extra_banco, liq_dias_preaviso, liq_preaviso, liq_dias_cesantia, liq_cesantia,
        liq_nota_preaviso, liq_nota_cesantia, liq_dias_indemnizacion_plazo_fijo,
-       liq_indemnizacion_plazo_fijo, liq_total, liq_deducciones_obreras, liq_neto, liq_observaciones`
+       liq_indemnizacion_plazo_fijo, liq_total, liq_deducciones_obreras, liq_neto, liq_observaciones,
+       sgrh_historial_laboral ( lab_sucursal_id )`
     )
     .eq('liq_id', liqId)
     .maybeSingle<LiquidacionRow>()
 
   if (errLiq) return { ok: false, error: 'No se pudo cargar la liquidación.' }
   if (!liq) return { ok: false, error: 'La liquidación no existe o no es visible.' }
+  // La RLS deja leer las liquidaciones de toda la empresa: la sucursal del
+  // contrato se revisa acá.
+  if (!sucursalVisibleParaLaCuenta(claims, liq.sgrh_historial_laboral?.lab_sucursal_id)) {
+    return { ok: false, error: ERROR_OTRA_SUCURSAL }
+  }
   // La marca sola no alcanza: si se anuló el pago justo cuando se marcaba,
   // puede haber quedado en true sin ningún pago vigente, y eso no debe trabar
   // volver a pagarla. Lo que manda es el pago vigente (el índice único lo

@@ -24,3 +24,18 @@ export function periodoAtrasado(
   // Fechas 'YYYY-MM-DD': el orden lexicográfico es el orden cronológico.
   return fechaFinPeriodo < hoy
 }
+
+/**
+ * "Atrasado" visto por una cuenta. En un periodo de toda la empresa una cuenta
+ * de sucursal ve solo las filas de sus sucursales: si no tiene ninguna, el
+ * periodo no le debe nada a su gente y no es un atraso suyo, aunque otra
+ * sucursal lo tenga sin pagar. Una cuenta de toda la empresa, o un periodo de
+ * una sola sucursal, se quedan con el atraso del periodo.
+ */
+export function atrasadoParaLaCuenta(
+  atrasado: boolean,
+  contexto: { porEmpresa: boolean; cuentaDeEmpresa: boolean; filasVisibles: number }
+): boolean {
+  if (!atrasado) return false
+  return !(contexto.porEmpresa && !contexto.cuentaDeEmpresa && contexto.filasVisibles === 0)
+}

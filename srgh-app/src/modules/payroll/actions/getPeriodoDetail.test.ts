@@ -1076,3 +1076,189 @@ describe('getPeriodoDetail: periodo de toda la empresa', () => {
     expect(client.from.mock.calls.map((c) => c[0])).not.toContain('sgrh_sucursales')
   })
 })
+
+describe('getPeriodoDetail: empleados que faltan en un periodo de toda la empresa', () => {
+  const EMPRESA = { ...PERIODO_ROW, npe_sucursal_id: null, sgrh_sucursales: null }
+  // Filas del periodo (nomina_filas_estado): los contratos 100 y 101. La 101
+  // es de una sucursal que la cuenta no ve.
+  const ESTADO = {
+    nomina_filas_estado: {
+      data: [100, 101].map((lab) => ({
+        ndt_historial_laboral_id: lab,
+        ndt_pagado: false,
+        ndt_fecha_pago: null,
+      })),
+      error: null,
+    },
+  }
+  const activo = (lab: number, nombre: string) => ({
+    lab_id: lab,
+    lab_sucursal_id: 2,
+    lab_salario_base: 500000,
+    lab_salario_real: null,
+    sgrh_empleados: {
+      emp_numero_identificacion: `${lab}-0000-0000`,
+      emp_nombre: nombre,
+      emp_apellido_1: 'Mora',
+      emp_apellido_2: null,
+    },
+    sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: 48 },
+  })
+  const tablas = (over: Record<string, { data: unknown; error: unknown }> = {}) => ({
+    sgrh_nomina_periodo: { data: EMPRESA, error: null },
+    sgrh_nomina_detalle: { data: [{ ...DETALLE_ROW, ndt_sucursal_id: 2 }], error: null },
+    sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+    sgrh_empleado_datos_pago: { data: [], error: null },
+    sgrh_nomina_linea_ingreso: { data: [], error: null },
+    sgrh_nomina_linea_deduccion: { data: [], error: null },
+    sgrh_sucursales: {
+      data: [{ suc_id: 2, suc_nombre: 'Centro', sgrh_marcas_comerciales: null }],
+      error: null,
+    },
+    sgrh_historial_laboral: {
+      data: [activo(100, 'Ana'), activo(101, 'Luis'), activo(200, 'Zoe'), activo(201, 'Beto')],
+      error: null,
+    },
+    ...over,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(CLAIMS)
+    mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map() })
+    mockDecryptField.mockImplementation(async (stored) => ({ ok: true, value: stored }))
+  })
+
+  it('avisa quiénes activos no tienen fila, sin contar a los que la tienen en otra sucursal', async () => {
+    mockTables(tablas(), ESTADO)
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok && result.data.empleadosFaltantes).toEqual({
+      total: 2,
+      nombres: ['Beto Mora', 'Zoe Mora'],
+    })
+  })
+
+  it('solo cuenta a quien ya había ingresado cuando terminó la quincena (igual que el botón)', async () => {
+    const client = mockTables(tablas(), ESTADO)
+
+    await getPeriodoDetail(7)
+
+    const lte = client.from.mock.calls.flatMap(([t], i) =>
+      t === 'sgrh_historial_laboral'
+        ? (client.from.mock.results[i].value as { lte: { mock: { calls: unknown[][] } } }).lte.mock
+            .calls
+        : []
+    )
+    expect(lte).toContainEqual(['lab_fecha_inicio', '2026-07-15'])
+  })
+
+  it('si no falta nadie, no hay aviso', async () => {
+    mockTables(
+      tablas({
+        sgrh_historial_laboral: { data: [activo(100, 'Ana'), activo(101, 'Luis')], error: null },
+      }),
+      ESTADO
+    )
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok && result.data.empleadosFaltantes).toBeUndefined()
+  })
+
+  it('un periodo que ya no es borrador no avisa: ya no se le puede agregar gente', async () => {
+    mockTables(
+      tablas({ sgrh_nomina_periodo: { data: { ...EMPRESA, npe_estado: 'pagado' }, error: null } }),
+      ESTADO
+    )
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok && result.data.empleadosFaltantes).toBeUndefined()
+  })
+
+  it('un periodo de una sucursal no usa este aviso', async () => {
+    mockTables(tablas({ sgrh_nomina_periodo: { data: PERIODO_ROW, error: null } }), ESTADO)
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok && result.data.empleadosFaltantes).toBeUndefined()
+  })
+
+  it('un comprobante (una sola fila) no calcula quién falta', async () => {
+    mockTables(tablas(), ESTADO)
+
+    const result = await getPeriodoDetail(7, { soloDetalleId: 21 })
+
+    expect(result.ok && result.data.empleadosFaltantes).toBeUndefined()
+  })
+
+  it('si no se pudo leer a los activos, la pantalla sale sin el aviso', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockTables(
+      tablas({ sgrh_historial_laboral: { data: null, error: { message: 'boom' } } }),
+      ESTADO
+    )
+
+    const result = await getPeriodoDetail(7)
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.empleadosFaltantes).toBeUndefined()
+  })
+})
+
+describe('getPeriodoDetail: atraso visto por la cuenta', () => {
+  const EMPRESA = { ...PERIODO_ROW, npe_sucursal_id: null, sgrh_sucursales: null }
+  const ESTADO = {
+    nomina_filas_estado: {
+      data: [{ ndt_historial_laboral_id: 100, ndt_pagado: false, ndt_fecha_pago: null }],
+      error: null,
+    },
+  }
+  const detalle = (filas: unknown[], claims: Record<string, unknown>) => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: claims,
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    mockTables(
+      {
+        sgrh_nomina_periodo: { data: EMPRESA, error: null },
+        sgrh_nomina_detalle: { data: filas, error: null },
+        sgrh_cat_tipos_ausencia: TIPO_AUSENCIA_ROW,
+        sgrh_empleado_datos_pago: { data: [], error: null },
+        sgrh_nomina_linea_ingreso: { data: [], error: null },
+        sgrh_nomina_linea_deduccion: { data: [], error: null },
+        sgrh_sucursales: { data: [], error: null },
+      },
+      ESTADO
+    )
+    return getPeriodoDetail(7)
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetHorasDelPeriodo.mockResolvedValue({ ok: true, data: new Map() })
+    mockDecryptField.mockImplementation(async (stored) => ({ ok: true, value: stored }))
+  })
+
+  it('una cuenta de sucursal sin filas suyas no ve atrasado el periodo de la empresa', async () => {
+    const result = await detalle([], { empresa_id: 1, sucursal_ids: [2] })
+
+    expect(result.ok && result.data.atrasado).toBe(false)
+  })
+
+  it('con filas suyas sí', async () => {
+    const result = await detalle([{ ...DETALLE_ROW, ndt_sucursal_id: 2 }], {
+      empresa_id: 1,
+      sucursal_ids: [2],
+    })
+
+    expect(result.ok && result.data.atrasado).toBe(true)
+  })
+
+  it('una cuenta de toda la empresa lo ve atrasado', async () => {
+    const result = await detalle([], { empresa_id: 1 })
+
+    expect(result.ok && result.data.atrasado).toBe(true)
+  })
+})

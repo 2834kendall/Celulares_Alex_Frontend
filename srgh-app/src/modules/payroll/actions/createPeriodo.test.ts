@@ -291,3 +291,48 @@ describe('createPeriodo (server action)', () => {
     })
   })
 })
+
+describe('createPeriodo: quién queda cargado según la cuenta', () => {
+  const comoSucursal = () =>
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, sucursal_ids: [2] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(CLAIMS)
+    mockCargar.mockResolvedValue({
+      ok: true,
+      agregados: 3,
+      yaEstaban: 0,
+      sinAsistencia: 0,
+      sinSalario: [],
+    })
+  })
+
+  it('una cuenta de sucursal que crea el periodo de toda la empresa lo sabe: solo se cargó su gente', async () => {
+    comoSucursal()
+    mockInsert({ data: { npe_id: 7 }, error: null }, true)
+
+    const result = await createPeriodo({ ...INPUT, npe_sucursal_id: null })
+
+    expect(result.ok && result.soloSusSucursales).toBe(true)
+  })
+
+  it('una cuenta de toda la empresa carga a todos: no lleva el aviso', async () => {
+    mockInsert({ data: { npe_id: 7 }, error: null }, true)
+
+    const result = await createPeriodo({ ...INPUT, npe_sucursal_id: null })
+
+    expect(result.ok && result.soloSusSucursales).toBeUndefined()
+  })
+
+  it('en un periodo por sucursal (modelo viejo) tampoco lleva el aviso', async () => {
+    comoSucursal()
+    mockInsert({ data: { npe_id: 7 }, error: null }, false)
+
+    const result = await createPeriodo(INPUT)
+
+    expect(result.ok && result.soloSusSucursales).toBeUndefined()
+  })
+})

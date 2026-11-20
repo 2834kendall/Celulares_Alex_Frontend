@@ -19,6 +19,10 @@ import {
   type PagarBancoHorasInput,
   type PagarBancoHorasResult,
 } from '@/modules/payroll/types'
+import {
+  ERROR_OTRA_SUCURSAL,
+  sucursalVisibleParaLaCuenta,
+} from '@/modules/payroll/lib/sucursalCuenta'
 
 interface MovimientoRow extends MovimientoConLiquidaciones {
   bhm_id: number
@@ -78,6 +82,11 @@ export async function pagarBancoHoras(input: PagarBancoHorasInput): Promise<Paga
   }
   if (!movimiento) {
     return { ok: false, error: 'El movimiento no existe o no es visible.' }
+  }
+  // La RLS deja leer el banco de toda la empresa: la sucursal del contrato se
+  // revisa acá.
+  if (!sucursalVisibleParaLaCuenta(claims, movimiento.sgrh_historial_laboral?.lab_sucursal_id)) {
+    return { ok: false, error: ERROR_OTRA_SUCURSAL }
   }
   if (movimiento.bhm_estado !== 'pendiente') {
     return { ok: false, error: 'Este movimiento ya fue resuelto (pagado o compensado).' }

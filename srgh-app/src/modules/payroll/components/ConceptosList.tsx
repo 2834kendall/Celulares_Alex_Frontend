@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { Coins, FileSpreadsheet, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ConceptoNominaRow } from '@/modules/payroll/types'
 import { deleteConcepto } from '@/modules/payroll/actions/deleteConcepto'
@@ -85,7 +86,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
         className="flex items-start gap-2.5 rounded-xl border-2 border-amber-300 bg-amber-50 px-3.5 py-3 text-xs text-amber-950 shadow-sm"
       >
         <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-        <p>
+        <TextoPlegable className="flex-1">
           Todo concepto <span className="font-semibold">activo</span> aparece en la próxima
           plantilla de <span className="font-semibold text-emerald-700">Excel</span> que se
           descargue. Los marcados con{' '}
@@ -95,7 +96,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
           (ingreso o deducción de monto manual) salen como una columna que se llena a mano; los
           demás (% del bruto, horas extra automático) se calculan solos, igual que en la edición
           manual. Si desactivas un concepto, deja de aparecer en la próxima planilla.
-        </p>
+        </TextoPlegable>
       </div>
 
       {deleteError && (

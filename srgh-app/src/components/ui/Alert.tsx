@@ -1,5 +1,6 @@
 import { AlertTriangle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { TextoPlegable } from './TextoPlegable'
 
 export type AlertTone = 'error' | 'info' | 'warning'
 export type AlertSize = 'sm' | 'md'
@@ -53,7 +54,12 @@ export function Alert({ tone = 'error', size = 'sm', children, className }: Aler
   return (
     <div role="alert" className={cn('flex items-start gap-2 border', box, sizing.box, className)}>
       <Icon className={cn('shrink-0', icon, sizing.icon)} aria-hidden="true" />
-      <div className="min-w-0">{children}</div>
+      <div className="min-w-0 flex-1">
+        {/* Un texto simple (los mensajes de error) se recoge a 2 líneas y se abre al
+            tocarlo; si trae botones, enlaces o listas se deja tal cual para no
+            anidar elementos interactivos dentro del texto plegable. */}
+        {typeof children === 'string' ? <TextoPlegable>{children}</TextoPlegable> : children}
+      </div>
     </div>
   )
 }

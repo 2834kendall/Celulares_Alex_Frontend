@@ -6,6 +6,7 @@ import { quitarFilaPlanilla } from '@/modules/payroll/actions/quitarFilaPlanilla
 import { marcarDetallePagado } from '@/modules/payroll/actions/marcarDetallePagado'
 import { reenviarComprobante } from '@/modules/payroll/actions/reenviarComprobante'
 import { pagarTodosDelPeriodo } from '@/modules/payroll/actions/pagarTodosDelPeriodo'
+import { cargarEmpleadosDesdeAsistencia } from '@/modules/payroll/actions/cargarEmpleadosDesdeAsistencia'
 import { toast } from 'sonner'
 import { formatCRC } from '@/modules/payroll/lib/format'
 import type { DetalleNominaItem, PeriodoDetalle } from '@/modules/payroll/types'
@@ -570,6 +571,94 @@ describe('PeriodoDetail: periodo de toda la empresa', () => {
     expect(screen.getByText('Neto a pagar (de tus sucursales)')).toBeInTheDocument()
   })
 
+  describe('aviso de empleados que faltan', () => {
+    const faltan = { total: 3, nombres: ['Ana Ruiz', 'Beto Mora'] }
+
+    it('dice cuántos faltan y quiénes, y trae un botón para agregarlos', async () => {
+      vi.mocked(cargarEmpleadosDesdeAsistencia).mockResolvedValue({
+        ok: true,
+        agregados: 3,
+        yaEstaban: 1,
+        sinAsistencia: 0,
+        sinSalario: [],
+      })
+      render(
+        <PeriodoDetail
+          periodo={empresa([CENTRO], { empleadosFaltantes: faltan })}
+          canWrite
+          conceptosManuales={[]}
+        />
+      )
+
+      const aviso = screen.getByRole('button', {
+        name: /Faltan 3 empleados activos en este periodo/,
+      })
+      await userEvent.click(aviso)
+      expect(screen.getByText(/Ana Ruiz, Beto Mora y 1 más/)).toBeInTheDocument()
+
+      // Dentro del aviso hay un segundo botón "Agregar empleados que falten".
+      const botones = screen.getAllByRole('button', { name: 'Agregar empleados que falten' })
+      expect(botones).toHaveLength(2)
+      await userEvent.click(botones[0])
+      expect(cargarEmpleadosDesdeAsistencia).toHaveBeenCalledWith(7)
+    })
+
+    it('con uno solo, habla en singular', () => {
+      render(
+        <PeriodoDetail
+          periodo={empresa([CENTRO], { empleadosFaltantes: { total: 1, nombres: ['Zoe Mora'] } })}
+          canWrite
+          conceptosManuales={[]}
+        />
+      )
+
+      expect(screen.getByText('Falta 1 empleado activo en este periodo')).toBeInTheDocument()
+    })
+
+    it('sin faltantes no hay aviso', () => {
+      render(<PeriodoDetail periodo={empresa([CENTRO])} canWrite conceptosManuales={[]} />)
+
+      expect(screen.queryByText(/empleados? activos? en este periodo/)).not.toBeInTheDocument()
+    })
+
+    it('sin permiso de escritura no se ofrece agregar a nadie', () => {
+      render(
+        <PeriodoDetail
+          periodo={empresa([CENTRO], { empleadosFaltantes: faltan })}
+          canWrite={false}
+          conceptosManuales={[]}
+        />
+      )
+
+      expect(screen.queryByText(/empleados activos en este periodo/)).not.toBeInTheDocument()
+    })
+
+    it('con la planilla vacía no se duplica: ya está el botón de cargar empleados', () => {
+      render(
+        <PeriodoDetail
+          periodo={empresa([], { empleadosFaltantes: faltan })}
+          canWrite
+          conceptosManuales={[]}
+        />
+      )
+
+      expect(screen.queryByText(/empleados activos en este periodo/)).not.toBeInTheDocument()
+      expect(screen.getByText('Cargar empleados desde asistencia')).toBeInTheDocument()
+    })
+
+    it('un periodo ya pagado no lo ofrece', () => {
+      render(
+        <PeriodoDetail
+          periodo={empresa([CENTRO], { empleadosFaltantes: faltan, estado: 'pagado' })}
+          canWrite
+          conceptosManuales={[]}
+        />
+      )
+
+      expect(screen.queryByText(/empleados activos en este periodo/)).not.toBeInTheDocument()
+    })
+  })
+
   it('un periodo de una sucursal no muestra la columna ni el aviso', () => {
     render(<PeriodoDetail periodo={periodo([CENTRO, MALL_2])} canWrite conceptosManuales={[]} />)
 
@@ -620,6 +709,48 @@ describe('PeriodoDetail: pagar a todos', () => {
 
     expect(pagarTodosDelPeriodo).toHaveBeenCalledWith(7, null)
     expect(toast.success).toHaveBeenCalledWith('2 pago(s) registrados.')
+  })
+
+  it('si todas las filas están en ₡0 no dice que se registrará un pago de ₡0', async () => {
+    const EN_CERO_1 = fila({
+      id: 11,
+      historialLaboralId: 11,
+      empleadoNombre: 'Ana Mora',
+      totalAPagar: 0,
+    })
+    const EN_CERO_2 = fila({
+      id: 12,
+      historialLaboralId: 12,
+      empleadoNombre: 'Luis Vega',
+      totalAPagar: 0,
+    })
+    render(
+      <PeriodoDetail periodo={periodo([EN_CERO_1, EN_CERO_2])} canWrite conceptosManuales={[]} />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar a todos' }))
+    const dialogo = screen.getByRole('alertdialog')
+    expect(dialogo).toHaveTextContent('Todas estas filas están en ₡0')
+    expect(dialogo).toHaveTextContent('Se intentará pagar a 2 empleado(s)')
+    expect(dialogo).not.toHaveTextContent('Se registrará el pago de')
+  })
+
+  // Una fila en ₡0 SÍ se paga cuando está justificada (incapacidad, ausencia
+  // sin goce, no vino ningún día): el aviso no puede decir que no se paga.
+  it('el aviso dice que quedan sin pagar las filas en ₡0 SIN justificar', async () => {
+    render(
+      <PeriodoDetail
+        periodo={periodo([PENDIENTE_1, PENDIENTE_2])}
+        canWrite
+        conceptosManuales={[]}
+      />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar a todos' }))
+
+    const dialogo = screen.getByRole('alertdialog')
+    expect(dialogo).toHaveTextContent('fila en ₡0 sin justificar')
+    expect(dialogo).not.toHaveTextContent(/fila en ₡0\)/)
   })
 
   it('lista los que no se pudieron pagar con su motivo', async () => {

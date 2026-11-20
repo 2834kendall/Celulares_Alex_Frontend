@@ -9,6 +9,7 @@ import { periodoLabel } from '@/modules/payroll/lib/format'
 import { leerPaginado } from '@/modules/payroll/lib/paginado'
 import type { BancoHorasItem, EstadoBancoHoras } from '@/modules/payroll/types'
 import { liquidacionQueDejoElMovimiento } from '@/modules/payroll/lib/bancoHorasLiquidado'
+import { sucursalVisibleParaLaCuenta } from '@/modules/payroll/lib/sucursalCuenta'
 
 interface MovimientoRow {
   bhm_id: number
@@ -55,11 +56,12 @@ export type GetBancoHorasResult =
 
 /**
  * Lista los movimientos del banco de horas: pendientes (por resolver) e
- * historial (ya pagados o compensados). RLS ya limita esto a la empresa del
- * JWT — aquí solo se pide el permiso de nómina para mostrar la pantalla.
+ * historial (ya pagados o compensados). RLS limita esto a la empresa del JWT;
+ * la sucursal (la del contrato) se aplica acá: una cuenta de sucursal ve solo
+ * el banco de sus sucursales.
  */
 export async function getBancoHoras(): Promise<GetBancoHorasResult> {
-  await requirePermission(PERMISOS.NOMINA_READ)
+  const claims = await requirePermission(PERMISOS.NOMINA_READ)
 
   const filtro = await getFiltroMarca()
   if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
@@ -119,11 +121,11 @@ export async function getBancoHoras(): Promise<GetBancoHorasResult> {
   // En memoria: filtrar en la consulta sobre un join sin !inner devuelve la fila
   // con el join en null ("Empleado no disponible"), y los mocks no lo detectan.
   const { sucursalIds } = filtro
-  const filas = sucursalIds
-    ? (data ?? []).filter((row) =>
-        sucursalIds.includes(row.sgrh_historial_laboral?.lab_sucursal_id ?? Number.NaN)
-      )
-    : (data ?? [])
+  const filas = (data ?? []).filter((row) => {
+    const sucursal = row.sgrh_historial_laboral?.lab_sucursal_id
+    if (!sucursalVisibleParaLaCuenta(claims, sucursal)) return false
+    return sucursalIds ? sucursalIds.includes(sucursal ?? Number.NaN) : true
+  })
 
   const items: BancoHorasItem[] = filas.map((row) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados

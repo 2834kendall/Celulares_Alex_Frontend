@@ -238,6 +238,12 @@ export interface PeriodoDetalle {
    * de la pantalla no las incluyen.
    */
   filasOcultas: number
+  /**
+   * Periodo de toda la empresa en borrador: empleados activos del alcance de la
+   * cuenta que todavía no tienen fila (y a quienes agrega "Agregar empleados
+   * que falten"). Ausente si no falta nadie o no se pudo calcular.
+   */
+  empleadosFaltantes?: { total: number; nombres: string[] }
   detalles: DetalleNominaItem[]
 }
 

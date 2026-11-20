@@ -149,6 +149,56 @@ describe('getPeriodos (server action)', () => {
   })
 })
 
+describe('getPeriodos: atraso visto por la cuenta', () => {
+  const empresa = (id: number, filas: number) => ({
+    ...PERIODO_BASE,
+    npe_id: id,
+    npe_sucursal_id: null,
+    sgrh_sucursales: null,
+    sgrh_nomina_detalle: [{ count: filas }],
+  })
+  const periodos = (claims: Record<string, unknown>) => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: claims,
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        // 8: de toda la empresa, la cuenta no tiene filas · 9: tiene 2 ·
+        // 7: de su sucursal, sin filas (un periodo vacío, recién creado).
+        sgrh_nomina_periodo: {
+          data: [empresa(8, 0), empresa(9, 2), { ...PERIODO_BASE, sgrh_nomina_detalle: [] }],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    return getPeriodos()
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('una cuenta de sucursal no ve atrasado un periodo de la empresa sin filas suyas', async () => {
+    const result = await periodos({ empresa_id: 1, sucursal_ids: [2] })
+
+    expect(result.ok && result.data.map((p) => [p.id, p.atrasado])).toEqual([
+      [8, false],
+      [9, true],
+      [7, true],
+    ])
+  })
+
+  it('una cuenta de toda la empresa sí lo ve atrasado', async () => {
+    const result = await periodos({ empresa_id: 1 })
+
+    expect(result.ok && result.data.map((p) => [p.id, p.atrasado])).toEqual([
+      [8, true],
+      [9, true],
+      [7, true],
+    ])
+  })
+})
+
 const FILTRO_MARCA = { estado: 'filtrado' as const, marcaId: 1, sucursalIds: [5, 6] }
 const FILTRO_ERROR = { estado: 'error', sucursalIds: null } as const
 

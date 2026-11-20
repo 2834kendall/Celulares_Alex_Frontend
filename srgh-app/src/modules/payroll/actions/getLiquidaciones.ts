@@ -12,6 +12,7 @@ import {
   separarPagos,
   type AnulacionRow,
 } from '@/modules/payroll/lib/anulacionPagos'
+import { sucursalVisibleParaLaCuenta } from '@/modules/payroll/lib/sucursalCuenta'
 
 interface LiquidacionRow {
   liq_id: number
@@ -73,11 +74,12 @@ export type GetLiquidacionesResult =
  * Historial de liquidaciones ya generadas, más recientes primero. Solo puede
  * existir una por contrato (liq_historial_laboral_id es UNIQUE), así que esta
  * lista es, en la práctica, "empleados que salieron y ya se les liquidó".
- * RLS ya limita esto a la empresa del JWT — aquí solo se pide el permiso de
- * lectura de nómina para mostrar la pantalla.
+ * RLS limita esto a la empresa del JWT. La sucursal se aplica acá: una cuenta
+ * de sucursal ve solo las liquidaciones de contratos de sus sucursales (antes
+ * veía —y podía pagar— las de toda la empresa).
  */
 export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
-  await requirePermission(PERMISOS.NOMINA_READ)
+  const claims = await requirePermission(PERMISOS.NOMINA_READ)
 
   const filtro = await getFiltroMarca()
   if (filtro.estado === 'error') return { ok: false, error: ERROR_FILTRO_MARCA }
@@ -134,11 +136,11 @@ export async function getLiquidaciones(): Promise<GetLiquidacionesResult> {
 
   // En memoria, por lo mismo que getBancoHoras: el join no es !inner.
   const { sucursalIds } = filtro
-  const filas = sucursalIds
-    ? (data ?? []).filter((row) =>
-        sucursalIds.includes(row.sgrh_historial_laboral?.lab_sucursal_id ?? Number.NaN)
-      )
-    : (data ?? [])
+  const filas = (data ?? []).filter((row) => {
+    const sucursal = row.sgrh_historial_laboral?.lab_sucursal_id
+    if (!sucursalVisibleParaLaCuenta(claims, sucursal)) return false
+    return sucursalIds ? sucursalIds.includes(sucursal ?? Number.NaN) : true
+  })
 
   const items: LiquidacionListItem[] = filas.map((row) => {
     const empleado = row.sgrh_historial_laboral?.sgrh_empleados

@@ -1,5 +1,6 @@
 'use client'
 
+import { TextoPlegable } from '@/components/ui/TextoPlegable'
 import { useConfirmLeave } from '@/hooks/useUnsavedChanges'
 
 import { Fragment, useMemo, useState } from 'react'
@@ -282,6 +283,12 @@ function filaVacia(d: DetalleNominaItem): boolean {
     !(d.horasExtra > 0) &&
     !((d.incapacidad?.diasEmpleador ?? 0) > 0)
   )
+}
+
+/** "Ana Mora, Luis Soto y 3 más" para el aviso de empleados que faltan. */
+function nombresQueFaltan(f: { total: number; nombres: string[] }): string {
+  const resto = f.total - f.nombres.length
+  return resto > 0 ? `${f.nombres.join(', ')} y ${resto} más` : f.nombres.join(', ')
 }
 
 /**
@@ -892,9 +899,9 @@ export function PeriodoDetail({
           </p>
         )}
         {periodo.observaciones && (
-          <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+          <TextoPlegable className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
             {periodo.observaciones}
-          </p>
+          </TextoPlegable>
         )}
       </div>
 
@@ -910,6 +917,39 @@ export function PeriodoDetail({
           </p>
         </AvisoDesplegable>
       )}
+
+      {puedeEditar &&
+        periodo.porEmpresa &&
+        periodo.detalles.length > 0 &&
+        periodo.empleadosFaltantes && (
+          <AvisoDesplegable
+            tono="amber"
+            titulo={
+              periodo.empleadosFaltantes.total === 1
+                ? 'Falta 1 empleado activo en este periodo'
+                : `Faltan ${periodo.empleadosFaltantes.total} empleados activos en este periodo`
+            }
+          >
+            <p className="text-xs leading-relaxed text-amber-800">
+              {nombresQueFaltan(periodo.empleadosFaltantes)}. Con contrato activo en las sucursales
+              que ves, pero sin fila en esta planilla. «Agregar empleados que falten» los trae con
+              las horas de la asistencia y no toca a los que ya están.
+            </p>
+            <button
+              type="button"
+              onClick={handleCargarEmpleados}
+              disabled={cargandoEmpleados}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 outline-none transition hover:underline disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+            >
+              {cargandoEmpleados ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Users className="h-3.5 w-3.5" />
+              )}
+              Agregar empleados que falten
+            </button>
+          </AvisoDesplegable>
+        )}
 
       {variasSucursales && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1585,11 +1625,15 @@ export function PeriodoDetail({
       {confirmandoPagarTodos && (
         <ConfirmDialog
           title={`¿Desea pagarle a los ${pendientesDePago.length} empleado(s) que faltan?`}
-          message={`Se registrará el pago de ${formatCRC(
-            pendientesDePago.reduce((sum, d) => sum + d.totalAPagar, 0)
-          )} a ${pendientesDePago.length} empleado(s)${
+          message={`${
+            pendientesDePago.every((d) => d.totalAPagar === 0)
+              ? 'Todas estas filas están en ₡0: solo se pagan las que tengan el ₡0 justificado (incapacidad, ausencia sin goce, no vino ningún día) y las demás quedan sin pagar. Si falta el salario en algún contrato, corrígelo y usá "Recalcular desde asistencia" antes. Se intentará pagar a'
+              : `Se registrará el pago de ${formatCRC(
+                  pendientesDePago.reduce((sum, d) => sum + d.totalAPagar, 0)
+                )} a`
+          } ${pendientesDePago.length} empleado(s)${
             nombreSucursalActiva ? ` de ${nombreSucursalActiva}` : ''
-          }, uno por uno y con las mismas revisiones que el botón de cada fila. Los que tengan algo por corregir (marcas incompletas, horas desactualizadas, fila en ₡0) quedan sin pagar y se listan al terminar. ${
+          }, uno por uno y con las mismas revisiones que el botón de cada fila. Los que tengan algo por corregir (marcas incompletas, horas desactualizadas, fila en ₡0 sin justificar) quedan sin pagar y se listan al terminar. ${
             correoConfigurado
               ? 'A cada uno se le envía su comprobante por correo, si tiene uno registrado.'
               : 'El envío de comprobantes por correo no está configurado: habrá que entregarlos impresos.'

@@ -69,16 +69,7 @@ export function aContrato(row: ContratoRow): ContratoDelEmpleado {
   }
 }
 
-/**
- * Sucursales que ve el usuario (claim sucursal_ids del JWT). null = toda la
- * empresa (ADMIN o usuario sin sucursal asignada), igual que
- * sucursal_visible() en la base.
- */
-export function sucursalesVisibles(claims: { app_metadata?: unknown }): number[] | null {
-  const ids = ((claims.app_metadata ?? {}) as { sucursal_ids?: unknown }).sucursal_ids
-  if (!Array.isArray(ids)) return null
-  return ids.filter((id): id is number => typeof id === 'number')
-}
+export { sucursalesVisibles } from '@/modules/payroll/lib/sucursalCuenta'
 
 /**
  * ¿Algún contrato de la relación es de una sucursal que el usuario no ve?

@@ -281,7 +281,8 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
   if (errors.length > 0) {
     const detalle = errors
       .slice(0, 5)
-      .map((e) => `fila ${e.fila}: ${e.mensaje}`)
+      // Un error de todo el archivo (plantilla vieja, sin hojas) lleva fila 0: no es una fila.
+      .map((e) => (e.fila > 0 ? `fila ${e.fila}: ${e.mensaje}` : e.mensaje))
       .join(' · ')
     return { ok: false, error: `El archivo tiene errores — ${detalle}` }
   }

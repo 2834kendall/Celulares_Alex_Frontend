@@ -38,7 +38,7 @@ export async function proponerVacacionesLiquidacion(
   }
 
   const supabase = await createClient()
-  const historial = await cargarHistorialParaLiquidacion(supabase, historialLaboralId)
+  const historial = await cargarHistorialParaLiquidacion(supabase, historialLaboralId, claims)
   if (!historial.ok) return historial
 
   const bases = await calcularBasesLiquidacion(
