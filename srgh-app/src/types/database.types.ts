@@ -1902,6 +1902,7 @@ export type Database = {
           kio_empresa_id: number
           kio_estado: string
           kio_id: string
+          kio_login: string | null
           kio_nombre: string
           kio_sucursal_id: number
           kio_ultima_actividad: string | null
@@ -1915,6 +1916,7 @@ export type Database = {
           kio_empresa_id: number
           kio_estado?: string
           kio_id?: string
+          kio_login?: string | null
           kio_nombre: string
           kio_sucursal_id: number
           kio_ultima_actividad?: string | null
@@ -1928,6 +1930,7 @@ export type Database = {
           kio_empresa_id?: number
           kio_estado?: string
           kio_id?: string
+          kio_login?: string | null
           kio_nombre?: string
           kio_sucursal_id?: number
           kio_ultima_actividad?: string | null
@@ -3379,7 +3382,7 @@ export type Database = {
         Returns: string
       }
       sgrh_kiosk_context: {
-        Args: { p_auth: string; p_empresa: number }
+        Args: { p_auth: string; p_empresa: number; p_session?: string }
         Returns: Json
       }
       sgrh_manage_kiosk: {
