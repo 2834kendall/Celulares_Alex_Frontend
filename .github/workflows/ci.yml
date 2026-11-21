@@ -128,9 +128,18 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 11
+      # Fijado en Node 22 LTS, no ">=22.13": con Node 24 (hasta 24.22.2) este
+      # job abortaba al azar con "Check failed: jit_page.has_value()" (exit
+      # 132) sin que fallara ningun test. Es un bug de V8 al liberar codigo
+      # WebAssembly cuando se cierran worker threads (vitest usa pool
+      # 'threads'): nodejs/node#66366 y #67556. El arreglo de V8 no esta
+      # backporteado a 24.x y Node 22 no tiene el bug. Volver a ">=22.13"
+      # cuando salga un 24.x con el backport (nodejs/node#66376).
+      # `--no-wasm-code-gc` lo evita en 24, pero Node no lo acepta en
+      # NODE_OPTIONS, y la cobertura v8 mide igual en 22.
       - uses: actions/setup-node@v4
         with:
-          node-version: ">=22.13"
+          node-version: "22"
           cache: pnpm
           cache-dependency-path: srgh-app/pnpm-lock.yaml
       - name: Install dependencies
