@@ -22,6 +22,7 @@ pnpm dev                  # http://localhost:3000
 | `NEXT_PUBLIC_FACE_DEBUG`, `NEXT_PUBLIC_FACE_TEST_MODE` | depuración del reconocimiento facial |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | envío de comprobantes. Sin ellas, el pago se marca igual y no se envía nada. Con Gmail, `SMTP_PASS` es una contraseña de aplicación |
 | `NEXT_PUBLIC_SITE_URL` | origen público para metadatos y vistas previas sociales |
+| `KIOSK_EMAIL_DOMAIN` | opcional. Dominio del correo interno de las cuentas de kiosco; por defecto `kiosk.sgrh.internal` ([kioscos](../../srgh-app/src/modules/settings/docs/sucursales-y-kioscos.md)) |
 | `SGRH_DEBUG_TIMING=1` | loguea cada consulta a Supabase con su duración |
 
 Las de cifrado se validan en `lib/env.server.ts`.
