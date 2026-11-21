@@ -24,7 +24,6 @@ const CON_MARCAS = {
     { id: 3, nombre: 'Vieja', activa: false },
   ],
   kiosks: [],
-  legacy: [],
   audit: [],
   canManageKiosks: false,
 } as unknown as BranchSettings
@@ -42,7 +41,6 @@ describe('branch listing', () => {
         { suc_id: 20, suc_nombre: 'Norte', suc_codigo_interno: 'NOR', suc_activa: false },
       ],
       kiosks: [],
-      legacy: [],
       audit: [],
       canManageKiosks: true,
     } as unknown as BranchSettings

@@ -3,8 +3,16 @@ import { cache } from 'react'
 
 // Request-scoped only: repeated guards in one render share a read. A new
 // recognition/options/save request always revalidates current access.
-const readContext = cache(async (sub: string, empresa: number) =>
-  createAdminClient().rpc('sgrh_kiosk_context', { p_auth: sub, p_empresa: empresa })
+//
+// The JWT session goes along (SGRH-111): after a password change the kiosk
+// sessions are deleted, and the RPC rejects a token whose session is gone even
+// before the token expires.
+const readContext = cache(async (sub: string, empresa: number, session?: string) =>
+  createAdminClient().rpc('sgrh_kiosk_context', {
+    p_auth: sub,
+    p_empresa: empresa,
+    ...(session ? { p_session: session } : {}),
+  })
 )
 
 export type ManagedKioskMeta = {
@@ -20,7 +28,8 @@ export type ManagedKioskMeta = {
 /** Resolve every operation against current state, never a browser device UUID. */
 export async function liveKioskMetadata(
   sub: string,
-  meta: Record<string, unknown>
+  meta: Record<string, unknown>,
+  session?: string
 ): Promise<Record<string, unknown>> {
   const denied = (message: string, definitive = false) => ({
     ...meta,
@@ -31,7 +40,7 @@ export async function liveKioskMetadata(
   if (!Number.isInteger(meta.empresa_id))
     return denied('No se pudo determinar la empresa del kiosco.', true)
   try {
-    const { data, error } = await readContext(sub, meta.empresa_id as number)
+    const { data, error } = await readContext(sub, meta.empresa_id as number, session)
     if (error || !data || typeof data !== 'object' || Array.isArray(data))
       return denied('No se pudo comprobar el acceso del kiosco. Reintentá cuando haya conexión.')
     if (typeof data.error === 'string') return denied(data.error, true)

@@ -9,6 +9,8 @@ import type { Branch, BranchSettings } from './types'
 
 const TODAS = 'todas'
 
+const kioskCount = (n: number) => (n === 1 ? '1 kiosco' : `${n} kioscos`)
+
 export function BranchesPanel({
   data,
   marcaContextoId = null,
@@ -133,7 +135,7 @@ export function BranchesPanel({
                       <p className="mt-1 text-sm text-slate-600">
                         {b.suc_codigo_interno || 'Sin código interno'}
                         {data.canManageKiosks
-                          ? ` · ${data.kiosks.filter((k) => k.kio_sucursal_id === b.suc_id).length} kioscos`
+                          ? ` · ${kioskCount(data.kiosks.filter((k) => k.kio_sucursal_id === b.suc_id).length)}`
                           : ''}
                       </p>
                     </div>

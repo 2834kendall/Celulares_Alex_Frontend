@@ -28,6 +28,15 @@ describe('requestPasswordReset (server action)', () => {
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 
+  it('no envía nada al correo interno de un kiosco, pero responde igual (SGRH-111)', async () => {
+    const client = mockReset()
+
+    const result = await requestPasswordReset({ email: 'kiosk-1@KIOSK.SGRH.INTERNAL' })
+
+    expect(result).toEqual({ ok: true })
+    expect(client.auth.resetPasswordForEmail).not.toHaveBeenCalled()
+  })
+
   it('envía el enlace con el correo normalizado', async () => {
     const client = mockReset()
 

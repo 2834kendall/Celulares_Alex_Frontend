@@ -2,6 +2,7 @@
 
 import type { AuthError } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { loginSchema, type LoginInput } from '@/modules/auth/types'
 import type { SgrhJwtClaims } from '@/types/auth'
 
@@ -37,8 +38,32 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     return { ok: false, error: 'Datos de acceso invalidos.' }
   }
 
+  // Usuario de kiosco (SGRH-111): sin `@`, se busca el correo interno de su
+  // cuenta. El cliente admin solo lee esa columna; un usuario inexistente
+  // responde igual que una contraseña mala, para no revelar que existe.
+  let email = parsed.data.email
+  if (!email.includes('@')) {
+    const { data: kiosk, error: lookupError } = await createAdminClient()
+      .from('sgrh_kioscos')
+      .select('kio_email')
+      .eq('kio_login', email)
+      .maybeSingle()
+    if (lookupError) {
+      return {
+        ok: false,
+        error:
+          'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.',
+      }
+    }
+    if (!kiosk) return { ok: false, error: 'Credenciales invalidas.' }
+    email = kiosk.kio_email
+  }
+
   const supabase = await createClient()
-  const { error } = await supabase.auth.signInWithPassword(parsed.data)
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password: parsed.data.password,
+  })
 
   if (error) {
     return { ok: false, error: getLoginMessage(error) }

@@ -34,7 +34,12 @@ Action) y `ExpiredLink` (enlace vencido; los textos de cada flujo están en `con
 - **Política de contraseñas:** mínimo 12 caracteres, con minúsculas, mayúsculas, dígitos y
   símbolos. `PASSWORD_RULES` (`types.ts`) es espejo de la política del Dashboard: **se cambian
   juntas o ninguna**. Si difieren, la pantalla acepta lo que el servidor rechaza, o al revés.
-- Los usuarios se crean **solo por invitación**. El registro público tiene que estar apagado.
+- Las personas se crean **solo por invitación**. El registro público tiene que estar apagado.
+  La excepción son los **kioscos (SGRH-111)**: el administrador crea su cuenta ya confirmada,
+  con su contraseña, desde Configuración → Sucursales.
+- **El login acepta correo o usuario de kiosco.** El campo sigue llamándose `email`; sin `@`
+  se valida como usuario de kiosco y `login` lo traduce al correo interno de esa cuenta. Ver
+  [sucursales y kioscos](../settings/docs/sucursales-y-kioscos.md).
 
 ## Trampas
 

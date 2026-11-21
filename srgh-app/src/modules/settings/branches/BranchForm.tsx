@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FormProvider } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { SectionCard } from '@/components/ui/ProfileSection'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import {
@@ -119,42 +120,40 @@ export function BranchForm({
         noValidate
       >
         {error && <Alert>{error}</Alert>}
-        <fieldset
-          disabled={isSubmitting}
-          className="space-y-4 rounded-xl border border-slate-200 bg-white p-5"
-        >
-          <legend className="px-1 text-base font-bold text-slate-900">Datos de la sucursal</legend>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <CatalogSelect name="suc_marca_id" label="Marca *" options={brandOptions} />
-            <Labeled label="Nombre *" error={err('suc_nombre')}>
-              <input
-                {...register('suc_nombre')}
-                className={INPUT_CLASSES}
-                aria-invalid={!!err('suc_nombre')}
-              />
-            </Labeled>
-            <Labeled label="Código interno" error={err('suc_codigo_interno')}>
-              <input {...register('suc_codigo_interno')} className={INPUT_CLASSES} />
-            </Labeled>
-            <Labeled label="Teléfono" error={err('suc_telefono')}>
-              <input {...register('suc_telefono')} type="tel" className={INPUT_CLASSES} />
-            </Labeled>
-            <Labeled label="Correo de contacto" error={err('suc_email_sucursal')}>
-              <input {...register('suc_email_sucursal')} type="email" className={INPUT_CLASSES} />
-            </Labeled>
-          </div>
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <input {...register('suc_activa')} type="checkbox" />
-            Sucursal activa
-          </label>
-        </fieldset>
-        <fieldset
-          disabled={isSubmitting}
-          className="space-y-4 rounded-xl border border-slate-200 bg-white p-5"
-        >
-          <legend className="px-1 text-base font-bold">Dirección</legend>
-          <AddressFields basePath="direccion." territorio={territorio} />
-        </fieldset>
+        {/* SectionCard: el mismo título de sección que Empresa y la ficha del
+            empleado. El fieldset queda adentro solo para deshabilitar al guardar. */}
+        <SectionCard title="Datos de la sucursal">
+          <fieldset disabled={isSubmitting} className="min-w-0 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <CatalogSelect name="suc_marca_id" label="Marca *" options={brandOptions} />
+              <Labeled label="Nombre *" error={err('suc_nombre')}>
+                <input
+                  {...register('suc_nombre')}
+                  className={INPUT_CLASSES}
+                  aria-invalid={!!err('suc_nombre')}
+                />
+              </Labeled>
+              <Labeled label="Código interno" error={err('suc_codigo_interno')}>
+                <input {...register('suc_codigo_interno')} className={INPUT_CLASSES} />
+              </Labeled>
+              <Labeled label="Teléfono" error={err('suc_telefono')}>
+                <input {...register('suc_telefono')} type="tel" className={INPUT_CLASSES} />
+              </Labeled>
+              <Labeled label="Correo de contacto" error={err('suc_email_sucursal')}>
+                <input {...register('suc_email_sucursal')} type="email" className={INPUT_CLASSES} />
+              </Labeled>
+            </div>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input {...register('suc_activa')} type="checkbox" />
+              Sucursal activa
+            </label>
+          </fieldset>
+        </SectionCard>
+        <SectionCard title="Dirección">
+          <fieldset disabled={isSubmitting} className="min-w-0 space-y-4">
+            <AddressFields basePath="direccion." territorio={territorio} />
+          </fieldset>
+        </SectionCard>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Guardando…' : branch ? 'Guardar cambios' : 'Crear sucursal'}
