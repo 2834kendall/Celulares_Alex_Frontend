@@ -5,16 +5,18 @@ import { z } from 'zod'
 import { branchAdmin } from './access'
 import {
   branchSchema,
+  kioskLoginSchema,
+  kioskPasswordSchema,
   kioskSchema,
   type BranchBrand,
   type BranchInput,
   type BranchSettings,
+  type Kiosk,
   type KioskInput,
-  type LegacyKiosk,
 } from './types'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { internalKioskEmail } from '@/lib/kiosk/internalEmail'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
-import { resendInvitation } from '@/modules/users/actions/resendInvitation'
 
 type Result<T = undefined> = { ok: true; data: T } | { ok: false; error: string }
 const idSchema = z.number().int().positive()
@@ -115,31 +117,6 @@ export async function getBranchSettings(): Promise<Result<BranchSettings>> {
       error:
         'No se pudo cargar la configuración. Comprobá que la migración SGRH-103 esté aplicada y reintentá.',
     }
-  const legacy: LegacyKiosk[] = []
-  if (canManageKiosks) {
-    const u = await admin
-      .from('sgrh_usuarios_empresa_rol')
-      .select(
-        'uer_usuario_id,uer_sucursal_id,sgrh_usuarios(usr_id,usr_email,usr_empleado_id),sgrh_cat_roles(rol_codigo)'
-      )
-      .eq('uer_empresa_id', empresa)
-      .eq('uer_activo', true)
-    if (u.error) return { ok: false, error: 'No se pudieron consultar las cuentas existentes.' }
-    for (const row of u.data ?? []) {
-      const user = row.sgrh_usuarios
-      if (
-        row.sgrh_cat_roles?.rol_codigo !== 'KIOSCO' ||
-        !user ||
-        user.usr_empleado_id ||
-        k.data?.some((x) => x.kio_usuario_id === user.usr_id)
-      )
-        continue
-      const entry = legacy.find((x) => x.id === user.usr_id)
-      if (entry) entry.sucursales.push(row.uer_sucursal_id)
-      else
-        legacy.push({ id: user.usr_id, email: user.usr_email, sucursales: [row.uer_sucursal_id] })
-    }
-  }
   return {
     ok: true,
     data: {
@@ -151,7 +128,6 @@ export async function getBranchSettings(): Promise<Result<BranchSettings>> {
       })),
       brands: m.data,
       kiosks: k.data ?? [],
-      legacy,
       audit: a.data ?? [],
       canManageKiosks,
     },
@@ -184,27 +160,194 @@ export async function saveBranch(id: number | null, input: BranchInput): Promise
   return { ok: true, data: result.data }
 }
 
-export async function createKiosk(input: KioskInput): Promise<Result<string>> {
+type KioskAccount = Pick<
+  Kiosk,
+  'kio_id' | 'kio_email' | 'kio_usuario_id' | 'kio_estado' | 'kio_sucursal_id'
+>
+
+function accountError(error: { code?: string; message?: string }) {
+  if (error.code === 'weak_password')
+    return 'La contraseña no cumple la política de seguridad de la cuenta.'
+  if (error.code === 'email_address_invalid')
+    return 'Supabase rechazó el correo interno del kiosco. Revisá la variable KIOSK_EMAIL_DOMAIN.'
+  return 'No se pudo guardar el acceso del kiosco. Reintentá.'
+}
+
+/**
+ * Gives the kiosk account the password chosen by the administrator (SGRH-111).
+ *
+ * Without an account yet, it creates the Auth user already confirmed (no email
+ * is sent) and links it. An account that already exists (a KIOSCO account from
+ * before SGRH-111) is linked first, so the RPC validates it, and only then gets
+ * the new password. A password change on a linked kiosk closes its sessions.
+ */
+async function grantKioskAccess(
+  admin: Admin,
+  empresa: number,
+  actor: string,
+  k: KioskAccount,
+  password: string
+): Promise<Result> {
+  if (k.kio_estado === 'bloqueado')
+    return { ok: false, error: 'Habilitá el kiosco antes de cambiar su acceso.' }
+  let usrId = k.kio_usuario_id
+  if (!usrId) {
+    const branch = await admin
+      .from('sgrh_sucursales')
+      .select('suc_id')
+      .eq('suc_id', k.kio_sucursal_id)
+      .eq('suc_empresa_id', empresa)
+      .eq('suc_activa', true)
+      .maybeSingle()
+    if (branch.error || !branch.data) return { ok: false, error: 'La sucursal no está activa.' }
+    const created = await admin.auth.admin.createUser({
+      email: k.kio_email,
+      password,
+      email_confirm: true,
+    })
+    const existed =
+      !!created.error &&
+      (created.error.code === 'email_exists' || /already/i.test(created.error.message ?? ''))
+    if (created.error && !existed) return { ok: false, error: accountError(created.error) }
+    const user = await admin
+      .from('sgrh_usuarios')
+      .select('usr_id')
+      .eq('usr_email', k.kio_email)
+      .maybeSingle()
+    if (user.error || !user.data)
+      return {
+        ok: false,
+        error: 'La cuenta del kiosco todavía no está disponible. Reintentá en un momento.',
+      }
+    const linked = await admin.rpc('sgrh_manage_kiosk', {
+      p_actor: actor,
+      p_empresa: empresa,
+      p_action: 'vincular',
+      p_id: k.kio_id,
+      p_data: { usuario_id: user.data.usr_id },
+    })
+    if (linked.error) return { ok: false, error: linked.error.message }
+    // A brand-new account already has this password and no sessions.
+    if (!existed) return { ok: true, data: undefined }
+    usrId = user.data.usr_id
+  }
+  const account = await admin
+    .from('sgrh_usuarios')
+    .select('usr_auth_id')
+    .eq('usr_id', usrId)
+    .maybeSingle()
+  if (account.error || !account.data?.usr_auth_id)
+    return { ok: false, error: 'No se encontró la cuenta del kiosco.' }
+  const updated = await admin.auth.admin.updateUserById(account.data.usr_auth_id, { password })
+  if (updated.error) return { ok: false, error: accountError(updated.error) }
+  const recorded = await admin.rpc('sgrh_manage_kiosk', {
+    p_actor: actor,
+    p_empresa: empresa,
+    p_action: 'clave',
+    p_id: k.kio_id,
+    p_data: {},
+  })
+  if (recorded.error)
+    return {
+      ok: false,
+      error:
+        'La contraseña cambió, pero no se pudieron cerrar las sesiones abiertas. Volvé a guardarla.',
+    }
+  return { ok: true, data: undefined }
+}
+
+/**
+ * Registers a kiosk with its username and password. The kiosk is saved first;
+ * if its account cannot be created, it stays pending and the error comes back
+ * in `accessError`, so the administrator retries with "Definir contraseña"
+ * instead of registering it twice.
+ */
+export async function createKiosk(
+  input: KioskInput
+): Promise<Result<{ id: string; accessError?: string }>> {
   const parsed = kioskSchema.safeParse(input)
   if (!parsed.success)
-    return { ok: false, error: 'Revisá el nombre, correo y sucursal del kiosco.' }
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? 'Revisá los datos del kiosco.',
+    }
   const { admin, empresa, actor } = await branchAdmin(true)
+  const { password, ...data } = parsed.data
+  const kioskEmail = internalKioskEmail()
   const r = await admin.rpc('sgrh_manage_kiosk', {
     p_actor: actor,
     p_empresa: empresa,
     p_action: 'crear',
     // gen types no refleja que la RPC acepta NULL (= crear).
     p_id: null as unknown as string,
-    p_data: parsed.data,
+    p_data: { ...data, email: kioskEmail },
   })
   if (r.error)
     return {
       ok: false,
       error:
-        r.error.code === '23505' ? 'Ese correo ya está registrado como kiosco.' : r.error.message,
+        r.error.code === '23505'
+          ? 'Ese usuario o esa cuenta ya están registrados en otro kiosco.'
+          : r.error.message,
+    }
+  const access = await grantKioskAccess(
+    admin,
+    empresa,
+    actor,
+    {
+      kio_id: r.data,
+      kio_email: kioskEmail,
+      kio_usuario_id: null,
+      kio_estado: 'pendiente',
+      kio_sucursal_id: data.sucursal_id,
+    },
+    password
+  )
+  refresh()
+  return { ok: true, data: { id: r.data, accessError: access.ok ? undefined : access.error } }
+}
+
+/** Defines or changes the kiosk password; a change signs out every device. */
+export async function setKioskPassword(id: string, password: string): Promise<Result> {
+  if (!kioskId.safeParse(id).success) return { ok: false, error: 'Kiosco inválido.' }
+  const parsed = kioskPasswordSchema.safeParse(password)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message }
+  const { admin, empresa, actor } = await branchAdmin(true)
+  const { data: k, error } = await admin
+    .from('sgrh_kioscos')
+    .select('kio_id,kio_email,kio_usuario_id,kio_estado,kio_sucursal_id')
+    .eq('kio_id', id)
+    .eq('kio_empresa_id', empresa)
+    .single()
+  if (error || !k) return { ok: false, error: 'Kiosco no encontrado.' }
+  try {
+    const r = await grantKioskAccess(admin, empresa, actor, k, parsed.data)
+    if (r.ok) refresh()
+    return r
+  } catch (e) {
+    return failure(e)
+  }
+}
+
+export async function setKioskLogin(id: string, login: string): Promise<Result> {
+  if (!kioskId.safeParse(id).success) return { ok: false, error: 'Kiosco inválido.' }
+  const parsed = kioskLoginSchema.safeParse(login)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message }
+  const { admin, empresa, actor } = await branchAdmin(true)
+  const r = await admin.rpc('sgrh_manage_kiosk', {
+    p_actor: actor,
+    p_empresa: empresa,
+    p_action: 'usuario',
+    p_id: id,
+    p_data: { login: parsed.data },
+  })
+  if (r.error)
+    return {
+      ok: false,
+      error: r.error.code === '23505' ? 'Ese usuario ya está en uso. Elegí otro.' : r.error.message,
     }
   refresh()
-  return { ok: true, data: r.data }
+  return { ok: true, data: undefined }
 }
 
 export async function setKioskState(id: string, active: boolean): Promise<Result> {
@@ -253,116 +396,4 @@ export async function renameKiosk(id: string, name: string): Promise<Result> {
   if (r.error) return { ok: false, error: r.error.message }
   refresh()
   return { ok: true, data: undefined }
-}
-
-/** Invitation and linking are intentionally separate, recoverable steps. */
-export async function provisionKiosk(
-  id: string,
-  mode: 'invitar' | 'vincular' | 'reenviar' | 'recuperar'
-): Promise<Result> {
-  if (
-    !kioskId.safeParse(id).success ||
-    !['invitar', 'vincular', 'reenviar', 'recuperar'].includes(mode)
-  )
-    return { ok: false, error: 'Acción inválida.' }
-  const { admin, empresa, actor } = await branchAdmin(true)
-  const { data: k, error } = await admin
-    .from('sgrh_kioscos')
-    .select('*')
-    .eq('kio_id', id)
-    .eq('kio_empresa_id', empresa)
-    .single()
-  if (error || !k) return { ok: false, error: 'Kiosco no encontrado.' }
-  if (k.kio_estado === 'bloqueado')
-    return { ok: false, error: 'Activá el kiosco antes de gestionar su acceso.' }
-  const branch = await admin
-    .from('sgrh_sucursales')
-    .select('suc_id')
-    .eq('suc_id', k.kio_sucursal_id)
-    .eq('suc_empresa_id', empresa)
-    .eq('suc_activa', true)
-    .maybeSingle()
-  if (branch.error || !branch.data) return { ok: false, error: 'La sucursal no está activa.' }
-  try {
-    if (mode === 'reenviar') {
-      if (!k.kio_usuario_id)
-        return { ok: false, error: 'Completá primero el vínculo de la cuenta.' }
-      const r = await resendInvitation(k.kio_usuario_id)
-      if (!r.ok) return r
-    } else if (mode === 'recuperar') {
-      if (!k.kio_usuario_id)
-        return { ok: false, error: 'Completá primero el vínculo de la cuenta.' }
-      const { error: authError } = await admin.auth.resetPasswordForEmail(k.kio_email)
-      if (authError) return { ok: false, error: 'No se pudo enviar el correo de recuperación.' }
-    } else {
-      if (mode === 'invitar') {
-        const existing = await admin
-          .from('sgrh_usuarios')
-          .select('usr_id,usr_auth_id,usr_activo,usr_empleado_id')
-          .eq('usr_email', k.kio_email)
-          .maybeSingle()
-        if (existing.error) return { ok: false, error: 'No se pudo comprobar el correo.' }
-        if (existing.data) {
-          if (existing.data.usr_auth_id)
-            return {
-              ok: false,
-              error: 'La cuenta ya existe. Usá Completar vínculo para validarla y asociarla.',
-            }
-          const assignments = await admin
-            .from('sgrh_usuarios_empresa_rol')
-            .select('uer_empresa_id,uer_sucursal_id,uer_activo,sgrh_cat_roles(rol_codigo)')
-            .eq('uer_usuario_id', existing.data.usr_id)
-          const active = assignments.data?.filter((a) => a.uer_activo) ?? []
-          if (
-            assignments.error ||
-            !existing.data.usr_activo ||
-            existing.data.usr_empleado_id ||
-            active.length !== 1 ||
-            active[0].uer_sucursal_id !== k.kio_sucursal_id ||
-            !assignments.data?.every(
-              (a) => a.uer_empresa_id === empresa && a.sgrh_cat_roles?.rol_codigo === 'KIOSCO'
-            )
-          )
-            return {
-              ok: false,
-              error:
-                'La cuenta pendiente debe ser una cuenta KIOSCO activa, sin empleado y asignada únicamente a esta sucursal.',
-            }
-          const retry = await resendInvitation(existing.data.usr_id)
-          if (!retry.ok) return retry
-        } else {
-          const invite = await admin.auth.admin.inviteUserByEmail(k.kio_email)
-          if (invite.error)
-            return {
-              ok: false,
-              error:
-                'No se pudo enviar la invitación. Si la cuenta ya existe, usá Completar vínculo.',
-            }
-        }
-      }
-      const user = await admin
-        .from('sgrh_usuarios')
-        .select('usr_id')
-        .eq('usr_email', k.kio_email)
-        .single()
-      if (user.error || !user.data)
-        return {
-          ok: false,
-          error:
-            'La cuenta aún no está disponible. Reintentá Completar vínculo; no creés otro kiosco.',
-        }
-      const r = await admin.rpc('sgrh_manage_kiosk', {
-        p_actor: actor,
-        p_empresa: empresa,
-        p_action: 'vincular',
-        p_id: id,
-        p_data: { usuario_id: user.data.usr_id },
-      })
-      if (r.error) return { ok: false, error: r.error.message }
-    }
-    refresh()
-    return { ok: true, data: undefined }
-  } catch (error) {
-    return failure(error)
-  }
 }

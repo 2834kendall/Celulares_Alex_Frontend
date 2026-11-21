@@ -132,6 +132,7 @@ type DeleteUserResult = { data: unknown; error: unknown }
 
 interface AdminMockOptions extends ClientMockOptions {
   inviteResult?: InviteResult
+  createUserResult?: UserResult
   listUsersResult?: ListUsersResult
   getUserResult?: UserResult
   updateUserResult?: UserResult
@@ -140,7 +141,7 @@ interface AdminMockOptions extends ClientMockOptions {
 
 /**
  * Mocks createAdminClient(): same query builder per table plus the Auth admin
- * API (inviteUserByEmail, listUsers, getUserById, updateUserById, deleteUser)
+ * API (inviteUserByEmail, createUser, listUsers, getUserById, updateUserById, deleteUser)
  * used by the user-management actions.
  */
 export function createSupabaseAdminClientMock(
@@ -148,6 +149,10 @@ export function createSupabaseAdminClientMock(
   options: AdminMockOptions = {}
 ) {
   const inviteResult = options.inviteResult ?? { data: { user: { id: 'auth-uuid' } }, error: null }
+  const createUserResult = options.createUserResult ?? {
+    data: { user: { id: 'auth-uuid' } },
+    error: null,
+  }
   const listUsersResult = options.listUsersResult ?? { data: { users: [] }, error: null }
   const getUserResult = options.getUserResult ?? { data: { user: null }, error: null }
   const updateUserResult = options.updateUserResult ?? {
@@ -161,6 +166,7 @@ export function createSupabaseAdminClientMock(
     auth: {
       admin: {
         inviteUserByEmail: vi.fn(async () => inviteResult),
+        createUser: vi.fn(async () => createUserResult),
         listUsers: vi.fn(async () => listUsersResult),
         getUserById: vi.fn(async () => getUserResult),
         updateUserById: vi.fn(async () => updateUserResult),
