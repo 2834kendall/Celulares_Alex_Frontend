@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { isInternalKioskEmail } from '@/lib/kiosk/internalEmail'
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@/modules/auth/types'
 
 export type RequestPasswordResetResult = { ok: true } | { ok: false; error: string }
@@ -31,6 +32,11 @@ export async function requestPasswordReset(
   if (!parsed.success) {
     return { ok: false, error: 'Ingrese un correo electrónico válido.' }
   }
+
+  // Correo interno de un kiosco (SGRH-111): nadie lo lee y su contraseña la
+  // cambia el administrador en Sucursales. Mismo { ok: true } que cualquier
+  // otro correo, para no confirmar que existe.
+  if (isInternalKioskEmail(parsed.data.email)) return { ok: true }
 
   const supabase = await createClient()
 

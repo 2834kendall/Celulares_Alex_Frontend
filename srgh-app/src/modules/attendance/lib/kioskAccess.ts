@@ -23,5 +23,9 @@ import { liveKioskMetadata } from './liveKioskAccess'
  */
 export async function requireKioskAccess() {
   const claims = await requireAnyPermission([PERMISOS.ASISTENCIA_KIOSCO, PERMISOS.ASISTENCIA_WRITE])
-  return { ...claims, app_metadata: await liveKioskMetadata(claims.sub, claims.app_metadata ?? {}) }
+  const session = typeof claims.session_id === 'string' ? claims.session_id : undefined
+  return {
+    ...claims,
+    app_metadata: await liveKioskMetadata(claims.sub, claims.app_metadata ?? {}, session),
+  }
 }

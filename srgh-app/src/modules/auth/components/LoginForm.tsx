@@ -184,14 +184,18 @@ export function LoginForm() {
       >
         <div className="login-enter" style={enterStep(1)}>
           <label className={AUTH_FIELD_LABEL} htmlFor="email-input">
-            Correo Electronico
+            Correo o usuario
           </label>
           <div className="group relative">
             <Mail className={AUTH_FIELD_ICON} />
+            {/* type="text" y no "email": los kioscos entran con un usuario sin @
+                (SGRH-111), y el navegador rechazaría el formulario. */}
             <input
-              type="email"
+              type="text"
               id="email-input"
-              autoComplete="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
               disabled={isSubmitting}
               data-rejected={rejected}
               aria-invalid={!!errors.email}
@@ -206,7 +210,7 @@ export function LoginForm() {
                 setFocusedField(null)
               }}
               className={cn(INPUT, AUTH_INPUT)}
-              placeholder="correo@sucursal.com"
+              placeholder="correo@sucursal.com o usuario"
             />
           </div>
           {errors.email && <p className={FIELD_ERROR}>{errors.email.message}</p>}

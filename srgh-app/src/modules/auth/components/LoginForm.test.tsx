@@ -20,7 +20,7 @@ const mockLogin = vi.mocked(login)
 
 async function fillAndSubmit(email = 'user@mail.com', password = 'secreto') {
   const user = userEvent.setup()
-  await user.type(screen.getByLabelText('Correo Electronico'), email)
+  await user.type(screen.getByLabelText('Correo o usuario'), email)
   await user.type(screen.getByLabelText('Contrasena'), password)
   await user.click(screen.getByRole('button', { name: /iniciar sesion/i }))
   return user
@@ -109,7 +109,7 @@ describe('<LoginForm />', () => {
 
     await user.click(screen.getByRole('button', { name: /iniciar sesion/i }))
 
-    expect(await screen.findByText('El correo electrónico es requerido.')).toBeInTheDocument()
+    expect(await screen.findByText('El correo o usuario es requerido.')).toBeInTheDocument()
     expect(screen.getByText('Ingrese su contraseña.')).toBeInTheDocument()
     expect(mockLogin).not.toHaveBeenCalled()
   })
@@ -161,7 +161,7 @@ describe('<LoginForm />', () => {
     await fillAndSubmit()
 
     expect(await screen.findByText(/validando acceso/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('Correo Electronico')).toBeDisabled()
+    expect(screen.getByLabelText('Correo o usuario')).toBeDisabled()
 
     resolveLogin({ ok: true, destination: '/dashboard' })
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'))
@@ -210,7 +210,7 @@ describe('<LoginForm />', () => {
     expect(warning()).toBeInTheDocument()
 
     // Fuera del campo no se muestra, aunque siga activado.
-    await user.click(screen.getByLabelText('Correo Electronico'))
+    await user.click(screen.getByLabelText('Correo o usuario'))
     expect(warning()).not.toBeInTheDocument()
     await user.click(password)
     expect(warning()).toBeInTheDocument()

@@ -1,16 +1,29 @@
 import { z } from 'zod'
+import { KIOSK_LOGIN_PATTERN } from '@/lib/kiosk/login'
+
+const emailFormat = z.email()
 
 /**
  * Esquema de validacion del formulario de login.
  * Unica fuente de verdad: el tipo del formulario se infiere de aqui.
+ *
+ * El campo se sigue llamando `email`, pero desde SGRH-111 acepta tambien el
+ * usuario de un kiosco: con `@` se valida como correo; sin `@`, con la regla
+ * del usuario de kiosco. El servidor lo traduce al correo interno del kiosco.
  */
 export const loginSchema = z.object({
   email: z
-    .string({ message: 'El correo electrónico es requerido.' })
+    .string({ message: 'El correo o usuario es requerido.' })
     .trim()
     .toLowerCase()
-    .min(1, 'El correo electrónico es requerido.')
-    .email('Ingrese un correo electrónico válido.'),
+    .min(1, 'El correo o usuario es requerido.')
+    .refine(
+      (value) =>
+        value.includes('@')
+          ? emailFormat.safeParse(value).success
+          : KIOSK_LOGIN_PATTERN.test(value),
+      'Ingrese un correo electrónico o un usuario válido.'
+    ),
   password: z.string({ message: 'La contraseña es requerida.' }).min(1, 'Ingrese su contraseña.'),
 })
 

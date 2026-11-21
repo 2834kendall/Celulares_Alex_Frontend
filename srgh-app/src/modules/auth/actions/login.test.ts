@@ -1,11 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { login } from './login'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { createSupabaseAdminClientMock } from '@/test/supabaseMock'
 import type { LoginInput } from '@/modules/auth/types'
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }))
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(),
+}))
+
+function mockKioskLookup(result: { data: unknown; error: unknown }) {
+  const admin = createSupabaseAdminClientMock({ sgrh_kioscos: result })
+  vi.mocked(createAdminClient).mockReturnValue(
+    admin as unknown as ReturnType<typeof createAdminClient>
+  )
+  return admin
+}
 
 const mockCreateClient = vi.mocked(createClient)
 
@@ -36,10 +49,61 @@ describe('login (server action)', () => {
 
   it('rechaza un payload invalido sin llamar a supabase', async () => {
     const client = mockSupabase()
-    const result = await login({ email: 'invalido', password: '' })
+    const result = await login({ email: 'invalido@', password: '' })
 
     expect(result).toEqual({ ok: false, error: 'Datos de acceso invalidos.' })
     expect(client.auth.signInWithPassword).not.toHaveBeenCalled()
+  })
+
+  it('no consulta kioscos cuando se escribe un correo', async () => {
+    mockSupabase({ claims: { app_metadata: { permisos: ['EMPLEADOS_READ'] } } })
+    await login(validInput)
+    expect(createAdminClient).not.toHaveBeenCalled()
+  })
+
+  describe('usuario de kiosco (SGRH-111)', () => {
+    it('traduce el usuario al correo interno del kiosco y lo manda a /kiosco', async () => {
+      const admin = mockKioskLookup({
+        data: { kio_email: 'kiosk-1@kiosk.sgrh.internal' },
+        error: null,
+      })
+      const client = mockSupabase({
+        claims: { app_metadata: { rol: 'KIOSCO', permisos: ['ASISTENCIA_KIOSCO'] } },
+      })
+
+      const result = await login({ email: 'Centro-Caja1', password: 'secreto' })
+
+      expect(admin.from).toHaveBeenCalledWith('sgrh_kioscos')
+      expect(client.auth.signInWithPassword).toHaveBeenCalledWith({
+        email: 'kiosk-1@kiosk.sgrh.internal',
+        password: 'secreto',
+      })
+      expect(result).toEqual({ ok: true, destination: '/kiosco' })
+    })
+
+    it('responde como credenciales invalidas si el usuario no existe', async () => {
+      mockKioskLookup({ data: null, error: null })
+      const client = mockSupabase()
+
+      const result = await login({ email: 'nadie', password: 'secreto' })
+
+      expect(result).toEqual({ ok: false, error: 'Credenciales invalidas.' })
+      expect(client.auth.signInWithPassword).not.toHaveBeenCalled()
+    })
+
+    it('informa un problema de conexion si la busqueda falla', async () => {
+      mockKioskLookup({ data: null, error: { message: 'unavailable' } })
+      const client = mockSupabase()
+
+      const result = await login({ email: 'caja1', password: 'secreto' })
+
+      expect(result).toEqual({
+        ok: false,
+        error:
+          'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.',
+      })
+      expect(client.auth.signInWithPassword).not.toHaveBeenCalled()
+    })
   })
 
   it('redirige a /dashboard cuando el JWT trae permisos', async () => {

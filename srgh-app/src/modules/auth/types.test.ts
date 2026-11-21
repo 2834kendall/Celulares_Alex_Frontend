@@ -19,10 +19,27 @@ describe('loginSchema', () => {
   })
 
   it('rechaza un correo con formato invalido', () => {
-    const result = loginSchema.safeParse({ email: 'no-es-correo', password: 'x' })
+    const result = loginSchema.safeParse({ email: 'usuario@', password: 'x' })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0].message).toBe('Ingrese un correo electrónico válido.')
+      expect(result.error.issues[0].message).toBe(
+        'Ingrese un correo electrónico o un usuario válido.'
+      )
+    }
+  })
+
+  it('acepta el usuario de un kiosco y lo pasa a minusculas (SGRH-111)', () => {
+    const result = loginSchema.parse({ email: '  Centro-Caja1 ', password: 'x' })
+    expect(result.email).toBe('centro-caja1')
+  })
+
+  it('rechaza un usuario de kiosco con caracteres no permitidos', () => {
+    const result = loginSchema.safeParse({ email: 'caja 1', password: 'x' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe(
+        'Ingrese un correo electrónico o un usuario válido.'
+      )
     }
   })
 
@@ -30,7 +47,7 @@ describe('loginSchema', () => {
     const result = loginSchema.safeParse({ email: '   ', password: 'x' })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0].message).toBe('El correo electrónico es requerido.')
+      expect(result.error.issues[0].message).toBe('El correo o usuario es requerido.')
     }
   })
 
@@ -38,7 +55,7 @@ describe('loginSchema', () => {
     const result = loginSchema.safeParse({ password: 'x' })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0].message).toBe('El correo electrónico es requerido.')
+      expect(result.error.issues[0].message).toBe('El correo o usuario es requerido.')
     }
   })
 

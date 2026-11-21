@@ -60,6 +60,22 @@ describe('live kiosk authorization', () => {
     })
     expect(rpc).toHaveBeenCalledWith('sgrh_kiosk_context', { p_auth: 'auth-id', p_empresa: 1 })
   })
+  it('sends the JWT session so a closed session is rejected before the token expires', async () => {
+    rpc.mockResolvedValue({
+      data: { error: 'La sesión del kiosco se cerró. Iniciá sesión de nuevo.' },
+      error: null,
+    })
+    expect(await liveKioskMetadata('auth-id', old, 'session-1')).toMatchObject({
+      sucursal_ids: [],
+      kiosk_denied: true,
+      kiosk_error: expect.stringMatching(/sesión del kiosco se cerró/),
+    })
+    expect(rpc).toHaveBeenCalledWith('sgrh_kiosk_context', {
+      p_auth: 'auth-id',
+      p_empresa: 1,
+      p_session: 'session-1',
+    })
+  })
   it('denies a blocked account even if its signed JWT still grants the permission', async () => {
     rpc.mockResolvedValue({ data: { error: 'Kiosco bloqueado' }, error: null })
     expect(await liveKioskMetadata('auth-id', old)).toMatchObject({
