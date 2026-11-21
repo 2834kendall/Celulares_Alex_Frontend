@@ -1,12 +1,32 @@
+<!-- sgrh-presentation:start -->
+<p align="center"><a href="testing.md" lang="es" hreflang="es"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/lang-es-es-dark.svg"><img src="../assets/readme/lang-es-es-light.svg" alt="Español"></picture></a> <a href="testing.en.md" lang="en" hreflang="en"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/lang-en-es-dark.svg"><img src="../assets/readme/lang-en-es-light.svg" alt="English"></picture></a></p>
+
+<p align="center">
+  <a href="../../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-home-es-dark.svg"><img src="../assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../../srgh-app/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-start-es-dark.svg"><img src="../assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="../README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-docs-es-dark.svg"><img src="../assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="../arquitectura/vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-architecture-es-dark.svg"><img src="../assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="https://github.com/2834kendall/Celulares_Alex_Frontend/actions/workflows/ci.yml"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-ci-es-dark.svg"><img src="../assets/readme/nav-ci-es-light.svg" alt="CI"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/header-tests-es-dark.svg"><img src="../assets/readme/header-tests-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Testing
+
+<!-- sgrh-visual:start -->
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/diagram-tests-es-dark.svg"><img src="../assets/readme/diagram-tests-es-light.svg" width="100%" alt="Lint, tipos, dos shards de Vitest, cobertura y E2E convergen en CI passed."></picture>
+<!-- sgrh-visual:end -->
 
 Vitest + Testing Library. Desde `srgh-app/`:
 
-| comando | qué corre |
-|---|---|
-| `pnpm test` | la suite completa (~3000 tests, ~65 s) |
-| `pnpm test:coverage` | con cobertura de las zonas de seguridad (100 % obligatorio) |
-| `pnpm test:coverage:modules` | lo de arriba + pisos por módulo |
+| comando                                   | qué corre                                                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`                               | la suite completa (~3000 tests, ~65 s)                                                                                            |
+| `pnpm test:coverage`                      | con cobertura de las zonas de seguridad (100 % obligatorio)                                                                       |
+| `pnpm test:coverage:modules`              | lo de arriba + pisos por módulo                                                                                                   |
 | `pnpm test:e2e:prepare` + `pnpm test:e2e` | navegador e integración HTTP contra un Supabase local en Docker (ver [`tests/e2e/README.md`](../../srgh-app/tests/e2e/README.md)) |
 
 ## Convenciones
@@ -36,13 +56,13 @@ soporte (deshabilitar el guard, borrar la línea) y ver que **falle**. Ya pasó 
 
 ## Cobertura
 
-| zona | piso | config |
-|---|---|---|
-| `modules/auth`, `lib/auth`, `lib/permissions`, `lib/storage`, `lib/crypto`, `hooks/usePermisos`, `components/layout/Sidebar` | **100 %** en las cuatro métricas | `vitest.config.ts` |
-| `modules/attendance` | 87 % líneas / 75 % ramas | `vitest.modules.config.ts` |
-| `modules/dashboard` | 72 % / 64 % | `vitest.modules.config.ts` |
-| `modules/recruitment` | 85 % / 77 % | `vitest.modules.config.ts` |
-| `modules/evaluations` | 93 % / 86 % | `vitest.modules.config.ts` |
+| zona                                                                                                                         | piso                             | config                     |
+| ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | -------------------------- |
+| `modules/auth`, `lib/auth`, `lib/permissions`, `lib/storage`, `lib/crypto`, `hooks/usePermisos`, `components/layout/Sidebar` | **100 %** en las cuatro métricas | `vitest.config.ts`         |
+| `modules/attendance`                                                                                                         | 87 % líneas / 75 % ramas         | `vitest.modules.config.ts` |
+| `modules/dashboard`                                                                                                          | 72 % / 64 %                      | `vitest.modules.config.ts` |
+| `modules/recruitment`                                                                                                        | 85 % / 77 %                      | `vitest.modules.config.ts` |
+| `modules/evaluations`                                                                                                        | 93 % / 86 %                      | `vitest.modules.config.ts` |
 
 Si tocás algo en una zona al 100 %, corré `pnpm test:coverage` antes de darlo por cerrado.
 

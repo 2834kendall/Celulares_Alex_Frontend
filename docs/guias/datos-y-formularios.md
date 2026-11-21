@@ -1,3 +1,18 @@
+<!-- sgrh-presentation:start -->
+<p align="center">Contenido en español · <a href="../../README.md" lang="en">English overview</a></p>
+
+<p align="center">
+  <a href="../../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-home-es-dark.svg"><img src="../assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../../srgh-app/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-start-es-dark.svg"><img src="../assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="../README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-docs-es-dark.svg"><img src="../assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="../arquitectura/vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-architecture-es-dark.svg"><img src="../assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-tests-es-dark.svg"><img src="../assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/header-guides-es-dark.svg"><img src="../assets/readme/header-guides-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Datos y formularios
 
 ## Leer y escribir
@@ -36,14 +51,14 @@ Toda pantalla que edita datos pregunta antes de abandonar cambios sin guardar. "
 editando" es la acción principal y tiene el foco; Escape o un clic en el fondo siguen editando.
 Un formulario limpio, o con los cambios revertidos, no pregunta.
 
-| pieza | para qué |
-|---|---|
-| `UnsavedChangesProvider` | en el layout raíz; registra formularios (etiquetas, lectores de estado, raíces del DOM), no copias de los datos |
-| `useProtectedForm` | adaptador para RHF: `unsavedLabel`, valores/archivos/estado externos, `guard.bindRoot`, `guard.confirmLeave`, `guard.acceptChanges`. Su `reset` fija una base limpia nueva |
-| `useUnsavedChanges` | editores con estado local, con soporte para "archivo pendiente" |
-| `useConfirmLeave` | cambios de estado que desmontan un formulario (CRUD en línea, tabs) |
-| `Modal` | X, Escape y fondo solo deciden sobre los formularios de **su** panel |
-| `nextjs-nav-guard` (fijo en 1.1.3) | links, navegación imperativa y Atrás/Adelante del navegador |
+| pieza                              | para qué                                                                                                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UnsavedChangesProvider`           | en el layout raíz; registra formularios (etiquetas, lectores de estado, raíces del DOM), no copias de los datos                                                            |
+| `useProtectedForm`                 | adaptador para RHF: `unsavedLabel`, valores/archivos/estado externos, `guard.bindRoot`, `guard.confirmLeave`, `guard.acceptChanges`. Su `reset` fija una base limpia nueva |
+| `useUnsavedChanges`                | editores con estado local, con soporte para "archivo pendiente"                                                                                                            |
+| `useConfirmLeave`                  | cambios de estado que desmontan un formulario (CRUD en línea, tabs)                                                                                                        |
+| `Modal`                            | X, Escape y fondo solo deciden sobre los formularios de **su** panel                                                                                                       |
+| `nextjs-nav-guard` (fijo en 1.1.3) | links, navegación imperativa y Atrás/Adelante del navegador                                                                                                                |
 
 **Reglas:**
 

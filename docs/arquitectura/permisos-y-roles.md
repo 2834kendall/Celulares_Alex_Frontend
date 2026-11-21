@@ -1,3 +1,18 @@
+<!-- sgrh-presentation:start -->
+<p align="center">Contenido en español · <a href="../../README.md" lang="en">English overview</a></p>
+
+<p align="center">
+  <a href="../../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-home-es-dark.svg"><img src="../assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../../srgh-app/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-start-es-dark.svg"><img src="../assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="../README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-docs-es-dark.svg"><img src="../assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-architecture-es-dark.svg"><img src="../assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="../guias/testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-tests-es-dark.svg"><img src="../assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/header-security-es-dark.svg"><img src="../assets/readme/header-security-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Permisos y roles
 
 ## El modelo
@@ -6,12 +21,12 @@ Las policies **no comparan nombres de rol**. Preguntan por permisos:
 `tiene_permiso('NOMINA_WRITE')`. Los roles son solo un agrupamiento de permisos guardado en
 tablas, así que agregar o cambiar un rol no exige tocar ninguna policy.
 
-| tabla | contiene |
-|---|---|
-| `sgrh_cat_permisos` | el catálogo de permisos |
-| `sgrh_cat_roles` | los roles de cada empresa (`rol_empresa_id`) y las plantillas (sin empresa) |
-| `sgrh_rol_permisos` | la matriz rol → permiso |
-| `sgrh_usuarios_empresa_rol` | qué rol tiene cada usuario en cada empresa, y en qué sucursal |
+| tabla                       | contiene                                                                    |
+| --------------------------- | --------------------------------------------------------------------------- |
+| `sgrh_cat_permisos`         | el catálogo de permisos                                                     |
+| `sgrh_cat_roles`            | los roles de cada empresa (`rol_empresa_id`) y las plantillas (sin empresa) |
+| `sgrh_rol_permisos`         | la matriz rol → permiso                                                     |
+| `sgrh_usuarios_empresa_rol` | qué rol tiene cada usuario en cada empresa, y en qué sucursal               |
 
 **Cada empresa tiene sus roles** y los edita desde Configuración → Roles y permisos
 ([detalle](../../srgh-app/src/modules/settings/docs/roles.md)). Las plantillas y su matriz se
@@ -29,12 +44,12 @@ no tiene ese permiso". Quedan comparaciones con `KIOSCO`, que es del sistema y n
 
 Con los que nace cada empresa:
 
-| plantilla | `uer_sucursal_id` | ve |
-|---|---|---|
-| `ADMIN` | `NULL` | toda su empresa |
-| `GERENTE` | con valor | solo su sucursal (tablas operativas) |
-| `EMPLEADO` | — | solo lo suyo. **Sin permisos de datos, a propósito** |
-| `KIOSCO` | con valor | solo los empleados activos de su sucursal, y solo para marcar |
+| plantilla  | `uer_sucursal_id` | ve                                                            |
+| ---------- | ----------------- | ------------------------------------------------------------- |
+| `ADMIN`    | `NULL`            | toda su empresa                                               |
+| `GERENTE`  | con valor         | solo su sucursal (tablas operativas)                          |
+| `EMPLEADO` | —                 | solo lo suyo. **Sin permisos de datos, a propósito**          |
+| `KIOSCO`   | con valor         | solo los empleados activos de su sucursal, y solo para marcar |
 
 - **El alcance lo decide `uer_sucursal_id`, no el rol.**
 - `SUPERADMIN` se eliminó, y `EMPLEADO` no tiene permisos a propósito. El porqué está en
@@ -84,16 +99,16 @@ ofrecerlo en una pantalla de gestión de roles.
 Inventario del 2026-10-09, re-verificado el 2026-11-07. Son 30 permisos; estos no gatean lo
 que su nombre promete, y **no pueden ofrecerse en una pantalla de roles** hasta resolverlos:
 
-| prioridad | permiso | problema |
-|---|---|---|
-| **P0** | `NOMINA_APPROVE` | 0 usos en RLS y en guards. Todas las acciones de pago piden `NOMINA_WRITE`: **quien calcula la planilla es quien la marca pagada**, y no hay separación de funciones |
-| **P0** | `AUSENCIAS_WRITE` | no gatea nada. Para *registrar* una ausencia hay que tener `AUSENCIAS_APPROVE`. **Decisión de negocio pendiente:** cablearlo (habilita "solicitar sin aprobar", el autoservicio de vacaciones) o borrarlo y dejar dos niveles, Ver y Aprobar |
-| **P0** | `HISTORIAL_READ` | hoy no separa nada: la policy de `sgrh_historial_laboral` lo acepta como alternativa de otro permiso, así que no distingue "ver expedientes" de "ver contratos y salarios". Detalle y arreglo propuesto, en el ticket correspondiente |
-| P1 | `REPORTES_READ` | sin módulo y sin uso: borrarlo o marcarlo reservado |
-| P1 | `COMPROBANTES_READ` | placeholder a propósito (`payroll/page.tsx` muestra "Disponible próximamente") |
-| P1 | `ROLES_WRITE` | nunca es *requerido*: siempre aparece como alternativa de `USUARIOS_WRITE` |
-| P2 | `CATALOGOS_WRITE` | un solo interruptor para seis catálogos de dueños distintos (puestos, tardías, **conceptos de nómina**, rubros, etapas y criterios, tipos de turno). Partirlo por módulo merece ticket propio; mientras tanto, la UI tiene que enumerar los seis |
-| P2 | — | no hay forma de ver Configuración sin poder cambiarla (`/settings` exige uno de cuatro permisos `WRITE`). Un `CONFIGURACION_READ` habilitaría un rol auditor |
+| prioridad | permiso             | problema                                                                                                                                                                                                                                         |
+| --------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **P0**    | `NOMINA_APPROVE`    | 0 usos en RLS y en guards. Todas las acciones de pago piden `NOMINA_WRITE`: **quien calcula la planilla es quien la marca pagada**, y no hay separación de funciones                                                                             |
+| **P0**    | `AUSENCIAS_WRITE`   | no gatea nada. Para _registrar_ una ausencia hay que tener `AUSENCIAS_APPROVE`. **Decisión de negocio pendiente:** cablearlo (habilita "solicitar sin aprobar", el autoservicio de vacaciones) o borrarlo y dejar dos niveles, Ver y Aprobar     |
+| **P0**    | `HISTORIAL_READ`    | hoy no separa nada: la policy de `sgrh_historial_laboral` lo acepta como alternativa de otro permiso, así que no distingue "ver expedientes" de "ver contratos y salarios". Detalle y arreglo propuesto, en el ticket correspondiente            |
+| P1        | `REPORTES_READ`     | sin módulo y sin uso: borrarlo o marcarlo reservado                                                                                                                                                                                              |
+| P1        | `COMPROBANTES_READ` | placeholder a propósito (`payroll/page.tsx` muestra "Disponible próximamente")                                                                                                                                                                   |
+| P1        | `ROLES_WRITE`       | nunca es _requerido_: siempre aparece como alternativa de `USUARIOS_WRITE`                                                                                                                                                                       |
+| P2        | `CATALOGOS_WRITE`   | un solo interruptor para seis catálogos de dueños distintos (puestos, tardías, **conceptos de nómina**, rubros, etapas y criterios, tipos de turno). Partirlo por módulo merece ticket propio; mientras tanto, la UI tiene que enumerar los seis |
+| P2        | —                   | no hay forma de ver Configuración sin poder cambiarla (`/settings` exige uno de cuatro permisos `WRITE`). Un `CONFIGURACION_READ` habilitaría un rol auditor                                                                                     |
 
 Las tres P0 tocan los mismos archivos (`20260101000600_rls_policies.sql` y los guards) y pueden
 ir en una sola migración.

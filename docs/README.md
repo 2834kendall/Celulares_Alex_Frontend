@@ -1,56 +1,79 @@
+<!-- sgrh-presentation:start -->
+<p align="center"><a href="README.md" lang="es" hreflang="es"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/lang-es-es-dark.svg"><img src="assets/readme/lang-es-es-light.svg" alt="Español"></picture></a> <a href="README.en.md" lang="en" hreflang="en"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/lang-en-es-dark.svg"><img src="assets/readme/lang-en-es-light.svg" alt="English"></picture></a></p>
+
+<p align="center">
+  <a href="../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/nav-home-es-dark.svg"><img src="assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../srgh-app/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/nav-start-es-dark.svg"><img src="assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="arquitectura/vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/nav-architecture-es-dark.svg"><img src="assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="guias/testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/nav-tests-es-dark.svg"><img src="assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+  <a href="https://github.com/2834kendall/Celulares_Alex_Frontend/actions/workflows/ci.yml"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/nav-ci-es-dark.svg"><img src="assets/readme/nav-ci-es-light.svg" alt="CI"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/header-docs-es-dark.svg"><img src="assets/readme/header-docs-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Documentación del SGRH
+
+<!-- sgrh-visual:start -->
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/diagram-docs-es-dark.svg"><img src="assets/readme/diagram-docs-es-light.svg" width="100%" alt="Mapa de lectura: ejecutar, entender, modificar y validar el proyecto."></picture>
+<!-- sgrh-visual:end -->
 
 Índice de toda la documentación. Las reglas de cada módulo viven **junto a su código**
 (`srgh-app/src/modules/<módulo>/README.md`); acá solo está lo transversal.
 
-
 ## Por módulo
 
-| módulo | documento | estado |
-|---|---|---|
-| Expedientes | [`modules/employees/README.md`](../srgh-app/src/modules/employees/README.md) | ✅ |
-| Nómina | [`modules/payroll/README.md`](../srgh-app/src/modules/payroll/README.md) | ✅ |
-| Autenticación | [`modules/auth/README.md`](../srgh-app/src/modules/auth/README.md) | ✅ |
-| Usuarios | [`modules/users/README.md`](../srgh-app/src/modules/users/README.md) | ✅ |
-| Archivos | [`modules/storage/README.md`](../srgh-app/src/modules/storage/README.md) | ✅ |
-| Configuración, sucursales y kioscos | [`modules/settings/README.md`](../srgh-app/src/modules/settings/README.md) | ✅ |
-| Cifrado de campos | [`lib/crypto/README.md`](../srgh-app/src/lib/crypto/README.md) | ✅ |
-| UI compartida y marca | [`components/ui/README.md`](../srgh-app/src/components/ui/README.md) | ✅ |
-| Base de datos: proyectos, RLS, migraciones, respaldos | [`supabase/README.md`](../srgh-app/supabase/README.md) | ✅ |
-| Asistencia y kiosco | [`modules/attendance/README.md`](../srgh-app/src/modules/attendance/README.md) | ✅ revisión del dueño pendiente |
-| Horarios | [`modules/schedules/README.md`](../srgh-app/src/modules/schedules/README.md) | ✅ revisión del dueño pendiente |
-| Ausencias | [`modules/absences/README.md`](../srgh-app/src/modules/absences/README.md) | ✅ revisión del dueño pendiente |
-| Reclutamiento | [`modules/recruitment/README.md`](../srgh-app/src/modules/recruitment/README.md) | ✅ revisión del dueño pendiente |
-| Evaluaciones | [`modules/evaluations/README.md`](../srgh-app/src/modules/evaluations/README.md) | ✅ revisión del dueño pendiente |
-| Dashboard | [`modules/dashboard/README.md`](../srgh-app/src/modules/dashboard/README.md) | ✅ revisión del dueño pendiente |
+<!-- sgrh-section-visual:modules:start -->
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/diagram-modules-es-dark.svg"><img src="assets/readme/diagram-modules-es-light.svg" width="100%" alt="Relación entre personas, tiempo, nómina y contexto operativo."></picture>
+<!-- sgrh-section-visual:modules:end -->
+
+| módulo                                                | documento                                                                        | estado                          |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------- |
+| Expedientes                                           | [`modules/employees/README.md`](../srgh-app/src/modules/employees/README.md)     | ✅                              |
+| Nómina                                                | [`modules/payroll/README.md`](../srgh-app/src/modules/payroll/README.md)         | ✅                              |
+| Autenticación                                         | [`modules/auth/README.md`](../srgh-app/src/modules/auth/README.md)               | ✅                              |
+| Usuarios                                              | [`modules/users/README.md`](../srgh-app/src/modules/users/README.md)             | ✅                              |
+| Archivos                                              | [`modules/storage/README.md`](../srgh-app/src/modules/storage/README.md)         | ✅                              |
+| Configuración, sucursales y kioscos                   | [`modules/settings/README.md`](../srgh-app/src/modules/settings/README.md)       | ✅                              |
+| Cifrado de campos                                     | [`lib/crypto/README.md`](../srgh-app/src/lib/crypto/README.md)                   | ✅                              |
+| UI compartida y marca                                 | [`components/ui/README.md`](../srgh-app/src/components/ui/README.md)             | ✅                              |
+| Base de datos: proyectos, RLS, migraciones, respaldos | [`supabase/README.md`](../srgh-app/supabase/README.md)                           | ✅                              |
+| Asistencia y kiosco                                   | [`modules/attendance/README.md`](../srgh-app/src/modules/attendance/README.md)   | ✅ revisión del dueño pendiente |
+| Horarios                                              | [`modules/schedules/README.md`](../srgh-app/src/modules/schedules/README.md)     | ✅ revisión del dueño pendiente |
+| Ausencias                                             | [`modules/absences/README.md`](../srgh-app/src/modules/absences/README.md)       | ✅ revisión del dueño pendiente |
+| Reclutamiento                                         | [`modules/recruitment/README.md`](../srgh-app/src/modules/recruitment/README.md) | ✅ revisión del dueño pendiente |
+| Evaluaciones                                          | [`modules/evaluations/README.md`](../srgh-app/src/modules/evaluations/README.md) | ✅ revisión del dueño pendiente |
+| Dashboard                                             | [`modules/dashboard/README.md`](../srgh-app/src/modules/dashboard/README.md)     | ✅ revisión del dueño pendiente |
 
 ## Arquitectura
 
-| documento | qué tiene |
-|---|---|
-| [visión general](arquitectura/vision-general.md) | stack, organización por módulo, estructura de carpetas, routing |
-| [capas de seguridad](arquitectura/capas-de-seguridad.md) | proxy → guard → RLS → `usePermisos`, patrón de Server Action, principios de las policies |
-| [auth y JWT](arquitectura/auth-y-jwt.md) | usuarios de Auth y de negocio, claims del token, helpers, por qué hay que volver a entrar |
-| [permisos y roles](arquitectura/permisos-y-roles.md) | el modelo, los roles, cómo agregar un permiso |
-| [rendimiento](arquitectura/rendimiento.md) | viajes en serie, `Promise.all`, `router.refresh`, catálogos cacheados |
-| [errores de Postgres](arquitectura/errores-postgres.md) | códigos SQLSTATE y qué muestra la UI |
+| documento                                                | qué tiene                                                                                 |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [visión general](arquitectura/vision-general.md)         | stack, organización por módulo, estructura de carpetas, routing                           |
+| [capas de seguridad](arquitectura/capas-de-seguridad.md) | proxy → guard → RLS → `usePermisos`, patrón de Server Action, principios de las policies  |
+| [auth y JWT](arquitectura/auth-y-jwt.md)                 | usuarios de Auth y de negocio, claims del token, helpers, por qué hay que volver a entrar |
+| [permisos y roles](arquitectura/permisos-y-roles.md)     | el modelo, los roles, cómo agregar un permiso                                             |
+| [rendimiento](arquitectura/rendimiento.md)               | viajes en serie, `Promise.all`, `router.refresh`, catálogos cacheados                     |
+| [errores de Postgres](arquitectura/errores-postgres.md)  | códigos SQLSTATE y qué muestra la UI                                                      |
 
 ## Propuestas
 
-| documento | estado |
-|---|---|
+| documento                                                             | estado                    |
+| --------------------------------------------------------------------- | ------------------------- |
 | [portal público de reclutamiento](propuestas/portal-reclutamiento.md) | para decisión, sin código |
 
 ## Guías
 
-| documento | para |
-|---|---|
-| [crear un módulo](guias/nuevo-modulo.md) | un módulo nuevo o una funcionalidad nueva |
+| documento                                           | para                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------ |
+| [crear un módulo](guias/nuevo-modulo.md)            | un módulo nuevo o una funcionalidad nueva                    |
 | [datos y formularios](guias/datos-y-formularios.md) | leer, escribir, Zod + RHF, protección de cambios sin guardar |
-| [git y calidad](guias/git-y-calidad.md) | ramas, commits, PRs, hooks, Prettier y la trampa de CRLF |
-| [testing](guias/testing.md) | convenciones, cobertura, SQL real, CI |
-| [entorno y Supabase](guias/entorno-y-supabase.md) | variables de entorno, levantar un proyecto desde cero |
-
+| [git y calidad](guias/git-y-calidad.md)             | ramas, commits, PRs, hooks, Prettier y la trampa de CRLF     |
+| [testing](guias/testing.md)                         | convenciones, cobertura, SQL real, CI                        |
+| [entorno y Supabase](guias/entorno-y-supabase.md)   | variables de entorno, levantar un proyecto desde cero        |
 
 ## Reglas para mantener esto ordenado
 
@@ -74,21 +97,27 @@
 # <Módulo>
 
 ## Qué hace
+
 3-5 líneas y las rutas de la app que lo usan.
 
 ## Reglas de negocio
+
 Viñetas cortas, en presente. Lo que un usuario o un dev preguntaría.
 
 ## Flujos
+
 Solo si hay pasos (terminar → liquidar → pagar).
 
 ## Datos
+
 | tabla / RPC | permiso | migración |
 
 ## Trampas
+
 Lo que ya rompió algo, una viñeta cada una.
 
 ## Pendiente
+
 Preguntas de dominio sin resolver.
 ```
 
