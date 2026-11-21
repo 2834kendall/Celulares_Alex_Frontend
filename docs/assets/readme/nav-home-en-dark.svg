@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="146" height="54" viewBox="0 0 146 54" role="img" aria-labelledby="title desc"><title id="title">Overview</title><desc id="desc">SGRH modules, technology and documentation. Illustrative workflows without real personal data.</desc><defs><path id="M650_4f" d="M745 -30Q529.25 -30 376.0 64.5Q222.75 159 141.375 328.0Q60 497 60 720Q60 943 141.375 1112.0Q222.75 1281 376.0 1375.5Q529.25 1470 745 1470Q960.75 1470 1114.0 1375.5Q1267.25 1281 1348.625 1112.0Q1430 943 1430 720Q1430 497 1348.625 328.0Q1267.25 159 1114.0 64.5Q960.75 -30 745 -30ZM745 183Q894 181.5 993.125 248.625Q1092.25 315.75 1141.875 437.25Q1191.5 558.75 1191.5 720Q1191.5 881.25 1141.875 1001.375Q1092.25 1121.5 993.125 1188.5Q894 1255.5 745 1257Q596 1258.5 497.125 1191.5Q398.25 1124.5 348.625 1002.875Q299 881.25 298.5 720Q298 558.75 347.625 438.75Q397.25 318.75 496.625 251.625Q596 184.5 745 183Z"/><path id="M650_76" d="M432 0 40 1080H266L545.5 279.5L824.5 1080H1051L659 0Z"/><path id="M650_65" d="M625 -30Q462.25 -30 339.75 40.875Q217.25 111.75 148.625 237.875Q80 364 80 529.5Q80 706.5 147.375 836.75Q214.75 967 334.625 1038.5Q454.5 1110 613 1110Q779.25 1110 896.0 1032.5Q1012.75 955 1070.125 813.0Q1127.5 671 1114.75 477H890.5V559Q889 741 823.75 826.5Q758.5 912 622 912Q469.75 912 394.125 816.75Q318.5 721.5 318.5 540Q318.5 369 394.125 275.25Q469.75 181.5 613 181.5Q706.5 181.5 774.5 223.5Q842.5 265.5 880 344.5L1101.5 276Q1039.25 130.5 910.375 50.25Q781.5 -30 625 -30ZM246.5 477V649.5H1003.5V477Z"/><path id="M650_72" d="M140 0V1080H339.5V817.5L313.5 851.5Q333.5 904.5 366.25 948.5Q399 992.5 443.5 1021Q483.75 1049.75 533.375 1065.5Q583 1081.25 635.0 1084.75Q687 1088.25 735.5 1080V869.5Q685 883.75 621.625 878.0Q558.25 872.25 506 840Q455.75 810.25 425.125 765.625Q394.5 721 380.5 665.5Q366.5 610 366.5 547V0Z"/><path id="M650_69" d="M160 1250.5V1462.5H385V1250.5ZM160 0V1080H385V0Z"/><path id="M650_77" d="M370 0 40 1081.5 261.5 1080 480 363 700.75 1080H892.25L1113 363L1332 1080H1553L1223 0H1045L796.5 762.5L548 0Z"/><clipPath id="edge"><rect x="1" y="1" width="144" height="52" rx="22"/></clipPath><clipPath id="candidate"><rect x="66" y="986" width="290" height="140"/></clipPath></defs><style>
+.flow{stroke-dasharray:5 27;animation:flow 3s linear infinite}
+.float{animation:float 5s ease-in-out infinite}
+.scan{animation:scan 6s cubic-bezier(.65,0,.35,1) infinite}
+.frame{animation:frame 6s ease-in-out infinite}
+.hand{transform-origin:0 0;animation:hand 18s linear infinite}
+.record{animation:record 9s cubic-bezier(.65,0,.35,1) infinite}
+.draw{stroke-dasharray:80;animation:draw 6s ease-in-out infinite}
+.bar{transform-box:fill-box;transform-origin:left;animation:bar 7s cubic-bezier(.16,1,.3,1) infinite}
+.reveal{animation:reveal 7s ease-in-out infinite}
+.arrow{animation:arrow 2s ease-in-out infinite}
+@keyframes flow{to{stroke-dashoffset:-128}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes scan{0%,12%{transform:translateY(0);opacity:0}20%{opacity:1}70%{transform:translateY(114px);opacity:1}80%,100%{transform:translateY(114px);opacity:0}}
+@keyframes frame{0%,75%,100%{opacity:.45}80%,95%{opacity:1}}
+@keyframes hand{to{transform:rotate(360deg)}}
+@keyframes record{0%,8%{transform:translateX(0);opacity:1}30%,40%{transform:translateX(88px);opacity:1}65%,90%{transform:translateX(176px);opacity:1}96%,100%{transform:translateX(176px);opacity:0}}
+@keyframes draw{0%,65%{stroke-dashoffset:80;opacity:.3}82%,98%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:80;opacity:.3}}
+@keyframes bar{0%,8%,100%{transform:scaleX(.2);opacity:.5}35%,90%{transform:scaleX(1);opacity:1}}
+@keyframes reveal{0%,15%,100%{opacity:.4}38%,90%{opacity:1}}
+@keyframes arrow{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+
+.comet{stroke-dasharray:15 85;animation:comet 3.8s cubic-bezier(.4,0,.2,1) infinite}
+.node-arc{stroke-dasharray:22 78;animation:nodearc 8s linear infinite}
+.mesh{stroke-dasharray:1;animation:mesh 6s ease-in-out infinite}
+.hire-stamp{transform-box:fill-box;transform-origin:center;animation:hire 9s cubic-bezier(.16,1,.3,1) infinite}
+.stage-outline{animation:stage 8s ease-in-out infinite}
+.receipt{stroke-dasharray:50;animation:receipt 6s ease-out infinite}
+@keyframes comet{0%{stroke-dashoffset:115;opacity:.15}20%,75%{opacity:1}100%{stroke-dashoffset:-100;opacity:.15}}
+@keyframes nodearc{0%{stroke-dashoffset:100;opacity:.25}35%,65%{opacity:.9}100%{stroke-dashoffset:-100;opacity:.25}}
+@keyframes mesh{0%,12%{stroke-dashoffset:1;opacity:.2}50%,85%{stroke-dashoffset:0;opacity:.8}100%{stroke-dashoffset:1;opacity:.2}}
+@keyframes hire{0%,60%{opacity:0;transform:scale(.88)}74%,94%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
+@keyframes stage{0%,100%{stroke:#29384f}35%,62%{stroke:#56d5e8}}
+@keyframes receipt{0%,45%{stroke-dashoffset:50}70%,95%{stroke-dashoffset:0}100%{stroke-dashoffset:50}}
+
+@media(prefers-reduced-motion:reduce){*{animation:none!important}.scan,.flow,.comet,.node-arc{display:none}}
+</style><rect x="1" y="1" width="144" height="52" rx="12" fill="#121f33" stroke="#29384f" class="" /><g transform="translate(13 14) scale(0.75)"><path d="M4 13l12-9 12 9M7 13v16h18V13M13 29V19h6v10" fill="none" stroke="#f1f5fc" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="" /></g><g role="img" aria-label="Overview" class="" fill="#f1f5fc" transform="translate(47.00 33) scale(0.0070000 -0.0070000)"><use href="#M650_4f" x="0.00"/><use href="#M650_76" x="1490.00"/><use href="#M650_65" x="2581.00"/><use href="#M650_72" x="3779.50"/><use href="#M650_76" x="4565.00"/><use href="#M650_69" x="5656.00"/><use href="#M650_65" x="6201.00"/><use href="#M650_77" x="7399.50"/></g><path d="M122 27h11m-4-4 4 4-4 4" fill="none" stroke="#f1f5fc" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="arrow" /></svg>

@@ -1,7 +1,26 @@
+<!-- sgrh-presentation:start -->
+<p align="center"><a href="README.md" lang="es" hreflang="es"><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/lang-es-es-dark.svg"><img src="../docs/assets/readme/lang-es-es-light.svg" alt="Español"></picture></a> <a href="README.en.md" lang="en" hreflang="en"><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/lang-en-es-dark.svg"><img src="../docs/assets/readme/lang-en-es-light.svg" alt="English"></picture></a></p>
+
+<p align="center">
+  <a href="../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/nav-home-es-dark.svg"><img src="../docs/assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../docs/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/nav-docs-es-dark.svg"><img src="../docs/assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="../docs/arquitectura/vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/nav-architecture-es-dark.svg"><img src="../docs/assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="../docs/guias/testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/nav-tests-es-dark.svg"><img src="../docs/assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+  <a href="https://github.com/2834kendall/Celulares_Alex_Frontend/actions/workflows/ci.yml"><picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/nav-ci-es-dark.svg"><img src="../docs/assets/readme/nav-ci-es-light.svg" alt="CI"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/header-start-es-dark.svg"><img src="../docs/assets/readme/header-start-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # SGRH — aplicación
 
-La aplicación Next.js del Sistema de Gestión de Recursos Humanos de **Celulares Alex CR** e
-**Infinity CR**. Todos los comandos se corren desde esta carpeta.
+<!-- sgrh-visual:start -->
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../docs/assets/readme/diagram-setup-es-dark.svg"><img src="../docs/assets/readme/diagram-setup-es-light.svg" width="100%" alt="Dependencias, entorno, vínculo a Supabase dev e inicio de la aplicación."></picture>
+<!-- sgrh-visual:end -->
+
+La aplicación Next.js del Sistema de Gestión de Recursos Humanos. Todos los comandos se corren desde esta carpeta.
 
 ## Stack
 

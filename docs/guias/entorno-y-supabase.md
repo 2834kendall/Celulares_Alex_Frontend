@@ -1,3 +1,18 @@
+<!-- sgrh-presentation:start -->
+<p align="center">Contenido en español · <a href="../../README.md" lang="en">English overview</a></p>
+
+<p align="center">
+  <a href="../../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-home-es-dark.svg"><img src="../assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../../srgh-app/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-start-es-dark.svg"><img src="../assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="../README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-docs-es-dark.svg"><img src="../assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="../arquitectura/vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-architecture-es-dark.svg"><img src="../assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-tests-es-dark.svg"><img src="../assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/header-guides-es-dark.svg"><img src="../assets/readme/header-guides-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Entorno local y proyecto de Supabase
 
 ## Requisitos
@@ -13,17 +28,17 @@ pnpm dev                  # http://localhost:3000
 
 ## Variables de entorno (`srgh-app/.env.local`, nunca en el repo)
 
-| variable | para qué |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | cliente de Supabase |
-| `SUPABASE_SECRET_KEY` | cliente admin, solo servidor |
-| `FIELD_ENCRYPTION_KEY`, `FIELD_INDEX_KEY` | cifrado de cuentas bancarias: 32 bytes en base64 cada una. **Si se pierde la primera, los números de cuenta son irrecuperables** ([cifrado](../../srgh-app/src/lib/crypto/README.md)) |
-| `FACE_VECTOR_KEY`, `FACE_TICKET_SECRET`, `NEXT_PUBLIC_FACE_VECTOR_KEY` | reconocimiento facial del kiosco |
-| `NEXT_PUBLIC_FACE_DEBUG`, `NEXT_PUBLIC_FACE_TEST_MODE` | depuración del reconocimiento facial |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | envío de comprobantes. Sin ellas, el pago se marca igual y no se envía nada. Con Gmail, `SMTP_PASS` es una contraseña de aplicación |
-| `NEXT_PUBLIC_SITE_URL` | origen público para metadatos y vistas previas sociales |
-| `KIOSK_EMAIL_DOMAIN` | opcional. Dominio del correo interno de las cuentas de kiosco; por defecto `kiosk.sgrh.internal` ([kioscos](../../srgh-app/src/modules/settings/docs/sucursales-y-kioscos.md)) |
-| `SGRH_DEBUG_TIMING=1` | loguea cada consulta a Supabase con su duración |
+| variable                                                                       | para qué                                                                                                                                                                              |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`             | cliente de Supabase                                                                                                                                                                   |
+| `SUPABASE_SECRET_KEY`                                                          | cliente admin, solo servidor                                                                                                                                                          |
+| `FIELD_ENCRYPTION_KEY`, `FIELD_INDEX_KEY`                                      | cifrado de cuentas bancarias: 32 bytes en base64 cada una. **Si se pierde la primera, los números de cuenta son irrecuperables** ([cifrado](../../srgh-app/src/lib/crypto/README.md)) |
+| `FACE_VECTOR_KEY`, `FACE_TICKET_SECRET`, `NEXT_PUBLIC_FACE_VECTOR_KEY`         | reconocimiento facial del kiosco                                                                                                                                                      |
+| `NEXT_PUBLIC_FACE_DEBUG`, `NEXT_PUBLIC_FACE_TEST_MODE`                         | depuración del reconocimiento facial                                                                                                                                                  |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | envío de comprobantes. Sin ellas, el pago se marca igual y no se envía nada. Con Gmail, `SMTP_PASS` es una contraseña de aplicación                                                   |
+| `NEXT_PUBLIC_SITE_URL`                                                         | origen público para metadatos y vistas previas sociales                                                                                                                               |
+| `KIOSK_EMAIL_DOMAIN`                                                           | opcional. Dominio del correo interno de las cuentas de kiosco; por defecto `kiosk.sgrh.internal` ([kioscos](../../srgh-app/src/modules/settings/docs/sucursales-y-kioscos.md))        |
+| `SGRH_DEBUG_TIMING=1`                                                          | loguea cada consulta a Supabase con su duración                                                                                                                                       |
 
 Las de cifrado se validan en `lib/env.server.ts`.
 

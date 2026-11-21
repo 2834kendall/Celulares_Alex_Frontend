@@ -1,3 +1,18 @@
+<!-- sgrh-presentation:start -->
+<p align="center">Contenido en español · <a href="../../README.md" lang="en">English overview</a></p>
+
+<p align="center">
+  <a href="../../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-home-es-dark.svg"><img src="../assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../../srgh-app/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-start-es-dark.svg"><img src="../assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="../README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-docs-es-dark.svg"><img src="../assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-architecture-es-dark.svg"><img src="../assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="../guias/testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-tests-es-dark.svg"><img src="../assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/header-architecture-es-dark.svg"><img src="../assets/readme/header-architecture-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Rendimiento
 
 ## Lo que cuesta es la cantidad de viajes en serie, no las filas
@@ -36,12 +51,12 @@ hace una página y cuáles van en serie.
 
 ## En la base
 
-| decisión | impacto |
-|---|---|
-| `emp_id` en el JWT | elimina una subconsulta anidada por fila en las tablas operativas |
-| `tiene_permiso()` lee el JWT | elimina dos JOINs por cada evaluación de policy |
-| helpers `STABLE` + envueltos en `(SELECT …)` | se evalúan una vez por consulta, no por fila |
-| índices sobre las columnas de las policies | `20260929120000_indices_historial_laboral.sql`, `20261007120000_indices_nomina.sql` |
+| decisión                                     | impacto                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `emp_id` en el JWT                           | elimina una subconsulta anidada por fila en las tablas operativas                   |
+| `tiene_permiso()` lee el JWT                 | elimina dos JOINs por cada evaluación de policy                                     |
+| helpers `STABLE` + envueltos en `(SELECT …)` | se evalúan una vez por consulta, no por fila                                        |
+| índices sobre las columnas de las policies   | `20260929120000_indices_historial_laboral.sql`, `20261007120000_indices_nomina.sql` |
 
 ## Local es más lento que producción
 

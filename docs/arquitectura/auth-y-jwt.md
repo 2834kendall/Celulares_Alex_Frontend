@@ -1,3 +1,18 @@
+<!-- sgrh-presentation:start -->
+<p align="center">Contenido en español · <a href="../../README.md" lang="en">English overview</a></p>
+
+<p align="center">
+  <a href="../../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-home-es-dark.svg"><img src="../assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../../srgh-app/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-start-es-dark.svg"><img src="../assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="../README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-docs-es-dark.svg"><img src="../assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-architecture-es-dark.svg"><img src="../assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="../guias/testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-tests-es-dark.svg"><img src="../assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/header-security-es-dark.svg"><img src="../assets/readme/header-security-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Auth y JWT con claims propios
 
 Los flujos de login, activación y recuperación están en
@@ -18,21 +33,21 @@ el modelo de negocio y qué lleva el token.
 
 La RLS necesita saber empresa, empleado y permisos en **cada** consulta.
 
-| opción | problema |
-|---|---|
+| opción                            | problema                         |
+| --------------------------------- | -------------------------------- |
 | consultar la base en cada request | latencia extra en toda operación |
-| guardarlo en el frontend | manipulable por el usuario |
-| **claims en el JWT** | firmados, sin consultas extra |
+| guardarlo en el frontend          | manipulable por el usuario       |
+| **claims en el JWT**              | firmados, sin consultas extra    |
 
 `public.custom_access_token_hook` los inyecta en `app_metadata` al emitir el token:
 
-| claim | para qué |
-|---|---|
-| `empresa_id` | aislamiento por empresa en todas las policies |
-| `sucursal_id` | alcance por sucursal. `NULL` = sin restricción |
-| `emp_id` | "es mío" sin subconsultas anidadas por fila, crítico en tablas grandes como las marcas |
-| `rol` | informativo; **las policies no comparan nombres de rol** |
-| `permisos` | array que lee `tiene_permiso()` en memoria, y que usa la UI sin consultar |
+| claim         | para qué                                                                               |
+| ------------- | -------------------------------------------------------------------------------------- |
+| `empresa_id`  | aislamiento por empresa en todas las policies                                          |
+| `sucursal_id` | alcance por sucursal. `NULL` = sin restricción                                         |
+| `emp_id`      | "es mío" sin subconsultas anidadas por fila, crítico en tablas grandes como las marcas |
+| `rol`         | informativo; **las policies no comparan nombres de rol**                               |
+| `permisos`    | array que lee `tiene_permiso()` en memoria, y que usa la UI sin consultar              |
 
 - El hook es `VOLATILE` (Supabase lo exige) y corre como `supabase_auth_admin`, que necesita
   grants explícitos sobre `public`. Sin ellos falla **en silencio** y el token sale sin claims.
@@ -59,11 +74,11 @@ primera sospecha cuando "a alguien no le aparece algo".
 
 ## Dónde se consume en Next
 
-| archivo | uso |
-|---|---|
-| `lib/supabase/server.ts` | cliente de sesión para Server Components y Actions (RLS activa) |
-| `lib/supabase/client.ts` | cliente de navegador |
-| `lib/supabase/admin.ts` | `createAdminClient`, con la secret key; se salta la RLS |
-| `lib/supabase/proxy.ts` | refresco de sesión en el proxy |
+| archivo                          | uso                                                                                                                                                                    |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/supabase/server.ts`         | cliente de sesión para Server Components y Actions (RLS activa)                                                                                                        |
+| `lib/supabase/client.ts`         | cliente de navegador                                                                                                                                                   |
+| `lib/supabase/admin.ts`          | `createAdminClient`, con la secret key; se salta la RLS                                                                                                                |
+| `lib/supabase/proxy.ts`          | refresco de sesión en el proxy                                                                                                                                         |
 | `lib/auth/require-permission.ts` | guard; lee los permisos con `getClaims()` (`getUser()` no los trae, porque viven en el token y no en el registro del usuario), memoizado por request con `React.cache` |
-| `hooks/usePermisos.ts` | permisos del token para la UI |
+| `hooks/usePermisos.ts`           | permisos del token para la UI                                                                                                                                          |

@@ -1,3 +1,18 @@
+<!-- sgrh-presentation:start -->
+<p align="center">Contenido en español · <a href="../../README.md" lang="en">English overview</a></p>
+
+<p align="center">
+  <a href="../../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-home-es-dark.svg"><img src="../assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../../srgh-app/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-start-es-dark.svg"><img src="../assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="../README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-docs-es-dark.svg"><img src="../assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="../arquitectura/vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-architecture-es-dark.svg"><img src="../assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="../guias/testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/nav-tests-es-dark.svg"><img src="../assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme/header-guides-es-dark.svg"><img src="../assets/readme/header-guides-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Propuesta: portal público de reclutamiento
 
 > **Estado: propuesta para decisión, sin código.** Análisis del 2026-08-24, actualizado el
@@ -26,16 +41,16 @@ de terceros**, lo que activa la Ley 8968 y la inscripción ante PRODHAB.
 
 ## Bloques de trabajo que faltan
 
-| bloque | contenido | días-persona (estimación de ago-2026) |
-|---|---|---:|
-| B0 | correcciones de seguridad previas (ver Jira) | 1 – 2 |
-| B1 | modelo de datos (`sgrh_vacantes` y relación con postulaciones) | 3 – 5 |
-| B2 | acceso público y rate limiting (no hay infraestructura para eso) | 4 – 6 |
-| B3 | archivos y antivirus (Supabase no trae; requiere componente externo) | 4 – 6 |
-| B4 | portal público + SEO | 8 – 12 |
-| B6 | cumplimiento legal (consentimiento, privacidad, retención y purga) | 2 – 4 |
-| B7 / B8 | operación, infraestructura (DNS, segundo despliegue) | 5 – 7 |
-| — | QA, endurecimiento y prueba de seguridad | 4 – 6 |
+| bloque  | contenido                                                            | días-persona (estimación de ago-2026) |
+| ------- | -------------------------------------------------------------------- | ------------------------------------: |
+| B0      | correcciones de seguridad previas (ver Jira)                         |                                 1 – 2 |
+| B1      | modelo de datos (`sgrh_vacantes` y relación con postulaciones)       |                                 3 – 5 |
+| B2      | acceso público y rate limiting (no hay infraestructura para eso)     |                                 4 – 6 |
+| B3      | archivos y antivirus (Supabase no trae; requiere componente externo) |                                 4 – 6 |
+| B4      | portal público + SEO                                                 |                                8 – 12 |
+| B6      | cumplimiento legal (consentimiento, privacidad, retención y purga)   |                                 2 – 4 |
+| B7 / B8 | operación, infraestructura (DNS, segundo despliegue)                 |                                 5 – 7 |
+| —       | QA, endurecimiento y prueba de seguridad                             |                                 4 – 6 |
 
 Con el back-office ya hecho, lo que resta es aproximadamente **31 a 48 días-persona**, casi todo
 exclusivo del portal. **No incluye el trámite ante PRODHAB**, que no depende del equipo y es el
@@ -46,14 +61,14 @@ dominio, tiempo de RRHH moderando postulaciones falsas y la renovación ante PRO
 
 ## Decisiones abiertas
 
-| tema | opciones | recomendación del análisis |
-|---|---|---|
-| ¿Se hace el portal? | sí / posponer | el back-office ya resuelve la gestión interna; decidir con el costo real |
-| Antivirus | ClamAV propio / servicio externo / no hacerlo | servicio externo |
-| Rate limiting | tabla propia con TTL / Upstash / WAF de Cloudflare | Cloudflare primero, tabla como respaldo |
-| Identidad del postulante | anónimo / cuenta con magic link | anónimo para postular, enlace firmado para consultar el estado |
-| Formatos | PDF / PDF + DOCX | solo PDF |
-| Ubicación | misma app / subdominio / app separada | app separada; subdominio si se prioriza la simplicidad |
+| tema                     | opciones                                           | recomendación del análisis                                               |
+| ------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------ |
+| ¿Se hace el portal?      | sí / posponer                                      | el back-office ya resuelve la gestión interna; decidir con el costo real |
+| Antivirus                | ClamAV propio / servicio externo / no hacerlo      | servicio externo                                                         |
+| Rate limiting            | tabla propia con TTL / Upstash / WAF de Cloudflare | Cloudflare primero, tabla como respaldo                                  |
+| Identidad del postulante | anónimo / cuenta con magic link                    | anónimo para postular, enlace firmado para consultar el estado           |
+| Formatos                 | PDF / PDF + DOCX                                   | solo PDF                                                                 |
+| Ubicación                | misma app / subdominio / app separada              | app separada; subdominio si se prioriza la simplicidad                   |
 
 **Orden sugerido si se aprueba:** B0 → trámite PRODHAB y textos legales en paralelo → B1 →
 B2, B3, B4 y B8 como una fase con su propia aprobación → prueba de seguridad antes de exponer.

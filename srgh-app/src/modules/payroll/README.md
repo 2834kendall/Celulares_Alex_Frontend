@@ -1,4 +1,24 @@
+<!-- sgrh-presentation:start -->
+<p align="center">Contenido en español · <a href="../../../../README.md" lang="en">English overview</a></p>
+
+<p align="center">
+  <a href="../../../../README.es.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../../../../docs/assets/readme/nav-home-es-dark.svg"><img src="../../../../docs/assets/readme/nav-home-es-light.svg" alt="Inicio"></picture></a>
+  <a href="../../../README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../../../../docs/assets/readme/nav-start-es-dark.svg"><img src="../../../../docs/assets/readme/nav-start-es-light.svg" alt="Instalación"></picture></a>
+  <a href="../../../../docs/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../../../../docs/assets/readme/nav-docs-es-dark.svg"><img src="../../../../docs/assets/readme/nav-docs-es-light.svg" alt="Documentación"></picture></a>
+  <a href="../../../../docs/arquitectura/vision-general.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../../../../docs/assets/readme/nav-architecture-es-dark.svg"><img src="../../../../docs/assets/readme/nav-architecture-es-light.svg" alt="Arquitectura"></picture></a>
+  <a href="../../../../docs/guias/testing.md"><picture><source media="(prefers-color-scheme: dark)" srcset="../../../../docs/assets/readme/nav-tests-es-dark.svg"><img src="../../../../docs/assets/readme/nav-tests-es-light.svg" alt="Pruebas"></picture></a>
+</p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../../docs/assets/readme/header-modules-es-dark.svg"><img src="../../../../docs/assets/readme/header-modules-es-light.svg" width="100%" alt="Documentación del SGRH"></picture>
+
+<!-- sgrh-presentation:end -->
+
 # Nómina (`payroll`)
+
+<!-- sgrh-visual:start -->
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../../docs/assets/readme/diagram-payroll-es-dark.svg"><img src="../../../../docs/assets/readme/diagram-payroll-es-light.svg" width="100%" alt="Borrador, pago por fila y emisión de comprobantes; el período se paga cuando todas las filas están pagadas."></picture>
+<!-- sgrh-visual:end -->
 
 ## Qué hace
 
