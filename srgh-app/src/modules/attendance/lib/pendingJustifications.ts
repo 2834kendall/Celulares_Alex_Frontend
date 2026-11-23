@@ -25,18 +25,17 @@ export interface JustificationQueue {
   resolved: JustificationItem[]
 }
 
+/** Dentro de un dia, como van pasando las marcas. */
+const KIND_ORDER: Record<TardyDay['kind'], number> = { entrada: 0, almuerzo: 1, segundo_bloque: 2 }
+
 function newestFirst(a: JustificationItem, b: JustificationItem) {
-  // Lo de esta semana arriba; dentro del dia, por nombre, y la entrada antes
-  // que el almuerzo de la misma persona.
+  // Lo de esta semana arriba; dentro del dia, por nombre, y las marcas de la
+  // misma persona en el orden en que pasaron.
   return (
     b.date.localeCompare(a.date) ||
     a.employeeName.localeCompare(b.employeeName, 'es') ||
     (a.kind === 'tardia' && b.kind === 'tardia'
-      ? a.day.kind === b.day.kind
-        ? 0
-        : a.day.kind === 'entrada'
-          ? -1
-          : 1
+      ? KIND_ORDER[a.day.kind] - KIND_ORDER[b.day.kind]
       : 0)
   )
 }

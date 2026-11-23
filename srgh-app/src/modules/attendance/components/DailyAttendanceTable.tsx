@@ -18,6 +18,7 @@ import type {
   DailyTardiness,
 } from '@/modules/attendance/actions/getDailyAttendance'
 import { DEFAULT_TARDINESS_COLOR } from '@/modules/attendance/lib/infractions'
+import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
@@ -42,6 +43,12 @@ interface DailyAttendanceTableProps {
 interface EditingTarget {
   row: DailyAttendanceRow
   tipo: MarkType
+  /**
+   * La marca que se corrige, cuando no es la de la fila: la de un bloque de un
+   * dia de varios (SGRH-110). Sin esto el modal tomaria la primera entrada o
+   * la ultima salida, que son las unicas que la fila expone.
+   */
+  mark?: DailyMarkInfo
 }
 
 const MARK_FIELD: Record<
@@ -267,7 +274,30 @@ function EmployeeMeta({ row }: { row: DailyAttendanceRow }) {
  * (cards en movil, tabla en md:) y duplicar las condiciones garantizaba que
  * una se quedara atras al agregar un estado nuevo.
  */
-function StatusBadges({ row }: { row: DailyAttendanceRow }) {
+function StatusBadges({
+  row,
+  canWrite = false,
+  onEditBlockMark,
+}: {
+  row: DailyAttendanceRow
+  canWrite?: boolean
+  onEditBlockMark?: (tipo: MarkType, mark: DailyMarkInfo) => void
+}) {
+  /** La hora de una marca de bloque: con permiso de escritura, abre su correccion. */
+  function blockTime(tipo: MarkType, mark: DailyMarkInfo) {
+    if (!canWrite || !onEditBlockMark) return <Hora value={mark.time} />
+    return (
+      <button
+        type="button"
+        onClick={() => onEditBlockMark(tipo, mark)}
+        aria-label={`Corregir ${tipo === 'entrada' ? 'entrada' : 'salida'} de las ${mark.time}`}
+        className="rounded underline decoration-dotted underline-offset-2 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-brand-600"
+      >
+        <Hora value={mark.time} />
+      </button>
+    )
+  }
+
   return (
     <>
       {row.isDayOff && (
@@ -288,6 +318,44 @@ function StatusBadges({ row }: { row: DailyAttendanceRow }) {
       {row.isOpen && (
         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
           <AlertTriangle className="h-3 w-3" /> Sin salida
+        </span>
+      )}
+      {/* Dia de varios bloques (SGRH-110): la entrada y la salida de la fila
+          son las del primero y el ultimo; aca van todos. */}
+      {row.blocks.length > 1 && (
+        <span
+          title="Bloques del dia"
+          className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600"
+        >
+          {row.blocks.map((block, i) => (
+            <span key={block.entrada.id}>
+              {i > 0 && ' · '}
+              {blockTime('entrada', block.entrada)}–
+              {block.salida ? blockTime('salida', block.salida) : '…'}
+            </span>
+          ))}
+        </span>
+      )}
+      {/* Atraso al entrar al segundo bloque (SGRH-110): la primera entrada ya
+          tiene su punto de color; esta no esta en una celda de la fila. */}
+      {row.secondBlockTardiness && (
+        <span
+          title={
+            row.secondBlockTardiness.isJustified
+              ? `Justificada${row.secondBlockTardiness.justification ? `: ${row.secondBlockTardiness.justification}` : '.'}`
+              : undefined
+          }
+          style={
+            row.secondBlockTardiness.isJustified
+              ? undefined
+              : tardinessChipStyle(row.secondBlockTardiness.tipo.color)
+          }
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
+            row.secondBlockTardiness.isJustified ? 'bg-slate-100 text-slate-500' : ''
+          }`}
+        >
+          2.º bloque +{formatMinutes(row.secondBlockTardiness.diffMinutes)}
+          {row.secondBlockTardiness.isJustified ? ' · justificada' : ''}
         </span>
       )}
       {/* Excesos (SGRH-88): el almuerzo contra su duracion programada, el
@@ -569,7 +637,11 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                     <span className="text-[11px] font-medium tabular-nums text-slate-400">
                       {marcadas} de {MARK_SLOTS.length} marcas
                     </span>
-                    <StatusBadges row={row} />
+                    <StatusBadges
+                      row={row}
+                      canWrite={canWrite}
+                      onEditBlockMark={(tipo, mark) => setEditing({ row, tipo, mark })}
+                    />
                   </div>
                 </li>
               )
@@ -648,7 +720,11 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap items-center gap-1">
-                        <StatusBadges row={row} />
+                        <StatusBadges
+                          row={row}
+                          canWrite={canWrite}
+                          onEditBlockMark={(tipo, mark) => setEditing({ row, tipo, mark })}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -667,7 +743,7 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
 
       {editing &&
         (() => {
-          const mark = editing.row[MARK_FIELD[editing.tipo]]
+          const mark = editing.mark ?? editing.row[MARK_FIELD[editing.tipo]]
           return (
             <ManualMarkModal
               employmentHistoryId={editing.row.employmentHistoryId}

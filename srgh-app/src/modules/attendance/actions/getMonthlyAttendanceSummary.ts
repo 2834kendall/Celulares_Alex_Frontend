@@ -10,6 +10,9 @@ import {
   lunchCountsTowardWarning,
   lunchLateMinutes,
   lunchTardinessOfDay,
+  secondBlockCountsTowardWarning,
+  secondBlockLateMinutes,
+  secondBlockTardinessOfDay,
   tardinessOfDay,
   type TardinessBadge,
 } from '@/modules/attendance/lib/infractions'
@@ -20,8 +23,14 @@ import {
   type GetMonthlyAttendanceSummaryInput,
 } from '@/modules/attendance/types'
 
-/** Que marca llego tarde: la entrada o el regreso del almuerzo (SGRH-88). */
-export type TardinessKind = 'entrada' | 'almuerzo'
+/**
+ * Que marca llego tarde: la entrada, el regreso del almuerzo (SGRH-88) o la
+ * entrada del segundo bloque de un dia partido (SGRH-110).
+ */
+export type TardinessKind = 'entrada' | 'almuerzo' | 'segundo_bloque'
+
+/** Orden dentro de un mismo dia: como van pasando las marcas. */
+const KIND_ORDER: Record<TardinessKind, number> = { entrada: 0, almuerzo: 1, segundo_bloque: 2 }
 
 export interface TardyDay {
   date: string
@@ -183,12 +192,29 @@ export async function getMonthlyAttendanceSummary(
           justification: day.lunchJustificacion,
         })
       }
+
+      // La entrada al segundo bloque tambien es independiente: se puede llegar
+      // a tiempo en la manana y tarde en la tarde (SGRH-110).
+      const tipoSegundoBloque = secondBlockTardinessOfDay(day, gathered.tipos)
+      if (tipoSegundoBloque) {
+        tardyDays.push({
+          date: day.date,
+          kind: 'segundo_bloque',
+          // Con tipo de tardia la hora esperada y la marca existen.
+          time: day.secondBlockEntradaTime!,
+          diffMinutes: secondBlockLateMinutes(day)!,
+          tipo: { nombre: tipoSegundoBloque.nombre, color: tipoSegundoBloque.color },
+          countsTowardWarning: secondBlockCountsTowardWarning(day, gathered.tipos),
+          markId: day.secondBlockMarkId,
+          isJustified: day.isJustifiedSecondBlockTardiness ?? false,
+          justification: day.secondBlockJustificacion,
+        })
+      }
     }
 
-    // Por fecha, y dentro del dia la entrada antes que el almuerzo.
+    // Por fecha, y dentro del dia en el orden en que van pasando las marcas.
     tardyDays.sort(
-      (a, b) =>
-        a.date.localeCompare(b.date) || (a.kind === b.kind ? 0 : a.kind === 'entrada' ? -1 : 1)
+      (a, b) => a.date.localeCompare(b.date) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]
     )
     absentDays.sort((a, b) => a.localeCompare(b))
     justifiedAbsences.sort((a, b) => a.date.localeCompare(b.date))

@@ -8,6 +8,7 @@ import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
 import { getDayAssignments, type DayAssignment } from '@/modules/attendance/lib/workingDay'
+import { secondBlockStart } from '@/modules/attendance/lib/secondBlock'
 import {
   classifyTardiness,
   LUNCH_MINUTES,
@@ -100,6 +101,13 @@ export interface DailyAttendanceRow {
   inicioAlmuerzo: DailyMarkInfo | null
   finAlmuerzo: DailyMarkInfo | null
   salida: DailyMarkInfo | null
+  /**
+   * Un dia de varios bloques (SGRH-110: jornada partida, o un tramo por
+   * sucursal) trae una entrada y una salida por bloque. `entrada` es la del
+   * primero y `salida` la del ultimo; aca van todos, en orden. Vacio en un dia
+   * de un solo bloque.
+   */
+  blocks: { entrada: DailyMarkInfo; salida: DailyMarkInfo | null }[]
   duplicateMarksCount: number
   isOpen: boolean
   /**
@@ -109,6 +117,12 @@ export interface DailyAttendanceRow {
   tardiness: DailyTardiness | null
   /** Tardanza al volver del almuerzo, con el mismo catalogo (SGRH-88). */
   lunchTardiness: DailyTardiness | null
+  /**
+   * Tardanza al entrar al segundo bloque de un dia partido, con el mismo
+   * catalogo (SGRH-110). null si llego a tiempo, no hay segundo bloque o no
+   * marco su entrada.
+   */
+  secondBlockTardiness: DailyTardiness | null
   /**
    * Minutos que el almuerzo se paso de su hora, contada desde la marca de
    * inicio (SGRH-95). null si no se marco completo; 0 si no se paso.
@@ -322,7 +336,13 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
   // Con varios tramos el mismo dia (SGRH-110: uno por sucursal) la fila
   // muestra el que empieza primero: es contra el que se mide la entrada.
   const assignmentByHistoryId = new Map<number, DayAssignment>()
+  // Todos los tramos del dia: de ahi sale cuando empieza el segundo bloque.
+  const assignmentsByHistoryId = new Map<number, DayAssignment[]>()
   for (const a of assignments.data) {
+    const delDia = assignmentsByHistoryId.get(a.employmentHistoryId) ?? []
+    delDia.push(a)
+    assignmentsByHistoryId.set(a.employmentHistoryId, delDia)
+
     const previo = assignmentByHistoryId.get(a.employmentHistoryId)
     const empiezaAntes =
       a.expectedStart !== null &&
@@ -406,7 +426,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
     const assignment = assignmentByHistoryId.get(h.lab_id)
 
-    const journey = groupIntoDayJourney(marksByHistoryId.get(h.lab_id) ?? [])
+    const journey = groupIntoDayJourney(marksByHistoryId.get(h.lab_id) ?? [], { byBlocks: true })
 
     // Cada marca se compara contra SU hora programada: la entrada contra la
     // entrada y el receso contra el suyo (SGRH-88). La salida sigue sin
@@ -449,9 +469,23 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
         : null,
     }
 
+    // El segundo bloque se mide contra su propia hora: la entrada de la tarde
+    // contra la de la tarde, no contra la de la manana (SGRH-110). Sin dia
+    // partido no hay segunda entrada y esto queda en null.
+    const segundoBloque = journey.blocks[1]?.entrada ?? null
+    const segundaEntradaEsperada = secondBlockStart(
+      (assignmentsByHistoryId.get(h.lab_id) ?? [])
+        .filter((a) => !a.isDayOff && !a.isHoliday)
+        .flatMap((a) => [a.expectedStart, a.expectedSecondBlockStart])
+    )
+    const segundaEntrada = markInfo(segundoBloque, segundaEntradaEsperada)
+
     const tardiness = noSeTrabaja
       ? null
       : tardinessOf(entrada, journey.entrada, tipos, justificacionByMarkId)
+    const secondBlockTardiness = noSeTrabaja
+      ? null
+      : tardinessOf(segundaEntrada, segundoBloque, tipos, justificacionByMarkId)
     const lunchTardiness = noSeTrabaja
       ? null
       : tardinessOf(finAlmuerzo, journey.finAlmuerzo, tipos, justificacionByMarkId)
@@ -474,10 +508,18 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       inicioAlmuerzo,
       finAlmuerzo,
       salida: markInfo(journey.salida, null),
+      blocks: journey.blocks.map((b, i) => ({
+        entrada:
+          i === 1 && segundaEntrada
+            ? segundaEntrada
+            : { id: b.entrada.id, time: timeOfDay(b.entrada.fechaHora), diffMinutes: null },
+        salida: markInfo(b.salida, null),
+      })),
       duplicateMarksCount: journey.duplicates.length,
       isOpen: journey.isOpen,
       tardiness,
       lunchTardiness,
+      secondBlockTardiness,
       lunchExcessMinutes:
         inicioAlmuerzo && finAlmuerzo
           ? periodExcessMinutes(inicioAlmuerzo.time, finAlmuerzo.time, LUNCH_MINUTES)

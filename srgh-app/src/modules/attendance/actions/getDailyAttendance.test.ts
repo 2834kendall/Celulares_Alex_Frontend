@@ -234,6 +234,200 @@ describe('getDailyAttendance (server action)', () => {
     expect(row.duplicateMarksCount).toBe(0)
   })
 
+  it('un dia de dos bloques muestra cada bloque y no marca duplicados', async () => {
+    const marca = (id: number, tipo: string, hora: string) => ({
+      mar_id: id,
+      mar_historial_laboral_id: 1,
+      mar_sucursal_id: 100,
+      mar_tipo: tipo,
+      mar_fecha_hora: `${DATE} ${hora}`,
+    })
+
+    useClient(
+      createSupabaseClientMock(
+        mocks({
+          turnos: { data: [assignment()], error: null },
+          plantilla: { data: [{ lab_id: 1 }], error: null },
+          detalle: { data: [ANA_HISTORIAL], error: null },
+          marcas: {
+            data: [
+              marca(1, 'entrada', '08:02:00'),
+              marca(2, 'salida', '12:00:00'),
+              marca(3, 'entrada', '13:00:00'),
+              marca(4, 'salida', '17:00:00'),
+            ],
+            error: null,
+          },
+        })
+      )
+    )
+
+    const result = await getDailyAttendance(DATE)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const row = result.data[0]
+    // La fila muestra la primera entrada (contra la que se mide el atraso) y
+    // la ultima salida; el detalle de cada bloque va en `blocks`.
+    expect(row.entrada).toEqual({ id: 1, time: '08:02', diffMinutes: 2 })
+    expect(row.salida).toEqual({ id: 4, time: '17:00', diffMinutes: null })
+    expect(row.blocks).toEqual([
+      {
+        entrada: { id: 1, time: '08:02', diffMinutes: null },
+        salida: { id: 2, time: '12:00', diffMinutes: null },
+      },
+      {
+        entrada: { id: 3, time: '13:00', diffMinutes: null },
+        salida: { id: 4, time: '17:00', diffMinutes: null },
+      },
+    ])
+    expect(row.duplicateMarksCount).toBe(0)
+    expect(row.isOpen).toBe(false)
+  })
+
+  describe('tardanza del segundo bloque (SGRH-110)', () => {
+    const marca = (id: number, tipo: string, hora: string) => ({
+      mar_id: id,
+      mar_historial_laboral_id: 1,
+      mar_sucursal_id: 100,
+      mar_tipo: tipo,
+      mar_fecha_hora: `${DATE} ${hora}`,
+    })
+
+    const plantillaPartida = {
+      hor_hora_entrada: '07:00:00',
+      hor_hora_entrada_2: '16:00:00',
+      hor_hora_salida_2: '20:00:00',
+    }
+
+    async function filaConMarcas(
+      marcas: unknown[],
+      turnos = [assignment({ sgrh_cat_horarios: plantillaPartida })]
+    ) {
+      const client = createSupabaseClientMock(
+        mocks({
+          turnos: { data: turnos, error: null },
+          plantilla: { data: [{ lab_id: 1 }], error: null },
+          detalle: { data: [ANA_HISTORIAL], error: null },
+          marcas: { data: marcas, error: null },
+        })
+      )
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+      const result = await getDailyAttendance(DATE)
+      if (!result.ok) throw new Error(result.error)
+      return result.data[0]
+    }
+
+    it('mide la entrada de la tarde contra la hora de la tarde, no contra la de la manana', async () => {
+      const row = await filaConMarcas([
+        marca(1, 'entrada', '07:00:00'),
+        marca(2, 'salida', '11:00:00'),
+        marca(3, 'entrada', '16:12:00'),
+        marca(4, 'salida', '20:00:00'),
+      ])
+
+      // La manana fue a tiempo: no hay tardia de entrada, solo la de la tarde.
+      expect(row.tardiness).toBeNull()
+      expect(row.secondBlockTardiness).toMatchObject({
+        tipo: { nombre: 'Tardia grave' },
+        diffMinutes: 12,
+        isJustified: false,
+      })
+      expect(row.blocks[1].entrada).toEqual({ id: 3, time: '16:12', diffMinutes: 12 })
+    })
+
+    it('llegar a la hora del segundo bloque no es tardanza', async () => {
+      const row = await filaConMarcas([
+        marca(1, 'entrada', '07:00:00'),
+        marca(2, 'salida', '11:00:00'),
+        marca(3, 'entrada', '16:00:00'),
+        marca(4, 'salida', '20:00:00'),
+      ])
+
+      expect(row.secondBlockTardiness).toBeNull()
+    })
+
+    it('dos tramos del mismo dia: el segundo se mide contra su propia entrada', async () => {
+      const manana = assignment({ prg_hora_entrada_custom: '08:00:00' })
+      const tarde = assignment({ prg_sucursal_id: 200, prg_hora_entrada_custom: '13:00:00' })
+
+      const row = await filaConMarcas(
+        [
+          marca(1, 'entrada', '08:00:00'),
+          marca(2, 'salida', '12:00:00'),
+          marca(3, 'entrada', '13:07:00'),
+          marca(4, 'salida', '17:00:00'),
+        ],
+        [tarde, manana]
+      )
+
+      expect(row.secondBlockTardiness).toMatchObject({ diffMinutes: 7 })
+    })
+
+    it('un dia de un solo bloque no tiene tardanza de segundo bloque', async () => {
+      const row = await filaConMarcas(
+        [marca(1, 'entrada', '08:00:00'), marca(2, 'salida', '17:00:00')],
+        [assignment()]
+      )
+
+      expect(row.secondBlockTardiness).toBeNull()
+    })
+
+    it('un dia libre no tiene tardanza', async () => {
+      const row = await filaConMarcas(
+        [
+          marca(1, 'entrada', '07:00:00'),
+          marca(2, 'salida', '11:00:00'),
+          marca(3, 'entrada', '16:30:00'),
+          marca(4, 'salida', '20:00:00'),
+        ],
+        [assignment({ prg_es_dia_libre: true, sgrh_cat_horarios: plantillaPartida })]
+      )
+
+      expect(row.secondBlockTardiness).toBeNull()
+    })
+  })
+
+  it('con el segundo bloque sin cerrar, el dia queda abierto', async () => {
+    const marca = (id: number, tipo: string, hora: string) => ({
+      mar_id: id,
+      mar_historial_laboral_id: 1,
+      mar_sucursal_id: 100,
+      mar_tipo: tipo,
+      mar_fecha_hora: `${DATE} ${hora}`,
+    })
+
+    useClient(
+      createSupabaseClientMock(
+        mocks({
+          turnos: { data: [assignment()], error: null },
+          plantilla: { data: [{ lab_id: 1 }], error: null },
+          detalle: { data: [ANA_HISTORIAL], error: null },
+          marcas: {
+            data: [
+              marca(1, 'entrada', '08:00:00'),
+              marca(2, 'salida', '12:00:00'),
+              marca(3, 'entrada', '13:00:00'),
+            ],
+            error: null,
+          },
+        })
+      )
+    )
+
+    const result = await getDailyAttendance(DATE)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data[0].isOpen).toBe(true)
+    expect(result.data[0].salida).toBeNull()
+    expect(result.data[0].blocks[1].salida).toBeNull()
+  })
+
   it('mide el almuerzo desde la marca de inicio, no desde el horario', async () => {
     // El horario programa un almuerzo de 12:00 a 12:30, pero la hora es fija
     // y corre desde la marca: lo toma de 14:10 a 15:15.

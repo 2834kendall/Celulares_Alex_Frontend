@@ -20,6 +20,7 @@ describe('<MyAttendanceHistory />', () => {
         inicioAlmuerzo: null,
         finAlmuerzo: null,
         salida: null,
+        blocks: [],
       },
     ]
 
@@ -39,6 +40,7 @@ describe('<MyAttendanceHistory />', () => {
         inicioAlmuerzo: { time: '12:00' },
         finAlmuerzo: { time: '13:00' },
         salida: { time: '17:00' },
+        blocks: [],
       },
     ]
 
@@ -46,5 +48,29 @@ describe('<MyAttendanceHistory />', () => {
 
     expect(screen.getByText('12:00')).toBeInTheDocument()
     expect(screen.getByText('13:00')).toBeInTheDocument()
+  })
+
+  it('un dia de varios bloques muestra la entrada y la salida de cada uno', () => {
+    const data: MyAttendanceDay[] = [
+      {
+        date: '2026-07-25',
+        entrada: { time: '07:00' },
+        inicioReceso: null,
+        finReceso: null,
+        inicioAlmuerzo: null,
+        finAlmuerzo: null,
+        salida: { time: '20:00' },
+        blocks: [
+          { entrada: { time: '07:00' }, salida: { time: '11:00' } },
+          { entrada: { time: '16:00' }, salida: { time: '20:00' } },
+        ],
+      },
+    ]
+
+    render(<MyAttendanceHistory data={data} />)
+
+    for (const hora of ['07:00', '11:00', '16:00', '20:00']) {
+      expect(screen.getByText(hora)).toBeInTheDocument()
+    }
   })
 })

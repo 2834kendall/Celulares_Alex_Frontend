@@ -115,6 +115,27 @@ describe('saveManualMark (server action)', () => {
     expect(markBuilder.insert).not.toHaveBeenCalled()
   })
 
+  it('al corregir una marca no le reescribe la sucursal donde se hizo', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_marcas_asistencia: { data: null, error: null },
+      sgrh_notificaciones: { data: null, error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    await saveManualMark({ ...validInput, markId: 77 })
+
+    const markBuilder = client.from.mock.results.find(
+      (_r, i) => client.from.mock.calls[i][0] === 'sgrh_marcas_asistencia'
+    )!.value
+    // La fila de un dia con un tramo por sucursal trae la del primer tramo:
+    // si viajara en el update, la marca del segundo bloque cambiaria de tienda.
+    expect(markBuilder.update).toHaveBeenCalledWith(
+      expect.not.objectContaining({ mar_sucursal_id: expect.anything() })
+    )
+  })
+
   it('la cuenta KIOSCO no puede registrar marcas manuales (tiene WRITE, pero no READ)', async () => {
     mockRequirePermission.mockResolvedValue({
       app_metadata: {

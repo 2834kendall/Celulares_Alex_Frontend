@@ -88,6 +88,15 @@ export interface DayForInfraction {
   finAlmuerzoTime?: string | null
   /** Justificacion de la tardanza al volver del almuerzo, sobre su propia marca. */
   isJustifiedLunchTardiness?: boolean
+  /**
+   * "HH:mm" en que debia empezar el segundo bloque del dia, y en que se marco
+   * su entrada (SGRH-110). Opcionales: un dia de un solo bloque no los trae, y
+   * sin las dos no hay con que medir.
+   */
+  secondBlockExpectedStart?: string | null
+  secondBlockEntradaTime?: string | null
+  /** Justificacion de la tardanza del segundo bloque, sobre su propia marca. */
+  isJustifiedSecondBlockTardiness?: boolean
 }
 
 /**
@@ -175,6 +184,47 @@ export function lunchTardinessOfDay(
   return classifyTardiness(atraso, tipos)
 }
 
+/**
+ * Minutos que la entrada del segundo bloque llego despues de su hora. Negativo
+ * o cero si llego a tiempo; null si falta la hora esperada o la marca (SGRH-110).
+ */
+export function secondBlockLateMinutes(day: DayForInfraction): number | null {
+  if (!day.secondBlockExpectedStart || !day.secondBlockEntradaTime) return null
+
+  return diffMinutes(day.secondBlockEntradaTime, day.secondBlockExpectedStart)
+}
+
+/**
+ * Tipo de tardia al entrar al segundo bloque, o null si llego a tiempo, el
+ * dia no aplica o falta la marca o la hora esperada.
+ *
+ * Se clasifica con el MISMO catalogo que la primera entrada, igual que el
+ * regreso del almuerzo: volver 3 minutos tarde a la tarde es una tardia leve
+ * como entrar 3 minutos tarde en la manana. Faltar al segundo bloque (no
+ * marcar) no se cuenta aca: ninguna regla define todavia que es "ausentarse"
+ * a medias.
+ */
+export function secondBlockTardinessOfDay(
+  day: DayForInfraction,
+  tipos: TardinessType[]
+): TardinessType | null {
+  if (day.isJustifiedAbsence || day.isDayOff || day.isHoliday) return null
+
+  const atraso = secondBlockLateMinutes(day)
+  if (atraso === null) return null
+
+  return classifyTardiness(atraso, tipos)
+}
+
+/** Si la tardanza del segundo bloque suma para la advertencia del mes. */
+export function secondBlockCountsTowardWarning(
+  day: DayForInfraction,
+  tipos: TardinessType[]
+): boolean {
+  if (day.isJustifiedSecondBlockTardiness) return false
+  return secondBlockTardinessOfDay(day, tipos)?.cuentaAdvertencia ?? false
+}
+
 /** Si la tardanza al volver del almuerzo suma para la advertencia del mes. */
 export function lunchCountsTowardWarning(day: DayForInfraction, tipos: TardinessType[]): boolean {
   if (day.isJustifiedLunchTardiness) return false
@@ -219,7 +269,9 @@ export function summarizeMonth(
   let ausencias = 0
 
   for (const day of days) {
-    // Un mismo dia puede sumar dos tardias: al entrar y al volver del almuerzo.
+    // Un mismo dia puede sumar varias tardias: al entrar, al volver del
+    // almuerzo y al entrar al segundo bloque (SGRH-110).
+    if (secondBlockCountsTowardWarning(day, tipos)) tardias++
     if (lunchCountsTowardWarning(day, tipos)) tardias++
     if (countsTowardWarning(day, tipos)) tardias++
     else if (classifyDay(day, tipos) === 'ausente') ausencias++

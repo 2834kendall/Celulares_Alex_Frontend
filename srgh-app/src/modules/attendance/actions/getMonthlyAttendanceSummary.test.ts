@@ -112,6 +112,159 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
   })
 
+  it.each([false, true])(
+    'un dia partido llego a tiempo en la manana y tarde en la tarde: cuenta una tardia del segundo bloque (justificada: %s)',
+    async (justified) => {
+      const marca = (
+        id: number,
+        tipo: string,
+        hora: string,
+        extra: Record<string, unknown> = {}
+      ) => ({
+        mar_id: id,
+        mar_historial_laboral_id: 1,
+        mar_tipo: tipo,
+        mar_fecha_hora: `2026-07-05 ${hora}`,
+        mar_tardia_justificada: false,
+        mar_tardia_justificacion: null,
+        ...extra,
+      })
+
+      const client = createSupabaseClientMock({
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_historial_laboral: {
+          data: [
+            {
+              lab_id: 1,
+              lab_empleado_id: 10,
+              lab_sucursal_id: 100,
+              sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+            },
+          ],
+          error: null,
+        },
+        sgrh_cat_tipos_tardia: { data: [], error: null },
+        // Plantilla partida: 07:00-11:00 y 16:00-20:00.
+        sgrh_programacion_semanal: {
+          data: [
+            {
+              prg_historial_laboral_id: 1,
+              prg_sucursal_id: 100,
+              prg_fecha: '2026-07-05',
+              prg_es_dia_libre: false,
+              prg_es_feriado: false,
+              prg_hora_entrada_custom: null,
+              prg_hora_salida_custom: null,
+              sgrh_cat_horarios: {
+                hor_hora_entrada: '07:00:00',
+                hor_hora_entrada_2: '16:00:00',
+                hor_hora_salida_2: '20:00:00',
+              },
+            },
+          ],
+          error: null,
+        },
+        sgrh_ausencias: { data: [], error: null },
+        sgrh_marcas_asistencia: {
+          data: [
+            marca(1, 'entrada', '07:00:00'),
+            marca(2, 'salida', '11:00:00'),
+            marca(3, 'entrada', '16:12:00', {
+              mar_tardia_justificada: justified,
+              mar_tardia_justificacion: justified ? 'Fallo del sistema' : null,
+            }),
+            marca(4, 'salida', '20:00:00'),
+          ],
+          error: null,
+        },
+      })
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+      const result = await getMonthlyAttendanceSummary(validInput)
+      if (!result.ok) throw new Error(result.error)
+
+      // La primera entrada, a su hora, no genera nada; solo la de la tarde.
+      expect(result.data[0].tardyDays).toHaveLength(1)
+      expect(result.data[0].tardyDays[0]).toMatchObject({
+        kind: 'segundo_bloque',
+        date: '2026-07-05',
+        time: '16:12',
+        diffMinutes: 12,
+        markId: 3,
+        isJustified: justified,
+        countsTowardWarning: !justified,
+        justification: justified ? 'Fallo del sistema' : null,
+      })
+      expect(result.data[0]).toMatchObject({ tardias: justified ? 0 : 1, ausencias: 0 })
+    }
+  )
+
+  it('un dia partido con las dos entradas a tiempo no genera tardias', async () => {
+    const marca = (id: number, tipo: string, hora: string) => ({
+      mar_id: id,
+      mar_historial_laboral_id: 1,
+      mar_tipo: tipo,
+      mar_fecha_hora: `2026-07-05 ${hora}`,
+      mar_tardia_justificada: false,
+      mar_tardia_justificacion: null,
+    })
+
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_id: 1,
+            lab_empleado_id: 10,
+            lab_sucursal_id: 100,
+            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
+          },
+        ],
+        error: null,
+      },
+      sgrh_cat_tipos_tardia: { data: [], error: null },
+      sgrh_programacion_semanal: {
+        data: [
+          {
+            prg_historial_laboral_id: 1,
+            prg_sucursal_id: 100,
+            prg_fecha: '2026-07-05',
+            prg_es_dia_libre: false,
+            prg_es_feriado: false,
+            prg_hora_entrada_custom: null,
+            prg_hora_salida_custom: null,
+            sgrh_cat_horarios: {
+              hor_hora_entrada: '07:00:00',
+              hor_hora_entrada_2: '16:00:00',
+              hor_hora_salida_2: '20:00:00',
+            },
+          },
+        ],
+        error: null,
+      },
+      sgrh_ausencias: { data: [], error: null },
+      sgrh_marcas_asistencia: {
+        data: [
+          marca(1, 'entrada', '07:00:00'),
+          marca(2, 'salida', '11:00:00'),
+          marca(3, 'entrada', '15:58:00'),
+          marca(4, 'salida', '20:00:00'),
+        ],
+        error: null,
+      },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getMonthlyAttendanceSummary(validInput)
+    if (!result.ok) throw new Error(result.error)
+
+    expect(result.data[0]).toMatchObject({ tardias: 0, ausencias: 0, tardyDays: [] })
+  })
+
   it('rechaza datos invalidos sin llamar a requirePermission', async () => {
     const result = await getMonthlyAttendanceSummary({ fecha: 'no-es-una-fecha' })
 

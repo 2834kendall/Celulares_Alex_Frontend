@@ -71,7 +71,16 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
                       {formatDay(day.date)}
                     </td>
                     <td className="py-2">
-                      <MarkTime time={day.entrada?.time} />
+                      {day.blocks.length > 1 ? (
+                        day.blocks.map((block, i) => (
+                          <span key={block.entrada.time}>
+                            {i > 0 && ' · '}
+                            <MarkTime time={block.entrada.time} />
+                          </span>
+                        ))
+                      ) : (
+                        <MarkTime time={day.entrada?.time} />
+                      )}
                     </td>
                     <td className="py-2">
                       <MarkTime time={day.inicioReceso?.time} />
@@ -92,7 +101,16 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
                       )}
                     </td>
                     <td className="py-2">
-                      <MarkTime time={day.salida?.time} />
+                      {day.blocks.length > 1 ? (
+                        day.blocks.map((block, i) => (
+                          <span key={block.entrada.time}>
+                            {i > 0 && ' · '}
+                            <MarkTime time={block.salida?.time} />
+                          </span>
+                        ))
+                      ) : (
+                        <MarkTime time={day.salida?.time} />
+                      )}
                     </td>
                   </tr>
                 ))}

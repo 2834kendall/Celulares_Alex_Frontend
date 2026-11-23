@@ -416,4 +416,5 @@ export const DEMO_MY_DAY = describeMyDay({
   inicioAlmuerzo: { time: '12:05' },
   finAlmuerzo: null,
   salida: null,
+  blocks: [],
 })

@@ -83,3 +83,23 @@ describe('buildJustificationQueue', () => {
     expect(pending).toEqual([])
   })
 })
+
+describe('tardia del segundo bloque en la bandeja (SGRH-110)', () => {
+  it('va despues de la entrada y del almuerzo del mismo dia, y se puede justificar', () => {
+    const queue = buildJustificationQueue([
+      row({
+        tardyDays: [
+          tardy({ kind: 'segundo_bloque', time: '16:12', markId: 3 }),
+          tardy({ kind: 'almuerzo', time: '13:10', markId: 2 }),
+          tardy({ kind: 'entrada', time: '08:15', markId: 1 }),
+        ],
+      }),
+    ])
+
+    expect(queue.pending.map((i) => (i.kind === 'tardia' ? i.day.kind : i.kind))).toEqual([
+      'entrada',
+      'almuerzo',
+      'segundo_bloque',
+    ])
+  })
+})

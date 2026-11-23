@@ -255,6 +255,11 @@ describe('gatherMonthlyAttendanceDays', () => {
               finAlmuerzoMarkId: null,
               isJustifiedLunchTardiness: false,
               lunchJustificacion: null,
+              secondBlockExpectedStart: null,
+              secondBlockEntradaTime: null,
+              secondBlockMarkId: null,
+              isJustifiedSecondBlockTardiness: false,
+              secondBlockJustificacion: null,
             },
           ],
         },
@@ -289,6 +294,166 @@ describe('gatherMonthlyAttendanceDays', () => {
     expect(result.ok && result.data[0].days).toEqual([
       expect.objectContaining({ date: '2026-07-01', expectedStart: '08:00', entradaTime: null }),
     ])
+  })
+
+  describe('segundo bloque (SGRH-110)', () => {
+    const marca = (
+      id: number,
+      tipo: string,
+      hora: string,
+      extra: Record<string, unknown> = {}
+    ) => ({
+      mar_id: id,
+      mar_historial_laboral_id: 1,
+      mar_tipo: tipo,
+      mar_fecha_hora: `2026-07-01T${hora}`,
+      mar_tardia_justificada: false,
+      mar_tardia_justificacion: null,
+      ...extra,
+    })
+
+    async function diaDe(client: ClientMock) {
+      const result = await gatherMonthlyAttendanceDays(
+        asClient(client),
+        1,
+        5,
+        '2026-07-01',
+        '2026-07-31',
+        null
+      )
+      if (!result.ok) throw new Error(result.error)
+      return result.data[0].days[0]
+    }
+
+    const plantillaPartida = {
+      hor_hora_entrada: '07:00:00',
+      hor_hora_entrada_2: '16:00:00',
+      hor_hora_salida_2: '20:00:00',
+    }
+
+    it('una plantilla partida mide la segunda entrada contra el inicio de su segundo bloque', async () => {
+      const client = createSupabaseClientMock(
+        anaConUnDia({
+          turnos: {
+            data: [assignment({ sgrh_cat_horarios: plantillaPartida })],
+            error: null,
+          },
+          marcas: {
+            data: [
+              marca(1, 'entrada', '07:00:00'),
+              marca(2, 'salida', '11:00:00'),
+              marca(3, 'entrada', '16:12:00', {
+                mar_tardia_justificada: true,
+                mar_tardia_justificacion: 'Fallo del sistema',
+              }),
+              marca(4, 'salida', '20:00:00'),
+            ],
+            error: null,
+          },
+        })
+      )
+
+      expect(await diaDe(client)).toMatchObject({
+        expectedStart: '07:00',
+        entradaTime: '07:00',
+        secondBlockExpectedStart: '16:00',
+        secondBlockEntradaTime: '16:12',
+        secondBlockMarkId: 3,
+        isJustifiedSecondBlockTardiness: true,
+        secondBlockJustificacion: 'Fallo del sistema',
+      })
+    })
+
+    it('dos tramos en sucursales distintas: el segundo bloque es el del tramo que empieza despues', async () => {
+      const manana = assignment({
+        prg_hora_entrada_custom: '08:00:00',
+        prg_hora_salida_custom: '12:00:00',
+      })
+      const tarde = assignment({
+        prg_sucursal_id: 200,
+        prg_hora_entrada_custom: '13:00:00',
+        prg_hora_salida_custom: '17:00:00',
+      })
+      const client = createSupabaseClientMock(
+        anaConUnDia({
+          // La tarde antes que la manana: el orden de la consulta no importa.
+          turnos: { data: [tarde, manana], error: null },
+          marcas: {
+            data: [
+              marca(1, 'entrada', '08:00:00'),
+              marca(2, 'salida', '12:00:00'),
+              marca(3, 'entrada', '13:20:00'),
+              marca(4, 'salida', '17:00:00'),
+            ],
+            error: null,
+          },
+        })
+      )
+
+      expect(await diaDe(client)).toMatchObject({
+        expectedStart: '08:00',
+        secondBlockExpectedStart: '13:00',
+        secondBlockEntradaTime: '13:20',
+        secondBlockMarkId: 3,
+      })
+    })
+
+    it('un dia de un solo bloque no trae segundo bloque, aunque marque dos veces', async () => {
+      const client = createSupabaseClientMock(
+        anaConUnDia({
+          marcas: {
+            data: [
+              marca(1, 'entrada', '08:00:00'),
+              marca(2, 'salida', '12:00:00'),
+              marca(3, 'entrada', '13:00:00'),
+              marca(4, 'salida', '17:00:00'),
+            ],
+            error: null,
+          },
+        })
+      )
+
+      expect(await diaDe(client)).toMatchObject({
+        secondBlockExpectedStart: null,
+        secondBlockEntradaTime: '13:00',
+      })
+    })
+
+    it('si el segundo bloque no se marco, no hay entrada que medir', async () => {
+      const client = createSupabaseClientMock(
+        anaConUnDia({
+          turnos: {
+            data: [assignment({ sgrh_cat_horarios: plantillaPartida })],
+            error: null,
+          },
+          marcas: {
+            data: [marca(1, 'entrada', '07:00:00'), marca(2, 'salida', '11:00:00')],
+            error: null,
+          },
+        })
+      )
+
+      expect(await diaDe(client)).toMatchObject({
+        secondBlockExpectedStart: '16:00',
+        secondBlockEntradaTime: null,
+        secondBlockMarkId: null,
+      })
+    })
+
+    it('trae tambien las salidas para armar los bloques', async () => {
+      const client = createSupabaseClientMock(anaConUnDia())
+      await diaDe(client)
+
+      const marcasCall = client.from.mock.results.find(
+        (_r, i) => client.from.mock.calls[i][0] === 'sgrh_marcas_asistencia'
+      )!.value
+      expect(marcasCall.in).toHaveBeenCalledWith('mar_tipo', [
+        'entrada',
+        'salida',
+        'inicio_almuerzo',
+        'fin_almuerzo',
+      ])
+    })
   })
 
   it('devuelve el catalogo de la empresa para que el llamador clasifique con las mismas reglas', async () => {
@@ -459,6 +624,11 @@ describe('gatherMonthlyAttendanceDays', () => {
               finAlmuerzoMarkId: null,
               isJustifiedLunchTardiness: false,
               lunchJustificacion: null,
+              secondBlockExpectedStart: null,
+              secondBlockEntradaTime: null,
+              secondBlockMarkId: null,
+              isJustifiedSecondBlockTardiness: false,
+              secondBlockJustificacion: null,
             },
           ],
         },

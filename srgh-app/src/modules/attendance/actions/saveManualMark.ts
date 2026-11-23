@@ -65,7 +65,6 @@ export async function saveManualMark(input: ManualMarkInput): Promise<SaveManual
 
   const payload = {
     mar_historial_laboral_id: employmentHistoryId,
-    mar_sucursal_id: sucursalId,
     mar_tipo: tipo,
     mar_fecha_hora: `${fecha} ${hora}:00`,
     mar_metodo_verificacion: 'MANUAL',
@@ -73,9 +72,15 @@ export async function saveManualMark(input: ManualMarkInput): Promise<SaveManual
     mar_observacion: observacion,
   }
 
+  // Corregir una marca cambia su hora, no donde se hizo: en un dia con un
+  // tramo por sucursal (SGRH-110) la sucursal de la fila es la del primer
+  // tramo, y reescribirla movia a ella la marca del segundo. La sucursal solo
+  // se fija al crear la marca.
   const { error } = markId
     ? await supabase.from('sgrh_marcas_asistencia').update(payload).eq('mar_id', markId)
-    : await supabase.from('sgrh_marcas_asistencia').insert(payload)
+    : await supabase
+        .from('sgrh_marcas_asistencia')
+        .insert({ ...payload, mar_sucursal_id: sucursalId })
 
   if (error) {
     return { ok: false, error: 'No se pudo guardar la marca.' }

@@ -27,6 +27,12 @@ export interface MyAttendanceDay {
   inicioAlmuerzo: MyAttendanceDayMark | null
   finAlmuerzo: MyAttendanceDayMark | null
   salida: MyAttendanceDayMark | null
+  /**
+   * Un dia de varios bloques (SGRH-110) trae una entrada y una salida por
+   * bloque: `entrada` es la del primero y `salida` la del ultimo. Vacio en un
+   * dia de un solo bloque.
+   */
+  blocks: { entrada: MyAttendanceDayMark; salida: MyAttendanceDayMark | null }[]
 }
 
 export type GetMyMarksResult = { ok: true; data: MyAttendanceDay[] } | { ok: false; error: string }
@@ -81,7 +87,7 @@ export async function getMyMarks(): Promise<GetMyMarksResult> {
   const days: MyAttendanceDay[] = Array.from(marksByDate.entries())
     .sort(([a], [b]) => b.localeCompare(a))
     .map(([date, marks]) => {
-      const journey = groupIntoDayJourney(marks)
+      const journey = groupIntoDayJourney(marks, { byBlocks: true })
 
       function markOf(mark: RawMark | null): MyAttendanceDayMark | null {
         return mark ? { time: timeOfDay(mark.fechaHora) } : null
@@ -95,6 +101,10 @@ export async function getMyMarks(): Promise<GetMyMarksResult> {
         inicioAlmuerzo: markOf(journey.inicioAlmuerzo),
         finAlmuerzo: markOf(journey.finAlmuerzo),
         salida: markOf(journey.salida),
+        blocks: journey.blocks.map((b) => ({
+          entrada: { time: timeOfDay(b.entrada.fechaHora) },
+          salida: markOf(b.salida),
+        })),
       }
     })
 
