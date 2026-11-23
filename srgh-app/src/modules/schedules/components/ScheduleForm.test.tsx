@@ -79,7 +79,7 @@ describe('<ScheduleForm />', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /crear horario/i }))
 
-    expect(await screen.findByText(/3 characters/i)).toBeInTheDocument()
+    expect(await screen.findByText(/al menos 3 caracteres/i)).toBeInTheDocument()
     expect(mockCreateSchedule).not.toHaveBeenCalled()
   })
 
