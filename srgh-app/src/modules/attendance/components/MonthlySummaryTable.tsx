@@ -43,7 +43,12 @@ function initials(fullName: string) {
 }
 
 function hasIncidents(row: MonthlyEmployeeSummary) {
-  return row.tardyDays.length > 0 || row.absentDays.length > 0 || row.justifiedAbsences.length > 0
+  return (
+    row.tardyDays.length > 0 ||
+    row.absentDays.length > 0 ||
+    row.absentSecondBlockDays.length > 0 ||
+    row.justifiedAbsences.length > 0
+  )
 }
 
 /** Todos los dias de una persona, pendientes y resueltos, lo mas reciente primero. */

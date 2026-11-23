@@ -10,6 +10,7 @@ import {
   lunchCountsTowardWarning,
   lunchLateMinutes,
   lunchTardinessOfDay,
+  secondBlockAbsentOfDay,
   secondBlockCountsTowardWarning,
   secondBlockLateMinutes,
   secondBlockTardinessOfDay,
@@ -72,6 +73,12 @@ export interface MonthlyEmployeeSummary {
   tardyDays: TardyDay[]
   /** Dias de turno sin marca y sin ausencia registrada: no justificados. */
   absentDays: string[]
+  /**
+   * Dias en que vino al primer bloque pero no entro al segundo (SGRH-110).
+   * Cuentan como ausencia igual que los de arriba; van aparte porque no
+   * "no vino": vino y falto a una parte, y la bandeja lo tiene que decir.
+   */
+  absentSecondBlockDays: string[]
   /**
    * Dias de turno sin marca cubiertos por una ausencia aprobada (permiso,
    * incapacidad, vacaciones...). No suman, pero se muestran para que el
@@ -136,6 +143,7 @@ export async function getMonthlyAttendanceSummary(
   const data: MonthlyEmployeeSummary[] = gathered.data.map((employee) => {
     const tardyDays: TardyDay[] = []
     const absentDays: string[] = []
+    const absentSecondBlockDays: string[] = []
     const justifiedAbsences: JustifiedAbsenceDay[] = []
 
     for (const day of employee.days) {
@@ -193,6 +201,9 @@ export async function getMonthlyAttendanceSummary(
         })
       }
 
+      // Vino a la manana y no volvio por la tarde: falto al segundo bloque.
+      if (secondBlockAbsentOfDay(day)) absentSecondBlockDays.push(day.date)
+
       // La entrada al segundo bloque tambien es independiente: se puede llegar
       // a tiempo en la manana y tarde en la tarde (SGRH-110).
       const tipoSegundoBloque = secondBlockTardinessOfDay(day, gathered.tipos)
@@ -217,6 +228,7 @@ export async function getMonthlyAttendanceSummary(
       (a, b) => a.date.localeCompare(b.date) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]
     )
     absentDays.sort((a, b) => a.localeCompare(b))
+    absentSecondBlockDays.sort((a, b) => a.localeCompare(b))
     justifiedAbsences.sort((a, b) => a.date.localeCompare(b.date))
 
     return {
@@ -226,9 +238,10 @@ export async function getMonthlyAttendanceSummary(
       // Solo las que suman: es el numero que dispara la advertencia del
       // mes, y el que el encargado necesita ver como "deuda" real.
       tardias: tardyDays.filter((d) => d.countsTowardWarning).length,
-      ausencias: absentDays.length,
+      ausencias: absentDays.length + absentSecondBlockDays.length,
       tardyDays,
       absentDays,
+      absentSecondBlockDays,
       justifiedAbsences,
     }
   })

@@ -15,7 +15,9 @@ interface ItemBase {
  */
 export type JustificationItem =
   | (ItemBase & { kind: 'tardia'; day: TardyDay })
-  | (ItemBase & { kind: 'ausencia' })
+  // `bloque` solo viene cuando faltó al segundo bloque de un día partido
+  // (SGRH-110): vino al primero, y la fila tiene que decirlo.
+  | (ItemBase & { kind: 'ausencia'; bloque?: 'segundo' })
   | (ItemBase & { kind: 'ausencia_justificada'; tipoNombre: string })
 
 export interface JustificationQueue {
@@ -64,6 +66,10 @@ export function buildJustificationQueue(rows: MonthlyEmployeeSummary[]): Justifi
 
     for (const date of row.absentDays) {
       pending.push({ ...base, kind: 'ausencia', date })
+    }
+
+    for (const date of row.absentSecondBlockDays) {
+      pending.push({ ...base, kind: 'ausencia', date, bloque: 'segundo' })
     }
 
     for (const absence of row.justifiedAbsences) {

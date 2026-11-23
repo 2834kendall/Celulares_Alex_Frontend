@@ -73,7 +73,7 @@ export function IncidentRow({ item, showName = false, action }: IncidentRowProps
       </>
     )
   } else if (item.kind === 'ausencia') {
-    title = 'No vino y no marco'
+    title = item.bloque === 'segundo' ? 'No entro al segundo bloque' : 'No vino y no marco'
     tags = <span className={`${PILL} bg-rose-50 text-rose-700`}>Ausencia</span>
   } else {
     icon = <CalendarCheck2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />

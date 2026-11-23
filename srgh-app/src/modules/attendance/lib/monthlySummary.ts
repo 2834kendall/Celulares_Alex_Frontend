@@ -469,6 +469,9 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
         // empezaba (SGRH-110). Los bloques salen de alternar entrada/salida;
         // si las marcas no alternan no hay segundo bloque que medir.
         const diaKey = `${h.lab_id}|${a.prg_fecha}`
+        const secondBlockExpectedStart = secondBlockStart(
+          blockStartsByHistAndDate.get(diaKey) ?? []
+        )
         const segundaEntradaMarca =
           groupIntoDayJourney(blockMarksByHistAndDate.get(diaKey) ?? [], { byBlocks: true })
             .blocks[1]?.entrada ?? null
@@ -498,7 +501,17 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
           finAlmuerzoMarkId: finAlmuerzo?.markId ?? null,
           isJustifiedLunchTardiness: finAlmuerzo?.justificada ?? false,
           lunchJustificacion: finAlmuerzo?.justificacion ?? null,
-          secondBlockExpectedStart: secondBlockStart(blockStartsByHistAndDate.get(diaKey) ?? []),
+          secondBlockExpectedStart,
+          entradaCount: (blockMarksByHistAndDate.get(diaKey) ?? []).filter(
+            (m) => m.tipo === 'entrada'
+          ).length,
+          // Hoy el segundo bloque todavia puede estar por empezar: solo se
+          // da por faltado cuando ya paso el minuto de la primera tardia,
+          // igual que el primer bloque (mas abajo, en el filtro del dia).
+          secondBlockDue:
+            a.prg_fecha !== today ||
+            !secondBlockExpectedStart ||
+            classifyTardiness(diffMinutes(nowTime, secondBlockExpectedStart), tipos) !== null,
           secondBlockEntradaTime: segundaEntrada?.time ?? null,
           secondBlockMarkId: segundaEntrada?.markId ?? null,
           isJustifiedSecondBlockTardiness: segundaEntrada?.justificada ?? false,

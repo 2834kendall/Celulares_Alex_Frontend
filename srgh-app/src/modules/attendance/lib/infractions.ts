@@ -97,6 +97,18 @@ export interface DayForInfraction {
   secondBlockEntradaTime?: string | null
   /** Justificacion de la tardanza del segundo bloque, sobre su propia marca. */
   isJustifiedSecondBlockTardiness?: boolean
+  /**
+   * Cuantas entradas se marcaron ese dia. Con dos o mas el colaborador si
+   * volvio, aunque las marcas no alternen y no se pueda emparejar el segundo
+   * bloque (SGRH-110): ahi no se sabe que falto, asi que no se acusa.
+   */
+  entradaCount?: number
+  /**
+   * false mientras todavia no se cierra la ventana en que el segundo bloque
+   * habria sido tardia: un colaborador que sigue en su primer bloque no ha
+   * faltado al segundo. Ausente se lee como true (cualquier dia pasado).
+   */
+  secondBlockDue?: boolean
 }
 
 /**
@@ -216,6 +228,24 @@ export function secondBlockTardinessOfDay(
   return classifyTardiness(atraso, tipos)
 }
 
+/**
+ * Si el colaborador falto a su segundo bloque: vino al primero, tenia un
+ * segundo programado y no entro a el (SGRH-110). Se mide igual que el primero:
+ * programado, vencido y sin marca es una ausencia.
+ *
+ * Quien faltó a TODO el dia ya es una ausencia (classifyDay), y contarlo otra
+ * vez por el segundo bloque seria contar dos ausencias por un solo dia. Un dia
+ * libre, un feriado o una ausencia aprobada tampoco cuentan.
+ */
+export function secondBlockAbsentOfDay(day: DayForInfraction): boolean {
+  if (day.isJustifiedAbsence || day.isDayOff || day.isHoliday) return false
+  if (!day.secondBlockExpectedStart || !day.entradaTime) return false
+  if (day.secondBlockEntradaTime) return false
+  if ((day.entradaCount ?? 1) >= 2) return false
+
+  return day.secondBlockDue ?? true
+}
+
 /** Si la tardanza del segundo bloque suma para la advertencia del mes. */
 export function secondBlockCountsTowardWarning(
   day: DayForInfraction,
@@ -275,6 +305,8 @@ export function summarizeMonth(
     if (lunchCountsTowardWarning(day, tipos)) tardias++
     if (countsTowardWarning(day, tipos)) tardias++
     else if (classifyDay(day, tipos) === 'ausente') ausencias++
+    // Faltar al segundo bloque es ausencia, igual que al primero (SGRH-110).
+    if (secondBlockAbsentOfDay(day)) ausencias++
   }
 
   return { tardias, ausencias }

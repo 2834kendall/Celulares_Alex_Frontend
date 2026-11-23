@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_TARDINESS_TYPES,
   lunchCountsTowardWarning,
+  secondBlockAbsentOfDay,
   secondBlockCountsTowardWarning,
   secondBlockLateMinutes,
   secondBlockTardinessOfDay,
   lunchLateMinutes,
   lunchTardinessOfDay,
   periodExcessMinutes,
+  shouldWarn,
   summarizeMonth,
   type DayForInfraction,
 } from './infractions'
@@ -213,5 +215,56 @@ describe('tardanza del segundo bloque (SGRH-110)', () => {
       tardias: 1,
       ausencias: 0,
     })
+  })
+})
+
+describe('ausencia del segundo bloque (SGRH-110)', () => {
+  /** Vino a la manana (07:00), tenia un segundo bloque a las 16:00 y no entro. */
+  const faltoAlSegundo = (overrides: Partial<DayForInfraction> = {}) =>
+    day({
+      entradaTime: '07:00',
+      secondBlockExpectedStart: '16:00',
+      secondBlockEntradaTime: null,
+      entradaCount: 1,
+      ...overrides,
+    })
+
+  it('venir al primer bloque y no entrar al segundo es una ausencia', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo())).toBe(true)
+  })
+
+  it('entrar al segundo bloque, aunque sea tarde, no es ausencia', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ secondBlockEntradaTime: '16:40' }))).toBe(false)
+  })
+
+  it('un dia de un solo bloque no tiene segundo al que faltar', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ secondBlockExpectedStart: null }))).toBe(false)
+  })
+
+  it('faltar a todo el dia ya es una ausencia: no se cuenta otra por el segundo bloque', () => {
+    const todoElDia = faltoAlSegundo({ entradaTime: null })
+
+    expect(secondBlockAbsentOfDay(todoElDia)).toBe(false)
+    expect(summarizeMonth([todoElDia], TIPOS)).toEqual({ tardias: 0, ausencias: 1 })
+  })
+
+  it('un dia libre, un feriado o una ausencia aprobada no cuentan', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ isDayOff: true }))).toBe(false)
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ isHoliday: true }))).toBe(false)
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ isJustifiedAbsence: true }))).toBe(false)
+  })
+
+  it('con dos entradas que no se pueden emparejar no se acusa: volvio, aunque no se sepa a que hora', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ entradaCount: 2 }))).toBe(false)
+  })
+
+  it('mientras no vence el segundo bloque no se da por faltado', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ secondBlockDue: false }))).toBe(false)
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ secondBlockDue: true }))).toBe(true)
+  })
+
+  it('suma una ausencia al mes, que es lo que dispara la advertencia', () => {
+    expect(summarizeMonth([faltoAlSegundo()], TIPOS)).toEqual({ tardias: 0, ausencias: 1 })
+    expect(shouldWarn(summarizeMonth([faltoAlSegundo()], TIPOS))).toBe(true)
   })
 })

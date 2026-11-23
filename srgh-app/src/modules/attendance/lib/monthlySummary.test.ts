@@ -256,6 +256,8 @@ describe('gatherMonthlyAttendanceDays', () => {
               isJustifiedLunchTardiness: false,
               lunchJustificacion: null,
               secondBlockExpectedStart: null,
+              entradaCount: 1,
+              secondBlockDue: true,
               secondBlockEntradaTime: null,
               secondBlockMarkId: null,
               isJustifiedSecondBlockTardiness: false,
@@ -438,6 +440,77 @@ describe('gatherMonthlyAttendanceDays', () => {
         secondBlockEntradaTime: null,
         secondBlockMarkId: null,
       })
+    })
+
+    it('cuenta las entradas del dia, aunque no se puedan emparejar en bloques', async () => {
+      const client = createSupabaseClientMock(
+        anaConUnDia({
+          turnos: {
+            data: [assignment({ sgrh_cat_horarios: plantillaPartida })],
+            error: null,
+          },
+          marcas: {
+            data: [
+              // Dos entradas seguidas, sin salida en medio: no alternan.
+              marca(1, 'entrada', '07:00:00'),
+              marca(2, 'entrada', '16:00:00'),
+            ],
+            error: null,
+          },
+        })
+      )
+
+      expect(await diaDe(client)).toMatchObject({ entradaCount: 2, secondBlockEntradaTime: null })
+    })
+
+    it('un dia pasado con el segundo bloque programado ya esta vencido', async () => {
+      const client = createSupabaseClientMock(
+        anaConUnDia({
+          turnos: {
+            data: [assignment({ sgrh_cat_horarios: plantillaPartida })],
+            error: null,
+          },
+          marcas: { data: [marca(1, 'entrada', '07:00:00')], error: null },
+        })
+      )
+
+      expect(await diaDe(client)).toMatchObject({ entradaCount: 1, secondBlockDue: true })
+    })
+
+    it('hoy el segundo bloque no vence hasta que pasa su primera tardia', async () => {
+      vi.useFakeTimers()
+      // 14:00 en Costa Rica (UTC-6): el segundo bloque (16:00) no ha empezado.
+      vi.setSystemTime(new Date('2026-07-01T20:00:00Z'))
+
+      const client = createSupabaseClientMock(
+        anaConUnDia({
+          turnos: {
+            data: [assignment({ sgrh_cat_horarios: plantillaPartida })],
+            error: null,
+          },
+          marcas: { data: [marca(1, 'entrada', '07:00:00')], error: null },
+        })
+      )
+
+      expect(await diaDe(client)).toMatchObject({ secondBlockDue: false })
+    })
+
+    it('hoy, ya pasado el minuto de la primera tardia del segundo bloque, vence', async () => {
+      vi.useFakeTimers()
+      // 16:05 en Costa Rica: ya habria sido tardia.
+      vi.setSystemTime(new Date('2026-07-01T22:05:00Z'))
+
+      const client = createSupabaseClientMock(
+        anaConUnDia({
+          turnos: {
+            data: [assignment({ sgrh_cat_horarios: plantillaPartida })],
+            error: null,
+          },
+          marcas: { data: [marca(1, 'entrada', '07:00:00')], error: null },
+        })
+      )
+
+      expect(await diaDe(client)).toMatchObject({ secondBlockDue: true })
     })
 
     it('trae tambien las salidas para armar los bloques', async () => {
@@ -625,6 +698,8 @@ describe('gatherMonthlyAttendanceDays', () => {
               isJustifiedLunchTardiness: false,
               lunchJustificacion: null,
               secondBlockExpectedStart: null,
+              entradaCount: 0,
+              secondBlockDue: true,
               secondBlockEntradaTime: null,
               secondBlockMarkId: null,
               isJustifiedSecondBlockTardiness: false,

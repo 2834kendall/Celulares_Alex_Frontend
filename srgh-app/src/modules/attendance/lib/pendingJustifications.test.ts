@@ -29,6 +29,7 @@ function row(overrides: Partial<MonthlyEmployeeSummary>): MonthlyEmployeeSummary
     ausencias: 0,
     tardyDays: [],
     absentDays: [],
+    absentSecondBlockDays: [],
     justifiedAbsences: [],
     ...overrides,
   }
@@ -101,5 +102,19 @@ describe('tardia del segundo bloque en la bandeja (SGRH-110)', () => {
       'almuerzo',
       'segundo_bloque',
     ])
+  })
+})
+
+describe('ausencia del segundo bloque en la bandeja (SGRH-110)', () => {
+  it('entra como pendiente y se distingue de no haber venido', () => {
+    const queue = buildJustificationQueue([
+      row({ absentDays: ['2026-07-05'], absentSecondBlockDays: ['2026-07-09'] }),
+    ])
+
+    expect(queue.pending).toEqual([
+      expect.objectContaining({ kind: 'ausencia', date: '2026-07-09', bloque: 'segundo' }),
+      expect.objectContaining({ kind: 'ausencia', date: '2026-07-05' }),
+    ])
+    expect(queue.pending[1]).not.toHaveProperty('bloque')
   })
 })

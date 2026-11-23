@@ -35,6 +35,7 @@ function makeRow(overrides: Partial<MonthlyEmployeeSummary> = {}): MonthlyEmploy
     ausencias: 0,
     tardyDays: [],
     absentDays: [],
+    absentSecondBlockDays: [],
     justifiedAbsences: [],
     ...overrides,
   }
@@ -115,6 +116,18 @@ describe('<MonthlySummaryTable />', () => {
     await user.click(fila)
 
     expect(screen.queryByText('Tardia grave')).not.toBeInTheDocument()
+  })
+
+  it('una falta al segundo bloque se cuenta y se lee distinta a no haber venido', async () => {
+    const user = userEvent.setup()
+    const row = makeRow({ ausencias: 1, absentSecondBlockDays: ['2026-07-09'] })
+    render(<MonthlySummaryTable monthISO="2026-07-01" rows={[row]} />)
+
+    // Aparece entre quienes tienen incidencias aunque no tenga nada mas.
+    await user.click(screen.getByRole('button', { name: /Ana Perez/ }))
+
+    expect(screen.getByText('No entro al segundo bloque')).toBeInTheDocument()
+    expect(screen.queryByText('No vino y no marco')).not.toBeInTheDocument()
   })
 
   it('es solo consulta: muestra lo justificado y no ofrece justificar', async () => {
