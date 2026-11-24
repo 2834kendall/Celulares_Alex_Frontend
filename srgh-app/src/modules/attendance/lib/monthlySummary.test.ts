@@ -269,6 +269,28 @@ describe('gatherMonthlyAttendanceDays', () => {
     expect(programacionCall.in).toHaveBeenCalledWith('prg_sucursal_id', [100])
   })
 
+  it('un dia de dos tramos (SGRH-110) es un solo dia, medido contra el que empieza primero', async () => {
+    // La tarde (13:00) viene antes en la consulta: el orden no debe importar.
+    const tarde = assignment({ prg_sucursal_id: 200, prg_hora_entrada_custom: '13:00:00' })
+    const manana = assignment({ prg_hora_entrada_custom: '08:00:00' })
+    const client = createSupabaseClientMock(
+      anaConUnDia({ turnos: { data: [tarde, manana], error: null } })
+    )
+
+    const result = await gatherMonthlyAttendanceDays(
+      asClient(client),
+      1,
+      5,
+      '2026-07-01',
+      '2026-07-31',
+      null
+    )
+
+    expect(result.ok && result.data[0].days).toEqual([
+      expect.objectContaining({ date: '2026-07-01', expectedStart: '08:00', entradaTime: null }),
+    ])
+  })
+
   it('devuelve el catalogo de la empresa para que el llamador clasifique con las mismas reglas', async () => {
     const catalogo = [
       {

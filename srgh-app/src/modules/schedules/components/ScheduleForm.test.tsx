@@ -123,4 +123,183 @@ describe('<ScheduleForm />', () => {
     expect(screen.getByLabelText('Inicio de break: hora')).toHaveTextContent('10')
     expect(screen.getByLabelText('Inicio de break: minutos')).toHaveTextContent('00')
   })
+
+  describe('jornada partida (segundo bloque)', () => {
+    const partida = {
+      ...existingSchedule,
+      hor_hora_salida: '12:00:00',
+      hor_hora_inicio_almuerzo: '12:00:00',
+      hor_hora_fin_almuerzo: '14:00:00',
+      hor_hora_entrada_2: '14:00:00',
+      hor_hora_salida_2: '18:00:00',
+    } as ScheduleRow
+
+    it('el segundo bloque esta oculto por defecto y aparece al activar el switch', async () => {
+      render(<ScheduleForm shiftTypes={shiftTypes} />)
+
+      expect(screen.queryByLabelText('Entrada del segundo bloque: hora')).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByText(/jornada partida/i))
+
+      expect(screen.getByLabelText('Entrada del segundo bloque: hora')).toBeInTheDocument()
+      expect(screen.getByLabelText('Salida del segundo bloque: hora')).toBeInTheDocument()
+    })
+
+    it('al activarlo, sugiere un segundo bloque posterior al primero y oculta almuerzo y break', async () => {
+      render(<ScheduleForm shiftTypes={shiftTypes} />)
+
+      expect(screen.getByLabelText('Inicio de almuerzo: hora')).toBeInTheDocument()
+
+      await userEvent.click(screen.getByText(/jornada partida/i))
+
+      // Salida 17:00 por defecto: el segundo bloque sugerido arranca a las 19:00.
+      expect(screen.getByLabelText('Entrada del segundo bloque: hora')).toHaveTextContent('19')
+      expect(screen.queryByLabelText('Inicio de almuerzo: hora')).not.toBeInTheDocument()
+      expect(screen.queryByText('Incluye break adicional al almuerzo')).not.toBeInTheDocument()
+    })
+
+    it('precarga el segundo bloque de una plantilla existente', () => {
+      render(<ScheduleForm schedule={partida} shiftTypes={shiftTypes} />)
+
+      expect(screen.getByLabelText('Entrada del segundo bloque: hora')).toHaveTextContent('14')
+      expect(screen.getByLabelText('Salida del segundo bloque: hora')).toHaveTextContent('18')
+      expect(screen.queryByLabelText('Inicio de almuerzo: hora')).not.toBeInTheDocument()
+    })
+
+    it('al guardar manda los dos bloques a updateSchedule', async () => {
+      mockUpdateSchedule.mockResolvedValue({ ok: true })
+      render(<ScheduleForm schedule={partida} shiftTypes={shiftTypes} />)
+
+      await userEvent.click(screen.getByRole('button', { name: /actualizar horario/i }))
+
+      await waitFor(() =>
+        expect(mockUpdateSchedule).toHaveBeenCalledWith(
+          7,
+          expect.objectContaining({
+            hor_hora_entrada: '08:00',
+            hor_hora_salida: '12:00',
+            hor_hora_entrada_2: '14:00',
+            hor_hora_salida_2: '18:00',
+          })
+        )
+      )
+    })
+
+    it('desactivar el switch limpia el segundo bloque y vuelve a mostrar el almuerzo', async () => {
+      mockUpdateSchedule.mockResolvedValue({ ok: true })
+      render(<ScheduleForm schedule={partida} shiftTypes={shiftTypes} />)
+
+      await userEvent.click(screen.getByText(/jornada partida/i))
+
+      expect(screen.queryByLabelText('Entrada del segundo bloque: hora')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Inicio de almuerzo: hora')).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: /actualizar horario/i }))
+
+      await waitFor(() =>
+        expect(mockUpdateSchedule).toHaveBeenCalledWith(
+          7,
+          expect.objectContaining({ hor_hora_entrada_2: '', hor_hora_salida_2: '' })
+        )
+      )
+    })
+  })
+
+  describe('sucursal de cada bloque', () => {
+    const sucursales = [
+      { id: 10, nombre: 'Infinity' },
+      { id: 20, nombre: 'Alex' },
+    ]
+
+    it('no se ofrece sin segundo bloque', () => {
+      render(<ScheduleForm shiftTypes={shiftTypes} sucursales={sucursales} />)
+
+      expect(screen.queryByLabelText('Sucursal del primer bloque')).not.toBeInTheDocument()
+    })
+
+    it('con segundo bloque ofrece una sucursal por bloque, por defecto la de la asignacion', async () => {
+      render(<ScheduleForm shiftTypes={shiftTypes} sucursales={sucursales} />)
+
+      await userEvent.click(screen.getByText(/jornada partida/i))
+
+      expect(screen.getByLabelText('Sucursal del primer bloque')).toHaveValue('')
+      expect(screen.getByLabelText('Sucursal del segundo bloque')).toHaveValue('')
+      expect(screen.getAllByRole('option', { name: 'La de la asignación' })).toHaveLength(2)
+    })
+
+    it('con una sola sucursal no ofrece la eleccion', async () => {
+      render(<ScheduleForm shiftTypes={shiftTypes} sucursales={[sucursales[0]]} />)
+
+      await userEvent.click(screen.getByText(/jornada partida/i))
+
+      expect(screen.queryByLabelText('Sucursal del primer bloque')).not.toBeInTheDocument()
+    })
+
+    it('guarda la sucursal elegida para cada bloque', async () => {
+      mockCreateSchedule.mockResolvedValue({ ok: true, id: 1 })
+      render(<ScheduleForm shiftTypes={shiftTypes} sucursales={sucursales} />)
+
+      await userEvent.type(screen.getByLabelText('Nombre de la plantilla'), 'Turno Partido')
+      await userEvent.click(screen.getByText(/jornada partida/i))
+      await userEvent.selectOptions(screen.getByLabelText('Sucursal del primer bloque'), '10')
+      await userEvent.selectOptions(screen.getByLabelText('Sucursal del segundo bloque'), '20')
+      await userEvent.click(screen.getByRole('button', { name: /crear horario/i }))
+
+      await waitFor(() =>
+        expect(mockCreateSchedule).toHaveBeenCalledWith(
+          expect.objectContaining({ hor_sucursal_id: 10, hor_sucursal_id_2: 20 })
+        )
+      )
+    })
+
+    it('no deja guardar con la sucursal de un solo bloque', async () => {
+      render(<ScheduleForm shiftTypes={shiftTypes} sucursales={sucursales} />)
+
+      await userEvent.type(screen.getByLabelText('Nombre de la plantilla'), 'Turno Partido')
+      await userEvent.click(screen.getByText(/jornada partida/i))
+      await userEvent.selectOptions(screen.getByLabelText('Sucursal del primer bloque'), '10')
+      await userEvent.click(screen.getByRole('button', { name: /crear horario/i }))
+
+      expect(await screen.findByText(/Elija la sucursal de los dos bloques/)).toBeInTheDocument()
+      expect(mockCreateSchedule).not.toHaveBeenCalled()
+    })
+
+    it('precarga las sucursales de una plantilla existente', () => {
+      const partida = {
+        ...existingSchedule,
+        hor_hora_salida: '12:00:00',
+        hor_hora_entrada_2: '14:00:00',
+        hor_hora_salida_2: '18:00:00',
+        hor_sucursal_id: 20,
+        hor_sucursal_id_2: 10,
+      } as ScheduleRow
+      render(<ScheduleForm schedule={partida} shiftTypes={shiftTypes} sucursales={sucursales} />)
+
+      expect(screen.getByLabelText('Sucursal del primer bloque')).toHaveValue('20')
+      expect(screen.getByLabelText('Sucursal del segundo bloque')).toHaveValue('10')
+    })
+
+    it('quitar la jornada partida limpia las sucursales', async () => {
+      mockUpdateSchedule.mockResolvedValue({ ok: true })
+      const partida = {
+        ...existingSchedule,
+        hor_hora_salida: '12:00:00',
+        hor_hora_entrada_2: '14:00:00',
+        hor_hora_salida_2: '18:00:00',
+        hor_sucursal_id: 20,
+        hor_sucursal_id_2: 10,
+      } as ScheduleRow
+      render(<ScheduleForm schedule={partida} shiftTypes={shiftTypes} sucursales={sucursales} />)
+
+      await userEvent.click(screen.getByText(/jornada partida/i))
+      await userEvent.click(screen.getByRole('button', { name: /actualizar horario/i }))
+
+      await waitFor(() =>
+        expect(mockUpdateSchedule).toHaveBeenCalledWith(
+          7,
+          expect.objectContaining({ hor_sucursal_id: null, hor_sucursal_id_2: null })
+        )
+      )
+    })
+  })
 })

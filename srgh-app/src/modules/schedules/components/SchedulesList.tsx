@@ -15,6 +15,7 @@ import {
   Search,
 } from 'lucide-react'
 import type { ScheduleRow } from '@/modules/schedules/types'
+import type { SucursalOption } from '@/modules/schedules/actions/getWeeklySchedule'
 import { deleteSchedule } from '@/modules/schedules/actions/deleteSchedule'
 import { useFormatHora } from '@/lib/time/FormatoHoraContext'
 import { useCrudList } from '@/modules/schedules/hooks/useCrudList'
@@ -47,11 +48,40 @@ interface ShiftTypeOption {
 interface SchedulesListProps {
   schedules: ScheduleRow[]
   shiftTypes: ShiftTypeOption[]
+  /** Sucursales de la empresa: para elegir y mostrar la de cada bloque de una jornada partida. */
+  sucursales?: SucursalOption[]
   canWrite: boolean
 }
 
-export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesListProps) {
+export function SchedulesList({
+  schedules,
+  shiftTypes,
+  sucursales = [],
+  canWrite,
+}: SchedulesListProps) {
   const { hora, rango } = useFormatHora()
+
+  /** Con jornada partida la celda muestra las dos horas: "07:00 · 16:00". */
+  const entradas = (schedule: ScheduleRow) =>
+    [schedule.hor_hora_entrada, schedule.hor_hora_entrada_2]
+      .filter(Boolean)
+      .map((value) => hora(value))
+      .join(' · ') || '—'
+  const salidas = (schedule: ScheduleRow) =>
+    [schedule.hor_hora_salida, schedule.hor_hora_salida_2]
+      .filter(Boolean)
+      .map((value) => hora(value))
+      .join(' · ') || '—'
+  const esPartida = (schedule: ScheduleRow) =>
+    Boolean(schedule.hor_hora_entrada_2 && schedule.hor_hora_salida_2)
+  /** "Partida", o "Partida: Infinity → Alex" cuando la plantilla fija la sucursal de cada bloque. */
+  const textoPartida = (schedule: ScheduleRow) => {
+    const nombre = (id: number | null | undefined) =>
+      sucursales.find((sucursal) => sucursal.id === id)?.nombre
+    const primera = nombre(schedule.hor_sucursal_id)
+    const segunda = nombre(schedule.hor_sucursal_id_2)
+    return primera && segunda ? `Partida: ${primera} → ${segunda}` : 'Partida'
+  }
   const {
     editing,
     setEditing,
@@ -159,6 +189,7 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
           <ScheduleForm
             schedule={editing === 'new' ? undefined : editing}
             shiftTypes={shiftTypes}
+            sucursales={sucursales}
             onSuccess={() => setEditing(null)}
           />
         </div>
@@ -244,13 +275,16 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
                   {[
-                    { label: 'Entrada', valor: hora(schedule.hor_hora_entrada) ?? '—' },
-                    { label: 'Salida', valor: hora(schedule.hor_hora_salida) ?? '—' },
+                    { label: 'Entrada', valor: entradas(schedule) },
+                    { label: 'Salida', valor: salidas(schedule) },
                     {
                       label: 'Almuerzo',
-                      valor:
-                        rango(schedule.hor_hora_inicio_almuerzo, schedule.hor_hora_fin_almuerzo) ??
-                        '—',
+                      valor: esPartida(schedule)
+                        ? textoPartida(schedule)
+                        : (rango(
+                            schedule.hor_hora_inicio_almuerzo,
+                            schedule.hor_hora_fin_almuerzo
+                          ) ?? '—'),
                     },
                     {
                       label: 'Break',
@@ -312,11 +346,15 @@ export function SchedulesList({ schedules, shiftTypes, canWrite }: SchedulesList
                   >
                     <td className={TABLE_TD_STRONG}>{schedule.hor_nombre}</td>
                     <td className={TABLE_TD}>{shiftTypeName(schedule.hor_tipo_jornada_id)}</td>
-                    <td className={TABLE_TD_NUM}>{hora(schedule.hor_hora_entrada) ?? '—'}</td>
-                    <td className={TABLE_TD_NUM}>{hora(schedule.hor_hora_salida) ?? '—'}</td>
+                    <td className={TABLE_TD_NUM}>{entradas(schedule)}</td>
+                    <td className={TABLE_TD_NUM}>{salidas(schedule)}</td>
                     <td className={TABLE_TD_NUM}>
-                      {rango(schedule.hor_hora_inicio_almuerzo, schedule.hor_hora_fin_almuerzo) ??
-                        '—'}
+                      {esPartida(schedule)
+                        ? textoPartida(schedule)
+                        : (rango(
+                            schedule.hor_hora_inicio_almuerzo,
+                            schedule.hor_hora_fin_almuerzo
+                          ) ?? '—')}
                     </td>
                     <td className={TABLE_TD_NUM}>
                       {rango(schedule.hor_hora_inicio_break, schedule.hor_hora_fin_break) ?? '—'}

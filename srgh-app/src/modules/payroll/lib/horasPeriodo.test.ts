@@ -809,3 +809,114 @@ describe('calcularHorasPeriodo con tope semanal', () => {
     expect(r.horasExtra).toBe(16)
   })
 })
+
+// SGRH-110: un día con varios bloques (tramos en sucursales distintas o una
+// plantilla con jornada partida). El horario llega ya combinado: de la entrada
+// del primer bloque a la salida del último, con el tiempo entre bloques como
+// hueco sin pago.
+describe('calcularDia: días de varios bloques', () => {
+  const PARTIDO: HorarioDia = {
+    entrada: '08:00',
+    salida: '17:00',
+    inicioAlmuerzo: null,
+    finAlmuerzo: null,
+    inicioBreak: null,
+    finBreak: null,
+    huecos: [{ inicio: '12:00', fin: '13:00' }],
+  }
+  // Plantilla partida 7–11 y 16–20: guarda el hueco también como almuerzo.
+  const PLANTILLA_PARTIDA: HorarioDia = {
+    entrada: '07:00',
+    salida: '20:00',
+    inicioAlmuerzo: '11:00',
+    finAlmuerzo: '16:00',
+    inicioBreak: null,
+    finBreak: null,
+    huecos: [{ inicio: '11:00', fin: '16:00' }],
+  }
+  const d = '2026-07-06'
+
+  it('el hueco no se paga y el almuerzo guardado igual al hueco no se descuenta dos veces', () => {
+    expect(calcularDia(dia({ horario: PARTIDO })).horasEsperadas).toBe(8)
+    expect(calcularDia(dia({ horario: PLANTILLA_PARTIDA })).horasEsperadas).toBe(8)
+  })
+
+  it('una entrada y una salida por bloque: cuenta los dos bloques', () => {
+    const r = calcularDia(
+      dia({
+        horario: PARTIDO,
+        marcas: [
+          marca('entrada', `${d} 08:00`),
+          marca('salida', `${d} 12:00`),
+          marca('entrada', `${d} 13:00`),
+          marca('salida', `${d} 17:00`),
+        ],
+      })
+    )
+    expect(r).toMatchObject({
+      horasTrabajadas: 8,
+      horasOrdinarias: 8,
+      horasExtra: 0,
+      problema: null,
+    })
+  })
+
+  it('volver tarde al segundo bloque rebaja ese tiempo', () => {
+    const r = calcularDia(
+      dia({
+        horario: PARTIDO,
+        marcas: [
+          marca('entrada', `${d} 08:00`),
+          marca('salida', `${d} 12:00`),
+          marca('entrada', `${d} 13:30`),
+          marca('salida', `${d} 17:00`),
+        ],
+      })
+    )
+    expect(r).toMatchObject({ horasTrabajadas: 7.5, horasOrdinarias: 7.5 })
+  })
+
+  it('el hueco marcado como almuerzo también cuenta los dos bloques', () => {
+    const r = calcularDia(
+      dia({
+        horario: PLANTILLA_PARTIDA,
+        marcas: [
+          marca('entrada', `${d} 07:00`),
+          marca('inicio_almuerzo', `${d} 11:00`),
+          marca('fin_almuerzo', `${d} 16:00`),
+          marca('salida', `${d} 20:00`),
+        ],
+      })
+    )
+    expect(r).toMatchObject({ horasTrabajadas: 8, horasOrdinarias: 8, horasExtra: 0 })
+  })
+
+  it('si falta cerrar el último bloque, el día queda sin salida (no se paga a medias en silencio)', () => {
+    const r = calcularDia(
+      dia({
+        horario: PARTIDO,
+        marcas: [
+          marca('entrada', `${d} 08:00`),
+          marca('salida', `${d} 12:00`),
+          marca('entrada', `${d} 13:00`),
+        ],
+      })
+    )
+    expect(r.problema).toBe('sin_salida')
+  })
+
+  it('en un día de un solo bloque, una segunda entrada y salida se leen como siempre', () => {
+    const r = calcularDia(
+      dia({
+        marcas: [
+          marca('entrada', `${d} 08:00`),
+          marca('salida', `${d} 12:00`),
+          marca('entrada', `${d} 13:00`),
+          marca('salida', `${d} 17:00`),
+        ],
+      })
+    )
+    // La primera salida cierra el día, igual que antes de SGRH-110.
+    expect(r).toMatchObject({ horasTrabajadas: 4, problema: null })
+  })
+})

@@ -5,7 +5,8 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { getWeekDates } from '@/modules/schedules/lib/week'
-import { hoursBetween } from '@/modules/schedules/lib/hours'
+import { hoursBetween, templateHours } from '@/modules/schedules/lib/hours'
+import { compareByStart } from '@/modules/schedules/lib/dayAssignment'
 import { signEmployeePhotos } from '@/lib/storage/employee-photos'
 import { formatSucursalLabel, sucursalLabel } from '@/lib/empresa/marca-label'
 
@@ -45,6 +46,8 @@ interface ScheduleJoin {
   hor_hora_fin_almuerzo: string
   hor_hora_inicio_break: string | null
   hor_hora_fin_break: string | null
+  hor_hora_entrada_2: string | null
+  hor_hora_salida_2: string | null
 }
 
 interface AssignmentRow {
@@ -76,12 +79,26 @@ export interface DayAssignment {
   // Sucursal real del dia, puede diferir de la de casa del empleado.
   branchId: number
   branchName: string | null
+  /**
+   * Segundo bloque del dia cuando la plantilla es una jornada partida (por ejemplo
+   * 7-11 y 16-20). Sigue siendo UN tramo en UNA sucursal: startTime/endTime son el
+   * primer bloque. null cuando no hay segundo bloque o el tramo es personalizado.
+   */
+  secondStartTime?: string | null
+  secondEndTime?: string | null
   customStartTime?: string | null
   customEndTime?: string | null
   customLunchStart?: string | null
   customLunchEnd?: string | null
   customBreakStart?: string | null
   customBreakEnd?: string | null
+  /**
+   * Los demás tramos del día, cuando se trabaja en más de una sucursal (SGRH-110):
+   * por ejemplo 8–12 en una tienda y 13–17 en otra. Los campos de arriba describen
+   * el PRIMER tramo (el que empieza antes); cada elemento de acá describe otro, con
+   * la misma forma. Ausente cuando el día tiene un solo tramo, que es lo normal.
+   */
+  extraTramos?: DayAssignment[]
 }
 
 export interface EmployeeWeekRow {
@@ -95,6 +112,7 @@ export interface EmployeeWeekRow {
   fotoUrl: string | null
   position: string | null
   days: DayAssignment[]
+  /** Horas de la semana, sumando todos los tramos de cada dia. */
   weeklyTotal: number
 }
 
@@ -110,6 +128,57 @@ export interface SucursalOption {
  */
 function sinSegundos(hora: string | null): string | null {
   return hora ? hora.slice(0, 5) : hora
+}
+
+/** Hora de inicio del tramo: la propia si trae entrada y salida, y si no la de la plantilla. */
+function startOf(assignment: AssignmentRow): string | null {
+  const isCustom = Boolean(assignment.prg_hora_entrada_custom && assignment.prg_hora_salida_custom)
+  return isCustom
+    ? assignment.prg_hora_entrada_custom
+    : (assignment.sgrh_cat_horarios?.hor_hora_entrada ?? null)
+}
+
+/** Un tramo (una fila de programacion) con sus horas calculadas. */
+function toDayAssignment(date: string, assignment: AssignmentRow): DayAssignment {
+  const schedule = assignment.sgrh_cat_horarios
+  const isCustom = Boolean(assignment.prg_hora_entrada_custom && assignment.prg_hora_salida_custom)
+  let hours = 0
+
+  if (!assignment.prg_es_dia_libre) {
+    if (isCustom) {
+      hours = hoursBetween(
+        assignment.prg_hora_entrada_custom!,
+        assignment.prg_hora_salida_custom!,
+        assignment.prg_hora_inicio_almuerzo_custom,
+        assignment.prg_hora_fin_almuerzo_custom,
+        assignment.prg_hora_inicio_break_custom,
+        assignment.prg_hora_fin_break_custom
+      )
+    } else if (schedule) {
+      hours = templateHours(schedule)
+    }
+  }
+
+  return {
+    date,
+    assignmentId: assignment.prg_id,
+    scheduleId: assignment.prg_horario_id,
+    scheduleName: schedule?.hor_nombre ?? null,
+    startTime: isCustom ? assignment.prg_hora_entrada_custom : (schedule?.hor_hora_entrada ?? null),
+    endTime: isCustom ? assignment.prg_hora_salida_custom : (schedule?.hor_hora_salida ?? null),
+    secondStartTime: isCustom ? null : (schedule?.hor_hora_entrada_2 ?? null),
+    secondEndTime: isCustom ? null : (schedule?.hor_hora_salida_2 ?? null),
+    customStartTime: sinSegundos(assignment.prg_hora_entrada_custom),
+    customEndTime: sinSegundos(assignment.prg_hora_salida_custom),
+    customLunchStart: sinSegundos(assignment.prg_hora_inicio_almuerzo_custom),
+    customLunchEnd: sinSegundos(assignment.prg_hora_fin_almuerzo_custom),
+    customBreakStart: sinSegundos(assignment.prg_hora_inicio_break_custom),
+    customBreakEnd: sinSegundos(assignment.prg_hora_fin_break_custom),
+    isDayOff: assignment.prg_es_dia_libre,
+    hours,
+    branchId: assignment.prg_sucursal_id,
+    branchName: sucursalLabel(assignment.sgrh_sucursales) ?? null,
+  }
 }
 
 export type GetWeeklyScheduleResult =
@@ -196,7 +265,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
           prg_horario_id,
           prg_sucursal_id,
           sgrh_sucursales ( suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
-          sgrh_cat_horarios ( hor_id, hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo, hor_hora_inicio_break, hor_hora_fin_break ),
+          sgrh_cat_horarios ( hor_id, hor_nombre, hor_hora_entrada, hor_hora_salida, hor_hora_inicio_almuerzo, hor_hora_fin_almuerzo, hor_hora_inicio_break, hor_hora_fin_break, hor_hora_entrada_2, hor_hora_salida_2 ),
             prg_hora_entrada_custom,
             prg_hora_salida_custom,
             prg_hora_inicio_almuerzo_custom,
@@ -218,10 +287,20 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
     return { ok: false, error: 'No se pudo cargar la programacion semanal.' }
   }
 
-  // Index by employmentHistoryId+date to avoid a linear find() per cell.
-  const assignmentByCell = new Map<string, AssignmentRow>()
+  // Index by employmentHistoryId+date to avoid a linear find() per cell. Una
+  // celda puede tener varios tramos (SGRH-110): se guardan todos, y los de cada
+  // día se ordenan por hora de inicio para que "el primero" sea estable.
+  const assignmentsByCell = new Map<string, AssignmentRow[]>()
   for (const a of assignments ?? []) {
-    assignmentByCell.set(`${a.prg_historial_laboral_id}|${a.prg_fecha}`, a)
+    const key = `${a.prg_historial_laboral_id}|${a.prg_fecha}`
+    const cell = assignmentsByCell.get(key)
+    if (cell) cell.push(a)
+    else assignmentsByCell.set(key, [a])
+  }
+  for (const cell of assignmentsByCell.values()) {
+    if (cell.length > 1) {
+      cell.sort((a, b) => compareByStart(startOf(a), startOf(b)) || a.prg_id - b.prg_id)
+    }
   }
 
   // Con una marca elegida: quien tiene la base en ella, o trabaja ahí algún día de la
@@ -250,9 +329,9 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
     let weeklyTotal = 0
 
     const days: DayAssignment[] = weekDates.map((date) => {
-      const assignment = assignmentByCell.get(`${h.lab_id}|${date}`)
+      const cell = assignmentsByCell.get(`${h.lab_id}|${date}`)
 
-      if (!assignment) {
+      if (!cell) {
         return {
           date,
           assignmentId: null,
@@ -268,56 +347,14 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
         }
       }
 
-      const schedule = assignment.sgrh_cat_horarios
-      const isCustom = Boolean(
-        assignment.prg_hora_entrada_custom && assignment.prg_hora_salida_custom
-      )
-      let hours = 0
+      // El primer tramo describe el dia; los demas (SGRH-110) van en extraTramos.
+      // El total semanal suma TODOS: quien parte el dia en dos tiendas trabaja
+      // las horas de las dos.
+      const tramos = cell.map((assignment) => toDayAssignment(date, assignment))
+      for (const tramo of tramos) weeklyTotal += tramo.hours
 
-      if (!assignment.prg_es_dia_libre) {
-        if (isCustom) {
-          hours = hoursBetween(
-            assignment.prg_hora_entrada_custom!,
-            assignment.prg_hora_salida_custom!,
-            assignment.prg_hora_inicio_almuerzo_custom,
-            assignment.prg_hora_fin_almuerzo_custom,
-            assignment.prg_hora_inicio_break_custom,
-            assignment.prg_hora_fin_break_custom
-          )
-          weeklyTotal += hours
-        } else if (schedule) {
-          hours = hoursBetween(
-            schedule.hor_hora_entrada,
-            schedule.hor_hora_salida,
-            schedule.hor_hora_inicio_almuerzo,
-            schedule.hor_hora_fin_almuerzo,
-            schedule.hor_hora_inicio_break,
-            schedule.hor_hora_fin_break
-          )
-          weeklyTotal += hours
-        }
-      }
-
-      return {
-        date,
-        assignmentId: assignment.prg_id,
-        scheduleId: assignment.prg_horario_id,
-        scheduleName: schedule?.hor_nombre ?? null,
-        startTime: isCustom
-          ? assignment.prg_hora_entrada_custom
-          : (schedule?.hor_hora_entrada ?? null),
-        endTime: isCustom ? assignment.prg_hora_salida_custom : (schedule?.hor_hora_salida ?? null),
-        customStartTime: sinSegundos(assignment.prg_hora_entrada_custom),
-        customEndTime: sinSegundos(assignment.prg_hora_salida_custom),
-        customLunchStart: sinSegundos(assignment.prg_hora_inicio_almuerzo_custom),
-        customLunchEnd: sinSegundos(assignment.prg_hora_fin_almuerzo_custom),
-        customBreakStart: sinSegundos(assignment.prg_hora_inicio_break_custom),
-        customBreakEnd: sinSegundos(assignment.prg_hora_fin_break_custom),
-        isDayOff: assignment.prg_es_dia_libre,
-        hours,
-        branchId: assignment.prg_sucursal_id,
-        branchName: sucursalLabel(assignment.sgrh_sucursales) ?? null,
-      }
+      const [primero, ...extras] = tramos
+      return extras.length > 0 ? { ...primero, extraTramos: extras } : primero
     })
 
     return {

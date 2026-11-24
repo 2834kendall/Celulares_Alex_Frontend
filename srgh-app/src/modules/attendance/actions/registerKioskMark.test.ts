@@ -539,6 +539,141 @@ describe('registerKioskMark (server action)', () => {
     })
   })
 
+  describe('un dia de dos tramos (SGRH-110)', () => {
+    // 08-12 en la sucursal 100 y 13-17 en la 200, horas propias.
+    const TRAMO_1 = {
+      ...ASSIGNMENT,
+      prg_hora_entrada_custom: '08:00:00',
+      prg_hora_salida_custom: '12:00:00',
+      sgrh_cat_horarios: null,
+    }
+    const TRAMO_2 = {
+      ...TRAMO_1,
+      prg_sucursal_id: 200,
+      prg_hora_entrada_custom: '13:00:00',
+      prg_hora_salida_custom: '17:00:00',
+    }
+    const marca = (mar_id: number, mar_tipo: string, hora: string) => ({
+      mar_id,
+      mar_tipo,
+      mar_fecha_hora: `2026-08-14 ${hora}:00`,
+    })
+
+    function mockDosTramos(marcas: unknown[]) {
+      return clientConTurno({
+        sgrh_programacion_semanal: { data: [TRAMO_1, TRAMO_2], error: null },
+        sgrh_marcas_asistencia: [
+          { data: marcas, error: null },
+          { data: null, error: null },
+        ],
+      })
+    }
+
+    it('despues de la salida del primer tramo acepta la entrada del segundo', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T18:55:00Z')) // 12:55 en Costa Rica
+      const client = useClient(
+        mockDosTramos([marca(1, 'entrada', '08:00'), marca(2, 'salida', '12:00')])
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'entrada' }))).toEqual({ ok: true })
+      expect(insertedMark(client)).toEqual(expect.objectContaining({ mar_tipo: 'entrada' }))
+    })
+
+    it('entre tramos no deja marcar otra salida', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T23:00:00Z')) // 17:00 en Costa Rica
+      const client = useClient(
+        mockDosTramos([marca(1, 'entrada', '08:00'), marca(2, 'salida', '12:00')])
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'salida' }))).toEqual({
+        ok: false,
+        error: 'No corresponde marcar salida ahora. Puedes marcar: entrada.',
+        definitivo: true,
+      })
+      expect(insertedMark(client)).toBeUndefined()
+    })
+
+    it('la ventana de salida del segundo tramo es la de su hora de salida', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T20:00:00Z')) // 14:00 en Costa Rica
+      const client = useClient(
+        mockDosTramos([
+          marca(1, 'entrada', '08:00'),
+          marca(2, 'salida', '12:00'),
+          marca(3, 'entrada', '13:00'),
+        ])
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'salida' }))).toEqual({
+        ok: false,
+        error: 'Tu salida es a las 17:00. Si necesitas salir antes, avisa al encargado.',
+        definitivo: true,
+      })
+      expect(insertedMark(client)).toBeUndefined()
+    })
+
+    it('con la salida del ultimo tramo el dia queda cerrado', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T23:30:00Z')) // 17:30 en Costa Rica
+      const client = useClient(
+        mockDosTramos([
+          marca(1, 'entrada', '08:00'),
+          marca(2, 'salida', '12:00'),
+          marca(3, 'entrada', '13:00'),
+          marca(4, 'salida', '17:00'),
+        ])
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'entrada' }))).toEqual({
+        ok: false,
+        error: 'Ya registraste tu salida de hoy.',
+        definitivo: true,
+      })
+      expect(insertedMark(client)).toBeUndefined()
+    })
+
+    it('un dia de un solo tramo sigue cerrandose con la salida', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T18:55:00Z')) // 12:55 en Costa Rica
+      const client = useClient(
+        clientConTurno({
+          sgrh_programacion_semanal: { data: [TRAMO_1], error: null },
+          sgrh_marcas_asistencia: [
+            { data: [marca(1, 'entrada', '08:00'), marca(2, 'salida', '12:00')], error: null },
+            { data: null, error: null },
+          ],
+        })
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'entrada' }))).toEqual({
+        ok: false,
+        error: 'Ya registraste tu salida de hoy.',
+        definitivo: true,
+      })
+      expect(insertedMark(client)).toBeUndefined()
+    })
+
+    it('no marca si no se pudo leer la programacion del dia', async () => {
+      const client = useClient(
+        clientConTurno({
+          // 1ra lectura: el turno; 2da: los bloques del dia.
+          sgrh_programacion_semanal: [
+            { data: [TRAMO_1, TRAMO_2], error: null },
+            { data: null, error: { message: 'offline' } },
+          ],
+        })
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'entrada' }))).toEqual({
+        ok: false,
+        error: 'No se pudo validar la secuencia de marcas.',
+      })
+      expect(insertedMark(client)).toBeUndefined()
+    })
+  })
+
   describe('la hora de salida del horario', () => {
     const CON_SALIDA = {
       ...ASSIGNMENT,

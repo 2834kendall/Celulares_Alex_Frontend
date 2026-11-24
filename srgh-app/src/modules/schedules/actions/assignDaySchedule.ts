@@ -9,7 +9,7 @@ import {
   parseOptionalTime,
   type AssignDayInput,
 } from '@/modules/schedules/types'
-import { upsertDayAssignment } from '@/modules/schedules/lib/dayAssignment'
+import { describeAssignmentError, upsertDayAssignment } from '@/modules/schedules/lib/dayAssignment'
 import { branchesBelongToEmpresa } from '@/modules/schedules/lib/validateBranches'
 
 export type AssignDayResult = { ok: true } | { ok: false; error: string }
@@ -81,7 +81,7 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
   const { error } = await upsertDayAssignment(supabase, data.assignmentId, payload)
 
   if (error) {
-    return { ok: false, error: 'No se pudo guardar la asignacion.' }
+    return { ok: false, error: describeAssignmentError(error, 'No se pudo guardar la asignacion.') }
   }
 
   revalidatePath('/schedule')

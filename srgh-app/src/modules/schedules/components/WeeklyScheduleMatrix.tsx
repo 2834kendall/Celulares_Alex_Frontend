@@ -20,7 +20,11 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
-import type { EmployeeWeekRow, SucursalOption } from '@/modules/schedules/actions/getWeeklySchedule'
+import type {
+  DayAssignment,
+  EmployeeWeekRow,
+  SucursalOption,
+} from '@/modules/schedules/actions/getWeeklySchedule'
 import { getScheduleSuggestion } from '@/modules/schedules/actions/getScheduleSuggestion'
 import { pasteWeeklySchedule } from '@/modules/schedules/actions/pasteWeeklySchedule'
 import type { PasteWeeklyScheduleInput, ScheduleRow } from '@/modules/schedules/types'
@@ -49,11 +53,13 @@ import {
 import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
 import { formatHoursValue } from '@/modules/schedules/lib/hours'
+import { dayHours, tramosOf } from '@/modules/schedules/lib/segments'
 import { Pagination } from '@/components/ui/Pagination'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import { SelectMenu, type SelectMenuOption } from '@/components/ui/SelectMenu'
 import { META_LABEL } from '@/components/ui/styles'
 import { CustomHoursModal } from '@/modules/schedules/components/CustomHoursModal'
+import { hasSecondBlock } from '@/modules/schedules/lib/hours'
 import type { AusenciaOverlayEntry } from '@/modules/absences/lib/overlay'
 import { IconButton } from '@/components/ui/IconButton'
 import { DatePopover } from '@/components/ui/DatePickerButton'
@@ -62,6 +68,7 @@ import { useFormatHora } from '@/lib/time/FormatoHoraContext'
 
 type PasteEmployeeInput = PasteWeeklyScheduleInput['employees'][number]
 type PasteDayInput = PasteEmployeeInput['days'][number]
+type PasteExtraTramoInput = NonNullable<PasteDayInput['extraTramos']>[number]
 
 interface ClipboardDay {
   scheduleId: number | null
@@ -74,6 +81,8 @@ interface ClipboardDay {
   customBreakEnd: string | null
   // Sucursal real del dia copiado, para que "pegar" respete la rotacion.
   branchId: number
+  // Los demas tramos del dia (SGRH-110); el primero lo describen los campos de arriba.
+  extraTramos?: ClipboardDay[]
 }
 
 interface ScheduleClipboard {
@@ -93,9 +102,44 @@ interface SourceDay {
   customLunchEnd?: string | null
   customBreakStart?: string | null
   customBreakEnd?: string | null
+  // Los demas tramos del dia (SGRH-110), cada uno con su propia sucursal.
+  extraTramos?: SourceDay[]
 }
 
 const CLIPBOARD_STORAGE_KEY = 'sgrh_schedule_week_clipboard'
+
+/** Un dia de la matriz, con todos sus tramos, en la forma que guarda el portapapeles. */
+function toClipboardDay(day: DayAssignment): ClipboardDay {
+  return {
+    scheduleId: day.scheduleId,
+    isDayOff: day.isDayOff,
+    customStartTime: day.customStartTime ?? null,
+    customEndTime: day.customEndTime ?? null,
+    customLunchStart: day.customLunchStart ?? null,
+    customLunchEnd: day.customLunchEnd ?? null,
+    customBreakStart: day.customBreakStart ?? null,
+    customBreakEnd: day.customBreakEnd ?? null,
+    branchId: day.branchId,
+    ...(day.extraTramos && day.extraTramos.length > 0
+      ? { extraTramos: day.extraTramos.map(toClipboardDay) }
+      : {}),
+  }
+}
+
+/** Un tramo adicional del origen, listo para escribirse como fila nueva en el destino. */
+function toPasteExtraTramo(source: SourceDay, fallbackBranchId: number): PasteExtraTramoInput {
+  return {
+    // La sugerencia de un dia de varios tramos trae la sucursal de cada uno.
+    branchId: source.branchId ?? fallbackBranchId,
+    scheduleId: source.scheduleId,
+    customStartTime: source.customStartTime ?? null,
+    customEndTime: source.customEndTime ?? null,
+    customLunchStart: source.customLunchStart ?? null,
+    customLunchEnd: source.customLunchEnd ?? null,
+    customBreakStart: source.customBreakStart ?? null,
+    customBreakEnd: source.customBreakEnd ?? null,
+  }
+}
 
 function loadClipboard(): ScheduleClipboard | null {
   if (typeof window === 'undefined') return null
@@ -236,7 +280,13 @@ function timeRange(
 ) {
   const start = assignment.customStartTime ?? assignment.startTime
   const end = assignment.customEndTime ?? assignment.endTime
-  return rango(start, end)
+  const first = rango(start, end)
+  // Jornada partida (plantilla con segundo bloque): "07:00 - 11:00 · 16:00 - 20:00".
+  const second =
+    assignment.secondStartTime && assignment.secondEndTime
+      ? rango(assignment.secondStartTime, assignment.secondEndTime)
+      : null
+  return first && second ? `${first} · ${second}` : first
 }
 
 function assignmentOptions(scheduleOptions: ScheduleRow[]): SelectMenuOption[] {
@@ -438,7 +488,7 @@ function ScheduleCell({
   return (
     <div
       title={isBlocked ? ausencia!.tipoNombre : undefined}
-      className="group/cell relative flex h-full min-h-[58px] flex-col"
+      className="group/cell relative flex h-full min-h-[58px] flex-1 flex-col"
     >
       {canWrite && (
         <SelectMenu
@@ -453,6 +503,168 @@ function ScheduleCell({
         />
       )}
       <div className="pointer-events-none relative z-10 flex flex-1 flex-col">{content}</div>
+    </div>
+  )
+}
+
+interface DayCellProps {
+  row: EmployeeWeekRowWithAusencia
+  day: DayAssignmentWithAusencia
+  dayIndex: number
+  stripe: string
+  canWrite: boolean
+  savingCell: string | null
+  scheduleOptions: ScheduleRow[]
+  sucursales: SucursalOption[]
+  colorById: Map<number, string>
+  getAssignmentValue: (assignment: DayAssignmentWithAusencia) => string
+  onChange: (assignment: DayAssignmentWithAusencia, value: string) => void | Promise<void>
+  onEditCustom: (assignment: DayAssignmentWithAusencia) => void
+  onBranchChange: (assignment: DayAssignmentWithAusencia, branchId: number) => void
+}
+
+/**
+ * Un dia de un colaborador (SGRH-110): uno o varios tramos apilados, cada uno
+ * con su horario y su sucursal. Desde el dia se puede agregar otro tramo en una
+ * sucursal que todavia no tenga uno (por ejemplo, empezar en Infinity y
+ * terminar en Celulares Alex); borrar un tramo es dejar su selector en
+ * "Asignar horario", igual que antes con el dia entero.
+ */
+function DayCell({
+  row,
+  day,
+  dayIndex,
+  stripe,
+  canWrite,
+  savingCell,
+  scheduleOptions,
+  sucursales,
+  colorById,
+  getAssignmentValue,
+  onChange,
+  onEditCustom,
+  onBranchChange,
+}: DayCellProps) {
+  const [newTramoBranchId, setNewTramoBranchId] = useState<number | null>(null)
+
+  const isBlocked = Boolean(day.ausencia && !day.ausencia.isIntraday)
+  // Una ausencia bloquea el dia entero: se muestra ella sola, no los tramos.
+  const tramos = isBlocked ? [day] : tramosOf(day)
+  const isSaving = savingCell === `${row.employmentHistoryId}-${day.date}`
+  const dayLabel = WEEKDAY_NAMES[dayIndex]
+
+  const usedBranchIds = new Set(tramos.map((tramo) => tramo.branchId))
+  const freeBranches = sucursales.filter((sucursal) => !usedBranchIds.has(sucursal.id))
+  // Una jornada partida ya trae sus dos bloques: el dia no admite mas tramos.
+  const hasSplitShift = tramos.some((tramo) => tramo.secondStartTime && tramo.secondEndTime)
+  // Un dia de descanso no admite otros tramos, y solo se agrega sobre un dia ya asignado.
+  const canAddTramo =
+    canWrite &&
+    !isBlocked &&
+    day.assignmentId !== null &&
+    !tramos.some((tramo) => tramo.isDayOff) &&
+    !hasSplitShift &&
+    freeBranches.length > 0
+
+  // Una plantilla partida solo se ofrece en un dia de un tramo: en un dia con
+  // varios sumaria mas de dos bloques. Y en un tramo nuevo (que se agrega a un
+  // dia ya asignado) tampoco.
+  const singleBlockOptions = scheduleOptions.filter((schedule) => !hasSecondBlock(schedule))
+  const cellScheduleOptions = tramos.length > 1 ? singleBlockOptions : scheduleOptions
+
+  const newTramoOptions: SelectMenuOption[] = [
+    { value: '', label: 'Elegir horario' },
+    { value: '__custom__', label: 'Personalizado' },
+    ...singleBlockOptions.map((schedule) => ({
+      value: String(schedule.hor_id),
+      label: schedule.hor_nombre,
+    })),
+  ]
+
+  async function handleNewTramo(value: string) {
+    if (value === '' || newTramoBranchId === null) return
+
+    const branch = sucursales.find((sucursal) => sucursal.id === newTramoBranchId)
+    // Tramo "en blanco" (sin fila todavia): al elegir horario se crea una fila nueva.
+    const blank: DayAssignmentWithAusencia = {
+      date: day.date,
+      assignmentId: null,
+      scheduleId: null,
+      scheduleName: null,
+      startTime: null,
+      endTime: null,
+      isDayOff: false,
+      hours: 0,
+      branchId: newTramoBranchId,
+      branchName: branch?.nombre ?? null,
+      ausencia: null,
+    }
+
+    setNewTramoBranchId(null)
+    await onChange(blank, value)
+  }
+
+  return (
+    <div className="group/day flex h-full flex-col gap-1">
+      {tramos.map((tramo, index) => (
+        <ScheduleCell
+          key={tramo.assignmentId ?? `sin-fila-${index}`}
+          row={row}
+          assignment={tramo}
+          dayIndex={dayIndex}
+          stripe={stripe}
+          canWrite={canWrite}
+          isSaving={isSaving}
+          scheduleOptions={cellScheduleOptions}
+          sucursales={sucursales}
+          currentValue={getAssignmentValue(tramo)}
+          colorById={colorById}
+          onChange={(value) => onChange(tramo, value)}
+          onEditCustom={() => onEditCustom(tramo)}
+          onBranchChange={(branchId) => onBranchChange(tramo, branchId)}
+        />
+      ))}
+
+      {canAddTramo &&
+        (newTramoBranchId === null ? (
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={() => setNewTramoBranchId(freeBranches[0].id)}
+            aria-label={`Agregar tramo para ${row.fullName} el ${dayLabel}`}
+            className="flex items-center justify-center gap-0.5 rounded-md py-0.5 text-[10px] font-semibold text-slate-400 opacity-0 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 group-hover/day:opacity-100 pointer-coarse:opacity-100 disabled:cursor-not-allowed"
+          >
+            <Plus className="h-2.5 w-2.5" aria-hidden="true" /> Tramo
+          </button>
+        ) : (
+          <div className="space-y-1 rounded-lg border border-dashed border-slate-300 p-1">
+            <SelectMenu
+              size="sm"
+              options={freeBranches.map((sucursal) => ({
+                value: String(sucursal.id),
+                label: sucursal.nombre,
+              }))}
+              value={String(newTramoBranchId)}
+              onChange={(value) => setNewTramoBranchId(Number(value))}
+              ariaLabel={`Sucursal del nuevo tramo de ${row.fullName} el ${dayLabel}`}
+            />
+            <SelectMenu
+              size="sm"
+              options={newTramoOptions}
+              value=""
+              disabled={isSaving}
+              onChange={handleNewTramo}
+              ariaLabel={`Horario del nuevo tramo de ${row.fullName} el ${dayLabel}`}
+            />
+            <button
+              type="button"
+              onClick={() => setNewTramoBranchId(null)}
+              className="w-full rounded-md py-0.5 text-[10px] font-semibold text-slate-500 outline-none hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+            >
+              Cancelar
+            </button>
+          </div>
+        ))}
     </div>
   )
 }
@@ -611,17 +823,7 @@ export function WeeklyScheduleMatrix({
 
     const byEmployment: Record<number, ClipboardDay[]> = {}
     for (const row of filteredRows) {
-      byEmployment[row.employmentHistoryId] = row.days.map((day) => ({
-        scheduleId: day.scheduleId,
-        isDayOff: day.isDayOff,
-        customStartTime: day.customStartTime ?? null,
-        customEndTime: day.customEndTime ?? null,
-        customLunchStart: day.customLunchStart ?? null,
-        customLunchEnd: day.customLunchEnd ?? null,
-        customBreakStart: day.customBreakStart ?? null,
-        customBreakEnd: day.customBreakEnd ?? null,
-        branchId: day.branchId,
-      }))
+      byEmployment[row.employmentHistoryId] = row.days.map(toClipboardDay)
     }
 
     const next: ScheduleClipboard = { sourceWeekStartISO: weekStartISO, byEmployment }
@@ -658,10 +860,20 @@ export function WeeklyScheduleMatrix({
         const isBlocked = Boolean(destDay.ausencia && !destDay.ausencia.isIntraday)
         if (isBlocked) continue
 
+        // SGRH-110: el primer tramo del origen va a la fila del primero del
+        // destino; los tramos adicionales que el destino ya tenia se reemplazan
+        // por los del origen, para que el dia quede igual.
+        const replaceTramoIds = (destDay.extraTramos ?? [])
+          .map((tramo) => tramo.assignmentId)
+          .filter((id): id is number => id !== null)
+        const extraTramos = (sourceDay.extraTramos ?? []).map((tramo) =>
+          toPasteExtraTramo(tramo, row.branchId)
+        )
+
         days.push({
           assignmentId: destDay.assignmentId,
           date: destDay.date,
-          // La sugerencia no opina de sucursal: cae a la de casa del destino.
+          // La sugerencia de un dia de un solo tramo no opina de sucursal: cae a la de casa del destino.
           branchId: sourceDay.branchId ?? row.branchId,
           scheduleId: sourceDay.scheduleId,
           isDayOff: sourceDay.isDayOff,
@@ -671,6 +883,8 @@ export function WeeklyScheduleMatrix({
           customLunchEnd: sourceDay.customLunchEnd ?? null,
           customBreakStart: sourceDay.customBreakStart ?? null,
           customBreakEnd: sourceDay.customBreakEnd ?? null,
+          ...(extraTramos.length > 0 ? { extraTramos } : {}),
+          ...(replaceTramoIds.length > 0 ? { replaceTramoIds } : {}),
         })
       }
 
@@ -1044,28 +1258,26 @@ export function WeeklyScheduleMatrix({
                               {WEEKDAY_NAMES[index].slice(0, 3)} {dayNumber(dateISO)}
                             </p>
                             <p className="text-[10px] font-semibold tabular-nums text-slate-400">
-                              {assignment.hours > 0
-                                ? `${formatHoursValue(assignment.hours)} h`
+                              {dayHours(assignment) > 0
+                                ? `${formatHoursValue(dayHours(assignment))} h`
                                 : '—'}
                             </p>
                           </div>
-                          <ScheduleCell
+                          <DayCell
                             row={row}
-                            assignment={assignment}
+                            day={assignment}
                             dayIndex={index}
                             stripe={stripe}
                             canWrite={canWrite}
-                            isSaving={
-                              savingCell === `${row.employmentHistoryId}-${assignment.date}`
-                            }
+                            savingCell={savingCell}
                             scheduleOptions={scheduleOptions}
                             sucursales={sucursales}
-                            currentValue={getAssignmentValue(assignment)}
                             colorById={colorById}
-                            onChange={(value) => handleAssignmentChange(row, assignment, value)}
-                            onEditCustom={() => openCustomModal(row, assignment)}
-                            onBranchChange={(branchId) =>
-                              handleBranchChange(row, assignment, branchId)
+                            getAssignmentValue={getAssignmentValue}
+                            onChange={(tramo, value) => handleAssignmentChange(row, tramo, value)}
+                            onEditCustom={(tramo) => openCustomModal(row, tramo)}
+                            onBranchChange={(tramo, branchId) =>
+                              handleBranchChange(row, tramo, branchId)
                             }
                           />
                         </div>
@@ -1161,23 +1373,23 @@ export function WeeklyScheduleMatrix({
                               key={assignment.date}
                               className="h-full border-b border-l border-slate-200/70 p-1"
                             >
-                              <ScheduleCell
+                              <DayCell
                                 row={row}
-                                assignment={assignment}
+                                day={assignment}
                                 dayIndex={index}
                                 stripe={stripe}
                                 canWrite={canWrite}
-                                isSaving={
-                                  savingCell === `${row.employmentHistoryId}-${assignment.date}`
-                                }
+                                savingCell={savingCell}
                                 scheduleOptions={scheduleOptions}
                                 sucursales={sucursales}
-                                currentValue={getAssignmentValue(assignment)}
                                 colorById={colorById}
-                                onChange={(value) => handleAssignmentChange(row, assignment, value)}
-                                onEditCustom={() => openCustomModal(row, assignment)}
-                                onBranchChange={(branchId) =>
-                                  handleBranchChange(row, assignment, branchId)
+                                getAssignmentValue={getAssignmentValue}
+                                onChange={(tramo, value) =>
+                                  handleAssignmentChange(row, tramo, value)
+                                }
+                                onEditCustom={(tramo) => openCustomModal(row, tramo)}
+                                onBranchChange={(tramo, branchId) =>
+                                  handleBranchChange(row, tramo, branchId)
                                 }
                               />
                             </td>

@@ -76,6 +76,54 @@ describe('personal weekly dashboard', () => {
     expect(screen.getByText('7.5 h')).toBeInTheDocument()
     expect(screen.queryByText('Diurno · Central')).not.toBeInTheDocument()
   })
+  it('lists every tramo of the selected day with its branch (SGRH-110)', () => {
+    render(
+      <MyWeekWidget
+        days={[
+          day({
+            startTime: '08:00',
+            endTime: '12:00',
+            hours: 4,
+            branchName: 'Infinity',
+            extraTramos: [
+              day({
+                scheduleName: 'Tarde',
+                startTime: '13:00',
+                endTime: '17:00',
+                hours: 4,
+                branchName: 'Celulares Alex',
+              }),
+            ],
+          }),
+        ]}
+        weeklyTotal={8}
+        todayIso="2026-11-02"
+      />
+    )
+    expect(screen.getByText('Diurno · Infinity')).toBeInTheDocument()
+    expect(screen.getByText('Tarde · Celulares Alex')).toBeInTheDocument()
+  })
+  it('shows both blocks of a split shift on one line (SGRH-110)', () => {
+    render(
+      <MyWeekWidget
+        days={[
+          day({
+            scheduleName: 'Partida',
+            startTime: '07:00',
+            endTime: '11:00',
+            secondStartTime: '16:00',
+            secondEndTime: '20:00',
+            hours: 8,
+          }),
+        ]}
+        weeklyTotal={8}
+        todayIso="2026-11-02"
+      />
+    )
+    expect(screen.getByText('07:00 - 11:00 · 16:00 - 20:00')).toBeInTheDocument()
+    expect(screen.getByText('Partida · Central')).toBeInTheDocument()
+  })
+
   it('updates the detail on pointer selection and omits absent schedule metadata', () => {
     render(
       <MyWeekWidget

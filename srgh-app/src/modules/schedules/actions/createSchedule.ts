@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
-import { parseOptionalTime, scheduleSchema, type ScheduleInput } from '@/modules/schedules/types'
+import { scheduleSchema, toScheduleColumns, type ScheduleInput } from '@/modules/schedules/types'
+import { templateBranchesBelongToEmpresa } from '@/modules/schedules/lib/validateBranches'
 
 export type CreateScheduleResult = { ok: true; id: number } | { ok: false; error: string }
 
@@ -23,12 +24,16 @@ export async function createSchedule(input: ScheduleInput): Promise<CreateSchedu
   }
 
   const supabase = await createClient()
+  const columns = toScheduleColumns(parsed.data)
+
+  if (!(await templateBranchesBelongToEmpresa(supabase, empresaId, columns))) {
+    return { ok: false, error: 'La sucursal seleccionada no es válida para tu empresa.' }
+  }
+
   const { data, error } = await supabase
     .from('sgrh_cat_horarios')
     .insert({
-      ...parsed.data,
-      hor_hora_inicio_break: parseOptionalTime(parsed.data.hor_hora_inicio_break),
-      hor_hora_fin_break: parseOptionalTime(parsed.data.hor_hora_fin_break),
+      ...columns,
       hor_empresa_id: empresaId,
     })
     .select('hor_id')

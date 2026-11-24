@@ -140,6 +140,106 @@ describe('MyScheduleView', () => {
     expect(screen.getByText('40 h')).toBeInTheDocument()
   })
 
+  it('muestra los dos tramos de un dia con su sucursal y suma las horas (SGRH-110)', () => {
+    const days = WEEK_DATES.map((date, i) =>
+      i === 1
+        ? makeDay(date, {
+            scheduleId: 1,
+            scheduleName: 'Turno Manana',
+            startTime: '08:00:00',
+            endTime: '12:00:00',
+            hours: 4,
+            branchName: 'Infinity',
+            extraTramos: [
+              makeDay(date, {
+                scheduleId: 2,
+                scheduleName: 'Turno Tarde',
+                startTime: '13:00:00',
+                endTime: '17:00:00',
+                hours: 4,
+                branchName: 'Celulares Alex',
+              }),
+            ],
+          })
+        : makeDay(date)
+    )
+
+    render(
+      <MyScheduleView
+        weekStartISO={WEEK_DATES[0]}
+        weekDates={WEEK_DATES}
+        days={days}
+        weeklyTotal={8}
+      />
+    )
+
+    expect(screen.getByText('Turno Manana')).toBeInTheDocument()
+    expect(screen.getByText('Turno Tarde')).toBeInTheDocument()
+    expect(screen.getByText('08:00 - 12:00')).toBeInTheDocument()
+    expect(screen.getByText('13:00 - 17:00')).toBeInTheDocument()
+    expect(screen.getByText('Infinity')).toBeInTheDocument()
+    expect(screen.getByText('Celulares Alex')).toBeInTheDocument()
+    // Etiqueta del dia (4 + 4) y total semanal.
+    expect(screen.getAllByText('8 h')).toHaveLength(2)
+  })
+
+  it('muestra los dos bloques de una jornada partida en un solo tramo (SGRH-110)', () => {
+    const days = WEEK_DATES.map((date, i) =>
+      i === 1
+        ? makeDay(date, {
+            scheduleId: 3,
+            scheduleName: 'Partida',
+            startTime: '07:00:00',
+            endTime: '11:00:00',
+            secondStartTime: '16:00:00',
+            secondEndTime: '20:00:00',
+            hours: 8,
+            branchName: 'Infinity',
+          })
+        : makeDay(date)
+    )
+
+    render(
+      <MyScheduleView
+        weekStartISO={WEEK_DATES[0]}
+        weekDates={WEEK_DATES}
+        days={days}
+        weeklyTotal={8}
+      />
+    )
+
+    expect(screen.getByText('07:00 - 11:00 · 16:00 - 20:00')).toBeInTheDocument()
+    expect(screen.getAllByText('Partida')).toHaveLength(1)
+    expect(screen.getAllByText('8 h')).toHaveLength(2)
+  })
+
+  it('un horario de un solo bloque no muestra separador de segundo bloque', () => {
+    const days = WEEK_DATES.map((date, i) =>
+      i === 1
+        ? makeDay(date, {
+            scheduleId: 1,
+            scheduleName: 'Turno A',
+            startTime: '08:00:00',
+            endTime: '17:00:00',
+            secondStartTime: null,
+            secondEndTime: null,
+            hours: 8,
+          })
+        : makeDay(date)
+    )
+
+    render(
+      <MyScheduleView
+        weekStartISO={WEEK_DATES[0]}
+        weekDates={WEEK_DATES}
+        days={days}
+        weeklyTotal={8}
+      />
+    )
+
+    expect(screen.getByText('08:00 - 17:00')).toBeInTheDocument()
+  })
+
   it('los enlaces de semana anterior/siguiente apuntan a la fecha correcta', () => {
     render(
       <MyScheduleView

@@ -61,6 +61,14 @@ export interface HorarioDia {
   finAlmuerzo: string | null
   inicioBreak: string | null
   finBreak: string | null
+  /**
+   * Tiempo SIN PAGO entre los bloques de un día con varios bloques: dos tramos
+   * en sucursales distintas (8–12 en una, 13–17 en otra) o una plantilla con
+   * jornada partida (7–11 y 16–20). `entrada` es la del primer bloque y
+   * `salida` la del último; lo que hay entre bloques se descuenta igual que el
+   * almuerzo. Vacío o ausente en un día de un solo bloque (SGRH-110).
+   */
+  huecos?: { inicio: string; fin: string }[]
 }
 
 export interface DiaProgramado {
@@ -261,6 +269,55 @@ function solape(inicioA: number, finA: number, inicioB: number, finB: number): n
 }
 
 /**
+ * Minutos de [inicio, fin] cubiertos por la UNIÓN de varios intervalos: dos
+ * ventanas que se pisan cuentan una sola vez.
+ */
+function solapeDeUnion(inicio: number, fin: number, intervalos: [number, number][]): number {
+  const recortados = intervalos
+    .map(([a, b]): [number, number] => [Math.max(a, inicio), Math.min(b, fin)])
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0])
+  let total = 0
+  let actual: [number, number] | null = null
+  for (const [a, b] of recortados) {
+    if (actual && a <= actual[1]) {
+      actual[1] = Math.max(actual[1], b)
+      continue
+    }
+    if (actual) total += actual[1] - actual[0]
+    actual = [a, b]
+  }
+  if (actual) total += actual[1] - actual[0]
+  return total
+}
+
+/**
+ * Entrada y salida de un día de varios bloques, cuando se marcó una entrada y
+ * una salida por bloque (8 entra, 12 sale, 13 entra, 17 sale). La jornada va
+ * de la primera entrada a la última salida, y el tiempo entre una salida y la
+ * entrada siguiente es una pausa real, como un almuerzo marcado.
+ *
+ * Solo aplica si las marcas alternan entrada/salida empezando por una entrada.
+ * Si la última es una entrada (falta cerrar el último bloque) devuelve
+ * 'sin_salida'. Cualquier otra forma (un doble toque, una salida suelta)
+ * devuelve null y el día se lee como siempre.
+ */
+function bloquesMarcados(
+  marcas: RawMark[]
+): { entrada: RawMark; salida: RawMark; pausas: [RawMark, RawMark][] } | 'sin_salida' | null {
+  const es = [...marcas]
+    .filter((m) => m.tipo === 'entrada' || m.tipo === 'salida')
+    .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora))
+  if (es.filter((m) => m.tipo === 'entrada').length < 2) return null
+  const alterna = es.every((m, i) => m.tipo === (i % 2 === 0 ? 'entrada' : 'salida'))
+  if (!alterna) return null
+  if (es[es.length - 1].tipo === 'entrada') return 'sin_salida'
+  const pausas: [RawMark, RawMark][] = []
+  for (let i = 1; i + 1 < es.length; i += 2) pausas.push([es[i], es[i + 1]])
+  return { entrada: es[0], salida: es[es.length - 1], pausas }
+}
+
+/**
  * Hora del horario expresada en minutos desde la medianoche del día en que
  * ARRANCA la jornada. Una hora anterior a la entrada pertenece al día
  * siguiente: en un turno de 22:00 a 06:00, tanto la salida como un almuerzo a
@@ -291,12 +348,24 @@ function minutosDescontables(
       ? solape(entrada, salida, minutosEnJornada(inicio, anclaje), minutosEnJornada(fin, anclaje))
       : 0
 
+  // El almuerzo y los huecos entre bloques son tiempo sin pago. Se descuenta
+  // su UNIÓN: una plantilla partida guarda el hueco también como almuerzo, y
+  // sumarlos dos veces le quitaba al día horas trabajadas.
+  const sinPago = [
+    ...(horario.inicioAlmuerzo && horario.finAlmuerzo
+      ? [{ inicio: horario.inicioAlmuerzo, fin: horario.finAlmuerzo }]
+      : []),
+    ...(horario.huecos ?? []),
+  ]
+  const programado = solapeDeUnion(
+    entrada,
+    salida,
+    sinPago.map((v) => [minutosEnJornada(v.inicio, anclaje), minutosEnJornada(v.fin, anclaje)])
+  )
+
   // Lo marcado manda solo cuando es MÁS que lo programado: un almuerzo de 2 h
   // con 1 h programada resta 2 h. Uno más corto no suma tiempo trabajado.
-  const almuerzo = Math.max(
-    ventana(horario.inicioAlmuerzo, horario.finAlmuerzo),
-    reales.almuerzo ?? 0
-  )
+  const almuerzo = Math.max(programado, reales.almuerzo ?? 0)
   const brk = Math.max(ventana(horario.inicioBreak, horario.finBreak), reales.receso ?? 0)
 
   return almuerzo + Math.max(0, brk - PAID_BREAK_MINUTES)
@@ -446,6 +515,19 @@ export function calcularDia(dia: DiaProgramado): DiaCalculado {
 
   const jornada = groupIntoDayJourney(dia.marcas)
 
+  // Día de varios bloques con una entrada y una salida por bloque (SGRH-110):
+  // la jornada es de la primera entrada a la última salida, y el tiempo fuera
+  // entre bloques se descuenta. Leída como un día normal, tomaba la PRIMERA
+  // salida y pagaba solo el primer bloque.
+  const porBloques = (horario.huecos ?? []).length > 0 ? bloquesMarcados(dia.marcas) : null
+  if (porBloques === 'sin_salida') {
+    return DIA_VACIO(dia.fecha, 'sin_salida', horasEsperadas)
+  }
+  if (porBloques) {
+    jornada.entrada = porBloques.entrada
+    jornada.salida = porBloques.salida
+  }
+
   if (!jornada.entrada && !jornada.salida) {
     return DIA_VACIO(dia.fecha, 'sin_marcas', horasEsperadas)
   }
@@ -476,8 +558,19 @@ export function calcularDia(dia: DiaProgramado): DiaCalculado {
   // no es trabajo extra. Quedarse después de la salida sí lo es.
   const entradaEfectiva = Math.max(entrada, minutosDeHora(horario.entrada))
 
+  const pausasEntreBloques = porBloques
+    ? porBloques.pausas.map(([s, e]) => minutosDePausa(dia.fecha, s, e))
+    : []
+  if (pausasEntreBloques.some((m) => m === null)) {
+    return DIA_VACIO(dia.fecha, 'marca_ilegible', horasEsperadas)
+  }
+  const almuerzoMarcado = minutosDePausa(dia.fecha, jornada.inicioAlmuerzo, jornada.finAlmuerzo)
+  const fueraEntreBloques = pausasEntreBloques.reduce<number>((t, m) => t + (m ?? 0), 0)
   const reales = {
-    almuerzo: minutosDePausa(dia.fecha, jornada.inicioAlmuerzo, jornada.finAlmuerzo),
+    almuerzo:
+      almuerzoMarcado === null && fueraEntreBloques === 0
+        ? null
+        : (almuerzoMarcado ?? 0) + fueraEntreBloques,
     receso: minutosDePausa(dia.fecha, jornada.inicioReceso, jornada.finReceso),
   }
   const brutos = Math.max(0, salidaReal - entradaEfectiva)

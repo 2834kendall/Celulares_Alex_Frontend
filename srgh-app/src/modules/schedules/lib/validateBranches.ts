@@ -19,3 +19,18 @@ export async function branchesBelongToEmpresa(
 
   return !error && (data ?? []).length === distinctIds.length
 }
+
+/**
+ * Las sucursales de los dos bloques de una plantilla (SGRH-110) tienen que ser
+ * de la empresa. Sin sucursales definidas no hay nada que validar.
+ */
+export async function templateBranchesBelongToEmpresa(
+  supabase: SupabaseServerClient,
+  empresaId: number,
+  columns: { hor_sucursal_id?: number | null; hor_sucursal_id_2?: number | null }
+): Promise<boolean> {
+  const ids = [columns.hor_sucursal_id, columns.hor_sucursal_id_2].filter(
+    (id): id is number => typeof id === 'number'
+  )
+  return branchesBelongToEmpresa(supabase, empresaId, ids)
+}

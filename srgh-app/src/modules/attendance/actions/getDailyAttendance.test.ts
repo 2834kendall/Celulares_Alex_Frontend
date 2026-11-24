@@ -313,6 +313,38 @@ describe('getDailyAttendance (server action)', () => {
     expect(result.data[0].branchId).toBe(200)
   })
 
+  it('con dos tramos ese dia (SGRH-110) muestra el que empieza primero', async () => {
+    // La tarde (13:00, sucursal 200) viene despues en la consulta: antes ganaba
+    // la ultima fila y la entrada de la manana se comparaba contra las 13:00.
+    useClient(
+      createSupabaseClientMock({
+        ...mocks({
+          turnos: {
+            data: [
+              assignment({ prg_hora_entrada_custom: '08:00:00' }),
+              assignment({ prg_sucursal_id: 200, prg_hora_entrada_custom: '13:00:00' }),
+            ],
+            error: null,
+          },
+          plantilla: { data: [], error: null },
+          detalle: { data: [ANA_HISTORIAL], error: null },
+        }),
+        sgrh_usuarios_empresa_rol: {
+          data: [{ uer_sucursal_id: 100 }, { uer_sucursal_id: 200 }],
+          error: null,
+        },
+      })
+    )
+
+    const result = await getDailyAttendance(DATE)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0].expectedStart).toBe('08:00')
+    expect(result.data[0].branchId).toBe(100)
+  })
+
   it('no pierde una marca cuya programacion ya no existe: la fila sale con la sucursal de la marca', async () => {
     useClient(
       createSupabaseClientMock(

@@ -173,3 +173,195 @@ describe('getMySchedule (server action)', () => {
     expect(result.weeklyTotal).toBe(16.5)
   })
 })
+
+describe('getMySchedule con varios tramos en un dia (SGRH-110)', () => {
+  const tramo = (fecha: string, sucursal: string, entrada: string, salida: string) => ({
+    prg_fecha: fecha,
+    prg_es_dia_libre: false,
+    prg_es_feriado: false,
+    prg_observaciones: null,
+    prg_sucursal_id: 1,
+    sgrh_sucursales: { suc_nombre: sucursal },
+    sgrh_cat_horarios: null,
+    prg_hora_entrada_custom: entrada,
+    prg_hora_salida_custom: salida,
+    prg_hora_inicio_almuerzo_custom: null,
+    prg_hora_fin_almuerzo_custom: null,
+    prg_hora_inicio_break_custom: null,
+    prg_hora_fin_break_custom: null,
+  })
+
+  async function miSemana(filas: unknown[]) {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_programacion_semanal: { data: filas, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    const result = await getMySchedule(WEEK_START)
+    if (!result.ok) throw new Error(result.error)
+    return result
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { emp_id: 10 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  it('muestra el dia partido en dos tiendas: el primer tramo y el resto en extraTramos', async () => {
+    const { days } = await miSemana([
+      // Llegan en desorden: el de la tarde primero.
+      tramo('2026-01-06', 'Alex', '13:00:00', '17:00:00'),
+      tramo('2026-01-06', 'Infinity', '08:00:00', '12:00:00'),
+    ])
+
+    expect(days[1]).toMatchObject({
+      date: '2026-01-06',
+      branchName: 'Infinity',
+      startTime: '08:00:00',
+      endTime: '12:00:00',
+      hours: 4,
+    })
+    expect(days[1].extraTramos).toHaveLength(1)
+    expect(days[1].extraTramos![0]).toMatchObject({
+      date: '2026-01-06',
+      branchName: 'Alex',
+      startTime: '13:00:00',
+      endTime: '17:00:00',
+      hours: 4,
+    })
+  })
+
+  it('el total semanal suma las horas de los dos tramos', async () => {
+    const { weeklyTotal } = await miSemana([
+      tramo('2026-01-06', 'Infinity', '08:00:00', '12:00:00'),
+      tramo('2026-01-06', 'Alex', '13:00:00', '17:00:00'),
+      tramo('2026-01-07', 'Alex', '08:00:00', '16:00:00'),
+    ])
+
+    expect(weeklyTotal).toBe(16)
+  })
+
+  it('un dia con un solo tramo no trae extraTramos', async () => {
+    const { days } = await miSemana([tramo('2026-01-06', 'Infinity', '08:00:00', '12:00:00')])
+
+    expect(days[1]).not.toHaveProperty('extraTramos')
+  })
+})
+
+describe('getMySchedule con jornada partida (SGRH-110)', () => {
+  const plantillaPartida = (extra: Record<string, unknown> = {}) => ({
+    prg_fecha: '2026-01-06',
+    prg_es_dia_libre: false,
+    prg_es_feriado: false,
+    prg_observaciones: null,
+    prg_sucursal_id: 1,
+    sgrh_sucursales: { suc_nombre: 'Infinity' },
+    sgrh_cat_horarios: {
+      hor_id: 8,
+      hor_nombre: 'Partida',
+      hor_color: null,
+      hor_hora_entrada: '07:00:00',
+      hor_hora_salida: '11:00:00',
+      // El hueco entre bloques viaja como almuerzo: no debe descontarse otra vez.
+      hor_hora_inicio_almuerzo: '11:00:00',
+      hor_hora_fin_almuerzo: '16:00:00',
+      hor_hora_inicio_break: null,
+      hor_hora_fin_break: null,
+      hor_hora_entrada_2: '16:00:00',
+      hor_hora_salida_2: '20:00:00',
+    },
+    prg_hora_entrada_custom: null,
+    prg_hora_salida_custom: null,
+    prg_hora_inicio_almuerzo_custom: null,
+    prg_hora_fin_almuerzo_custom: null,
+    prg_hora_inicio_break_custom: null,
+    prg_hora_fin_break_custom: null,
+    ...extra,
+  })
+
+  async function miSemana(filas: unknown[]) {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_programacion_semanal: { data: filas, error: null },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+    const result = await getMySchedule(WEEK_START)
+    if (!result.ok) throw new Error(result.error)
+    return result
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { emp_id: 10 },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+  })
+
+  it('expone los dos bloques y suma sus horas sin restar el hueco', async () => {
+    const { days, weeklyTotal } = await miSemana([plantillaPartida()])
+
+    expect(days[1]).toMatchObject({
+      scheduleName: 'Partida',
+      startTime: '07:00:00',
+      endTime: '11:00:00',
+      secondStartTime: '16:00:00',
+      secondEndTime: '20:00:00',
+      hours: 8,
+    })
+    expect(days[1]).not.toHaveProperty('extraTramos')
+    expect(weeklyTotal).toBe(8)
+  })
+
+  it('una plantilla de un solo bloque trae el segundo bloque en null', async () => {
+    const { days } = await miSemana([
+      plantillaPartida({
+        sgrh_cat_horarios: {
+          hor_id: 5,
+          hor_nombre: 'Turno A',
+          hor_color: null,
+          hor_hora_entrada: '08:00:00',
+          hor_hora_salida: '17:00:00',
+          hor_hora_inicio_almuerzo: '12:00:00',
+          hor_hora_fin_almuerzo: '13:00:00',
+          hor_hora_inicio_break: null,
+          hor_hora_fin_break: null,
+          hor_hora_entrada_2: null,
+          hor_hora_salida_2: null,
+        },
+      }),
+    ])
+
+    expect(days[1]).toMatchObject({ secondStartTime: null, secondEndTime: null, hours: 8 })
+  })
+
+  it('las horas propias del dia mandan: no muestran el segundo bloque de la plantilla', async () => {
+    const { days } = await miSemana([
+      plantillaPartida({ prg_hora_entrada_custom: '09:00:00', prg_hora_salida_custom: '13:00:00' }),
+    ])
+
+    expect(days[1]).toMatchObject({
+      isCustom: true,
+      startTime: '09:00:00',
+      endTime: '13:00:00',
+      secondStartTime: null,
+      secondEndTime: null,
+      hours: 4,
+    })
+  })
+
+  it('la jornada partida suma en el total junto con otro tramo del dia', async () => {
+    const { weeklyTotal } = await miSemana([
+      plantillaPartida(),
+      plantillaPartida({
+        sgrh_sucursales: { suc_nombre: 'Alex' },
+        sgrh_cat_horarios: null,
+        prg_hora_entrada_custom: '12:00:00',
+        prg_hora_salida_custom: '15:00:00',
+      }),
+    ])
+
+    expect(weeklyTotal).toBe(11)
+  })
+})

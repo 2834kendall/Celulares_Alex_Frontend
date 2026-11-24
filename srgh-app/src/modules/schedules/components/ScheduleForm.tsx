@@ -9,8 +9,9 @@ import { scheduleSchema, type ScheduleInput, type ScheduleRow } from '@/modules/
 import { createSchedule } from '@/modules/schedules/actions/createSchedule'
 import { updateSchedule } from '@/modules/schedules/actions/updateSchedule'
 import { stripSeconds } from '@/modules/schedules/lib/time'
+import type { SucursalOption } from '@/modules/schedules/actions/getWeeklySchedule'
 import { Button } from '@/components/ui/Button'
-import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { FIELD_ERROR, INPUT, LABEL, SELECT, SPINNER } from '@/components/ui/styles'
 import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 import { ControlledTimeSelect } from '@/components/ui/TimeSelect'
 import { Alert } from '@/components/ui/Alert'
@@ -25,16 +26,30 @@ interface ScheduleFormProps {
   /** If an existing schedule is passed, the form enters edit mode. */
   schedule?: ScheduleRow
   shiftTypes: ShiftTypeOption[]
+  /**
+   * Sucursales de la empresa, para elegir la de cada bloque de una jornada
+   * partida. Con menos de dos no se ofrece la eleccion.
+   */
+  sucursales?: SucursalOption[]
   /** Called after a successful save (create or update). */
   onSuccess?: () => void
 }
 
-export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormProps) {
+export function ScheduleForm({
+  schedule,
+  shiftTypes,
+  sucursales = [],
+  onSuccess,
+}: ScheduleFormProps) {
   const [serverError, setServerError] = useState<string | null>(null)
   const isEditing = Boolean(schedule)
 
   const [hasBreak, setHasBreak] = useState(
     Boolean(schedule?.hor_hora_inicio_break && schedule?.hor_hora_fin_break)
+  )
+  // Jornada partida: la plantilla trae un segundo bloque de trabajo en el mismo dia.
+  const [hasSecondBlock, setHasSecondBlock] = useState(
+    Boolean(schedule?.hor_hora_entrada_2 && schedule?.hor_hora_salida_2)
   )
 
   const {
@@ -54,6 +69,12 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           ...schedule,
           hor_hora_entrada: stripSeconds(schedule.hor_hora_entrada),
           hor_hora_salida: stripSeconds(schedule.hor_hora_salida),
+          hor_hora_entrada_2: schedule.hor_hora_entrada_2
+            ? stripSeconds(schedule.hor_hora_entrada_2)
+            : '',
+          hor_hora_salida_2: schedule.hor_hora_salida_2
+            ? stripSeconds(schedule.hor_hora_salida_2)
+            : '',
           hor_hora_inicio_almuerzo: stripSeconds(schedule.hor_hora_inicio_almuerzo),
           hor_hora_fin_almuerzo: stripSeconds(schedule.hor_hora_fin_almuerzo),
           hor_hora_inicio_break: schedule.hor_hora_inicio_break
@@ -68,6 +89,10 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
           hor_tipo_jornada_id: shiftTypes[0]?.tjo_id ?? 0,
           hor_hora_entrada: '08:00',
           hor_hora_salida: '17:00',
+          hor_hora_entrada_2: '',
+          hor_hora_salida_2: '',
+          hor_sucursal_id: null,
+          hor_sucursal_id_2: null,
           hor_hora_inicio_almuerzo: '12:00',
           hor_hora_fin_almuerzo: '13:00',
           hor_duracion_almuerzo_min: 60,
@@ -80,6 +105,8 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
   })
 
   const colorValue = watch('hor_color')
+  const firstBranchId = watch('hor_sucursal_id')
+  const secondBranchId = watch('hor_sucursal_id_2')
 
   function toggleBreak(checked: boolean) {
     setHasBreak(checked)
@@ -89,6 +116,25 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
     } else if (!getValues('hor_hora_inicio_break')) {
       setValue('hor_hora_inicio_break', '10:00')
       setValue('hor_hora_fin_break', '10:10')
+    }
+  }
+
+  function toggleSecondBlock(checked: boolean) {
+    setHasSecondBlock(checked)
+    if (!checked) {
+      setValue('hor_hora_entrada_2', '')
+      setValue('hor_hora_salida_2', '')
+      setValue('hor_sucursal_id', null)
+      setValue('hor_sucursal_id_2', null)
+    } else {
+      // Sugerencia: el segundo bloque arranca dos horas despues de que termina el primero.
+      const salida = getValues('hor_hora_salida')
+      const [h, m] = salida.split(':').map(Number)
+      const start = Math.min(h + 2, 22)
+      const entrada2 = `${String(start).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+      const salida2 = `${String(Math.min(start + 4, 23)).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+      setValue('hor_hora_entrada_2', entrada2)
+      setValue('hor_hora_salida_2', salida2)
     }
   }
 
@@ -194,102 +240,215 @@ export function ScheduleForm({ schedule, shiftTypes, onSuccess }: ScheduleFormPr
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className={LABEL} htmlFor="hor_hora_inicio_almuerzo">
-            Inicio de almuerzo
-          </label>
-          <ControlledTimeSelect
-            control={control}
-            name="hor_hora_inicio_almuerzo"
-            id="hor_hora_inicio_almuerzo"
-            label="Inicio de almuerzo"
-            disabled={isSubmitting}
-            invalid={!!errors.hor_hora_inicio_almuerzo}
-          />
-          {errors.hor_hora_inicio_almuerzo && (
-            <p className={FIELD_ERROR}>{errors.hor_hora_inicio_almuerzo.message}</p>
-          )}
-        </div>
-
-        <div>
-          <label className={LABEL} htmlFor="hor_hora_fin_almuerzo">
-            Fin de almuerzo
-          </label>
-          <ControlledTimeSelect
-            control={control}
-            name="hor_hora_fin_almuerzo"
-            id="hor_hora_fin_almuerzo"
-            label="Fin de almuerzo"
-            disabled={isSubmitting}
-            invalid={!!errors.hor_hora_fin_almuerzo}
-          />
-          {errors.hor_hora_fin_almuerzo && (
-            <p className={FIELD_ERROR}>{errors.hor_hora_fin_almuerzo.message}</p>
-          )}
-        </div>
-      </div>
-
       <div className="rounded-xl border border-slate-200 p-3">
         <label
-          htmlFor="hor_tiene_break"
+          htmlFor="hor_tiene_segundo_bloque"
           className="flex cursor-pointer select-none items-center gap-3"
         >
           <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
             <input
               type="checkbox"
-              id="hor_tiene_break"
+              id="hor_tiene_segundo_bloque"
               disabled={isSubmitting}
-              checked={hasBreak}
-              onChange={(event) => toggleBreak(event.target.checked)}
+              checked={hasSecondBlock}
+              onChange={(event) => toggleSecondBlock(event.target.checked)}
               className="peer sr-only"
             />
             <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2" />
             <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
           </span>
           <span className="text-xs text-slate-700 sm:text-sm">
-            Incluye break adicional al almuerzo
+            Jornada partida: dos bloques de trabajo en el mismo dia
           </span>
         </label>
 
-        {hasBreak && (
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {hasSecondBlock && (
+          <>
+            <p className="mt-2 text-xs text-slate-500">
+              Las horas del dia son la suma de los dos bloques; el hueco entre ambos no cuenta.
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className={LABEL} htmlFor="hor_hora_entrada_2">
+                  Entrada del segundo bloque
+                </label>
+                <ControlledTimeSelect
+                  control={control}
+                  name="hor_hora_entrada_2"
+                  id="hor_hora_entrada_2"
+                  label="Entrada del segundo bloque"
+                  disabled={isSubmitting}
+                  invalid={!!errors.hor_hora_entrada_2}
+                />
+                {errors.hor_hora_entrada_2 && (
+                  <p className={FIELD_ERROR}>{errors.hor_hora_entrada_2.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className={LABEL} htmlFor="hor_hora_salida_2">
+                  Salida del segundo bloque
+                </label>
+                <ControlledTimeSelect
+                  control={control}
+                  name="hor_hora_salida_2"
+                  id="hor_hora_salida_2"
+                  label="Salida del segundo bloque"
+                  disabled={isSubmitting}
+                  invalid={!!errors.hor_hora_salida_2}
+                />
+                {errors.hor_hora_salida_2 && (
+                  <p className={FIELD_ERROR}>{errors.hor_hora_salida_2.message}</p>
+                )}
+              </div>
+            </div>
+
+            {sucursales.length > 1 && (
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                <p className="mb-2 text-xs text-slate-500">
+                  Sucursal de cada bloque. Si son distintas, al asignar la plantilla el día se
+                  reparte en dos tramos. Sin elegir, se usa la sucursal con la que se asigne.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {(
+                    [
+                      ['hor_sucursal_id', 'Sucursal del primer bloque', firstBranchId],
+                      ['hor_sucursal_id_2', 'Sucursal del segundo bloque', secondBranchId],
+                    ] as const
+                  ).map(([name, label, value]) => (
+                    <div key={name}>
+                      <label className={LABEL} htmlFor={name}>
+                        {label}
+                      </label>
+                      <select
+                        id={name}
+                        className={SELECT}
+                        disabled={isSubmitting}
+                        value={value ? String(value) : ''}
+                        onChange={(event) =>
+                          setValue(name, event.target.value ? Number(event.target.value) : null, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                      >
+                        <option value="">La de la asignación</option>
+                        {sucursales.map((sucursal) => (
+                          <option key={sucursal.id} value={sucursal.id}>
+                            {sucursal.nombre}
+                          </option>
+                        ))}
+                      </select>
+                      {errors[name] && <p className={FIELD_ERROR}>{errors[name]?.message}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {!hasSecondBlock && (
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className={LABEL} htmlFor="hor_hora_inicio_break">
-                Inicio de break
+              <label className={LABEL} htmlFor="hor_hora_inicio_almuerzo">
+                Inicio de almuerzo
               </label>
               <ControlledTimeSelect
                 control={control}
-                name="hor_hora_inicio_break"
-                id="hor_hora_inicio_break"
-                label="Inicio de break"
+                name="hor_hora_inicio_almuerzo"
+                id="hor_hora_inicio_almuerzo"
+                label="Inicio de almuerzo"
                 disabled={isSubmitting}
-                invalid={!!errors.hor_hora_inicio_break}
+                invalid={!!errors.hor_hora_inicio_almuerzo}
               />
-              {errors.hor_hora_inicio_break && (
-                <p className={FIELD_ERROR}>{errors.hor_hora_inicio_break.message}</p>
+              {errors.hor_hora_inicio_almuerzo && (
+                <p className={FIELD_ERROR}>{errors.hor_hora_inicio_almuerzo.message}</p>
               )}
             </div>
 
             <div>
-              <label className={LABEL} htmlFor="hor_hora_fin_break">
-                Fin de break
+              <label className={LABEL} htmlFor="hor_hora_fin_almuerzo">
+                Fin de almuerzo
               </label>
               <ControlledTimeSelect
                 control={control}
-                name="hor_hora_fin_break"
-                id="hor_hora_fin_break"
-                label="Fin de break"
+                name="hor_hora_fin_almuerzo"
+                id="hor_hora_fin_almuerzo"
+                label="Fin de almuerzo"
                 disabled={isSubmitting}
-                invalid={!!errors.hor_hora_fin_break}
+                invalid={!!errors.hor_hora_fin_almuerzo}
               />
-              {errors.hor_hora_fin_break && (
-                <p className={FIELD_ERROR}>{errors.hor_hora_fin_break.message}</p>
+              {errors.hor_hora_fin_almuerzo && (
+                <p className={FIELD_ERROR}>{errors.hor_hora_fin_almuerzo.message}</p>
               )}
             </div>
           </div>
-        )}
-      </div>
+
+          <div className="rounded-xl border border-slate-200 p-3">
+            <label
+              htmlFor="hor_tiene_break"
+              className="flex cursor-pointer select-none items-center gap-3"
+            >
+              <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
+                <input
+                  type="checkbox"
+                  id="hor_tiene_break"
+                  disabled={isSubmitting}
+                  checked={hasBreak}
+                  onChange={(event) => toggleBreak(event.target.checked)}
+                  className="peer sr-only"
+                />
+                <span className="absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2" />
+                <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+              </span>
+              <span className="text-xs text-slate-700 sm:text-sm">
+                Incluye break adicional al almuerzo
+              </span>
+            </label>
+
+            {hasBreak && (
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={LABEL} htmlFor="hor_hora_inicio_break">
+                    Inicio de break
+                  </label>
+                  <ControlledTimeSelect
+                    control={control}
+                    name="hor_hora_inicio_break"
+                    id="hor_hora_inicio_break"
+                    label="Inicio de break"
+                    disabled={isSubmitting}
+                    invalid={!!errors.hor_hora_inicio_break}
+                  />
+                  {errors.hor_hora_inicio_break && (
+                    <p className={FIELD_ERROR}>{errors.hor_hora_inicio_break.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className={LABEL} htmlFor="hor_hora_fin_break">
+                    Fin de break
+                  </label>
+                  <ControlledTimeSelect
+                    control={control}
+                    name="hor_hora_fin_break"
+                    id="hor_hora_fin_break"
+                    label="Fin de break"
+                    disabled={isSubmitting}
+                    invalid={!!errors.hor_hora_fin_break}
+                  />
+                  {errors.hor_hora_fin_break && (
+                    <p className={FIELD_ERROR}>{errors.hor_hora_fin_break.message}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <ColorPicker
         value={colorValue}

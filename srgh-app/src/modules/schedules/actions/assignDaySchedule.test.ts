@@ -182,4 +182,56 @@ describe('assignDaySchedule (server action)', () => {
 
     expect(result).toEqual({ ok: false, error: 'No se pudo guardar la asignacion.' })
   })
+
+  describe('cuando la base rechaza el tramo (SGRH-110)', () => {
+    const conErrorDeBase = (error: { code: string; message: string }) =>
+      mockCreateClient.mockResolvedValue(
+        createSupabaseClientMock({
+          sgrh_sucursales: { data: [{ suc_id: 3 }], error: null },
+          sgrh_programacion_semanal: { data: null, error },
+        }) as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+
+    it('explica que ya hay un tramo en esa sucursal ese dia', async () => {
+      conErrorDeBase({ code: '23505', message: 'duplicate key value violates unique constraint' })
+
+      const result = await assignDaySchedule({ ...baseInput, scheduleId: 4 })
+
+      expect(result).toEqual({
+        ok: false,
+        error:
+          'Este colaborador ya tiene un tramo en esa sucursal ese día. Edítalo en lugar de agregar otro.',
+      })
+    })
+
+    it('muestra el mensaje del trigger cuando los tramos se traslapan', async () => {
+      const message =
+        'Los tramos del mismo día no pueden traslaparse (11:00 a 15:00 contra 08:00 a 12:00).'
+      conErrorDeBase({ code: '23P01', message })
+
+      const result = await assignDaySchedule({ ...baseInput, scheduleId: 4 })
+
+      expect(result).toEqual({ ok: false, error: message })
+    })
+
+    it('muestra el mensaje del trigger cuando un dia libre convive con otro tramo', async () => {
+      const message = 'Un día libre no puede tener otros tramos el mismo día.'
+      conErrorDeBase({ code: '23514', message })
+
+      const result = await assignDaySchedule({ ...baseInput, isDayOff: true })
+
+      expect(result).toEqual({ ok: false, error: message })
+    })
+
+    it('no deja pasar el texto de cualquier otro error de la base', async () => {
+      conErrorDeBase({
+        code: '23P01',
+        message: 'conflicting key value violates exclusion constraint "otra"',
+      })
+
+      const result = await assignDaySchedule({ ...baseInput, scheduleId: 4 })
+
+      expect(result).toEqual({ ok: false, error: 'No se pudo guardar la asignacion.' })
+    })
+  })
 })

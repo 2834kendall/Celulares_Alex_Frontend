@@ -77,16 +77,11 @@ export function MyScheduleView({
 }
 
 function MyScheduleDayCard({ day, dayIndex }: { day: MyDayAssignment; dayIndex: number }) {
-  const palette = paletteForSchedule({
-    scheduleId: day.scheduleId,
-    isCustom: day.isCustom,
-    manualColor: day.scheduleColor,
-  })
-  // El texto lo pinta <RangoHora> (formato de la empresa). Acá solo se
-  // decide si hay rango que mostrar: este archivo es componente de
-  // servidor y no puede llamar al hook.
-  const hasRange = Boolean(day.startTime && day.endTime)
-  const showBranch = !day.isDayOff && palette != null && day.branchName
+  // SGRH-110: un dia puede tener varios tramos (p. ej. manana en una sucursal
+  // y tarde en otra). El primero describe el dia; los demas vienen en extraTramos.
+  const tramos = [day, ...(day.extraTramos ?? [])]
+  const dayHours = tramos.reduce((total, tramo) => total + tramo.hours, 0)
+  const hasAssignment = tramos.some((tramo) => tramoPalette(tramo) != null)
 
   return (
     <div className="flex flex-col">
@@ -95,7 +90,7 @@ function MyScheduleDayCard({ day, dayIndex }: { day: MyDayAssignment; dayIndex: 
           {WEEKDAY_NAMES[dayIndex].slice(0, 3)} {dayNumber(day.date)}
         </p>
         <p className="text-[10px] font-semibold tabular-nums text-slate-400">
-          {day.hours > 0 ? `${formatHoursValue(day.hours)} h` : '—'}
+          {dayHours > 0 ? `${formatHoursValue(dayHours)} h` : '—'}
         </p>
       </div>
 
@@ -104,43 +99,14 @@ function MyScheduleDayCard({ day, dayIndex }: { day: MyDayAssignment; dayIndex: 
           <div className="flex-1 rounded-lg" style={hatchStyle(NEUTRAL_STRIPE)}>
             <span className="sr-only">Descanso</span>
           </div>
-        ) : palette ? (
-          <div
-            className="flex flex-1 flex-col"
-            style={{ backgroundColor: palette.fill, borderColor: palette.border }}
-          >
-            <div className="flex flex-1 flex-col items-center justify-center gap-px px-1.5 py-1.5">
-              {day.isHoliday && (
-                <Badge tone="amber" className="mb-0.5">
-                  Feriado
-                </Badge>
-              )}
-              <p className="line-clamp-2 text-[11px] font-bold leading-[1.25] text-slate-800">
-                {day.isCustom ? 'Personalizado' : (day.scheduleName ?? 'Sin asignar')}
-              </p>
-              {hasRange && (
-                // Sin whitespace-nowrap: en 12h el rango ("8:00 a. m. -
-                // 5:00 p. m.") casi duplica el largo de "08:00 - 17:00" y en
-                // una tarjeta de día se salía. En 24h sigue entrando en una
-                // línea, así que ahí no cambia nada.
-                <p className="text-[11px] leading-[1.3] tabular-nums text-slate-600">
-                  <RangoHora inicio={day.startTime} fin={day.endTime} />
-                </p>
-              )}
-            </div>
-            {showBranch && (
-              <div
-                className="flex shrink-0 items-center justify-center gap-1 px-1.5 py-1"
-                style={{ borderTop: `1px solid ${palette.border}` }}
-                title={day.branchName ?? undefined}
-              >
-                <Building2 className="h-2.5 w-2.5 shrink-0 text-slate-500" />
-                <span className="min-w-0 truncate text-[9.5px] font-semibold leading-none text-slate-600">
-                  {day.branchName}
-                </span>
-              </div>
-            )}
-          </div>
+        ) : hasAssignment ? (
+          tramos.map((tramo, index) => (
+            <MyScheduleTramo
+              key={`${tramo.branchName ?? ''}-${index}`}
+              tramo={tramo}
+              index={index}
+            />
+          ))
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-slate-200 px-1.5 py-1.5">
             {day.isHoliday ? (
@@ -156,6 +122,75 @@ function MyScheduleDayCard({ day, dayIndex }: { day: MyDayAssignment; dayIndex: 
         <p className="mt-1 line-clamp-2 px-0.5 text-[10px] leading-tight text-slate-400">
           {day.observaciones}
         </p>
+      )}
+    </div>
+  )
+}
+
+function tramoPalette(tramo: MyDayAssignment) {
+  return paletteForSchedule({
+    scheduleId: tramo.scheduleId,
+    isCustom: tramo.isCustom,
+    manualColor: tramo.scheduleColor,
+  })
+}
+
+// Un tramo del dia: horario + sucursal. Los tramos extra se apilan debajo del
+// primero dentro de la misma tarjeta, separados por una linea del color del tramo.
+function MyScheduleTramo({ tramo, index }: { tramo: MyDayAssignment; index: number }) {
+  const palette = tramoPalette(tramo)
+  if (!palette) return null
+
+  // El texto lo pinta <RangoHora> (formato de la empresa). Acá solo se
+  // decide si hay rango que mostrar: este archivo es componente de
+  // servidor y no puede llamar al hook.
+  const hasRange = Boolean(tramo.startTime && tramo.endTime)
+
+  return (
+    <div
+      className="flex flex-1 flex-col"
+      style={{
+        backgroundColor: palette.fill,
+        borderColor: palette.border,
+        borderTop: index > 0 ? `1px solid ${palette.border}` : undefined,
+      }}
+    >
+      <div className="flex flex-1 flex-col items-center justify-center gap-px px-1.5 py-1.5">
+        {index === 0 && tramo.isHoliday && (
+          <Badge tone="amber" className="mb-0.5">
+            Feriado
+          </Badge>
+        )}
+        <p className="line-clamp-2 text-[11px] font-bold leading-[1.25] text-slate-800">
+          {tramo.isCustom ? 'Personalizado' : (tramo.scheduleName ?? 'Sin asignar')}
+        </p>
+        {hasRange && (
+          // Sin whitespace-nowrap: en 12h el rango ("8:00 a. m. -
+          // 5:00 p. m.") casi duplica el largo de "08:00 - 17:00" y en
+          // una tarjeta de día se salía. En 24h sigue entrando en una
+          // línea, así que ahí no cambia nada.
+          <p className="text-[11px] leading-[1.3] tabular-nums text-slate-600">
+            <RangoHora inicio={tramo.startTime} fin={tramo.endTime} />
+            {tramo.secondStartTime && tramo.secondEndTime && (
+              <>
+                {' · '}
+                <RangoHora inicio={tramo.secondStartTime} fin={tramo.secondEndTime} />
+              </>
+            )}
+          </p>
+        )}
+      </div>
+      {tramo.branchName && (
+        <div
+          className="flex shrink-0 items-center justify-center gap-1 px-1.5 py-1"
+          style={{ borderTop: `1px solid ${palette.border}` }}
+          title={tramo.branchName}
+        >
+          <Building2 className="h-2.5 w-2.5 shrink-0 text-slate-500" />
+          <span className="min-w-0 truncate text-[9.5px] font-semibold leading-none text-slate-600">
+            {tramo.branchName}
+          </span>
+        </div>
       )}
     </div>
   )

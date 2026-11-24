@@ -8,9 +8,11 @@ import type { ManagedKioskMeta } from '@/modules/attendance/lib/liveKioskAccess'
 import { allowedNextMarks, isExitWindowOpen, type MarkType } from '@/modules/attendance/lib/marks'
 import {
   absenceBlocksMarkMessage,
+  bloquesDelDia,
   findApprovedAbsence,
   loadDayJourney,
   resolveKioskSucursalIds,
+  salidaDelBloqueActual,
 } from '@/modules/attendance/lib/dayJourney'
 import { findWorkableDay } from '@/modules/attendance/lib/workingDay'
 import { nowInCostaRica, timeOfDay, todayInCostaRica } from '@/modules/attendance/lib/time'
@@ -59,9 +61,9 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
     return { ok: false, error: 'No tienes turno asignado en esta sucursal hoy.' }
   }
 
-  const [ausencia, jornada] = await Promise.all([
+  const [ausencia, delDia] = await Promise.all([
     findApprovedAbsence(admin, turno.employmentHistoryId, hoy),
-    loadDayJourney(admin, turno.employmentHistoryId, hoy),
+    bloquesDelDia(admin, turno.employmentHistoryId, hoy),
   ])
 
   if (!ausencia.ok) {
@@ -71,6 +73,13 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
   if (ausencia.tipo) {
     return { ok: false, error: absenceBlocksMarkMessage(ausencia.tipo) }
   }
+
+  if (!delDia.ok) {
+    return { ok: false, error: delDia.error }
+  }
+
+  // Un dia de varios bloques (SGRH-110) se marca bloque por bloque.
+  const jornada = await loadDayJourney(admin, turno.employmentHistoryId, hoy, delDia.bloques.length)
 
   if (!jornada.ok) {
     return { ok: false, error: jornada.error }
@@ -83,7 +92,10 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
   return {
     ok: true,
     allowed: allowedNextMarks(jornada.journey, {
-      exitWindowOpen: isExitWindowOpen(ahora, turno.expectedEnd),
+      exitWindowOpen: isExitWindowOpen(
+        ahora,
+        salidaDelBloqueActual(delDia.bloques, jornada.salidas, turno.expectedEnd)
+      ),
       breakScheduled: turno.expectedBreakStart !== null,
     }),
   }
