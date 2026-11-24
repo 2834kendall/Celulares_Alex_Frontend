@@ -21,9 +21,27 @@ export function EvaluationTabs({
   nuevaContent,
 }: EvaluationTabsProps) {
   const tabs: TabDefinition<Tab>[] = [
-    { id: 'metricas', label: 'Métricas sucursal', icon: BarChart3, content: metricasContent },
-    { id: 'individual', label: 'Vista individual', icon: UserRound, content: individualContent },
-    { id: 'rubros', label: 'Gestionar rubros', icon: ClipboardList, content: rubrosContent },
+    {
+      id: 'metricas',
+      label: 'Métricas sucursal',
+      shortLabel: 'Métricas',
+      icon: BarChart3,
+      content: metricasContent,
+    },
+    {
+      id: 'individual',
+      label: 'Vista individual',
+      shortLabel: 'Individual',
+      icon: UserRound,
+      content: individualContent,
+    },
+    {
+      id: 'rubros',
+      label: 'Gestionar rubros',
+      shortLabel: 'Rubros',
+      icon: ClipboardList,
+      content: rubrosContent,
+    },
   ]
 
   // Sin permiso de escritura el tab no existe; si la URL lo pide igual, Tabs
@@ -32,6 +50,7 @@ export function EvaluationTabs({
     tabs.push({
       id: 'nueva',
       label: 'Nueva evaluación',
+      shortLabel: 'Nueva',
       icon: Star,
       content: nuevaContent,
       standalone: true,

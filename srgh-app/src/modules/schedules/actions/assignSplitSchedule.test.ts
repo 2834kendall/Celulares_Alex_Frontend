@@ -136,7 +136,7 @@ describe('assignSplitSchedule (server action)', () => {
     expect(primero.update).toHaveBeenCalledWith(
       expect.objectContaining({
         prg_sucursal_id: 10,
-        prg_horario_id: null,
+        prg_horario_id: 8,
         prg_fecha: '2026-01-06',
         prg_es_dia_libre: false,
         prg_hora_entrada_custom: '07:00',
@@ -148,7 +148,7 @@ describe('assignSplitSchedule (server action)', () => {
     expect(segundo.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         prg_sucursal_id: 20,
-        prg_horario_id: null,
+        prg_horario_id: 8,
         prg_hora_entrada_custom: '16:00',
         prg_hora_salida_custom: '20:00',
       })

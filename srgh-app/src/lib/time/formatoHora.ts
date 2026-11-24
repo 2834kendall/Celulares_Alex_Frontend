@@ -63,7 +63,12 @@ export function formatHora(hora: string | null | undefined, formato: FormatoHora
   // Con "a. m."/"p. m." (con espacio y puntos), que es como lo escribe la
   // RAE y como lo formatea Intl con locale es-CR — así el reloj del kiosco y
   // el resto del sistema se leen igual.
-  const sufijo = h < 12 ? 'a. m.' : 'p. m.'
+  //
+  // El espacio del sufijo es duro (\u00a0): con el normal, en una celda
+  // angosta "12:00 p. m." se partía entre la "p." y la "m." y quedaba la "m."
+  // sola en la segunda línea (QA, SGRH-115). El espacio que separa la hora
+  // del sufijo sí es normal: ahí partir es correcto.
+  const sufijo = h < 12 ? 'a.\u00a0m.' : 'p.\u00a0m.'
   const h12 = h % 12 === 0 ? 12 : h % 12
   return `${h12}:${m} ${sufijo}`
 }

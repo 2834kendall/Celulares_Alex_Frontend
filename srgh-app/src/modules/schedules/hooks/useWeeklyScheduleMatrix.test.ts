@@ -92,6 +92,17 @@ describe('useWeeklyScheduleMatrix', () => {
       )
     })
 
+    it('con plantilla Y horas propias (jornada partida) devuelve la plantilla', () => {
+      const { result } = renderHook(() =>
+        useWeeklyScheduleMatrix({ rows: [], schedules: [], canWrite: true })
+      )
+      expect(
+        result.current.getAssignmentValue(
+          makeAssignment({ scheduleId: 7, customStartTime: '07:00' })
+        )
+      ).toBe('7')
+    })
+
     it('devuelve el scheduleId como string cuando hay uno asignado', () => {
       const { result } = renderHook(() =>
         useWeeklyScheduleMatrix({ rows: [], schedules: [], canWrite: true })

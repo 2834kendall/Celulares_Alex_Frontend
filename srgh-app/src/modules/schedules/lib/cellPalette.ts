@@ -29,14 +29,18 @@ export function customSchedulePalette(hex: string): CellPalette {
   }
 }
 
-// Prioridad: personalizado > sin horario > color manual > rotacion por hor_id.
+// Prioridad: color manual > rotacion por hor_id > personalizado > sin horario.
+//
+// La plantilla va primero porque una jornada partida guarda horas propias en
+// cada bloque pero sigue apuntando a su plantilla (assignSplitSchedule): si
+// mandara isCustom, esos dias saldrian del color lila de "personalizado" y
+// perderian el color de su horario.
 export function paletteForSchedule(day: {
   scheduleId: number | null
   isCustom: boolean
   manualColor?: string | null
 }): CellPalette | null {
-  if (day.isCustom) return CUSTOM_PALETTE
-  if (day.scheduleId == null) return null
+  if (day.scheduleId == null) return day.isCustom ? CUSTOM_PALETTE : null
   if (day.manualColor) return customSchedulePalette(day.manualColor)
   return SCHEDULE_PALETTE[day.scheduleId % SCHEDULE_PALETTE.length]
 }

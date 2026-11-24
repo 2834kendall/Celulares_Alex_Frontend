@@ -162,7 +162,7 @@ function MyScheduleTramo({ tramo, index }: { tramo: MyDayAssignment; index: numb
           </Badge>
         )}
         <p className="line-clamp-2 text-[11px] font-bold leading-[1.25] text-slate-800">
-          {tramo.isCustom ? 'Personalizado' : (tramo.scheduleName ?? 'Sin asignar')}
+          {tramo.scheduleName ?? (tramo.isCustom ? 'Personalizado' : 'Sin asignar')}
         </p>
         {hasRange && (
           // Sin whitespace-nowrap: en 12h el rango ("8:00 a. m. -

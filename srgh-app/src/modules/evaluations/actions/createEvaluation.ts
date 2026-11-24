@@ -11,6 +11,7 @@ import {
   serializeNotes,
 } from '@/modules/evaluations/lib/scoring'
 import { evaluationSchema, type EvaluationInput } from '@/modules/evaluations/types'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 export type CreateEvaluationResult = { ok: true; id: number } | { ok: false; error: string }
 
@@ -53,7 +54,10 @@ export async function createEvaluation(input: EvaluationInput): Promise<CreateEv
       eve_historial_laboral_id: historial.lab_id,
       eve_sucursal_id: historial.lab_sucursal_id,
       eve_evaluador_id: meta.usr_id,
-      eve_fecha_evaluacion: new Date().toISOString().slice(0, 10),
+      // Fecha de Costa Rica, no la UTC: evaluar a las 7 p. m. guardaba el dia
+      // siguiente, porque toISOString() ya habia cruzado la medianoche en UTC
+      // (QA, SGRH-115).
+      eve_fecha_evaluacion: todayInCostaRica(),
       eve_tipo_periodo: formatPeriod(parsed.data.periodoInicio, parsed.data.periodoFin),
       eve_estado: 'completada',
       eve_promedio_final: promedio,

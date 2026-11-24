@@ -19,30 +19,30 @@ describe('formatHora', () => {
 
   describe('12h', () => {
     it('mañana → a. m. sin cero a la izquierda', () => {
-      expect(formatHora('08:35', '12h')).toBe('8:35 a. m.')
+      expect(formatHora('08:35', '12h')).toBe('8:35 a.\u00a0m.')
     })
 
     it('tarde → p. m.', () => {
-      expect(formatHora('17:05', '12h')).toBe('5:05 p. m.')
+      expect(formatHora('17:05', '12h')).toBe('5:05 p.\u00a0m.')
     })
 
     // Los dos casos que siempre se rompen al pasar a 12h.
     it('medianoche es 12 a. m., no 0', () => {
-      expect(formatHora('00:05', '12h')).toBe('12:05 a. m.')
-      expect(formatHora('00:00', '12h')).toBe('12:00 a. m.')
+      expect(formatHora('00:05', '12h')).toBe('12:05 a.\u00a0m.')
+      expect(formatHora('00:00', '12h')).toBe('12:00 a.\u00a0m.')
     })
 
     it('mediodía es 12 p. m., no 12 a. m.', () => {
-      expect(formatHora('12:00', '12h')).toBe('12:00 p. m.')
-      expect(formatHora('12:30', '12h')).toBe('12:30 p. m.')
+      expect(formatHora('12:00', '12h')).toBe('12:00 p.\u00a0m.')
+      expect(formatHora('12:30', '12h')).toBe('12:30 p.\u00a0m.')
     })
 
     it('11:59 p. m. es el último minuto del día', () => {
-      expect(formatHora('23:59', '12h')).toBe('11:59 p. m.')
+      expect(formatHora('23:59', '12h')).toBe('11:59 p.\u00a0m.')
     })
 
     it('acepta "HH:MM:SS"', () => {
-      expect(formatHora('13:45:30', '12h')).toBe('1:45 p. m.')
+      expect(formatHora('13:45:30', '12h')).toBe('1:45 p.\u00a0m.')
     })
   })
 
@@ -60,7 +60,7 @@ describe('formatHora', () => {
 describe('formatRangoHora', () => {
   it('une inicio y fin con el formato elegido', () => {
     expect(formatRangoHora('08:00', '17:00', '24h')).toBe('08:00 - 17:00')
-    expect(formatRangoHora('08:00', '17:00', '12h')).toBe('8:00 a. m. - 5:00 p. m.')
+    expect(formatRangoHora('08:00', '17:00', '12h')).toBe('8:00 a.\u00a0m. - 5:00 p.\u00a0m.')
   })
 
   it('si falta un extremo devuelve null, no "08:00 - —"', () => {

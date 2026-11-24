@@ -65,11 +65,20 @@ function getAssignmentValue(assignment: DayAssignment) {
     return '__free__'
   }
 
+  // La plantilla va antes que las horas propias: un bloque de jornada partida
+  // tiene las dos cosas (assignSplitSchedule guarda prg_horario_id junto con
+  // las horas de su bloque) y el selector decia "Personalizado", sin nombre ni
+  // color (QA, SGRH-115). Un dia con horas a mano no tiene plantilla, asi que
+  // ese sigue cayendo en __custom__.
+  if (assignment.scheduleId) {
+    return String(assignment.scheduleId)
+  }
+
   if (assignment.customStartTime) {
     return '__custom__'
   }
 
-  return assignment.scheduleId ? String(assignment.scheduleId) : ''
+  return ''
 }
 
 export function useWeeklyScheduleMatrix({
