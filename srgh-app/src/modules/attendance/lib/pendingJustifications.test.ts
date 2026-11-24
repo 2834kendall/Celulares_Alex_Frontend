@@ -29,6 +29,7 @@ function row(overrides: Partial<MonthlyEmployeeSummary>): MonthlyEmployeeSummary
     ausencias: 0,
     tardyDays: [],
     absentDays: [],
+    absentSecondBlockDays: [],
     justifiedAbsences: [],
     ...overrides,
   }
@@ -81,5 +82,39 @@ describe('buildJustificationQueue', () => {
     const { pending } = buildJustificationQueue([row({ tardyDays: [tardy({ markId: null })] })])
 
     expect(pending).toEqual([])
+  })
+})
+
+describe('tardia del segundo bloque en la bandeja (SGRH-110)', () => {
+  it('va despues de la entrada y del almuerzo del mismo dia, y se puede justificar', () => {
+    const queue = buildJustificationQueue([
+      row({
+        tardyDays: [
+          tardy({ kind: 'segundo_bloque', time: '16:12', markId: 3 }),
+          tardy({ kind: 'almuerzo', time: '13:10', markId: 2 }),
+          tardy({ kind: 'entrada', time: '08:15', markId: 1 }),
+        ],
+      }),
+    ])
+
+    expect(queue.pending.map((i) => (i.kind === 'tardia' ? i.day.kind : i.kind))).toEqual([
+      'entrada',
+      'almuerzo',
+      'segundo_bloque',
+    ])
+  })
+})
+
+describe('ausencia del segundo bloque en la bandeja (SGRH-110)', () => {
+  it('entra como pendiente y se distingue de no haber venido', () => {
+    const queue = buildJustificationQueue([
+      row({ absentDays: ['2026-07-05'], absentSecondBlockDays: ['2026-07-09'] }),
+    ])
+
+    expect(queue.pending).toEqual([
+      expect.objectContaining({ kind: 'ausencia', date: '2026-07-09', bloque: 'segundo' }),
+      expect.objectContaining({ kind: 'ausencia', date: '2026-07-05' }),
+    ])
+    expect(queue.pending[1]).not.toHaveProperty('bloque')
   })
 })

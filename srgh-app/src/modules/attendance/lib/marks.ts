@@ -35,6 +35,12 @@ export interface RawMark {
   fechaHora: string
 }
 
+/** Un bloque de trabajo marcado: su entrada y, si ya cerro, su salida. */
+export interface JourneyBlock {
+  entrada: RawMark
+  salida: RawMark | null
+}
+
 export interface DayJourney {
   entrada: RawMark | null
   inicioReceso: RawMark | null
@@ -46,9 +52,16 @@ export interface DayJourney {
   duplicates: RawMark[]
   /** Hay entrada pero no salida: la jornada quedo abierta. */
   isOpen: boolean
+  /**
+   * Bloques marcados del dia (SGRH-110): con jornada partida, o con un tramo
+   * por sucursal, cada bloque tiene su entrada y su salida. Solo se llena si
+   * quien llama pide `byBlocks` y el dia son dos o mas pares entrada/salida;
+   * en cualquier otro caso es [] y el dia se lee como siempre.
+   */
+  blocks: JourneyBlock[]
 }
 
-type JourneySlot = keyof Omit<DayJourney, 'duplicates' | 'isOpen'>
+type JourneySlot = keyof Omit<DayJourney, 'duplicates' | 'isOpen' | 'blocks'>
 
 const SLOT_OF: Record<MarkType, JourneySlot> = {
   entrada: 'entrada',
@@ -68,8 +81,12 @@ const SLOT_OF: Record<MarkType, JourneySlot> = {
  * casi siempre ocurre despues del real, no antes. Las demas quedan en
  * `duplicates` para que el encargado las revise/corrija, nunca se descartan.
  */
-export function groupIntoDayJourney(marks: RawMark[]): DayJourney {
+export function groupIntoDayJourney(
+  marks: RawMark[],
+  options: { byBlocks?: boolean } = {}
+): DayJourney {
   const sorted = [...marks].sort((a, b) => a.fechaHora.localeCompare(b.fechaHora))
+  const blocks = options.byBlocks ? pairIntoBlocks(sorted) : null
 
   const journey: DayJourney = {
     entrada: null,
@@ -80,9 +97,13 @@ export function groupIntoDayJourney(marks: RawMark[]): DayJourney {
     salida: null,
     duplicates: [],
     isOpen: false,
+    blocks: [],
   }
 
   for (const mark of sorted) {
+    // Las entradas y salidas de un dia por bloques no son duplicados: cada par
+    // es un bloque. El resto (receso, almuerzo) sigue la regla de siempre.
+    if (blocks && (mark.tipo === 'entrada' || mark.tipo === 'salida')) continue
     const slot = SLOT_OF[mark.tipo]
     if (journey[slot] === null) {
       journey[slot] = mark
@@ -91,9 +112,38 @@ export function groupIntoDayJourney(marks: RawMark[]): DayJourney {
     }
   }
 
+  if (blocks) {
+    // El dia va de la primera entrada a la ultima salida; si el ultimo bloque
+    // sigue abierto no hay salida y la jornada queda abierta.
+    journey.blocks = blocks
+    journey.entrada = blocks[0].entrada
+    journey.salida = blocks[blocks.length - 1].salida
+  }
+
   journey.isOpen = journey.entrada !== null && journey.salida === null
 
   return journey
+}
+
+/**
+ * Entradas y salidas de un dia de varios bloques (8 entra, 12 sale, 13 entra,
+ * 17 sale), o null si el dia no tiene esa forma: menos de dos entradas, o
+ * marcas que no alternan entrada/salida empezando por una entrada (un doble
+ * toque, una salida suelta). Esos casos se leen como siempre, con los
+ * repetidos en `duplicates` para que el encargado los revise.
+ *
+ * Si la ultima marca es una entrada, el ultimo bloque queda abierto.
+ */
+function pairIntoBlocks(sorted: RawMark[]): JourneyBlock[] | null {
+  const es = sorted.filter((m) => m.tipo === 'entrada' || m.tipo === 'salida')
+  if (es.filter((m) => m.tipo === 'entrada').length < 2) return null
+  if (!es.every((m, i) => m.tipo === (i % 2 === 0 ? 'entrada' : 'salida'))) return null
+
+  const blocks: JourneyBlock[] = []
+  for (let i = 0; i < es.length; i += 2) {
+    blocks.push({ entrada: es[i], salida: es[i + 1] ?? null })
+  }
+  return blocks
 }
 
 /**

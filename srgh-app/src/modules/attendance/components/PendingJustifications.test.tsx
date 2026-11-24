@@ -51,6 +51,7 @@ function makeRow(overrides: Partial<MonthlyEmployeeSummary> = {}): MonthlyEmploy
     ausencias: 0,
     tardyDays: [],
     absentDays: [],
+    absentSecondBlockDays: [],
     justifiedAbsences: [],
     ...overrides,
   }

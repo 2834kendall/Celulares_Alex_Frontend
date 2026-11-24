@@ -5,15 +5,28 @@ on:
     branches: [main]
     types: [opened, edited, synchronize, reopened]
 
+# Este workflow solo lee el contexto del PR: no necesita escribir en el repo.
+# El token por defecto trae permisos de escritura si no se declaran, asi que
+# se bajan a lectura para que un paso comprometido no pueda empujar nada.
+permissions:
+  contents: read
+
 jobs:
   check-source-branch:
     runs-on: ubuntu-latest
     steps:
       - name: Verify PR source is dev
+        # El nombre de la rama origen lo controla quien abre el PR y puede
+        # contener comillas o `;`. Interpolarlo con ${{ }} dentro del script lo
+        # pegaria como texto en el shell y permitiria ejecutar comandos
+        # arbitrarios en el runner; pasarlo por `env` lo deja como variable y
+        # el shell ya no lo interpreta.
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          if [ "${{ github.head_ref }}" != "dev" ]; then
+          if [ "$HEAD_REF" != "dev" ]; then
             echo "❌ Pull requests to 'main' are only allowed from 'dev'."
-            echo "You're trying to merge from: ${{ github.head_ref }}"
+            echo "You're trying to merge from: $HEAD_REF"
             exit 1
           fi
           echo "✅ Source branch is 'dev'. OK."

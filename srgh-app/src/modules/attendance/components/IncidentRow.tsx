@@ -1,4 +1,5 @@
 import { CalendarCheck2, CalendarX2, Clock } from 'lucide-react'
+import type { TardyDay } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
 import type { JustificationItem } from '@/modules/attendance/lib/pendingJustifications'
 import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
 import { formatMinutes } from '@/modules/attendance/lib/time'
@@ -26,6 +27,12 @@ interface IncidentRowProps {
  * detalle del resumen mensual y la bandeja "Por justificar", para que el
  * mismo dia se lea igual en los dos lugares.
  */
+const TARDY_TITLE: Record<TardyDay['kind'], string> = {
+  entrada: 'Llego a las ',
+  almuerzo: 'Volvio del almuerzo a las ',
+  segundo_bloque: 'Entro al segundo bloque a las ',
+}
+
 export function IncidentRow({ item, showName = false, action }: IncidentRowProps) {
   const { day, weekday } = dayParts(item.date)
 
@@ -38,7 +45,7 @@ export function IncidentRow({ item, showName = false, action }: IncidentRowProps
     icon = <Clock className="h-4 w-4 text-amber-600" aria-hidden="true" />
     title = (
       <>
-        {d.kind === 'entrada' ? 'Llego a las ' : 'Volvio del almuerzo a las '}
+        {TARDY_TITLE[d.kind]}
         <span className="tabular-nums">
           <Hora value={d.time} />
         </span>
@@ -66,7 +73,7 @@ export function IncidentRow({ item, showName = false, action }: IncidentRowProps
       </>
     )
   } else if (item.kind === 'ausencia') {
-    title = 'No vino y no marco'
+    title = item.bloque === 'segundo' ? 'No entro al segundo bloque' : 'No vino y no marco'
     tags = <span className={`${PILL} bg-rose-50 text-rose-700`}>Ausencia</span>
   } else {
     icon = <CalendarCheck2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />

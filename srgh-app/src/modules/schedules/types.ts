@@ -17,7 +17,14 @@ const optionalTime = z
 
 export const scheduleSchema = z
   .object({
-    hor_nombre: z.string('El nombre es requerido.').trim().min(3).max(100),
+    // Mensajes explicitos en min/max: desde zod 4.6 el mensaje que se le pasa
+    // a z.string() tambien se usa como respaldo de los demas checks, asi que
+    // sin esto un nombre de 2 caracteres o de mas de 100 decia "es requerido".
+    hor_nombre: z
+      .string('El nombre es requerido.')
+      .trim()
+      .min(3, 'El nombre debe tener al menos 3 caracteres.')
+      .max(100, 'Maximo 100 caracteres.'),
     hor_tipo_jornada_id: z.number('Seleccione un tipo de jornada.').int().positive(),
     hor_hora_entrada: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
     hor_hora_salida: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),

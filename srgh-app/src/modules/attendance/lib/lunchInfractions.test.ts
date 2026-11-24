@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_TARDINESS_TYPES,
   lunchCountsTowardWarning,
+  secondBlockAbsentOfDay,
+  secondBlockCountsTowardWarning,
+  secondBlockLateMinutes,
+  secondBlockTardinessOfDay,
   lunchLateMinutes,
   lunchTardinessOfDay,
   periodExcessMinutes,
+  shouldWarn,
   summarizeMonth,
   type DayForInfraction,
 } from './infractions'
@@ -129,5 +134,137 @@ describe('periodExcessMinutes', () => {
 
   it('tomar menos de lo permitido no es exceso negativo', () => {
     expect(periodExcessMinutes('10:00', '10:05', 10)).toBe(0)
+  })
+})
+
+describe('tardanza del segundo bloque (SGRH-110)', () => {
+  const partido = (overrides: Partial<DayForInfraction> = {}) =>
+    day({
+      secondBlockExpectedStart: '16:00',
+      secondBlockEntradaTime: '16:00',
+      isJustifiedSecondBlockTardiness: false,
+      ...overrides,
+    })
+
+  it('entrar al segundo bloque a su hora no es tardanza', () => {
+    expect(secondBlockLateMinutes(partido())).toBe(0)
+    expect(secondBlockTardinessOfDay(partido(), TIPOS)).toBeNull()
+  })
+
+  it('se mide contra la hora del segundo bloque, no contra la primera entrada', () => {
+    // Entro a las 08:00 (a tiempo) y volvio a las 16:12: 12 min tarde en la tarde.
+    const d = partido({ secondBlockEntradaTime: '16:12' })
+
+    expect(secondBlockLateMinutes(d)).toBe(12)
+    expect(secondBlockTardinessOfDay(d, TIPOS)?.nombre).toBe('Tardia grave')
+  })
+
+  it('usa el mismo catalogo que la entrada', () => {
+    expect(
+      secondBlockTardinessOfDay(partido({ secondBlockEntradaTime: '16:03' }), TIPOS)?.nombre
+    ).toBe('Tardia leve')
+  })
+
+  it('un dia de un solo bloque no tiene tardanza de segundo bloque', () => {
+    expect(secondBlockTardinessOfDay(day(), TIPOS)).toBeNull()
+    expect(secondBlockLateMinutes(day())).toBeNull()
+  })
+
+  it('sin marcar la entrada del segundo bloque no hay con que medir', () => {
+    expect(secondBlockTardinessOfDay(partido({ secondBlockEntradaTime: null }), TIPOS)).toBeNull()
+  })
+
+  it('un dia libre, un feriado o una ausencia aprobada no tienen tardanza', () => {
+    const tarde = { secondBlockEntradaTime: '16:30' }
+    expect(secondBlockTardinessOfDay(partido({ ...tarde, isDayOff: true }), TIPOS)).toBeNull()
+    expect(secondBlockTardinessOfDay(partido({ ...tarde, isHoliday: true }), TIPOS)).toBeNull()
+    expect(
+      secondBlockTardinessOfDay(partido({ ...tarde, isJustifiedAbsence: true }), TIPOS)
+    ).toBeNull()
+  })
+
+  it('justificada, deja de contar para el mes', () => {
+    const tarde = partido({ secondBlockEntradaTime: '16:30' })
+
+    expect(secondBlockCountsTowardWarning(tarde, TIPOS)).toBe(true)
+    expect(
+      secondBlockCountsTowardWarning({ ...tarde, isJustifiedSecondBlockTardiness: true }, TIPOS)
+    ).toBe(false)
+  })
+
+  it('un tipo configurado para no contar no suma', () => {
+    const sinContar = TIPOS.map((t) => ({ ...t, cuentaAdvertencia: false }))
+
+    expect(
+      secondBlockCountsTowardWarning(partido({ secondBlockEntradaTime: '16:30' }), sinContar)
+    ).toBe(false)
+  })
+
+  it('suma al mes junto con la entrada y el almuerzo del mismo dia', () => {
+    const tresTardias = partido({
+      entradaTime: '08:20',
+      finAlmuerzoTime: '13:20',
+      secondBlockEntradaTime: '16:20',
+    })
+
+    expect(summarizeMonth([tresTardias], TIPOS)).toEqual({ tardias: 3, ausencias: 0 })
+  })
+
+  it('llegar tarde solo al segundo bloque cuenta una tardia, sin volver al dia "tardio"', () => {
+    expect(summarizeMonth([partido({ secondBlockEntradaTime: '16:20' })], TIPOS)).toEqual({
+      tardias: 1,
+      ausencias: 0,
+    })
+  })
+})
+
+describe('ausencia del segundo bloque (SGRH-110)', () => {
+  /** Vino a la manana (07:00), tenia un segundo bloque a las 16:00 y no entro. */
+  const faltoAlSegundo = (overrides: Partial<DayForInfraction> = {}) =>
+    day({
+      entradaTime: '07:00',
+      secondBlockExpectedStart: '16:00',
+      secondBlockEntradaTime: null,
+      entradaCount: 1,
+      ...overrides,
+    })
+
+  it('venir al primer bloque y no entrar al segundo es una ausencia', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo())).toBe(true)
+  })
+
+  it('entrar al segundo bloque, aunque sea tarde, no es ausencia', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ secondBlockEntradaTime: '16:40' }))).toBe(false)
+  })
+
+  it('un dia de un solo bloque no tiene segundo al que faltar', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ secondBlockExpectedStart: null }))).toBe(false)
+  })
+
+  it('faltar a todo el dia ya es una ausencia: no se cuenta otra por el segundo bloque', () => {
+    const todoElDia = faltoAlSegundo({ entradaTime: null })
+
+    expect(secondBlockAbsentOfDay(todoElDia)).toBe(false)
+    expect(summarizeMonth([todoElDia], TIPOS)).toEqual({ tardias: 0, ausencias: 1 })
+  })
+
+  it('un dia libre, un feriado o una ausencia aprobada no cuentan', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ isDayOff: true }))).toBe(false)
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ isHoliday: true }))).toBe(false)
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ isJustifiedAbsence: true }))).toBe(false)
+  })
+
+  it('con dos entradas que no se pueden emparejar no se acusa: volvio, aunque no se sepa a que hora', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ entradaCount: 2 }))).toBe(false)
+  })
+
+  it('mientras no vence el segundo bloque no se da por faltado', () => {
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ secondBlockDue: false }))).toBe(false)
+    expect(secondBlockAbsentOfDay(faltoAlSegundo({ secondBlockDue: true }))).toBe(true)
+  })
+
+  it('suma una ausencia al mes, que es lo que dispara la advertencia', () => {
+    expect(summarizeMonth([faltoAlSegundo()], TIPOS)).toEqual({ tardias: 0, ausencias: 1 })
+    expect(shouldWarn(summarizeMonth([faltoAlSegundo()], TIPOS))).toBe(true)
   })
 })

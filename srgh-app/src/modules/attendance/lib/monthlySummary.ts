@@ -16,6 +16,8 @@ import {
   todayInCostaRica,
 } from '@/modules/attendance/lib/time'
 import { marcaTipoSchema } from '@/modules/attendance/types'
+import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
+import { secondBlockStart } from '@/modules/attendance/lib/secondBlock'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -34,6 +36,8 @@ interface HistorialRow {
 
 interface AssignmentJoin {
   hor_hora_entrada: string
+  hor_hora_entrada_2: string | null
+  hor_hora_salida_2: string | null
 }
 
 interface AssignmentRow {
@@ -90,6 +94,10 @@ export type DayForInfractionWithDate = DayForInfraction & {
   finAlmuerzoMarkId: number | null
   /** Motivo de la justificacion de la tardanza al volver del almuerzo. */
   lunchJustificacion: string | null
+  /** mar_id de la entrada del segundo bloque, null si no hay o no la marco (SGRH-110). */
+  secondBlockMarkId: number | null
+  /** Motivo de la justificacion de la tardanza del segundo bloque. */
+  secondBlockJustificacion: string | null
   /**
    * Tipo de la ausencia aprobada que cubre el dia (ej. "Cita Médica"), null
    * si no hay. Es lo que el reporte muestra como "justificada".
@@ -184,7 +192,7 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
       prg_es_feriado,
       prg_hora_entrada_custom,
       prg_hora_salida_custom,
-      sgrh_cat_horarios ( hor_hora_entrada )
+      sgrh_cat_horarios ( hor_hora_entrada, hor_hora_entrada_2, hor_hora_salida_2 )
     `
     )
     .gte('prg_fecha', start)
@@ -287,8 +295,9 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
       .in('mar_historial_laboral_id', historyIds)
       // La entrada y el regreso del almuerzo: las dos marcas que pueden
       // llegar tarde (SGRH-88). El inicio del almuerzo es desde donde se
-      // cuenta su duracion (SGRH-95).
-      .in('mar_tipo', ['entrada', 'inicio_almuerzo', 'fin_almuerzo'])
+      // cuenta su duracion (SGRH-95). La salida, para saber donde termina
+      // cada bloque y asi cual entrada es la del segundo (SGRH-110).
+      .in('mar_tipo', ['entrada', 'salida', 'inicio_almuerzo', 'fin_almuerzo'])
       .gte('mar_fecha_hora', `${start} 00:00:00`)
       .lte('mar_fecha_hora', `${end} 23:59:59`)
       .returns<MarkDbRow[]>(),
@@ -337,8 +346,24 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
   const inicioDe = (a: AssignmentRow) =>
     a.prg_hora_entrada_custom ?? a.sgrh_cat_horarios?.hor_hora_entrada ?? ''
   const assignmentsByHist = new Map<number, AssignmentRow[]>()
+  // Cuando empieza cada bloque del dia, de todos sus tramos: de ahi sale la
+  // hora esperada del segundo (SGRH-110). Clave "historial|fecha".
+  const blockStartsByHistAndDate = new Map<string, (string | null)[]>()
   for (const a of assignments ?? []) {
     if (a.prg_fecha > today) continue
+    if (!a.prg_es_dia_libre && !a.prg_es_feriado) {
+      const key = `${a.prg_historial_laboral_id}|${a.prg_fecha}`
+      const propias = Boolean(a.prg_hora_entrada_custom && a.prg_hora_salida_custom)
+      const cat = a.sgrh_cat_horarios
+      const starts = blockStartsByHistAndDate.get(key) ?? []
+      // "HH:mm", como el resto de horas esperadas del reporte.
+      const hhmm = (hora: string | null | undefined) => (hora ? timeOfDay(hora) : null)
+      starts.push(
+        hhmm(a.prg_hora_entrada_custom ?? cat?.hor_hora_entrada),
+        !propias && cat?.hor_hora_salida_2 ? hhmm(cat.hor_hora_entrada_2) : null
+      )
+      blockStartsByHistAndDate.set(key, starts)
+    }
     const list = assignmentsByHist.get(a.prg_historial_laboral_id) ?? []
     const mismoDia = list.findIndex((b) => b.prg_fecha === a.prg_fecha)
     if (mismoDia === -1) {
@@ -382,9 +407,27 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
   const entradaByHistAndDate = new Map<string, MarcaDelDia>()
   const inicioAlmuerzoByHistAndDate = new Map<string, MarcaDelDia>()
   const finAlmuerzoByHistAndDate = new Map<string, MarcaDelDia>()
+  // Entradas y salidas de cada dia, para armar sus bloques y sacar la entrada
+  // del segundo (SGRH-110), con lo que hace falta para justificarla.
+  const blockMarksByHistAndDate = new Map<string, RawMark[]>()
+  const justificacionByMarkId = new Map<
+    number,
+    { justificada: boolean; justificacion: string | null }
+  >()
   for (const m of marks ?? []) {
     const parsedTipo = marcaTipoSchema.safeParse(m.mar_tipo)
     if (!parsedTipo.success) continue
+
+    if (parsedTipo.data === 'entrada' || parsedTipo.data === 'salida') {
+      const blockKey = `${m.mar_historial_laboral_id}|${dateOfDay(m.mar_fecha_hora)}`
+      const list = blockMarksByHistAndDate.get(blockKey) ?? []
+      list.push({ id: m.mar_id, tipo: parsedTipo.data, fechaHora: m.mar_fecha_hora })
+      blockMarksByHistAndDate.set(blockKey, list)
+      justificacionByMarkId.set(m.mar_id, {
+        justificada: m.mar_tardia_justificada ?? false,
+        justificacion: m.mar_tardia_justificacion,
+      })
+    }
 
     const destino =
       parsedTipo.data === 'entrada'
@@ -421,6 +464,27 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
         const inicioAlmuerzo = inicioAlmuerzoByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         const finAlmuerzo = finAlmuerzoByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         const ausenciaTipo = justifiedDays.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
+
+        // La entrada del segundo bloque, contra la hora en que ese bloque
+        // empezaba (SGRH-110). Los bloques salen de alternar entrada/salida;
+        // si las marcas no alternan no hay segundo bloque que medir.
+        const diaKey = `${h.lab_id}|${a.prg_fecha}`
+        const secondBlockExpectedStart = secondBlockStart(
+          blockStartsByHistAndDate.get(diaKey) ?? []
+        )
+        const segundaEntradaMarca =
+          groupIntoDayJourney(blockMarksByHistAndDate.get(diaKey) ?? [], { byBlocks: true })
+            .blocks[1]?.entrada ?? null
+        const segundaEntrada = segundaEntradaMarca
+          ? {
+              markId: segundaEntradaMarca.id,
+              time: timeOfDay(segundaEntradaMarca.fechaHora),
+              ...(justificacionByMarkId.get(segundaEntradaMarca.id) ?? {
+                justificada: false,
+                justificacion: null,
+              }),
+            }
+          : null
         return {
           date: a.prg_fecha,
           isJustifiedAbsence: ausenciaTipo !== null,
@@ -437,6 +501,21 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
           finAlmuerzoMarkId: finAlmuerzo?.markId ?? null,
           isJustifiedLunchTardiness: finAlmuerzo?.justificada ?? false,
           lunchJustificacion: finAlmuerzo?.justificacion ?? null,
+          secondBlockExpectedStart,
+          entradaCount: (blockMarksByHistAndDate.get(diaKey) ?? []).filter(
+            (m) => m.tipo === 'entrada'
+          ).length,
+          // Hoy el segundo bloque todavia puede estar por empezar: solo se
+          // da por faltado cuando ya paso el minuto de la primera tardia,
+          // igual que el primer bloque (mas abajo, en el filtro del dia).
+          secondBlockDue:
+            a.prg_fecha !== today ||
+            !secondBlockExpectedStart ||
+            classifyTardiness(diffMinutes(nowTime, secondBlockExpectedStart), tipos) !== null,
+          secondBlockEntradaTime: segundaEntrada?.time ?? null,
+          secondBlockMarkId: segundaEntrada?.markId ?? null,
+          isJustifiedSecondBlockTardiness: segundaEntrada?.justificada ?? false,
+          secondBlockJustificacion: segundaEntrada?.justificacion ?? null,
         }
       })
       .filter((day) => {

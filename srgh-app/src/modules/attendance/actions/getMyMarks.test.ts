@@ -83,6 +83,7 @@ describe('getMyMarks (server action)', () => {
       inicioAlmuerzo: null,
       finAlmuerzo: null,
       salida: null,
+      blocks: [],
     })
     expect(result.data[1]).toEqual({
       date: '2026-07-20',
@@ -92,6 +93,7 @@ describe('getMyMarks (server action)', () => {
       inicioAlmuerzo: null,
       finAlmuerzo: null,
       salida: { time: '17:00' },
+      blocks: [],
     })
   })
 
@@ -124,7 +126,61 @@ describe('getMyMarks (server action)', () => {
       inicioAlmuerzo: null,
       finAlmuerzo: null,
       salida: { time: '17:00' },
+      blocks: [],
     })
+  })
+
+  it('un dia de dos bloques trae cada entrada y salida, y la salida es la del ultimo', async () => {
+    mockClient(
+      { app_metadata: { emp_id: 10 } },
+      {
+        data: [
+          { mar_id: 1, mar_tipo: 'entrada', mar_fecha_hora: `${DATE} 07:00:00` },
+          { mar_id: 2, mar_tipo: 'salida', mar_fecha_hora: `${DATE} 11:00:00` },
+          { mar_id: 3, mar_tipo: 'entrada', mar_fecha_hora: `${DATE} 16:00:00` },
+          { mar_id: 4, mar_tipo: 'salida', mar_fecha_hora: `${DATE} 20:00:00` },
+        ],
+        error: null,
+      }
+    )
+
+    const result = await getMyMarks()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data[0]).toMatchObject({
+      date: DATE,
+      entrada: { time: '07:00' },
+      salida: { time: '20:00' },
+      blocks: [
+        { entrada: { time: '07:00' }, salida: { time: '11:00' } },
+        { entrada: { time: '16:00' }, salida: { time: '20:00' } },
+      ],
+    })
+  })
+
+  it('con el segundo bloque abierto, la salida del dia queda vacia', async () => {
+    mockClient(
+      { app_metadata: { emp_id: 10 } },
+      {
+        data: [
+          { mar_id: 1, mar_tipo: 'entrada', mar_fecha_hora: `${DATE} 07:00:00` },
+          { mar_id: 2, mar_tipo: 'salida', mar_fecha_hora: `${DATE} 11:00:00` },
+          { mar_id: 3, mar_tipo: 'entrada', mar_fecha_hora: `${DATE} 16:00:00` },
+        ],
+        error: null,
+      }
+    )
+
+    const result = await getMyMarks()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data[0].salida).toBeNull()
+    expect(result.data[0].blocks).toHaveLength(2)
+    expect(result.data[0].blocks[1].salida).toBeNull()
   })
 
   it('ignora una marca cuyo tipo no calza con el vocabulario valido', async () => {

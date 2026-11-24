@@ -71,6 +71,7 @@ describe('getDayAssignments', () => {
           expectedLunchEnd: null,
           expectedBreakStart: null,
           expectedBreakEnd: null,
+          expectedSecondBlockStart: null,
           isDayOff: false,
           isHoliday: false,
         },
@@ -242,5 +243,47 @@ describe('findWorkableDay', () => {
     })
 
     expect(await findWorkableDay(asClient(client), '2026-07-25', 10, [100])).toBeNull()
+  })
+})
+
+describe('expectedSecondBlockStart (SGRH-110)', () => {
+  async function secondBlockOf(rowOverrides: Record<string, unknown>) {
+    const client = createSupabaseClientMock({
+      sgrh_programacion_semanal: { data: [row(rowOverrides)], error: null },
+    })
+    const result = await getDayAssignments(asClient(client), '2026-07-25', null)
+    return result.ok ? result.data[0].expectedSecondBlockStart : undefined
+  }
+
+  it('una plantilla partida expone cuando empieza su segundo bloque', async () => {
+    expect(
+      await secondBlockOf({
+        sgrh_cat_horarios: {
+          hor_hora_entrada: '07:00:00',
+          hor_hora_salida: '11:00:00',
+          hor_hora_entrada_2: '16:00:00',
+          hor_hora_salida_2: '20:00:00',
+        },
+      })
+    ).toBe('16:00')
+  })
+
+  it('una plantilla de un solo bloque no tiene segundo', async () => {
+    expect(await secondBlockOf({})).toBeNull()
+  })
+
+  it('con horas propias en entrada y salida el tramo es un solo bloque', async () => {
+    expect(
+      await secondBlockOf({
+        prg_hora_entrada_custom: '09:00:00',
+        prg_hora_salida_custom: '17:00:00',
+        sgrh_cat_horarios: {
+          hor_hora_entrada: '07:00:00',
+          hor_hora_salida: '11:00:00',
+          hor_hora_entrada_2: '16:00:00',
+          hor_hora_salida_2: '20:00:00',
+        },
+      })
+    ).toBeNull()
   })
 })

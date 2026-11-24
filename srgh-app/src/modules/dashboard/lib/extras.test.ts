@@ -173,6 +173,7 @@ describe('describeMyDay', () => {
     inicioAlmuerzo: null,
     finAlmuerzo: null,
     salida: null,
+    blocks: [],
   }
   const at = (time: string) => ({ time })
 

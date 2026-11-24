@@ -39,6 +39,13 @@ export interface DayAssignment {
   expectedLunchEnd: string | null
   expectedBreakStart: string | null
   expectedBreakEnd: string | null
+  /**
+   * "HH:mm" del segundo bloque de una plantilla partida (SGRH-110), null si
+   * no la tiene o si el dia trae horas propias (un tramo propio es un solo
+   * bloque). El segundo bloque de un dia en dos sucursales no esta aca: es
+   * OTRO tramo, con su propia entrada.
+   */
+  expectedSecondBlockStart?: string | null
   isDayOff: boolean
   isHoliday: boolean
 }
@@ -62,6 +69,8 @@ interface DayAssignmentDbRow {
     hor_hora_fin_almuerzo: string | null
     hor_hora_inicio_break: string | null
     hor_hora_fin_break: string | null
+    hor_hora_entrada_2: string | null
+    hor_hora_salida_2: string | null
   } | null
 }
 
@@ -107,6 +116,12 @@ function toDayAssignment(row: DayAssignmentDbRow): DayAssignment {
       isCustom ? row.prg_hora_inicio_break_custom : horario?.hor_hora_inicio_break
     ),
     expectedBreakEnd: hhmm(isCustom ? row.prg_hora_fin_break_custom : horario?.hor_hora_fin_break),
+    // Mismo criterio que payroll (bloquesDelTramo): con horas propias en
+    // entrada y salida el tramo es un solo bloque.
+    expectedSecondBlockStart:
+      !isCustom && horario?.hor_hora_entrada_2 && horario.hor_hora_salida_2
+        ? hhmm(horario.hor_hora_entrada_2)
+        : null,
     isDayOff: row.prg_es_dia_libre,
     isHoliday: row.prg_es_feriado,
   }
@@ -139,7 +154,9 @@ async function queryDayAssignments(
         hor_hora_inicio_almuerzo,
         hor_hora_fin_almuerzo,
         hor_hora_inicio_break,
-        hor_hora_fin_break
+        hor_hora_fin_break,
+        hor_hora_entrada_2,
+        hor_hora_salida_2
       )
     `
     )

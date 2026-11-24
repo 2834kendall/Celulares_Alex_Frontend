@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [dev, main]
 
+# El CI solo necesita leer el codigo: instala, compila y corre pruebas. Sin
+# este bloque, GitHub le da al token permisos de escritura por defecto, asi
+# que una dependencia o accion comprometida podria empujar commits o tocar
+# releases. Si algun job llega a necesitar mas (comentar en el PR, subir
+# paquetes), se le declara aparte en ese job, no aca.
+permissions:
+  contents: read
+
 # Empujar un commit nuevo cancela la corrida anterior de la misma rama/PR.
 # Sin esto, tres pushes seguidos dejan tres CI compitiendo por los runners y
 # el ultimo — el unico que importa — es el que mas tarda en arrancar.

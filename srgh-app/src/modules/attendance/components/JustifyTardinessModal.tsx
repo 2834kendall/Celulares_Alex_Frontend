@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { justifyTardiness } from '@/modules/attendance/actions/justifyTardiness'
+import type { TardinessKind } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
 import { justifyTardinessSchema } from '@/modules/attendance/types'
 import { formatMinutes } from '@/modules/attendance/lib/time'
 import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
@@ -21,8 +22,8 @@ interface JustifyTardinessModalProps {
   dateISO: string
   /** Nombre del tipo de tardia del catalogo, ej. "Tardia grave". */
   tipoNombre: string
-  /** Que marca llego tarde: la entrada o el regreso del almuerzo. */
-  kind: 'entrada' | 'almuerzo'
+  /** Que marca llego tarde: la entrada, el regreso del almuerzo o el segundo bloque. */
+  kind: TardinessKind
   diffMinutes: number
   /** Ya estaba justificada: el modal pasa a ofrecer retirarla. */
   isJustified: boolean
@@ -30,6 +31,13 @@ interface JustifyTardinessModalProps {
   currentJustification: string | null
   onClose: () => void
   onSuccess?: () => void
+}
+
+/** Cierra la frase "<tipo> de N min ..." segun que marca llego tarde. */
+const KIND_PHRASE: Record<TardinessKind, string> = {
+  entrada: ' al entrar',
+  almuerzo: ' al volver del almuerzo',
+  segundo_bloque: ' al entrar al segundo bloque',
 }
 
 function formatDay(dateISO: string) {
@@ -128,8 +136,8 @@ export function JustifyTardinessModal({
         <p className="text-sm text-slate-600">
           {tipoNombre} de{' '}
           <span className="font-semibold tabular-nums">{formatMinutes(diffMinutes)}</span>
-          {kind === 'almuerzo' ? ' al volver del almuerzo' : ' al entrar'}. Justificarla la deja
-          visible en el reporte, pero deja de contar para el mes.
+          {KIND_PHRASE[kind]}. Justificarla la deja visible en el reporte, pero deja de contar para
+          el mes.
         </p>
 
         <div>

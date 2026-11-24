@@ -16,6 +16,10 @@ function setup() {
     back: vi.fn(),
     forward: vi.fn(),
     prefetch: vi.fn(),
+    // Next 16.4 agrego bfcacheId al router: identifica el segmento de ruta y
+    // cambia solo en navegaciones nuevas. El guard no lo usa, pero el tipo lo
+    // exige, asi que el mock lleva un valor fijo.
+    bfcacheId: 'test',
   }
   function Editor() {
     const navigation = useRouter()

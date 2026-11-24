@@ -18,8 +18,20 @@ allowBuilds:
 # eso el override va apuntado a cada minimatch especifico (sintaxis
 # "paquete@version>hijo"), no a brace-expansion en general.
 overrides:
-  minimatch@3.1.5>brace-expansion: '>=1.1.18 <2.0.0'
-  minimatch@5.1.9>brace-expansion: '>=2.1.4 <3.0.0'
+  minimatch@3.1.5>brace-expansion: '>=1.1.22 <2.0.0'
+  minimatch@5.1.9>brace-expansion: '>=2.1.8 <3.0.0'
   uuid: '>=11.1.1'
   postcss: '>=8.5.23'
   sharp: '>=0.35.0'
+  # browserslist y baseline-browser-mapping entran por next/postcss y solo
+  # corren en build, pero pnpm audit --prod los sigue reportando: crecimiento
+  # de memoria sin tope y caida con datos de entrada invalidos.
+  browserslist: '>=4.28.7'
+  baseline-browser-mapping: '>=2.11.0'
+  # Solo herramientas de desarrollo (vitest, eslint, el CLI de Supabase): no
+  # viajan al bundle, pero pnpm audit y OpenSSF Scorecard los siguen contando.
+  # El rango se queda dentro de la misma version mayor para no cambiar APIs.
+  fast-uri: '>=3.1.9 <4.0.0'
+  nanoid: '>=3.3.20 <4.0.0'
+  source-map-js: '>=1.2.4'
+  vite: '>=8.1.6 <9.0.0'
