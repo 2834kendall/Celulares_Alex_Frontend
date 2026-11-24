@@ -20,7 +20,6 @@ import { CARD } from '@/components/ui/styles'
 import { cn } from '@/lib/utils/cn'
 import { BirthdayCake } from '@/modules/dashboard/components/BirthdayCake'
 import { ConfettiBurst } from '@/modules/dashboard/components/ConfettiBurst'
-import { CountUp } from '@/modules/dashboard/components/CountUp'
 import {
   MONTHS_LONG,
   MONTHS_SHORT,
@@ -461,13 +460,12 @@ export function BirthdaysPanel({
                                     : 'bg-slate-100 text-slate-600'
                               )}
                             >
-                              {birthday.daysUntil > 1 ? (
-                                <>
-                                  en <CountUp value={birthday.daysUntil} /> días
-                                </>
-                              ) : (
-                                countdownLabel(birthday.daysUntil)
-                              )}
+                              {/* Sin CountUp: una cuenta regresiva no es una
+                                  magnitud que crezca. Mientras animaba, la
+                                  tarjeta decia "en 232 dias" y la de
+                                  aniversarios, que nunca animo, "en 233" para
+                                  el mismo dia (QA, SGRH-115). */}
+                              {countdownLabel(birthday.daysUntil)}
                             </span>
 
                             <ChevronDown

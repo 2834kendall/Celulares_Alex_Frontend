@@ -35,6 +35,24 @@ describe('rejectPostulacion (server action)', () => {
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
+  it('cierra con la fecha de Costa Rica, no con la UTC', async () => {
+    // 7 p. m. del 5 en Costa Rica ya es el 6 en UTC: la fecha de cierre
+    // tiene que seguir siendo la del dia que vive quien descarta.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-06T01:00:00Z'))
+    const client = mockClient({
+      sgrh_postulaciones: { data: { pos_candidato_id: 1 }, error: null },
+    })
+
+    await rejectPostulacion({ postulacionId: 1, motivo: 'No cumple el perfil' })
+
+    const builder = client.from.mock.results[0].value
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ pos_fecha_cierre: '2026-01-05' })
+    )
+    vi.useRealTimers()
+  })
+
   it('exige RECLUTAMIENTO_WRITE', async () => {
     mockClient({ sgrh_postulaciones: { data: { pos_candidato_id: 1 }, error: null } })
 

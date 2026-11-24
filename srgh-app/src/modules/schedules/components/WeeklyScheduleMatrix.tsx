@@ -217,6 +217,30 @@ function rowStripeColor(row: EmployeeWeekRowWithAusencia, colorById: Map<number,
   return SCHEDULE_PALETTE[dominant % SCHEDULE_PALETTE.length].stripe
 }
 
+/**
+ * Sucursales en las que un colaborador aparece esta semana: la de su contrato
+ * y la de cada tramo programado.
+ *
+ * Un traslado del dia (SGRH-84) o un dia repartido entre dos tiendas
+ * (SGRH-110) hacen que esas sucursales no sean la misma. El filtro se armaba
+ * solo con la del contrato, asi que la tienda destino de un traslado no
+ * aparecia en la lista y nadie podia filtrar por ella (QA, SGRH-115).
+ */
+function branchesOfRow(row: EmployeeWeekRowWithAusencia): Map<number, string> {
+  const branches = new Map<number, string>()
+  const add = (id: number, name: string | null) => {
+    if (!branches.has(id)) branches.set(id, name ?? 'Sin sucursal')
+  }
+
+  add(row.branchId, row.branchName)
+  for (const day of row.days) {
+    add(day.branchId, day.branchName)
+    for (const tramo of day.extraTramos ?? []) add(tramo.branchId, tramo.branchName)
+  }
+
+  return branches
+}
+
 // Un dia bloqueado por ausencia no cuenta como hueco: sin horario = no puede marcar.
 function hasScheduleGap(row: EmployeeWeekRowWithAusencia): boolean {
   return row.days.some((day) => {
@@ -264,8 +288,11 @@ function formatHours(hours: number) {
 
 function assignmentLabel(assignment: DayAssignmentWithAusencia) {
   if (assignment.isDayOff) return 'Descanso'
+  // El nombre va antes que "Personalizado": un bloque de jornada partida tiene
+  // horas propias y plantilla a la vez, y el nombre dice mas que el rotulo.
+  if (assignment.scheduleName) return assignment.scheduleName
   if (assignment.customStartTime) return 'Personalizado'
-  return assignment.scheduleName ?? 'Sin asignar'
+  return 'Sin asignar'
 }
 
 /**
@@ -289,8 +316,21 @@ function timeRange(
   return first && second ? `${first} · ${second}` : first
 }
 
-function assignmentOptions(scheduleOptions: ScheduleRow[]): SelectMenuOption[] {
-  return [
+/**
+ * Opciones del selector de la celda.
+ *
+ * `assigned` es la plantilla que el tramo YA tiene, y se agrega cuando no esta
+ * entre las elegibles: un dia partido saca las plantillas de dos bloques de la
+ * lista (no se puede asignar una a un solo tramo), pero la que ya quedo
+ * asignada tiene que poder mostrarse. Sin esto el selector caia en su
+ * placeholder, "Seleccionar...", al lado de un rotulo con el nombre de la
+ * plantilla (QA, SGRH-115).
+ */
+function assignmentOptions(
+  scheduleOptions: ScheduleRow[],
+  assigned?: { value: string; label: string } | null
+): SelectMenuOption[] {
+  const options: SelectMenuOption[] = [
     { value: '', label: 'Asignar horario' },
     { value: '__free__', label: 'Descanso' },
     { value: '__custom__', label: 'Personalizado' },
@@ -299,6 +339,12 @@ function assignmentOptions(scheduleOptions: ScheduleRow[]): SelectMenuOption[] {
       label: schedule.hor_nombre,
     })),
   ]
+
+  if (assigned && !options.some((option) => option.value === assigned.value)) {
+    options.push(assigned)
+  }
+
+  return options
 }
 
 /*
@@ -495,7 +541,10 @@ function ScheduleCell({
           size="sm"
           className={`${CELL_MENU} z-0`}
           triggerClassName={`${CELL_TRIGGER} ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-          options={assignmentOptions(scheduleOptions)}
+          options={assignmentOptions(
+            scheduleOptions,
+            assignment.scheduleName ? { value: currentValue, label: assignment.scheduleName } : null
+          )}
           value={currentValue}
           disabled={isDisabled}
           onChange={onChange}
@@ -709,20 +758,35 @@ export function WeeklyScheduleMatrix({
   const [isPasting, setIsPasting] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
 
+  // Una sola pasada: el filtro necesita las sucursales de cada fila para armar
+  // las opciones y, despues, para decidir que filas quedan.
+  const branchesByRow = useMemo(
+    () => new Map(scheduleRows.map((row) => [row.employmentHistoryId, branchesOfRow(row)])),
+    [scheduleRows]
+  )
+
   const branchOptions = useMemo(() => {
     const map = new Map<number, string>()
-    for (const row of scheduleRows) {
-      if (!map.has(row.branchId)) map.set(row.branchId, row.branchName ?? 'Sin sucursal')
+    for (const branches of branchesByRow.values()) {
+      for (const [id, name] of branches) {
+        if (!map.has(id)) map.set(id, name)
+      }
     }
-    return Array.from(map, ([id, name]) => ({ id, name }))
-  }, [scheduleRows])
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name, 'es')
+    )
+  }, [branchesByRow])
 
+  // Quien trabaja un dia en otra tienda aparece tambien al filtrar por esa
+  // tienda: de lo contrario la opcion existe y no devuelve a nadie.
   const branchFilteredRows = useMemo(
     () =>
       branchFilter === 'all'
         ? scheduleRows
-        : scheduleRows.filter((row) => row.branchId === branchFilter),
-    [scheduleRows, branchFilter]
+        : scheduleRows.filter((row) =>
+            branchesByRow.get(row.employmentHistoryId)?.has(branchFilter)
+          ),
+    [scheduleRows, branchFilter, branchesByRow]
   )
 
   // El selector de colaborador solo ofrece a quienes quedan tras el filtro de

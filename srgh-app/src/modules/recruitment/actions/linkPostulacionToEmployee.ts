@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 export type LinkPostulacionToEmployeeResult = { ok: true } | { ok: false; error: string }
 
@@ -33,7 +34,9 @@ export async function linkPostulacionToEmployee(
     .update({
       pos_estado_final: 'contratado',
       pos_empleado_id: empId,
-      pos_fecha_cierre: new Date().toISOString().slice(0, 10),
+      // Fecha de Costa Rica, no la UTC: cerrar la postulacion despues de las
+      // 6 p. m. guardaba el dia siguiente (QA, SGRH-115).
+      pos_fecha_cierre: todayInCostaRica(),
     })
     .eq('pos_id', postulacionId)
     .eq('pos_estado_final', 'en_proceso')

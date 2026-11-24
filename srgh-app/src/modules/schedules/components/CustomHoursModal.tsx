@@ -3,11 +3,10 @@
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 
 import { type FormEvent, useState } from 'react'
-import { X } from 'lucide-react'
 import { TimeSelect } from '@/components/ui/TimeSelect'
 import { WEEKDAY_NAMES } from '@/modules/schedules/lib/week'
-import { IconButton } from '@/components/ui/IconButton'
 import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
 import { LABEL, SELECT } from '@/components/ui/styles'
 import type { SucursalOption } from '@/modules/schedules/actions/getWeeklySchedule'
 
@@ -195,150 +194,129 @@ export function CustomHoursModal({
     setIsSaving(false)
   }
 
+  // El Modal del sistema trae Escape, foco atrapado, clic en el fondo y bloqueo
+  // del scroll. Esta ventana los tenia copiados a mano y le faltaba Escape
+  // (QA, SGRH-115); el aviso de cambios sin guardar sigue igual, porque Modal
+  // cierra con el mismo useConfirmLeave que registra este formulario.
   return (
-    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-[2px]">
-      {/*
-        El panel se limita a la altura de la ventana y solo scrollea el cuerpo,
-        para que la cabecera y los botones queden siempre visibles aunque el
-        formulario crezca (almuerzo + break desplegados).
-      */}
-      <div className="animate-fade-in flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[21rem] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5">
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+    <Modal
+      title="Horario personalizado"
+      subtitle={`${employeeName} · ${dayLabel}`}
+      onClose={onClose}
+    >
+      <form ref={(element) => guard.bindRoot(element)} onSubmit={handleSubmit}>
+        <div className="space-y-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-600">
-              Horario personalizado
-            </p>
-            <h3 className="mt-0.5 text-sm font-bold text-slate-900">{employeeName}</h3>
-            <p className="text-xs text-slate-500">{dayLabel}</p>
+            <label className={LABEL} htmlFor="custom-start">
+              Hora de entrada
+            </label>
+            <TimeSelect
+              id="custom-start"
+              label="Hora de entrada"
+              value={startTime}
+              onChange={setStartTime}
+            />
           </div>
 
-          <IconButton
-            onClick={() => guard.confirmLeave(onClose)}
+          <div>
+            <label className={LABEL} htmlFor="custom-end">
+              Hora de salida
+            </label>
+            <TimeSelect
+              id="custom-end"
+              label="Hora de salida"
+              value={endTime}
+              onChange={setEndTime}
+            />
+          </div>
 
-            aria-label="Cerrar modal"
-          >
-            <X className="h-3.5 w-3.5" />
-          </IconButton>
+          <div>
+            <label className={LABEL}>Aplicar a estos días</label>
+            <div className="flex flex-wrap gap-1.5">
+              {weekDates.map((date, index) => {
+                const isSelected = applyToDates.includes(date)
+                const isUnavailable = unavailableDates.includes(date)
+                return (
+                  <button
+                    key={date}
+                    type="button"
+                    disabled={isUnavailable}
+                    onClick={() => toggleDate(date)}
+                    aria-pressed={isSelected}
+                    title={
+                      isUnavailable ? 'Día cubierto por una incapacidad o licencia' : undefined
+                    }
+                    className={`rounded-lg px-2 py-1 text-[10px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-brand-500/60 ${
+                      isUnavailable
+                        ? 'cursor-not-allowed bg-slate-100 text-slate-300'
+                        : isSelected
+                          ? 'bg-brand-600 text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {WEEKDAY_NAMES[index].slice(0, 3)}
+                  </button>
+                )
+              })}
+            </div>
+            {sucursales.length > 1 && (
+              <div className="mt-3">
+                <label className={LABEL} htmlFor="custom-branch">
+                  Sucursal (aplica a todos los días marcados)
+                </label>
+                <select
+                  id="custom-branch"
+                  className={SELECT}
+                  value={branchId}
+                  onChange={(event) => setBranchId(Number(event.target.value))}
+                >
+                  {sucursales.map((sucursal) => (
+                    <option key={sucursal.id} value={sucursal.id}>
+                      {sucursal.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {applyToDates.length === 0 && (
+              <p className="mt-1 text-[10px] text-rose-600">Seleccione al menos un día.</p>
+            )}
+          </div>
+
+          <OptionalPeriod
+            idPrefix="custom-lunch"
+            label="Incluye almuerzo"
+            periodName="almuerzo"
+            enabled={hasLunch}
+            onToggle={setHasLunch}
+            start={lunchStart}
+            end={lunchEnd}
+            onChangeStart={setLunchStart}
+            onChangeEnd={setLunchEnd}
+          />
+
+          <OptionalPeriod
+            idPrefix="custom-break"
+            label="Incluye break"
+            periodName="break"
+            enabled={hasBreak}
+            onToggle={setHasBreak}
+            start={breakStart}
+            end={breakEnd}
+            onChangeStart={setBreakStart}
+            onChangeEnd={setBreakEnd}
+          />
         </div>
 
-        <form
-          ref={(element) => guard.bindRoot(element)}
-          onSubmit={handleSubmit}
-          className="flex min-h-0 flex-1 flex-col"
-        >
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
-            <div>
-              <label className={LABEL} htmlFor="custom-start">
-                Hora de entrada
-              </label>
-              <TimeSelect
-                id="custom-start"
-                label="Hora de entrada"
-                value={startTime}
-                onChange={setStartTime}
-              />
-            </div>
-
-            <div>
-              <label className={LABEL} htmlFor="custom-end">
-                Hora de salida
-              </label>
-              <TimeSelect
-                id="custom-end"
-                label="Hora de salida"
-                value={endTime}
-                onChange={setEndTime}
-              />
-            </div>
-
-            <div>
-              <label className={LABEL}>Aplicar a estos días</label>
-              <div className="flex flex-wrap gap-1.5">
-                {weekDates.map((date, index) => {
-                  const isSelected = applyToDates.includes(date)
-                  const isUnavailable = unavailableDates.includes(date)
-                  return (
-                    <button
-                      key={date}
-                      type="button"
-                      disabled={isUnavailable}
-                      onClick={() => toggleDate(date)}
-                      aria-pressed={isSelected}
-                      title={
-                        isUnavailable ? 'Día cubierto por una incapacidad o licencia' : undefined
-                      }
-                      className={`rounded-lg px-2 py-1 text-[10px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-brand-500/60 ${
-                        isUnavailable
-                          ? 'cursor-not-allowed bg-slate-100 text-slate-300'
-                          : isSelected
-                            ? 'bg-brand-600 text-white shadow-sm'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {WEEKDAY_NAMES[index].slice(0, 3)}
-                    </button>
-                  )
-                })}
-              </div>
-              {sucursales.length > 1 && (
-                <div className="mt-3">
-                  <label className={LABEL} htmlFor="custom-branch">
-                    Sucursal (aplica a todos los días marcados)
-                  </label>
-                  <select
-                    id="custom-branch"
-                    className={SELECT}
-                    value={branchId}
-                    onChange={(event) => setBranchId(Number(event.target.value))}
-                  >
-                    {sucursales.map((sucursal) => (
-                      <option key={sucursal.id} value={sucursal.id}>
-                        {sucursal.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {applyToDates.length === 0 && (
-                <p className="mt-1 text-[10px] text-rose-600">Seleccione al menos un día.</p>
-              )}
-            </div>
-
-            <OptionalPeriod
-              idPrefix="custom-lunch"
-              label="Incluye almuerzo"
-              periodName="almuerzo"
-              enabled={hasLunch}
-              onToggle={setHasLunch}
-              start={lunchStart}
-              end={lunchEnd}
-              onChangeStart={setLunchStart}
-              onChangeEnd={setLunchEnd}
-            />
-
-            <OptionalPeriod
-              idPrefix="custom-break"
-              label="Incluye break"
-              periodName="break"
-              enabled={hasBreak}
-              onToggle={setHasBreak}
-              start={breakStart}
-              end={breakEnd}
-              onChangeStart={setBreakStart}
-              onChangeEnd={setBreakEnd}
-            />
-          </div>
-
-          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 px-4 py-3">
-            <Button onClick={() => guard.confirmLeave(onClose)} variant="secondary" size="md">
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={isSaving || applyToDates.length === 0} size="md">
-              {isSaving ? 'Guardando...' : 'Guardar'}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+          <Button onClick={() => guard.confirmLeave(onClose)} variant="secondary" size="md">
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={isSaving || applyToDates.length === 0} size="md">
+            {isSaving ? 'Guardando...' : 'Guardar'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }

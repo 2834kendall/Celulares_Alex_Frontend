@@ -8,6 +8,7 @@ import {
   rechazarPostulacionSchema,
   type RechazarPostulacionInput,
 } from '@/modules/recruitment/types'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 export type RejectPostulacionResult = { ok: true } | { ok: false; error: string }
 
@@ -28,7 +29,9 @@ export async function rejectPostulacion(
     .update({
       pos_estado_final: 'descartado',
       pos_motivo_descarte: parsed.data.motivo,
-      pos_fecha_cierre: new Date().toISOString().slice(0, 10),
+      // Fecha de Costa Rica, no la UTC: cerrar la postulacion despues de las
+      // 6 p. m. guardaba el dia siguiente (QA, SGRH-115).
+      pos_fecha_cierre: todayInCostaRica(),
     })
     .eq('pos_id', parsed.data.postulacionId)
     .eq('pos_estado_final', 'en_proceso')

@@ -11,9 +11,12 @@ interface ProfileInfoProps {
 }
 
 /**
- * Tarjeta de perfil del usuario con su informacion personal.
- * Cuando exista el modulo de empleados, aqui se enlazara el expediente
- * completo (datos personales, contrato, puesto).
+ * Tarjeta de perfil del usuario: lo que identifica a su CUENTA (correo,
+ * empresa y rol en el sistema), no su expediente laboral.
+ *
+ * El expediente (contrato, puesto, sucursal, salario) vive en el modulo de
+ * empleados, al que la mayoria de las cuentas no tiene acceso: por eso el pie
+ * de la tarjeta manda a Recursos Humanos en vez de enlazarlo.
  */
 export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
   const detalles = [
@@ -55,8 +58,8 @@ export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
         </dl>
 
         <p className="mt-8 text-xs leading-relaxed text-slate-400">
-          Los datos del expediente (contrato, puesto, sucursal) estaran disponibles cuando el modulo
-          de empleados entre en operacion.
+          Esta tarjeta muestra los datos de tu cuenta. Los del expediente (contrato, puesto,
+          sucursal) los mantiene Recursos Humanos: si algo no corresponde, avisá a tu encargado.
         </p>
       </div>
     </section>

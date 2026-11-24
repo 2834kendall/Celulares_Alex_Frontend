@@ -33,8 +33,17 @@ describe('<CustomHoursModal />', () => {
   it('muestra el nombre del colaborador y el dia', () => {
     render(<CustomHoursModal {...baseProps} />)
 
-    expect(screen.getByText('Ana Perez')).toBeInTheDocument()
-    expect(screen.getByText('Lunes 05 ene.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Horario personalizado' })).toBeInTheDocument()
+    expect(screen.getByText('Ana Perez · Lunes 05 ene.')).toBeInTheDocument()
+  })
+
+  it('cierra con Escape', async () => {
+    const onClose = vi.fn()
+    render(<CustomHoursModal {...baseProps} onClose={onClose} />)
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('almuerzo y break inician deshabilitados si no hay valores iniciales', () => {

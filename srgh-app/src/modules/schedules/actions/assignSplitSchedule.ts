@@ -18,9 +18,14 @@ const hhmm = (hora: string) => hora.slice(0, 5)
  *
  * Las sucursales las define la plantilla (hor_sucursal_id y hor_sucursal_id_2);
  * esta accion las lee de ahi y no del cliente. Un tramo es de una sola
- * sucursal, asi que el reparto se guarda como DOS tramos con horas propias, uno por bloque. Esas
- * filas ya no apuntan a la plantilla (igual que cualquier horario
- * personalizado): conservan las horas, no el nombre ni el color.
+ * sucursal, asi que el reparto se guarda como DOS tramos con horas propias, uno por bloque.
+ *
+ * Cada fila conserva prg_horario_id: las horas son propias (una por bloque),
+ * pero el dia SI viene de una plantilla, y sin ese id la matriz lo mostraba
+ * como "Personalizado", sin nombre ni color (QA, SGRH-115). Quien lee las
+ * horas no se confunde: entrada y salida propias mandan sobre la plantilla
+ * en toda la cadena (getWeeklySchedule, workingDay y nomina), asi que el id
+ * solo aporta el nombre y el color.
  *
  * No es atomico: si el segundo bloque falla, el primero ya quedo guardado, y el
  * mensaje lo dice para que quien programa sepa en que estado quedo el dia.
@@ -82,7 +87,7 @@ export async function assignSplitSchedule(
     prg_empleado_id: data.employeeId,
     prg_sucursal_id: branchId,
     prg_historial_laboral_id: data.employmentHistoryId,
-    prg_horario_id: null,
+    prg_horario_id: data.scheduleId,
     prg_fecha: data.date,
     prg_es_dia_libre: false,
     prg_hora_entrada_custom: hhmm(entrada),
