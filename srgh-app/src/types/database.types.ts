@@ -1921,6 +1921,84 @@ export type Database = {
           },
         ]
       }
+      sgrh_justificaciones_bloque: {
+        Row: {
+          jbl_bloque: number
+          jbl_created_at: string
+          jbl_empresa_id: number
+          jbl_fecha: string
+          jbl_fraccion_pagada: number
+          jbl_historial_laboral_id: number
+          jbl_id: number
+          jbl_motivo: string | null
+          jbl_registrado_por_id: number | null
+          jbl_sucursal_id: number
+          jbl_tipo_ausencia_id: number
+        }
+        Insert: {
+          jbl_bloque: number
+          jbl_created_at?: string
+          jbl_empresa_id: number
+          jbl_fecha: string
+          jbl_fraccion_pagada: number
+          jbl_historial_laboral_id: number
+          jbl_id?: never
+          jbl_motivo?: string | null
+          jbl_registrado_por_id?: number | null
+          jbl_sucursal_id: number
+          jbl_tipo_ausencia_id: number
+        }
+        Update: {
+          jbl_bloque?: number
+          jbl_created_at?: string
+          jbl_empresa_id?: number
+          jbl_fecha?: string
+          jbl_fraccion_pagada?: number
+          jbl_historial_laboral_id?: number
+          jbl_id?: never
+          jbl_motivo?: string | null
+          jbl_registrado_por_id?: number | null
+          jbl_sucursal_id?: number
+          jbl_tipo_ausencia_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgrh_justificaciones_bloque_jbl_empresa_id_fkey"
+            columns: ["jbl_empresa_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_empresas"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "sgrh_justificaciones_bloque_jbl_historial_laboral_id_fkey"
+            columns: ["jbl_historial_laboral_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_historial_laboral"
+            referencedColumns: ["lab_id"]
+          },
+          {
+            foreignKeyName: "sgrh_justificaciones_bloque_jbl_registrado_por_id_fkey"
+            columns: ["jbl_registrado_por_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_usuarios"
+            referencedColumns: ["usr_id"]
+          },
+          {
+            foreignKeyName: "sgrh_justificaciones_bloque_jbl_sucursal_id_fkey"
+            columns: ["jbl_sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_sucursales"
+            referencedColumns: ["suc_id"]
+          },
+          {
+            foreignKeyName: "sgrh_justificaciones_bloque_jbl_tipo_ausencia_id_fkey"
+            columns: ["jbl_tipo_ausencia_id"]
+            isOneToOne: false
+            referencedRelation: "sgrh_cat_tipos_ausencia"
+            referencedColumns: ["tau_id"]
+          },
+        ]
+      }
       sgrh_kioscos: {
         Row: {
           kio_created_at: string
