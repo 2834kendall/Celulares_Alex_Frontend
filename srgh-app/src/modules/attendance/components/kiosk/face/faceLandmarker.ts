@@ -1,4 +1,5 @@
 import type { FaceLandmarker } from '@mediapipe/tasks-vision'
+import { blankCanvas, warmUp } from './warmUp'
 
 /**
  * Carga perezosa y unica del Face Landmarker de MediaPipe. Los assets se
@@ -14,7 +15,13 @@ import type { FaceLandmarker } from '@mediapipe/tasks-vision'
 const WASM_PATH = '/models/mediapipe-wasm'
 const MODEL_PATH = '/models/face_landmarker.task'
 
-let landmarkerPromise: Promise<FaceLandmarker> | null = null
+/**
+ * Una instancia por cantidad maxima de rostros. El kiosco usa 1: con gente en
+ * fila detras, buscar mas rostros solo agrega costo y la chance de tomar al de
+ * atras. El registro usa 2 para poder frenar si hay otra persona en cuadro
+ * (SGRH-117). El modelo se descarga una sola vez; el navegador lo cachea.
+ */
+const landmarkerPromises = new Map<number, Promise<FaceLandmarker>>()
 let infoLogsSilenced = false
 
 /**
@@ -39,7 +46,8 @@ function silenceMediapipeInfoLogs() {
   }
 }
 
-export function getFaceLandmarker(): Promise<FaceLandmarker> {
+export function getFaceLandmarker(maxFaces = 1): Promise<FaceLandmarker> {
+  let landmarkerPromise = landmarkerPromises.get(maxFaces)
   if (!landmarkerPromise) {
     silenceMediapipeInfoLogs()
     landmarkerPromise = (async () => {
@@ -53,22 +61,28 @@ export function getFaceLandmarker(): Promise<FaceLandmarker> {
         FaceLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: MODEL_PATH, delegate },
           runningMode: 'VIDEO',
-          numFaces: 1,
+          numFaces: maxFaces,
           outputFaceBlendshapes: false,
         })
+      let detector: FaceLandmarker
       try {
-        return await create('GPU')
+        detector = await create('GPU')
       } catch {
         // Some devices block hardware acceleration. Keep the same model and
         // capture policy, using MediaPipe's WASM CPU delegate instead.
-        return create('CPU')
+        detector = await create('CPU')
       }
+      // Ver warmUp.ts: el primer detectForVideo compila y bloquea segundos.
+      // Timestamp 1: el loop despues usa performance.now(), siempre mayor.
+      await warmUp(() => detector.detectForVideo(blankCanvas(), 1))
+      return detector
     })().catch((err) => {
       // Si fallo la carga (assets ausentes, WebGL bloqueado), el siguiente
       // intento debe poder reintentar en vez de heredar la promesa rota.
-      landmarkerPromise = null
+      landmarkerPromises.delete(maxFaces)
       throw err
     })
+    landmarkerPromises.set(maxFaces, landmarkerPromise)
   }
   return landmarkerPromise
 }

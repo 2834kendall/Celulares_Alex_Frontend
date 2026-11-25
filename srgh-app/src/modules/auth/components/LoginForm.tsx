@@ -142,7 +142,7 @@ export function LoginForm() {
       router.replace(result.destination)
     } catch {
       setServerError(
-        'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.'
+        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
       )
       setErrorPulse(true)
     }
@@ -218,7 +218,7 @@ export function LoginForm() {
 
         <div className="login-enter" style={enterStep(2)}>
           <label className={AUTH_FIELD_LABEL} htmlFor="pass-input">
-            Contrasena
+            Contraseña
           </label>
           <div className="group relative">
             <LockKeyhole className={AUTH_FIELD_ICON} />
@@ -247,7 +247,7 @@ export function LoginForm() {
               type="button"
               onClick={() => setShowPassword((visible) => !visible)}
               disabled={isSubmitting}
-              aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+              aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
               className="group/eye absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 transition-colors duration-200 hover:text-brand-600 disabled:cursor-not-allowed"
             >
               <span
@@ -294,7 +294,7 @@ export function LoginForm() {
               </>
             ) : (
               <>
-                Iniciar sesion
+                Iniciar sesión
                 <ArrowRight className="auth-submit-arrow h-4 w-4" />
               </>
             )}

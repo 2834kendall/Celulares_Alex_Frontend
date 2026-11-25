@@ -48,12 +48,28 @@ export function EmployeeProfileTabs({
   ]
 
   if (documentosContent !== null) {
-    tabs.push({ id: 'documentos', label: 'Documentos', icon: FileText, content: documentosContent })
+    tabs.push({
+      id: 'documentos',
+      label: 'Documentos',
+      shortLabel: 'Docs',
+      icon: FileText,
+      content: documentosContent,
+    })
   }
 
   if (rostroContent !== null) {
     tabs.push({ id: 'rostro', label: 'Rostro', icon: ScanFace, content: rostroContent })
   }
 
-  return <Tabs idPrefix="employee-profile" ariaLabel="Secciones del empleado" tabs={tabs} />
+  // Con Rostro son cuatro pestañas y no entraban en un celular (la última quedaba
+  // cortada y había que deslizar para descubrirla): en angosto van solo con texto
+  // y "Docs" en corto.
+  return (
+    <Tabs
+      idPrefix="employee-profile"
+      ariaLabel="Secciones del empleado"
+      tabs={tabs}
+      textOnlyWhenNarrow={tabs.length > 3}
+    />
+  )
 }

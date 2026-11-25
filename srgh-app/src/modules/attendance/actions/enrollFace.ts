@@ -1,6 +1,8 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { euclideanDistance, UMBRAL_MATCH } from '@/modules/attendance/lib/face/faceMath'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { decryptFacePayload } from '@/modules/attendance/lib/face/faceCrypto'
@@ -9,6 +11,58 @@ import { FACE_EMBEDDING_DIM, FACE_MODEL_ID } from '@/modules/attendance/lib/face
 import { enrollFaceSchema, type EnrollFaceInput } from '@/modules/attendance/types'
 
 export type EnrollFaceResult = { ok: true } | { ok: false; error: string }
+
+/** Valor de `bia_resultado` cuando se rechaza un registro por parecido. */
+const DUPLICATE_AUDIT_RESULT = 'ENROLL_DUPLICADO'
+
+interface StoredVectorRow {
+  bio_empleado_id: number
+  bio_vector: unknown
+}
+
+/**
+ * Unicidad (SGRH-117): el rostro nuevo no puede parecerse al de OTRO
+ * colaborador de la empresa tanto como para que el kiosco los confunda. Se
+ * usa el mismo umbral que el kiosco da por coincidencia (UMBRAL_MATCH): si a
+ * esa distancia hay otra persona, ese registro marcaria asistencia a nombre
+ * equivocado, que es el error que termina en la nomina.
+ *
+ * Corre en el servidor, que ya descifra el vector: no depende de nada que el
+ * navegador pueda saltarse, y los rostros de los demas nunca salen de aca. Usa
+ * el cliente admin porque la RLS limita al gerente a su sucursal, y el
+ * parecido importa en toda la empresa (un traslado lo pone frente a otro
+ * kiosco). El propio colaborador se excluye: reemplazar su registro es normal.
+ *
+ * Devuelve el colaborador mas parecido bajo el umbral, null si no hay, o
+ * 'error' si no se pudo leer (y entonces no se guarda: falla cerrado).
+ */
+async function findSimilarFace(
+  empresaId: number,
+  employeeId: number,
+  vector: number[]
+): Promise<{ employeeId: number; distance: number } | null | 'error'> {
+  const { data, error } = await createAdminClient()
+    .from('sgrh_biometria_empleado')
+    .select('bio_empleado_id, bio_vector')
+    .eq('bio_empresa_id', empresaId)
+    .eq('bio_modelo', FACE_MODEL_ID)
+    .neq('bio_empleado_id', employeeId)
+    .returns<StoredVectorRow[]>()
+
+  if (error) return 'error'
+
+  let closest: { employeeId: number; distance: number } | null = null
+  for (const row of data ?? []) {
+    const stored = row.bio_vector
+    if (!Array.isArray(stored) || stored.length !== FACE_EMBEDDING_DIM) continue
+    if (!stored.every((x) => typeof x === 'number' && Number.isFinite(x))) continue
+    const distance = euclideanDistance(vector, stored)
+    if (distance < UMBRAL_MATCH && (!closest || distance < closest.distance)) {
+      closest = { employeeId: row.bio_empleado_id, distance }
+    }
+  }
+  return closest
+}
 
 /**
  * Enrolamiento: guarda (o reemplaza) el vector facial de un empleado, desde el
@@ -42,7 +96,7 @@ export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResu
 
   const vectorKey = process.env.FACE_VECTOR_KEY
   if (!vectorKey) {
-    return { ok: false, error: 'El reconocimiento facial no esta configurado en el servidor.' }
+    return { ok: false, error: 'El reconocimiento facial no está configurado en el servidor.' }
   }
 
   let vector: number[]
@@ -62,7 +116,7 @@ export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResu
   if (!isLivenessProof(liveness)) {
     return {
       ok: false,
-      error: 'No se pudo confirmar que haya una persona real frente a la camara.',
+      error: 'No se pudo confirmar que haya una persona real frente a la cámara.',
     }
   }
 
@@ -80,6 +134,35 @@ export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResu
 
   if (!historial) {
     return { ok: false, error: 'El empleado no tiene un contrato activo.' }
+  }
+
+  const duplicate = await findSimilarFace(meta.empresa_id, parsed.data.employeeId, vector)
+  if (duplicate === 'error') {
+    return { ok: false, error: 'No se pudo comprobar el registro facial. Intentá de nuevo.' }
+  }
+  if (duplicate) {
+    // Best-effort, como el DENIED del kiosco: si el log falla, el rechazo
+    // se mantiene igual.
+    await createAdminClient()
+      .from('sgrh_biometria_auditoria')
+      .insert({
+        bia_empresa_id: meta.empresa_id,
+        bia_resultado: DUPLICATE_AUDIT_RESULT,
+        bia_mejor_distancia: Number(duplicate.distance.toFixed(4)),
+        bia_mejor_empleado_id: duplicate.employeeId,
+        // Perfil en el que se intento registrar y quien lo intento: la columna
+        // de dispositivo es texto libre y el registro no tiene dispositivo.
+        bia_dispositivo_id: `registro:${parsed.data.employeeId}:usr:${meta.usr_id ?? '-'}`,
+      })
+      .then(
+        () => undefined,
+        () => undefined
+      )
+    return {
+      ok: false,
+      error:
+        'Este rostro se parece demasiado al de otro colaborador ya registrado. Revisá que sea la persona correcta y, si lo es, consultá con RRHH.',
+    }
   }
 
   const { error } = await supabase.from('sgrh_biometria_empleado').upsert(

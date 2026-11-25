@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ScanFace, Trash2 } from 'lucide-react'
+import { Glasses, Hand, ScanFace, Sun, Trash2, UserRound, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert } from '@/components/ui/Alert'
 import { Badge } from '@/components/ui/Badge'
@@ -13,10 +13,9 @@ import { enrollFace } from '@/modules/attendance/actions/enrollFace'
 import { deleteFaceEnrollment } from '@/modules/attendance/actions/deleteFaceEnrollment'
 import type { FaceStatus } from '@/modules/attendance/actions/getFaceStatus'
 import type { EncryptedVector } from '@/modules/attendance/lib/face/faceCrypto'
-// Los modelos pesados (MediaPipe, face-api, onnxruntime) ya entran por
-// import() dinamico dentro de FaceScan: hasta que se pulsa "Capturar" no se
-// descarga nada de eso.
-import { FaceScan } from '@/modules/attendance/components/kiosk/face/FaceScan'
+// Los modelos pesados (MediaPipe, face-api, onnxruntime) entran por import()
+// dinamico dentro de FaceScan; se precargan al abrir la pestaña (ver abajo).
+import { FaceScan, preloadFaceScan } from '@/modules/attendance/components/kiosk/face/FaceScan'
 import { formatDate } from '@/modules/employees/lib/format'
 
 interface EmployeeFaceSectionProps {
@@ -29,6 +28,21 @@ interface EmployeeFaceSectionProps {
 }
 
 /**
+ * Lo que tiene que hacer la persona; se muestra antes de abrir la cámara.
+ * Ícono y dos o tres palabras: se lee de un vistazo, sin párrafos. El detalle
+ * (qué cuenta como "tapada", qué hacer si falla) lo da la franja de la cámara
+ * en el momento, cuando de verdad hace falta.
+ */
+const GUIDE: { icon: LucideIcon; label: string }[] = [
+  { icon: UserRound, label: 'De frente' },
+  { icon: Hand, label: 'Sin nada en la cara' },
+  { icon: Sun, label: 'Buena luz' },
+  { icon: Glasses, label: 'Lentes claros, sí' },
+]
+
+type Step = 'idle' | 'guide' | 'scanning'
+
+/**
  * Tab Rostro del perfil (SGRH-102): registrar, reemplazar o eliminar el rostro
  * con el que el kiosco reconoce al colaborador. Es el único punto de entrada
  * del enrolamiento: lo normal es hacerlo al incorporar a alguien, desde la
@@ -37,6 +51,11 @@ interface EmployeeFaceSectionProps {
  * La captura usa la MISMA prueba de vida que el kiosco (SGRH-80): un vector
  * registrado desde una fotografía no caduca y deja al colaborador suplantable
  * de forma permanente.
+ *
+ * Guía (SGRH-117): antes de abrir la cámara se explica qué tiene que hacer la
+ * persona, y mientras se lee ya se bajan los modelos. La captura se guarda
+ * sola cuando FaceScan valida la cara; en el registro también rechaza una mano
+ * sobre el rostro.
  */
 export function EmployeeFaceSection({
   empId,
@@ -45,11 +64,31 @@ export function EmployeeFaceSection({
   hasActiveContract,
 }: EmployeeFaceSectionProps) {
   const router = useRouter()
-  const [scanning, setScanning] = useState(false)
+  const [step, setStep] = useState<Step>('idle')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
+
+  // Los modelos pesan ~20 MB la primera vez. Se empiezan a bajar apenas se
+  // abre la pestaña, cuando el navegador queda libre, para que al tocar
+  // "Capturar rostro" ya estén (o casi). Solo si de verdad se puede capturar.
+  const canCapture = status !== null && hasActiveContract
+  useEffect(() => {
+    if (!canCapture) return
+    const preload = () => preloadFaceScan(true)
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(preload, { timeout: 2000 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const timer = window.setTimeout(preload, 500)
+    return () => window.clearTimeout(timer)
+  }, [canCapture])
+
+  function openGuide() {
+    preloadFaceScan(true)
+    setStep('guide')
+  }
 
   const handleEmbedding = useCallback(
     async (payload: EncryptedVector) => {
@@ -63,13 +102,14 @@ export function EmployeeFaceSection({
           return
         }
         toast.success('Rostro registrado.')
+        // enrollFace no revalida la ruta: el estado del registro se relee acá.
         router.refresh()
       } catch {
         toast.error('No se pudo guardar el rostro. Revisá la conexión e intentá de nuevo.')
       } finally {
         savingRef.current = false
         setSaving(false)
-        setScanning(false)
+        setStep('idle')
       }
     },
     [empId, router]
@@ -77,14 +117,14 @@ export function EmployeeFaceSection({
 
   const handleUnavailable = useCallback((reason: string) => {
     toast.error(reason)
-    setScanning(false)
+    setStep('idle')
   }, [])
 
   const handleSpoof = useCallback(() => {
     toast.error(
       'La cámara ve una imagen plana, no un rostro. El registro debe hacerse con la persona presente.'
     )
-    setScanning(false)
+    setStep('idle')
   }, [])
 
   async function handleConfirmDelete() {
@@ -144,7 +184,35 @@ export function EmployeeFaceSection({
           </Alert>
         )}
 
-        {scanning ? (
+        {step === 'guide' && (
+          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Antes de capturar</h3>
+            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {GUIDE.map(({ icon: Icon, label }) => (
+                <li
+                  key={label}
+                  className="flex flex-col items-center gap-2 rounded-lg bg-white px-2 py-3 text-center ring-1 ring-slate-200"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="text-sm font-medium text-slate-800">{label}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setStep('scanning')}>
+                <ScanFace className="h-3.5 w-3.5" aria-hidden="true" />
+                Empezar captura
+              </Button>
+              <Button variant="secondary" onClick={() => setStep('idle')}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 'scanning' && (
           <div className="flex flex-col items-center gap-3">
             <FaceScan
               enrollment
@@ -161,17 +229,19 @@ export function EmployeeFaceSection({
               variant="secondary"
               disabled={saving}
               onClick={() => {
-                if (!savingRef.current) setScanning(false)
+                if (!savingRef.current) setStep('idle')
               }}
             >
               Cancelar
             </Button>
           </div>
-        ) : (
+        )}
+
+        {step === 'idle' && (
           <div className="flex flex-wrap gap-2">
             <Button
               variant={necesitaCaptura ? 'primary' : 'secondary'}
-              onClick={() => setScanning(true)}
+              onClick={openGuide}
               disabled={!hasActiveContract || deleting}
             >
               <ScanFace className="h-3.5 w-3.5" aria-hidden="true" />

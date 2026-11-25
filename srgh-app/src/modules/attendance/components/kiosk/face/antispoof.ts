@@ -1,3 +1,5 @@
+import { warmUp } from './warmUp'
+
 /**
  * Anti-spoofing por ANALISIS DE MATERIAL (MiniFASNetV2 sobre onnxruntime-web).
  *
@@ -237,7 +239,21 @@ function getOrt(): Promise<OrtModule> {
 function getSession(): Promise<Session> {
   if (!sessionPromise) {
     sessionPromise = getOrt()
-      .then((ort) => ort.InferenceSession.create(MODEL_URL))
+      .then(async (ort) => {
+        const session = await ort.InferenceSession.create(MODEL_URL)
+        // Ver warmUp.ts: la primera corrida prepara el motor y trababa el
+        // video durante la prueba de vida.
+        await warmUp(() =>
+          session.run({
+            [session.inputNames[0]]: new ort.Tensor(
+              'float32',
+              new Float32Array(3 * ANTISPOOF_INPUT * ANTISPOOF_INPUT),
+              [1, 3, ANTISPOOF_INPUT, ANTISPOOF_INPUT]
+            ),
+          })
+        )
+        return session
+      })
       .catch((err) => {
         sessionPromise = null
         throw err

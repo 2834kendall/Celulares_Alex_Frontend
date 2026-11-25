@@ -95,7 +95,7 @@ export function SetPasswordForm({
       router.refresh()
     } catch {
       setServerError(
-        'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.'
+        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
       )
     }
   }
@@ -166,7 +166,7 @@ export function SetPasswordForm({
                   type="button"
                   onClick={() => setShowPassword((visible) => !visible)}
                   disabled={isSubmitting}
-                  aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                   className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition hover:text-slate-600 disabled:cursor-not-allowed"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

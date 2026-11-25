@@ -10,6 +10,9 @@ import { FACE_EMBEDDING_DIM, FACE_MODEL_ID } from '@/modules/attendance/lib/face
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/auth/require-permission', () => ({ requirePermission: vi.fn() }))
+// Unicidad (SGRH-117): los rostros de los demas se leen con el cliente admin.
+let adminClient: ReturnType<typeof createSupabaseClientMock>
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => adminClient }))
 
 const mockCreateClient = vi.mocked(createClient)
 const mockRequirePermission = vi.mocked(requirePermission)
@@ -36,6 +39,10 @@ describe('enrollFace (server action)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('FACE_VECTOR_KEY', KEY)
+    adminClient = createSupabaseClientMock({
+      sgrh_biometria_empleado: { data: [], error: null },
+      sgrh_biometria_auditoria: { data: null, error: null },
+    })
     mockRequirePermission.mockResolvedValue({
       app_metadata: { empresa_id: 1, usr_id: 50 },
     } as unknown as Awaited<ReturnType<typeof requirePermission>>)
@@ -79,7 +86,7 @@ describe('enrollFace (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'El reconocimiento facial no esta configurado en el servidor.',
+      error: 'El reconocimiento facial no está configurado en el servidor.',
     })
   })
 
@@ -176,7 +183,7 @@ describe('enrollFace (server action)', () => {
 
       expect(result).toEqual({
         ok: false,
-        error: 'No se pudo confirmar que haya una persona real frente a la camara.',
+        error: 'No se pudo confirmar que haya una persona real frente a la cámara.',
       })
     })
 
@@ -200,6 +207,117 @@ describe('enrollFace (server action)', () => {
       })
 
       expect(result).toEqual({ ok: true })
+    })
+  })
+
+  describe('unicidad contra los demás rostros de la empresa', () => {
+    const near = (() => {
+      const v = [...RAW_VECTOR]
+      v[2] = 0.2 // distancia 0.2 al vector capturado: el kiosco los confundiría
+      return v
+    })()
+    const far = (() => {
+      const v = [...RAW_VECTOR]
+      v[2] = 0.9
+      return v
+    })()
+
+    function userClient() {
+      const client = createSupabaseClientMock({
+        sgrh_historial_laboral: { data: { lab_id: 7 }, error: null },
+        sgrh_biometria_empleado: { data: null, error: null },
+      })
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
+      return client
+    }
+
+    function adminWith(rows: unknown) {
+      adminClient = createSupabaseClientMock({
+        sgrh_biometria_empleado: rows as { data: unknown; error: unknown },
+        sgrh_biometria_auditoria: { data: null, error: null },
+      })
+    }
+
+    it('rechaza un rostro que se parece al de otro colaborador y lo deja en la auditoría', async () => {
+      const client = userClient()
+      adminWith({
+        data: [
+          { bio_empleado_id: 20, bio_vector: far },
+          { bio_empleado_id: 21, bio_vector: near },
+        ],
+        error: null,
+      })
+
+      const result = await enrollFace({ employeeId: 10, vector: await encryptedEnrollment() })
+
+      expect(result).toEqual({
+        ok: false,
+        error: expect.stringMatching(/se parece demasiado al de otro colaborador/),
+      })
+      expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_empleado')
+      const audit = adminClient.from.mock.results.find(
+        (_r, i) => adminClient.from.mock.calls[i][0] === 'sgrh_biometria_auditoria'
+      )!.value.insert as ReturnType<typeof vi.fn>
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bia_empresa_id: 1,
+          bia_resultado: 'ENROLL_DUPLICADO',
+          bia_mejor_empleado_id: 21,
+          bia_mejor_distancia: 0.2,
+          bia_dispositivo_id: 'registro:10:usr:50',
+        })
+      )
+    })
+
+    it('guarda si nadie más queda a distancia de coincidencia', async () => {
+      userClient()
+      adminWith({ data: [{ bio_empleado_id: 20, bio_vector: far }], error: null })
+
+      expect(await enrollFace({ employeeId: 10, vector: await encryptedEnrollment() })).toEqual({
+        ok: true,
+      })
+    })
+
+    it('se compara contra los demás de la empresa, no contra sí mismo ni otro modelo', async () => {
+      userClient()
+      await enrollFace({ employeeId: 10, vector: await encryptedEnrollment() })
+
+      const query = adminClient.from.mock.results[0].value
+      expect(adminClient.from).toHaveBeenCalledWith('sgrh_biometria_empleado')
+      expect(query.eq).toHaveBeenCalledWith('bio_empresa_id', 1)
+      expect(query.eq).toHaveBeenCalledWith('bio_modelo', FACE_MODEL_ID)
+      expect(query.neq).toHaveBeenCalledWith('bio_empleado_id', 10)
+    })
+
+    it('ignora vectores corruptos o de otra dimensión', async () => {
+      userClient()
+      adminWith({
+        data: [
+          { bio_empleado_id: 30, bio_vector: [1, 2, 3] },
+          { bio_empleado_id: 31, bio_vector: near.map((x, i) => (i === 5 ? 'x' : x)) },
+          { bio_empleado_id: 32, bio_vector: null },
+        ],
+        error: null,
+      })
+
+      expect(await enrollFace({ employeeId: 10, vector: await encryptedEnrollment() })).toEqual({
+        ok: true,
+      })
+    })
+
+    it('si no puede leer los demás rostros, no guarda (falla cerrado)', async () => {
+      const client = userClient()
+      adminWith({ data: null, error: { message: 'boom' } })
+
+      const result = await enrollFace({ employeeId: 10, vector: await encryptedEnrollment() })
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'No se pudo comprobar el registro facial. Intentá de nuevo.',
+      })
+      expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_empleado')
     })
   })
 })

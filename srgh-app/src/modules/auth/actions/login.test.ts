@@ -100,7 +100,7 @@ describe('login (server action)', () => {
       expect(result).toEqual({
         ok: false,
         error:
-          'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.',
+          'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
       })
       expect(client.auth.signInWithPassword).not.toHaveBeenCalled()
     })
@@ -173,11 +173,11 @@ describe('login (server action)', () => {
       ],
       [
         { message: 'Failed to fetch' },
-        'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.',
+        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
       ],
       [
         { message: 'network error occurred' },
-        'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.',
+        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
       ],
       [{ message: 'Invalid login credentials' }, 'Credenciales invalidas.'],
     ])('mapea %o a "%s"', async (signInError, expected) => {

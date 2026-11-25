@@ -72,7 +72,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   const vectorKey = process.env.FACE_VECTOR_KEY
   const ticketSecret = process.env.FACE_TICKET_SECRET
   if (!vectorKey || !ticketSecret) {
-    return { ok: false, error: 'El reconocimiento facial no esta configurado en el servidor.' }
+    return { ok: false, error: 'El reconocimiento facial no está configurado en el servidor.' }
   }
 
   let probe: number[]

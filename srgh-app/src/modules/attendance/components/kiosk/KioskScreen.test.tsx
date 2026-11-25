@@ -108,7 +108,7 @@ describe('<KioskScreen />', () => {
       render(<KioskScreen employees={employees} />)
 
       expect(screen.getByTestId('face-scan')).toBeInTheDocument()
-      expect(screen.getByText('Mira a la camara')).toBeInTheDocument()
+      expect(screen.getByText('Mira a la cámara')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     })
@@ -124,7 +124,7 @@ describe('<KioskScreen />', () => {
       vi.stubEnv('NEXT_PUBLIC_FACE_VECTOR_KEY', '')
       render(<KioskScreen employees={employees} />)
 
-      expect(screen.getByText('Face ID no esta configurado')).toBeInTheDocument()
+      expect(screen.getByText('Face ID no está configurado')).toBeInTheDocument()
       expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
     })
 
@@ -132,7 +132,7 @@ describe('<KioskScreen />', () => {
       setOnline(false)
       render(<KioskScreen employees={employees} />)
 
-      expect(await screen.findByText('Sin conexion')).toBeInTheDocument()
+      expect(await screen.findByText('Sin conexión')).toBeInTheDocument()
       expect(screen.getByText(/avisa al encargado/)).toBeInTheDocument()
       expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
     })
@@ -308,8 +308,8 @@ describe('<KioskScreen />', () => {
       await emitEmbedding()
 
       expect(screen.getByText('No pudimos verificarte')).toBeInTheDocument()
-      expect(screen.getByText(/No se pudo completar la verificacion/)).toBeInTheDocument()
-      expect(screen.queryByText('La camara no esta disponible')).not.toBeInTheDocument()
+      expect(screen.getByText(/No se pudo completar la verificación/)).toBeInTheDocument()
+      expect(screen.queryByText('La cámara no está disponible')).not.toBeInTheDocument()
       expect(mockGetKioskMarkOptions).not.toHaveBeenCalled()
       expect(mockRegisterKioskMark).not.toHaveBeenCalled()
       await userEvent.click(screen.getByRole('button', { name: 'Intentar de nuevo' }))
@@ -365,7 +365,7 @@ describe('<KioskScreen />', () => {
       expect(screen.getByTestId('face-scan')).toBeInTheDocument()
     })
 
-    it('una foto frente a la camara se rechaza sin consultar al servidor', () => {
+    it('una foto frente a la cámara se rechaza sin consultar al servidor', () => {
       render(<KioskScreen employees={employees} />)
 
       act(() => {
@@ -380,11 +380,11 @@ describe('<KioskScreen />', () => {
       render(<KioskScreen employees={employees} />)
 
       act(() => {
-        faceScanProps!.onUnavailable('No se pudo acceder a la camara.')
+        faceScanProps!.onUnavailable('No se pudo acceder a la cámara.')
       })
 
-      expect(screen.getByText('La camara no esta disponible')).toBeInTheDocument()
-      expect(screen.getByText(/No se pudo acceder a la camara\./)).toBeInTheDocument()
+      expect(screen.getByText('La cámara no está disponible')).toBeInTheDocument()
+      expect(screen.getByText(/No se pudo acceder a la cámara\./)).toBeInTheDocument()
     })
 
     it('error del servidor al verificar: pide avisar al encargado', async () => {

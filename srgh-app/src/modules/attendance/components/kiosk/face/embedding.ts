@@ -1,5 +1,6 @@
 import { FACE_EMBEDDING_DIM, FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
 import { computeTestEmbedding } from './testEmbedding'
+import { blankCanvas, warmUp } from './warmUp'
 
 /**
  * Embedding facial con la red de reconocimiento de face-api.js (fork
@@ -48,7 +49,12 @@ function getFaceapi(): Promise<typeof import('@vladmandic/face-api')> {
 function loadModel(): Promise<void> {
   if (!modelLoadPromise) {
     modelLoadPromise = getFaceapi()
-      .then((faceapi) => faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL))
+      .then(async (faceapi) => {
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        // Ver warmUp.ts: la primera pasada de TensorFlow.js compila sus
+        // shaders; sin esto, "Procesando…" tardaba segundos al terminar.
+        await warmUp(() => faceapi.computeFaceDescriptor(blankCanvas(FACE_INPUT_SIZE)))
+      })
       .catch((err) => {
         modelLoadPromise = null
         throw err
@@ -83,7 +89,7 @@ export async function computeEmbedding(faceCanvas: HTMLCanvasElement): Promise<n
 
   if (!descriptor || descriptor.length !== FACE_EMBEDDING_DIM) {
     throw new Error(
-      `El modelo devolvio ${descriptor?.length ?? 0} dimensiones, esperaba ${FACE_EMBEDDING_DIM}.`
+      `El modelo devolvió ${descriptor?.length ?? 0} dimensiones, esperaba ${FACE_EMBEDDING_DIM}.`
     )
   }
 

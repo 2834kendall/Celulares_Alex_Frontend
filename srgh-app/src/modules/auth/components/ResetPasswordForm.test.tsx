@@ -169,7 +169,7 @@ describe('<ResetPasswordForm />', () => {
     await fillPasswords('Secreto1234!', 'Secreto1234!')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /No se pudo conectar con el servicio de autenticacion/
+      /No se pudo conectar con el servicio de autenticación/
     )
   })
 
@@ -198,10 +198,10 @@ describe('<ResetPasswordForm />', () => {
 
     expect(password).toHaveAttribute('type', 'password')
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar contrasena' }))
+    await user.click(screen.getByRole('button', { name: 'Mostrar contraseña' }))
     expect(password).toHaveAttribute('type', 'text')
 
-    await user.click(screen.getByRole('button', { name: 'Ocultar contrasena' }))
+    await user.click(screen.getByRole('button', { name: 'Ocultar contraseña' }))
     expect(password).toHaveAttribute('type', 'password')
   })
 })

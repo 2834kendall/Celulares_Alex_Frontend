@@ -1,21 +1,37 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ScanFace } from 'lucide-react'
+import { Camera, CheckCircle2 } from 'lucide-react'
+import { Skeleton, SkeletonRegion } from '@/components/ui/Skeleton'
 import { encryptFacePayload, type EncryptedVector } from '@/modules/attendance/lib/face/faceCrypto'
 import {
   LIVE_THRESHOLD,
   MIN_LIVE_SAMPLES as MIN_SAMPLES,
   type LivenessProof,
 } from '@/modules/attendance/lib/face/livenessProof'
-import { enrollmentMedoid } from '@/modules/attendance/lib/face/enrollment'
+import {
+  enrollmentMedoid,
+  InconsistentEnrollmentError,
+} from '@/modules/attendance/lib/face/enrollment'
 import { timeFaceStage } from './timing'
 import { FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
 import { getFaceLandmarker } from './faceLandmarker'
+import { getHandLandmarker } from './handLandmarker'
 import { computeEmbedding, preloadEmbeddingModel } from './embedding'
 import { preloadAntispoofModel, scoreRealness } from './antispoof'
 import { eyeTiltAngle, faceCropBox, firstFaceLandmarks } from './landmarks'
-import { assessPixels, assessQuality, qualityMessage } from './quality'
+import { getScanVisual, MESSAGE_HOLD_MS, type ScanPhase, type ScanTone } from './scanVisual'
+import {
+  assessPixels,
+  assessQuality,
+  DARK_GLASSES_MESSAGE,
+  eyeShade,
+  HAND_ON_FACE_MESSAGE,
+  looksLikeDarkGlasses,
+  handCoversFace,
+  ovalInVideo,
+  qualityMessage,
+} from './quality'
 
 /**
  * Umbrales sobre la MEDIANA del puntaje de realidad. Medidos contra las
@@ -46,6 +62,44 @@ const DECISION_TIMEOUT_MS = 8000
  */
 const CAPTURE_WINDOW_MS = 500
 
+/**
+ * Lentes oscuros (registro): se mide cada SHADE_EVERY cuadros sobre una copia
+ * de SHADE_SIZE (de sobra para promediar el brillo de un ojo) y se frena tras
+ * DARK_STREAK mediciones oscuras seguidas.
+ */
+const SHADE_EVERY = 2
+const SHADE_SIZE = { w: 160, h: 120 }
+const DARK_STREAK = 4
+
+/**
+ * El registro busca hasta 2 rostros para poder frenar si hay otra persona en
+ * cuadro; el kiosco busca 1 (con fila detras, mas rostros solo estorban).
+ */
+const faceLimit = (enrollment: boolean) => (enrollment ? 2 : 1)
+
+/** Mensaje cuando hay mas de una persona frente a la camara (registro). */
+export const TWO_FACES_MESSAGE = 'Que solo una persona quede frente a la cámara'
+
+/** Capturas que se juntan en el registro, y la pausa minima entre ellas. */
+export const ENROLLMENT_CAPTURES = 3
+const ENROLLMENT_GAP_MS = 300
+
+/**
+ * Empieza a bajar los modelos antes de abrir la camara: el registro lo llama
+ * al mostrar la guia, asi el costo se paga mientras se lee. Cada carga es
+ * unica (promesa compartida), asi que llamarlo de mas no repite descargas, y
+ * un fallo aca no importa: FaceScan lo vuelve a intentar y lo reporta.
+ */
+export function preloadFaceScan(enrollment = false): void {
+  const loads: Promise<unknown>[] = [
+    getFaceLandmarker(faceLimit(enrollment)),
+    preloadEmbeddingModel(),
+    preloadAntispoofModel(),
+  ]
+  if (enrollment) loads.push(getHandLandmarker())
+  for (const load of loads) load.catch(() => {})
+}
+
 const DEBUG = process.env.NEXT_PUBLIC_FACE_DEBUG === 'true'
 
 export interface FaceScanProps {
@@ -54,7 +108,7 @@ export interface FaceScanProps {
    * Recibe el embedding YA cifrado, junto con la prueba de vida que lo
    * respalda. El padre decide que hacer (verificar en el kiosco, enrolar desde
    * el tab Rostro del perfil del empleado). Mientras la promesa esta viva,
-   * FaceScan muestra "procesando".
+   * FaceScan muestra "listo".
    */
   onEmbedding: (payload: EncryptedVector) => Promise<void>
   /**
@@ -71,14 +125,62 @@ export interface FaceScanProps {
   onSpoof?: () => void
 }
 
-type ScanStatus = 'iniciando' | 'buscando_rostro' | 'ajusta_encuadre' | 'evaluando' | 'procesando'
+/** Color del ovalo y del anillo por tono. Siempre va junto al texto. */
+const TONE_STROKE: Record<ScanTone, string> = {
+  neutral: 'stroke-white/70',
+  warn: 'stroke-amber-400',
+  progress: 'stroke-sky-400',
+  done: 'stroke-emerald-400',
+}
 
-const STATUS_TEXT: Record<ScanStatus, string> = {
-  iniciando: 'Preparando la camara…',
-  buscando_rostro: 'Coloca tu rostro frente a la camara',
-  ajusta_encuadre: 'Acomoda tu rostro en el recuadro',
-  evaluando: 'Verificando…',
-  procesando: 'Procesando…',
+/** Guia del ovalo debajo del anillo: ambar si hay que corregir algo. */
+const GUIDE_STROKE: Record<ScanTone, string> = {
+  neutral: 'stroke-white/70',
+  warn: 'stroke-amber-400',
+  progress: 'stroke-white/25',
+  done: 'stroke-white/25',
+}
+
+/**
+ * Proporcion del ovalo dentro del video 4:3: ocupa 1/2 del ancho y 3/4 del
+ * alto, asi que su caja mide (0.5*4)/(0.75*3) = 0.889 de ancho por alto. El
+ * viewBox respeta esa proporcion para que el trazo no se deforme.
+ */
+const OVAL_BOX = { w: 80, h: 90, rx: 37, ry: 42, stroke: 3 }
+
+/**
+ * Parte del video que ocupa el ovalo DIBUJADO (la elipse, no su caja): la caja
+ * es 1/2 del ancho y 3/4 del alto, y la elipse ocupa 2*rx/w y 2*ry/h de ella.
+ * La validacion usa estas medidas para exigir lo mismo que se ve.
+ */
+const OVAL_WIDTH_SHARE = 0.5 * ((2 * OVAL_BOX.rx) / OVAL_BOX.w)
+const OVAL_HEIGHT_SHARE = 0.75 * ((2 * OVAL_BOX.ry) / OVAL_BOX.h)
+
+/** Mismo ovalo como trazado que empieza arriba y gira en sentido horario. */
+const RING_PATH = (() => {
+  const { w, h, rx, ry } = OVAL_BOX
+  const cx = w / 2
+  const top = h / 2 - ry
+  const bottom = h / 2 + ry
+  return `M ${cx} ${top} A ${rx} ${ry} 0 1 1 ${cx} ${bottom} A ${rx} ${ry} 0 1 1 ${cx} ${top}`
+})()
+
+/**
+ * Texto y tono que se muestran, con un respiro de MESSAGE_HOLD_MS antes de
+ * cambiar: la mano y el encuadre se evaluan en cada cuadro, y sin esto la
+ * franja (y el lector de pantalla) cambiarian varias veces por segundo. El
+ * cierre ("listo") no espera.
+ */
+function useSettledLabel(tone: ScanTone, message: string) {
+  const key = `${tone}|${message}`
+  const [shown, setShown] = useState(key)
+  useEffect(() => {
+    if (key === shown) return
+    const timer = setTimeout(() => setShown(key), tone === 'done' ? 0 : MESSAGE_HOLD_MS)
+    return () => clearTimeout(timer)
+  }, [key, shown, tone])
+  const sep = shown.indexOf('|')
+  return { tone: shown.slice(0, sep) as ScanTone, message: shown.slice(sep + 1) }
 }
 
 interface Candidate {
@@ -138,9 +240,21 @@ export function FaceScan({
   const doneRef = useRef(false)
   const unavailableRef = useRef(false)
 
-  const [status, setStatus] = useState<ScanStatus>('iniciando')
+  const [status, setStatus] = useState<ScanPhase>('iniciando')
   const [hint, setHint] = useState<string | null>(null)
   const [debug, setDebug] = useState<DebugInfo | null>(null)
+  const [cameraReady, setCameraReady] = useState(false)
+  const [livenessSamples, setLivenessSamples] = useState(0)
+  const [captureProgress, setCaptureProgress] = useState(0)
+
+  const visual = getScanVisual({
+    phase: status,
+    hint,
+    livenessSamples,
+    livenessNeeded: MIN_SAMPLES,
+    captureProgress,
+  })
+  const label = useSettledLabel(visual.tone, visual.message)
 
   useEffect(() => {
     let cancelled = false
@@ -165,44 +279,48 @@ export function FaceScan({
       doneRef.current = true
       stopCamera()
       if (onSpoof) onSpoof()
-      else onUnavailable('No se detecto una persona real frente a la camara.')
+      else onUnavailable('No se detectó una persona real frente a la cámara.')
     }
 
     async function start() {
       const key = process.env.NEXT_PUBLIC_FACE_VECTOR_KEY
       if (!key) {
-        fail('El reconocimiento facial no esta configurado en este kiosco.')
+        fail('El reconocimiento facial no está configurado en este kiosco.')
         return
       }
 
       if (!navigator.mediaDevices?.getUserMedia) {
-        fail('Este dispositivo no tiene camara disponible.')
+        fail('Este dispositivo no tiene cámara disponible.')
         return
       }
 
-      let landmarker: Awaited<ReturnType<typeof getFaceLandmarker>>
-      try {
-        // Los dos modelos pesados se precargan en paralelo con el detector
-        // para que el costo se pague al abrir el kiosco y no al marcar.
-        const models = await timeFaceStage('models', () =>
-          Promise.all([getFaceLandmarker(), preloadEmbeddingModel(), preloadAntispoofModel()])
-        )
-        landmarker = models[0]
-      } catch {
-        fail('No se pudieron cargar los modelos de reconocimiento.')
-        return
-      }
-
-      if (cancelled) return
+      // La camara se pide EN PARALELO con los modelos (SGRH-117): antes se
+      // pedia recien al terminar de cargarlos, y la persona miraba un recuadro
+      // negro durante toda la descarga. Asi el video aparece enseguida.
+      const cameraPromise = navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
+      })
+      // Los dos modelos pesados se precargan en paralelo con el detector
+      // para que el costo se pague al abrir el kiosco y no al marcar. El
+      // registro suma el detector de manos.
+      const modelsPromise = timeFaceStage('models', () =>
+        Promise.all([
+          getFaceLandmarker(faceLimit(enrollment)),
+          enrollment ? getHandLandmarker() : Promise.resolve(null),
+          preloadEmbeddingModel(),
+          preloadAntispoofModel(),
+        ])
+      )
+      // Ninguna de las dos debe quedar como rechazo sin manejar si la otra
+      // falla primero.
+      modelsPromise.catch(() => {})
 
       let stream: MediaStream
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false,
-        })
+        stream = await cameraPromise
       } catch {
-        fail('No se pudo acceder a la camara.')
+        fail('No se pudo acceder a la cámara.')
         return
       }
 
@@ -227,6 +345,23 @@ export function FaceScan({
 
       if (cancelled) return
 
+      let landmarker: Awaited<ReturnType<typeof getFaceLandmarker>>
+      let handLandmarker: Awaited<ReturnType<typeof getHandLandmarker>> | null
+      try {
+        const models = await modelsPromise
+        landmarker = models[0]
+        handLandmarker = models[1]
+      } catch {
+        fail('No se pudieron cargar los modelos de reconocimiento.')
+        return
+      }
+
+      if (cancelled) return
+      // El skeleton se quita recien con camara Y modelos listos (y calentados,
+      // ver warmUp.ts). Antes se mostraba el video apenas respondia la camara,
+      // y la compilacion de los modelos lo dejaba congelado frente a la persona.
+      setCameraReady(true)
+
       setStatus('buscando_rostro')
 
       const scores: number[] = []
@@ -242,6 +377,41 @@ export function FaceScan({
       let lastCandidateMs = -Infinity
       let detectionFrames = 0
       let detectionMs = 0
+      // Ultima indicacion que se le dio a la persona: si se vence el plazo, el
+      // mensaje dice la causa probable en vez de un "intenta de nuevo" vacio.
+      let lastHint: string | null = null
+      // Mediciones seguidas con los ojos oscuros (ver lentes oscuros abajo).
+      let darkStreak = 0
+      let shadeTick = 0
+      let shadeCanvas: HTMLCanvasElement | null = null
+
+      /** Brillo de ojos vs piel sobre una copia chica del cuadro actual. */
+      function sampleEyeShade(v: HTMLVideoElement, landmarks: { x: number; y: number }[]) {
+        if (!shadeCanvas) {
+          shadeCanvas = document.createElement('canvas')
+          shadeCanvas.width = SHADE_SIZE.w
+          shadeCanvas.height = SHADE_SIZE.h
+        }
+        const ctx = shadeCanvas.getContext('2d', { willReadFrequently: true })
+        if (!ctx) return null
+        try {
+          ctx.drawImage(v, 0, 0, SHADE_SIZE.w, SHADE_SIZE.h)
+          return eyeShade(ctx.getImageData(0, 0, SHADE_SIZE.w, SHADE_SIZE.h), landmarks)
+        } catch {
+          return null
+        }
+      }
+
+      function showHint(next: string | null) {
+        if (next) lastHint = next
+        setHint(next)
+      }
+
+      function timeoutMessage(fallback: string) {
+        return lastHint
+          ? `No pudimos completar la captura. ${lastHint} e intenta de nuevo.`
+          : fallback
+      }
 
       function resetCapture(resetTimer = false) {
         if (resetTimer) startMs = null
@@ -253,6 +423,8 @@ export function FaceScan({
         best = null
         candidates = []
         lastCandidateMs = -Infinity
+        setLivenessSamples(0)
+        setCaptureProgress(0)
       }
 
       /** Recorte alineado del rostro, listo para el modelo de embeddings. */
@@ -302,7 +474,7 @@ export function FaceScan({
           })
         doneRef.current = true
         stopCamera()
-        setStatus('procesando')
+        setStatus('listo')
         setHint(null)
 
         void (async () => {
@@ -320,8 +492,14 @@ export function FaceScan({
             )
             if (cancelled) return
             await onEmbedding(payload)
-          } catch {
-            fail('No se pudo procesar el rostro capturado.')
+          } catch (err) {
+            // Tomas que no coinciden entre si: decirle a la persona que
+            // corregir, no un "no se pudo" generico.
+            fail(
+              err instanceof InconsistentEnrollmentError
+                ? err.message
+                : 'No se pudo procesar el rostro capturado.'
+            )
           }
         })()
       }
@@ -336,7 +514,11 @@ export function FaceScan({
 
         const now = performance.now()
         if (startMs !== null && now - startMs > DECISION_TIMEOUT_MS) {
-          fail('No pudimos completar una captura valida. Ajusta la luz e intenta de nuevo.')
+          fail(
+            timeoutMessage(
+              'No pudimos completar una captura válida. Ajusta la luz e intenta de nuevo.'
+            )
+          )
           return
         }
         if (document.hidden || v.currentTime === lastVideoTime) {
@@ -352,10 +534,20 @@ export function FaceScan({
           detectionFrames += 1
           detectionMs += performance.now() - now
         } catch {
-          fail('No se pudo analizar la camara. Intenta de nuevo.')
+          fail('No se pudo analizar la cámara. Intenta de nuevo.')
           return
         }
         const landmarks = firstFaceLandmarks(result)
+
+        // Registro: una sola persona en cuadro. Con dos, no hay forma de saber
+        // de quien es el rostro que se guarda (SGRH-117).
+        if (enrollment && landmarks && (result.faceLandmarks?.length ?? 0) > 1) {
+          resetCapture(true)
+          setStatus('ajusta_encuadre')
+          showHint(TWO_FACES_MESSAGE)
+          rafRef.current = requestAnimationFrame(loop)
+          return
+        }
 
         if (!landmarks) {
           resetCapture(true)
@@ -366,11 +558,62 @@ export function FaceScan({
         }
 
         if (startMs === null) startMs = now
-        const quality = assessQuality(landmarks)
+        const quality = assessQuality(landmarks, {
+          oval: ovalInVideo(
+            v.videoWidth,
+            v.videoHeight,
+            4 / 3,
+            OVAL_WIDTH_SHARE,
+            OVAL_HEIGHT_SHARE
+          ),
+        })
         if (!quality || !quality.ok) {
           resetCapture()
           setStatus('ajusta_encuadre')
-          setHint(quality ? qualityMessage(quality.issues) : null)
+          showHint(quality ? qualityMessage(quality.issues) : null)
+          rafRef.current = requestAnimationFrame(loop)
+          return
+        }
+
+        // Registro: una mano sobre la cara invalida TODO lo juntado hasta ahi
+        // y reinicia el plazo, para que la persona tenga tiempo de quitarla.
+        // Se revisa en cada frame: basta un frame con la mano encima para que
+        // ninguna de las tres capturas pueda salir tapada.
+        if (handLandmarker) {
+          let covered = false
+          try {
+            const hands = handLandmarker.detectForVideo(v, now).landmarks ?? []
+            covered = hands.length > 0 && handCoversFace(landmarks, hands)
+          } catch {
+            fail('No se pudo analizar la cámara. Intenta de nuevo.')
+            return
+          }
+          if (covered) {
+            resetCapture(true)
+            setStatus('ajusta_encuadre')
+            showHint(HAND_ON_FACE_MESSAGE)
+            rafRef.current = requestAnimationFrame(loop)
+            return
+          }
+        }
+
+        // Registro: lentes oscuros. Ningun modelo los ve (la malla se ajusta
+        // igual, la prueba de vida ve piel real) y, si estan puestos todo el
+        // tiempo, las tres tomas salen consistentes entre si. Se mide el brillo
+        // de los ojos contra la piel del mismo rostro cada SHADE_EVERY cuadros
+        // y solo se frena tras DARK_STREAK mediciones seguidas: una sombra o
+        // un parpadeo no alcanzan.
+        shadeTick += 1
+        if (enrollment && shadeTick % SHADE_EVERY === 0) {
+          const shade = sampleEyeShade(v, landmarks)
+          darkStreak = looksLikeDarkGlasses(shade) ? darkStreak + 1 : 0
+          if (DEBUG && shade)
+            console.info('[face] ojos/piel', shade.right.toFixed(2), shade.left.toFixed(2))
+        }
+        if (darkStreak >= DARK_STREAK) {
+          resetCapture(true)
+          setStatus('ajusta_encuadre')
+          showHint(DARK_GLASSES_MESSAGE)
           rafRef.current = requestAnimationFrame(loop)
           return
         }
@@ -393,8 +636,10 @@ export function FaceScan({
                   !doneRef.current &&
                   sampleGeneration === generation &&
                   score !== null
-                )
+                ) {
                   scores.push(score)
+                  setLivenessSamples(scores.length)
+                }
               })
               .catch(() => {
                 // Un fallo suelto de inferencia no debe tumbar la sesion; si
@@ -428,7 +673,7 @@ export function FaceScan({
 
           if (!proof) {
             if (now - startMs > DECISION_TIMEOUT_MS) {
-              fail('No pudimos confirmar que haya una persona frente a la camara.')
+              fail(timeoutMessage('No pudimos confirmar que haya una persona frente a la cámara.'))
               return
             }
             rafRef.current = requestAnimationFrame(loop)
@@ -446,6 +691,7 @@ export function FaceScan({
         }
 
         // ---- Fase 2: capturar el mejor encuadre ----
+        setStatus('capturando')
         const canvas = buildCrop(v, landmarks)
         if (canvas) {
           const ctx = canvas.getContext('2d', { willReadFrequently: true })
@@ -457,17 +703,26 @@ export function FaceScan({
 
           // Reject empty/flat captures without inventing device-specific blur thresholds.
           if (!pixels?.ok) {
-            setHint('Mejora la luz y manten el rostro quieto')
+            showHint('Mejora la luz y mantén el rostro quieto')
             rafRef.current = requestAnimationFrame(loop)
             return
           }
-          if (enrollment && now - lastCandidateMs >= 150 && candidates.length < 3) {
+          if (
+            enrollment &&
+            now - lastCandidateMs >= ENROLLMENT_GAP_MS &&
+            candidates.length < ENROLLMENT_CAPTURES
+          ) {
             candidates.push({ canvas, sharpness })
             lastCandidateMs = now
           }
 
           if (!best || sharpness > best.sharpness) best = { canvas, sharpness }
           if (captureStartMs === null) captureStartMs = now
+          setCaptureProgress(
+            enrollment
+              ? candidates.length / ENROLLMENT_CAPTURES
+              : Math.min(1, (now - captureStartMs) / CAPTURE_WINDOW_MS)
+          )
         }
 
         // Se dispara con el mejor candidato del lote, no con el primero.
@@ -475,7 +730,7 @@ export function FaceScan({
           best &&
           captureStartMs !== null &&
           now - captureStartMs >= CAPTURE_WINDOW_MS &&
-          (!enrollment || candidates.length === 3)
+          (!enrollment || candidates.length === ENROLLMENT_CAPTURES)
         ) {
           capture(best.canvas, proof)
           return
@@ -502,7 +757,9 @@ export function FaceScan({
       {/* El alto se limita al del viewport: en un telefono acostado (375px de
           alto) el video 4:3 a todo el ancho dejaba los botones fuera de
           pantalla. */}
-      <div className="relative mx-auto w-full max-w-[calc(60dvh*4/3)] overflow-hidden rounded-3xl bg-slate-900 ring-1 ring-blue-100">
+      <div
+        className={`relative mx-auto w-full max-w-[calc(60dvh*4/3)] overflow-hidden rounded-3xl ring-1 ring-blue-100 ${cameraReady ? 'bg-slate-900' : 'bg-white'}`}
+      >
         {/* El video se espeja como un espejo real: menos desconcertante. */}
         <video
           ref={videoRef}
@@ -510,9 +767,81 @@ export function FaceScan({
           playsInline
           className="aspect-[4/3] w-full -scale-x-100 object-cover"
         />
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-3/4 w-1/2 rounded-[50%] border-2 border-dashed border-white/60" />
+
+        {/* Hasta que llega la imagen: la silueta de carga del resto del
+            sistema (Skeleton) en vez de un recuadro negro. El video sigue
+            montado debajo porque el stream se le asigna por ref. */}
+        {!cameraReady && (
+          <SkeletonRegion label="Preparando la cámara…" className="absolute inset-0 space-y-0">
+            <Skeleton className="h-full w-full" rounded="rounded-3xl" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500">
+              <Camera className="h-8 w-8" aria-hidden="true" />
+              <span className="text-sm font-medium" aria-hidden="true">
+                Preparando la cámara…
+              </span>
+            </div>
+          </SkeletonRegion>
+        )}
+
+        <div
+          className={`pointer-events-none absolute inset-0 flex items-center justify-center ${cameraReady ? '' : 'hidden'}`}
+        >
+          <svg
+            viewBox={`0 0 ${OVAL_BOX.w} ${OVAL_BOX.h}`}
+            className="h-3/4 w-1/2 overflow-visible"
+            aria-hidden="true"
+            data-testid="scan-ring"
+            data-tone={visual.tone}
+            data-progress={visual.progress.toFixed(2)}
+          >
+            {/* Guia del ovalo: punteada mientras busca, ambar cuando hay que
+                corregir algo y tenue debajo del anillo mientras avanza. */}
+            <ellipse
+              cx={OVAL_BOX.w / 2}
+              cy={OVAL_BOX.h / 2}
+              rx={OVAL_BOX.rx}
+              ry={OVAL_BOX.ry}
+              fill="none"
+              strokeWidth={visual.tone === 'neutral' ? 1 : OVAL_BOX.stroke}
+              strokeDasharray={visual.tone === 'neutral' ? '3 3' : undefined}
+              className={`transition-[stroke] duration-300 motion-reduce:transition-none ${GUIDE_STROKE[visual.tone]}`}
+            />
+            {/* Anillo de avance: arranca arriba y avanza en sentido horario. Es
+                un trazado y no una <ellipse> rotada: rotar una elipse que no es
+                circulo la acuesta. Al vaciarse lo hace con una transicion
+                corta, nunca de golpe. */}
+            <path
+              d={RING_PATH}
+              fill="none"
+              strokeWidth={OVAL_BOX.stroke}
+              strokeLinecap="round"
+              pathLength={1}
+              strokeDasharray="1 1"
+              strokeDashoffset={1 - visual.progress}
+              className={`transition-[stroke-dashoffset,stroke,opacity] duration-300 ease-out motion-reduce:transition-none ${TONE_STROKE[visual.tone]} ${visual.progress > 0 ? 'opacity-100' : 'opacity-0'}`}
+            />
+          </svg>
         </div>
+
+        {visual.tone === 'done' && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <CheckCircle2
+              className="h-20 w-20 text-emerald-400 drop-shadow-lg motion-safe:animate-[pulse_1s_ease-out_1]"
+              aria-hidden="true"
+            />
+          </div>
+        )}
+
+        {/* Franja de indicaciones SOBRE el video, fuera del espejo: se lee a
+            un metro y no queda al reves. */}
+        {cameraReady && (
+          <p
+            className="absolute inset-x-0 bottom-0 bg-black/60 px-4 py-3 text-center text-base font-semibold text-white text-balance sm:text-lg"
+            aria-live="polite"
+          >
+            {label.message}
+          </p>
+        )}
 
         {DEBUG && debug && (
           <div className="pointer-events-none absolute left-0 top-0 m-2 rounded-lg bg-black/80 p-2.5 font-mono text-[11px] leading-relaxed text-lime-300">
@@ -546,10 +875,6 @@ export function FaceScan({
           </div>
         )}
       </div>
-      <p className="flex items-center gap-2 text-center text-sm text-slate-600" aria-live="polite">
-        <ScanFace className="h-4 w-4 shrink-0 text-blue-600" />
-        {hint ?? STATUS_TEXT[status]}
-      </p>
     </div>
   )
 }

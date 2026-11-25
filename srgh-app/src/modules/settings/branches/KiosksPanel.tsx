@@ -2,7 +2,6 @@
 
 import { useId, useRef, useState } from 'react'
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
@@ -154,7 +153,6 @@ type KioskDialog = { kind: 'editar' | 'clave' | 'sucursal'; kiosk: Kiosk }
 const EMPTY_FORM = { nombre: '', login: '', password: '', sucursal: '' }
 
 export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSettings }) {
-  const router = useRouter()
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -221,7 +219,6 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
         return
       }
       setMessage(success)
-      router.refresh()
     } catch {
       setError('No se pudo completar la operación. Revisá la conexión y reintentá.')
     } finally {
@@ -278,7 +275,6 @@ export function KiosksPanel({ branch, data }: { branch: Branch; data: BranchSett
                 // El kiosco quedó registrado aunque su acceso fallara: el error
                 // se muestra fuera del modal, junto a "Definir contraseña".
                 if (r.data.accessError) {
-                  router.refresh()
                   return {
                     ok: false,
                     error: `El kiosco quedó registrado, pero sin acceso: ${r.data.accessError}`,

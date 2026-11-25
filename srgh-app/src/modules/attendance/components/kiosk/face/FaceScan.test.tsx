@@ -8,9 +8,30 @@ const mocks = vi.hoisted(() => ({
   embed: vi.fn(),
   encrypt: vi.fn(),
   stop: vi.fn(),
+  hands: vi.fn(),
+  getHands: vi.fn(),
+  covered: false,
+  qualityOk: true,
+  dark: false,
+  faces: 1,
 }))
 vi.mock('./faceLandmarker', () => ({
-  getFaceLandmarker: async () => ({ detectForVideo: mocks.detect }),
+  getFaceLandmarker: async () => ({
+    detectForVideo: (...args: unknown[]) => {
+      const points = mocks.detect(...args)
+      // firstFaceLandmarks esta mockeado como identidad: el resultado ES la
+      // malla, con la cantidad de rostros colgada como faceLandmarks.
+      if (points && typeof points === 'object')
+        Object.defineProperty(points, 'faceLandmarks', {
+          value: Array(mocks.faces).fill(points),
+          configurable: true,
+        })
+      return points
+    },
+  }),
+}))
+vi.mock('./handLandmarker', () => ({
+  getHandLandmarker: () => mocks.getHands(),
 }))
 vi.mock('./embedding', () => ({
   preloadEmbeddingModel: async () => {},
@@ -26,9 +47,15 @@ vi.mock('./landmarks', () => ({
   eyeTiltAngle: () => 0,
 }))
 vi.mock('./quality', () => ({
-  assessQuality: () => ({ ok: true }),
-  qualityMessage: () => null,
+  assessQuality: () => ({ ok: mocks.qualityOk, issues: [] }),
+  qualityMessage: () => 'Acércate un poco más a la cámara',
   assessPixels: () => ({ ok: true, sharpness: 100, light: 120 }),
+  handCoversFace: () => mocks.covered,
+  eyeShade: () => ({ right: 0.5, left: 0.5 }),
+  looksLikeDarkGlasses: () => mocks.dark,
+  DARK_GLASSES_MESSAGE: 'Quítate los lentes oscuros',
+  ovalInVideo: () => null,
+  HAND_ON_FACE_MESSAGE: 'Quita la mano de la cara',
 }))
 vi.mock('@/modules/attendance/lib/face/faceCrypto', () => ({ encryptFacePayload: mocks.encrypt }))
 
@@ -86,6 +113,12 @@ describe('FaceScan continuity', () => {
     mocks.score.mockResolvedValue(0.99)
     mocks.embed.mockResolvedValue(Array(128).fill(0))
     mocks.encrypt.mockResolvedValue({ iv: 'iv', data: 'ciphertext' })
+    mocks.covered = false
+    mocks.qualityOk = true
+    mocks.dark = false
+    mocks.faces = 1
+    mocks.hands.mockReturnValue({ landmarks: [[{ x: 0.5, y: 0.5 }]] })
+    mocks.getHands.mockResolvedValue({ detectForVideo: mocks.hands })
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -108,7 +141,7 @@ describe('FaceScan continuity', () => {
     const onEmbedding = vi.fn()
     render(<FaceScan onEmbedding={onEmbedding} onUnavailable={onUnavailable} />)
     await waitFor(() => expect(onUnavailable).toHaveBeenCalledTimes(1))
-    expect(onUnavailable).toHaveBeenCalledWith('Este dispositivo no tiene camara disponible.')
+    expect(onUnavailable).toHaveBeenCalledWith('Este dispositivo no tiene cámara disponible.')
     expect(mocks.detect).not.toHaveBeenCalled()
     expect(onEmbedding).not.toHaveBeenCalled()
   })
@@ -121,7 +154,7 @@ describe('FaceScan continuity', () => {
     const onEmbedding = vi.fn()
     render(<FaceScan onEmbedding={onEmbedding} onUnavailable={onUnavailable} />)
     await waitFor(() =>
-      expect(onUnavailable).toHaveBeenCalledWith('No se pudo acceder a la camara.')
+      expect(onUnavailable).toHaveBeenCalledWith('No se pudo acceder a la cámara.')
     )
     expect(onEmbedding).not.toHaveBeenCalled()
     expect(mocks.detect).not.toHaveBeenCalled()
@@ -194,6 +227,136 @@ describe('FaceScan continuity', () => {
     for (let i = 0; i < 24; i++) await frame()
     expect(mocks.embed).toHaveBeenCalledTimes(3)
     expect(onEmbedding).toHaveBeenCalledTimes(1)
+  })
+  it('does not enroll while a hand covers the face, and resumes once it moves', async () => {
+    mocks.covered = true
+    const { onEmbedding, findByText, getByTestId } = await mount(true)
+    for (let i = 0; i < 30; i++) await frame()
+    expect(onEmbedding).not.toHaveBeenCalled()
+    expect(mocks.embed).not.toHaveBeenCalled()
+    expect(await findByText('Quita la mano de la cara')).toBeInTheDocument()
+    expect(getByTestId('scan-ring')).toHaveAttribute('data-tone', 'warn')
+    expect(getByTestId('scan-ring')).toHaveAttribute('data-progress', '0.00')
+
+    mocks.covered = false
+    for (let i = 0; i < 30; i++) await frame()
+    expect(mocks.embed).toHaveBeenCalledTimes(3)
+    expect(onEmbedding).toHaveBeenCalledTimes(1)
+  })
+  it('fails closed when the hand detector cannot load during enrollment', async () => {
+    mocks.getHands.mockRejectedValue(new Error('no model'))
+    const onUnavailable = vi.fn()
+    render(<FaceScan enrollment onEmbedding={vi.fn()} onUnavailable={onUnavailable} />)
+    await waitFor(() => expect(onUnavailable).toHaveBeenCalledTimes(1))
+    expect(mocks.stop).toHaveBeenCalled()
+  })
+  it('the kiosk never loads the hand detector', async () => {
+    const { onEmbedding } = await mount()
+    for (let i = 0; i < 24; i++) await frame()
+    expect(onEmbedding).toHaveBeenCalledTimes(1)
+    expect(mocks.getHands).not.toHaveBeenCalled()
+  })
+  it('fills the ring while the person holds still and turns green at the end', async () => {
+    const { getByTestId, findByText } = await mount(true)
+    const ring = getByTestId('scan-ring')
+    await frame()
+    expect(await findByText('Quédate quieto, mirando a la cámara')).toBeInTheDocument()
+    let previous = 0
+    for (let i = 0; i < 12; i++) {
+      await frame()
+      const progress = Number(ring.getAttribute('data-progress'))
+      expect(progress).toBeGreaterThanOrEqual(previous)
+      previous = progress
+    }
+    expect(previous).toBeGreaterThan(0)
+    for (let i = 0; i < 20; i++) await frame()
+    expect(ring).toHaveAttribute('data-tone', 'done')
+    expect(ring).toHaveAttribute('data-progress', '1.00')
+    expect(await findByText('Listo, ya puedes moverte')).toBeInTheDocument()
+  })
+  it('does not flash a message that only lasts one frame', async () => {
+    const { findByText, queryByText } = await mount(true)
+    await frame()
+    await findByText('Quédate quieto, mirando a la cámara')
+    mocks.covered = true
+    await frame()
+    mocks.covered = false
+    await frame()
+    await new Promise((r) => setTimeout(r, 500))
+    expect(queryByText('Quita la mano de la cara')).not.toBeInTheDocument()
+  })
+  it('names the probable cause when it times out', async () => {
+    mocks.qualityOk = false
+    const { onUnavailable } = await mount()
+    for (let i = 0; i < 90; i++) await frame()
+    expect(onUnavailable).toHaveBeenCalledWith(
+      'No pudimos completar la captura. Acércate un poco más a la cámara e intenta de nuevo.'
+    )
+  })
+  it('shows the loading skeleton until the camera answers, then the live guidance', async () => {
+    let answer!: (stream: unknown) => void
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(() => new Promise((resolve) => (answer = resolve))) },
+    })
+    const { getByRole, queryByRole, findByText } = render(
+      <FaceScan enrollment onEmbedding={vi.fn()} onUnavailable={vi.fn()} />
+    )
+    expect(getByRole('status')).toHaveTextContent('Preparando la cámara…')
+    await act(async () => answer({ getTracks: () => [{ stop: mocks.stop }] }))
+    await waitFor(() => expect(queryByRole('status')).not.toBeInTheDocument())
+    expect(await findByText('Preparando el reconocimiento…')).toBeInTheDocument()
+  })
+  it('does not enroll with dark glasses on, and resumes once they come off', async () => {
+    mocks.dark = true
+    const { onEmbedding, findByText } = await mount(true)
+    for (let i = 0; i < 30; i++) await frame()
+    expect(onEmbedding).not.toHaveBeenCalled()
+    expect(await findByText('Quítate los lentes oscuros')).toBeInTheDocument()
+
+    mocks.dark = false
+    for (let i = 0; i < 30; i++) await frame()
+    expect(onEmbedding).toHaveBeenCalledTimes(1)
+  })
+  it('the kiosk does not check for dark glasses', async () => {
+    mocks.dark = true
+    const { onEmbedding } = await mount()
+    for (let i = 0; i < 24; i++) await frame()
+    expect(onEmbedding).toHaveBeenCalledTimes(1)
+  })
+  it('does not enroll with two people in frame', async () => {
+    mocks.faces = 2
+    const { onEmbedding, findByText } = await mount(true)
+    for (let i = 0; i < 30; i++) await frame()
+    expect(onEmbedding).not.toHaveBeenCalled()
+    expect(await findByText('Que solo una persona quede frente a la cámara')).toBeInTheDocument()
+  })
+  it('tells the person to hold still when the three captures disagree', async () => {
+    const far = Array(128).fill(0)
+    far[0] = 1
+    mocks.embed
+      .mockResolvedValueOnce(Array(128).fill(0))
+      .mockResolvedValueOnce(Array(128).fill(0))
+      .mockResolvedValueOnce(far)
+    const { onEmbedding, onUnavailable } = await mount(true)
+    for (let i = 0; i < 30; i++) await frame()
+    await waitFor(() =>
+      expect(onUnavailable).toHaveBeenCalledWith(
+        'Las tomas salieron distintas entre sí. Quédate quieto, de frente, e intenta de nuevo.'
+      )
+    )
+    expect(onEmbedding).not.toHaveBeenCalled()
+  })
+  it('asks for the camera without waiting for the models', async () => {
+    let releaseModels!: () => void
+    mocks.getHands.mockReturnValue(
+      new Promise((resolve) => {
+        releaseModels = () => resolve({ detectForVideo: mocks.hands })
+      })
+    )
+    render(<FaceScan enrollment onEmbedding={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1))
+    releaseModels()
   })
   it('releases the camera on unmount without publishing late results', async () => {
     const { unmount, onEmbedding } = await mount()

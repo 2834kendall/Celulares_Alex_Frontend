@@ -20,7 +20,7 @@ function getLoginMessage(error: AuthError) {
   }
 
   if (message.includes('failed to fetch') || message.includes('network')) {
-    return 'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.'
+    return 'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
   }
 
   return 'Credenciales invalidas.'
@@ -52,7 +52,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
       return {
         ok: false,
         error:
-          'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.',
+          'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
       }
     }
     if (!kiosk) return { ok: false, error: 'Credenciales invalidas.' }

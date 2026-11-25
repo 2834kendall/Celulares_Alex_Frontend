@@ -43,10 +43,29 @@ intradía (lactancia) no cuentan.
    sube la versión de acceso y anula los tickets viejos.
 
 **Enrolamiento:** desde el tab Rostro del perfil del empleado (`BIOMETRIA_WRITE`, SGRH-102), no
-desde el kiosco. Son tres capturas a ≥ 150 ms entre sí, que tienen que coincidir bajo el umbral
-de 0,5. Se guarda la **medoide** (una muestra real), con el mismo modelo de 128 dimensiones.
-Exige prueba de vida: un enrolamiento hecho con una foto dejaría suplantable a esa persona para
-siempre.
+desde el kiosco. Son tres capturas a ≥ 300 ms entre sí, que tienen que coincidir bajo el umbral
+de **0,4** (la coincidencia alta del kiosco). Se guarda la **medoide** (una muestra real), con el
+mismo modelo de 128 dimensiones. Exige prueba de vida: un enrolamiento hecho con una foto dejaría
+suplantable a esa persona para siempre.
+
+Controles del registro (SGRH-117), además de los del kiosco:
+
+- **El rostro tiene que quedar dentro del óvalo** de la pantalla (calculado sobre el cuadro real
+  de la cámara, que puede ser 16:9 y verse recortado a 4:3), ni muy lejos ni más grande que él.
+- **Sin mano sobre la cara** (MediaPipe Hand Landmarker; solo lo baja el registro).
+- **Sin lentes oscuros:** brillo de los dos ojos contra la piel del mismo rostro, sostenido varias
+  mediciones. Umbral conservador (`DARK_EYES_RATIO`), calibrable con `NEXT_PUBLIC_FACE_DEBUG`.
+  Los lentes claros pasan. Es la única defensa contra algo que tapa la cara todo el tiempo: esas
+  tres tomas salen consistentes entre sí.
+- **Una sola persona en cuadro:** el registro busca hasta 2 rostros; el kiosco, 1 (con fila
+  detrás, más rostros solo estorban).
+- **Unicidad, en el servidor:** `enrollFace` compara contra los rostros vigentes de la empresa
+  (sin el propio colaborador). Si alguno queda a menos de 0,5, rechaza: el kiosco los
+  confundiría. Queda en `sgrh_biometria_auditoria` como `ENROLL_DUPLICADO`, con el colaborador
+  parecido y `registro:<perfil>:usr:<quien>`.
+
+Sin cubrir todavía: mascarilla y gorra, y una persona que no está en el sistema registrada en el
+perfil de otra (eso queda en la auditoría de quién registró).
 
 ## Guardar la marca
 
