@@ -123,7 +123,7 @@ describe('verifyFace (server action)', () => {
       dispositivoId: null,
     })
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo procesar la verificacion facial.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo procesar la verificación facial.' })
   })
 
   it('falla si el kiosco no tiene sucursal asignada', async () => {
@@ -326,7 +326,7 @@ describe('verifyFace (server action)', () => {
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
-    expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los datos biometricos.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los datos biométricos.' })
   })
 
   /**

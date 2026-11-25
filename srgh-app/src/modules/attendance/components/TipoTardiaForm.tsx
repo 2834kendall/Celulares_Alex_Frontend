@@ -107,7 +107,7 @@ export function TipoTardiaForm({ tipo, onSuccess }: TipoTardiaFormProps) {
             aria-invalid={!!errors.tta_nombre}
             {...register('tta_nombre')}
             className={INPUT}
-            placeholder="Tardia leve"
+            placeholder="Tardía leve"
           />
           {errors.tta_nombre && <p className={FIELD_ERROR}>{errors.tta_nombre.message}</p>}
         </div>

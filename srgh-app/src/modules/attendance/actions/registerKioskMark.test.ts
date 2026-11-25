@@ -134,7 +134,7 @@ describe('registerKioskMark (server action)', () => {
       tipo: 'ALMUERZO' as never,
     })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de marca invalidos.', definitivo: true })
+    expect(result).toEqual({ ok: false, error: 'Datos de marca inválidos.', definitivo: true })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -161,7 +161,7 @@ describe('registerKioskMark (server action)', () => {
     it('rechaza sin ticket: ya no hay PIN ni marca sin rostro', async () => {
       const result = await registerKioskMark({ ...(await validInput()), ticketFacial: '' })
 
-      expect(result).toEqual({ ok: false, error: 'Datos de marca invalidos.', definitivo: true })
+      expect(result).toEqual({ ok: false, error: 'Datos de marca inválidos.', definitivo: true })
     })
 
     it('rechaza un ticket de OTRO empleado', async () => {
@@ -379,7 +379,7 @@ describe('registerKioskMark (server action)', () => {
     it('rechaza una hora con formato invalido', async () => {
       const result = await registerKioskMark(await validInput({ fechaHora: '14/08/2026 8:00' }))
 
-      expect(result).toEqual({ ok: false, error: 'Datos de marca invalidos.', definitivo: true })
+      expect(result).toEqual({ ok: false, error: 'Datos de marca inválidos.', definitivo: true })
     })
   })
 

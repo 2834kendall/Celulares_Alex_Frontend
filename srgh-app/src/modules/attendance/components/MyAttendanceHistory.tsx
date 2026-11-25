@@ -46,18 +46,18 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
           </span>
           <div>
             <h2 className="text-sm font-bold text-slate-900">Mi historial de asistencia</h2>
-            <p className="text-xs text-slate-500">Marcas de los ultimos 15 dias.</p>
+            <p className="text-xs text-slate-500">Marcas de los últimos 15 días.</p>
           </div>
         </div>
 
         {data.length === 0 ? (
-          <EmptyState icon={Inbox} title="Todavia no tienes marcas registradas." className="mt-6" />
+          <EmptyState icon={Inbox} title="Todavía no tienes marcas registradas." className="mt-6" />
         ) : (
           <div className="mt-6 overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="text-[10px] uppercase tracking-wide text-slate-400">
                 <tr>
-                  <th className="py-1.5 text-left font-semibold">Dia</th>
+                  <th className="py-1.5 text-left font-semibold">Día</th>
                   <th className="py-1.5 text-left font-semibold">Entrada</th>
                   <th className="py-1.5 text-left font-semibold">Receso</th>
                   <th className="py-1.5 text-left font-semibold">Almuerzo</th>

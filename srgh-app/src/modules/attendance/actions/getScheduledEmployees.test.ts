@@ -184,7 +184,7 @@ describe('getScheduledEmployees (server action)', () => {
 
     expect(await getScheduledEmployees()).toEqual({
       ok: false,
-      error: 'No se pudo cargar la programacion del dia.',
+      error: 'No se pudo cargar la programación del día.',
     })
   })
 

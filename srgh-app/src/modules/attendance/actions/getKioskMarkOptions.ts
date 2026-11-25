@@ -32,7 +32,7 @@ const employeeIdSchema = z.number().int().positive()
  */
 export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskMarkOptionsResult> {
   if (!employeeIdSchema.safeParse(employeeId).success) {
-    return { ok: false, error: 'Colaborador invalido.' }
+    return { ok: false, error: 'Colaborador inválido.' }
   }
 
   const claims = await requireKioskAccess()

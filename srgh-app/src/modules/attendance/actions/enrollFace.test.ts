@@ -58,7 +58,7 @@ describe('enrollFace (server action)', () => {
       vector: { iv: 'x', data: 'y' },
     })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de enrolamiento invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos de enrolamiento inválidos.' })
   })
 
   // SGRH-102: el gerente enrola con un permiso propio. Con EMPLEADOS_WRITE (lo
@@ -315,7 +315,7 @@ describe('enrollFace (server action)', () => {
 
       expect(result).toEqual({
         ok: false,
-        error: 'No se pudo comprobar el registro facial. Intentá de nuevo.',
+        error: 'No se pudo comprobar el registro facial. Intenta de nuevo.',
       })
       expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_empleado')
     })

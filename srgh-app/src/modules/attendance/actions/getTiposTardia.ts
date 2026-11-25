@@ -23,7 +23,7 @@ export async function getTiposTardia(): Promise<GetTiposTardiaResult> {
     .order('tta_desde_minutos', { ascending: true })
 
   if (error) {
-    return { ok: false, error: 'No se pudieron cargar los tipos de tardia.' }
+    return { ok: false, error: 'No se pudieron cargar los tipos de tardía.' }
   }
 
   return { ok: true, data }

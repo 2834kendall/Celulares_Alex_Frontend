@@ -77,7 +77,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   const parsed = kioskMarkSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de marca invalidos.', definitivo: true }
+    return { ok: false, error: 'Datos de marca inválidos.', definitivo: true }
   }
 
   const claims = await requireKioskAccess()
@@ -309,7 +309,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   // de lo contrario el resumen mensual la lee como una tardanza inventada.
   const observaciones = [
     fechaHora && (!operationId || parsed.data.sincronizada)
-      ? 'Marca sincronizada desde la cola offline: la hora es la del evento, no la de sincronizacion.'
+      ? 'Marca sincronizada desde la cola offline: la hora es la del evento, no la de sincronización.'
       : null,
   ].filter((o): o is string => o !== null)
 

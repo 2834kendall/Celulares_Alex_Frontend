@@ -50,7 +50,7 @@ export async function getMyMarks(): Promise<GetMyMarksResult> {
   const { data: claimsData, error: claimsError } = await supabase.auth.getClaims()
 
   if (claimsError || !claimsData?.claims) {
-    return { ok: false, error: 'No se pudo verificar tu sesion.' }
+    return { ok: false, error: 'No se pudo verificar tu sesión.' }
   }
 
   const meta = (claimsData.claims.app_metadata ?? {}) as Partial<SgrhJwtClaims>

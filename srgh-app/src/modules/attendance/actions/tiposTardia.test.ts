@@ -49,7 +49,7 @@ describe('createTipoTardia', () => {
   it('rechaza datos invalidos sin pedir permiso', async () => {
     const result = await createTipoTardia({ ...valido, tta_desde_minutos: 0 })
 
-    expect(result).toEqual({ ok: false, error: 'Datos del tipo de tardia invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos del tipo de tardía inválidos.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -96,7 +96,7 @@ describe('createTipoTardia', () => {
     expect(result).toEqual({
       ok: false,
       error:
-        'Ya hay un tipo de tardia que empieza en el minuto 6. Cada tipo tiene que empezar en un minuto distinto.',
+        'Ya hay un tipo de tardía que empieza en el minuto 6. Cada tipo tiene que empezar en un minuto distinto.',
     })
   })
 
@@ -144,7 +144,7 @@ describe('updateTipoTardia', () => {
 
     expect(await updateTipoTardia(4, valido)).toEqual({
       ok: false,
-      error: 'No se pudo actualizar el tipo de tardia.',
+      error: 'No se pudo actualizar el tipo de tardía.',
     })
   })
 })
@@ -189,7 +189,7 @@ describe('deleteTipoTardia', () => {
 
     expect(await deleteTipoTardia(2)).toEqual({
       ok: false,
-      error: 'No se pudo eliminar el tipo de tardia.',
+      error: 'No se pudo eliminar el tipo de tardía.',
     })
   })
 })
@@ -214,7 +214,7 @@ describe('getTiposTardia', () => {
 
     expect(await getTiposTardia()).toEqual({
       ok: false,
-      error: 'No se pudieron cargar los tipos de tardia.',
+      error: 'No se pudieron cargar los tipos de tardía.',
     })
   })
 })

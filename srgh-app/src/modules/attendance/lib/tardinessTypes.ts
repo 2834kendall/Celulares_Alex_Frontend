@@ -46,7 +46,7 @@ export const loadTardinessTypes = cache(async function loadTardinessTypes(
     .returns<TipoTardiaRow[]>()
 
   if (error) {
-    return { ok: false, error: 'No se pudieron cargar los tipos de tardia.' }
+    return { ok: false, error: 'No se pudieron cargar los tipos de tardía.' }
   }
 
   if (!data || data.length === 0) {

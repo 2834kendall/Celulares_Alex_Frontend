@@ -7,7 +7,7 @@ describe('<MyAttendanceHistory />', () => {
   it('muestra el estado vacio cuando no hay marcas', () => {
     render(<MyAttendanceHistory data={[]} />)
 
-    expect(screen.getByText('Todavia no tienes marcas registradas.')).toBeInTheDocument()
+    expect(screen.getByText('Todavía no tienes marcas registradas.')).toBeInTheDocument()
   })
 
   it('lista los dias con marcas, con guion para lo que falta', () => {
