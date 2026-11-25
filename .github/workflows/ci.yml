@@ -208,6 +208,27 @@ jobs:
       # automatico sin impedir que Docker los use.
       - name: Reserve the isolated stack ports
         run: sudo sysctl -w net.ipv4.ip_local_reserved_ports=55420-55429
+      # Las imagenes de Supabase vienen de public.ecr.aws, que a veces corta
+      # con "429 Too Many Requests" o "Data limit exceeded" cuando los cuatro
+      # shards bajan lo mismo a la vez (en el PR #91 dos shards no llegaron a
+      # arrancar). Se guardan en la cache de GitHub y se cargan antes de
+      # `supabase start`, que no descarga lo que ya esta en el Docker local.
+      # Las versiones de las imagenes las fija el CLI y la major de Postgres
+      # sale de config.toml: esos dos van en la clave.
+      - name: Resolve Supabase image cache key
+        id: supabase-images
+        run: |
+          cli=$(pnpm exec supabase --version | tail -n 1 | tr -d '[:space:]')
+          echo "key=supabase-images-${{ runner.os }}-$cli-${{ hashFiles('srgh-app/supabase/config.toml') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore Supabase images
+        id: supabase-images-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/supabase-images.tar
+          key: ${{ steps.supabase-images.outputs.key }}
+      - name: Load Supabase images
+        if: steps.supabase-images-cache.outputs.cache-hit == 'true'
+        run: docker load --input ~/supabase-images.tar
       # Cada linea del log lleva la hora: sin eso no se distingue cuanto del
       # arranque es descarga de imagenes y cuanto migraciones. `pipefail` hace
       # que un fallo de `supabase start` siga tumbando el paso aunque su
@@ -218,6 +239,25 @@ jobs:
           pnpm exec supabase start --workdir .e2e --exclude=studio --exclude=imgproxy --exclude=realtime --exclude=edge-runtime --exclude=vector --exclude=logflare 2>&1 \
             | while IFS= read -r line; do printf '%(%H:%M:%S)T %s\n' -1 "$line"; done > .e2e/start.log
           pnpm exec supabase status --workdir .e2e --output json > .e2e/connection.json
+      # Solo un shard guarda: los cuatro compiten por la misma clave y los
+      # demas solo dejarian un aviso de "unable to reserve cache".
+      - name: Export Supabase images
+        if: steps.supabase-images-cache.outputs.cache-hit != 'true' && matrix.shard == 1
+        run: |
+          images=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '(^|/)supabase/' | sort -u || true)
+          if [ -z "$images" ]; then
+            echo "::warning::No Supabase images found to cache."
+            exit 0
+          fi
+          echo "$images"
+          # shellcheck disable=SC2086  # one argument per image.
+          docker save --output ~/supabase-images.tar $images
+      - name: Save Supabase images
+        if: steps.supabase-images-cache.outputs.cache-hit != 'true' && matrix.shard == 1
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/supabase-images.tar
+          key: ${{ steps.supabase-images.outputs.key }}
       # El binario de Chromium se cachea; la clave cambia con el lockfile, que
       # es donde queda fijada la version de Playwright.
       - name: Restore test browser
