@@ -32,15 +32,15 @@ jobs:
         working-directory: srgh-app
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: 11
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ">=22.13"
           cache: pnpm
@@ -49,7 +49,7 @@ jobs:
       # Acelerador, no fuente de verdad: `pnpm install` corre igual despues y
       # corrige cualquier cache incompleto o corrupto.
       - name: Restore node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: srgh-app/node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}
@@ -61,7 +61,7 @@ jobs:
       # que cada corrida guarde su propio cache y restore-keys recupere el
       # mas reciente de la misma configuracion.
       - name: Restore lint/typecheck caches
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             srgh-app/.eslintcache
@@ -96,22 +96,22 @@ jobs:
         shard: [1, 2]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: 11
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ">=22.13"
           cache: pnpm
           cache-dependency-path: srgh-app/pnpm-lock.yaml
 
       - name: Restore node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: srgh-app/node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}
@@ -132,8 +132,8 @@ jobs:
       run:
         working-directory: srgh-app
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: 11
       # Fijado en Node 22 LTS, no ">=22.13": con Node 24 (hasta 24.22.2) este
@@ -145,7 +145,7 @@ jobs:
       # cuando salga un 24.x con el backport (nodejs/node#66376).
       # `--no-wasm-code-gc` lo evita en 24, pero Node no lo acepta en
       # NODE_OPTIONS, y la cobertura v8 mide igual en 22.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: pnpm
@@ -156,7 +156,7 @@ jobs:
         run: pnpm test:coverage:modules --maxWorkers=4
       - name: Publish coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-reports
           path: srgh-app/coverage
@@ -187,11 +187,11 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ">=22.13"
           cache: pnpm
@@ -222,7 +222,7 @@ jobs:
       # es donde queda fijada la version de Playwright.
       - name: Restore test browser
         id: playwright-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}
@@ -242,7 +242,7 @@ jobs:
       # Supabase (descarga de imagenes vs. migraciones).
       - name: Publish browser report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: browser-report-${{ matrix.shard }}
           include-hidden-files: true
@@ -285,22 +285,22 @@ jobs:
       NEXT_PUBLIC_FACE_VECTOR_KEY: ${{ secrets.NEXT_PUBLIC_FACE_VECTOR_KEY }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: 11
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ">=22.13"
           cache: pnpm
           cache-dependency-path: srgh-app/pnpm-lock.yaml
 
       - name: Restore node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: srgh-app/node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}
@@ -308,7 +308,7 @@ jobs:
       # Cache de compilacion de Next: pesa poco (~350 KB) y bajo la
       # compilacion de 20.4s a 9.9s en la medicion local.
       - name: Restore Next.js build cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: srgh-app/.next/cache
           key: next-${{ runner.os }}-${{ hashFiles('srgh-app/pnpm-lock.yaml') }}-${{ github.sha }}
