@@ -51,6 +51,10 @@ const FACE_API_RAW = `https://raw.githubusercontent.com/vladmandic/face-api/${FA
  * `sha256` admite varios valores solo cuando el contenido es el mismo y
  * cambian los bytes: el manifiesto JSON versionado quedo reformateado por
  * Prettier, y el que baja del origen viene compacto. Para un binario va uno.
+ *
+ * `text: true` compara con los fines de linea normalizados a LF: git puede
+ * dejar el JSON con CRLF en Windows y con LF en Linux (el CI), y son el mismo
+ * archivo. Los binarios se comparan byte a byte.
  */
 const MODELS = [
   {
@@ -71,8 +75,9 @@ const MODELS = [
     url: `${FACE_API_RAW}/face_recognition_model-weights_manifest.json`,
     sha256: [
       'cbaffa501b0b9275a12b63357a6843e7e30c054e1c9151e1a5f879b26e32986b',
-      'fb904791e049ece9f4ffd17225271e7885cad590d6c0e92de1ffde0362acfe47',
+      '766cc208d18e83e160d158a1b611a8d354e701ccf47f723d124aff44319b47b3',
     ],
+    text: true,
     whenMissing: 'el kiosco no puede generar embeddings y cae al flujo de PIN',
   },
   {
@@ -89,7 +94,19 @@ const MODELS = [
   },
 ]
 
-const sha256Of = (bytes) => createHash('sha256').update(bytes).digest('hex')
+const CR = 0x0d
+const LF = 0x0a
+
+/** SHA-256; con `text`, sobre el contenido con CRLF convertido a LF. */
+function sha256Of(bytes, text = false) {
+  if (!text) return createHash('sha256').update(bytes).digest('hex')
+  const out = []
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === CR && bytes[i + 1] === LF) continue
+    out.push(bytes[i])
+  }
+  return createHash('sha256').update(Uint8Array.from(out)).digest('hex')
+}
 
 function copyDir(fromDir, toDir, filter) {
   if (!existsSync(fromDir)) {
@@ -108,11 +125,11 @@ function copyDir(fromDir, toDir, filter) {
  * Verifica un modelo presente o lo descarga. Devuelve false solo ante un hash
  * que no coincide: es el unico caso que debe frenar el build.
  */
-async function ensureModel({ file, url, sha256, whenMissing }) {
+async function ensureModel({ file, url, sha256, whenMissing, text = false }) {
   const dest = join(publicModels, file)
 
   if (existsSync(dest)) {
-    const actual = sha256Of(readFileSync(dest))
+    const actual = sha256Of(readFileSync(dest), text)
     if (sha256.includes(actual)) return true
     console.error(
       `[face-assets] ERROR: ${file} no coincide con el SHA-256 esperado.\n` +
@@ -138,7 +155,7 @@ async function ensureModel({ file, url, sha256, whenMissing }) {
     return true
   }
 
-  const actual = sha256Of(bytes)
+  const actual = sha256Of(bytes, text)
   if (!sha256.includes(actual)) {
     console.error(
       `[face-assets] ERROR: la descarga de ${file} no coincide con el SHA-256 esperado\n` +
