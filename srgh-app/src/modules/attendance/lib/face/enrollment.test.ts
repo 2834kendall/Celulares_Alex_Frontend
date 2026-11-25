@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { enrollmentMedoid } from './enrollment'
+import {
+  ENROLLMENT_INCONSISTENT_MESSAGE,
+  ENROLLMENT_MAX_SPREAD,
+  InconsistentEnrollmentError,
+  enrollmentMedoid,
+} from './enrollment'
 
 const vector = (x: number) => [x, ...Array<number>(127).fill(0)]
 
@@ -9,7 +14,17 @@ describe('enrollmentMedoid', () => {
     expect(enrollmentMedoid(samples)).toBe(samples[1])
   })
   it('does not replace enrollment when captures disagree', () => {
-    expect(() => enrollmentMedoid([vector(0), vector(0.1), vector(0.8)])).toThrow('consistentes')
+    expect(() => enrollmentMedoid([vector(0), vector(0.1), vector(0.8)])).toThrow(
+      InconsistentEnrollmentError
+    )
+  })
+  it('exige la coincidencia alta entre todas las tomas (más estricto que el kiosco)', () => {
+    expect(ENROLLMENT_MAX_SPREAD).toBe(0.4)
+    // 0.45 pasaría la coincidencia común del kiosco (0.5), pero no el registro.
+    expect(() => enrollmentMedoid([vector(0), vector(0.2), vector(0.45)])).toThrow(
+      ENROLLMENT_INCONSISTENT_MESSAGE
+    )
+    expect(enrollmentMedoid([vector(0), vector(0.15), vector(0.35)])).toEqual(vector(0.15))
   })
   it('rejects missing, malformed and nonfinite descriptors', () => {
     expect(() => enrollmentMedoid([vector(0)])).toThrow()

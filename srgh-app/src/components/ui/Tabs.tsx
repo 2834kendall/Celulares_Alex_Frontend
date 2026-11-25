@@ -32,6 +32,13 @@ interface TabsProps<T extends string> {
    * ocultar una seccion por permisos.
    */
   tabs: TabDefinition<T>[]
+  /**
+   * En pantallas angostas, pestañas solo con texto: el ícono aparece desde
+   * `@sm`. Para barras de 4 pestañas que no entran en un celular ni con
+   * `shortLabel` (el perfil del empleado con Rostro, SGRH-117). Opcional para
+   * no cambiar las barras que ya entran.
+   */
+  textOnlyWhenNarrow?: boolean
 }
 
 // Las pestañas tambien responden al toque: sin eso eran el unico control de
@@ -53,7 +60,12 @@ const STANDALONE_BUTTON =
  * La URL es la unica fuente de verdad del tab activo: no hay estado local que
  * pueda desincronizarse al navegar hacia atras.
  */
-export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<T>) {
+export function Tabs<T extends string>({
+  idPrefix,
+  ariaLabel,
+  tabs,
+  textOnlyWhenNarrow = false,
+}: TabsProps<T>) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -116,7 +128,8 @@ export function Tabs<T extends string>({ idPrefix, ariaLabel, tabs }: TabsProps<
         ) : (
           <span
             className={cn(
-              'flex h-5 w-5 items-center justify-center rounded-full transition',
+              'h-5 w-5 items-center justify-center rounded-full transition',
+              textOnlyWhenNarrow ? 'hidden @sm:flex' : 'flex',
               active ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-500'
             )}
           >

@@ -25,7 +25,7 @@ const GRID_ROWS = 8 // 16 * 8 = FACE_EMBEDDING_DIM (128)
 export function computeTestEmbedding(rgba: Uint8ClampedArray, size = FACE_INPUT_SIZE): number[] {
   const expected = size * size * 4
   if (rgba.length !== expected) {
-    throw new Error(`Recorte facial invalido: ${rgba.length} bytes, esperaba ${expected}.`)
+    throw new Error(`Recorte facial inválido: ${rgba.length} bytes, esperaba ${expected}.`)
   }
 
   const cellW = size / GRID_COLS

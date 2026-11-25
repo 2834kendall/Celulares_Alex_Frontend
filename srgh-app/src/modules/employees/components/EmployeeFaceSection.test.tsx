@@ -19,7 +19,9 @@ const PAYLOAD = { iv: 'iv', data: 'cifrado' }
 
 // La camara real (MediaPipe, modelos, getUserMedia) no existe en jsdom: el
 // doble expone un boton por cada desenlace que FaceScan le informa al padre.
+const mockPreload = vi.hoisted(() => vi.fn())
 vi.mock('@/modules/attendance/components/kiosk/face/FaceScan', () => ({
+  preloadFaceScan: mockPreload,
   FaceScan: (props: {
     enrollment?: boolean
     onEmbedding: (p: typeof PAYLOAD) => Promise<void>
@@ -118,7 +120,66 @@ describe('<EmployeeFaceSection />', () => {
     })
   })
 
+  describe('precarga', () => {
+    it('empieza a bajar los modelos al abrir la pestaña si se puede capturar', async () => {
+      renderSection(SIN_REGISTRO)
+      await waitFor(() => expect(mockPreload).toHaveBeenCalledWith(true))
+    })
+
+    it('no baja nada sin contrato vigente', async () => {
+      renderSection(SIN_REGISTRO, { contrato: false })
+      await new Promise((r) => setTimeout(r, 700))
+      expect(mockPreload).not.toHaveBeenCalled()
+    })
+  })
+
   describe('captura', () => {
+    async function openCamera() {
+      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+      await userEvent.click(screen.getByRole('button', { name: /empezar captura/i }))
+    }
+
+    it('explica qué hacer y precarga los modelos antes de abrir la cámara', async () => {
+      renderSection(SIN_REGISTRO)
+
+      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+
+      expect(screen.getByRole('heading', { name: 'Antes de capturar' })).toBeInTheDocument()
+      expect(screen.getByText('Sin nada en la cara')).toBeInTheDocument()
+      expect(screen.getByText('Lentes claros, sí')).toBeInTheDocument()
+      // Los modelos se bajan mientras se lee la guía; la cámara todavía no.
+      expect(mockPreload).toHaveBeenCalledWith(true)
+      expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+      expect(screen.queryByText('Antes de capturar')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /capturar rostro/i })).toBeEnabled()
+    })
+
+    it('abre la cámara en modo enrolamiento y Cancelar la cierra', async () => {
+      renderSection(SIN_REGISTRO)
+
+      await openCamera()
+      // enrollment: tres capturas consistentes, prueba de vida y sin manos.
+      expect(screen.getByTestId('face-scan')).toHaveAttribute('data-enrollment', 'true')
+
+      await userEvent.click(screen.getByRole('button', { name: /cancelar/i }))
+      expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
+    })
+
+    it('guarda solo el vector de ESTE empleado en cuanto la cámara lo valida', async () => {
+      mockEnrollFace.mockResolvedValue({ ok: true })
+      renderSection(SIN_REGISTRO)
+
+      await openCamera()
+      await userEvent.click(screen.getByRole('button', { name: /simular captura/i }))
+
+      expect(mockEnrollFace).toHaveBeenCalledWith({ employeeId: 10, vector: PAYLOAD })
+      expect(toast.success).toHaveBeenCalledWith('Rostro registrado.')
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
+    })
+
     it('bloquea cancelar y duplicar la captura durante el guardado', async () => {
       let finish!: (value: { ok: true }) => void
       mockEnrollFace.mockImplementationOnce(
@@ -128,7 +189,7 @@ describe('<EmployeeFaceSection />', () => {
           })
       )
       renderSection(SIN_REGISTRO)
-      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+      await openCamera()
       await userEvent.click(screen.getByRole('button', { name: /simular captura/i }))
       expect(screen.getByRole('status')).toHaveTextContent('Guardando registro facial')
       expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled()
@@ -143,36 +204,13 @@ describe('<EmployeeFaceSection />', () => {
     it('permite reintentar cuando la llamada de guardado rechaza por red', async () => {
       mockEnrollFace.mockRejectedValueOnce(new TypeError('Network failed'))
       renderSection(SIN_REGISTRO)
-      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+      await openCamera()
       await userEvent.click(screen.getByRole('button', { name: /simular captura/i }))
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/conexión/))
       )
       expect(screen.getByRole('button', { name: /capturar rostro/i })).toBeEnabled()
       expect(refresh).not.toHaveBeenCalled()
-    })
-    it('abre la cámara en modo enrolamiento y Cancelar la cierra', async () => {
-      renderSection(SIN_REGISTRO)
-
-      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
-      // enrollment: tres capturas consistentes y prueba de vida, no una marca.
-      expect(screen.getByTestId('face-scan')).toHaveAttribute('data-enrollment', 'true')
-
-      await userEvent.click(screen.getByRole('button', { name: /cancelar/i }))
-      expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
-    })
-
-    it('guarda el vector de ESTE empleado y refresca el estado', async () => {
-      mockEnrollFace.mockResolvedValue({ ok: true })
-      renderSection(SIN_REGISTRO)
-
-      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
-      await userEvent.click(screen.getByRole('button', { name: /simular captura/i }))
-
-      expect(mockEnrollFace).toHaveBeenCalledWith({ employeeId: 10, vector: PAYLOAD })
-      expect(toast.success).toHaveBeenCalledWith('Rostro registrado.')
-      expect(refresh).toHaveBeenCalledTimes(1)
-      expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
     })
 
     it('si el servidor rechaza, muestra su error y no refresca', async () => {
@@ -182,7 +220,7 @@ describe('<EmployeeFaceSection />', () => {
       })
       renderSection(SIN_REGISTRO)
 
-      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+      await openCamera()
       await userEvent.click(screen.getByRole('button', { name: /simular captura/i }))
 
       expect(toast.error).toHaveBeenCalledWith('El empleado no tiene un contrato activo.')
@@ -193,7 +231,7 @@ describe('<EmployeeFaceSection />', () => {
     it('sin cámara disponible avisa y cierra el escaneo', async () => {
       renderSection(SIN_REGISTRO)
 
-      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+      await openCamera()
       await userEvent.click(screen.getByRole('button', { name: /simular sin cámara/i }))
 
       expect(toast.error).toHaveBeenCalledWith('Sin cámara')
@@ -204,7 +242,7 @@ describe('<EmployeeFaceSection />', () => {
     it('ante una imagen plana no guarda nada y pide a la persona presente', async () => {
       renderSection(SIN_REGISTRO)
 
-      await userEvent.click(screen.getByRole('button', { name: /capturar rostro/i }))
+      await openCamera()
       await userEvent.click(screen.getByRole('button', { name: /simular foto/i }))
 
       expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/persona presente/i))

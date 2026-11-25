@@ -27,6 +27,16 @@ describe('face landmarker device compatibility', () => {
     expect(create.mock.calls[0][1].baseOptions.delegate).toBe('GPU')
   })
 
+  it('keeps a separate two-face detector for enrollment, and one face for the kiosk', async () => {
+    create.mockImplementation(async () => ({ detectForVideo: vi.fn() }))
+    const { getFaceLandmarker } = await import('./faceLandmarker')
+    const kiosk = await getFaceLandmarker()
+    const enrollment = await getFaceLandmarker(2)
+    expect(kiosk).not.toBe(enrollment)
+    expect(await getFaceLandmarker(2)).toBe(enrollment)
+    expect(create.mock.calls.map((call) => call[1].numFaces)).toEqual([1, 2])
+  })
+
   it('uses and caches the CPU detector when GPU initialization is unavailable', async () => {
     const detector = { detectForVideo: vi.fn() }
     create.mockRejectedValueOnce(new Error('WebGL unavailable')).mockResolvedValueOnce(detector)

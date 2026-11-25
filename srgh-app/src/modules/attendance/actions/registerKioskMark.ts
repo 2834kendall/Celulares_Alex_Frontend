@@ -102,7 +102,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   const ticketSecret = process.env.FACE_TICKET_SECRET
 
   if (!ticketSecret) {
-    return { ok: false, error: 'El reconocimiento facial no esta configurado en el servidor.' }
+    return { ok: false, error: 'El reconocimiento facial no está configurado en el servidor.' }
   }
 
   // El ticket vence a los pocos minutos de emitido. Una marca en linea se

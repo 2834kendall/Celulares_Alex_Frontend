@@ -113,7 +113,7 @@ describe('verifyFace (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'El reconocimiento facial no esta configurado en el servidor.',
+      error: 'El reconocimiento facial no está configurado en el servidor.',
     })
   })
 
