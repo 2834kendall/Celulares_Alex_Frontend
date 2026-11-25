@@ -22,6 +22,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Busca en OSV las versiones exactas del lockfile: avisos de seguridad y
+  # paquetes maliciosos (MAL-*), que `pnpm audit` no trae. Va aparte para que
+  # un aviso nuevo se vea como lo que es y no como un fallo de lint o tests.
+  # Ojo: no detecta avisos que solo nombran el producto en texto, sin paquete
+  # ni version (los CVE de ExcelJS 4.4.0 de noviembre 2026 son asi); esos se
+  # siguen a mano.
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Scan the lockfile
+        uses: google/osv-scanner-action/osv-scanner-action@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
+        with:
+          scan-args: |-
+            --lockfile=srgh-app/pnpm-lock.yaml
+
   # Lint y typecheck comparten instalacion y son rapidos; corren en paralelo
   # con los tests, que son el paso mas lento.
   static:
@@ -367,17 +385,19 @@ jobs:
   ci:
     name: CI passed
     if: always()
-    needs: [static, test, coverage, e2e, build]
+    needs: [dependencies, static, test, coverage, e2e, build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs succeeded
         run: |
+          echo "dependencies: ${{ needs.dependencies.result }}"
           echo "static: ${{ needs.static.result }}"
           echo "test:   ${{ needs.test.result }}"
           echo "coverage: ${{ needs.coverage.result }}"
           echo "e2e: ${{ needs.e2e.result }}"
           echo "build:  ${{ needs.build.result }}"
-          if [ "${{ needs.static.result }}" != "success" ] \
+          if [ "${{ needs.dependencies.result }}" != "success" ] \
+            || [ "${{ needs.static.result }}" != "success" ] \
             || [ "${{ needs.test.result }}" != "success" ] \
             || [ "${{ needs.coverage.result }}" != "success" ] \
             || [ "${{ needs.e2e.result }}" != "success" ] \
