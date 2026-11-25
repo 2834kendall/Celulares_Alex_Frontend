@@ -3,13 +3,13 @@ module.exports = {
   parserPreset: {
     parserOpts: {
       headerPattern: /^(SGRH-\d+):\s(\w+)(?:\(([\w\$\.\-\* ]+)\))?\:\s(.+)$/,
-      headerCorrespondence: ['jira', 'type', 'scope', 'subject']
-    }
+      headerCorrespondence: ['jira', 'type', 'scope', 'subject'],
+    },
   },
   rules: {
     'type-empty': [2, 'never'],
     'subject-empty': [2, 'never'],
-    'jira-key-required': [2, 'always']
+    'jira-key-required': [2, 'always'],
   },
   plugins: [
     {
@@ -18,10 +18,10 @@ module.exports = {
           const { jira } = parsed
           return [
             !!jira,
-            "Your commit message must start with a Jira ticket prefix (e.g., 'SGRH-57: feat(auth): add login page')"
+            "Your commit message must start with a Jira ticket prefix (e.g., 'SGRH-57: feat(auth): add login page')",
           ]
-        }
-      }
-    }
-  ]
+        },
+      },
+    },
+  ],
 }

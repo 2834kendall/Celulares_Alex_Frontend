@@ -57,7 +57,9 @@ function query(sql) {
     })
   } catch (err) {
     console.error('\nNo se pudo consultar el proyecto vinculado.')
-    console.error('Verifica que corriste `pnpm supabase:link` y que tenes sesion (`pnpm supabase:login`).\n')
+    console.error(
+      'Verifica que corriste `pnpm supabase:link` y que tenes sesion (`pnpm supabase:login`).\n'
+    )
     console.error(String(err.stdout || err.stderr || err.message).slice(0, 600))
     process.exit(1)
   }
@@ -158,8 +160,14 @@ let riesgos = 0
 let divergencias = 0
 const titulo = (t) => console.log(`\n${'='.repeat(72)}\n${t}\n${'='.repeat(72)}`)
 const ok = (t) => console.log(`  OK   ${t}`)
-const alerta = (t) => { console.log(`  !!   ${t}`); riesgos++ }
-const nota = (t) => { console.log(`  ~    ${t}`); divergencias++ }
+const alerta = (t) => {
+  console.log(`  !!   ${t}`)
+  riesgos++
+}
+const nota = (t) => {
+  console.log(`  ~    ${t}`)
+  divergencias++
+}
 
 console.log('\nDiagnostico del proyecto vinculado (solo lectura)')
 
@@ -177,19 +185,24 @@ const tieneLedger = query(
 if (!tieneLedger) {
   ok('El destino no tiene ledger: el push aplicara las 9 migraciones desde cero.')
 } else {
-  const remotas = query('select version from supabase_migrations.schema_migrations order by version').map(
-    (r) => String(r.version)
-  )
+  const remotas = query(
+    'select version from supabase_migrations.schema_migrations order by version'
+  ).map((r) => String(r.version))
   const soloRemotas = remotas.filter((v) => !localVersions.includes(v))
   const soloLocales = localVersions.filter((v) => !remotas.includes(v))
-  console.log(`  Registradas en el destino: ${remotas.length} | en el repo: ${localVersions.length}`)
+  console.log(
+    `  Registradas en el destino: ${remotas.length} | en el repo: ${localVersions.length}`
+  )
   if (soloRemotas.length) {
     alerta(`El destino registra ${soloRemotas.length} migracion(es) que el repo ya no tiene:`)
     soloRemotas.forEach((v) => console.log(`         ${v}`))
     console.log('         -> `db push` se va a negar. Hay que repararlas como `reverted`,')
-    console.log('            y marcar las del baseline como `applied` SOLO si los objetos ya existen.')
+    console.log(
+      '            y marcar las del baseline como `applied` SOLO si los objetos ya existen.'
+    )
   }
-  if (soloLocales.length && !soloRemotas.length) ok(`${soloLocales.length} migracion(es) pendientes de aplicar.`)
+  if (soloLocales.length && !soloRemotas.length)
+    ok(`${soloLocales.length} migracion(es) pendientes de aplicar.`)
   if (!soloRemotas.length && !soloLocales.length) ok('Ledger sincronizado.')
 }
 
@@ -212,7 +225,9 @@ if (destinoTablas.size === 0) {
   if (ajenas.length) {
     alerta(`${ajenas.length} tabla(s) sgrh_* en el destino que el baseline NO conoce:`)
     ajenas.forEach((t) => console.log(`         ${t}`))
-    console.log('         -> el baseline no las crea, pero SI les va a habilitar RLS (ver seccion 3).')
+    console.log(
+      '         -> el baseline no las crea, pero SI les va a habilitar RLS (ver seccion 3).'
+    )
   }
   let conDiferencias = 0
   for (const [t, cols] of [...repoTablas].sort()) {
@@ -254,7 +269,9 @@ if (!rls.length) {
   if (peligrosas.length) {
     alerta(`${peligrosas.length} tabla(s) quedarian DENY-ALL (RLS activa y CERO policies):`)
     peligrosas.forEach((r) =>
-      console.log(`         ${r.tabla}${r.rls_activa ? ' (ya esta asi)' : '  <-- la rompe el push'}`)
+      console.log(
+        `         ${r.tabla}${r.rls_activa ? ' (ya esta asi)' : '  <-- la rompe el push'}`
+      )
     )
     console.log('         -> el baseline habilita RLS en TODA tabla sgrh_*. Si una no tiene')
     console.log('            policies, su modulo deja de leer. Escribir sus policies ANTES.')
@@ -292,7 +309,9 @@ for (const [tabla, filas] of [...porTabla].sort()) {
       nota(`${tabla}: el id ${e.id} deberia ser '${e.codigo}' pero el destino tiene '${enEseId}'`)
     } else if (idDelCodigo !== undefined && idDelCodigo !== e.id) {
       colisiones++
-      nota(`${tabla}: '${e.codigo}' existe con id ${idDelCodigo}, el repo lo declara con id ${e.id}`)
+      nota(
+        `${tabla}: '${e.codigo}' existe con id ${idDelCodigo}, el repo lo declara con id ${e.id}`
+      )
     }
   }
   // Filas que el destino tiene y el repo ya no declara (p. ej. SUPERADMIN).
@@ -300,7 +319,9 @@ for (const [tabla, filas] of [...porTabla].sort()) {
   const sobrantes = actuales.map((r) => String(r.codigo)).filter((c) => !codigosRepo.has(c))
   if (sobrantes.length) {
     colisiones++
-    nota(`${tabla}: el destino tiene ${sobrantes.length} fila(s) que el repo ya no declara: ${sobrantes.join(', ')}`)
+    nota(
+      `${tabla}: el destino tiene ${sobrantes.length} fila(s) que el repo ya no declara: ${sobrantes.join(', ')}`
+    )
     console.log('         -> los seeds NUNCA borran. Si sobran a proposito, retirarlas a mano.')
   }
 }
@@ -323,7 +344,9 @@ if (!destinoTablas.has('sgrh_rol_permisos')) {
   const soloDestino = [...enDestino].filter((k) => !declarada.has(k))
   const soloRepo = [...declarada].filter((k) => !enDestino.has(k))
 
-  console.log(`  Declarados en el repo: ${declarada.size} | efectivos en el destino: ${enDestino.size}`)
+  console.log(
+    `  Declarados en el repo: ${declarada.size} | efectivos en el destino: ${enDestino.size}`
+  )
   if (soloDestino.length) {
     alerta(`${soloDestino.length} grant(s) vivos en el destino que el repo NO declara:`)
     for (const k of soloDestino.sort()) console.log(`         ${k.replace('|', ' -> ')}`)
@@ -331,9 +354,12 @@ if (!destinoTablas.has('sgrh_rol_permisos')) {
     console.log('            revocarlos a mano si ya no corresponden.')
   }
   if (soloRepo.length) {
-    nota(`${soloRepo.length} grant(s) del repo que faltan en el destino (el seed los va a agregar).`)
+    nota(
+      `${soloRepo.length} grant(s) del repo que faltan en el destino (el seed los va a agregar).`
+    )
   }
-  if (!soloDestino.length && !soloRepo.length) ok('La matriz efectiva coincide exactamente con el repo.')
+  if (!soloDestino.length && !soloRepo.length)
+    ok('La matriz efectiva coincide exactamente con el repo.')
 }
 
 // ── Cierre ─────────────────────────────────────────────────────────────────
@@ -342,7 +368,10 @@ if (!riesgos && !divergencias) {
   console.log('  Sin riesgos ni divergencias: se puede aplicar el baseline.')
 } else {
   if (riesgos) console.log(`  ${riesgos} riesgo(s) de ROTURA  (!!) — resolver ANTES de aplicar.`)
-  if (divergencias) console.log(`  ${divergencias} divergencia(s) silenciosa(s) (~) — el push no las va a arreglar.`)
+  if (divergencias)
+    console.log(
+      `  ${divergencias} divergencia(s) silenciosa(s) (~) — el push no las va a arreglar.`
+    )
   console.log('\n  Ninguna se resuelve sola: las migraciones no borran datos, pero tampoco')
   console.log('  fuerzan el destino al estado del repo.')
 }
