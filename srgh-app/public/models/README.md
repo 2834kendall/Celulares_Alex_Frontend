@@ -8,11 +8,38 @@ nunca sale del dispositivo; al servidor solo viaja el embedding cifrado).
 | Archivo                             | Que es                                                   | Fuente                                          |
 | ----------------------------------- | -------------------------------------------------------- | ----------------------------------------------- |
 | `face_landmarker.task`              | MediaPipe Face Landmarker (deteccion + blendshapes)      | Bucket oficial de Google.                       |
+| `hand_landmarker.task`              | MediaPipe Hand Landmarker: mano sobre la cara (registro) | Bucket oficial de Google.                       |
 | `face-api/face_recognition_model-*` | Red de reconocimiento, embeddings de 128 dimensiones     | `@vladmandic/face-api` (ver procedencia abajo). |
 | `antispoof/minifasnet_v2.onnx`      | Clasificador anti-spoofing (real / impresion / pantalla) | MiniFASNetV2 de minivision-ai (ver abajo).      |
 
 `scripts/setup-face-assets.mjs` los descarga solos si faltan (corre en
 `predev`/`prebuild`) — no hace falta tocarlos a mano.
+
+**Integridad (SGRH-117).** Cada archivo baja de una revisión fija y se compara
+con su SHA-256 antes de publicarse: la descarga va a un archivo temporal y solo
+pasa a su ruta final si el hash coincide. Un archivo presente que no coincide
+hace fallar `pnpm dev` y `pnpm build`.
+
+| Archivo                                         | Revisión fija                                         | SHA-256                                                            |
+| ----------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `face_landmarker.task`                          | `float16/1` del bucket de MediaPipe                   | `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff` |
+| `hand_landmarker.task`                          | `float16/1` del bucket de MediaPipe                   | `fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1` |
+| `face-api/face_recognition_model.bin`           | commit `ad61f77` de `vladmandic/face-api`             | `b413e420d6840b2775fba32008db6f3cddb07d485967fb42cfcf379c16a8c589` |
+| `face-api/face_recognition_model-weights_…json` | commit `ad61f77` de `vladmandic/face-api`             | dos válidos: el del origen y el reformateado por Prettier del repo |
+| `antispoof/minifasnet_v2.onnx`                  | commit `d29c875` de `garciafido/minifasnet-v2-…-onnx` | `d7b3cd9ba8a7ceb13baa8c4720902e27ca3112eff52f926c08804af6b6eecc7b` |
+
+Para actualizar un modelo: cambiar la revisión y el hash juntos en el script,
+borrar el archivo y correr `pnpm dev` para que se descargue y verifique.
+
+### Por qué el registro usa además el detector de manos
+
+Ninguno de los otros tres modelos nota una mano sobre la cara: el Face
+Landmarker ajusta un modelo 3D completo aunque media cara esté tapada, el
+anti-spoofing ve piel real y la red de reconocimiento convierte en vector lo
+que le den. Sin el Hand Landmarker, una captura con la mano encima quedaba
+guardada como el rostro de la persona. Solo lo carga el registro (tab Rostro);
+el kiosco no lo baja. No detecta mascarillas ni gorras: eso queda en la guía
+que se muestra antes de capturar.
 
 ### Procedencia del modelo de reconocimiento (por que se pudo automatizar)
 
@@ -59,7 +86,7 @@ es indiferente a los lentes.
   11), con el script incluido.
 - **SHA-256 del archivo en uso**:
   `d7b3cd9ba8a7ceb13baa8c4720902e27ca3112eff52f926c08804af6b6eecc7b`.
-  `scripts/setup-face-assets.mjs` lo verifica en cada build y avisa si cambia.
+  `scripts/setup-face-assets.mjs` lo verifica en cada build y falla si cambia.
 
 ### Lo que se DESCARTO, y por que
 

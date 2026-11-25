@@ -2,21 +2,29 @@
  * Copia a /public el runtime WASM de MediaPipe y descarga los modelos de
  * reconocimiento facial si faltan. Se corre solo via predev/prebuild.
  *
- * public/models/mediapipe-wasm/  — NO se versiona (.gitignore): sale de
- *   node_modules y debe seguir la version instalada del paquete.
+ * public/models/mediapipe-wasm/ y public/models/ort/ — NO se versionan
+ *   (.gitignore): salen de node_modules y siguen la version instalada.
  *
  * Modelos (SI versionados, no salen de node_modules):
- *   face_landmarker.task              — MediaPipe Face Landmarker. Se
- *     autodescarga si falta: la URL es el bucket oficial de Google
- *     (storage.googleapis.com/mediapipe-models), la misma que documenta
- *     MediaPipe — no un mirror de terceros.
+ *   face_landmarker.task              — MediaPipe Face Landmarker, del bucket
+ *     oficial de Google (storage.googleapis.com/mediapipe-models).
+ *   hand_landmarker.task              — MediaPipe Hand Landmarker, mismo
+ *     bucket. Solo lo usa el registro del rostro (mano sobre la cara).
  *   face-api/face_recognition_model-* — Red de reconocimiento de
- *     @vladmandic/face-api (fork mantenido de face-api.js). Tambien se
- *     autodescarga: verificamos su procedencia antes de automatizar esto —
- *     pesos entrenados por davisking (creador de dlib, Boost License 1.0,
- *     uso comercial permitido) empaquetados por face-api.js (MIT, uso
- *     comercial confirmado por el propio mantenedor). Ver
+ *     @vladmandic/face-api (fork mantenido de face-api.js). Pesos entrenados
+ *     por davisking (creador de dlib, Boost License 1.0, uso comercial
+ *     permitido) empaquetados por face-api.js (MIT). Ver
  *     public/models/README.md para el detalle completo.
+ *   antispoof/minifasnet_v2.onnx      — Clasificador anti-spoofing.
+ *
+ * INTEGRIDAD (SGRH-117): cada modelo se descarga de una revision FIJA (nunca
+ * `latest` ni `master`) y se compara con su SHA-256. La descarga va a un
+ * archivo temporal y solo se mueve a su ruta final si el hash coincide: el
+ * cliente carga esa ruta, asi que un archivo a medias o reemplazado nunca
+ * llega a servirse. Un archivo presente que no coincide hace fallar el
+ * script (y con el `pnpm dev` / `pnpm build`), en vez de avisar y seguir.
+ *
+ * Sin red, en cambio, solo se avisa: el kiosco cae al flujo de PIN.
  */
 import {
   copyFileSync,
@@ -24,24 +32,64 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const publicModels = join(root, 'public', 'models')
-const faceApiModels = join(publicModels, 'face-api')
 
-const FACE_LANDMARKER_URL =
-  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task'
+/** Commit de vladmandic/face-api que publico estos pesos (marzo 2021). */
+const FACE_API_REVISION = 'ad61f77ea2962809bed52b5b18966fea80ab1273'
+const FACE_API_RAW = `https://raw.githubusercontent.com/vladmandic/face-api/${FACE_API_REVISION}/model`
 
-const FACE_API_REPO_RAW = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model'
-const FACE_RECOGNITION_FILES = [
-  'face_recognition_model-weights_manifest.json',
-  'face_recognition_model.bin',
+/**
+ * `sha256` admite varios valores solo cuando el contenido es el mismo y
+ * cambian los bytes: el manifiesto JSON versionado quedo reformateado por
+ * Prettier, y el que baja del origen viene compacto. Para un binario va uno.
+ */
+const MODELS = [
+  {
+    file: 'face_landmarker.task',
+    url: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+    sha256: ['64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff'],
+    whenMissing: 'el kiosco no puede ubicar el rostro y cae al flujo de PIN',
+  },
+  {
+    // Solo el registro del rostro: detecta una mano sobre la cara (SGRH-117).
+    file: 'hand_landmarker.task',
+    url: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+    sha256: ['fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1'],
+    whenMissing: 'el registro del rostro no puede detectar una mano sobre la cara y no se abre',
+  },
+  {
+    file: 'face-api/face_recognition_model-weights_manifest.json',
+    url: `${FACE_API_RAW}/face_recognition_model-weights_manifest.json`,
+    sha256: [
+      'cbaffa501b0b9275a12b63357a6843e7e30c054e1c9151e1a5f879b26e32986b',
+      'fb904791e049ece9f4ffd17225271e7885cad590d6c0e92de1ffde0362acfe47',
+    ],
+    whenMissing: 'el kiosco no puede generar embeddings y cae al flujo de PIN',
+  },
+  {
+    file: 'face-api/face_recognition_model.bin',
+    url: `${FACE_API_RAW}/face_recognition_model.bin`,
+    sha256: ['b413e420d6840b2775fba32008db6f3cddb07d485967fb42cfcf379c16a8c589'],
+    whenMissing: 'el kiosco no puede generar embeddings y cae al flujo de PIN',
+  },
+  {
+    file: 'antispoof/minifasnet_v2.onnx',
+    url: 'https://huggingface.co/garciafido/minifasnet-v2-anti-spoofing-onnx/resolve/d29c87568ca9b5662da803b10f217c4db20b142b/minifasnet_v2.onnx',
+    sha256: ['d7b3cd9ba8a7ceb13baa8c4720902e27ca3112eff52f926c08804af6b6eecc7b'],
+    whenMissing: 'el kiosco no puede confirmar que haya una persona real y cae al PIN',
+  },
 ]
+
+const sha256Of = (bytes) => createHash('sha256').update(bytes).digest('hex')
 
 function copyDir(fromDir, toDir, filter) {
   if (!existsSync(fromDir)) {
@@ -56,99 +104,58 @@ function copyDir(fromDir, toDir, filter) {
   }
 }
 
-async function downloadFile(url, dest) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const bytes = new Uint8Array(await res.arrayBuffer())
-  writeFileSync(dest, bytes)
-  return bytes.length
-}
-
-async function ensureFaceLandmarker() {
-  const dest = join(publicModels, 'face_landmarker.task')
-  if (existsSync(dest)) return
-
-  console.log('[face-assets] Descargando face_landmarker.task desde Google (mediapipe-models)…')
-  try {
-    mkdirSync(publicModels, { recursive: true })
-    const size = await downloadFile(FACE_LANDMARKER_URL, dest)
-    console.log(`[face-assets] face_landmarker.task descargado (${size} bytes).`)
-  } catch (err) {
-    console.warn(
-      `[face-assets] AVISO: no se pudo descargar face_landmarker.task (${err.message}).\n` +
-        '  Sin red, el kiosco caera al flujo de PIN. Reintenta con internet o descargalo a mano:\n' +
-        `  ${FACE_LANDMARKER_URL}`
-    )
-  }
-}
-
-async function ensureFaceRecognitionModel() {
-  const missing = FACE_RECOGNITION_FILES.filter((f) => !existsSync(join(faceApiModels, f)))
-  if (missing.length === 0) return
-
-  console.log('[face-assets] Descargando el modelo de reconocimiento de @vladmandic/face-api…')
-  try {
-    mkdirSync(faceApiModels, { recursive: true })
-    for (const file of missing) {
-      const size = await downloadFile(`${FACE_API_REPO_RAW}/${file}`, join(faceApiModels, file))
-      console.log(`[face-assets] ${file} descargado (${size} bytes).`)
-    }
-  } catch (err) {
-    console.warn(
-      `[face-assets] AVISO: no se pudo descargar el modelo de reconocimiento (${err.message}).\n` +
-        '  Sin el, el kiosco NO puede generar embeddings y cae al flujo de PIN.\n' +
-        '  NO entra solo en modo de prueba: NEXT_PUBLIC_FACE_TEST_MODE hay que\n' +
-        '  ponerlo a mano, y solo con el valor exacto "true".\n' +
-        `  Fuente: ${FACE_API_REPO_RAW}`
-    )
-  }
-}
-
 /**
- * Clasificador anti-spoofing (MiniFASNetV2). A diferencia de los otros dos,
- * este SI se versiona: pesa 1.7 MB y su procedencia se verifico a mano, asi
- * que se prefiere tenerlo fijo en el repo antes que depender de que un tercero
- * siga publicando el archivo. La descarga es solo la red de seguridad para un
- * clon que llegue sin el.
- *
- * El SHA-256 esperado esta abajo a proposito: si algun dia el archivo de
- * origen cambia, el build lo grita en vez de aceptar en silencio otros pesos.
+ * Verifica un modelo presente o lo descarga. Devuelve false solo ante un hash
+ * que no coincide: es el unico caso que debe frenar el build.
  */
-const ANTISPOOF_URL =
-  'https://huggingface.co/garciafido/minifasnet-v2-anti-spoofing-onnx/resolve/main/minifasnet_v2.onnx'
-const ANTISPOOF_SHA256 = 'd7b3cd9ba8a7ceb13baa8c4720902e27ca3112eff52f926c08804af6b6eecc7b'
+async function ensureModel({ file, url, sha256, whenMissing }) {
+  const dest = join(publicModels, file)
 
-async function ensureAntispoofModel() {
-  const dir = join(publicModels, 'antispoof')
-  const dest = join(dir, 'minifasnet_v2.onnx')
   if (existsSync(dest)) {
-    const actual = createHash('sha256').update(readFileSync(dest)).digest('hex')
-    if (actual !== ANTISPOOF_SHA256) {
-      console.warn(
-        `[face-assets] AVISO: minifasnet_v2.onnx no coincide con el SHA-256 esperado.\n` +
-          `  esperado: ${ANTISPOOF_SHA256}\n  actual:   ${actual}\n` +
-          '  El modelo pudo haber sido reemplazado. Revisar antes de confiar en el.'
-      )
-    }
-    return
+    const actual = sha256Of(readFileSync(dest))
+    if (sha256.includes(actual)) return true
+    console.error(
+      `[face-assets] ERROR: ${file} no coincide con el SHA-256 esperado.\n` +
+        `  esperado: ${sha256.join(' o ')}\n  actual:   ${actual}\n` +
+        '  El modelo pudo haber sido reemplazado. Restauralo desde git o borralo para\n' +
+        '  que se descargue de nuevo desde su revision fija.'
+    )
+    return false
   }
 
-  console.log('[face-assets] Descargando el clasificador anti-spoofing (MiniFASNetV2)…')
+  console.log(`[face-assets] Descargando ${file}…`)
+  const temp = `${dest}.download`
+  let bytes
   try {
-    mkdirSync(dir, { recursive: true })
-    const size = await downloadFile(ANTISPOOF_URL, dest)
-    const actual = createHash('sha256').update(readFileSync(dest)).digest('hex')
-    if (actual !== ANTISPOOF_SHA256) {
-      throw new Error(`SHA-256 no coincide (esperado ${ANTISPOOF_SHA256}, obtenido ${actual})`)
-    }
-    console.log(`[face-assets] minifasnet_v2.onnx descargado y verificado (${size} bytes).`)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    bytes = new Uint8Array(await res.arrayBuffer())
   } catch (err) {
     console.warn(
-      `[face-assets] AVISO: no se pudo obtener el clasificador anti-spoofing (${err.message}).\n` +
-        '  SIN EL, el kiosco NO puede confirmar que haya una persona real y cae al PIN.\n' +
-        `  Fuente: ${ANTISPOOF_URL}`
+      `[face-assets] AVISO: no se pudo descargar ${file} (${err.message}).\n` +
+        `  Sin el, ${whenMissing}. Reintenta con internet.\n  Fuente: ${url}`
     )
+    return true
   }
+
+  const actual = sha256Of(bytes)
+  if (!sha256.includes(actual)) {
+    console.error(
+      `[face-assets] ERROR: la descarga de ${file} no coincide con el SHA-256 esperado\n` +
+        `  (esperado ${sha256.join(' o ')}, obtenido ${actual}). No se publico.\n  Fuente: ${url}`
+    )
+    return false
+  }
+
+  mkdirSync(dirname(dest), { recursive: true })
+  try {
+    writeFileSync(temp, bytes)
+    renameSync(temp, dest)
+  } finally {
+    rmSync(temp, { force: true })
+  }
+  console.log(`[face-assets] ${file} descargado y verificado (${bytes.length} bytes).`)
+  return true
 }
 
 // MediaPipe: el FilesetResolver pide el .js y el .wasm del mismo directorio.
@@ -167,22 +174,24 @@ copyDir(
   (n) => n === 'ort-wasm-simd-threaded.wasm' || n === 'ort-wasm-simd-threaded.mjs'
 )
 
-await ensureFaceLandmarker()
-await ensureFaceRecognitionModel()
-await ensureAntispoofModel()
+let verified = true
+for (const model of MODELS) {
+  if (!(await ensureModel(model))) verified = false
+}
 
-const missing = [
-  'face_landmarker.task',
-  'antispoof/minifasnet_v2.onnx',
-  ...FACE_RECOGNITION_FILES.map((f) => `face-api/${f}`),
-].filter((m) => !existsSync(join(publicModels, m)))
+const missing = MODELS.map((m) => m.file).filter((f) => !existsSync(join(publicModels, f)))
 
-if (missing.length > 0) {
+if (!verified) {
+  console.error(
+    `[face-assets] Hay modelos que no pasaron la verificacion en ${relative(root, publicModels)}.`
+  )
+  process.exitCode = 1
+} else if (missing.length > 0) {
   console.warn(
     `[face-assets] AVISO: faltan modelos en public/models: ${missing.join(', ')}.\n` +
       '  El kiosco caera automaticamente al flujo de PIN hasta que existan.\n' +
       '  Ver srgh-app/public/models/README.md para las fuentes de descarga.'
   )
 } else {
-  console.log('[face-assets] Runtime WASM copiado y modelos presentes.')
+  console.log('[face-assets] Runtime WASM copiado y modelos verificados.')
 }
