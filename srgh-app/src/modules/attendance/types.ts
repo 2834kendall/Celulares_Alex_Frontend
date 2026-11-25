@@ -32,16 +32,25 @@ export const manualMarkSchema = z.object({
   employeeId: z.number().int().positive(),
   sucursalId: z.number().int().positive(),
   tipo: marcaTipoSchema,
-  fecha: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
-  hora: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+  fecha: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
+  hora: z.string().regex(timeRegex, 'Formato de hora inválido (HH:mm).'),
   observacion: z
-    .string('La justificacion es requerida.')
+    .string('La justificación es requerida.')
     .trim()
-    .min(10, 'Escriba una justificacion de al menos 10 caracteres.')
-    .max(500, 'Maximo 500 caracteres.'),
+    .min(10, 'Escribe una justificación de al menos 10 caracteres.')
+    .max(500, 'Máximo 500 caracteres.'),
 })
 
 export type ManualMarkInput = z.input<typeof manualMarkSchema>
+
+export const justifySecondBlockSchema = z.object({
+  employmentHistoryId: z.number().int().positive(),
+  date: z.iso.date(),
+  tipoAusenciaId: z.number().int().positive(),
+  motivo: z.string().trim().max(300).optional(),
+})
+
+export type JustifySecondBlockInput = z.input<typeof justifySecondBlockSchema>
 
 /**
  * Marca del kiosco: el empleado NO inicia sesion, el dispositivo si (cuenta
@@ -108,7 +117,7 @@ export type EnrollFaceInput = z.input<typeof enrollFaceSchema>
  * del mes calendario a partir de ella, igual que el "?date=" del panel diario.
  */
 export const getMonthlyAttendanceSummarySchema = z.object({
-  fecha: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+  fecha: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
 })
 
 export type GetMonthlyAttendanceSummaryInput = z.input<typeof getMonthlyAttendanceSummarySchema>
@@ -129,10 +138,10 @@ export const justifyTardinessSchema = z
   .object({
     markId: z.number().int().positive(),
     justificada: z.boolean(),
-    motivo: z.string().trim().max(500, 'Maximo 500 caracteres.').nullable().default(null),
+    motivo: z.string().trim().max(500, 'Máximo 500 caracteres.').nullable().default(null),
   })
   .refine((v) => !v.justificada || (v.motivo !== null && v.motivo.length >= MOTIVO_MINIMO), {
-    message: `Escriba un motivo de al menos ${MOTIVO_MINIMO} caracteres.`,
+    message: `Escribe un motivo de al menos ${MOTIVO_MINIMO} caracteres.`,
     path: ['motivo'],
   })
 
@@ -157,14 +166,14 @@ export const tipoTardiaSchema = z.object({
     .string('El nombre es requerido.')
     .trim()
     .min(2, 'El nombre es requerido.')
-    .max(60, 'Maximo 60 caracteres.'),
+    .max(60, 'Máximo 60 caracteres.'),
   tta_desde_minutos: z
-    .number('Indique desde que minuto de atraso empieza.')
-    .int('Tiene que ser un numero entero de minutos.')
-    .min(1, 'Tiene que empezar en el minuto 1 o despues.')
-    .max(720, 'Maximo 720 minutos (12 horas).'),
+    .number('Indica desde qué minuto de atraso empieza.')
+    .int('Tiene que ser un número entero de minutos.')
+    .min(1, 'Tiene que empezar en el minuto 1 o después.')
+    .max(720, 'Máximo 720 minutos (12 horas).'),
   tta_cuenta_advertencia: z.boolean().default(true),
-  tta_color: z.string().regex(HEX_COLOR, 'Color invalido.').nullable().default(null),
+  tta_color: z.string().regex(HEX_COLOR, 'Color inválido.').nullable().default(null),
 })
 
 export type TipoTardiaInput = z.input<typeof tipoTardiaSchema>

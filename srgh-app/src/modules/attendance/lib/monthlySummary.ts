@@ -18,6 +18,7 @@ import {
 import { marcaTipoSchema } from '@/modules/attendance/types'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
 import { secondBlockStart } from '@/modules/attendance/lib/secondBlock'
+import { absencePaidFraction } from '@/modules/attendance/lib/absencePaidFraction'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -76,7 +77,12 @@ interface AusenciaRow {
   aus_historial_laboral_id: number
   aus_fecha_inicio: string
   aus_fecha_fin: string
-  sgrh_cat_tipos_ausencia: { tau_nombre: string; tau_es_intradia: boolean } | null
+  sgrh_cat_tipos_ausencia: {
+    tau_nombre: string
+    tau_es_intradia: boolean
+    tau_requiere_documento_ccss: boolean
+    tau_porcentaje_pago_empleador: number | null
+  } | null
 }
 
 /**
@@ -103,6 +109,8 @@ export type DayForInfractionWithDate = DayForInfraction & {
    * si no hay. Es lo que el reporte muestra como "justificada".
    */
   ausenciaTipo: string | null
+  secondBlockAbsenceType?: string | null
+  isSingleDayPaidAbsence?: boolean
 }
 
 export interface EmployeeMonthDays {
@@ -226,7 +234,7 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
     ])
 
   if (errAssignments) {
-    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
+    return { ok: false, error: 'No se pudieron calcular las tardías y las ausencias del mes.' }
   }
 
   const conDiasAca = Array.from(new Set((assignments ?? []).map((a) => a.prg_historial_laboral_id)))
@@ -251,7 +259,7 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
     : { data: [], error: null }
 
   if (errOtras) {
-    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
+    return { ok: false, error: 'No se pudieron calcular las tardías y las ausencias del mes.' }
   }
 
   const conAlgunaProgramacion = new Set((enOtras ?? []).map((p) => p.prg_historial_laboral_id))
@@ -272,6 +280,7 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
     { data: historial, error: errHistorial },
     { data: marks, error: errMarks },
     { data: ausencias, error: errAusencias },
+    { data: blockJustifications, error: blockJustificationsError },
   ] = await Promise.all([
     supabase
       .from('sgrh_historial_laboral')
@@ -308,21 +317,28 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
     supabase
       .from('sgrh_ausencias')
       .select(
-        'aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin, sgrh_cat_tipos_ausencia ( tau_nombre, tau_es_intradia )'
+        'aus_historial_laboral_id, aus_fecha_inicio, aus_fecha_fin, sgrh_cat_tipos_ausencia ( tau_nombre, tau_es_intradia, tau_requiere_documento_ccss, tau_porcentaje_pago_empleador )'
       )
       .in('aus_historial_laboral_id', historyIds)
       .eq('aus_estado', 'aprobada')
       .lte('aus_fecha_inicio', end)
       .gte('aus_fecha_fin', start)
       .returns<AusenciaRow[]>(),
+    supabase
+      .from('sgrh_justificaciones_bloque')
+      .select('jbl_historial_laboral_id, jbl_fecha, sgrh_cat_tipos_ausencia ( tau_nombre )')
+      .eq('jbl_empresa_id', empresaId)
+      .in('jbl_historial_laboral_id', historyIds)
+      .gte('jbl_fecha', start)
+      .lte('jbl_fecha', end),
   ])
 
   if (errHistorial) {
     return { ok: false, error: 'No se pudieron cargar los colaboradores.' }
   }
 
-  if (errMarks || errAusencias) {
-    return { ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' }
+  if (errMarks || errAusencias || blockJustificationsError) {
+    return { ok: false, error: 'No se pudieron calcular las tardías y las ausencias del mes.' }
   }
 
   if (historial.length === 0) {
@@ -384,23 +400,34 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
   // Ojo: leer esta tabla exige el permiso AUSENCIAS_READ. Si el rol que abre
   // el panel no lo tiene, RLS no devuelve error — devuelve cero filas, y
   // todo vuelve a contarse como ausencia sin ninguna señal visible.
-  const justifiedDays = new Map<string, string>()
+  const justifiedDays = new Map<string, { name: string; isSingleDayPaid: boolean }>()
   for (const a of ausencias ?? []) {
     // Lactancia y demas intradia se miden en horas dentro de un dia
     // trabajado: no cubren el dia. Antes una lactancia de meses dejaba todos
     // esos dias fuera del calculo, tardias incluidas.
-    if (a.sgrh_cat_tipos_ausencia?.tau_es_intradia) continue
+    const absenceType = a.sgrh_cat_tipos_ausencia
+    if (absenceType?.tau_es_intradia) continue
 
     const from = a.aus_fecha_inicio > start ? a.aus_fecha_inicio : start
     const to = a.aus_fecha_fin < end ? a.aus_fecha_fin : end
 
     for (let d = from; d <= to; d = shiftISODate(d, 1)) {
-      justifiedDays.set(
-        `${a.aus_historial_laboral_id}|${d}`,
-        a.sgrh_cat_tipos_ausencia?.tau_nombre ?? 'Ausencia justificada'
-      )
+      justifiedDays.set(`${a.aus_historial_laboral_id}|${d}`, {
+        name: absenceType?.tau_nombre ?? 'Ausencia justificada',
+        isSingleDayPaid:
+          a.aus_fecha_inicio === a.aus_fecha_fin &&
+          absenceType !== null &&
+          absencePaidFraction(absenceType) > 0,
+      })
     }
   }
+
+  const justifiedBlocks = new Map(
+    (blockJustifications ?? []).map((row) => [
+      `${row.jbl_historial_laboral_id}|${row.jbl_fecha}`,
+      row.sgrh_cat_tipos_ausencia?.tau_nombre ?? 'Ausencia justificada',
+    ])
+  )
 
   // Primera marca valida por (historial, fecha) de cada tipo — mismo
   // criterio de "primera cronologica gana" que groupIntoDayJourney.
@@ -463,12 +490,13 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
         const entrada = entradaByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         const inicioAlmuerzo = inicioAlmuerzoByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
         const finAlmuerzo = finAlmuerzoByHistAndDate.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
-        const ausenciaTipo = justifiedDays.get(`${h.lab_id}|${a.prg_fecha}`) ?? null
+        const diaKey = `${h.lab_id}|${a.prg_fecha}`
+        const justifiedDay = justifiedDays.get(diaKey)
+        const secondBlockAbsenceType = justifiedBlocks.get(diaKey) ?? null
 
         // La entrada del segundo bloque, contra la hora en que ese bloque
         // empezaba (SGRH-110). Los bloques salen de alternar entrada/salida;
         // si las marcas no alternan no hay segundo bloque que medir.
-        const diaKey = `${h.lab_id}|${a.prg_fecha}`
         const secondBlockExpectedStart = secondBlockStart(
           blockStartsByHistAndDate.get(diaKey) ?? []
         )
@@ -487,8 +515,11 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
           : null
         return {
           date: a.prg_fecha,
-          isJustifiedAbsence: ausenciaTipo !== null,
-          ausenciaTipo,
+          isJustifiedAbsence: justifiedDay !== undefined,
+          ausenciaTipo: justifiedDay?.name ?? null,
+          isSingleDayPaidAbsence: justifiedDay?.isSingleDayPaid ?? false,
+          isJustifiedSecondBlockAbsence: secondBlockAbsenceType !== null,
+          secondBlockAbsenceType,
           isDayOff: a.prg_es_dia_libre,
           isHoliday: a.prg_es_feriado,
           expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,

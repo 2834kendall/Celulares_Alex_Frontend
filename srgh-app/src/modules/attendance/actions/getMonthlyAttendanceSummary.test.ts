@@ -51,6 +51,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
           ],
           error: null,
         },
+        sgrh_justificaciones_bloque: { data: [], error: null },
         sgrh_ausencias: { data: [], error: null },
         sgrh_marcas_asistencia: {
           data: [
@@ -164,6 +165,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
           ],
           error: null,
         },
+        sgrh_justificaciones_bloque: { data: [], error: null },
         sgrh_ausencias: { data: [], error: null },
         sgrh_marcas_asistencia: {
           data: [
@@ -244,6 +246,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         ],
         error: null,
       },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
@@ -265,73 +268,118 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
     expect(result.data[0]).toMatchObject({ tardias: 0, ausencias: 0, tardyDays: [] })
   })
 
-  it('un dia partido en que vino a la manana y no volvio cuenta una ausencia, aparte del dia completo', async () => {
-    const marca = (id: number, tipo: string, hora: string) => ({
-      mar_id: id,
-      mar_historial_laboral_id: 1,
-      mar_tipo: tipo,
-      mar_fecha_hora: `2026-07-05 ${hora}`,
-      mar_tardia_justificada: false,
-      mar_tardia_justificacion: null,
-    })
+  it.each(['pending', 'unpaid', 'paid'] as const)(
+    'reports a missing second block as %s',
+    async (status) => {
+      const date = '2026-07-05'
+      const marca = (id: number, tipo: string, hora: string) => ({
+        mar_id: id,
+        mar_historial_laboral_id: 1,
+        mar_tipo: tipo,
+        mar_fecha_hora: `2026-07-05 ${hora}`,
+        mar_tardia_justificada: false,
+        mar_tardia_justificacion: null,
+      })
 
-    const client = createSupabaseClientMock({
-      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
-      sgrh_historial_laboral: {
-        data: [
-          {
-            lab_id: 1,
-            lab_empleado_id: 10,
-            lab_sucursal_id: 100,
-            sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
-          },
-        ],
-        error: null,
-      },
-      sgrh_cat_tipos_tardia: { data: [], error: null },
-      sgrh_programacion_semanal: {
-        data: [
-          {
-            prg_historial_laboral_id: 1,
-            prg_sucursal_id: 100,
-            prg_fecha: '2026-07-05',
-            prg_es_dia_libre: false,
-            prg_es_feriado: false,
-            prg_hora_entrada_custom: null,
-            prg_hora_salida_custom: null,
-            sgrh_cat_horarios: {
-              hor_hora_entrada: '07:00:00',
-              hor_hora_entrada_2: '16:00:00',
-              hor_hora_salida_2: '20:00:00',
+      const client = createSupabaseClientMock({
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_historial_laboral: {
+          data: [
+            {
+              lab_id: 1,
+              lab_empleado_id: 10,
+              lab_sucursal_id: 100,
+              sgrh_empleados: { emp_nombre: 'Ana', emp_apellido_1: 'Perez', emp_apellido_2: null },
             },
-          },
-        ],
-        error: null,
-      },
-      sgrh_ausencias: { data: [], error: null },
-      sgrh_marcas_asistencia: {
-        data: [marca(1, 'entrada', '07:00:00'), marca(2, 'salida', '11:00:00')],
-        error: null,
-      },
-    })
-    mockCreateClient.mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+          ],
+          error: null,
+        },
+        sgrh_cat_tipos_tardia: { data: [], error: null },
+        sgrh_programacion_semanal: {
+          data: [
+            {
+              prg_historial_laboral_id: 1,
+              prg_sucursal_id: 100,
+              prg_fecha: '2026-07-05',
+              prg_es_dia_libre: false,
+              prg_es_feriado: false,
+              prg_hora_entrada_custom: null,
+              prg_hora_salida_custom: null,
+              sgrh_cat_horarios: {
+                hor_hora_entrada: '07:00:00',
+                hor_hora_entrada_2: '16:00:00',
+                hor_hora_salida_2: '20:00:00',
+              },
+            },
+          ],
+          error: null,
+        },
+        sgrh_justificaciones_bloque: {
+          data:
+            status === 'unpaid'
+              ? [
+                  {
+                    jbl_historial_laboral_id: 1,
+                    jbl_fecha: date,
+                    sgrh_cat_tipos_ausencia: { tau_nombre: 'Permiso sin goce' },
+                  },
+                ]
+              : [],
+          error: null,
+        },
+        sgrh_ausencias: {
+          data:
+            status === 'paid'
+              ? [
+                  {
+                    aus_historial_laboral_id: 1,
+                    aus_fecha_inicio: date,
+                    aus_fecha_fin: date,
+                    sgrh_cat_tipos_ausencia: {
+                      tau_nombre: 'Permiso con goce',
+                      tau_es_intradia: false,
+                      tau_porcentaje_pago_empleador: 100,
+                      tau_requiere_documento_ccss: false,
+                    },
+                  },
+                ]
+              : [],
+          error: null,
+        },
+        sgrh_marcas_asistencia: {
+          data: [marca(1, 'entrada', '07:00:00'), marca(2, 'salida', '11:00:00')],
+          error: null,
+        },
+      })
+      mockCreateClient.mockResolvedValue(
+        client as unknown as Awaited<ReturnType<typeof createClient>>
+      )
 
-    const result = await getMonthlyAttendanceSummary(validInput)
-    if (!result.ok) throw new Error(result.error)
+      const result = await getMonthlyAttendanceSummary(validInput)
+      if (!result.ok) throw new Error(result.error)
 
-    expect(result.data[0]).toMatchObject({
-      ausencias: 1,
-      absentDays: [],
-      absentSecondBlockDays: ['2026-07-05'],
-    })
-  })
+      expect(result.data[0]).toMatchObject({
+        ausencias: status === 'pending' ? 1 : 0,
+        absentDays: [],
+        absentSecondBlockDays: status === 'pending' ? [date] : [],
+        justifiedAbsences:
+          status === 'pending'
+            ? []
+            : [
+                {
+                  date,
+                  bloque: 'segundo',
+                  tipoNombre: status === 'paid' ? 'Permiso con goce' : 'Permiso sin goce',
+                },
+              ],
+      })
+    }
+  )
 
   it('rechaza datos invalidos sin llamar a requirePermission', async () => {
     const result = await getMonthlyAttendanceSummary({ fecha: 'no-es-una-fecha' })
 
-    expect(result).toEqual({ ok: false, error: 'Datos invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos inválidos.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -408,6 +456,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         ],
         error: null,
       },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
@@ -498,6 +547,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         error: null,
       },
       sgrh_cat_tipos_tardia: { data: [], error: null },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
@@ -574,6 +624,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         error: null,
       },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
@@ -607,6 +658,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
       sgrh_historial_laboral: { data: null, error: { message: 'boom' } },
       sgrh_cat_tipos_tardia: { data: [], error: null },
       sgrh_marcas_asistencia: { data: [], error: null },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
@@ -646,6 +698,7 @@ describe('getMonthlyAttendanceSummary (server action)', () => {
         ],
         error: null,
       },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: {
         data: [
           {
@@ -692,6 +745,7 @@ describe('getMonthlyAttendanceSummary con una marca elegida', () => {
       sgrh_historial_laboral: vacio,
       sgrh_cat_tipos_tardia: vacio,
       sgrh_programacion_semanal: vacio,
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: vacio,
       sgrh_marcas_asistencia: vacio,
     })

@@ -37,7 +37,7 @@ function formatMonth(monthISO: string) {
 }
 
 function itemKey(item: JustificationItem) {
-  return `${item.kind}-${item.employmentHistoryId}-${item.date}-${item.kind === 'tardia' ? item.day.kind : ''}`
+  return `${item.kind}-${item.employmentHistoryId}-${item.date}-${item.kind === 'tardia' ? item.day.kind : (item.bloque ?? '')}`
 }
 
 /**
@@ -140,12 +140,12 @@ export function PendingJustifications({
           title={
             view === 'pendientes'
               ? 'No hay nada pendiente de justificar este mes'
-              : 'Todavia no se justifico nada este mes'
+              : 'Todavía no se justificó nada este mes'
           }
           description={
             view === 'pendientes'
-              ? 'Las tardias y ausencias nuevas van a aparecer aca.'
-              : 'Lo que justifiques desde Pendientes va a quedar aca.'
+              ? 'Las tardías y ausencias nuevas van a aparecer acá.'
+              : 'Lo que justifiques desde Pendientes va a quedar acá.'
           }
         />
       ) : (
@@ -183,6 +183,7 @@ export function PendingJustifications({
           employmentHistoryId={justifying.employmentHistoryId}
           employeeName={justifying.employeeName}
           dateISO={justifying.date}
+          block={justifying.bloque}
           onClose={() => setJustifying(null)}
         />
       )}

@@ -89,6 +89,7 @@ export interface MonthlyEmployeeSummary {
 
 export interface JustifiedAbsenceDay {
   date: string
+  bloque?: 'segundo'
   /** Nombre del tipo de ausencia, ej. "Cita Médica". */
   tipoNombre: string
 }
@@ -111,7 +112,7 @@ export async function getMonthlyAttendanceSummary(
   const parsed = getMonthlyAttendanceSummarySchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos invalidos.' }
+    return { ok: false, error: 'Datos inválidos.' }
   }
 
   const claims = await requirePermission(PERMISOS.ASISTENCIA_READ)
@@ -148,6 +149,19 @@ export async function getMonthlyAttendanceSummary(
 
     for (const day of employee.days) {
       const status = classifyDay(day, gathered.tipos)
+
+      // Las ausencias con goce de un solo día se guardan sin datos del bloque.
+      const paidSecondBlock =
+        day.isSingleDayPaidAbsence &&
+        day.entradaTime &&
+        day.secondBlockExpectedStart &&
+        day.entradaTime < day.secondBlockExpectedStart &&
+        secondBlockAbsentOfDay({ ...day, isJustifiedAbsence: false })
+      const blockAbsenceType =
+        day.secondBlockAbsenceType ?? (paidSecondBlock ? day.ausenciaTipo : null)
+      if (blockAbsenceType) {
+        justifiedAbsences.push({ date: day.date, tipoNombre: blockAbsenceType, bloque: 'segundo' })
+      }
 
       if (status === 'tardio' || status === 'tardio_justificado') {
         // Las dos ramas solo se alcanzan con entradaTime y expectedStart

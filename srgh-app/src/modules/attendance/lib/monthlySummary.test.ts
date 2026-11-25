@@ -66,6 +66,7 @@ function mocks(options: {
     // tardia desde 6, grave desde 11).
     sgrh_cat_tipos_tardia: options.tipos ?? vacio,
     sgrh_marcas_asistencia: options.marcas ?? vacio,
+    sgrh_justificaciones_bloque: vacio,
     sgrh_ausencias: options.ausencias ?? vacio,
   }
 }
@@ -131,7 +132,10 @@ describe('gatherMonthlyAttendanceDays', () => {
       null
     )
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'No se pudieron calcular las tardías y las ausencias del mes.',
+    })
   })
 
   it('devuelve error si falla la carga de la plantilla', async () => {
@@ -261,6 +265,9 @@ describe('gatherMonthlyAttendanceDays', () => {
               secondBlockEntradaTime: null,
               secondBlockMarkId: null,
               isJustifiedSecondBlockTardiness: false,
+              isJustifiedSecondBlockAbsence: false,
+              isSingleDayPaidAbsence: false,
+              secondBlockAbsenceType: null,
               secondBlockJustificacion: null,
             },
           ],
@@ -574,7 +581,7 @@ describe('gatherMonthlyAttendanceDays', () => {
       null
     )
 
-    expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los tipos de tardia.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los tipos de tardía.' })
   })
 
   it('ignora dias futuros: un horario ya asignado para manana no cuenta como ausencia', async () => {
@@ -703,6 +710,9 @@ describe('gatherMonthlyAttendanceDays', () => {
               secondBlockEntradaTime: null,
               secondBlockMarkId: null,
               isJustifiedSecondBlockTardiness: false,
+              isJustifiedSecondBlockAbsence: false,
+              isSingleDayPaidAbsence: false,
+              secondBlockAbsenceType: null,
               secondBlockJustificacion: null,
             },
           ],
@@ -770,7 +780,7 @@ describe('gatherMonthlyAttendanceDays', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo calcular tardias/ausencias del mes.',
+      error: 'No se pudieron calcular las tardías y las ausencias del mes.',
     })
   })
 
@@ -833,6 +843,9 @@ describe('gatherMonthlyAttendanceDays', () => {
       null
     )
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'No se pudieron calcular las tardías y las ausencias del mes.',
+    })
   })
 })

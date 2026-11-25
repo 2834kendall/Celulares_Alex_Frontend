@@ -8,10 +8,12 @@ import type {
 } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
 import { createAusencia } from '@/modules/absences/actions/createAusencia'
 import { getAusenciaTypes } from '@/modules/absences/actions/getAusenciaTypes'
+import { justifySecondBlock } from '@/modules/attendance/actions/justifySecondBlock'
 
 vi.mock('@/modules/attendance/actions/justifyTardiness', () => ({
   justifyTardiness: vi.fn(),
 }))
+vi.mock('@/modules/attendance/actions/justifySecondBlock', () => ({ justifySecondBlock: vi.fn() }))
 vi.mock('@/modules/absences/actions/createAusencia', () => ({ createAusencia: vi.fn() }))
 vi.mock('@/modules/absences/actions/getAusenciaTypes', () => ({ getAusenciaTypes: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -101,7 +103,7 @@ describe('<PendingJustifications />', () => {
     expect(filas).toHaveLength(2)
     // Ausencia de Bruno del 12 antes que la tardia de Ana del 10.
     expect(filas[0]).toHaveTextContent('Bruno Mora')
-    expect(filas[0]).toHaveTextContent('No vino y no marco')
+    expect(filas[0]).toHaveTextContent('No vino y no marcó')
     expect(filas[1]).toHaveTextContent('Ana Perez')
     expect(filas[1]).toHaveTextContent('Tardia grave')
     expect(screen.getAllByRole('button', { name: 'Justificar' })).toHaveLength(2)
@@ -115,7 +117,7 @@ describe('<PendingJustifications />', () => {
 
     expect(screen.getByText('Cita Médica')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ver motivo' })).toBeInTheDocument()
-    expect(screen.queryByText('No vino y no marco')).not.toBeInTheDocument()
+    expect(screen.queryByText('No vino y no marcó')).not.toBeInTheDocument()
   })
 
   it('sin pendientes lo dice', () => {
@@ -127,7 +129,7 @@ describe('<PendingJustifications />', () => {
   it('sin permiso de ausencias, la ausencia se ve pero sin boton', () => {
     renderQueue({ canJustifyAbsences: false })
 
-    expect(screen.getByText('No vino y no marco')).toBeInTheDocument()
+    expect(screen.getByText('No vino y no marcó')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Justificar' })).toHaveLength(1)
   })
 
@@ -183,5 +185,48 @@ describe('<PendingJustifications />', () => {
     await user.click(screen.getByLabelText('Mes siguiente'))
 
     expect(push).toHaveBeenCalledWith('/attendance?tab=justificar&month=2026-08-01')
+  })
+
+  it('opens the block modal and submits the second-block justification', async () => {
+    mockGetAusenciaTypes.mockResolvedValue({
+      ok: true,
+      data: [{ tau_id: 3, tau_nombre: 'Permiso sin goce', tau_es_intradia: false }] as never,
+    })
+    vi.mocked(justifySecondBlock).mockResolvedValue({ ok: true })
+    const user = userEvent.setup()
+    renderQueue({ rows: [makeRow({ absentSecondBlockDays: ['2026-07-12'] })] })
+
+    expect(screen.getByText('No entró al 2.º bloque')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Justificar' }))
+    expect(screen.getByRole('heading', { name: 'Justificar 2.º bloque' })).toBeInTheDocument()
+    expect(screen.getByText(/Sin goce: se paga lo trabajado/)).toBeInTheDocument()
+    const trigger = screen.getByLabelText('Tipo de ausencia')
+    await waitFor(() => expect(trigger).toBeEnabled())
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Permiso sin goce' }))
+    await user.click(screen.getByRole('button', { name: 'Justificar 2.º bloque' }))
+
+    expect(justifySecondBlock).toHaveBeenCalledWith({
+      employmentHistoryId: 1,
+      date: '2026-07-12',
+      tipoAusenciaId: 3,
+      motivo: undefined,
+    })
+    expect(mockCreateAusencia).not.toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('labels resolved second blocks with the absence type', async () => {
+    renderQueue({
+      rows: [
+        makeRow({
+          justifiedAbsences: [
+            { date: '2026-07-12', tipoNombre: 'Permiso con goce', bloque: 'segundo' },
+          ],
+        }),
+      ],
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Resueltas (1)' }))
+    expect(screen.getByText('2.º bloque · Permiso con goce')).toBeInTheDocument()
   })
 })
