@@ -81,7 +81,7 @@ export function ForgotPasswordForm() {
       setSentTo(input.email)
     } catch {
       setServerError(
-        'No se pudo conectar con el servicio de autenticacion. Revise la conexion e intente de nuevo.'
+        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
       )
       setErrorPulse(true)
     }

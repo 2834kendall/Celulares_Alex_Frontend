@@ -17,7 +17,7 @@ const SCENE_AND_CARD = `
   </section>
   <div style="background-color: rgba(0, 0, 0, 0)">
     <input id="email-input" />
-    <button id="submit-login">Iniciar sesion</button>
+    <button id="submit-login">Iniciar sesión</button>
   </div>`
 
 function mountScreen(html = SCENE_AND_CARD) {

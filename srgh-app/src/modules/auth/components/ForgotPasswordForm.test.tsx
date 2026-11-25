@@ -106,7 +106,7 @@ describe('<ForgotPasswordForm />', () => {
     await submitEmail('ana@empresa.com')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /No se pudo conectar con el servicio de autenticacion/
+      /No se pudo conectar con el servicio de autenticación/
     )
   })
 

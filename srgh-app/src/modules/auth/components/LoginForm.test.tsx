@@ -21,8 +21,8 @@ const mockLogin = vi.mocked(login)
 async function fillAndSubmit(email = 'user@mail.com', password = 'secreto') {
   const user = userEvent.setup()
   await user.type(screen.getByLabelText('Correo o usuario'), email)
-  await user.type(screen.getByLabelText('Contrasena'), password)
-  await user.click(screen.getByRole('button', { name: /iniciar sesion/i }))
+  await user.type(screen.getByLabelText('Contraseña'), password)
+  await user.click(screen.getByRole('button', { name: /iniciar sesión/i }))
   return user
 }
 
@@ -37,7 +37,7 @@ function installAnimate() {
   return animate
 }
 
-const submitButton = () => screen.getByRole('button', { name: /iniciar sesion/i })
+const submitButton = () => screen.getByRole('button', { name: /iniciar sesión/i })
 
 describe('<LoginForm />', () => {
   beforeEach(() => {
@@ -84,13 +84,13 @@ describe('<LoginForm />', () => {
 
     expect(scene).toHaveAttribute('data-mood', 'idle')
 
-    await user.click(screen.getByLabelText('Contrasena'))
+    await user.click(screen.getByLabelText('Contraseña'))
     expect(scene).toHaveAttribute('data-mood', 'hiding')
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar contrasena' }))
+    await user.click(screen.getByRole('button', { name: 'Mostrar contraseña' }))
     expect(scene).toHaveAttribute('data-mood', 'peeking')
 
-    await user.click(screen.getByRole('button', { name: 'Ocultar contrasena' }))
+    await user.click(screen.getByRole('button', { name: 'Ocultar contraseña' }))
     expect(scene).toHaveAttribute('data-mood', 'idle')
   })
 
@@ -107,7 +107,7 @@ describe('<LoginForm />', () => {
     render(<LoginForm />)
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('button', { name: /iniciar sesion/i }))
+    await user.click(screen.getByRole('button', { name: /iniciar sesión/i }))
 
     expect(await screen.findByText('El correo o usuario es requerido.')).toBeInTheDocument()
     expect(screen.getByText('Ingrese su contraseña.')).toBeInTheDocument()
@@ -145,7 +145,7 @@ describe('<LoginForm />', () => {
     await fillAndSubmit()
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'No se pudo conectar con el servicio de autenticacion'
+      'No se pudo conectar con el servicio de autenticación'
     )
   })
 
@@ -202,7 +202,7 @@ describe('<LoginForm />', () => {
   it('avisa del Bloq Mayús solo mientras se escribe la contraseña', async () => {
     render(<LoginForm />)
     const user = userEvent.setup()
-    const password = screen.getByLabelText('Contrasena')
+    const password = screen.getByLabelText('Contraseña')
     const warning = () => screen.queryByText(/bloq mayús activado/i)
 
     await user.click(password)
@@ -223,14 +223,14 @@ describe('<LoginForm />', () => {
   it('alterna la visibilidad de la contrasena', async () => {
     render(<LoginForm />)
     const user = userEvent.setup()
-    const passwordInput = screen.getByLabelText('Contrasena')
+    const passwordInput = screen.getByLabelText('Contraseña')
 
     expect(passwordInput).toHaveAttribute('type', 'password')
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar contrasena' }))
+    await user.click(screen.getByRole('button', { name: 'Mostrar contraseña' }))
     expect(passwordInput).toHaveAttribute('type', 'text')
 
-    await user.click(screen.getByRole('button', { name: 'Ocultar contrasena' }))
+    await user.click(screen.getByRole('button', { name: 'Ocultar contraseña' }))
     expect(passwordInput).toHaveAttribute('type', 'password')
   })
 })

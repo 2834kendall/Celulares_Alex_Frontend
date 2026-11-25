@@ -20,7 +20,7 @@ interface ProfileInfoProps {
  */
 export function ProfileInfo({ email, rol, empresaNombre }: ProfileInfoProps) {
   const detalles = [
-    { key: 'correo', icon: Mail, etiqueta: 'Correo electronico', valor: email },
+    { key: 'correo', icon: Mail, etiqueta: 'Correo electrónico', valor: email },
     { key: 'empresa', icon: Building2, etiqueta: 'Empresa', valor: empresaNombre },
     { key: 'rol', icon: Briefcase, etiqueta: 'Rol en el sistema', valor: rol ?? 'Sin asignar' },
   ]

@@ -27,12 +27,12 @@ describe('<LogoutButton />', () => {
 
   it('renderiza la etiqueta por defecto', () => {
     render(<LogoutButton />)
-    expect(screen.getByRole('button', { name: /cerrar sesion/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /cerrar sesión/i })).toBeInTheDocument()
   })
 
   it('acepta etiqueta y clases personalizadas', () => {
-    render(<LogoutButton label="Volver al inicio de sesion" className="custom" />)
-    const button = screen.getByRole('button', { name: /volver al inicio de sesion/i })
+    render(<LogoutButton label="Volver al inicio de sesión" className="custom" />)
+    const button = screen.getByRole('button', { name: /volver al inicio de sesión/i })
     expect(button).toHaveClass('custom')
   })
 
@@ -41,7 +41,7 @@ describe('<LogoutButton />', () => {
     render(<LogoutButton />)
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('button', { name: /cerrar sesion/i }))
+    await user.click(screen.getByRole('button', { name: /cerrar sesión/i }))
 
     expect(mockLogout).toHaveBeenCalledOnce()
     expect(screen.getByRole('button')).toBeDisabled()
@@ -57,7 +57,7 @@ describe('<LogoutButton />', () => {
     render(<LogoutButton />)
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('button', { name: /cerrar sesion/i }))
+    await user.click(screen.getByRole('button', { name: /cerrar sesión/i }))
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'))
     expect(toast.error).not.toHaveBeenCalled()
@@ -71,7 +71,7 @@ describe('<LogoutButton />', () => {
     render(<LogoutButton />)
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('button', { name: /cerrar sesion/i }))
+    await user.click(screen.getByRole('button', { name: /cerrar sesión/i }))
 
     await waitFor(() => expect(screen.getByRole('button')).toBeEnabled())
     expect(toast.error).toHaveBeenCalledWith('El servidor no pudo cerrar la sesión.')
@@ -83,7 +83,7 @@ describe('<LogoutButton />', () => {
     render(<LogoutButton />)
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('button', { name: /cerrar sesion/i }))
+    await user.click(screen.getByRole('button', { name: /cerrar sesión/i }))
 
     await waitFor(() => expect(screen.getByRole('button')).toBeEnabled())
     expect(toast.error).toHaveBeenCalledWith(
