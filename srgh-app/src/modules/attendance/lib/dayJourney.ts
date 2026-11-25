@@ -97,6 +97,7 @@ export async function resolveKioskSucursalIds(
 }
 
 interface BloqueProgramacionRow {
+  prg_sucursal_id: number
   prg_es_dia_libre: boolean
   prg_hora_entrada_custom: string | null
   prg_hora_salida_custom: string | null
@@ -108,8 +109,14 @@ interface BloqueProgramacionRow {
   } | null
 }
 
+export interface ScheduledBlock {
+  inicio: string
+  fin: string
+  branchId: number
+}
+
 export type BloquesDelDiaResult =
-  { ok: true; bloques: { inicio: string; fin: string }[] } | { ok: false; error: string }
+  { ok: true; bloques: ScheduledBlock[] } | { ok: false; error: string }
 
 /**
  * Bloques de trabajo de UN contrato en UN dia, en TODAS sus sucursales y en
@@ -117,18 +124,18 @@ export type BloquesDelDiaResult =
  * plantilla con jornada partida. Con horas propias en entrada y salida, un
  * tramo es un solo bloque (mismo criterio del trigger de traslapes).
  *
- * Con el cliente ADMIN: la RLS de programacion solo deja ver las sucursales
- * del usuario, y el kiosco tiene que saber si queda un bloque en otra tienda.
+ * El kiosco usa el cliente ADMIN porque necesita saber si queda un bloque en
+ * otra tienda. El panel usa el cliente del usuario para respetar su alcance.
  */
 export async function bloquesDelDia(
-  admin: SupabaseAdminClient,
+  supabase: SupabaseServerClient | SupabaseAdminClient,
   employmentHistoryId: number,
   dateISO: string
 ): Promise<BloquesDelDiaResult> {
-  const { data, error } = await admin
+  const { data, error } = await supabase
     .from('sgrh_programacion_semanal')
     .select(
-      `prg_es_dia_libre, prg_hora_entrada_custom, prg_hora_salida_custom,
+      `prg_sucursal_id, prg_es_dia_libre, prg_hora_entrada_custom, prg_hora_salida_custom,
        sgrh_cat_horarios ( hor_hora_entrada, hor_hora_salida, hor_hora_entrada_2, hor_hora_salida_2 )`
     )
     .eq('prg_historial_laboral_id', employmentHistoryId)
@@ -136,7 +143,7 @@ export async function bloquesDelDia(
     .returns<BloqueProgramacionRow[]>()
 
   if (error) {
-    return { ok: false, error: 'No se pudo cargar la programacion del dia.' }
+    return { ok: false, error: 'No se pudo cargar la programación del día.' }
   }
 
   const hhmm = (h: string) => h.slice(0, 5)
@@ -144,20 +151,37 @@ export async function bloquesDelDia(
     .filter((r) => !r.prg_es_dia_libre)
     .flatMap((r) => {
       const cat = r.sgrh_cat_horarios
-      if (r.prg_hora_entrada_custom && r.prg_hora_salida_custom) {
-        return [{ inicio: hhmm(r.prg_hora_entrada_custom), fin: hhmm(r.prg_hora_salida_custom) }]
-      }
-      const entrada = r.prg_hora_entrada_custom ?? cat?.hor_hora_entrada ?? null
-      const salida = r.prg_hora_salida_custom ?? cat?.hor_hora_salida ?? null
+      const custom = r.prg_hora_entrada_custom && r.prg_hora_salida_custom
+      const entrada = custom ? r.prg_hora_entrada_custom : cat?.hor_hora_entrada
+      const salida = custom ? r.prg_hora_salida_custom : cat?.hor_hora_salida
       if (!entrada || !salida) return []
-      const primero = { inicio: hhmm(entrada), fin: hhmm(salida) }
-      return cat?.hor_hora_entrada_2 && cat.hor_hora_salida_2
-        ? [primero, { inicio: hhmm(cat.hor_hora_entrada_2), fin: hhmm(cat.hor_hora_salida_2) }]
+      const branchId = r.prg_sucursal_id
+      const primero = { inicio: hhmm(entrada), fin: hhmm(salida), branchId }
+      return !custom && cat?.hor_hora_entrada_2 && cat.hor_hora_salida_2
+        ? [
+            primero,
+            { inicio: hhmm(cat.hor_hora_entrada_2), fin: hhmm(cat.hor_hora_salida_2), branchId },
+          ]
         : [primero]
     })
     .sort((a, b) => a.inicio.localeCompare(b.inicio))
 
   return { ok: true, bloques }
+}
+
+export function scheduledBlockAtTime(
+  blocks: ScheduledBlock[],
+  time: string,
+  markType: RawMark['tipo']
+): ScheduledBlock | undefined {
+  const matches = blocks.filter((block) => block.inicio <= time && time <= block.fin)
+  if (matches.length === 1) return matches[0]
+
+  // Si los bloques se tocan, la salida cierra uno y la entrada abre el otro.
+  const boundary = matches.filter((block) =>
+    markType === 'salida' ? block.fin === time : block.inicio === time
+  )
+  return boundary.length === 1 ? boundary[0] : undefined
 }
 
 /**

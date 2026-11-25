@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { manualMarkSchema, marcaTipoSchema, type ManualMarkInput } from '@/modules/attendance/types'
 import { MARK_LABELS } from '@/modules/attendance/lib/marks'
+import { bloquesDelDia, scheduledBlockAtTime } from '@/modules/attendance/lib/dayJourney'
 
 export type SaveManualMarkResult = { ok: true } | { ok: false; error: string }
 
@@ -29,7 +30,7 @@ async function notifyEmployee(
 ) {
   if (!empresaId) return
 
-  const accion = isCorrection ? 'corrigio' : 'agrego'
+  const accion = isCorrection ? 'corrigió' : 'agregó'
   await supabase.from('sgrh_notificaciones').insert({
     ntf_empresa_id: empresaId,
     ntf_empleado_id: employeeId,
@@ -44,7 +45,7 @@ export async function saveManualMark(input: ManualMarkInput): Promise<SaveManual
   const parsed = manualMarkSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de la marca invalidos.' }
+    return { ok: false, error: 'Datos de la marca inválidos.' }
   }
 
   const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
@@ -76,13 +77,26 @@ export async function saveManualMark(input: ManualMarkInput): Promise<SaveManual
   // tramo por sucursal (SGRH-110) la sucursal de la fila es la del primer
   // tramo, y reescribirla movia a ella la marca del segundo. La sucursal solo
   // se fija al crear la marca.
-  const { error } = markId
-    ? await supabase.from('sgrh_marcas_asistencia').update(payload).eq('mar_id', markId)
+  let branchId = sucursalId
+  if (markId === null) {
+    const schedule = await bloquesDelDia(supabase, employmentHistoryId, fecha)
+    if (schedule.ok) {
+      branchId = scheduledBlockAtTime(schedule.bloques, hora, tipo)?.branchId ?? sucursalId
+    }
+  }
+
+  const { data, error } = markId
+    ? await supabase
+        .from('sgrh_marcas_asistencia')
+        .update(payload)
+        .eq('mar_id', markId)
+        .select('mar_id')
     : await supabase
         .from('sgrh_marcas_asistencia')
-        .insert({ ...payload, mar_sucursal_id: sucursalId })
+        .insert({ ...payload, mar_sucursal_id: branchId })
+        .select('mar_id')
 
-  if (error) {
+  if (error || !data?.length) {
     return { ok: false, error: 'No se pudo guardar la marca.' }
   }
 

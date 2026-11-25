@@ -72,6 +72,8 @@ describe('getDayAssignments', () => {
           expectedBreakStart: null,
           expectedBreakEnd: null,
           expectedSecondBlockStart: null,
+          expectedSecondBlockEnd: null,
+          branchName: null,
           isDayOff: false,
           isHoliday: false,
         },
@@ -196,7 +198,7 @@ describe('getDayAssignments', () => {
 
     const result = await getDayAssignments(asClient(client), '2026-07-25', null)
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo cargar la programacion del dia.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo cargar la programación del día.' })
   })
 })
 

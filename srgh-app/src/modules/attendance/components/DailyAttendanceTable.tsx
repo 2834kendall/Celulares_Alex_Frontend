@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
@@ -15,16 +15,17 @@ import {
 import type {
   DailyAttendanceRow,
   DailyMarkInfo,
+  DailyScheduledBlock,
   DailyTardiness,
 } from '@/modules/attendance/actions/getDailyAttendance'
 import { DEFAULT_TARDINESS_COLOR } from '@/modules/attendance/lib/infractions'
-import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import { ManualMarkModal } from '@/modules/attendance/components/ManualMarkModal'
 import type { MarkType } from '@/modules/attendance/lib/marks'
+import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { DatePickerButton } from '@/components/ui/DatePickerButton'
 import { formatMinutes, todayInCostaRica } from '@/modules/attendance/lib/time'
@@ -48,7 +49,8 @@ interface EditingTarget {
    * dia de varios (SGRH-110). Sin esto el modal tomaria la primera entrada o
    * la ultima salida, que son las unicas que la fila expone.
    */
-  mark?: DailyMarkInfo
+  mark?: DailyMarkInfo | null
+  block?: DailyScheduledBlock
 }
 
 const MARK_FIELD: Record<
@@ -81,7 +83,7 @@ function formatDay(dateISO: string) {
 function diffLabel(diffMinutes: number | null): string | null {
   if (diffMinutes === null || diffMinutes === 0) return null
 
-  return `${formatMinutes(diffMinutes)} ${diffMinutes > 0 ? 'despues' : 'antes'}`
+  return `${formatMinutes(diffMinutes)} ${diffMinutes > 0 ? 'después' : 'antes'}`
 }
 
 /** Lo que dice el punto de una marca al tocarlo. */
@@ -91,7 +93,7 @@ function markDetail(
   tardiness: DailyTardiness | null
 ): string | null {
   if (tardiness) {
-    const base = `${tardiness.tipo.nombre}: llego ${formatMinutes(tardiness.diffMinutes)} tarde.`
+    const base = `${tardiness.tipo.nombre}: llegó ${formatMinutes(tardiness.diffMinutes)} tarde.`
     if (!tardiness.isJustified) return base
 
     return (
@@ -102,7 +104,7 @@ function markDetail(
 
   const label = diffLabel(diffMinutes)
 
-  return label ? `Marco a las ${time}, ${label} de su hora.` : null
+  return label ? `Marcó a las ${time}, ${label} de su hora.` : null
 }
 
 /**
@@ -166,7 +168,7 @@ function MarkDot({
         onBlur={() => setAnchor(null)}
         aria-expanded={anchor !== null}
         aria-label={detalle}
-        className={`flex h-5 w-5 items-center justify-center rounded-full outline-none transition hover:scale-125 focus-visible:ring-2 focus-visible:ring-brand-500/60 motion-reduce:hover:scale-100 pointer-coarse:h-8 pointer-coarse:w-8 ${
+        className={`flex h-5 w-5 items-center justify-center rounded-full outline-none transition hover:scale-125 focus-visible:ring-2 focus-visible:ring-brand-500/60 motion-reduce:hover:scale-100 pointer-coarse:min-h-11 pointer-coarse:min-w-11 ${
           color ? '' : 'text-slate-300 hover:text-slate-500'
         }`}
       >
@@ -198,28 +200,36 @@ function MarkCell({
   canWrite,
   onEdit,
   tardiness = null,
+  label,
 }: {
   mark: DailyMarkInfo | null
   canWrite: boolean
   onEdit: () => void
   tardiness?: DailyTardiness | null
+  label?: string
 }) {
   return (
     <div className="group/celda flex items-center gap-1.5 whitespace-nowrap">
       {mark ? (
         <span className="inline-flex items-baseline gap-1.5">
-          <span className="text-[13px] font-semibold tabular-nums text-slate-700">
-            <Hora value={mark.time} />
-          </span>
+          {label && canWrite ? (
+            <Button variant="secondary" onClick={onEdit} aria-label={`Corregir marca de ${label}`}>
+              <Hora value={mark.time} />
+            </Button>
+          ) : (
+            <span className="text-[13px] font-semibold tabular-nums text-slate-700">
+              <Hora value={mark.time} />
+            </span>
+          )}
           <MarkDot time={mark.time} diffMinutes={mark.diffMinutes} tardiness={tardiness} />
         </span>
       ) : (
         <span className="text-sm text-slate-300">—</span>
       )}
-      {canWrite && (
+      {canWrite && (!label || !mark) && (
         <IconButton
           onClick={onEdit}
-          aria-label={mark ? 'Corregir marca' : 'Agregar marca'}
+          aria-label={`${mark ? 'Corregir marca' : 'Agregar marca'}${label ? ` de ${label}` : ''}`}
           tone="blue"
           // Aparece al apuntar la celda. Con cuatro marcas por fila y diez
           // filas, tener 40 lapices siempre visibles compite con lo que de
@@ -235,7 +245,11 @@ function MarkCell({
           // heuristica del navegador que no matchea en todos los caminos de
           // foco, y cuando no matcheaba el boton quedaba enfocado e
           // invisible — el peor resultado posible para quien usa teclado.
-          className="opacity-0 transition-opacity group-hover/celda:opacity-100 group-focus-within/celda:opacity-100 focus:opacity-100 pointer-coarse:opacity-100"
+          className={
+            label
+              ? undefined
+              : 'opacity-0 transition-opacity group-hover/celda:opacity-100 group-focus-within/celda:opacity-100 focus:opacity-100 pointer-coarse:opacity-100'
+          }
         >
           {mark ? <Pencil className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
         </IconButton>
@@ -291,7 +305,7 @@ function StatusBadges({
         type="button"
         onClick={() => onEditBlockMark(tipo, mark)}
         aria-label={`Corregir ${tipo === 'entrada' ? 'entrada' : 'salida'} de las ${mark.time}`}
-        className="rounded underline decoration-dotted underline-offset-2 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-brand-600"
+        className="rounded pointer-coarse:min-h-11 underline decoration-dotted underline-offset-2 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-brand-600"
       >
         <Hora value={mark.time} />
       </button>
@@ -302,7 +316,7 @@ function StatusBadges({
     <>
       {row.isDayOff && (
         <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-          Dia libre
+          Día libre
         </span>
       )}
       {row.ausencia && (
@@ -322,9 +336,9 @@ function StatusBadges({
       )}
       {/* Dia de varios bloques (SGRH-110): la entrada y la salida de la fila
           son las del primero y el ultimo; aca van todos. */}
-      {row.blocks.length > 1 && (
+      {row.scheduledBlocks.length !== 2 && row.blocks.length > 1 && (
         <span
-          title="Bloques del dia"
+          title="Bloques del día"
           className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600"
         >
           {row.blocks.map((block, i) => (
@@ -334,28 +348,6 @@ function StatusBadges({
               {block.salida ? blockTime('salida', block.salida) : '…'}
             </span>
           ))}
-        </span>
-      )}
-      {/* Atraso al entrar al segundo bloque (SGRH-110): la primera entrada ya
-          tiene su punto de color; esta no esta en una celda de la fila. */}
-      {row.secondBlockTardiness && (
-        <span
-          title={
-            row.secondBlockTardiness.isJustified
-              ? `Justificada${row.secondBlockTardiness.justification ? `: ${row.secondBlockTardiness.justification}` : '.'}`
-              : undefined
-          }
-          style={
-            row.secondBlockTardiness.isJustified
-              ? undefined
-              : tardinessChipStyle(row.secondBlockTardiness.tipo.color)
-          }
-          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
-            row.secondBlockTardiness.isJustified ? 'bg-slate-100 text-slate-500' : ''
-          }`}
-        >
-          2.º bloque +{formatMinutes(row.secondBlockTardiness.diffMinutes)}
-          {row.secondBlockTardiness.isJustified ? ' · justificada' : ''}
         </span>
       )}
       {/* Excesos (SGRH-88): el almuerzo contra su duracion programada, el
@@ -400,12 +392,14 @@ const MARK_SLOTS: { tipo: MarkType; label: string }[] = [
  */
 function MarkTile({
   label,
+  actionLabel = label.toLowerCase(),
   mark,
   canWrite,
   onEdit,
   tardiness = null,
 }: {
   label: string
+  actionLabel?: string
   mark: DailyMarkInfo | null
   canWrite: boolean
   onEdit: () => void
@@ -479,17 +473,45 @@ function MarkTile({
     <button
       type="button"
       onClick={onEdit}
-      aria-label={`${mark ? 'Corregir' : 'Agregar'} marca de ${label.toLowerCase()}`}
-      className={`${shape} outline-none hover:border-brand-300 hover:bg-brand-50/40 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.97] motion-reduce:active:scale-100`}
+      aria-label={`${mark ? 'Corregir' : 'Agregar'} marca de ${actionLabel}`}
+      className={`${shape} outline-none hover:border-brand-300 hover:bg-brand-50/40 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.97] motion-reduce:active:scale-100 pointer-coarse:min-h-11`}
     >
       {body}
     </button>
   )
 }
 
+const BLOCK_MARKS = [
+  { type: 'entrada', label: 'Entrada' },
+  { type: 'salida', label: 'Salida' },
+] as const
+
+function SecondBlockLabel({ row, block }: { row: DailyAttendanceRow; block: DailyScheduledBlock }) {
+  return (
+    <>
+      <p className="text-xs font-semibold text-slate-700">2.º bloque</p>
+      <p className="break-words text-xs text-slate-500">
+        <span className="whitespace-nowrap tabular-nums">
+          <Hora value={block.inicio} />–<Hora value={block.fin} />
+        </span>
+        {block.branchId !== row.branchId &&
+          ` · ${block.branchName ?? `Sucursal ${block.branchId}`}`}
+      </p>
+    </>
+  )
+}
+
 export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanceTableProps) {
   const { isNavigating, goToPreviousDay, goToNextDay, goToDate } = useDateNavigation(dateISO)
   const [editing, setEditing] = useState<EditingTarget | null>(null)
+
+  function editBlockMark(
+    row: DailyAttendanceRow,
+    block: DailyScheduledBlock,
+    type: 'entrada' | 'salida'
+  ) {
+    setEditing({ row, block, tipo: type, mark: block[type] })
+  }
 
   const total = rows.length
   const conEntrada = rows.filter((r) => r.entrada !== null).length
@@ -540,14 +562,14 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="min-w-0 flex-1 basis-48">
           <h2 className="text-sm font-bold capitalize text-slate-900">{formatDay(dateISO)}</h2>
-          <p className="truncate text-xs text-slate-500">Marcas de asistencia del dia.</p>
+          <p className="truncate text-xs text-slate-500">Marcas de asistencia del día.</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <IconButton onClick={goToPreviousDay} disabled={isNavigating} aria-label="Dia anterior">
+          <IconButton onClick={goToPreviousDay} disabled={isNavigating} aria-label="Día anterior">
             <ChevronLeft className="h-4 w-4" />
           </IconButton>
           {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-          <IconButton onClick={goToNextDay} disabled={isNavigating} aria-label="Dia siguiente">
+          <IconButton onClick={goToNextDay} disabled={isNavigating} aria-label="Día siguiente">
             <ChevronRight className="h-4 w-4" />
           </IconButton>
           <DatePickerButton
@@ -585,7 +607,18 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
           */}
           <ul className="space-y-3 @3xl:hidden">
             {paginatedItems.map((row, index) => {
-              const marcadas = MARK_SLOTS.filter((s) => row[MARK_FIELD[s.tipo]] !== null).length
+              const secondBlock = row.scheduledBlocks.length === 2 ? row.scheduledBlocks[1] : null
+              const firstBlock = secondBlock ? row.scheduledBlocks[0] : null
+              const slots = MARK_SLOTS.map(({ tipo, label }) => {
+                if (firstBlock && (tipo === 'entrada' || tipo === 'salida')) {
+                  return { tipo, label, block: firstBlock, mark: firstBlock[tipo] }
+                }
+                return { tipo, label, block: undefined, mark: row[MARK_FIELD[tipo]] }
+              })
+              const marked =
+                slots.filter(({ mark }) => mark !== null).length +
+                Number(Boolean(secondBlock?.entrada)) +
+                Number(Boolean(secondBlock?.salida))
 
               return (
                 <li
@@ -615,13 +648,13 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
-                    {MARK_SLOTS.map(({ tipo, label }) => (
+                    {slots.map(({ tipo, label, block, mark }) => (
                       <MarkTile
                         key={tipo}
                         label={label}
-                        mark={row[MARK_FIELD[tipo]]}
+                        mark={mark}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo })}
+                        onEdit={() => setEditing({ row, tipo, mark, block })}
                         tardiness={
                           tipo === 'entrada'
                             ? row.tardiness
@@ -633,9 +666,29 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                     ))}
                   </div>
 
+                  {secondBlock && (
+                    <section className="space-y-2 border-t border-slate-100 pt-3">
+                      <SecondBlockLabel row={row} block={secondBlock} />
+                      <div className="grid grid-cols-2 gap-2">
+                        {BLOCK_MARKS.map(({ type, label }) => (
+                          <MarkTile
+                            key={type}
+                            label={label}
+                            actionLabel={`${label.toLowerCase()} del 2.º bloque`}
+                            mark={secondBlock[type]}
+                            canWrite={canWrite}
+                            onEdit={() => editBlockMark(row, secondBlock, type)}
+                            tardiness={type === 'entrada' ? row.secondBlockTardiness : null}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
                     <span className="text-[11px] font-medium tabular-nums text-slate-400">
-                      {marcadas} de {MARK_SLOTS.length} marcas
+                      {marked} de {MARK_SLOTS.length + (secondBlock ? BLOCK_MARKS.length : 0)}{' '}
+                      marcas
                     </span>
                     <StatusBadges
                       row={row}
@@ -663,72 +716,113 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                 </tr>
               </thead>
               <tbody>
-                {paginatedItems.map((row) => (
-                  <tr key={row.employmentHistoryId} className={TABLE_ROW}>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2.5">
-                        <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
-                        <div className="min-w-0">
-                          <p className="font-medium text-slate-800">{row.fullName}</p>
-                          <EmployeeMeta row={row} />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <MarkCell
-                        mark={row.entrada}
-                        canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'entrada' })}
-                        tardiness={row.tardiness}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MarkCell
-                        mark={row.inicioReceso}
-                        canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'inicio_receso' })}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MarkCell
-                        mark={row.finReceso}
-                        canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'fin_receso' })}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MarkCell
-                        mark={row.inicioAlmuerzo}
-                        canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'inicio_almuerzo' })}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MarkCell
-                        mark={row.finAlmuerzo}
-                        canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'fin_almuerzo' })}
-                        tardiness={row.lunchTardiness}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MarkCell
-                        mark={row.salida}
-                        canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'salida' })}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <StatusBadges
-                          row={row}
-                          canWrite={canWrite}
-                          onEditBlockMark={(tipo, mark) => setEditing({ row, tipo, mark })}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {paginatedItems.map((row) => {
+                  const secondBlock =
+                    row.scheduledBlocks.length === 2 ? row.scheduledBlocks[1] : null
+                  const firstBlock = secondBlock ? row.scheduledBlocks[0] : null
+                  return (
+                    <Fragment key={row.employmentHistoryId}>
+                      <tr className={TABLE_ROW}>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-800">{row.fullName}</p>
+                              <EmployeeMeta row={row} />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <MarkCell
+                            mark={firstBlock ? firstBlock.entrada : row.entrada}
+                            canWrite={canWrite}
+                            onEdit={() =>
+                              firstBlock
+                                ? editBlockMark(row, firstBlock, 'entrada')
+                                : setEditing({ row, tipo: 'entrada' })
+                            }
+                            tardiness={row.tardiness}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <MarkCell
+                            mark={row.inicioReceso}
+                            canWrite={canWrite}
+                            onEdit={() => setEditing({ row, tipo: 'inicio_receso' })}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <MarkCell
+                            mark={row.finReceso}
+                            canWrite={canWrite}
+                            onEdit={() => setEditing({ row, tipo: 'fin_receso' })}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <MarkCell
+                            mark={row.inicioAlmuerzo}
+                            canWrite={canWrite}
+                            onEdit={() => setEditing({ row, tipo: 'inicio_almuerzo' })}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <MarkCell
+                            mark={row.finAlmuerzo}
+                            canWrite={canWrite}
+                            onEdit={() => setEditing({ row, tipo: 'fin_almuerzo' })}
+                            tardiness={row.lunchTardiness}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <MarkCell
+                            mark={firstBlock ? firstBlock.salida : row.salida}
+                            canWrite={canWrite}
+                            onEdit={() =>
+                              firstBlock
+                                ? editBlockMark(row, firstBlock, 'salida')
+                                : setEditing({ row, tipo: 'salida' })
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <StatusBadges
+                              row={row}
+                              canWrite={canWrite}
+                              onEditBlockMark={(tipo, mark) => setEditing({ row, tipo, mark })}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                      {secondBlock && (
+                        <tr className={`${TABLE_ROW} bg-slate-50/60`}>
+                          <td className="px-3 py-2 pl-9">
+                            <SecondBlockLabel row={row} block={secondBlock} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <MarkCell
+                              mark={secondBlock.entrada}
+                              canWrite={canWrite}
+                              label="entrada del 2.º bloque"
+                              onEdit={() => editBlockMark(row, secondBlock, 'entrada')}
+                              tardiness={row.secondBlockTardiness}
+                            />
+                          </td>
+                          <td colSpan={4} />
+                          <td className="px-3 py-2">
+                            <MarkCell
+                              mark={secondBlock.salida}
+                              canWrite={canWrite}
+                              label="salida del 2.º bloque"
+                              onEdit={() => editBlockMark(row, secondBlock, 'salida')}
+                            />
+                          </td>
+                          <td />
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -743,17 +837,19 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
 
       {editing &&
         (() => {
-          const mark = editing.mark ?? editing.row[MARK_FIELD[editing.tipo]]
+          const mark =
+            editing.mark === undefined ? editing.row[MARK_FIELD[editing.tipo]] : editing.mark
           return (
             <ManualMarkModal
               employmentHistoryId={editing.row.employmentHistoryId}
               employeeId={editing.row.employeeId}
               employeeName={editing.row.fullName}
-              sucursalId={editing.row.branchId}
+              sucursalId={editing.block?.branchId ?? editing.row.branchId}
               tipo={editing.tipo}
               markId={mark?.id ?? null}
               currentFechaHora={mark ? `${dateISO} ${mark.time}:00` : null}
               defaultDateISO={dateISO}
+              defaultTime={editing.tipo === 'salida' ? editing.block?.fin : editing.block?.inicio}
               onClose={() => setEditing(null)}
             />
           )

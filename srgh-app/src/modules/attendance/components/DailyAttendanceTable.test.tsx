@@ -29,6 +29,7 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
     finAlmuerzo: null,
     salida: null,
     blocks: [],
+    scheduledBlocks: [],
     duplicateMarksCount: 0,
     isOpen: true,
     tardiness: null,
@@ -84,7 +85,7 @@ describe('<DailyAttendanceTable />', () => {
 
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={[row]} canWrite={true} />)
 
-    const bloques = tabla().getByTitle('Bloques del dia')
+    const bloques = tabla().getByTitle('Bloques del día')
     expect(bloques).toHaveTextContent('08:04–12:00')
     expect(bloques).toHaveTextContent('13:00–17:00')
     expect(tabla().queryByText(/duplicada/)).not.toBeInTheDocument()
@@ -103,14 +104,113 @@ describe('<DailyAttendanceTable />', () => {
 
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={[row]} canWrite={true} />)
 
-    expect(tabla().getByTitle('Bloques del dia')).toHaveTextContent('13:00–…')
+    expect(tabla().getByTitle('Bloques del día')).toHaveTextContent('13:00–…')
     expect(tabla().getByText('Sin salida')).toBeInTheDocument()
   })
 
   it('un dia de un solo bloque no muestra el indicador de bloques', () => {
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={[makeRow()]} canWrite={true} />)
 
-    expect(tabla().queryByTitle('Bloques del dia')).not.toBeInTheDocument()
+    expect(tabla().queryByTitle('Bloques del día')).not.toBeInTheDocument()
+  })
+
+  const splitSchedule: DailyAttendanceRow['scheduledBlocks'] = [
+    {
+      inicio: '08:00',
+      fin: '12:00',
+      branchId: 100,
+      branchName: 'Centro',
+      entrada: null,
+      salida: null,
+    },
+    {
+      inicio: '18:00',
+      fin: '23:00',
+      branchId: 200,
+      branchName: 'Norte',
+      entrada: null,
+      salida: null,
+    },
+  ]
+
+  it('shows a second row and a mobile section only when two blocks are scheduled', () => {
+    const { rerender } = render(
+      <DailyAttendanceTable
+        dateISO="2026-07-25"
+        rows={[makeRow({ scheduledBlocks: splitSchedule.slice(0, 1) })]}
+        canWrite
+      />
+    )
+
+    expect(tabla().queryByText('2.º bloque')).not.toBeInTheDocument()
+    expect(cards().queryByText('2.º bloque')).not.toBeInTheDocument()
+
+    rerender(
+      <DailyAttendanceTable
+        dateISO="2026-07-25"
+        rows={[makeRow({ scheduledBlocks: splitSchedule })]}
+        canWrite
+      />
+    )
+
+    expect(tabla().getByText('2.º bloque').closest('tr')).toHaveTextContent('18:00–23:00 · Norte')
+    expect(cards().getByText('2.º bloque').closest('section')).toHaveTextContent(
+      '18:00–23:00 · Norte'
+    )
+  })
+
+  it.each([tabla, cards])(
+    'adds the second entry with its scheduled date and time',
+    async (view) => {
+      render(
+        <DailyAttendanceTable
+          dateISO="2026-07-25"
+          rows={[makeRow({ scheduledBlocks: splitSchedule })]}
+          canWrite
+        />
+      )
+
+      await userEvent.click(
+        view().getByRole('button', { name: 'Agregar marca de entrada del 2.º bloque' })
+      )
+
+      const modal = within(screen.getByRole('dialog'))
+      expect(modal.getByRole('heading', { name: 'Agregar marca' })).toBeInTheDocument()
+      expect(modal.getByText('Ana Perez — Entrada')).toBeInTheDocument()
+      expect(modal.getByRole('combobox', { name: 'Fecha del evento' })).toHaveValue('25/07/2026')
+      expect(modal.getByRole('button', { name: 'Hora real del evento: hora' })).toHaveTextContent(
+        '18'
+      )
+      expect(
+        modal.getByRole('button', { name: 'Hora real del evento: minutos' })
+      ).toHaveTextContent('00')
+    }
+  )
+
+  it('shows second-block lateness beside the second entry and lets the entry open correction', async () => {
+    const row = makeRow({
+      scheduledBlocks: [
+        splitSchedule[0],
+        { ...splitSchedule[1], entrada: { id: 3, time: '18:12', diffMinutes: 12 } },
+      ],
+      secondBlockTardiness: {
+        tipo: { nombre: 'Tardía grave', color: '#E11D48' },
+        diffMinutes: 12,
+        isJustified: true,
+        justification: 'Fallo del sistema',
+      },
+    })
+    render(<DailyAttendanceTable dateISO="2026-07-25" rows={[row]} canWrite />)
+
+    const secondRow = within(tabla().getByText('2.º bloque').closest('tr')!)
+    expect(
+      secondRow.getByRole('button', { name: /llegó 12 min tarde.*Fallo del sistema/ })
+    ).toBeInTheDocument()
+    expect(cards().getByText(/Tardía grave.*justificada/)).toBeInTheDocument()
+    await userEvent.click(
+      secondRow.getByRole('button', { name: 'Corregir marca de entrada del 2.º bloque' })
+    )
+    expect(screen.getByRole('heading', { name: 'Corregir marca' })).toBeInTheDocument()
   })
 
   it('lista un colaborador con su entrada y el estado de jornada abierta', () => {
@@ -180,53 +280,11 @@ describe('<DailyAttendanceTable />', () => {
       expect(within(modal).getByText(/Salida/)).toBeInTheDocument()
     })
 
-    it('muestra el atraso del segundo bloque, y justificado deja de reclamar atencion', () => {
-      const tarde = makeRow({
-        ...dosBloques,
-        secondBlockTardiness: {
-          tipo: { nombre: 'Tardia grave', color: '#E11D48' },
-          diffMinutes: 12,
-          isJustified: false,
-          justification: null,
-        },
-      })
-      const { rerender } = render(
-        <DailyAttendanceTable dateISO="2026-07-25" rows={[tarde]} canWrite={true} />
-      )
-
-      expect(tabla().getByText(/2\.º bloque \+/)).not.toHaveTextContent('justificada')
-
-      rerender(
-        <DailyAttendanceTable
-          dateISO="2026-07-25"
-          rows={[
-            {
-              ...tarde,
-              secondBlockTardiness: {
-                ...tarde.secondBlockTardiness!,
-                isJustified: true,
-                justification: 'Fallo del sistema',
-              },
-            },
-          ]}
-          canWrite={true}
-        />
-      )
-
-      expect(tabla().getByText(/2\.º bloque \+/)).toHaveTextContent('justificada')
-    })
-
-    it('sin atraso en el segundo bloque no aparece la etiqueta', () => {
-      render(<DailyAttendanceTable dateISO="2026-07-25" rows={[dosBloques]} canWrite={true} />)
-
-      expect(tabla().queryByText(/2\.º bloque \+/)).not.toBeInTheDocument()
-    })
-
     it('sin permiso de escritura las horas del bloque no son botones', () => {
       render(<DailyAttendanceTable dateISO="2026-07-25" rows={[dosBloques]} canWrite={false} />)
 
       expect(tabla().queryByLabelText('Corregir salida de las 12:00')).not.toBeInTheDocument()
-      expect(tabla().getByTitle('Bloques del dia')).toHaveTextContent('13:00–17:00')
+      expect(tabla().getByTitle('Bloques del día')).toHaveTextContent('13:00–17:00')
     })
   })
 

@@ -12,6 +12,7 @@ function admin(tabla: string, data: unknown, error: unknown = null) {
 
 const fila = (over: Record<string, unknown>) => ({
   prg_es_dia_libre: false,
+  prg_sucursal_id: 100,
   prg_hora_entrada_custom: null,
   prg_hora_salida_custom: null,
   sgrh_cat_horarios: null,
@@ -35,8 +36,8 @@ describe('bloquesDelDia', () => {
     expect(r).toEqual({
       ok: true,
       bloques: [
-        { inicio: '07:00', fin: '11:00' },
-        { inicio: '16:00', fin: '20:00' },
+        { inicio: '07:00', fin: '11:00', branchId: 100 },
+        { inicio: '16:00', fin: '20:00', branchId: 100 },
       ],
     })
   })
@@ -53,8 +54,8 @@ describe('bloquesDelDia', () => {
     expect(r).toEqual({
       ok: true,
       bloques: [
-        { inicio: '08:00', fin: '12:00' },
-        { inicio: '13:00', fin: '17:00' },
+        { inicio: '08:00', fin: '12:00', branchId: 100 },
+        { inicio: '13:00', fin: '17:00', branchId: 100 },
       ],
     })
   })
@@ -71,7 +72,7 @@ describe('bloquesDelDia', () => {
       1,
       '2026-10-20'
     )
-    expect(r).toEqual({ ok: true, bloques: [{ inicio: '09:00', fin: '15:00' }] })
+    expect(r).toEqual({ ok: true, bloques: [{ inicio: '09:00', fin: '15:00', branchId: 100 }] })
   })
 
   it('el dia libre no aporta bloques', async () => {
@@ -91,7 +92,7 @@ describe('bloquesDelDia', () => {
       1,
       '2026-10-20'
     )
-    expect(r).toEqual({ ok: false, error: 'No se pudo cargar la programacion del dia.' })
+    expect(r).toEqual({ ok: false, error: 'No se pudo cargar la programación del día.' })
   })
 })
 

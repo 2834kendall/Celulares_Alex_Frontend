@@ -125,7 +125,7 @@ describe('getDailyAttendance (server action)', () => {
 
     const result = await getDailyAttendance(DATE)
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo cargar la programacion del dia.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo cargar la programación del día.' })
   })
 
   it('devuelve error si falla la carga de la plantilla', async () => {
@@ -142,6 +142,53 @@ describe('getDailyAttendance (server action)', () => {
     useClient(createSupabaseClientMock(mocks({})))
 
     expect(await getDailyAttendance(DATE)).toEqual({ ok: true, date: DATE, data: [] })
+  })
+
+  it('returns both scheduled ranges and the second branch even without second-block marks', async () => {
+    useClient(
+      createSupabaseClientMock(
+        mocks({
+          turnos: {
+            data: [
+              assignment({
+                prg_sucursal_id: 200,
+                sgrh_sucursales: { suc_nombre: 'Norte' },
+                prg_hora_entrada_custom: '18:00:00',
+                prg_hora_salida_custom: '23:00:00',
+              }),
+              assignment({
+                prg_hora_entrada_custom: '08:00:00',
+                prg_hora_salida_custom: '12:00:00',
+              }),
+            ],
+            error: null,
+          },
+          detalle: { data: [ANA_HISTORIAL], error: null },
+          sucursalId: null,
+        })
+      )
+    )
+
+    const result = await getDailyAttendance(DATE)
+    if (!result.ok) throw new Error(result.error)
+    expect(result.data[0].scheduledBlocks).toEqual([
+      {
+        inicio: '08:00',
+        fin: '12:00',
+        branchId: 100,
+        branchName: null,
+        entrada: null,
+        salida: null,
+      },
+      {
+        inicio: '18:00',
+        fin: '23:00',
+        branchId: 200,
+        branchName: 'Norte',
+        entrada: null,
+        salida: null,
+      },
+    ])
   })
 
   it('lista a la plantilla de la sucursal aunque nadie tenga turno ese dia', async () => {

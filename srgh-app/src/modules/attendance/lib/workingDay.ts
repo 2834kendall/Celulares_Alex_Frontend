@@ -25,6 +25,7 @@ export interface DayAssignment {
   employeeId: number
   /** prg_sucursal_id: donde trabaja ESE dia. */
   branchId: number
+  branchName?: string | null
   /** "HH:mm" de entrada esperada, null si la fila no define ninguna. */
   expectedStart: string | null
   /** "HH:mm" de salida esperada, null si la fila no define ninguna. */
@@ -46,6 +47,7 @@ export interface DayAssignment {
    * OTRO tramo, con su propia entrada.
    */
   expectedSecondBlockStart?: string | null
+  expectedSecondBlockEnd?: string | null
   isDayOff: boolean
   isHoliday: boolean
 }
@@ -54,6 +56,7 @@ interface DayAssignmentDbRow {
   prg_historial_laboral_id: number
   prg_empleado_id: number
   prg_sucursal_id: number
+  sgrh_sucursales?: { suc_nombre: string } | null
   prg_es_dia_libre: boolean
   prg_es_feriado: boolean
   prg_hora_entrada_custom: string | null
@@ -104,6 +107,7 @@ function toDayAssignment(row: DayAssignmentDbRow): DayAssignment {
     employmentHistoryId: row.prg_historial_laboral_id,
     employeeId: row.prg_empleado_id,
     branchId: row.prg_sucursal_id,
+    branchName: row.sgrh_sucursales?.suc_nombre ?? null,
     expectedStart: expectedRaw ? timeOfDay(expectedRaw) : null,
     expectedEnd: hhmm(isCustom ? row.prg_hora_salida_custom : horario?.hor_hora_salida),
     expectedLunchStart: hhmm(
@@ -122,6 +126,7 @@ function toDayAssignment(row: DayAssignmentDbRow): DayAssignment {
       !isCustom && horario?.hor_hora_entrada_2 && horario.hor_hora_salida_2
         ? hhmm(horario.hor_hora_entrada_2)
         : null,
+    expectedSecondBlockEnd: !isCustom ? hhmm(horario?.hor_hora_salida_2) : null,
     isDayOff: row.prg_es_dia_libre,
     isHoliday: row.prg_es_feriado,
   }
@@ -140,6 +145,7 @@ async function queryDayAssignments(
       prg_historial_laboral_id,
       prg_empleado_id,
       prg_sucursal_id,
+      sgrh_sucursales ( suc_nombre ),
       prg_es_dia_libre,
       prg_es_feriado,
       prg_hora_entrada_custom,
@@ -175,7 +181,7 @@ async function queryDayAssignments(
   const { data, error } = await query.returns<DayAssignmentDbRow[]>()
 
   if (error) {
-    return { ok: false, error: 'No se pudo cargar la programacion del dia.' }
+    return { ok: false, error: 'No se pudo cargar la programación del día.' }
   }
 
   return { ok: true, data: (data ?? []).map(toDayAssignment) }
