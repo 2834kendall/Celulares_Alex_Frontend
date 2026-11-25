@@ -80,7 +80,8 @@ describe('kiosk settings', () => {
     )
     expect(await screen.findByRole('status')).toHaveTextContent('«caja1»')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(refresh).toHaveBeenCalled()
+    // The Server Action revalidates; the panel must not refresh on top of it.
+    expect(refresh).not.toHaveBeenCalled()
   })
   it('closes the form and shows the access error when the kiosk was saved without access', async () => {
     vi.mocked(createKiosk).mockResolvedValue({
@@ -93,7 +94,8 @@ describe('kiosk settings', () => {
       'El kiosco quedó registrado, pero sin acceso: Supabase rechazó el correo interno.'
     )
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(refresh).toHaveBeenCalled()
+    // The Server Action revalidates; the panel must not refresh on top of it.
+    expect(refresh).not.toHaveBeenCalled()
   })
   it('shows no help text until the username or the password needs it', async () => {
     setup([])
@@ -255,7 +257,10 @@ describe('kiosk settings', () => {
     expect(screen.getByRole('button', { name: 'Editar Mostrador' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Más acciones de Mostrador' })).toBeDisabled()
     finish({ ok: true, data: undefined })
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Editar Mostrador' })).toBeEnabled()
+    )
+    expect(refresh).not.toHaveBeenCalled()
   })
   it('moves a blocked kiosk from its menu, with the warning in the dialog', async () => {
     setup([{ ...kiosk, kio_estado: 'bloqueado' }])
