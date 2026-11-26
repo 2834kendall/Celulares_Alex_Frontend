@@ -266,6 +266,8 @@ export type Database = {
           bia_created_at: string
           bia_dispositivo_id: string | null
           bia_empresa_id: number
+          bia_escaneo_ms: number | null
+          bia_fps: number | null
           bia_id: number
           bia_mejor_distancia: number | null
           bia_mejor_empleado_id: number | null
@@ -276,6 +278,8 @@ export type Database = {
           bia_created_at?: string
           bia_dispositivo_id?: string | null
           bia_empresa_id: number
+          bia_escaneo_ms?: number | null
+          bia_fps?: number | null
           bia_id?: number
           bia_mejor_distancia?: number | null
           bia_mejor_empleado_id?: number | null
@@ -286,6 +290,8 @@ export type Database = {
           bia_created_at?: string
           bia_dispositivo_id?: string | null
           bia_empresa_id?: number
+          bia_escaneo_ms?: number | null
+          bia_fps?: number | null
           bia_id?: number
           bia_mejor_distancia?: number | null
           bia_mejor_empleado_id?: number | null
