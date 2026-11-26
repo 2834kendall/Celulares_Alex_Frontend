@@ -43,6 +43,28 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
   }
 }
 
+function person(
+  employmentHistoryId: number,
+  fullName: string,
+  kind: DailyAttendanceRow['status']['kind'],
+  expectedStart: string | null = '08:00',
+  needsAttention = false
+) {
+  return makeRow({
+    employmentHistoryId,
+    fullName,
+    expectedStart,
+    status: { kind, needsAttention, tardiness: null },
+  })
+}
+
+const filterRows = [
+  person(1, 'Ana Ruiz', 'sin_marcar', '08:00', true),
+  person(2, 'Bruno Solís', 'sin_salida', '08:00', true),
+  person(3, 'Carla Mora', 'en_jornada'),
+  person(4, 'Diego Rojas', 'ya_salio', '08:00', true),
+]
+
 /**
  * Jsdom no aplica los breakpoints: consultar por rama evita mezclar
  * coincidencias de la lista móvil con las de la tabla de escritorio.
@@ -64,6 +86,107 @@ describe('<DailyAttendanceTable />', () => {
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={[]} canWrite={true} />)
 
     expect(screen.getByText('No hay colaboradores activos en esta sucursal')).toBeInTheDocument()
+  })
+
+  it('shows the attention and total counts and filters both layouts', async () => {
+    render(<DailyAttendanceTable dateISO="2026-07-25" rows={filterRows} canWrite />)
+    const attention = screen.getByRole('button', { name: 'Requieren atención (3)' })
+    const all = screen.getByRole('button', { name: 'Todos (4)' })
+
+    expect(attention).toHaveAttribute('aria-pressed', 'true')
+    expect(cards().getAllByRole('listitem')).toHaveLength(3)
+    expect(tabla().queryByText('Carla Mora')).not.toBeInTheDocument()
+
+    await userEvent.click(all)
+    expect(all).toHaveAttribute('aria-pressed', 'true')
+    expect(cards().getByText('Carla Mora')).toBeInTheDocument()
+    expect(tabla().getByText('Carla Mora')).toBeInTheDocument()
+  })
+
+  it('switches to an indicator filter and restores the selected segment when cleared', async () => {
+    render(<DailyAttendanceTable dateISO="2026-07-25" rows={filterRows} canWrite />)
+    const all = screen.getByRole('button', { name: 'Todos (4)' })
+    const missing = screen.getByRole('button', { name: 'Faltan 1' })
+    expect(screen.getByRole('button', { name: 'Sin salida 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ya llegaron 2' })).toBeInTheDocument()
+    await userEvent.click(all)
+
+    await userEvent.click(missing)
+    expect(missing).toHaveAttribute('aria-pressed', 'true')
+    expect(all).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Requieren atención (3)' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+    expect(cards().getAllByRole('listitem')).toHaveLength(1)
+    expect(cards().getByText('Ana Ruiz')).toBeInTheDocument()
+    expect(tabla().getByText('Ana Ruiz')).toBeInTheDocument()
+    expect(tabla().getAllByRole('row')).toHaveLength(2)
+
+    await userEvent.click(missing)
+    expect(all).toHaveAttribute('aria-pressed', 'true')
+    expect(tabla().getByText('Bruno Solís')).toBeInTheDocument()
+
+    await userEvent.click(missing)
+    await userEvent.click(screen.getByRole('button', { name: 'Quitar filtro' }))
+    expect(all).toHaveAttribute('aria-pressed', 'true')
+    expect(all).toHaveFocus()
+    expect(cards().getAllByRole('listitem')).toHaveLength(4)
+  })
+
+  it('starts on all when nobody needs attention and gives empty filters distinct messages', async () => {
+    render(<DailyAttendanceTable dateISO="2026-07-25" rows={[makeRow()]} canWrite />)
+    expect(screen.getByRole('button', { name: 'Todos (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Requieren atención (0)' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Todo en orden')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Nadie necesita que hagas algo en este día.'
+    )
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Faltan 0' }))
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Nadie falta por marcar la entrada este día.'
+    )
+  })
+
+  it('resets pagination when switching between filters with multiple pages', async () => {
+    const rows = [
+      ...Array.from({ length: 12 }, (_, index) =>
+        person(index + 1, `Persona ${index + 1}`, 'sin_marcar', '08:00', true)
+      ),
+      person(13, 'Persona 13', 'en_jornada'),
+    ]
+    render(<DailyAttendanceTable dateISO="2026-07-25" rows={rows} canWrite />)
+    await userEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
+    expect(screen.getByText('Página 2 de 2')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Todos (13)' }))
+    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Faltan 12' }))
+    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument()
+  })
+
+  it('only shows the pending notice with a positive count and links to the justification tab', () => {
+    const props = { dateISO: '2026-07-25', rows: [makeRow()], canWrite: false }
+    const { rerender } = render(<DailyAttendanceTable {...props} />)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    rerender(<DailyAttendanceTable {...props} pendingCount={0} />)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    rerender(<DailyAttendanceTable {...props} pendingCount={2} />)
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Tienes 2 incidencias del mes por justificar.')
+    expect(within(alert).getByRole('link', { name: 'Ver' })).toHaveAttribute(
+      'href',
+      '?tab=justificar'
+    )
   })
 
   it('un dia de varios bloques muestra el rango de cada uno', () => {
@@ -246,22 +369,7 @@ describe('<DailyAttendanceTable />', () => {
     }
   })
 
-  it('sorts the full mobile list by attention, group, time and name while keeping desktop order', () => {
-    function person(
-      employmentHistoryId: number,
-      fullName: string,
-      kind: DailyAttendanceRow['status']['kind'],
-      expectedStart: string | null,
-      needsAttention = false
-    ) {
-      return makeRow({
-        employmentHistoryId,
-        fullName,
-        expectedStart,
-        status: { kind, needsAttention, tardiness: null },
-      })
-    }
-
+  it('sorts the full mobile list by attention, group, time and name while keeping desktop order', async () => {
     const rows = [
       person(1, 'Libre', 'libre', null),
       person(2, 'Ya salió', 'ya_salio', '07:00'),
@@ -276,6 +384,7 @@ describe('<DailyAttendanceTable />', () => {
       person(11, 'Primero', 'sin_marcar', '06:30', true),
     ]
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={rows} canWrite={false} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Todos (11)' }))
 
     const mobileNames = cards()
       .getAllByRole('button', { name: /^Detalle de/ })

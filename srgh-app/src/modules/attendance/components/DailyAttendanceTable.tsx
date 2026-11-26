@@ -1,13 +1,16 @@
 'use client'
 
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { createPortal } from 'react-dom'
 import {
-  AlertTriangle,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
+  CircleCheck,
+  CircleX,
   Loader2,
+  LogIn,
+  LogOut,
   Pencil,
   Plus,
   Users,
@@ -21,6 +24,7 @@ import type {
 import { DEFAULT_TARDINESS_COLOR } from '@/modules/attendance/lib/infractions'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
+import { Alert } from '@/components/ui/Alert'
 import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import { ManualMarkModal } from '@/modules/attendance/components/ManualMarkModal'
@@ -42,6 +46,8 @@ interface DailyAttendanceTableProps {
   dateISO: string
   rows: DailyAttendanceRow[]
   canWrite: boolean
+  pendingCount?: number
+  pendingHref?: string
 }
 
 interface EditingTarget {
@@ -592,21 +598,52 @@ function compareMobileRows(a: DailyAttendanceRow, b: DailyAttendanceRow) {
   )
 }
 
-export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanceTableProps) {
-  const { isNavigating, goToPreviousDay, goToNextDay, goToDate } = useDateNavigation(dateISO)
-  const [editing, setEditing] = useState<EditingTarget | null>(null)
+const INDICATORS = [
+  {
+    id: 'missing',
+    label: 'Faltan',
+    icon: CircleX,
+    tone: 'rose',
+    matches: (kind: DayStatusKind) => kind === 'sin_marcar',
+    emptyMessage: 'Nadie falta por marcar la entrada este día.',
+  },
+  {
+    id: 'missingExit',
+    label: 'Sin salida',
+    icon: LogOut,
+    tone: 'amber',
+    matches: (kind: DayStatusKind) => kind === 'sin_salida',
+    emptyMessage: 'Nadie quedó sin marcar la salida este día.',
+  },
+  {
+    id: 'arrived',
+    label: 'Ya llegaron',
+    icon: LogIn,
+    tone: 'emerald',
+    matches: (kind: DayStatusKind) => kind === 'en_jornada' || kind === 'ya_salio',
+    emptyMessage: 'Aún no hay entradas registradas este día.',
+  },
+] as const
 
+type Indicator = (typeof INDICATORS)[number]['id']
+type Segment = 'attention' | 'all'
+
+function DailyAttendanceRows({
+  rows,
+  canWrite,
+  onEditMark,
+}: {
+  rows: DailyAttendanceRow[]
+  canWrite: boolean
+  onEditMark: (target: EditingTarget) => void
+}) {
   function editBlockMark(
     row: DailyAttendanceRow,
     block: DailyScheduledBlock,
     type: 'entrada' | 'salida'
   ) {
-    setEditing({ row, block, type, mark: block[type] })
+    onEditMark({ row, block, type, mark: block[type] })
   }
-
-  const total = rows.length
-  const conEntrada = rows.filter((r) => r.entrada !== null).length
-  const jornadasAbiertas = rows.filter((r) => r.isOpen).length
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     rows,
@@ -616,220 +653,325 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
   const mobilePage = mobileRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
+    // Filas compactas mientras el contenedor no llegue a 768px REALES
+    // (@3xl) y tabla desde ahi: el sidebar mide 256px y se colapsa, asi
+    // que el ancho de pantalla no dice cuanto espacio tiene la tabla.
+    // `hidden` saca la rama inactiva del arbol de accesibilidad.
+    <div className="min-w-0 rounded-xl @3xl:overflow-hidden @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <ul className="space-y-1.5 px-px @3xl:hidden">
+        {mobilePage.map((row) => (
+          <DailyPersonRow
+            key={row.employmentHistoryId}
+            row={row}
+            canWrite={canWrite}
+            onAddMark={(type, block) =>
+              onEditMark({
+                row,
+                type,
+                block,
+                mark: null,
+                suggestedTime: type === 'entrada' ? (row.expectedStart ?? undefined) : undefined,
+              })
+            }
+          >
+            <MobileMarkDetails row={row} canWrite={canWrite} onEditMark={onEditMark} />
+          </DailyPersonRow>
+        ))}
+      </ul>
+
+      <div className={`hidden @3xl:block ${TABLE_SCROLL}`}>
+        <table className="w-full text-xs">
+          <thead className={TABLE_HEAD}>
+            <tr>
+              <th className={TABLE_TH}>Colaborador</th>
+              <th className={TABLE_TH}>Entrada</th>
+              <th className={TABLE_TH}>Inicio receso</th>
+              <th className={TABLE_TH}>Fin receso</th>
+              <th className={TABLE_TH}>Inicio almuerzo</th>
+              <th className={TABLE_TH}>Fin almuerzo</th>
+              <th className={TABLE_TH}>Salida</th>
+              <th className={TABLE_TH}>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedItems.map((row) => {
+              const secondBlock = row.scheduledBlocks.length === 2 ? row.scheduledBlocks[1] : null
+              const firstBlock = secondBlock ? row.scheduledBlocks[0] : null
+              return (
+                <Fragment key={row.employmentHistoryId}>
+                  <tr className={TABLE_ROW}>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2.5">
+                        <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-800">{row.fullName}</p>
+                          <EmployeeMeta row={row} />
+                          <MarkDetails row={row} canWrite={canWrite} onEditMark={onEditMark} />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={firstBlock ? firstBlock.entrada : row.entrada}
+                        canWrite={canWrite}
+                        onEdit={() =>
+                          firstBlock
+                            ? editBlockMark(row, firstBlock, 'entrada')
+                            : onEditMark({ row, type: 'entrada' })
+                        }
+                        tardiness={row.tardiness}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={row.inicioReceso}
+                        canWrite={canWrite}
+                        onEdit={() => onEditMark({ row, type: 'inicio_receso' })}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={row.finReceso}
+                        canWrite={canWrite}
+                        onEdit={() => onEditMark({ row, type: 'fin_receso' })}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={row.inicioAlmuerzo}
+                        canWrite={canWrite}
+                        onEdit={() => onEditMark({ row, type: 'inicio_almuerzo' })}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={row.finAlmuerzo}
+                        canWrite={canWrite}
+                        onEdit={() => onEditMark({ row, type: 'fin_almuerzo' })}
+                        tardiness={row.lunchTardiness}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <MarkCell
+                        mark={firstBlock ? firstBlock.salida : row.salida}
+                        canWrite={canWrite}
+                        onEdit={() =>
+                          firstBlock
+                            ? editBlockMark(row, firstBlock, 'salida')
+                            : onEditMark({ row, type: 'salida' })
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <DayStatusBadge status={row.status} size="xs" isHoliday={row.isHoliday} />
+                    </td>
+                  </tr>
+                  {secondBlock && (
+                    <tr className={`${TABLE_ROW} bg-slate-50/60`}>
+                      <td className="px-3 py-2 pl-9">
+                        <SecondBlockLabel row={row} block={secondBlock} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <MarkCell
+                          mark={secondBlock.entrada}
+                          canWrite={canWrite}
+                          label="entrada del 2.º bloque"
+                          onEdit={() => editBlockMark(row, secondBlock, 'entrada')}
+                          tardiness={row.secondBlockTardiness}
+                        />
+                      </td>
+                      <td colSpan={4} />
+                      <td className="px-3 py-2">
+                        <MarkCell
+                          mark={secondBlock.salida}
+                          canWrite={canWrite}
+                          label="salida del 2.º bloque"
+                          onEdit={() => editBlockMark(row, secondBlock, 'salida')}
+                        />
+                      </td>
+                      <td />
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        onPrevious={goToPreviousPage}
+        onNext={goToNextPage}
+      />
+    </div>
+  )
+}
+
+export function DailyAttendanceTable({
+  dateISO,
+  rows,
+  canWrite,
+  pendingCount = 0,
+  pendingHref = '?tab=justificar',
+}: DailyAttendanceTableProps) {
+  const { isNavigating, goToPreviousDay, goToNextDay, goToDate } = useDateNavigation(dateISO)
+  const [editing, setEditing] = useState<EditingTarget | null>(null)
+  const [segment, setSegment] = useState<Segment | null>(null)
+  const [indicator, setIndicator] = useState<Indicator | null>(null)
+  const segmentButton = useRef<HTMLButtonElement>(null)
+
+  const { attentionRows, indicatorGroups } = useMemo(
+    () => ({
+      attentionRows: rows.filter(({ status }) => status.needsAttention),
+      indicatorGroups: INDICATORS.map((item) => ({
+        ...item,
+        rows: rows.filter(({ status }) => item.matches(status.kind)),
+      })),
+    }),
+    [rows]
+  )
+  const activeSegment = segment ?? (attentionRows.length > 0 ? 'attention' : 'all')
+  const activeIndicator = indicatorGroups.find((item) => item.id === indicator)
+  const visibleRows =
+    activeIndicator?.rows ?? (activeSegment === 'attention' ? attentionRows : rows)
+
+  return (
     <div className="@container min-w-0 space-y-4">
-      {/*
-        Una columna o tres, nunca dos. Con `auto-fit` y tres tarjetas, todo
-        ancho que da para dos columnas deja la tercera sola ocupando media
-        fila — se veia como un error de maquetado. Al medir el contenedor
-        (@md = 448px reales) el salto ocurre donde las tres entran de verdad.
-      */}
-      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
-        <StatCard icon={Users} label="Colaboradores" value={total} />
-        <StatCard
-          icon={CalendarDays}
-          tone="emerald"
-          label="Con entrada marcada"
-          value={conEntrada}
-        />
-        <StatCard
-          icon={AlertTriangle}
-          tone="amber"
-          label="Jornadas sin salida"
-          value={jornadasAbiertas}
-        />
-      </div>
+      {pendingCount > 0 && (
+        <Alert tone="info" className="items-center! py-1!">
+          <div className="flex flex-wrap items-center gap-x-2">
+            <span>
+              Tienes {pendingCount} {pendingCount === 1 ? 'incidencia' : 'incidencias'} del mes por
+              justificar.
+            </span>
+            <Link
+              href={pendingHref}
+              className="inline-flex min-h-7 items-center rounded px-1.5 font-semibold text-brand-700 underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-brand-600/40 pointer-coarse:min-h-11"
+            >
+              Ver
+            </Link>
+          </div>
+        </Alert>
+      )}
 
-      {/*
-        flex-wrap + basis: con los targets tactiles en 44px, los tres botones
-        de navegacion mas el titulo ya no entran en una linea angosta. Antes
-        de envolver, el titulo se comprime hasta su base de 12rem; pasado ese
-        punto los controles bajan enteros en vez de aplastarse.
-      */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="min-w-0 flex-1 basis-48">
-          <h2 className="text-sm font-bold capitalize text-slate-900">{formatDay(dateISO)}</h2>
-          <p className="truncate text-xs text-slate-500">Marcas de asistencia del día.</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <IconButton onClick={goToPreviousDay} disabled={isNavigating} aria-label="Día anterior">
-            <ChevronLeft className="h-4 w-4" />
-          </IconButton>
-          {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-          <IconButton onClick={goToNextDay} disabled={isNavigating} aria-label="Día siguiente">
-            <ChevronRight className="h-4 w-4" />
-          </IconButton>
-          <DatePickerButton
-            value={dateISO}
-            onChange={goToDate}
-            // "Hoy" es el de Costa Rica, no el del navegador: una tablet con
-            // la zona mal configurada marcaria el dia equivocado.
-            todayISO={todayInCostaRica()}
-            disabled={isNavigating}
+      {/* Las etiquetas y los blancos táctiles necesitan espacio para convivir en una fila. */}
+      <div className="hidden grid-cols-3 gap-2.5 @md:grid">
+        {indicatorGroups.map(({ id, label, icon, tone, rows: groupRows }) => (
+          <StatCard
+            key={id}
+            icon={icon}
+            tone={tone}
+            label={label}
+            value={groupRows.length}
+            active={indicator === id}
+            onClick={() => setIndicator(indicator === id ? null : id)}
+            className="focus-visible:ring-2 focus-visible:ring-brand-600/40!"
           />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold capitalize text-slate-900">{formatDay(dateISO)}</h2>
+            <p className="truncate text-xs text-slate-500">Marcas de asistencia del día.</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton onClick={goToPreviousDay} disabled={isNavigating} aria-label="Día anterior">
+              <ChevronLeft className="h-4 w-4" />
+            </IconButton>
+            {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+            <IconButton onClick={goToNextDay} disabled={isNavigating} aria-label="Día siguiente">
+              <ChevronRight className="h-4 w-4" />
+            </IconButton>
+            <DatePickerButton
+              value={dateISO}
+              onChange={goToDate}
+              // "Hoy" es el de Costa Rica, no el del navegador: una tablet con
+              // la zona mal configurada marcaria el dia equivocado.
+              todayISO={todayInCostaRica()}
+              disabled={isNavigating}
+            />
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div
+            role="group"
+            aria-label="Filtrar colaboradores"
+            className="inline-flex max-w-full rounded-xl bg-slate-100 p-0.5 text-xs font-semibold"
+          >
+            {(
+              [
+                ['attention', `Requieren atención (${attentionRows.length})`],
+                ['all', `Todos (${rows.length})`],
+              ] as const
+            ).map(([value, label]) => {
+              const selected = !activeIndicator && activeSegment === value
+              return (
+                <button
+                  key={value}
+                  ref={activeSegment === value ? segmentButton : undefined}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setSegment(value)
+                    setIndicator(null)
+                  }}
+                  className={`min-h-9 rounded-[10px] px-3 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-600/40 pointer-coarse:min-h-11 ${
+                    selected
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          {activeIndicator && (
+            <div role="group" aria-label="Filtro de indicador" className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-700">
+                {activeIndicator.label} ({activeIndicator.rows.length})
+              </span>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setIndicator(null)
+                  segmentButton.current?.focus()
+                }}
+              >
+                Quitar filtro
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {visibleRows.length > 0 ? (
+        // La página anterior pertenece a otro conjunto de resultados.
+        <DailyAttendanceRows
+          key={activeIndicator?.id ?? activeSegment}
+          rows={visibleRows}
+          canWrite={canWrite}
+          onEditMark={setEditing}
+        />
+      ) : activeIndicator || activeSegment === 'attention' ? (
+        <EmptyState
+          icon={CircleCheck}
+          variant="no-results"
+          size="sm"
+          title="Todo en orden"
+          description={
+            activeIndicator?.emptyMessage ?? 'Nadie necesita que hagas algo en este día.'
+          }
+        />
+      ) : (
         <EmptyState
           icon={Users}
           title="No hay colaboradores activos en esta sucursal"
           description="Verifica que existan contratos activos asignados a esta sucursal."
         />
-      ) : (
-        // Filas compactas mientras el contenedor no llegue a 768px REALES
-        // (@3xl) y tabla desde ahi: el sidebar mide 256px y se colapsa, asi
-        // que el ancho de pantalla no dice cuanto espacio tiene la tabla.
-        // `hidden` saca la rama inactiva del arbol de accesibilidad.
-        <div className="min-w-0 rounded-xl @3xl:overflow-hidden @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          <ul className="space-y-1.5 px-px @3xl:hidden">
-            {mobilePage.map((row) => (
-              <DailyPersonRow
-                key={row.employmentHistoryId}
-                row={row}
-                canWrite={canWrite}
-                onAddMark={(type, block) =>
-                  setEditing({
-                    row,
-                    type,
-                    block,
-                    mark: null,
-                    suggestedTime:
-                      type === 'entrada' ? (row.expectedStart ?? undefined) : undefined,
-                  })
-                }
-              >
-                <MobileMarkDetails row={row} canWrite={canWrite} onEditMark={setEditing} />
-              </DailyPersonRow>
-            ))}
-          </ul>
-
-          <div className={`hidden @3xl:block ${TABLE_SCROLL}`}>
-            <table className="w-full text-xs">
-              <thead className={TABLE_HEAD}>
-                <tr>
-                  <th className={TABLE_TH}>Colaborador</th>
-                  <th className={TABLE_TH}>Entrada</th>
-                  <th className={TABLE_TH}>Inicio receso</th>
-                  <th className={TABLE_TH}>Fin receso</th>
-                  <th className={TABLE_TH}>Inicio almuerzo</th>
-                  <th className={TABLE_TH}>Fin almuerzo</th>
-                  <th className={TABLE_TH}>Salida</th>
-                  <th className={TABLE_TH}>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedItems.map((row) => {
-                  const secondBlock =
-                    row.scheduledBlocks.length === 2 ? row.scheduledBlocks[1] : null
-                  const firstBlock = secondBlock ? row.scheduledBlocks[0] : null
-                  return (
-                    <Fragment key={row.employmentHistoryId}>
-                      <tr className={TABLE_ROW}>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center gap-2.5">
-                            <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
-                            <div className="min-w-0">
-                              <p className="font-medium text-slate-800">{row.fullName}</p>
-                              <EmployeeMeta row={row} />
-                              <MarkDetails row={row} canWrite={canWrite} onEditMark={setEditing} />
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <MarkCell
-                            mark={firstBlock ? firstBlock.entrada : row.entrada}
-                            canWrite={canWrite}
-                            onEdit={() =>
-                              firstBlock
-                                ? editBlockMark(row, firstBlock, 'entrada')
-                                : setEditing({ row, type: 'entrada' })
-                            }
-                            tardiness={row.tardiness}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <MarkCell
-                            mark={row.inicioReceso}
-                            canWrite={canWrite}
-                            onEdit={() => setEditing({ row, type: 'inicio_receso' })}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <MarkCell
-                            mark={row.finReceso}
-                            canWrite={canWrite}
-                            onEdit={() => setEditing({ row, type: 'fin_receso' })}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <MarkCell
-                            mark={row.inicioAlmuerzo}
-                            canWrite={canWrite}
-                            onEdit={() => setEditing({ row, type: 'inicio_almuerzo' })}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <MarkCell
-                            mark={row.finAlmuerzo}
-                            canWrite={canWrite}
-                            onEdit={() => setEditing({ row, type: 'fin_almuerzo' })}
-                            tardiness={row.lunchTardiness}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <MarkCell
-                            mark={firstBlock ? firstBlock.salida : row.salida}
-                            canWrite={canWrite}
-                            onEdit={() =>
-                              firstBlock
-                                ? editBlockMark(row, firstBlock, 'salida')
-                                : setEditing({ row, type: 'salida' })
-                            }
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <DayStatusBadge status={row.status} size="xs" isHoliday={row.isHoliday} />
-                        </td>
-                      </tr>
-                      {secondBlock && (
-                        <tr className={`${TABLE_ROW} bg-slate-50/60`}>
-                          <td className="px-3 py-2 pl-9">
-                            <SecondBlockLabel row={row} block={secondBlock} />
-                          </td>
-                          <td className="px-3 py-2">
-                            <MarkCell
-                              mark={secondBlock.entrada}
-                              canWrite={canWrite}
-                              label="entrada del 2.º bloque"
-                              onEdit={() => editBlockMark(row, secondBlock, 'entrada')}
-                              tardiness={row.secondBlockTardiness}
-                            />
-                          </td>
-                          <td colSpan={4} />
-                          <td className="px-3 py-2">
-                            <MarkCell
-                              mark={secondBlock.salida}
-                              canWrite={canWrite}
-                              label="salida del 2.º bloque"
-                              onEdit={() => editBlockMark(row, secondBlock, 'salida')}
-                            />
-                          </td>
-                          <td />
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onPrevious={goToPreviousPage}
-            onNext={goToNextPage}
-          />
-        </div>
       )}
 
       {editing &&
