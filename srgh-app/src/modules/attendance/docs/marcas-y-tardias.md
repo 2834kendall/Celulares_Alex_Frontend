@@ -15,6 +15,11 @@ Antes de la entrada solo se puede entrar, y después de la salida no queda nada 
 **Salir no exige haber tomado el almuerzo** (decisión del cliente, 2026-09-17). El receso solo
 se ofrece si el horario del día lo contempla.
 
+**El receso es uno por día** (decisión del cliente, 2026-11-25, SGRH-120). Con jornada partida
+no hay un receso por bloque: basta con que algún tramo del día lo traiga, y la persona lo marca
+una sola vez, en cualquiera de las sucursales donde tiene turno ese día. Si ya lo tomó, el
+kiosco no vuelve a ofrecerlo y `registerKioskMark` rechaza un segundo inicio de receso.
+
 El kiosco solo muestra los botones permitidos, pero **la regla la aplica `registerKioskMark`**:
 esconder un botón no es una regla, porque la acción se puede invocar directo.
 

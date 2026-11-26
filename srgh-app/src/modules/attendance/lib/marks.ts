@@ -176,6 +176,11 @@ export function describeNoBreak() {
   return 'Tu horario no tiene receso asignado. Avisa al encargado si necesitas uno.'
 }
 
+/** Ya tomo el receso del dia, en este u otro bloque o sucursal (SGRH-120). */
+export function describeBreakTaken() {
+  return 'Ya tomaste tu receso de hoy. El receso es uno por día.'
+}
+
 /** El aviso de que todavia no es la hora de salir. */
 export function describeExitWindow(expectedEnd: string) {
   return `Tu salida es a las ${expectedEnd}. Si necesitas salir antes, avisa al encargado.`

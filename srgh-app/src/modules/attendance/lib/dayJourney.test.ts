@@ -12,6 +12,7 @@ function admin(tabla: string, data: unknown, error: unknown = null) {
 
 const fila = (over: Record<string, unknown>) => ({
   prg_es_dia_libre: false,
+  prg_hora_inicio_break_custom: null,
   prg_sucursal_id: 100,
   prg_hora_entrada_custom: null,
   prg_hora_salida_custom: null,
@@ -39,6 +40,7 @@ describe('bloquesDelDia', () => {
         { inicio: '07:00', fin: '11:00', branchId: 100 },
         { inicio: '16:00', fin: '20:00', branchId: 100 },
       ],
+      tieneReceso: false,
     })
   })
 
@@ -57,6 +59,7 @@ describe('bloquesDelDia', () => {
         { inicio: '08:00', fin: '12:00', branchId: 100 },
         { inicio: '13:00', fin: '17:00', branchId: 100 },
       ],
+      tieneReceso: false,
     })
   })
 
@@ -72,7 +75,11 @@ describe('bloquesDelDia', () => {
       1,
       '2026-10-20'
     )
-    expect(r).toEqual({ ok: true, bloques: [{ inicio: '09:00', fin: '15:00', branchId: 100 }] })
+    expect(r).toEqual({
+      ok: true,
+      bloques: [{ inicio: '09:00', fin: '15:00', branchId: 100 }],
+      tieneReceso: false,
+    })
   })
 
   it('el dia libre no aporta bloques', async () => {
@@ -83,7 +90,40 @@ describe('bloquesDelDia', () => {
       1,
       '2026-10-20'
     )
-    expect(r).toEqual({ ok: true, bloques: [] })
+    expect(r).toEqual({ ok: true, bloques: [], tieneReceso: false })
+  })
+
+  // SGRH-120: el receso es uno por dia; basta con que algun tramo lo traiga.
+  it('sabe si algun tramo del dia trae receso, propio o de la plantilla', async () => {
+    const conPlantilla = await bloquesDelDia(
+      admin('sgrh_programacion_semanal', [
+        fila({ sgrh_cat_horarios: { ...PARTIDA, hor_hora_inicio_break: '09:00:00' } }),
+      ]),
+      1,
+      '2026-10-20'
+    )
+    expect(conPlantilla).toMatchObject({ ok: true, tieneReceso: true })
+
+    const propio = await bloquesDelDia(
+      admin('sgrh_programacion_semanal', [
+        fila({
+          prg_hora_entrada_custom: '08:00:00',
+          prg_hora_salida_custom: '12:00:00',
+          prg_hora_inicio_break_custom: null,
+          sgrh_cat_horarios: { ...PARTIDA, hor_hora_inicio_break: '09:00:00' },
+        }),
+        fila({
+          prg_hora_entrada_custom: '13:00:00',
+          prg_hora_salida_custom: '17:00:00',
+          prg_hora_inicio_break_custom: '15:00:00',
+        }),
+      ]),
+      1,
+      '2026-10-20'
+    )
+    // El primer tramo tiene horas propias sin receso (no vale el de la
+    // plantilla); el segundo si trae el suyo.
+    expect(propio).toMatchObject({ ok: true, tieneReceso: true })
   })
 
   it('devuelve error si la consulta falla', async () => {

@@ -20,6 +20,11 @@ export type LoadDayJourneyResult =
       snapshot: [number, string, string][]
       /** Salidas ya marcadas ese dia: cuantos bloques quedaron cerrados. */
       salidas: number
+      /**
+       * Ya marco un inicio de receso ese dia, en cualquier bloque y sucursal.
+       * El receso es uno por dia (SGRH-120), no uno por bloque.
+       */
+      recesoTomado: boolean
     }
   | { ok: false; error: string }
 
@@ -75,6 +80,7 @@ export async function loadDayJourney(
     ok: true,
     journey: groupIntoDayJourney(delBloqueActual),
     salidas: salidas.length,
+    recesoTomado: marks.some((m) => m.tipo === 'inicio_receso'),
     snapshot: [...(data ?? [])]
       .sort((a, b) => a.mar_id - b.mar_id)
       .map((m) => [m.mar_id, m.mar_tipo, m.mar_fecha_hora.replace('T', ' ').slice(0, 19)]),
@@ -101,11 +107,13 @@ interface BloqueProgramacionRow {
   prg_es_dia_libre: boolean
   prg_hora_entrada_custom: string | null
   prg_hora_salida_custom: string | null
+  prg_hora_inicio_break_custom: string | null
   sgrh_cat_horarios: {
     hor_hora_entrada: string
     hor_hora_salida: string
     hor_hora_entrada_2: string | null
     hor_hora_salida_2: string | null
+    hor_hora_inicio_break: string | null
   } | null
 }
 
@@ -116,7 +124,17 @@ export interface ScheduledBlock {
 }
 
 export type BloquesDelDiaResult =
-  { ok: true; bloques: ScheduledBlock[] } | { ok: false; error: string }
+  | {
+      ok: true
+      bloques: ScheduledBlock[]
+      /**
+       * Algun tramo del dia trae receso (SGRH-120). Se toma una vez al dia,
+       * en la sucursal que la persona quiera de las que tiene turno: no
+       * importa si el tramo de ESTE kiosco es el que lo trae.
+       */
+      tieneReceso: boolean
+    }
+  | { ok: false; error: string }
 
 /**
  * Bloques de trabajo de UN contrato en UN dia, en TODAS sus sucursales y en
@@ -136,7 +154,9 @@ export async function bloquesDelDia(
     .from('sgrh_programacion_semanal')
     .select(
       `prg_sucursal_id, prg_es_dia_libre, prg_hora_entrada_custom, prg_hora_salida_custom,
-       sgrh_cat_horarios ( hor_hora_entrada, hor_hora_salida, hor_hora_entrada_2, hor_hora_salida_2 )`
+       prg_hora_inicio_break_custom,
+       sgrh_cat_horarios ( hor_hora_entrada, hor_hora_salida, hor_hora_entrada_2, hor_hora_salida_2,
+         hor_hora_inicio_break )`
     )
     .eq('prg_historial_laboral_id', employmentHistoryId)
     .eq('prg_fecha', dateISO)
@@ -147,8 +167,15 @@ export async function bloquesDelDia(
   }
 
   const hhmm = (h: string) => h.slice(0, 5)
-  const bloques = (data ?? [])
-    .filter((r) => !r.prg_es_dia_libre)
+  const tramos = (data ?? []).filter((r) => !r.prg_es_dia_libre)
+  // Mismo criterio que workingDay: con entrada y salida propias, el receso
+  // tambien es el propio (puede no haber); si no, el de la plantilla.
+  const tieneReceso = tramos.some((r) =>
+    r.prg_hora_entrada_custom && r.prg_hora_salida_custom
+      ? r.prg_hora_inicio_break_custom !== null
+      : Boolean(r.sgrh_cat_horarios?.hor_hora_inicio_break)
+  )
+  const bloques = tramos
     .flatMap((r) => {
       const cat = r.sgrh_cat_horarios
       const custom = r.prg_hora_entrada_custom && r.prg_hora_salida_custom
@@ -166,7 +193,16 @@ export async function bloquesDelDia(
     })
     .sort((a, b) => a.inicio.localeCompare(b.inicio))
 
-  return { ok: true, bloques }
+  return { ok: true, bloques, tieneReceso }
+}
+
+/**
+ * Si el kiosco puede ofrecer «Inicio receso» ahora: el dia tiene receso y
+ * todavia no se tomo. Un receso ya abierto en este bloque lo maneja la
+ * secuencia (`allowedNextMarks` ofrece «Fin receso»).
+ */
+export function breakAvailable(tieneReceso: boolean, recesoTomado: boolean): boolean {
+  return tieneReceso && !recesoTomado
 }
 
 export function scheduledBlockAtTime(

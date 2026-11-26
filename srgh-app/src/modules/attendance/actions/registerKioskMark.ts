@@ -17,6 +17,7 @@ import { findWorkableDayResult } from '@/modules/attendance/lib/workingDay'
 import {
   absenceBlocksMarkMessage,
   bloquesDelDia,
+  breakAvailable,
   findApprovedAbsence,
   loadDayJourney,
   resolveKioskSucursalIds,
@@ -24,6 +25,7 @@ import {
 } from '@/modules/attendance/lib/dayJourney'
 import {
   allowedNextMarks,
+  describeBreakTaken,
   describeExitWindow,
   describeNoBreak,
   describeSequenceRejection,
@@ -269,13 +271,18 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   }
 
   // Un horario sin receso no da derecho a tomarlo: el kiosco ni lo ofrece.
-  if (tipo === 'inicio_receso' && assignment.expectedBreakStart === null) {
+  // El receso es uno por dia (SGRH-120): vale el de cualquier tramo, y se
+  // puede marcar en cualquiera de las sucursales donde tiene turno.
+  if (tipo === 'inicio_receso' && !delDia.tieneReceso) {
     return { ok: false, error: describeNoBreak(), definitivo: true }
+  }
+  if (tipo === 'inicio_receso' && jornada.recesoTomado) {
+    return { ok: false, error: describeBreakTaken(), definitivo: true }
   }
 
   const permitidas = allowedNextMarks(jornada.journey, {
     exitWindowOpen: salidaAbierta,
-    breakScheduled: assignment.expectedBreakStart !== null,
+    breakScheduled: breakAvailable(delDia.tieneReceso, jornada.recesoTomado),
   })
 
   if (!permitidas.includes(tipo)) {

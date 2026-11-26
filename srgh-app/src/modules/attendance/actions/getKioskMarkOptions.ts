@@ -9,6 +9,7 @@ import { allowedNextMarks, isExitWindowOpen, type MarkType } from '@/modules/att
 import {
   absenceBlocksMarkMessage,
   bloquesDelDia,
+  breakAvailable,
   findApprovedAbsence,
   loadDayJourney,
   resolveKioskSucursalIds,
@@ -96,7 +97,7 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
         ahora,
         salidaDelBloqueActual(delDia.bloques, jornada.salidas, turno.expectedEnd)
       ),
-      breakScheduled: turno.expectedBreakStart !== null,
+      breakScheduled: breakAvailable(delDia.tieneReceso, jornada.recesoTomado),
     }),
   }
 }
