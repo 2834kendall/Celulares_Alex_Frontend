@@ -7,8 +7,8 @@
 
 import type { DailyAttendanceRow } from '@/modules/attendance/actions/getDailyAttendance'
 import type { MonthlyEmployeeSummary } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
-import { classifyTardiness, type TardinessType } from '@/modules/attendance/lib/infractions'
-import { diffMinutes } from '@/modules/attendance/lib/time'
+import { attendanceStatusOf } from '@/modules/attendance/lib/dayStatus'
+import type { TardinessType } from '@/modules/attendance/lib/infractions'
 import type { PeriodoListItem } from '@/modules/payroll/types'
 import type { PostulacionBoardItem } from '@/modules/recruitment/actions/getPostulacionesBoard'
 
@@ -79,49 +79,48 @@ export function summarizeAttendance(
   }
 
   for (const row of rows) {
-    if (row.isDayOff || row.isHoliday) continue
-    /* No schedule, no absence and no mark: nothing was expected of them. */
-    if (!row.expectedStart && !row.ausencia && !row.entrada) continue
+    // El estado de cada persona sale de la misma regla que usa el Diario.
+    const status = attendanceStatusOf(row, { when: 'today', nowTime }, tipos)
+    if (status.kind === 'libre' || status.kind === 'sin_programacion') continue
 
     summary.expected += 1
     const person = { id: row.employeeId, nombre: row.fullName, fotoUrl: row.fotoUrl }
 
-    if (row.entrada) {
-      if (row.tardiness) {
+    if (status.kind === 'en_jornada' || status.kind === 'ya_salio') {
+      if (status.tardiness) {
         summary.late += 1
         summary.latePeople.push({
           ...person,
-          minutes: row.tardiness.diffMinutes,
-          tipo: row.tardiness.tipo,
-          isJustified: row.tardiness.isJustified,
+          minutes: status.tardiness.minutes,
+          tipo: { nombre: status.tardiness.nombre, color: status.tardiness.color },
+          isJustified: status.tardiness.isJustified,
         })
       } else {
         summary.onTime += 1
       }
-      if (row.salida) summary.left += 1
+      if (status.kind === 'ya_salio') summary.left += 1
       else summary.working += 1
       continue
     }
 
-    if (row.ausencia || !row.expectedStart) {
+    if (status.kind === 'justificada') {
       summary.justified += 1
       continue
     }
 
-    const minutes = diffMinutes(nowTime, row.expectedStart)
-    const tipo = classifyTardiness(minutes, tipos)
-
-    if (tipo) {
+    // Por llegar o sin marcar: los dos tienen hora esperada.
+    const expectedStart = row.expectedStart!
+    if (status.kind === 'sin_marcar' && status.tardiness) {
       summary.missing += 1
       summary.missingPeople.push({
         ...person,
-        minutes,
-        tipo: { nombre: tipo.nombre, color: tipo.color },
-        expectedStart: row.expectedStart,
+        minutes: status.tardiness.minutes,
+        tipo: { nombre: status.tardiness.nombre, color: status.tardiness.color },
+        expectedStart,
       })
     } else {
       summary.pending += 1
-      summary.pendingPeople.push({ ...person, expectedStart: row.expectedStart })
+      summary.pendingPeople.push({ ...person, expectedStart })
     }
   }
 

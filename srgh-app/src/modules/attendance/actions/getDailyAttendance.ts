@@ -6,7 +6,17 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
-import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
+import {
+  diffMinutes,
+  nowInCostaRica,
+  timeOfDay,
+  todayInCostaRica,
+} from '@/modules/attendance/lib/time'
+import {
+  attendanceStatusOf,
+  type DayClock,
+  type DayStatus,
+} from '@/modules/attendance/lib/dayStatus'
 import { getDayAssignments, type DayAssignment } from '@/modules/attendance/lib/workingDay'
 import { secondBlockStart } from '@/modules/attendance/lib/secondBlock'
 import { scheduledBlockAtTime, type ScheduledBlock } from '@/modules/attendance/lib/dayJourney'
@@ -127,6 +137,11 @@ export interface DailyTardiness {
 }
 
 export interface DailyAttendanceRow {
+  /**
+   * Como esta la persona ese dia (SGRH-120), con la misma regla que la
+   * tarjeta del dashboard. Ver docs/estados-del-dia.md.
+   */
+  status: DayStatus
   employmentHistoryId: number
   employeeId: number
   fullName: string
@@ -474,7 +489,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     }
   }
 
-  const data: DailyAttendanceRow[] = employmentHistory.map((h) => {
+  const built: Omit<DailyAttendanceRow, 'status'>[] = employmentHistory.map((h) => {
     const employee = h.sgrh_empleados
     const fullName = employee
       ? `${employee.emp_nombre} ${employee.emp_apellido_1}${employee.emp_apellido_2 ? ' ' + employee.emp_apellido_2 : ''}`
@@ -605,6 +620,20 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
           : null,
     }
   })
+
+  // El estado de cada persona, con la misma regla que el dashboard: hoy se
+  // mide contra la hora actual; un dia pasado ya termino.
+  const today = todayInCostaRica()
+  const clock: DayClock =
+    dateISO === today
+      ? { when: 'today', nowTime: timeOfDay(nowInCostaRica()) }
+      : dateISO < today
+        ? { when: 'past' }
+        : { when: 'future' }
+  const data: DailyAttendanceRow[] = built.map((row) => ({
+    ...row,
+    status: attendanceStatusOf(row, clock, tipos),
+  }))
 
   data.sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'))
 

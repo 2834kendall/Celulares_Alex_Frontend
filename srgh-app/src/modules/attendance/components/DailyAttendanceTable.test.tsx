@@ -12,6 +12,7 @@ vi.mock('next/navigation', () => ({
 
 function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRow {
   return {
+    status: { kind: 'en_jornada', tardiness: null, needsAttention: false },
     employmentHistoryId: 1,
     employeeId: 10,
     fullName: 'Ana Perez',
