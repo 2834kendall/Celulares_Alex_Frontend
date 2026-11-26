@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PendingJustifications } from './PendingJustifications'
 import type {
@@ -104,6 +104,10 @@ describe('<PendingJustifications />', () => {
     // Ausencia de Bruno del 12 antes que la tardia de Ana del 10.
     expect(filas[0]).toHaveTextContent('Bruno Mora')
     expect(filas[0]).toHaveTextContent('No vino y no marcó')
+    expect(within(filas[0]).getByText('Ausencia').querySelector('svg')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
     expect(filas[1]).toHaveTextContent('Ana Perez')
     expect(filas[1]).toHaveTextContent('Tardia grave')
     expect(screen.getAllByRole('button', { name: 'Justificar' })).toHaveLength(2)
@@ -116,6 +120,10 @@ describe('<PendingJustifications />', () => {
     await user.click(screen.getByRole('button', { name: 'Resueltas (2)' }))
 
     expect(screen.getByText('Cita Médica')).toBeInTheDocument()
+    expect(screen.getByText('Justificada').querySelector('svg')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
     expect(screen.getByRole('button', { name: 'Ver motivo' })).toBeInTheDocument()
     expect(screen.queryByText('No vino y no marcó')).not.toBeInTheDocument()
   })
@@ -133,13 +141,20 @@ describe('<PendingJustifications />', () => {
     expect(screen.getAllByRole('button', { name: 'Justificar' })).toHaveLength(1)
   })
 
-  it('abre el modal de la tardia con sus datos', async () => {
+  it('opens the lateness modal from the secondary touch button', async () => {
     const user = userEvent.setup()
     renderQueue({ rows: [ROWS[0]] })
 
-    await user.click(screen.getByRole('button', { name: 'Justificar' }))
+    const action = screen.getByRole('button', { name: 'Justificar' })
+    expect(action).toHaveClass('bg-white', 'border-slate-200', 'pointer-coarse:min-h-11')
+    await user.click(action)
 
     expect(screen.getByRole('heading', { name: 'Justificar tardanza' })).toBeInTheDocument()
+  })
+
+  it('uses an icon alongside No suma', () => {
+    renderQueue({ rows: [makeRow({ tardyDays: [tardy({ countsTowardWarning: false })] })] })
+    expect(screen.getByText('No suma').querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('justifica una ausencia registrando una ausencia aprobada de ese dia', async () => {
@@ -154,7 +169,9 @@ describe('<PendingJustifications />', () => {
     const user = userEvent.setup()
     renderQueue({ rows: [ROWS[1]] })
 
-    await user.click(screen.getByRole('button', { name: 'Justificar' }))
+    const action = screen.getByRole('button', { name: 'Justificar' })
+    expect(action).toHaveClass('bg-white', 'border-slate-200', 'pointer-coarse:min-h-11')
+    await user.click(action)
 
     const trigger = await screen.findByLabelText('Tipo de ausencia')
     await waitFor(() => expect(trigger).toBeEnabled())

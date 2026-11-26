@@ -71,18 +71,14 @@ export function PendingJustifications({
   function actionFor(item: JustificationItem) {
     if (item.kind === 'tardia' && canWrite) {
       return (
-        <Button
-          size="sm"
-          variant={item.day.isJustified ? 'secondary' : 'primary'}
-          onClick={() => setJustifying(item)}
-        >
+        <Button size="sm" variant="secondary" onClick={() => setJustifying(item)}>
           {item.day.isJustified ? 'Ver motivo' : 'Justificar'}
         </Button>
       )
     }
     if (item.kind === 'ausencia' && canJustifyAbsences) {
       return (
-        <Button size="sm" onClick={() => setJustifying(item)}>
+        <Button size="sm" variant="secondary" onClick={() => setJustifying(item)}>
           Justificar
         </Button>
       )
