@@ -25,6 +25,7 @@ function row(overrides: Partial<DailyAttendanceRow>): DailyAttendanceRow {
     salida: null,
     blocks: [],
     scheduledBlocks: [],
+    isSecondBlockJustified: false,
     duplicateMarksCount: 0,
     isOpen: false,
     tardiness: null,
@@ -105,6 +106,61 @@ describe('attendanceStatusOf', () => {
   it('reports someone who clocked out as gone', () => {
     const status = attendanceStatusOf(row({ entrada: MARK, salida: MARK }), PAST, TIPOS)
     expect(status).toEqual({ kind: 'ya_salio', tardiness: null, needsAttention: false })
+  })
+
+  describe('split shift', () => {
+    const OUT = { id: 2, time: '12:00', diffMinutes: null } as DailyAttendanceRow['salida']
+    const blocks = (second: { entrada?: boolean; salida?: boolean } = {}) =>
+      [
+        {
+          inicio: '08:00',
+          fin: '12:00',
+          branchId: 1,
+          branchName: null,
+          entrada: MARK,
+          salida: OUT,
+        },
+        {
+          inicio: '18:00',
+          fin: '23:00',
+          branchId: 1,
+          branchName: null,
+          entrada: second.entrada ? MARK : null,
+          salida: second.salida ? OUT : null,
+        },
+      ] as DailyAttendanceRow['scheduledBlocks']
+    const split = (overrides: Partial<DailyAttendanceRow> = {}) =>
+      row({ entrada: MARK, salida: OUT, scheduledBlocks: blocks(), ...overrides })
+
+    it('does not treat the first block exit as the end of the day', () => {
+      expect(attendanceStatusOf(split(), at('13:00'), TIPOS).kind).toBe('por_llegar')
+    })
+
+    it('flags a missing second block once its tolerance passes, and on a past day', () => {
+      const late = attendanceStatusOf(split(), at('18:30'), TIPOS)
+      expect(late.kind).toBe('sin_marcar')
+      expect(late.needsAttention).toBe(true)
+      expect(late.tardiness).toMatchObject({ nombre: 'Tardía grave', minutes: 30 })
+      expect(attendanceStatusOf(split(), PAST, TIPOS)).toMatchObject({
+        kind: 'sin_marcar',
+        needsAttention: true,
+      })
+    })
+
+    it('stops asking once the second block is justified or covered by an absence', () => {
+      expect(attendanceStatusOf(split({ isSecondBlockJustified: true }), PAST, TIPOS).kind).toBe(
+        'ya_salio'
+      )
+      expect(attendanceStatusOf(split({ ausencia: 'Permiso' }), PAST, TIPOS).kind).toBe('ya_salio')
+    })
+
+    it('follows the second block once it is marked', () => {
+      const working = split({ scheduledBlocks: blocks({ entrada: true }) })
+      expect(attendanceStatusOf(working, at('19:00'), TIPOS).kind).toBe('en_jornada')
+      expect(attendanceStatusOf(working, PAST, TIPOS).kind).toBe('sin_salida')
+      const done = split({ scheduledBlocks: blocks({ entrada: true, salida: true }) })
+      expect(attendanceStatusOf(done, PAST, TIPOS).kind).toBe('ya_salio')
+    })
   })
 
   it('carries the tardiness Attendance already gave, and only an unjustified one needs action', () => {

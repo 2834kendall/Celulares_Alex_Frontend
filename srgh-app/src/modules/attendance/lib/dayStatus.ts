@@ -66,6 +66,36 @@ export function attendanceStatusOf(
       : null
     const lateUnjustified = tardiness !== null && !tardiness.isJustified
 
+    // Jornada partida: la salida del 1.er bloque no termina el dia. Mientras
+    // el 2.º no se marque, se mide contra su propia hora de entrada.
+    const second = row.scheduledBlocks?.length === 2 ? row.scheduledBlocks[1] : null
+    const secondCovered = Boolean(row.ausencia) || row.isSecondBlockJustified === true
+    if (second && !second.entrada && !secondCovered) {
+      const firstOpen = !row.scheduledBlocks[0].salida
+      if (clock.when === 'past') {
+        return { kind: 'sin_marcar', tardiness, needsAttention: true }
+      }
+      const minutes = clock.when === 'today' ? diffMinutes(clock.nowTime, second.inicio) : -1
+      const tipo = minutes >= 0 ? classifyTardiness(minutes, tipos) : null
+      if (!tipo) {
+        return {
+          kind: firstOpen ? 'en_jornada' : 'por_llegar',
+          tardiness,
+          needsAttention: lateUnjustified,
+        }
+      }
+      return {
+        kind: 'sin_marcar',
+        tardiness: { nombre: tipo.nombre, color: tipo.color, minutes, isJustified: false },
+        needsAttention: true,
+      }
+    }
+    if (second?.entrada) {
+      if (second.salida) return { kind: 'ya_salio', tardiness, needsAttention: lateUnjustified }
+      if (clock.when === 'past') return { kind: 'sin_salida', tardiness, needsAttention: true }
+      return { kind: 'en_jornada', tardiness, needsAttention: lateUnjustified }
+    }
+
     if (row.salida) return { kind: 'ya_salio', tardiness, needsAttention: lateUnjustified }
     if (clock.when === 'past') return { kind: 'sin_salida', tardiness, needsAttention: true }
     return { kind: 'en_jornada', tardiness, needsAttention: lateUnjustified }

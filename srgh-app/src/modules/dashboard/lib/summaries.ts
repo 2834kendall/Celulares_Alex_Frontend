@@ -108,8 +108,10 @@ export function summarizeAttendance(
       continue
     }
 
-    // Por llegar o sin marcar: los dos tienen hora esperada.
-    const expectedStart = row.expectedStart!
+    // Por llegar o sin marcar: los dos tienen hora esperada. Si ya entro al
+    // 1.er bloque de una jornada partida, la que falta es la del 2.º.
+    const secondBlock = row.entrada ? row.scheduledBlocks?.[1] : undefined
+    const expectedStart = secondBlock?.inicio ?? row.expectedStart!
     if (status.kind === 'sin_marcar' && status.tardiness) {
       summary.missing += 1
       summary.missingPeople.push({

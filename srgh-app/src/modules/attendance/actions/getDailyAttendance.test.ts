@@ -85,6 +85,7 @@ function mocks(options: {
     // Catalogo vacio: el lector usa los tipos por defecto (desde el minuto 1).
     sgrh_cat_tipos_tardia: options.tipos ?? vacio,
     sgrh_ausencias: options.ausencias ?? vacio,
+    sgrh_justificaciones_bloque: vacio,
   }
 }
 

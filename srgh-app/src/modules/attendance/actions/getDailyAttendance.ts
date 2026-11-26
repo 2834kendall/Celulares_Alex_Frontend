@@ -174,6 +174,8 @@ export interface DailyAttendanceRow {
    */
   blocks: { entrada: DailyMarkInfo; salida: DailyMarkInfo | null }[]
   scheduledBlocks: DailyScheduledBlock[]
+  /** El 2.º bloque de ese dia tiene una justificacion por bloque (SGRH-120). */
+  isSecondBlockJustified: boolean
   duplicateMarksCount: number
   isOpen: boolean
   /**
@@ -460,7 +462,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
   const tipos = tiposResult.data
 
-  const [{ data: ausencias }, fotoUrls] = await Promise.all([
+  const [{ data: ausencias }, fotoUrls, { data: justificacionesBloque }] = await Promise.all([
     // Ausencias aprobadas que cubren el dia. Leerlas exige AUSENCIAS_READ,
     // que tienen todos los roles que ven este panel; sin el, RLS devuelve cero
     // filas y el panel se ve como antes. Un error tampoco tumba el panel: es un
@@ -478,7 +480,23 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       .returns<AusenciaDelDiaRow[]>(),
     // Una sola firma para toda la jornada (ver signEmployeePhotos).
     signEmployeePhotos(employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)),
+    // 2.º bloque justificado sin goce (SGRH-120): no crea ausencia, pero el
+    // estado del dia tiene que dejar de pedir que alguien haga algo. Mismo
+    // criterio que las ausencias: si falla, el panel sigue.
+    supabase
+      .from('sgrh_justificaciones_bloque')
+      .select('jbl_historial_laboral_id')
+      .in(
+        'jbl_historial_laboral_id',
+        employmentHistory.map((h) => h.lab_id)
+      )
+      .eq('jbl_fecha', dateISO)
+      .eq('jbl_bloque', 2),
   ])
+
+  const segundoBloqueJustificado = new Set(
+    (justificacionesBloque ?? []).map((j) => j.jbl_historial_laboral_id)
+  )
 
   const ausenciaByHistoryId = new Map<number, string>()
   for (const a of ausencias ?? []) {
@@ -585,6 +603,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       inicioAlmuerzo,
       finAlmuerzo,
       salida: markInfo(journey.salida, null),
+      isSecondBlockJustified: segundoBloqueJustificado.has(h.lab_id),
       scheduledBlocks: scheduledBlocks.map((block, index) => {
         const marks = hasSplitSchedule ? blockJourneys[index] : index === 0 ? journey : null
         return {
