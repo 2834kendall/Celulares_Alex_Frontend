@@ -12,7 +12,11 @@ import {
   getQueuedMarks,
   removeQueuedMark,
 } from '@/modules/attendance/components/kiosk/offlineQueue'
-import type { FaceScanProps } from '@/modules/attendance/components/kiosk/face/FaceScan'
+import {
+  preloadFaceScan,
+  type FaceScanProps,
+} from '@/modules/attendance/components/kiosk/face/FaceScan'
+import { playConfirmationCue } from './confirmationCue'
 
 vi.mock('@/modules/attendance/actions/registerKioskMark', () => ({
   registerKioskMark: vi.fn(),
@@ -30,11 +34,16 @@ vi.mock('@/modules/attendance/components/kiosk/deviceId', () => ({
   getOrCreateDeviceId: vi.fn(() => 'device-123'),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), message: vi.fn() } }))
+vi.mock('./confirmationCue', () => ({
+  prepareConfirmationCue: vi.fn(),
+  playConfirmationCue: vi.fn(),
+}))
 
 // FaceScan arrastra MediaPipe y face-api.js (camara y modelo reales): se
 // sustituye por un stub que expone sus callbacks para dispararlos a mano.
 let faceScanProps: FaceScanProps | null = null
 vi.mock('@/modules/attendance/components/kiosk/face/FaceScan', () => ({
+  preloadFaceScan: vi.fn(),
   FaceScan: (props: FaceScanProps) => {
     faceScanProps = props
     return <div data-testid="face-scan" />
@@ -72,7 +81,7 @@ function setOnline(value: boolean) {
 async function emitEmbedding() {
   expect(faceScanProps).not.toBeNull()
   await act(async () => {
-    await faceScanProps!.onEmbedding(PAYLOAD)
+    await faceScanProps!.onEmbedding(PAYLOAD, { scanMs: 900, fps: 12.4 })
   })
 }
 
@@ -104,6 +113,11 @@ describe('<KioskScreen />', () => {
   })
 
   describe('antes de reconocer', () => {
+    it('preloads the kiosk models on mount', async () => {
+      render(<KioskScreen employees={employees} />)
+      await waitFor(() => expect(preloadFaceScan).toHaveBeenCalledWith(false))
+    })
+
     it('muestra la camara y ningun boton de marca ni selector de nombre', () => {
       render(<KioskScreen employees={employees} />)
 
@@ -145,6 +159,7 @@ describe('<KioskScreen />', () => {
       expect(mockVerifyFace).toHaveBeenCalledWith({
         vector: PAYLOAD,
         dispositivoId: 'device-123',
+        metricas: { escaneoMs: 900, fps: 12.4 },
       })
       expect(screen.getByText('Ana Perez')).toBeInTheDocument()
       expect(mockGetKioskMarkOptions).toHaveBeenCalledWith(10)
@@ -186,7 +201,7 @@ describe('<KioskScreen />', () => {
       expect(await screen.findByRole('button', { name: 'Entrada' })).toBeEnabled()
       expect(mockRegisterKioskMark).not.toHaveBeenCalled()
       expect(await getQueuedMarks()).toHaveLength(0)
-      expect(screen.queryByText('Entrada registrada')).not.toBeInTheDocument()
+      expect(screen.queryByText(/^Entrada registrada/)).not.toBeInTheDocument()
     })
 
     it('un doble toque mientras se guarda envia una sola marca', async () => {
@@ -202,7 +217,7 @@ describe('<KioskScreen />', () => {
       await user.dblClick(await screen.findByRole('button', { name: 'Entrada' }))
       expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1)
       await act(async () => finish({ ok: true }))
-      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(await screen.findByText(/^Entrada registrada/)).toBeInTheDocument()
       expect(mockRegisterKioskMark).toHaveBeenCalledTimes(1)
     })
 
@@ -228,7 +243,32 @@ describe('<KioskScreen />', () => {
           })
         )
       )
-      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(await screen.findByText(/^Entrada registrada/)).toBeInTheDocument()
+    })
+
+    it('shows the employee and the actual event time in the configured clock format', async () => {
+      vi.setSystemTime(new Date('2026-11-25T14:02:00Z'))
+      mockVerifyFace.mockResolvedValue(MATCH)
+      let finish!: (value: { ok: true }) => void
+      mockRegisterKioskMark.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      render(<KioskScreen employees={employees} formatoHora="12h" />)
+      await emitEmbedding()
+      await userEvent.click(await screen.findByRole('button', { name: 'Entrada' }))
+      expect(playConfirmationCue).not.toHaveBeenCalled()
+      vi.setSystemTime(new Date('2026-11-25T14:03:00Z'))
+      await act(async () => finish({ ok: true }))
+
+      expect(await screen.findByText('Entrada registrada · 8:02 a. m.')).toBeInTheDocument()
+      expect(screen.getByText('Ana Perez')).toBeInTheDocument()
+      expect(mockRegisterKioskMark).toHaveBeenCalledWith(
+        expect.objectContaining({ fechaHora: '2026-11-25 08:02:00' })
+      )
+      expect(playConfirmationCue).toHaveBeenCalledOnce()
     })
 
     it('permite marcar aunque el GPS no haya respondido', async () => {
@@ -236,7 +276,7 @@ describe('<KioskScreen />', () => {
       mockRegisterKioskMark.mockResolvedValue({ ok: true })
       await renderRecognized()
       await userEvent.click(await screen.findByRole('button', { name: 'Entrada' }))
-      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(await screen.findByText(/^Entrada registrada/)).toBeInTheDocument()
       expect(mockRegisterKioskMark).toHaveBeenCalledWith(
         expect.objectContaining({ latitud: null, longitud: null })
       )
@@ -248,12 +288,12 @@ describe('<KioskScreen />', () => {
       await renderRecognized()
 
       await user.click(await screen.findByRole('button', { name: 'Entrada' }))
-      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(await screen.findByText(/^Entrada registrada/)).toBeInTheDocument()
 
       await waitFor(() => expect(screen.getByTestId('face-scan')).toBeInTheDocument(), {
         timeout: 4000,
       })
-      expect(screen.queryByText('Entrada registrada')).not.toBeInTheDocument()
+      expect(screen.queryByText(/^Entrada registrada/)).not.toBeInTheDocument()
     })
 
     it('si el servidor rechaza la marca, vuelve a preguntar que corresponde', async () => {
@@ -268,7 +308,7 @@ describe('<KioskScreen />', () => {
       await user.click(await screen.findByRole('button', { name: 'Entrada' }))
 
       await waitFor(() => expect(mockGetKioskMarkOptions).toHaveBeenCalledTimes(2))
-      expect(screen.queryByText('Entrada registrada')).not.toBeInTheDocument()
+      expect(screen.queryByText(/^Entrada registrada/)).not.toBeInTheDocument()
     })
 
     it('"No soy yo" descarta la identidad y vuelve a la camara', async () => {
@@ -282,6 +322,7 @@ describe('<KioskScreen />', () => {
     })
 
     it('si se corta la red despues de reconocer, la marca se encola con su ticket', async () => {
+      vi.setSystemTime(new Date('2026-11-25T14:02:00Z'))
       const user = userEvent.setup()
       await renderRecognized()
       await screen.findByRole('button', { name: 'Entrada' })
@@ -293,10 +334,12 @@ describe('<KioskScreen />', () => {
 
       await user.click(screen.getByRole('button', { name: 'Entrada' }))
 
-      expect(await screen.findByText('Entrada registrada')).toBeInTheDocument()
+      expect(await screen.findByText('Entrada guardada · 08:02')).toBeInTheDocument()
+      expect(playConfirmationCue).toHaveBeenCalledOnce()
       expect(mockRegisterKioskMark).not.toHaveBeenCalled()
       const queued = await getQueuedMarks()
       expect(queued).toHaveLength(1)
+      expect(queued[0].fechaHora).toBe('2026-11-25 08:02:00')
       expect(queued[0]).toMatchObject({ employeeId: 10, tipo: 'entrada', ticketFacial: TICKET })
     })
   })

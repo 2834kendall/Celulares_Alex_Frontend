@@ -15,7 +15,9 @@ import {
 } from '@/modules/attendance/lib/face/enrollment'
 import { timeFaceStage } from './timing'
 import { FACE_INPUT_SIZE } from '@/modules/attendance/lib/face/model'
-import { getFaceLandmarker } from './faceLandmarker'
+import { discardFaceLandmarker, getFaceLandmarker } from './faceLandmarker'
+import { analysisStride, createFrameRateMeter } from './frameRate'
+import { faceBounds, overlapsPreviousFace, primaryFace, type FaceBounds } from './primaryFace'
 import { getHandLandmarker } from './handLandmarker'
 import { computeEmbedding, preloadEmbeddingModel } from './embedding'
 import { preloadAntispoofModel, scoreRealness } from './antispoof'
@@ -61,21 +63,18 @@ const DECISION_TIMEOUT_MS = 8000
  * personas distintas entre si, que es el peor error posible del kiosco.
  */
 const CAPTURE_WINDOW_MS = 500
+const RATE_WARMUP_MS = 1500
+const CROWDED_HOLD_MS = 1000
 
 /**
- * Lentes oscuros (registro): se mide cada SHADE_EVERY cuadros sobre una copia
- * de SHADE_SIZE (de sobra para promediar el brillo de un ojo) y se frena tras
- * DARK_STREAK mediciones oscuras seguidas.
+ * El brillo de los ojos se mide en una copia pequeña para que la pista
+ * de lentes oscuros no compita con el detector de rostro.
  */
 const SHADE_EVERY = 2
 const SHADE_SIZE = { w: 160, h: 120 }
 const DARK_STREAK = 4
 
-/**
- * El registro busca hasta 2 rostros para poder frenar si hay otra persona en
- * cuadro; el kiosco busca 1 (con fila detras, mas rostros solo estorban).
- */
-const faceLimit = (enrollment: boolean) => (enrollment ? 2 : 1)
+const FACE_LIMIT = 2
 
 /** Mensaje cuando hay mas de una persona frente a la camara (registro). */
 export const TWO_FACES_MESSAGE = 'Que solo una persona quede frente a la cámara'
@@ -92,7 +91,7 @@ const ENROLLMENT_GAP_MS = 300
  */
 export function preloadFaceScan(enrollment = false): void {
   const loads: Promise<unknown>[] = [
-    getFaceLandmarker(faceLimit(enrollment)),
+    getFaceLandmarker(FACE_LIMIT),
     preloadEmbeddingModel(),
     preloadAntispoofModel(),
   ]
@@ -102,6 +101,11 @@ export function preloadFaceScan(enrollment = false): void {
 
 const DEBUG = process.env.NEXT_PUBLIC_FACE_DEBUG === 'true'
 
+export interface FaceScanMetrics {
+  scanMs: number
+  fps: number
+}
+
 export interface FaceScanProps {
   enrollment?: boolean
   /**
@@ -110,7 +114,7 @@ export interface FaceScanProps {
    * el tab Rostro del perfil del empleado). Mientras la promesa esta viva,
    * FaceScan muestra "listo".
    */
-  onEmbedding: (payload: EncryptedVector) => Promise<void>
+  onEmbedding: (payload: EncryptedVector, metrics?: FaceScanMetrics) => Promise<void>
   /**
    * Camara denegada/ausente, modelos que no cargan o llave sin configurar:
    * el padre debe caer al flujo alterno (PIN). Nunca se llama mas de una vez.
@@ -246,10 +250,12 @@ export function FaceScan({
   const [cameraReady, setCameraReady] = useState(false)
   const [livenessSamples, setLivenessSamples] = useState(0)
   const [captureProgress, setCaptureProgress] = useState(0)
+  const [crowded, setCrowded] = useState(false)
 
   const visual = getScanVisual({
     phase: status,
     hint,
+    crowded: !enrollment && crowded,
     livenessSamples,
     livenessNeeded: MIN_SAMPLES,
     captureProgress,
@@ -306,7 +312,7 @@ export function FaceScan({
       // registro suma el detector de manos.
       const modelsPromise = timeFaceStage('models', () =>
         Promise.all([
-          getFaceLandmarker(faceLimit(enrollment)),
+          getFaceLandmarker(FACE_LIMIT),
           enrollment ? getHandLandmarker() : Promise.resolve(null),
           preloadEmbeddingModel(),
           preloadAntispoofModel(),
@@ -384,6 +390,16 @@ export function FaceScan({
       let darkStreak = 0
       let shadeTick = 0
       let shadeCanvas: HTMLCanvasElement | null = null
+      const frameRate = createFrameRateMeter()
+      let firstVideoFrameAt: number | null = null
+      let videoFrames = 0
+      let lastAnalyzedFrame = 0
+      let lastScoreFrame = 0
+      let scanStartedAt: number | null = null
+      let scanFrames = 0
+      let previousPrimary: FaceBounds | null = null
+      let hadMultipleFaces = false
+      let crowdedSince: number | null = null
 
       /** Brillo de ojos vs piel sobre una copia chica del cuadro actual. */
       function sampleEyeShade(v: HTMLVideoElement, landmarks: { x: number; y: number }[]) {
@@ -408,17 +424,32 @@ export function FaceScan({
       }
 
       function timeoutMessage(fallback: string) {
+        if (!enrollment && darkStreak >= DARK_STREAK) {
+          return 'No pudimos completar la captura. Si usas lentes de sol, quítatelos e intenta de nuevo.'
+        }
         return lastHint
           ? `No pudimos completar la captura. ${lastHint} e intenta de nuevo.`
           : fallback
       }
 
       function resetCapture(resetTimer = false) {
-        if (resetTimer) startMs = null
+        if (resetTimer) {
+          startMs = null
+          if (!enrollment) {
+            scanStartedAt = null
+            scanFrames = 0
+            previousPrimary = null
+            hadMultipleFaces = false
+            crowdedSince = null
+            darkStreak = 0
+            setCrowded(false)
+          }
+        }
         generation += 1
         scores.length = 0
         proof = null
         frameCount = 0
+        lastScoreFrame = videoFrames
         captureStartMs = null
         best = null
         candidates = []
@@ -487,11 +518,20 @@ export function FaceScan({
               return enrollmentMedoid(vectors)
             })
             if (cancelled) return
+            const elapsedMs = scanStartedAt === null ? 0 : performance.now() - scanStartedAt
+            const metrics =
+              !enrollment && elapsedMs > 0
+                ? {
+                    scanMs: Math.min(120_000, Math.round(elapsedMs)),
+                    fps: Math.min(240, Math.round((scanFrames * 10_000) / elapsedMs) / 10),
+                  }
+                : undefined
             const payload = await timeFaceStage('encrypt', () =>
               encryptFacePayload<LivenessProof>({ vector, liveness: livenessProof }, key!)
             )
             if (cancelled) return
-            await onEmbedding(payload)
+            if (enrollment) await onEmbedding(payload)
+            else await onEmbedding(payload, metrics)
           } catch (err) {
             // Tomas que no coinciden entre si: decirle a la persona que
             // corregir, no un "no se pudo" generico.
@@ -507,18 +547,22 @@ export function FaceScan({
       const loop = () => {
         if (cancelled || doneRef.current) return
         const v = videoRef.current
-        if (!v || v.readyState < 2) {
-          rafRef.current = requestAnimationFrame(loop)
-          return
-        }
-
         const now = performance.now()
-        if (startMs !== null && now - startMs > DECISION_TIMEOUT_MS) {
+        const videoReady = v && v.readyState >= 2
+        if (
+          (!enrollment || videoReady) &&
+          startMs !== null &&
+          now - startMs > DECISION_TIMEOUT_MS
+        ) {
           fail(
             timeoutMessage(
               'No pudimos completar una captura válida. Ajusta la luz e intenta de nuevo.'
             )
           )
+          return
+        }
+        if (!videoReady) {
+          rafRef.current = requestAnimationFrame(loop)
           return
         }
         if (document.hidden || v.currentTime === lastVideoTime) {
@@ -528,16 +572,34 @@ export function FaceScan({
         }
         lastVideoTime = v.currentTime
 
+        if (!enrollment) {
+          firstVideoFrameAt ??= now
+          videoFrames += 1
+          // Medir antes de saltar evita que el salto reduzca su propia estimación.
+          const fps = frameRate.record(now)
+          const stride = now - firstVideoFrameAt >= RATE_WARMUP_MS ? analysisStride(fps) : 1
+          if (videoFrames - lastAnalyzedFrame < stride) {
+            rafRef.current = requestAnimationFrame(loop)
+            return
+          }
+          lastAnalyzedFrame = videoFrames
+        }
+
         let result: ReturnType<typeof landmarker.detectForVideo>
         try {
           result = landmarker.detectForVideo(v, now)
           detectionFrames += 1
           detectionMs += performance.now() - now
         } catch {
-          fail('No se pudo analizar la cámara. Intenta de nuevo.')
+          const reportFailure = () => fail('No se pudo analizar la cámara. Intenta de nuevo.')
+          if (enrollment) reportFailure()
+          else void discardFaceLandmarker(FACE_LIMIT).then(reportFailure)
           return
         }
-        const landmarks = firstFaceLandmarks(result)
+        const selection = enrollment
+          ? { landmarks: firstFaceLandmarks(result), crowded: false }
+          : primaryFace(result?.faceLandmarks ?? [], v.videoWidth, v.videoHeight)
+        const { landmarks } = selection
 
         // Registro: una sola persona en cuadro. Con dos, no hay forma de saber
         // de quien es el rostro que se guarda (SGRH-117).
@@ -558,6 +620,25 @@ export function FaceScan({
         }
 
         if (startMs === null) startMs = now
+        if (!enrollment) {
+          if (scanStartedAt !== null) scanFrames += 1
+          const multipleFaces = (result.faceLandmarks?.length ?? 0) > 1
+          const bounds = faceBounds(landmarks)
+          if (
+            (multipleFaces || hadMultipleFaces) &&
+            previousPrimary &&
+            !overlapsPreviousFace(previousPrimary, bounds)
+          ) {
+            // La evidencia de una cara no respalda la captura de otra.
+            resetCapture()
+            crowdedSince = null
+            darkStreak = 0
+          }
+          previousPrimary = bounds
+          hadMultipleFaces = multipleFaces
+          crowdedSince = selection.crowded ? (crowdedSince ?? now) : null
+          setCrowded(selection.crowded)
+        }
         const quality = assessQuality(landmarks, {
           oval: ovalInVideo(
             v.videoWidth,
@@ -573,6 +654,10 @@ export function FaceScan({
           showHint(quality ? qualityMessage(quality.issues) : null)
           rafRef.current = requestAnimationFrame(loop)
           return
+        }
+        if (!enrollment && scanStartedAt === null) {
+          scanStartedAt = now
+          scanFrames = 1
         }
 
         // Registro: una mano sobre la cara invalida TODO lo juntado hasta ahi
@@ -597,20 +682,16 @@ export function FaceScan({
           }
         }
 
-        // Registro: lentes oscuros. Ningun modelo los ve (la malla se ajusta
-        // igual, la prueba de vida ve piel real) y, si estan puestos todo el
-        // tiempo, las tres tomas salen consistentes entre si. Se mide el brillo
-        // de los ojos contra la piel del mismo rostro cada SHADE_EVERY cuadros
-        // y solo se frena tras DARK_STREAK mediciones seguidas: una sombra o
-        // un parpadeo no alcanzan.
+        // Se exige una racha para que un parpadeo no se confunda con lentes.
+        // El kiosco guarda esa pista para el mensaje de tiempo agotado.
         shadeTick += 1
-        if (enrollment && shadeTick % SHADE_EVERY === 0) {
+        if (shadeTick % SHADE_EVERY === 0) {
           const shade = sampleEyeShade(v, landmarks)
           darkStreak = looksLikeDarkGlasses(shade) ? darkStreak + 1 : 0
-          if (DEBUG && shade)
+          if (enrollment && DEBUG && shade)
             console.info('[face] ojos/piel', shade.right.toFixed(2), shade.left.toFixed(2))
         }
-        if (darkStreak >= DARK_STREAK) {
+        if (enrollment && darkStreak >= DARK_STREAK) {
           resetCapture(true)
           setStatus('ajusta_encuadre')
           showHint(DARK_GLASSES_MESSAGE)
@@ -626,8 +707,13 @@ export function FaceScan({
 
           // La inferencia es asincrona: se lanza sin bloquear el loop y se
           // ignoran los frames que lleguen mientras una sigue en vuelo.
-          if (!scoring && frameCount % SCORE_EVERY === 0) {
+          // El salto de cuadros no debe multiplicar la espera entre muestras.
+          const sampleDue = enrollment
+            ? frameCount % SCORE_EVERY === 0
+            : videoFrames - lastScoreFrame >= SCORE_EVERY
+          if (!scoring && sampleDue) {
             scoring = true
+            lastScoreFrame = videoFrames
             const sampleGeneration = generation
             void scoreRealness(v, landmarks, v.videoWidth, v.videoHeight)
               .then((score) => {
@@ -730,6 +816,7 @@ export function FaceScan({
           best &&
           captureStartMs !== null &&
           now - captureStartMs >= CAPTURE_WINDOW_MS &&
+          (crowdedSince === null || now - crowdedSince >= CROWDED_HOLD_MS) &&
           (!enrollment || candidates.length === ENROLLMENT_CAPTURES)
         ) {
           capture(best.canvas, proof)
@@ -875,6 +962,9 @@ export function FaceScan({
           </div>
         )}
       </div>
+      {!enrollment && (
+        <p className="text-center text-xs text-slate-500">De frente, sin nada en la cara</p>
+      )}
     </div>
   )
 }

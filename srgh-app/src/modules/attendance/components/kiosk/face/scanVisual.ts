@@ -25,6 +25,7 @@ export interface ScanVisualInput {
   phase: ScanPhase
   /** Indicacion concreta (acercarse, quitar la mano…) cuando hay que corregir. */
   hint?: string | null
+  crowded?: boolean
   /** Lecturas de la prueba de vida juntadas y las necesarias para decidir. */
   livenessSamples?: number
   livenessNeeded?: number
@@ -50,7 +51,8 @@ const MESSAGES = {
 const clamp01 = (n: number) => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0)
 
 export function getScanVisual(input: ScanVisualInput): ScanVisual {
-  const { phase, hint } = input
+  const { phase } = input
+  const hint = input.crowded ? 'Una persona a la vez' : input.hint
 
   switch (phase) {
     case 'iniciando':

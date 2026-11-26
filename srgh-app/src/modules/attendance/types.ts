@@ -100,6 +100,12 @@ export type EncryptedVectorInput = z.input<typeof encryptedVectorSchema>
 export const verifyFaceSchema = z.object({
   vector: encryptedVectorSchema,
   dispositivoId: z.string().trim().max(100).nullable(),
+  metricas: z
+    .object({
+      escaneoMs: z.number().int().min(0).max(120_000),
+      fps: z.number().min(0).max(240),
+    })
+    .optional(),
 })
 
 export type VerifyFaceInput = z.input<typeof verifyFaceSchema>

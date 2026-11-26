@@ -20,6 +20,7 @@ import type { ActiveEmployeeOption } from '@/modules/attendance/actions/getActiv
 import { verifyFace } from '@/modules/attendance/actions/verifyFace'
 import { getKioskMarkOptions } from '@/modules/attendance/actions/getKioskMarkOptions'
 import { MARK_LABELS, MARK_TYPES, type MarkType } from '@/modules/attendance/lib/marks'
+import { nowInCostaRica, timeOfDay } from '@/modules/attendance/lib/time'
 import type { EncryptedVector } from '@/modules/attendance/lib/face/faceCrypto'
 import {
   getCurrentCoordinates,
@@ -28,8 +29,14 @@ import {
 import { timeFaceStage } from './face/timing'
 import { getOrCreateDeviceId } from '@/modules/attendance/components/kiosk/deviceId'
 import { useOfflineSync } from '@/modules/attendance/components/kiosk/useOfflineSync'
-import { FaceScan } from '@/modules/attendance/components/kiosk/face/FaceScan'
-import { FORMATO_HORA_DEFAULT, type FormatoHora } from '@/lib/time/formatoHora'
+import {
+  FaceScan,
+  preloadFaceScan,
+  type FaceScanMetrics,
+} from '@/modules/attendance/components/kiosk/face/FaceScan'
+import { FORMATO_HORA_DEFAULT, formatHora, type FormatoHora } from '@/lib/time/formatoHora'
+import { playConfirmationCue, prepareConfirmationCue } from './confirmationCue'
+import { useWakeLock } from './useWakeLock'
 
 interface KioskScreenProps {
   /** Quienes tienen turno hoy en esta sucursal: solo se usa para saber si hay alguien. */
@@ -175,8 +182,20 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
 
   const { isOnline, pendingCount, discardedCount, submitMark } = useOfflineSync()
   const now = useClock()
+  useWakeLock()
 
   const faceConfigured = Boolean(process.env.NEXT_PUBLIC_FACE_VECTOR_KEY)
+
+  useEffect(() => {
+    if (!faceConfigured || employees.length === 0) return
+    const preload = () => preloadFaceScan(false)
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(preload, { timeout: 2000 })
+      return () => window.cancelIdleCallback?.(id)
+    }
+    const timer = window.setTimeout(preload, 500)
+    return () => window.clearTimeout(timer)
+  }, [faceConfigured, employees.length])
 
   const reset = useCallback(() => {
     coordinatesRequest.current += 1
@@ -227,7 +246,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
   }, [failure, reset])
 
   const handleFaceEmbedding = useCallback(
-    async (payload: EncryptedVector) => {
+    async (payload: EncryptedVector, metrics?: FaceScanMetrics) => {
       setVerifying(true)
 
       try {
@@ -235,6 +254,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
           verifyFace({
             vector: payload,
             dispositivoId: getOrCreateDeviceId() || null,
+            ...(metrics && { metricas: { escaneoMs: metrics.scanMs, fps: metrics.fps } }),
           })
         )
 
@@ -295,6 +315,8 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
     marking.current = true
     setSubmittingTipo(tipo)
     const coords = coordinates.current
+    const eventTime = nowInCostaRica()
+    prepareConfirmationCue()
 
     try {
       const outcome = await timeFaceStage('mark', () =>
@@ -305,16 +327,13 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
           longitud: coords?.longitud ?? null,
           dispositivoId: getOrCreateDeviceId() || null,
           ticketFacial: verified.ticket,
+          fechaHora: eventTime,
         })
       )
 
       if (outcome.queued) {
         toast.success('Marca guardada. Se enviará al servidor cuando regrese el internet.')
-        setSuccessLabel(`${MARK_LABELS[tipo]} registrada`)
-        return
-      }
-
-      if (!outcome.result.ok) {
+      } else if (!outcome.result.ok) {
         toast.error(outcome.result.error)
         // Lo mas probable es que la jornada cambio en el medio: se vuelve a
         // preguntar para no dejar botones viejos.
@@ -322,7 +341,12 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
         return
       }
 
-      setSuccessLabel(`${MARK_LABELS[tipo]} registrada`)
+      const ending = tipo === 'entrada' || tipo === 'salida' ? 'a' : 'o'
+      const verb = outcome.queued ? 'guardad' : 'registrad'
+      setSuccessLabel(
+        `${MARK_LABELS[tipo]} ${verb}${ending} · ${formatHora(timeOfDay(eventTime), formatoHora)}`
+      )
+      playConfirmationCue()
     } catch {
       toast.error('No se pudo guardar la marca en este dispositivo. Intenta de nuevo.')
     } finally {
@@ -358,7 +382,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
           icon={CheckCircle2}
           tone="emerald"
           titulo={successLabel}
-          detalle={verified?.fullName ?? ''}
+          employeeName={verified?.fullName}
         />
       )
     }
@@ -519,12 +543,14 @@ function StatusPanel({
   tone,
   titulo,
   detalle,
+  employeeName,
   children,
 }: {
   icon: IconComponent
   tone: keyof typeof TONES
   titulo: string
-  detalle: string
+  detalle?: string
+  employeeName?: string
   children?: React.ReactNode
 }) {
   return (
@@ -537,6 +563,11 @@ function StatusPanel({
       <div>
         <p className="text-2xl font-bold text-slate-900 sm:text-3xl">{titulo}</p>
         {detalle && <p className="mx-auto mt-2 max-w-sm text-base text-slate-600">{detalle}</p>}
+        {employeeName && (
+          <p className="mx-auto mt-2 max-w-sm text-2xl font-bold text-slate-900 sm:text-3xl">
+            {employeeName}
+          </p>
+        )}
       </div>
       {children}
     </div>

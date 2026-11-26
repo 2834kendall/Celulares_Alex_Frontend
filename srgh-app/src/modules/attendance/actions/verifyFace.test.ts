@@ -82,6 +82,14 @@ const HISTORIAL = {
   error: null,
 }
 
+const METRICS = { escaneoMs: 1000, fps: 12.4 }
+
+function auditInsert(client: ReturnType<typeof createSupabaseClientMock>) {
+  return client.from.mock.results.find(
+    (_result, index) => client.from.mock.calls[index][0] === 'sgrh_biometria_auditoria'
+  )?.value.insert
+}
+
 describe('verifyFace (server action)', () => {
   it('rechaza el contexto bloqueado antes de consultar rostros', async () => {
     mockRequirePermission.mockResolvedValue({
@@ -115,6 +123,22 @@ describe('verifyFace (server action)', () => {
       ok: false,
       error: 'El reconocimiento facial no está configurado en el servidor.',
     })
+  })
+
+  it.each([
+    { escaneoMs: -1, fps: 12 },
+    { escaneoMs: 1000.1, fps: 12 },
+    { escaneoMs: 120_001, fps: 12 },
+    { escaneoMs: 1000, fps: -1 },
+    { escaneoMs: 1000, fps: 240.1 },
+  ])('rejects scan metrics outside the allowed bounds (%j)', async (metricas) => {
+    const result = await verifyFace({
+      vector: await encryptedProbe(),
+      dispositivoId: null,
+      metricas,
+    })
+    expect(result.ok).toBe(false)
+    expect(mockCreateClient).not.toHaveBeenCalled()
   })
 
   it('falla con un payload que no descifra (basura o llave equivocada)', async () => {
@@ -167,19 +191,22 @@ describe('verifyFace (server action)', () => {
   })
 
   it('MATCH de alta confianza con vector identico, con ticket firmado valido', async () => {
-    setClient(
-      createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
-        sgrh_programacion_semanal: PROGRAMACION,
-        sgrh_historial_laboral: HISTORIAL,
-        sgrh_biometria_empleado: {
-          data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],
-          error: null,
-        },
-      }) as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: PROGRAMACION,
+      sgrh_historial_laboral: HISTORIAL,
+      sgrh_biometria_empleado: {
+        data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0) }],
+        error: null,
+      },
+    })
+    setClient(client)
 
-    const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: 'tablet-1' })
+    const result = await verifyFace({
+      vector: await encryptedProbe(),
+      dispositivoId: 'tablet-1',
+      metricas: METRICS,
+    })
 
     expect(result.ok).toBe(true)
     if (!result.ok || result.status !== 'MATCH') throw new Error('esperaba MATCH')
@@ -187,6 +214,16 @@ describe('verifyFace (server action)', () => {
     expect(result.fullName).toBe('Ana Perez')
     expect(result.confianza).toBe('alta')
     expect(await verifyFaceTicket(result.ticket, 10, TICKET_SECRET)).toBe(true)
+    expect(auditInsert(client)).toHaveBeenCalledWith({
+      bia_empresa_id: 1,
+      bia_sucursal_id: 100,
+      bia_resultado: 'MATCH',
+      bia_mejor_empleado_id: 10,
+      bia_mejor_distancia: 0,
+      bia_dispositivo_id: 'tablet-1',
+      bia_escaneo_ms: 1000,
+      bia_fps: 12.4,
+    })
   })
 
   it('MATCH con tolerancia en la banda 0.4-0.5 (luz/angulo)', async () => {
@@ -240,7 +277,11 @@ describe('verifyFace (server action)', () => {
     })
     setClient(client as unknown as Awaited<ReturnType<typeof createClient>>)
 
-    const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: 'tablet-1' })
+    const result = await verifyFace({
+      vector: await encryptedProbe(),
+      dispositivoId: 'tablet-1',
+      metricas: METRICS,
+    })
 
     expect(result).toEqual({ ok: true, status: 'DENIED' })
 
@@ -253,11 +294,14 @@ describe('verifyFace (server action)', () => {
         bia_resultado: 'DENIED',
         bia_mejor_empleado_id: 11,
         bia_dispositivo_id: 'tablet-1',
+        bia_mejor_distancia: 0.8,
+        bia_escaneo_ms: 1000,
+        bia_fps: 12.4,
       })
     )
   })
 
-  it('sin vectores enrolados responde REQUIRE_PIN sin tocar la auditoria', async () => {
+  it('audits an undecided result without vectors or metrics with null columns', async () => {
     const client = createSupabaseClientMock({
       sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
       sgrh_programacion_semanal: PROGRAMACION,
@@ -269,29 +313,70 @@ describe('verifyFace (server action)', () => {
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
     expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
-    expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_auditoria')
+    expect(auditInsert(client)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bia_resultado: 'REQUIRE_PIN',
+        bia_mejor_distancia: null,
+        bia_mejor_empleado_id: null,
+        bia_escaneo_ms: null,
+        bia_fps: null,
+      })
+    )
   })
 
   it('pide otra captura si dos empleados pasan el umbral de coincidencia', async () => {
-    setClient(
-      createSupabaseClientMock({
-        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
-        sgrh_programacion_semanal: PROGRAMACION,
-        sgrh_historial_laboral: HISTORIAL,
-        sgrh_biometria_empleado: {
-          data: [
-            { bio_empleado_id: 10, bio_vector: vecAtDistance(0.3) },
-            { bio_empleado_id: 11, bio_vector: vecAtDistance(0.05) },
-          ],
-          error: null,
-        },
-      }) as unknown as Awaited<ReturnType<typeof createClient>>
-    )
+    const client = createSupabaseClientMock({
+      sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+      sgrh_programacion_semanal: PROGRAMACION,
+      sgrh_historial_laboral: HISTORIAL,
+      sgrh_biometria_empleado: {
+        data: [
+          { bio_empleado_id: 10, bio_vector: vecAtDistance(0.3) },
+          { bio_empleado_id: 11, bio_vector: vecAtDistance(0.05) },
+        ],
+        error: null,
+      },
+    })
+    setClient(client)
 
     const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
 
     expect(result).toEqual({ ok: true, status: 'REQUIRE_PIN' })
+    expect(auditInsert(client)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bia_resultado: 'REQUIRE_PIN',
+        bia_mejor_empleado_id: 11,
+        bia_mejor_distancia: 0.05,
+      })
+    )
   })
+
+  it.each(['returned error', 'thrown error'])(
+    'keeps a valid match when audit fails with a %s',
+    async (failure) => {
+      const client = createSupabaseClientMock({
+        sgrh_usuarios_empresa_rol: { data: [{ uer_sucursal_id: 100 }], error: null },
+        sgrh_programacion_semanal: PROGRAMACION,
+        sgrh_historial_laboral: HISTORIAL,
+        sgrh_biometria_empleado: {
+          data: [{ bio_empleado_id: 10, bio_vector: vecAtDistance(0.1) }],
+          error: null,
+        },
+        sgrh_biometria_auditoria: { data: null, error: { message: 'offline' } },
+      })
+      if (failure === 'thrown error') {
+        const from = client.from.getMockImplementation()!
+        client.from.mockImplementation((table) => {
+          if (table === 'sgrh_biometria_auditoria') throw new Error('offline')
+          return from(table)
+        })
+      }
+      setClient(client)
+      const result = await verifyFace({ vector: await encryptedProbe(), dispositivoId: null })
+      if (!result.ok || result.status !== 'MATCH') throw new Error('Expected MATCH')
+      expect(await verifyFaceTicket(result.ticket, 10, TICKET_SECRET)).toBe(true)
+    }
+  )
 
   it('ignora vectores corruptos o de otra dimension sin romperse', async () => {
     setClient(

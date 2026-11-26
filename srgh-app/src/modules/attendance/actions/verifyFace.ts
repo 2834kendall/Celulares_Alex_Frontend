@@ -42,6 +42,8 @@ interface BiometriaRow {
   bio_vector: unknown
 }
 
+const uncertain = { ok: true, status: 'REQUIRE_PIN' } as const
+
 /**
  * Identificacion facial 1:N del kiosco. Recibe el embedding CIFRADO (la foto
  * nunca llega aca), lo descifra, baja de la base de datos unicamente los
@@ -51,7 +53,7 @@ interface BiometriaRow {
  *
  * Estados segun la mejor distancia: MATCH (< 0.5, con confianza alta si
  * < 0.4), REQUIRE_PIN (0.5 a 0.6: el frontend abre el teclado de PIN) y
- * DENIED (> 0.6: se guarda log de auditoria). Sin vectores enrolados en la
+ * DENIED (> 0.6). Sin vectores enrolados en la
  * sucursal se responde REQUIRE_PIN: identidad no verificable ≠ intruso.
  */
 export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResult> {
@@ -65,7 +67,8 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   const meta = claims.app_metadata as ManagedKioskMeta
   if (meta.kiosk_error) return { ok: false, error: meta.kiosk_error }
 
-  if (!meta.empresa_id) {
+  const companyId = meta.empresa_id
+  if (!companyId) {
     return { ok: false, error: 'No se pudo determinar la empresa del kiosco.' }
   }
 
@@ -89,13 +92,37 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     return { ok: false, error: 'No se pudo procesar la verificación facial.' }
   }
 
+  const { dispositivoId, metricas } = parsed.data
+  const audit = async (
+    result: Extract<VerifyFaceResult, { ok: true }>,
+    branchId: number | null,
+    admin?: ReturnType<typeof createAdminClient>,
+    candidate?: { employeeId: number; distance: number }
+  ): Promise<VerifyFaceResult> => {
+    try {
+      await (admin ?? createAdminClient()).from('sgrh_biometria_auditoria').insert({
+        bia_empresa_id: companyId,
+        bia_sucursal_id: branchId,
+        bia_resultado: result.status,
+        bia_mejor_distancia: candidate ? Number(candidate.distance.toFixed(4)) : null,
+        bia_mejor_empleado_id: candidate?.employeeId ?? null,
+        bia_dispositivo_id: dispositivoId,
+        bia_escaneo_ms: metricas?.escaneoMs ?? null,
+        bia_fps: metricas?.fps ?? null,
+      })
+    } catch {
+      // Un fallo de auditoría no debe cambiar el resultado ni frenar la fila.
+    }
+    return result
+  }
+
   // Sin prueba de vida NO se emite ticket. Reconocer de quien es una cara y
   // verificar si esa cara esta viva son preguntas distintas: sin esta guarda,
   // una foto del colaborador da distancia baja —correctamente, es la misma
   // cara— y el kiosco firmaria una marca FACIAL. Ver livenessProof.ts para el
   // alcance real de esta garantia.
   if (!isLivenessProof(liveness)) {
-    return { ok: true, status: 'REQUIRE_PIN' }
+    return audit(uncertain, meta.sucursal_ids?.[0] ?? null)
   }
 
   const supabase = await createClient()
@@ -119,6 +146,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   // lib/kioskAccess.ts). Todo acotado a las sucursales de la cuenta y a la
   // empresa del JWT.
   const admin = createAdminClient()
+  const branchId = sucursalIds[0]
   const assignments = await getDayAssignments(admin, todayInCostaRica(), sucursalIds)
 
   if (!assignments.ok) {
@@ -131,7 +159,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   // 'nadie enrolado' — se cae al PIN, que igual va a rebotar en
   // registerKioskMark si de verdad no le toca trabajar.
   if (historyIds.length === 0) {
-    return { ok: true, status: 'REQUIRE_PIN' }
+    return audit(uncertain, branchId, admin)
   }
 
   const { data: historial, error: errHistorial } = await admin
@@ -146,7 +174,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     // cerrados: la programacion queda como historico y sobrevive a la salida
     // del colaborador.
     .in('lab_id', historyIds)
-    .eq('lab_empresa_id', meta.empresa_id)
+    .eq('lab_empresa_id', companyId)
     .is('lab_fecha_fin', null)
     .returns<HistorialRow[]>()
 
@@ -165,13 +193,13 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   }
 
   if (nameByEmployee.size === 0) {
-    return { ok: true, status: 'REQUIRE_PIN' }
+    return audit(uncertain, branchId, admin)
   }
 
   const { data: vectores, error: errVectores } = await admin
     .from('sgrh_biometria_empleado')
     .select('bio_empleado_id, bio_vector')
-    .eq('bio_empresa_id', meta.empresa_id)
+    .eq('bio_empresa_id', companyId)
     .in('bio_empleado_id', Array.from(nameByEmployee.keys()))
     .eq('bio_modelo', FACE_MODEL_ID)
     .returns<BiometriaRow[]>()
@@ -202,47 +230,39 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   // Nadie enrolado (o solo vectores de un modelo viejo/corruptos): zona de
   // incertidumbre, no un rechazo — el kiosco cae al flujo de nombre + PIN.
   if (bestEmployeeId === null) {
-    return { ok: true, status: 'REQUIRE_PIN' }
+    return audit(uncertain, branchId, admin)
   }
 
   const clasificacion = classifyDistance(bestDistance)
+  const candidate = { employeeId: bestEmployeeId, distance: bestDistance }
 
   // A second identity also passing today's MATCH threshold is ambiguous.
   // Do not invent a new uncalibrated margin or relax the existing threshold.
   if (clasificacion.status === 'MATCH' && classifyDistance(secondDistance).status === 'MATCH') {
-    return { ok: true, status: 'REQUIRE_PIN' }
+    return audit(uncertain, branchId, admin, candidate)
   }
 
   if (clasificacion.status === 'DENIED') {
-    // Log de auditoria obligatorio en DENIED. Best-effort: si el insert
-    // falla no se le esconde el resultado al kiosco, pero tampoco se miente
-    // con un MATCH.
-    await admin.from('sgrh_biometria_auditoria').insert({
-      bia_empresa_id: meta.empresa_id,
-      // El log de auditoria tiene una sola columna de sucursal; un kiosco es
-      // un dispositivo fisico de una sola sucursal, asi que "varias
-      // asignadas" no deberia darse en la practica — se registra la primera.
-      bia_sucursal_id: sucursalIds[0],
-      bia_resultado: 'DENIED',
-      bia_mejor_distancia: Number(bestDistance.toFixed(4)),
-      bia_mejor_empleado_id: bestEmployeeId,
-      bia_dispositivo_id: parsed.data.dispositivoId,
-    })
-    return { ok: true, status: 'DENIED' }
+    return audit({ ok: true, status: 'DENIED' }, branchId, admin, candidate)
   }
 
   if (clasificacion.status === 'REQUIRE_PIN') {
-    return { ok: true, status: 'REQUIRE_PIN' }
+    return audit(uncertain, branchId, admin, candidate)
   }
 
-  return {
-    ok: true,
-    status: 'MATCH',
-    employeeId: bestEmployeeId,
-    fullName: nameByEmployee.get(bestEmployeeId) ?? '',
-    confianza: clasificacion.confianza ?? 'tolerancia',
-    ticket: await (meta.kiosk_context
-      ? signFaceTicket(bestEmployeeId, ticketSecret, Date.now(), undefined, meta.kiosk_context)
-      : signFaceTicket(bestEmployeeId, ticketSecret)),
-  }
+  return audit(
+    {
+      ok: true,
+      status: 'MATCH',
+      employeeId: bestEmployeeId,
+      fullName: nameByEmployee.get(bestEmployeeId) ?? '',
+      confianza: clasificacion.confianza ?? 'tolerancia',
+      ticket: await (meta.kiosk_context
+        ? signFaceTicket(bestEmployeeId, ticketSecret, Date.now(), undefined, meta.kiosk_context)
+        : signFaceTicket(bestEmployeeId, ticketSecret)),
+    },
+    branchId,
+    admin,
+    candidate
+  )
 }

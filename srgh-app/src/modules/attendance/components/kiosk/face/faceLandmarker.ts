@@ -16,10 +16,8 @@ const WASM_PATH = '/models/mediapipe-wasm'
 const MODEL_PATH = '/models/face_landmarker.task'
 
 /**
- * Una instancia por cantidad maxima de rostros. El kiosco usa 1: con gente en
- * fila detras, buscar mas rostros solo agrega costo y la chance de tomar al de
- * atras. El registro usa 2 para poder frenar si hay otra persona en cuadro
- * (SGRH-117). El modelo se descarga una sola vez; el navegador lo cachea.
+ * El kiosco y el registro comparten la instancia de dos rostros para que
+ * precargar el modelo no duplique el trabajo ni el uso de memoria.
  */
 const landmarkerPromises = new Map<number, Promise<FaceLandmarker>>()
 let infoLogsSilenced = false
@@ -79,10 +77,23 @@ export function getFaceLandmarker(maxFaces = 1): Promise<FaceLandmarker> {
     })().catch((err) => {
       // Si fallo la carga (assets ausentes, WebGL bloqueado), el siguiente
       // intento debe poder reintentar en vez de heredar la promesa rota.
-      landmarkerPromises.delete(maxFaces)
+      if (landmarkerPromises.get(maxFaces) === landmarkerPromise) {
+        landmarkerPromises.delete(maxFaces)
+      }
       throw err
     })
     landmarkerPromises.set(maxFaces, landmarkerPromise)
   }
   return landmarkerPromise
+}
+
+export async function discardFaceLandmarker(maxFaces: number): Promise<void> {
+  const pending = landmarkerPromises.get(maxFaces)
+  landmarkerPromises.delete(maxFaces)
+  try {
+    const detector = await pending
+    detector?.close()
+  } catch {
+    // El siguiente intento debe poder cargar otro detector aunque falle el cierre.
+  }
 }
