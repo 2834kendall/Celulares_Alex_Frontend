@@ -4,9 +4,11 @@ import {
   esFechaVencida,
   formatCRC,
   formatCumpleanos,
+  formatCurrencyInput,
   formatDate,
   fullName,
   nombreSinExtension,
+  parseCurrencyInput,
 } from './format'
 
 describe('formatCumpleanos', () => {
@@ -65,15 +67,69 @@ describe('formatDate', () => {
   })
 })
 
+const normalizeSpaces = (text: string) => text.replace(/\u00a0/g, ' ')
+
 describe('formatCRC', () => {
-  it('formatea montos en colones sin decimales', () => {
-    const formatted = formatCRC(500000)
-    expect(formatted).toContain('500')
-    expect(formatted).toContain('₡')
+  it('formatea montos enteros en colones sin decimales', () => {
+    expect(normalizeSpaces(formatCRC(500000))).toBe('₡500 000')
   })
 
-  it('devuelve — para null', () => {
+  it('formatea montos con céntimos usando siempre 2 decimales', () => {
+    expect(normalizeSpaces(formatCRC(1234.5))).toBe('₡1 234,50')
+    expect(normalizeSpaces(formatCRC(1234.56))).toBe('₡1 234,56')
+  })
+
+  it('devuelve — para null, undefined o NaN', () => {
     expect(formatCRC(null)).toBe('—')
+    expect(formatCRC(undefined)).toBe('—')
+    expect(formatCRC(Number.NaN)).toBe('—')
+  })
+})
+
+describe('formatCurrencyInput', () => {
+  it('formatea enteros sin decimales y decimales con 2 dígitos, sin símbolo ₡', () => {
+    expect(normalizeSpaces(formatCurrencyInput(500000))).toBe('500 000')
+    expect(normalizeSpaces(formatCurrencyInput(1234.5))).toBe('1 234,50')
+    expect(normalizeSpaces(formatCurrencyInput(1234.56))).toBe('1 234,56')
+    expect(normalizeSpaces(formatCurrencyInput(-500))).toBe('-500')
+    expect(formatCurrencyInput(0)).toBe('0')
+  })
+
+  it('devuelve cadena vacía para NaN o infinito', () => {
+    expect(formatCurrencyInput(Number.NaN)).toBe('')
+    expect(formatCurrencyInput(Number.POSITIVE_INFINITY)).toBe('')
+  })
+})
+
+describe('parseCurrencyInput', () => {
+  it('interpreta un único punto o coma como separador decimal (nunca multiplica)', () => {
+    expect(parseCurrencyInput('1234.56')).toBe(1234.56)
+    expect(parseCurrencyInput('1234,56')).toBe(1234.56)
+    expect(parseCurrencyInput('350000.555')).toBe(350000.555)
+    expect(parseCurrencyInput('1234.')).toBe(1234)
+    expect(parseCurrencyInput('₡1 234,56')).toBe(1234.56)
+  })
+
+  it('cuando coexisten punto y coma, toma el último como decimal y el otro como miles', () => {
+    expect(parseCurrencyInput('1,234.56')).toBe(1234.56)
+    expect(parseCurrencyInput('1.234,56')).toBe(1234.56)
+    expect(parseCurrencyInput('1.234.567,89')).toBe(1234567.89)
+  })
+
+  it('interpreta múltiples ocurrencias del mismo separador como miles', () => {
+    expect(parseCurrencyInput('1.500.000')).toBe(1500000)
+    expect(parseCurrencyInput('1,500,000')).toBe(1500000)
+  })
+
+  it('conserva negativos y cero, y devuelve NaN para vacío o entradas inválidas', () => {
+    expect(parseCurrencyInput('-500')).toBe(-500)
+    expect(parseCurrencyInput('0')).toBe(0)
+    expect(parseCurrencyInput('-0')).toBe(0)
+    expect(parseCurrencyInput('')).toBeNaN()
+    expect(parseCurrencyInput('   ')).toBeNaN()
+    expect(parseCurrencyInput('-')).toBeNaN()
+    expect(parseCurrencyInput('50-0')).toBeNaN()
+    expect(parseCurrencyInput('abc')).toBeNaN()
   })
 })
 

@@ -3,8 +3,14 @@
 import { useState, type ReactNode } from 'react'
 import { useController, useFormContext, type FieldErrors } from 'react-hook-form'
 import type { CatalogoItem, TerritorioCatalogo } from '@/modules/employees/types'
-import { GENERO_LABELS, TIPO_CUENTA_LABELS } from '@/modules/employees/lib/format'
+import {
+  formatCurrencyInput,
+  GENERO_LABELS,
+  parseCurrencyInput,
+  TIPO_CUENTA_LABELS,
+} from '@/modules/employees/lib/format'
 import { formatIbanGroups, IBAN_CR_LENGTH, normalizeIban } from '@/modules/employees/lib/iban'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 import { DateField } from '@/components/ui/DatePickerButton'
 import { ControlledSelectMenu, parseNumber, SelectMenu } from '@/components/ui/SelectMenu'
 
@@ -119,13 +125,17 @@ export function CatalogSelect({
   )
 }
 
-// Formato de miles según la misma locale de formatCRC (es-CR), sin símbolo de
-// moneda: el ₡ ya va en la etiqueta del campo.
-const MILES_FORMAT = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 0 })
-
 interface MaskedInputProps {
   name: string
   invalid?: boolean
+}
+
+function sanitizeCurrencyDraft(raw: string): string {
+  const trimmedStart = raw.replace(/^[\s\u00a0]+/, '')
+  const hasLeadingMinus = trimmedStart.startsWith('-')
+  const rest = hasLeadingMinus ? trimmedStart.slice(1) : raw
+  const allowed = rest.replace(/[^0-9.,\s\u00a0]/g, '')
+  return hasLeadingMinus ? `-${allowed}` : allowed
 }
 
 /**
@@ -140,10 +150,14 @@ export function DateInput({
   name,
   label,
   invalid,
+  minISO,
+  maxISO,
 }: {
   name: string
   label: string
   invalid?: boolean
+  minISO?: string
+  maxISO?: string
 }) {
   const { control } = useFormContext()
   const {
@@ -156,36 +170,60 @@ export function DateInput({
       onChange={onChange}
       label={label}
       invalid={invalid}
+      minISO={minISO}
+      maxISO={maxISO}
     />
   )
 }
 
 /**
- * Monto en colones: guarda un number en el form y muestra separadores de
- * miles mientras se digita ('500000' → '500 000'). El vacío emite NaN para
- * replicar valueAsNumber y disparar el mensaje de "obligatorio" del schema.
+ * Monto en colones: guarda un `number` en el form (con soporte de decimales y
+ * preservando el signo `-` para que el schema lo rechace explícitamente) y
+ * formatea miles/decimales al perder el foco. Mientras tiene foco mantiene un
+ * borrador de texto para no borrar `.`, `,`, `0` o `-` a mitad de escritura.
  */
 export function CurrencyInput({ name, invalid }: MaskedInputProps) {
   const { control } = useFormContext()
+  const [isFocused, setIsFocused] = useState(false)
+  const [draft, setDraft] = useState('')
   // Se desestructura de una vez: `field` contiene una propiedad `ref` y la
   // regla react-hooks/refs lo confunde con un ref de React (falso positivo).
   const {
     field: { value, onChange, onBlur, name: inputName, ref },
   } = useController({ name, control })
 
-  const display =
-    typeof value === 'number' && !Number.isNaN(value) ? MILES_FORMAT.format(value) : ''
+  const hasValidNumber = typeof value === 'number' && !Number.isNaN(value)
+  const formatted = hasValidNumber ? formatCurrencyInput(value) : ''
+  // Si la persona escribió algo malformado ('12.34.56' o '-') y salió del
+  // campo, value es NaN (typeof === 'number'): se conserva el texto visible
+  // para que pueda corregirlo en vez de vaciarle el input en silencio.
+  const keepInvalidDraft = !hasValidNumber && typeof value === 'number' && draft.trim() !== ''
+  const display = isFocused || keepInvalidDraft ? draft : formatted
 
   return (
     <input
       type="text"
-      inputMode="numeric"
+      inputMode="decimal"
+      autoComplete="off"
       value={display}
-      onChange={(event) => {
-        const digits = event.target.value.replace(/\D/g, '')
-        onChange(digits === '' ? NaN : Number(digits))
+      onFocus={() => {
+        setIsFocused(true)
+        if (hasValidNumber) {
+          setDraft(formatted)
+        } else if (typeof value !== 'number') {
+          setDraft('')
+        }
       }}
-      onBlur={onBlur}
+      onChange={(event) => {
+        const sanitized = sanitizeCurrencyDraft(event.target.value)
+        setDraft(sanitized)
+        onChange(parseCurrencyInput(sanitized))
+      }}
+      onBlur={() => {
+        setIsFocused(false)
+        if (draft.trim() === '') setDraft('')
+        onBlur()
+      }}
       name={inputName}
       ref={ref}
       placeholder="0"
@@ -243,7 +281,10 @@ export function IbanInput({ name, invalid, disabled, mode = 'iban' }: IbanInputP
     <input
       type="text"
       inputMode={mode === 'sinpe' ? 'numeric' : 'text'}
-      autoComplete="off"
+      // Chromium ignora autoComplete="off" cuando su heurística de pagos ve
+      // "numero" + "cuenta"/"cc"; un token explícito distinto de tarjeta evita
+      // el globo de "formas de pago" en HTTP y el llenado de tarjetas en HTTPS.
+      autoComplete="one-time-code"
       spellCheck={false}
       disabled={disabled}
       value={formatIbanGroups(raw)}
@@ -288,6 +329,7 @@ export function PersonalDataFields({
       <Labeled label="Nombre *" error={err('emp_nombre')}>
         <input
           type="text"
+          autoComplete="off"
           {...register(`${basePath}emp_nombre`)}
           aria-invalid={Boolean(err('emp_nombre'))}
           className={INPUT_CLASSES}
@@ -297,6 +339,7 @@ export function PersonalDataFields({
       <Labeled label="Primer apellido *" error={err('emp_apellido_1')}>
         <input
           type="text"
+          autoComplete="off"
           {...register(`${basePath}emp_apellido_1`)}
           aria-invalid={Boolean(err('emp_apellido_1'))}
           className={INPUT_CLASSES}
@@ -306,6 +349,7 @@ export function PersonalDataFields({
       <Labeled label="Segundo apellido" error={err('emp_apellido_2')}>
         <input
           type="text"
+          autoComplete="off"
           {...register(`${basePath}emp_apellido_2`)}
           aria-invalid={Boolean(err('emp_apellido_2'))}
           className={INPUT_CLASSES}
@@ -328,6 +372,10 @@ export function PersonalDataFields({
       <Labeled label="Número de identificación *" error={err('emp_numero_identificacion')}>
         <input
           type="text"
+          // Chromium ignora autoComplete="off" si su heurística clasifica
+          // "numero" + "ccss" + nombres como tarjeta de crédito.
+          autoComplete="one-time-code"
+          spellCheck={false}
           {...register(`${basePath}emp_numero_identificacion`)}
           aria-invalid={Boolean(err('emp_numero_identificacion'))}
           className={INPUT_CLASSES}
@@ -353,6 +401,7 @@ export function PersonalDataFields({
           name={`${basePath}emp_fecha_nacimiento`}
           label="Fecha de nacimiento"
           invalid={Boolean(err('emp_fecha_nacimiento'))}
+          maxISO={todayInCostaRica()}
         />
       </Labeled>
 
@@ -373,6 +422,7 @@ export function PersonalDataFields({
       <Labeled label="Nacionalidad" error={err('emp_nacionalidad')}>
         <input
           type="text"
+          autoComplete="off"
           {...register(`${basePath}emp_nacionalidad`)}
           aria-invalid={Boolean(err('emp_nacionalidad'))}
           className={INPUT_CLASSES}
@@ -382,6 +432,7 @@ export function PersonalDataFields({
       <Labeled label="Teléfono" error={err('emp_telefono')}>
         <input
           type="tel"
+          autoComplete="off"
           {...register(`${basePath}emp_telefono`)}
           aria-invalid={Boolean(err('emp_telefono'))}
           className={INPUT_CLASSES}
@@ -391,6 +442,7 @@ export function PersonalDataFields({
       <Labeled label="Email personal" error={err('emp_email_personal')}>
         <input
           type="email"
+          autoComplete="off"
           {...register(`${basePath}emp_email_personal`)}
           aria-invalid={Boolean(err('emp_email_personal'))}
           className={INPUT_CLASSES}
@@ -400,6 +452,8 @@ export function PersonalDataFields({
       <Labeled label="Nº asegurado CCSS" error={err('emp_numero_asegurado_ccss')}>
         <input
           type="text"
+          autoComplete="one-time-code"
+          spellCheck={false}
           {...register(`${basePath}emp_numero_asegurado_ccss`)}
           aria-invalid={Boolean(err('emp_numero_asegurado_ccss'))}
           className={INPUT_CLASSES}
@@ -409,6 +463,7 @@ export function PersonalDataFields({
       <Labeled label="Contacto de emergencia" error={err('emp_nombre_contacto_emergencia')}>
         <input
           type="text"
+          autoComplete="off"
           {...register(`${basePath}emp_nombre_contacto_emergencia`)}
           aria-invalid={Boolean(err('emp_nombre_contacto_emergencia'))}
           className={INPUT_CLASSES}
@@ -418,6 +473,7 @@ export function PersonalDataFields({
       <Labeled label="Teléfono de emergencia" error={err('emp_telefono_emergencia')}>
         <input
           type="tel"
+          autoComplete="off"
           {...register(`${basePath}emp_telefono_emergencia`)}
           aria-invalid={Boolean(err('emp_telefono_emergencia'))}
           className={INPUT_CLASSES}
@@ -643,6 +699,7 @@ export function AddressFields({ basePath = '', territorio }: AddressFieldsProps)
       <Labeled label="Código postal">
         <input
           type="text"
+          autoComplete="off"
           readOnly
           value={codigoPostal ?? ''}
           placeholder="Se calcula con el distrito"
@@ -654,6 +711,7 @@ export function AddressFields({ basePath = '', territorio }: AddressFieldsProps)
         <Labeled label="Señas exactas *" error={err('dir_senas_exactas')}>
           <textarea
             rows={2}
+            autoComplete="off"
             {...register(`${basePath}dir_senas_exactas`)}
             placeholder="Ej. 200 m norte de la iglesia, casa portón verde"
             aria-invalid={Boolean(err('dir_senas_exactas'))}

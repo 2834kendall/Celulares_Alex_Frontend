@@ -262,4 +262,30 @@ describe('<EmployeeForm />', () => {
 
     expect(screen.getByLabelText('Número de cuenta (IBAN / SINPE)')).toHaveValue('')
   })
+
+  it('desactiva el autocompletado de pagos y perfiles en identificadores, cuentas y datos de terceros', () => {
+    const { container } = render(
+      <EmployeeForm
+        empleado={EMPLEADO_DETALLE}
+        tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
+        territorio={TERRITORIO}
+      />
+    )
+
+    expect(container.querySelector('form')).toHaveAttribute('autocomplete', 'off')
+    expect(screen.getByLabelText('Nombre *')).toHaveAttribute('autocomplete', 'off')
+    expect(screen.getByLabelText('Número de identificación *')).toHaveAttribute(
+      'autocomplete',
+      'one-time-code'
+    )
+    expect(screen.getByLabelText('Nº asegurado CCSS')).toHaveAttribute(
+      'autocomplete',
+      'one-time-code'
+    )
+    expect(screen.getByLabelText('Número de cuenta (IBAN / SINPE)')).toHaveAttribute(
+      'autocomplete',
+      'one-time-code'
+    )
+  })
 })

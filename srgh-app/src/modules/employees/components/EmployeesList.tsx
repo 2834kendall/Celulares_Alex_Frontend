@@ -104,6 +104,7 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
           <span className="sr-only">Buscar empleado</span>
           <input
             type="search"
+            autoComplete="off"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por nombre o identificación…"

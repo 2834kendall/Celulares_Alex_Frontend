@@ -99,6 +99,7 @@ export function DocumentMetadataForm({
         </label>
         <input
           id="doc_nombre"
+          autoComplete="off"
           disabled={isSubmitting}
           aria-invalid={!!errors.doc_nombre}
           {...register('doc_nombre')}
@@ -131,6 +132,7 @@ export function DocumentMetadataForm({
         <textarea
           id="doc_descripcion"
           rows={2}
+          autoComplete="off"
           disabled={isSubmitting}
           aria-invalid={!!errors.doc_descripcion}
           {...register('doc_descripcion')}

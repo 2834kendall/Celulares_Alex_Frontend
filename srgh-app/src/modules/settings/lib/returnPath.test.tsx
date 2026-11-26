@@ -41,10 +41,11 @@ describe('returnPath', () => {
   })
 
   it('si el storage falla, no rompe y vuelve al inicio', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const storageProto = Object.getPrototypeOf(window.sessionStorage) as Storage
+    vi.spyOn(storageProto, 'setItem').mockImplementation(() => {
       throw new Error('bloqueado')
     })
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    vi.spyOn(storageProto, 'getItem').mockImplementation(() => {
       throw new Error('bloqueado')
     })
 

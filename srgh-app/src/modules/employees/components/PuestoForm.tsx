@@ -65,6 +65,7 @@ export function PuestoForm({ puesto, onSuccess }: PuestoFormProps) {
       ref={(element) => guard.bindRoot(element)}
       onSubmit={handleSubmit(onSubmit)}
       className="space-y-3"
+      autoComplete="off"
       noValidate
     >
       {serverError && (
@@ -79,6 +80,7 @@ export function PuestoForm({ puesto, onSuccess }: PuestoFormProps) {
         </label>
         <input
           id="pue_nombre"
+          autoComplete="off"
           disabled={isSubmitting}
           aria-invalid={!!errors.pue_nombre}
           {...register('pue_nombre')}
@@ -94,6 +96,7 @@ export function PuestoForm({ puesto, onSuccess }: PuestoFormProps) {
         </label>
         <input
           id="pue_descripcion"
+          autoComplete="off"
           disabled={isSubmitting}
           aria-invalid={!!errors.pue_descripcion}
           {...register('pue_descripcion')}
@@ -106,13 +109,14 @@ export function PuestoForm({ puesto, onSuccess }: PuestoFormProps) {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
         <div>
           <label className={LABEL} htmlFor="pue_salario_minimo_referencia">
-            Salario mínimo de referencia
+            Salario mínimo de referencia (₡)
           </label>
           <input
             type="number"
             step="0.01"
             min="0"
             id="pue_salario_minimo_referencia"
+            autoComplete="off"
             disabled={isSubmitting}
             aria-invalid={!!errors.pue_salario_minimo_referencia}
             {...register('pue_salario_minimo_referencia')}
