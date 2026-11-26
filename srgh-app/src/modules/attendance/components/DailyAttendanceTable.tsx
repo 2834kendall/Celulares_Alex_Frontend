@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
@@ -24,6 +24,7 @@ import { usePagination } from '@/hooks/usePagination'
 import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import { ManualMarkModal } from '@/modules/attendance/components/ManualMarkModal'
+import type { DayStatusKind } from '@/modules/attendance/lib/dayStatus'
 import type { MarkType } from '@/modules/attendance/lib/marks'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
@@ -34,6 +35,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
 import { Hora } from '@/components/ui/Hora'
 import { useFormatHora } from '@/lib/time/FormatoHoraContext'
+import { DailyPersonRow } from './DailyPersonRow'
+import { DayStatusBadge } from './DayStatusBadge'
 
 interface DailyAttendanceTableProps {
   dateISO: string
@@ -43,7 +46,7 @@ interface DailyAttendanceTableProps {
 
 interface EditingTarget {
   row: DailyAttendanceRow
-  tipo: MarkType
+  type: MarkType
   /**
    * La marca que se corrige, cuando no es la de la fila: la de un bloque de un
    * dia de varios (SGRH-110). Sin esto el modal tomaria la primera entrada o
@@ -51,6 +54,7 @@ interface EditingTarget {
    */
   mark?: DailyMarkInfo | null
   block?: DailyScheduledBlock
+  suggestedTime?: string
 }
 
 const MARK_FIELD: Record<
@@ -265,7 +269,7 @@ function MarkCell({
  * ("+4") sin decir contra que. Pero gastar una columna entera en un dato que
  * se repite entre todos los del mismo turno no valia la pena — aca acompaña
  * al nombre, que es donde el gerente ya esta mirando, y libera ancho para las
- * marcas. Lo rinden las dos ramas, por eso vive aparte.
+ * marcas.
  */
 function EmployeeMeta({ row }: { row: DailyAttendanceRow }) {
   if (!row.position && !row.expectedStart) return null
@@ -283,28 +287,36 @@ function EmployeeMeta({ row }: { row: DailyAttendanceRow }) {
   )
 }
 
-/**
- * Etiquetas de estado del dia. Vive aparte porque la rendrizan las DOS ramas
- * (cards en movil, tabla en md:) y duplicar las condiciones garantizaba que
- * una se quedara atras al agregar un estado nuevo.
- */
-function StatusBadges({
+function MarkDetails({
   row,
-  canWrite = false,
-  onEditBlockMark,
+  canWrite,
+  onEditMark,
 }: {
   row: DailyAttendanceRow
-  canWrite?: boolean
-  onEditBlockMark?: (tipo: MarkType, mark: DailyMarkInfo) => void
+  canWrite: boolean
+  onEditMark: (target: EditingTarget) => void
 }) {
+  const showRecordedBlocks = row.scheduledBlocks.length !== 2 && row.blocks.length > 1
+  const lunchExcess = row.lunchExcessMinutes ?? 0
+  const breakExcess = row.breakExcessMinutes ?? 0
+  if (
+    !row.ausencia &&
+    !showRecordedBlocks &&
+    !lunchExcess &&
+    !breakExcess &&
+    !row.duplicateMarksCount
+  ) {
+    return null
+  }
+
   /** La hora de una marca de bloque: con permiso de escritura, abre su correccion. */
-  function blockTime(tipo: MarkType, mark: DailyMarkInfo) {
-    if (!canWrite || !onEditBlockMark) return <Hora value={mark.time} />
+  function blockTime(type: MarkType, mark: DailyMarkInfo) {
+    if (!canWrite) return <Hora value={mark.time} />
     return (
       <button
         type="button"
-        onClick={() => onEditBlockMark(tipo, mark)}
-        aria-label={`Corregir ${tipo === 'entrada' ? 'entrada' : 'salida'} de las ${mark.time}`}
+        onClick={() => onEditMark({ row, type, mark })}
+        aria-label={`Corregir ${type} de las ${mark.time}`}
         className="rounded pointer-coarse:min-h-11 underline decoration-dotted underline-offset-2 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-brand-600"
       >
         <Hora value={mark.time} />
@@ -313,33 +325,18 @@ function StatusBadges({
   }
 
   return (
-    <>
-      {row.isDayOff && (
-        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-          Día libre
-        </span>
-      )}
+    <div className="mt-1 flex flex-wrap items-center gap-1">
       {row.ausencia && (
         <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
           {row.ausencia}
         </span>
       )}
-      {row.isHoliday && (
-        <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
-          Feriado
-        </span>
-      )}
-      {row.isOpen && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-          <AlertTriangle className="h-3 w-3" /> Sin salida
-        </span>
-      )}
       {/* Dia de varios bloques (SGRH-110): la entrada y la salida de la fila
           son las del primero y el ultimo; aca van todos. */}
-      {row.scheduledBlocks.length !== 2 && row.blocks.length > 1 && (
+      {showRecordedBlocks && (
         <span
           title="Bloques del día"
-          className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600"
+          className="inline-flex max-w-full flex-wrap items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600"
         >
           {row.blocks.map((block, i) => (
             <span key={block.entrada.id}>
@@ -352,14 +349,14 @@ function StatusBadges({
       )}
       {/* Excesos (SGRH-88): el almuerzo contra su duracion programada, el
           receso contra los minutos pagados. 0 no se muestra. */}
-      {(row.lunchExcessMinutes ?? 0) > 0 && (
+      {lunchExcess > 0 && (
         <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
-          Almuerzo +{formatMinutes(row.lunchExcessMinutes ?? 0)}
+          Almuerzo +{formatMinutes(lunchExcess)}
         </span>
       )}
-      {(row.breakExcessMinutes ?? 0) > 0 && (
+      {breakExcess > 0 && (
         <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
-          Receso +{formatMinutes(row.breakExcessMinutes ?? 0)}
+          Receso +{formatMinutes(breakExcess)}
         </span>
       )}
       {row.duplicateMarksCount > 0 && (
@@ -367,18 +364,18 @@ function StatusBadges({
           {row.duplicateMarksCount} marca(s) duplicada(s)
         </span>
       )}
-    </>
+    </div>
   )
 }
 
 /** Las marcas en el orden de la jornada, para recorrerlas sin repetirlas. */
-const MARK_SLOTS: { tipo: MarkType; label: string }[] = [
-  { tipo: 'entrada', label: 'Entrada' },
-  { tipo: 'inicio_receso', label: 'Inicio receso' },
-  { tipo: 'fin_receso', label: 'Fin receso' },
-  { tipo: 'inicio_almuerzo', label: 'Inicio almuerzo' },
-  { tipo: 'fin_almuerzo', label: 'Fin almuerzo' },
-  { tipo: 'salida', label: 'Salida' },
+const MARK_SLOTS: { type: MarkType; label: string }[] = [
+  { type: 'entrada', label: 'Entrada' },
+  { type: 'inicio_receso', label: 'Inicio receso' },
+  { type: 'fin_receso', label: 'Fin receso' },
+  { type: 'inicio_almuerzo', label: 'Inicio almuerzo' },
+  { type: 'fin_almuerzo', label: 'Fin almuerzo' },
+  { type: 'salida', label: 'Salida' },
 ]
 
 /**
@@ -501,6 +498,100 @@ function SecondBlockLabel({ row, block }: { row: DailyAttendanceRow; block: Dail
   )
 }
 
+function MobileMarkDetails({
+  row,
+  canWrite,
+  onEditMark,
+}: {
+  row: DailyAttendanceRow
+  canWrite: boolean
+  onEditMark: (target: EditingTarget) => void
+}) {
+  const secondBlock = row.scheduledBlocks.length === 2 ? row.scheduledBlocks[1] : undefined
+  const firstBlock = secondBlock ? row.scheduledBlocks[0] : undefined
+  const slots = MARK_SLOTS.map(({ type, label }) => {
+    if (firstBlock && (type === 'entrada' || type === 'salida')) {
+      return { type, label, block: firstBlock, mark: firstBlock[type] }
+    }
+    return { type, label, block: undefined, mark: row[MARK_FIELD[type]] }
+  })
+  const marked =
+    slots.filter(({ mark }) => mark !== null).length +
+    Number(Boolean(secondBlock?.entrada)) +
+    Number(Boolean(secondBlock?.salida))
+
+  return (
+    <div className="space-y-2 border-t border-slate-100 px-2 py-2.5">
+      <div className="grid grid-cols-2 gap-2">
+        {slots.map(({ type, label, block, mark }) => (
+          <MarkTile
+            key={type}
+            label={label}
+            mark={mark}
+            canWrite={canWrite}
+            onEdit={() => onEditMark({ row, type, mark, block })}
+            tardiness={
+              type === 'entrada'
+                ? row.tardiness
+                : type === 'fin_almuerzo'
+                  ? row.lunchTardiness
+                  : null
+            }
+          />
+        ))}
+      </div>
+      {secondBlock && (
+        <section className="space-y-2 border-t border-slate-100 pt-2">
+          <SecondBlockLabel row={row} block={secondBlock} />
+          <div className="grid grid-cols-2 gap-2">
+            {BLOCK_MARKS.map(({ type, label }) => (
+              <MarkTile
+                key={type}
+                label={label}
+                actionLabel={`${label.toLowerCase()} del 2.º bloque`}
+                mark={secondBlock[type]}
+                canWrite={canWrite}
+                onEdit={() =>
+                  onEditMark({ row, type, mark: secondBlock[type], block: secondBlock })
+                }
+                tardiness={type === 'entrada' ? row.secondBlockTardiness : null}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-medium tabular-nums text-slate-500">
+          {marked} de {MARK_SLOTS.length + (secondBlock ? BLOCK_MARKS.length : 0)} marcas
+        </span>
+        <MarkDetails row={row} canWrite={canWrite} onEditMark={onEditMark} />
+      </div>
+    </div>
+  )
+}
+
+const PAGE_SIZE = 10
+const MOBILE_GROUP: Record<DayStatusKind, number> = {
+  sin_marcar: 1,
+  sin_salida: 1,
+  en_jornada: 1,
+  por_llegar: 1,
+  ya_salio: 2,
+  justificada: 2,
+  libre: 3,
+  sin_programacion: 3,
+}
+
+function compareMobileRows(a: DailyAttendanceRow, b: DailyAttendanceRow) {
+  const groupA = a.status.needsAttention ? 0 : MOBILE_GROUP[a.status.kind]
+  const groupB = b.status.needsAttention ? 0 : MOBILE_GROUP[b.status.kind]
+  return (
+    groupA - groupB ||
+    (a.expectedStart ?? '24:00').localeCompare(b.expectedStart ?? '24:00') ||
+    a.fullName.localeCompare(b.fullName, 'es-CR')
+  )
+}
+
 export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanceTableProps) {
   const { isNavigating, goToPreviousDay, goToNextDay, goToDate } = useDateNavigation(dateISO)
   const [editing, setEditing] = useState<EditingTarget | null>(null)
@@ -510,7 +601,7 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
     block: DailyScheduledBlock,
     type: 'entrada' | 'salida'
   ) {
-    setEditing({ row, block, tipo: type, mark: block[type] })
+    setEditing({ row, block, type, mark: block[type] })
   }
 
   const total = rows.length
@@ -519,18 +610,13 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     rows,
-    10
+    PAGE_SIZE
   )
+  const mobileRows = useMemo(() => [...rows].sort(compareMobileRows), [rows])
+  const mobilePage = mobileRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
-    // `@container`: todo lo de adentro decide contra el ancho REAL disponible,
-    // no contra el del viewport. Es la diferencia que importa aca, porque el
-    // sidebar mide 256px y ademas se colapsa: a 768px de pantalla el contenido
-    // puede tener 512px o 768px segun este abierto o cerrado. Con breakpoints
-    // de viewport la tabla aparecia a los 768px de PANTALLA, o sea con 512px
-    // reales — mas apretada que en el celular. Asi tambien queda resuelto
-    // cualquier tamaño intermedio: tablet, ventana a media pantalla, lo que sea.
-    <div className="@container space-y-4">
+    <div className="@container min-w-0 space-y-4">
       {/*
         Una columna o tres, nunca dos. Con `auto-fit` y tres tarjetas, todo
         ancho que da para dos columnas deja la tercera sola ocupando media
@@ -590,115 +676,31 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
           description="Verifica que existan contratos activos asignados a esta sucursal."
         />
       ) : (
-        // El marco (borde, fondo, sombra) aparece recien en `md:`: en movil
-        // las tarjetas traen el suyo propio, y envolverlas en TABLE_WRAP
-        // dibujaba una caja dentro de otra caja. Por eso no usa el token
-        // directo — es el unico listado del proyecto con dos presentaciones.
-        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          {/*
-            Cards mientras el contenedor no llegue a 768px REALES (@3xl), que
-            es lo que esta tabla necesita para sus 6 columnas con un boton de
-            correccion por marca. Abajo de eso el scroll horizontal esconde
-            los encabezados y hay que adivinar que columna se esta mirando.
-
-            `hidden` es display:none, asi que el navegador saca la rama
-            inactiva del arbol de accesibilidad: nunca hay contenido duplicado
-            para un lector de pantalla, aunque el markup exista dos veces.
-          */}
-          <ul className="space-y-3 @3xl:hidden">
-            {paginatedItems.map((row, index) => {
-              const secondBlock = row.scheduledBlocks.length === 2 ? row.scheduledBlocks[1] : null
-              const firstBlock = secondBlock ? row.scheduledBlocks[0] : null
-              const slots = MARK_SLOTS.map(({ tipo, label }) => {
-                if (firstBlock && (tipo === 'entrada' || tipo === 'salida')) {
-                  return { tipo, label, block: firstBlock, mark: firstBlock[tipo] }
+        // Filas compactas mientras el contenedor no llegue a 768px REALES
+        // (@3xl) y tabla desde ahi: el sidebar mide 256px y se colapsa, asi
+        // que el ancho de pantalla no dice cuanto espacio tiene la tabla.
+        // `hidden` saca la rama inactiva del arbol de accesibilidad.
+        <div className="min-w-0 rounded-xl @3xl:overflow-hidden @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+          <ul className="space-y-1.5 px-px @3xl:hidden">
+            {mobilePage.map((row) => (
+              <DailyPersonRow
+                key={row.employmentHistoryId}
+                row={row}
+                canWrite={canWrite}
+                onAddMark={(type, block) =>
+                  setEditing({
+                    row,
+                    type,
+                    block,
+                    mark: null,
+                    suggestedTime:
+                      type === 'entrada' ? (row.expectedStart ?? undefined) : undefined,
+                  })
                 }
-                return { tipo, label, block: undefined, mark: row[MARK_FIELD[tipo]] }
-              })
-              const marked =
-                slots.filter(({ mark }) => mark !== null).length +
-                Number(Boolean(secondBlock?.entrada)) +
-                Number(Boolean(secondBlock?.salida))
-
-              return (
-                <li
-                  key={row.employmentHistoryId}
-                  // Entrada escalonada: las tarjetas aparecen en cascada en vez
-                  // de todas de golpe, lo que ayuda a leerlas como una lista
-                  // ordenada. Se corta a los 6 elementos para que la ultima
-                  // tarjeta de una pagina no se haga esperar medio segundo.
-                  style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
-                  className="animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
-                >
-                  {/*
-                    El nombre se queda con el ancho completo y envuelve en vez
-                    de cortarse: en una lista de colaboradores el apellido es
-                    justo lo que distingue a dos personas, y truncarlo puede
-                    dejar dos filas identicas. La hora esperada bajo a la
-                    linea de meta, igual que en la tabla.
-                  */}
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
-                    <div className="min-w-0">
-                      <p className="break-words text-sm font-semibold text-slate-800">
-                        {row.fullName}
-                      </p>
-                      <EmployeeMeta row={row} />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    {slots.map(({ tipo, label, block, mark }) => (
-                      <MarkTile
-                        key={tipo}
-                        label={label}
-                        mark={mark}
-                        canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo, mark, block })}
-                        tardiness={
-                          tipo === 'entrada'
-                            ? row.tardiness
-                            : tipo === 'fin_almuerzo'
-                              ? row.lunchTardiness
-                              : null
-                        }
-                      />
-                    ))}
-                  </div>
-
-                  {secondBlock && (
-                    <section className="space-y-2 border-t border-slate-100 pt-3">
-                      <SecondBlockLabel row={row} block={secondBlock} />
-                      <div className="grid grid-cols-2 gap-2">
-                        {BLOCK_MARKS.map(({ type, label }) => (
-                          <MarkTile
-                            key={type}
-                            label={label}
-                            actionLabel={`${label.toLowerCase()} del 2.º bloque`}
-                            mark={secondBlock[type]}
-                            canWrite={canWrite}
-                            onEdit={() => editBlockMark(row, secondBlock, type)}
-                            tardiness={type === 'entrada' ? row.secondBlockTardiness : null}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
-                    <span className="text-[11px] font-medium tabular-nums text-slate-400">
-                      {marked} de {MARK_SLOTS.length + (secondBlock ? BLOCK_MARKS.length : 0)}{' '}
-                      marcas
-                    </span>
-                    <StatusBadges
-                      row={row}
-                      canWrite={canWrite}
-                      onEditBlockMark={(tipo, mark) => setEditing({ row, tipo, mark })}
-                    />
-                  </div>
-                </li>
-              )
-            })}
+              >
+                <MobileMarkDetails row={row} canWrite={canWrite} onEditMark={setEditing} />
+              </DailyPersonRow>
+            ))}
           </ul>
 
           <div className={`hidden @3xl:block ${TABLE_SCROLL}`}>
@@ -729,6 +731,7 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                             <div className="min-w-0">
                               <p className="font-medium text-slate-800">{row.fullName}</p>
                               <EmployeeMeta row={row} />
+                              <MarkDetails row={row} canWrite={canWrite} onEditMark={setEditing} />
                             </div>
                           </div>
                         </td>
@@ -739,7 +742,7 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                             onEdit={() =>
                               firstBlock
                                 ? editBlockMark(row, firstBlock, 'entrada')
-                                : setEditing({ row, tipo: 'entrada' })
+                                : setEditing({ row, type: 'entrada' })
                             }
                             tardiness={row.tardiness}
                           />
@@ -748,28 +751,28 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                           <MarkCell
                             mark={row.inicioReceso}
                             canWrite={canWrite}
-                            onEdit={() => setEditing({ row, tipo: 'inicio_receso' })}
+                            onEdit={() => setEditing({ row, type: 'inicio_receso' })}
                           />
                         </td>
                         <td className="px-3 py-2">
                           <MarkCell
                             mark={row.finReceso}
                             canWrite={canWrite}
-                            onEdit={() => setEditing({ row, tipo: 'fin_receso' })}
+                            onEdit={() => setEditing({ row, type: 'fin_receso' })}
                           />
                         </td>
                         <td className="px-3 py-2">
                           <MarkCell
                             mark={row.inicioAlmuerzo}
                             canWrite={canWrite}
-                            onEdit={() => setEditing({ row, tipo: 'inicio_almuerzo' })}
+                            onEdit={() => setEditing({ row, type: 'inicio_almuerzo' })}
                           />
                         </td>
                         <td className="px-3 py-2">
                           <MarkCell
                             mark={row.finAlmuerzo}
                             canWrite={canWrite}
-                            onEdit={() => setEditing({ row, tipo: 'fin_almuerzo' })}
+                            onEdit={() => setEditing({ row, type: 'fin_almuerzo' })}
                             tardiness={row.lunchTardiness}
                           />
                         </td>
@@ -780,18 +783,12 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                             onEdit={() =>
                               firstBlock
                                 ? editBlockMark(row, firstBlock, 'salida')
-                                : setEditing({ row, tipo: 'salida' })
+                                : setEditing({ row, type: 'salida' })
                             }
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <div className="flex flex-wrap items-center gap-1">
-                            <StatusBadges
-                              row={row}
-                              canWrite={canWrite}
-                              onEditBlockMark={(tipo, mark) => setEditing({ row, tipo, mark })}
-                            />
-                          </div>
+                          <DayStatusBadge status={row.status} size="xs" isHoliday={row.isHoliday} />
                         </td>
                       </tr>
                       {secondBlock && (
@@ -838,18 +835,21 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
       {editing &&
         (() => {
           const mark =
-            editing.mark === undefined ? editing.row[MARK_FIELD[editing.tipo]] : editing.mark
+            editing.mark === undefined ? editing.row[MARK_FIELD[editing.type]] : editing.mark
           return (
             <ManualMarkModal
               employmentHistoryId={editing.row.employmentHistoryId}
               employeeId={editing.row.employeeId}
               employeeName={editing.row.fullName}
               sucursalId={editing.block?.branchId ?? editing.row.branchId}
-              tipo={editing.tipo}
+              tipo={editing.type}
               markId={mark?.id ?? null}
               currentFechaHora={mark ? `${dateISO} ${mark.time}:00` : null}
               defaultDateISO={dateISO}
-              defaultTime={editing.tipo === 'salida' ? editing.block?.fin : editing.block?.inicio}
+              defaultTime={
+                (editing.type === 'salida' ? editing.block?.fin : editing.block?.inicio) ??
+                editing.suggestedTime
+              }
               onClose={() => setEditing(null)}
             />
           )

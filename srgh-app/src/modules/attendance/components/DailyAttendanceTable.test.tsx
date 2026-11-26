@@ -31,6 +31,7 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
     salida: null,
     blocks: [],
     scheduledBlocks: [],
+    isSecondBlockJustified: false,
     duplicateMarksCount: 0,
     isOpen: true,
     tardiness: null,
@@ -43,12 +44,8 @@ function makeRow(overrides: Partial<DailyAttendanceRow> = {}): DailyAttendanceRo
 }
 
 /**
- * El componente rinde la MISMA data dos veces: cards en movil (`md:hidden`) y
- * tabla desde `md:`. En un navegador solo una existe — `hidden` es
- * `display:none` y la otra rama sale del arbol de accesibilidad. jsdom no
- * aplica CSS, asi que aca conviven y cualquier consulta global encuentra dos
- * coincidencias. Por eso se consulta DENTRO de la rama que interesa, en vez
- * de relajar los tests a getAllBy* y perder de vista cual se esta probando.
+ * Jsdom no aplica los breakpoints: consultar por rama evita mezclar
+ * coincidencias de la lista móvil con las de la tabla de escritorio.
  */
 function tabla() {
   return within(screen.getByRole('table'))
@@ -94,6 +91,7 @@ describe('<DailyAttendanceTable />', () => {
 
   it('con el ultimo bloque abierto, el rango queda sin hora de salida', () => {
     const row = makeRow({
+      status: { kind: 'sin_salida', tardiness: null, needsAttention: true },
       blocks: [
         {
           entrada: { id: 1, time: '08:04', diffMinutes: null },
@@ -134,7 +132,7 @@ describe('<DailyAttendanceTable />', () => {
     },
   ]
 
-  it('shows a second row and a mobile section only when two blocks are scheduled', () => {
+  it('shows the second row and the expanded mobile section when two blocks are scheduled', async () => {
     const { rerender } = render(
       <DailyAttendanceTable
         dateISO="2026-07-25"
@@ -144,6 +142,7 @@ describe('<DailyAttendanceTable />', () => {
     )
 
     expect(tabla().queryByText('2.º bloque')).not.toBeInTheDocument()
+    await userEvent.click(cards().getByRole('button', { name: 'Detalle de Ana Perez' }))
     expect(cards().queryByText('2.º bloque')).not.toBeInTheDocument()
 
     rerender(
@@ -171,6 +170,9 @@ describe('<DailyAttendanceTable />', () => {
         />
       )
 
+      if (view === cards) {
+        await userEvent.click(view().getByRole('button', { name: 'Detalle de Ana Perez' }))
+      }
       await userEvent.click(
         view().getByRole('button', { name: 'Agregar marca de entrada del 2.º bloque' })
       )
@@ -207,6 +209,7 @@ describe('<DailyAttendanceTable />', () => {
     expect(
       secondRow.getByRole('button', { name: /llegó 12 min tarde.*Fallo del sistema/ })
     ).toBeInTheDocument()
+    await userEvent.click(cards().getByRole('button', { name: 'Detalle de Ana Perez' }))
     expect(cards().getByText(/Tardía grave.*justificada/)).toBeInTheDocument()
     await userEvent.click(
       secondRow.getByRole('button', { name: 'Corregir marca de entrada del 2.º bloque' })
@@ -219,20 +222,83 @@ describe('<DailyAttendanceTable />', () => {
 
     expect(tabla().getByText('Ana Perez')).toBeInTheDocument()
     expect(tabla().getByText('08:04')).toBeInTheDocument()
-    expect(tabla().getByText('Sin salida')).toBeInTheDocument()
+    expect(tabla().getByText('En jornada')).toBeInTheDocument()
   })
 
-  it('en movil rinde la misma jornada como card, con las cuatro marcas etiquetadas', () => {
+  it('shows the mobile summary first and the six mark labels on expansion', async () => {
     render(<DailyAttendanceTable dateISO="2026-07-25" rows={[makeRow()]} canWrite={true} />)
 
     expect(cards().getByText('Ana Perez')).toBeInTheDocument()
-    expect(cards().getByText('08:04')).toBeInTheDocument()
-    expect(cards().getByText('Sin salida')).toBeInTheDocument()
+    expect(cards().getByText('Entró 08:04')).toBeInTheDocument()
+    expect(cards().getByText('En jornada')).toBeInTheDocument()
+    expect(cards().queryByText('Inicio almuerzo')).not.toBeInTheDocument()
 
-    // Sin encabezados de tabla, cada marca necesita su propia etiqueta.
-    for (const label of ['Entrada', 'Inicio almuerzo', 'Fin almuerzo', 'Salida']) {
+    await userEvent.click(cards().getByRole('button', { name: 'Detalle de Ana Perez' }))
+    for (const label of [
+      'Entrada',
+      'Inicio receso',
+      'Fin receso',
+      'Inicio almuerzo',
+      'Fin almuerzo',
+      'Salida',
+    ]) {
       expect(cards().getByText(label)).toBeInTheDocument()
     }
+  })
+
+  it('sorts the full mobile list by attention, group, time and name while keeping desktop order', () => {
+    function person(
+      employmentHistoryId: number,
+      fullName: string,
+      kind: DailyAttendanceRow['status']['kind'],
+      expectedStart: string | null,
+      needsAttention = false
+    ) {
+      return makeRow({
+        employmentHistoryId,
+        fullName,
+        expectedStart,
+        status: { kind, needsAttention, tardiness: null },
+      })
+    }
+
+    const rows = [
+      person(1, 'Libre', 'libre', null),
+      person(2, 'Ya salió', 'ya_salio', '07:00'),
+      person(3, 'Por llegar', 'por_llegar', '09:00'),
+      person(4, 'Zoe', 'en_jornada', '08:00'),
+      person(5, 'Ana', 'en_jornada', '08:00'),
+      person(6, 'Con tardía', 'ya_salio', '10:00', true),
+      person(7, 'Pendiente', 'sin_marcar', '08:00', true),
+      person(8, 'Justificada', 'justificada', '06:00'),
+      person(9, 'Sin horario', 'sin_programacion', null),
+      person(10, 'Sin salida', 'sin_salida', '09:00', true),
+      person(11, 'Primero', 'sin_marcar', '06:30', true),
+    ]
+    render(<DailyAttendanceTable dateISO="2026-07-25" rows={rows} canWrite={false} />)
+
+    const mobileNames = cards()
+      .getAllByRole('button', { name: /^Detalle de/ })
+      .map((button) => button.getAttribute('aria-label'))
+    expect(mobileNames).toEqual(
+      [
+        'Primero',
+        'Pendiente',
+        'Sin salida',
+        'Con tardía',
+        'Ana',
+        'Zoe',
+        'Por llegar',
+        'Justificada',
+        'Ya salió',
+        'Libre',
+      ].map((name) => `Detalle de ${name}`)
+    )
+    const desktopNames = tabla()
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0].querySelector('p')?.textContent)
+    expect(desktopNames).toEqual(rows.slice(0, 10).map(({ fullName }) => fullName))
   })
 
   it('oculta los botones de corregir/agregar marca cuando canWrite es false', () => {
