@@ -4,6 +4,7 @@ import { FaceScan } from './FaceScan'
 
 const mocks = vi.hoisted(() => ({
   detect: vi.fn(),
+  discardDetector: vi.fn(),
   score: vi.fn(),
   embed: vi.fn(),
   encrypt: vi.fn(),
@@ -16,17 +17,17 @@ const mocks = vi.hoisted(() => ({
   faces: 1,
 }))
 vi.mock('./faceLandmarker', () => ({
+  discardFaceLandmarker: mocks.discardDetector,
   getFaceLandmarker: async () => ({
     detectForVideo: (...args: unknown[]) => {
       const points = mocks.detect(...args)
-      // firstFaceLandmarks esta mockeado como identidad: el resultado ES la
-      // malla, con la cantidad de rostros colgada como faceLandmarks.
-      if (points && typeof points === 'object')
-        Object.defineProperty(points, 'faceLandmarks', {
-          value: Array(mocks.faces).fill(points),
-          configurable: true,
-        })
-      return points
+      return {
+        faceLandmarks: !points
+          ? []
+          : Array.isArray(points[0])
+            ? points
+            : Array(mocks.faces).fill(points),
+      }
     },
   }),
 }))
@@ -42,7 +43,7 @@ vi.mock('./antispoof', () => ({
   scoreRealness: mocks.score,
 }))
 vi.mock('./landmarks', () => ({
-  firstFaceLandmarks: (r: unknown) => r,
+  firstFaceLandmarks: (r: { faceLandmarks: unknown[] }) => r.faceLandmarks[0] ?? null,
   faceCropBox: () => ({ x: 0, y: 0, size: 150 }),
   eyeTiltAngle: () => 0,
 }))
@@ -63,9 +64,9 @@ describe('FaceScan continuity', () => {
   let raf: FrameRequestCallback[]
   let videoTime: number
   let clock: number
-  async function frame(advance = true) {
+  async function frame(advance = true, elapsedMs = 100) {
     if (advance) videoTime += 0.1
-    clock += 100
+    clock += elapsedMs
     await act(async () => {
       raf.shift()?.(clock)
     })
@@ -109,7 +110,11 @@ describe('FaceScan continuity', () => {
         getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: mocks.stop }] }),
       },
     })
-    mocks.detect.mockReturnValue([{ x: 0.5, y: 0.5 }])
+    mocks.detect.mockReturnValue([
+      { x: 0.375, y: 0.375 },
+      { x: 0.625, y: 0.625 },
+    ])
+    mocks.discardDetector.mockResolvedValue(undefined)
     mocks.score.mockResolvedValue(0.99)
     mocks.embed.mockResolvedValue(Array(128).fill(0))
     mocks.encrypt.mockResolvedValue({ iv: 'iv', data: 'ciphertext' })
@@ -167,6 +172,8 @@ describe('FaceScan continuity', () => {
     })
     await frame()
     expect(onUnavailable).toHaveBeenCalledTimes(1)
+    expect(mocks.discardDetector).toHaveBeenCalledWith(2)
+    expect(mocks.discardDetector).toHaveBeenCalledBefore(onUnavailable)
     expect(mocks.stop).toHaveBeenCalled()
     expect(onEmbedding).not.toHaveBeenCalled()
   })
@@ -187,6 +194,15 @@ describe('FaceScan continuity', () => {
     const { onUnavailable } = await mount()
     for (let i = 0; i < 90; i++) await frame()
     expect(onUnavailable).not.toHaveBeenCalled()
+  })
+
+  it('uses the wall-clock deadline even when the video stalls during a kiosk scan', async () => {
+    const { onUnavailable, onEmbedding } = await mount()
+    await frame()
+    vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(1)
+    await frame(false, 8100)
+    expect(onUnavailable).toHaveBeenCalledOnce()
+    expect(onEmbedding).not.toHaveBeenCalled()
   })
   it('discards an antispoof result that arrives after the face is lost', async () => {
     let finish: (n: number) => void = () => {}
@@ -219,6 +235,16 @@ describe('FaceScan continuity', () => {
     for (let i = 0; i < 24; i++) await frame()
     expect(mocks.embed).toHaveBeenCalledTimes(1)
     expect(onEmbedding).toHaveBeenCalledTimes(1)
+    expect(onEmbedding).toHaveBeenCalledWith(
+      { iv: 'iv', data: 'ciphertext' },
+      {
+        scanMs: expect.any(Number),
+        fps: expect.any(Number),
+      }
+    )
+    const [, metrics] = onEmbedding.mock.calls[0]
+    expect(metrics.scanMs).toBeGreaterThan(0)
+    expect(metrics.fps).toBeGreaterThan(0)
     expect(mocks.stop).toHaveBeenCalled()
   })
 
@@ -227,6 +253,7 @@ describe('FaceScan continuity', () => {
     for (let i = 0; i < 24; i++) await frame()
     expect(mocks.embed).toHaveBeenCalledTimes(3)
     expect(onEmbedding).toHaveBeenCalledTimes(1)
+    expect(onEmbedding).toHaveBeenCalledWith({ iv: 'iv', data: 'ciphertext' })
   })
   it('does not enroll while a hand covers the face, and resumes once it moves', async () => {
     mocks.covered = true
@@ -318,11 +345,48 @@ describe('FaceScan continuity', () => {
     for (let i = 0; i < 30; i++) await frame()
     expect(onEmbedding).toHaveBeenCalledTimes(1)
   })
-  it('the kiosk does not check for dark glasses', async () => {
+  it('dark glasses do not prevent an otherwise valid kiosk capture', async () => {
     mocks.dark = true
     const { onEmbedding } = await mount()
     for (let i = 0; i < 24; i++) await frame()
     expect(onEmbedding).toHaveBeenCalledTimes(1)
+  })
+
+  it('suggests removing sunglasses if dark readings persist until the timeout', async () => {
+    mocks.dark = true
+    mocks.score.mockResolvedValue(null)
+    const { onUnavailable, getByText } = await mount()
+    expect(getByText('De frente, sin nada en la cara')).toBeInTheDocument()
+    for (let i = 0; i < 85; i++) await frame()
+    expect(onUnavailable).toHaveBeenCalledWith(
+      expect.stringContaining('Si usas lentes de sol, quítatelos e intenta de nuevo.')
+    )
+  })
+
+  it('preserves scan progress and holds capture for one second when a second person approaches', async () => {
+    const face = [
+      { x: 0.375, y: 0.375 },
+      { x: 0.625, y: 0.625 },
+    ]
+    const otherFace = [
+      { x: 0, y: 0 },
+      { x: 0.25, y: 0.25 },
+    ]
+    const { onEmbedding, findByText } = await mount()
+    for (let i = 0; i < 18; i++) await frame()
+    mocks.detect.mockReturnValue([face, otherFace])
+    for (let i = 0; i < 8; i++) await frame()
+    expect(await findByText('Una persona a la vez')).toBeInTheDocument()
+    expect(mocks.embed).not.toHaveBeenCalled()
+    for (let i = 0; i < 6; i++) await frame()
+    expect(onEmbedding).toHaveBeenCalledOnce()
+  })
+
+  it('skips decoded frames after warmup on slow devices without skipping all liveness samples', async () => {
+    const { onEmbedding } = await mount()
+    for (let i = 0; i < 28; i++) await frame(true, 250)
+    expect(mocks.detect.mock.calls.length).toBeLessThan(20)
+    expect(onEmbedding).toHaveBeenCalledOnce()
   })
   it('does not enroll with two people in frame', async () => {
     mocks.faces = 2

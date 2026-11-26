@@ -27,7 +27,7 @@ describe('face landmarker device compatibility', () => {
     expect(create.mock.calls[0][1].baseOptions.delegate).toBe('GPU')
   })
 
-  it('keeps a separate two-face detector for enrollment, and one face for the kiosk', async () => {
+  it('keeps independent cache entries for different face limits', async () => {
     create.mockImplementation(async () => ({ detectForVideo: vi.fn() }))
     const { getFaceLandmarker } = await import('./faceLandmarker')
     const kiosk = await getFaceLandmarker()
@@ -35,6 +35,18 @@ describe('face landmarker device compatibility', () => {
     expect(kiosk).not.toBe(enrollment)
     expect(await getFaceLandmarker(2)).toBe(enrollment)
     expect(create.mock.calls.map((call) => call[1].numFaces)).toEqual([1, 2])
+  })
+
+  it('closes and removes a failed detector before the next load', async () => {
+    const failed = { detectForVideo: vi.fn(), close: vi.fn() }
+    const replacement = { detectForVideo: vi.fn(), close: vi.fn() }
+    create.mockResolvedValueOnce(failed).mockResolvedValueOnce(replacement)
+    const { getFaceLandmarker, discardFaceLandmarker } = await import('./faceLandmarker')
+
+    expect(await getFaceLandmarker(2)).toBe(failed)
+    await discardFaceLandmarker(2)
+    expect(failed.close).toHaveBeenCalledOnce()
+    expect(await getFaceLandmarker(2)).toBe(replacement)
   })
 
   it('uses and caches the CPU detector when GPU initialization is unavailable', async () => {
