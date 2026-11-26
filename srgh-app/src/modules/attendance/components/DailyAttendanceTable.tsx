@@ -1,13 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { createPortal } from 'react-dom'
 import {
-  AlertTriangle,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
+  CircleCheck,
+  CircleX,
   Loader2,
+  LogIn,
+  LogOut,
   Pencil,
   Plus,
   Users,
@@ -15,16 +18,19 @@ import {
 import type {
   DailyAttendanceRow,
   DailyMarkInfo,
+  DailyScheduledBlock,
   DailyTardiness,
 } from '@/modules/attendance/actions/getDailyAttendance'
 import { DEFAULT_TARDINESS_COLOR } from '@/modules/attendance/lib/infractions'
-import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
 import { useDateNavigation } from '@/modules/attendance/hooks/useDateNavigation'
 import { usePagination } from '@/hooks/usePagination'
+import { Alert } from '@/components/ui/Alert'
 import { Avatar } from '@/components/ui/Avatar'
 import { Pagination } from '@/components/ui/Pagination'
 import { ManualMarkModal } from '@/modules/attendance/components/ManualMarkModal'
+import type { DayStatusKind } from '@/modules/attendance/lib/dayStatus'
 import type { MarkType } from '@/modules/attendance/lib/marks'
+import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { DatePickerButton } from '@/components/ui/DatePickerButton'
 import { formatMinutes, todayInCostaRica } from '@/modules/attendance/lib/time'
@@ -33,22 +39,28 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { StatCard } from '@/components/ui/StatCard'
 import { Hora } from '@/components/ui/Hora'
 import { useFormatHora } from '@/lib/time/FormatoHoraContext'
+import { DailyPersonRow } from './DailyPersonRow'
+import { DayStatusBadge } from './DayStatusBadge'
 
 interface DailyAttendanceTableProps {
   dateISO: string
   rows: DailyAttendanceRow[]
   canWrite: boolean
+  pendingCount?: number
+  pendingHref?: string
 }
 
 interface EditingTarget {
   row: DailyAttendanceRow
-  tipo: MarkType
+  type: MarkType
   /**
    * La marca que se corrige, cuando no es la de la fila: la de un bloque de un
    * dia de varios (SGRH-110). Sin esto el modal tomaria la primera entrada o
    * la ultima salida, que son las unicas que la fila expone.
    */
-  mark?: DailyMarkInfo
+  mark?: DailyMarkInfo | null
+  block?: DailyScheduledBlock
+  suggestedTime?: string
 }
 
 const MARK_FIELD: Record<
@@ -81,7 +93,7 @@ function formatDay(dateISO: string) {
 function diffLabel(diffMinutes: number | null): string | null {
   if (diffMinutes === null || diffMinutes === 0) return null
 
-  return `${formatMinutes(diffMinutes)} ${diffMinutes > 0 ? 'despues' : 'antes'}`
+  return `${formatMinutes(diffMinutes)} ${diffMinutes > 0 ? 'después' : 'antes'}`
 }
 
 /** Lo que dice el punto de una marca al tocarlo. */
@@ -91,7 +103,7 @@ function markDetail(
   tardiness: DailyTardiness | null
 ): string | null {
   if (tardiness) {
-    const base = `${tardiness.tipo.nombre}: llego ${formatMinutes(tardiness.diffMinutes)} tarde.`
+    const base = `${tardiness.tipo.nombre}: llegó ${formatMinutes(tardiness.diffMinutes)} tarde.`
     if (!tardiness.isJustified) return base
 
     return (
@@ -102,7 +114,7 @@ function markDetail(
 
   const label = diffLabel(diffMinutes)
 
-  return label ? `Marco a las ${time}, ${label} de su hora.` : null
+  return label ? `Marcó a las ${time}, ${label} de su hora.` : null
 }
 
 /**
@@ -166,7 +178,7 @@ function MarkDot({
         onBlur={() => setAnchor(null)}
         aria-expanded={anchor !== null}
         aria-label={detalle}
-        className={`flex h-5 w-5 items-center justify-center rounded-full outline-none transition hover:scale-125 focus-visible:ring-2 focus-visible:ring-brand-500/60 motion-reduce:hover:scale-100 pointer-coarse:h-8 pointer-coarse:w-8 ${
+        className={`flex h-5 w-5 items-center justify-center rounded-full outline-none transition hover:scale-125 focus-visible:ring-2 focus-visible:ring-brand-500/60 motion-reduce:hover:scale-100 pointer-coarse:min-h-11 pointer-coarse:min-w-11 ${
           color ? '' : 'text-slate-300 hover:text-slate-500'
         }`}
       >
@@ -198,28 +210,36 @@ function MarkCell({
   canWrite,
   onEdit,
   tardiness = null,
+  label,
 }: {
   mark: DailyMarkInfo | null
   canWrite: boolean
   onEdit: () => void
   tardiness?: DailyTardiness | null
+  label?: string
 }) {
   return (
     <div className="group/celda flex items-center gap-1.5 whitespace-nowrap">
       {mark ? (
         <span className="inline-flex items-baseline gap-1.5">
-          <span className="text-[13px] font-semibold tabular-nums text-slate-700">
-            <Hora value={mark.time} />
-          </span>
+          {label && canWrite ? (
+            <Button variant="secondary" onClick={onEdit} aria-label={`Corregir marca de ${label}`}>
+              <Hora value={mark.time} />
+            </Button>
+          ) : (
+            <span className="text-[13px] font-semibold tabular-nums text-slate-700">
+              <Hora value={mark.time} />
+            </span>
+          )}
           <MarkDot time={mark.time} diffMinutes={mark.diffMinutes} tardiness={tardiness} />
         </span>
       ) : (
         <span className="text-sm text-slate-300">—</span>
       )}
-      {canWrite && (
+      {canWrite && (!label || !mark) && (
         <IconButton
           onClick={onEdit}
-          aria-label={mark ? 'Corregir marca' : 'Agregar marca'}
+          aria-label={`${mark ? 'Corregir marca' : 'Agregar marca'}${label ? ` de ${label}` : ''}`}
           tone="blue"
           // Aparece al apuntar la celda. Con cuatro marcas por fila y diez
           // filas, tener 40 lapices siempre visibles compite con lo que de
@@ -235,7 +255,11 @@ function MarkCell({
           // heuristica del navegador que no matchea en todos los caminos de
           // foco, y cuando no matcheaba el boton quedaba enfocado e
           // invisible — el peor resultado posible para quien usa teclado.
-          className="opacity-0 transition-opacity group-hover/celda:opacity-100 group-focus-within/celda:opacity-100 focus:opacity-100 pointer-coarse:opacity-100"
+          className={
+            label
+              ? undefined
+              : 'opacity-0 transition-opacity group-hover/celda:opacity-100 group-focus-within/celda:opacity-100 focus:opacity-100 pointer-coarse:opacity-100'
+          }
         >
           {mark ? <Pencil className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
         </IconButton>
@@ -251,7 +275,7 @@ function MarkCell({
  * ("+4") sin decir contra que. Pero gastar una columna entera en un dato que
  * se repite entre todos los del mismo turno no valia la pena — aca acompaña
  * al nombre, que es donde el gerente ya esta mirando, y libera ancho para las
- * marcas. Lo rinden las dos ramas, por eso vive aparte.
+ * marcas.
  */
 function EmployeeMeta({ row }: { row: DailyAttendanceRow }) {
   if (!row.position && !row.expectedStart) return null
@@ -269,29 +293,37 @@ function EmployeeMeta({ row }: { row: DailyAttendanceRow }) {
   )
 }
 
-/**
- * Etiquetas de estado del dia. Vive aparte porque la rendrizan las DOS ramas
- * (cards en movil, tabla en md:) y duplicar las condiciones garantizaba que
- * una se quedara atras al agregar un estado nuevo.
- */
-function StatusBadges({
+function MarkDetails({
   row,
-  canWrite = false,
-  onEditBlockMark,
+  canWrite,
+  onEditMark,
 }: {
   row: DailyAttendanceRow
-  canWrite?: boolean
-  onEditBlockMark?: (tipo: MarkType, mark: DailyMarkInfo) => void
+  canWrite: boolean
+  onEditMark: (target: EditingTarget) => void
 }) {
+  const showRecordedBlocks = row.scheduledBlocks.length !== 2 && row.blocks.length > 1
+  const lunchExcess = row.lunchExcessMinutes ?? 0
+  const breakExcess = row.breakExcessMinutes ?? 0
+  if (
+    !row.ausencia &&
+    !showRecordedBlocks &&
+    !lunchExcess &&
+    !breakExcess &&
+    !row.duplicateMarksCount
+  ) {
+    return null
+  }
+
   /** La hora de una marca de bloque: con permiso de escritura, abre su correccion. */
-  function blockTime(tipo: MarkType, mark: DailyMarkInfo) {
-    if (!canWrite || !onEditBlockMark) return <Hora value={mark.time} />
+  function blockTime(type: MarkType, mark: DailyMarkInfo) {
+    if (!canWrite) return <Hora value={mark.time} />
     return (
       <button
         type="button"
-        onClick={() => onEditBlockMark(tipo, mark)}
-        aria-label={`Corregir ${tipo === 'entrada' ? 'entrada' : 'salida'} de las ${mark.time}`}
-        className="rounded underline decoration-dotted underline-offset-2 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-brand-600"
+        onClick={() => onEditMark({ row, type, mark })}
+        aria-label={`Corregir ${type} de las ${mark.time}`}
+        className="rounded pointer-coarse:min-h-11 underline decoration-dotted underline-offset-2 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-brand-600"
       >
         <Hora value={mark.time} />
       </button>
@@ -299,33 +331,18 @@ function StatusBadges({
   }
 
   return (
-    <>
-      {row.isDayOff && (
-        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-          Dia libre
-        </span>
-      )}
+    <div className="mt-1 flex flex-wrap items-center gap-1">
       {row.ausencia && (
         <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
           {row.ausencia}
         </span>
       )}
-      {row.isHoliday && (
-        <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
-          Feriado
-        </span>
-      )}
-      {row.isOpen && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-          <AlertTriangle className="h-3 w-3" /> Sin salida
-        </span>
-      )}
       {/* Dia de varios bloques (SGRH-110): la entrada y la salida de la fila
           son las del primero y el ultimo; aca van todos. */}
-      {row.blocks.length > 1 && (
+      {showRecordedBlocks && (
         <span
-          title="Bloques del dia"
-          className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600"
+          title="Bloques del día"
+          className="inline-flex max-w-full flex-wrap items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600"
         >
           {row.blocks.map((block, i) => (
             <span key={block.entrada.id}>
@@ -336,38 +353,16 @@ function StatusBadges({
           ))}
         </span>
       )}
-      {/* Atraso al entrar al segundo bloque (SGRH-110): la primera entrada ya
-          tiene su punto de color; esta no esta en una celda de la fila. */}
-      {row.secondBlockTardiness && (
-        <span
-          title={
-            row.secondBlockTardiness.isJustified
-              ? `Justificada${row.secondBlockTardiness.justification ? `: ${row.secondBlockTardiness.justification}` : '.'}`
-              : undefined
-          }
-          style={
-            row.secondBlockTardiness.isJustified
-              ? undefined
-              : tardinessChipStyle(row.secondBlockTardiness.tipo.color)
-          }
-          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
-            row.secondBlockTardiness.isJustified ? 'bg-slate-100 text-slate-500' : ''
-          }`}
-        >
-          2.º bloque +{formatMinutes(row.secondBlockTardiness.diffMinutes)}
-          {row.secondBlockTardiness.isJustified ? ' · justificada' : ''}
-        </span>
-      )}
       {/* Excesos (SGRH-88): el almuerzo contra su duracion programada, el
           receso contra los minutos pagados. 0 no se muestra. */}
-      {(row.lunchExcessMinutes ?? 0) > 0 && (
+      {lunchExcess > 0 && (
         <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
-          Almuerzo +{formatMinutes(row.lunchExcessMinutes ?? 0)}
+          Almuerzo +{formatMinutes(lunchExcess)}
         </span>
       )}
-      {(row.breakExcessMinutes ?? 0) > 0 && (
+      {breakExcess > 0 && (
         <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-orange-700">
-          Receso +{formatMinutes(row.breakExcessMinutes ?? 0)}
+          Receso +{formatMinutes(breakExcess)}
         </span>
       )}
       {row.duplicateMarksCount > 0 && (
@@ -375,18 +370,18 @@ function StatusBadges({
           {row.duplicateMarksCount} marca(s) duplicada(s)
         </span>
       )}
-    </>
+    </div>
   )
 }
 
 /** Las marcas en el orden de la jornada, para recorrerlas sin repetirlas. */
-const MARK_SLOTS: { tipo: MarkType; label: string }[] = [
-  { tipo: 'entrada', label: 'Entrada' },
-  { tipo: 'inicio_receso', label: 'Inicio receso' },
-  { tipo: 'fin_receso', label: 'Fin receso' },
-  { tipo: 'inicio_almuerzo', label: 'Inicio almuerzo' },
-  { tipo: 'fin_almuerzo', label: 'Fin almuerzo' },
-  { tipo: 'salida', label: 'Salida' },
+const MARK_SLOTS: { type: MarkType; label: string }[] = [
+  { type: 'entrada', label: 'Entrada' },
+  { type: 'inicio_receso', label: 'Inicio receso' },
+  { type: 'fin_receso', label: 'Fin receso' },
+  { type: 'inicio_almuerzo', label: 'Inicio almuerzo' },
+  { type: 'fin_almuerzo', label: 'Fin almuerzo' },
+  { type: 'salida', label: 'Salida' },
 ]
 
 /**
@@ -400,12 +395,14 @@ const MARK_SLOTS: { tipo: MarkType; label: string }[] = [
  */
 function MarkTile({
   label,
+  actionLabel = label.toLowerCase(),
   mark,
   canWrite,
   onEdit,
   tardiness = null,
 }: {
   label: string
+  actionLabel?: string
   mark: DailyMarkInfo | null
   canWrite: boolean
   onEdit: () => void
@@ -479,206 +476,249 @@ function MarkTile({
     <button
       type="button"
       onClick={onEdit}
-      aria-label={`${mark ? 'Corregir' : 'Agregar'} marca de ${label.toLowerCase()}`}
-      className={`${shape} outline-none hover:border-brand-300 hover:bg-brand-50/40 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.97] motion-reduce:active:scale-100`}
+      aria-label={`${mark ? 'Corregir' : 'Agregar'} marca de ${actionLabel}`}
+      className={`${shape} outline-none hover:border-brand-300 hover:bg-brand-50/40 focus-visible:ring-2 focus-visible:ring-brand-500/60 active:scale-[0.97] motion-reduce:active:scale-100 pointer-coarse:min-h-11`}
     >
       {body}
     </button>
   )
 }
 
-export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanceTableProps) {
-  const { isNavigating, goToPreviousDay, goToNextDay, goToDate } = useDateNavigation(dateISO)
-  const [editing, setEditing] = useState<EditingTarget | null>(null)
+const BLOCK_MARKS = [
+  { type: 'entrada', label: 'Entrada' },
+  { type: 'salida', label: 'Salida' },
+] as const
 
-  const total = rows.length
-  const conEntrada = rows.filter((r) => r.entrada !== null).length
-  const jornadasAbiertas = rows.filter((r) => r.isOpen).length
+function SecondBlockLabel({ row, block }: { row: DailyAttendanceRow; block: DailyScheduledBlock }) {
+  return (
+    <>
+      <p className="text-xs font-semibold text-slate-700">2.º bloque</p>
+      <p className="break-words text-xs text-slate-500">
+        <span className="whitespace-nowrap tabular-nums">
+          <Hora value={block.inicio} />–<Hora value={block.fin} />
+        </span>
+        {block.branchId !== row.branchId &&
+          ` · ${block.branchName ?? `Sucursal ${block.branchId}`}`}
+      </p>
+    </>
+  )
+}
+
+function MobileMarkDetails({
+  row,
+  canWrite,
+  onEditMark,
+}: {
+  row: DailyAttendanceRow
+  canWrite: boolean
+  onEditMark: (target: EditingTarget) => void
+}) {
+  const secondBlock = row.scheduledBlocks.length === 2 ? row.scheduledBlocks[1] : undefined
+  const firstBlock = secondBlock ? row.scheduledBlocks[0] : undefined
+  const slots = MARK_SLOTS.map(({ type, label }) => {
+    if (firstBlock && (type === 'entrada' || type === 'salida')) {
+      return { type, label, block: firstBlock, mark: firstBlock[type] }
+    }
+    return { type, label, block: undefined, mark: row[MARK_FIELD[type]] }
+  })
+  const marked =
+    slots.filter(({ mark }) => mark !== null).length +
+    Number(Boolean(secondBlock?.entrada)) +
+    Number(Boolean(secondBlock?.salida))
+
+  return (
+    <div className="space-y-2 border-t border-slate-100 px-2 py-2.5">
+      <div className="grid grid-cols-2 gap-2">
+        {slots.map(({ type, label, block, mark }) => (
+          <MarkTile
+            key={type}
+            label={label}
+            mark={mark}
+            canWrite={canWrite}
+            onEdit={() => onEditMark({ row, type, mark, block })}
+            tardiness={
+              type === 'entrada'
+                ? row.tardiness
+                : type === 'fin_almuerzo'
+                  ? row.lunchTardiness
+                  : null
+            }
+          />
+        ))}
+      </div>
+      {secondBlock && (
+        <section className="space-y-2 border-t border-slate-100 pt-2">
+          <SecondBlockLabel row={row} block={secondBlock} />
+          <div className="grid grid-cols-2 gap-2">
+            {BLOCK_MARKS.map(({ type, label }) => (
+              <MarkTile
+                key={type}
+                label={label}
+                actionLabel={`${label.toLowerCase()} del 2.º bloque`}
+                mark={secondBlock[type]}
+                canWrite={canWrite}
+                onEdit={() =>
+                  onEditMark({ row, type, mark: secondBlock[type], block: secondBlock })
+                }
+                tardiness={type === 'entrada' ? row.secondBlockTardiness : null}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-medium tabular-nums text-slate-500">
+          {marked} de {MARK_SLOTS.length + (secondBlock ? BLOCK_MARKS.length : 0)} marcas
+        </span>
+        <MarkDetails row={row} canWrite={canWrite} onEditMark={onEditMark} />
+      </div>
+    </div>
+  )
+}
+
+const PAGE_SIZE = 10
+const MOBILE_GROUP: Record<DayStatusKind, number> = {
+  sin_marcar: 1,
+  sin_salida: 1,
+  en_jornada: 1,
+  por_llegar: 1,
+  ya_salio: 2,
+  justificada: 2,
+  libre: 3,
+  sin_programacion: 3,
+}
+
+function compareMobileRows(a: DailyAttendanceRow, b: DailyAttendanceRow) {
+  const groupA = a.status.needsAttention ? 0 : MOBILE_GROUP[a.status.kind]
+  const groupB = b.status.needsAttention ? 0 : MOBILE_GROUP[b.status.kind]
+  return (
+    groupA - groupB ||
+    (a.expectedStart ?? '24:00').localeCompare(b.expectedStart ?? '24:00') ||
+    a.fullName.localeCompare(b.fullName, 'es-CR')
+  )
+}
+
+const INDICATORS = [
+  {
+    id: 'missing',
+    label: 'Faltan',
+    icon: CircleX,
+    tone: 'rose',
+    matches: (kind: DayStatusKind) => kind === 'sin_marcar',
+    emptyMessage: 'Nadie falta por marcar la entrada este día.',
+  },
+  {
+    id: 'missingExit',
+    label: 'Sin salida',
+    icon: LogOut,
+    tone: 'amber',
+    matches: (kind: DayStatusKind) => kind === 'sin_salida',
+    emptyMessage: 'Nadie quedó sin marcar la salida este día.',
+  },
+  {
+    id: 'arrived',
+    label: 'Ya llegaron',
+    icon: LogIn,
+    tone: 'emerald',
+    matches: (kind: DayStatusKind) => kind === 'en_jornada' || kind === 'ya_salio',
+    emptyMessage: 'Aún no hay entradas registradas este día.',
+  },
+] as const
+
+type Indicator = (typeof INDICATORS)[number]['id']
+type Segment = 'attention' | 'all'
+
+function DailyAttendanceRows({
+  rows,
+  canWrite,
+  onEditMark,
+}: {
+  rows: DailyAttendanceRow[]
+  canWrite: boolean
+  onEditMark: (target: EditingTarget) => void
+}) {
+  function editBlockMark(
+    row: DailyAttendanceRow,
+    block: DailyScheduledBlock,
+    type: 'entrada' | 'salida'
+  ) {
+    onEditMark({ row, block, type, mark: block[type] })
+  }
 
   const { page, totalPages, paginatedItems, goToPreviousPage, goToNextPage } = usePagination(
     rows,
-    10
+    PAGE_SIZE
   )
+  const mobileRows = useMemo(() => [...rows].sort(compareMobileRows), [rows])
+  const mobilePage = mobileRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
-    // `@container`: todo lo de adentro decide contra el ancho REAL disponible,
-    // no contra el del viewport. Es la diferencia que importa aca, porque el
-    // sidebar mide 256px y ademas se colapsa: a 768px de pantalla el contenido
-    // puede tener 512px o 768px segun este abierto o cerrado. Con breakpoints
-    // de viewport la tabla aparecia a los 768px de PANTALLA, o sea con 512px
-    // reales — mas apretada que en el celular. Asi tambien queda resuelto
-    // cualquier tamaño intermedio: tablet, ventana a media pantalla, lo que sea.
-    <div className="@container space-y-4">
-      {/*
-        Una columna o tres, nunca dos. Con `auto-fit` y tres tarjetas, todo
-        ancho que da para dos columnas deja la tercera sola ocupando media
-        fila — se veia como un error de maquetado. Al medir el contenedor
-        (@md = 448px reales) el salto ocurre donde las tres entran de verdad.
-      */}
-      <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
-        <StatCard icon={Users} label="Colaboradores" value={total} />
-        <StatCard
-          icon={CalendarDays}
-          tone="emerald"
-          label="Con entrada marcada"
-          value={conEntrada}
-        />
-        <StatCard
-          icon={AlertTriangle}
-          tone="amber"
-          label="Jornadas sin salida"
-          value={jornadasAbiertas}
-        />
-      </div>
+    // Filas compactas mientras el contenedor no llegue a 768px REALES
+    // (@3xl) y tabla desde ahi: el sidebar mide 256px y se colapsa, asi
+    // que el ancho de pantalla no dice cuanto espacio tiene la tabla.
+    // `hidden` saca la rama inactiva del arbol de accesibilidad.
+    <div className="min-w-0 rounded-xl @3xl:overflow-hidden @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <ul className="space-y-1.5 px-px @3xl:hidden">
+        {mobilePage.map((row) => (
+          <DailyPersonRow
+            key={row.employmentHistoryId}
+            row={row}
+            canWrite={canWrite}
+            onAddMark={(type, block) =>
+              onEditMark({
+                row,
+                type,
+                block,
+                mark: null,
+                suggestedTime: type === 'entrada' ? (row.expectedStart ?? undefined) : undefined,
+              })
+            }
+          >
+            <MobileMarkDetails row={row} canWrite={canWrite} onEditMark={onEditMark} />
+          </DailyPersonRow>
+        ))}
+      </ul>
 
-      {/*
-        flex-wrap + basis: con los targets tactiles en 44px, los tres botones
-        de navegacion mas el titulo ya no entran en una linea angosta. Antes
-        de envolver, el titulo se comprime hasta su base de 12rem; pasado ese
-        punto los controles bajan enteros en vez de aplastarse.
-      */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="min-w-0 flex-1 basis-48">
-          <h2 className="text-sm font-bold capitalize text-slate-900">{formatDay(dateISO)}</h2>
-          <p className="truncate text-xs text-slate-500">Marcas de asistencia del dia.</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <IconButton onClick={goToPreviousDay} disabled={isNavigating} aria-label="Dia anterior">
-            <ChevronLeft className="h-4 w-4" />
-          </IconButton>
-          {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-          <IconButton onClick={goToNextDay} disabled={isNavigating} aria-label="Dia siguiente">
-            <ChevronRight className="h-4 w-4" />
-          </IconButton>
-          <DatePickerButton
-            value={dateISO}
-            onChange={goToDate}
-            // "Hoy" es el de Costa Rica, no el del navegador: una tablet con
-            // la zona mal configurada marcaria el dia equivocado.
-            todayISO={todayInCostaRica()}
-            disabled={isNavigating}
-          />
-        </div>
-      </div>
-
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No hay colaboradores activos en esta sucursal"
-          description="Verifica que existan contratos activos asignados a esta sucursal."
-        />
-      ) : (
-        // El marco (borde, fondo, sombra) aparece recien en `md:`: en movil
-        // las tarjetas traen el suyo propio, y envolverlas en TABLE_WRAP
-        // dibujaba una caja dentro de otra caja. Por eso no usa el token
-        // directo — es el unico listado del proyecto con dos presentaciones.
-        <div className="overflow-hidden rounded-xl @3xl:border @3xl:border-slate-200 @3xl:bg-white @3xl:shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-          {/*
-            Cards mientras el contenedor no llegue a 768px REALES (@3xl), que
-            es lo que esta tabla necesita para sus 6 columnas con un boton de
-            correccion por marca. Abajo de eso el scroll horizontal esconde
-            los encabezados y hay que adivinar que columna se esta mirando.
-
-            `hidden` es display:none, asi que el navegador saca la rama
-            inactiva del arbol de accesibilidad: nunca hay contenido duplicado
-            para un lector de pantalla, aunque el markup exista dos veces.
-          */}
-          <ul className="space-y-3 @3xl:hidden">
-            {paginatedItems.map((row, index) => {
-              const marcadas = MARK_SLOTS.filter((s) => row[MARK_FIELD[s.tipo]] !== null).length
-
+      <div className={`hidden @3xl:block ${TABLE_SCROLL}`}>
+        <table className="w-full text-xs">
+          <thead className={TABLE_HEAD}>
+            <tr>
+              <th className={TABLE_TH}>Colaborador</th>
+              <th className={TABLE_TH}>Entrada</th>
+              <th className={TABLE_TH}>Inicio receso</th>
+              <th className={TABLE_TH}>Fin receso</th>
+              <th className={TABLE_TH}>Inicio almuerzo</th>
+              <th className={TABLE_TH}>Fin almuerzo</th>
+              <th className={TABLE_TH}>Salida</th>
+              <th className={TABLE_TH}>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedItems.map((row) => {
+              const secondBlock = row.scheduledBlocks.length === 2 ? row.scheduledBlocks[1] : null
+              const firstBlock = secondBlock ? row.scheduledBlocks[0] : null
               return (
-                <li
-                  key={row.employmentHistoryId}
-                  // Entrada escalonada: las tarjetas aparecen en cascada en vez
-                  // de todas de golpe, lo que ayuda a leerlas como una lista
-                  // ordenada. Se corta a los 6 elementos para que la ultima
-                  // tarjeta de una pagina no se haga esperar medio segundo.
-                  style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
-                  className="animate-fade-in space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
-                >
-                  {/*
-                    El nombre se queda con el ancho completo y envuelve en vez
-                    de cortarse: en una lista de colaboradores el apellido es
-                    justo lo que distingue a dos personas, y truncarlo puede
-                    dejar dos filas identicas. La hora esperada bajo a la
-                    linea de meta, igual que en la tabla.
-                  */}
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
-                    <div className="min-w-0">
-                      <p className="break-words text-sm font-semibold text-slate-800">
-                        {row.fullName}
-                      </p>
-                      <EmployeeMeta row={row} />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    {MARK_SLOTS.map(({ tipo, label }) => (
-                      <MarkTile
-                        key={tipo}
-                        label={label}
-                        mark={row[MARK_FIELD[tipo]]}
-                        canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo })}
-                        tardiness={
-                          tipo === 'entrada'
-                            ? row.tardiness
-                            : tipo === 'fin_almuerzo'
-                              ? row.lunchTardiness
-                              : null
-                        }
-                      />
-                    ))}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
-                    <span className="text-[11px] font-medium tabular-nums text-slate-400">
-                      {marcadas} de {MARK_SLOTS.length} marcas
-                    </span>
-                    <StatusBadges
-                      row={row}
-                      canWrite={canWrite}
-                      onEditBlockMark={(tipo, mark) => setEditing({ row, tipo, mark })}
-                    />
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-
-          <div className={`hidden @3xl:block ${TABLE_SCROLL}`}>
-            <table className="w-full text-xs">
-              <thead className={TABLE_HEAD}>
-                <tr>
-                  <th className={TABLE_TH}>Colaborador</th>
-                  <th className={TABLE_TH}>Entrada</th>
-                  <th className={TABLE_TH}>Inicio receso</th>
-                  <th className={TABLE_TH}>Fin receso</th>
-                  <th className={TABLE_TH}>Inicio almuerzo</th>
-                  <th className={TABLE_TH}>Fin almuerzo</th>
-                  <th className={TABLE_TH}>Salida</th>
-                  <th className={TABLE_TH}>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedItems.map((row) => (
-                  <tr key={row.employmentHistoryId} className={TABLE_ROW}>
+                <Fragment key={row.employmentHistoryId}>
+                  <tr className={TABLE_ROW}>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2.5">
                         <Avatar size="sm" fotoUrl={row.fotoUrl} nombre={row.fullName} />
                         <div className="min-w-0">
                           <p className="font-medium text-slate-800">{row.fullName}</p>
                           <EmployeeMeta row={row} />
+                          <MarkDetails row={row} canWrite={canWrite} onEditMark={onEditMark} />
                         </div>
                       </div>
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
-                        mark={row.entrada}
+                        mark={firstBlock ? firstBlock.entrada : row.entrada}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'entrada' })}
+                        onEdit={() =>
+                          firstBlock
+                            ? editBlockMark(row, firstBlock, 'entrada')
+                            : onEditMark({ row, type: 'entrada' })
+                        }
                         tardiness={row.tardiness}
                       />
                     </td>
@@ -686,74 +726,272 @@ export function DailyAttendanceTable({ dateISO, rows, canWrite }: DailyAttendanc
                       <MarkCell
                         mark={row.inicioReceso}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'inicio_receso' })}
+                        onEdit={() => onEditMark({ row, type: 'inicio_receso' })}
                       />
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
                         mark={row.finReceso}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'fin_receso' })}
+                        onEdit={() => onEditMark({ row, type: 'fin_receso' })}
                       />
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
                         mark={row.inicioAlmuerzo}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'inicio_almuerzo' })}
+                        onEdit={() => onEditMark({ row, type: 'inicio_almuerzo' })}
                       />
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
                         mark={row.finAlmuerzo}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'fin_almuerzo' })}
+                        onEdit={() => onEditMark({ row, type: 'fin_almuerzo' })}
                         tardiness={row.lunchTardiness}
                       />
                     </td>
                     <td className="px-3 py-2">
                       <MarkCell
-                        mark={row.salida}
+                        mark={firstBlock ? firstBlock.salida : row.salida}
                         canWrite={canWrite}
-                        onEdit={() => setEditing({ row, tipo: 'salida' })}
+                        onEdit={() =>
+                          firstBlock
+                            ? editBlockMark(row, firstBlock, 'salida')
+                            : onEditMark({ row, type: 'salida' })
+                        }
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <StatusBadges
-                          row={row}
-                          canWrite={canWrite}
-                          onEditBlockMark={(tipo, mark) => setEditing({ row, tipo, mark })}
-                        />
-                      </div>
+                      <DayStatusBadge status={row.status} size="xs" isHoliday={row.isHoliday} />
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                  {secondBlock && (
+                    <tr className={`${TABLE_ROW} bg-slate-50/60`}>
+                      <td className="px-3 py-2 pl-9">
+                        <SecondBlockLabel row={row} block={secondBlock} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <MarkCell
+                          mark={secondBlock.entrada}
+                          canWrite={canWrite}
+                          label="entrada del 2.º bloque"
+                          onEdit={() => editBlockMark(row, secondBlock, 'entrada')}
+                          tardiness={row.secondBlockTardiness}
+                        />
+                      </td>
+                      <td colSpan={4} />
+                      <td className="px-3 py-2">
+                        <MarkCell
+                          mark={secondBlock.salida}
+                          canWrite={canWrite}
+                          label="salida del 2.º bloque"
+                          onEdit={() => editBlockMark(row, secondBlock, 'salida')}
+                        />
+                      </td>
+                      <td />
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        onPrevious={goToPreviousPage}
+        onNext={goToNextPage}
+      />
+    </div>
+  )
+}
+
+export function DailyAttendanceTable({
+  dateISO,
+  rows,
+  canWrite,
+  pendingCount = 0,
+  pendingHref = '?tab=justificar',
+}: DailyAttendanceTableProps) {
+  const { isNavigating, goToPreviousDay, goToNextDay, goToDate } = useDateNavigation(dateISO)
+  const [editing, setEditing] = useState<EditingTarget | null>(null)
+  const [segment, setSegment] = useState<Segment | null>(null)
+  const [indicator, setIndicator] = useState<Indicator | null>(null)
+  const segmentButton = useRef<HTMLButtonElement>(null)
+
+  const { attentionRows, indicatorGroups } = useMemo(
+    () => ({
+      attentionRows: rows.filter(({ status }) => status.needsAttention),
+      indicatorGroups: INDICATORS.map((item) => ({
+        ...item,
+        rows: rows.filter(({ status }) => item.matches(status.kind)),
+      })),
+    }),
+    [rows]
+  )
+  const activeSegment = segment ?? (attentionRows.length > 0 ? 'attention' : 'all')
+  const activeIndicator = indicatorGroups.find((item) => item.id === indicator)
+  const visibleRows =
+    activeIndicator?.rows ?? (activeSegment === 'attention' ? attentionRows : rows)
+
+  return (
+    <div className="@container min-w-0 space-y-4">
+      {pendingCount > 0 && (
+        <Alert tone="info" className="items-center! py-1!">
+          <div className="flex flex-wrap items-center gap-x-2">
+            <span>
+              Tienes {pendingCount} {pendingCount === 1 ? 'incidencia' : 'incidencias'} del mes por
+              justificar.
+            </span>
+            <Link
+              href={pendingHref}
+              className="inline-flex min-h-7 items-center rounded px-1.5 font-semibold text-brand-700 underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-brand-600/40 pointer-coarse:min-h-11"
+            >
+              Ver
+            </Link>
           </div>
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onPrevious={goToPreviousPage}
-            onNext={goToNextPage}
+        </Alert>
+      )}
+
+      {/* Las etiquetas y los blancos táctiles necesitan espacio para convivir en una fila. */}
+      <div className="hidden grid-cols-3 gap-2.5 @md:grid">
+        {indicatorGroups.map(({ id, label, icon, tone, rows: groupRows }) => (
+          <StatCard
+            key={id}
+            icon={icon}
+            tone={tone}
+            label={label}
+            value={groupRows.length}
+            active={indicator === id}
+            onClick={() => setIndicator(indicator === id ? null : id)}
+            className="focus-visible:ring-2 focus-visible:ring-brand-600/40!"
           />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold capitalize text-slate-900">{formatDay(dateISO)}</h2>
+            <p className="truncate text-xs text-slate-500">Marcas de asistencia del día.</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton onClick={goToPreviousDay} disabled={isNavigating} aria-label="Día anterior">
+              <ChevronLeft className="h-4 w-4" />
+            </IconButton>
+            {isNavigating && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+            <IconButton onClick={goToNextDay} disabled={isNavigating} aria-label="Día siguiente">
+              <ChevronRight className="h-4 w-4" />
+            </IconButton>
+            <DatePickerButton
+              value={dateISO}
+              onChange={goToDate}
+              // "Hoy" es el de Costa Rica, no el del navegador: una tablet con
+              // la zona mal configurada marcaria el dia equivocado.
+              todayISO={todayInCostaRica()}
+              disabled={isNavigating}
+            />
+          </div>
         </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div
+            role="group"
+            aria-label="Filtrar colaboradores"
+            className="inline-flex max-w-full rounded-xl bg-slate-100 p-0.5 text-xs font-semibold"
+          >
+            {(
+              [
+                ['attention', `Requieren atención (${attentionRows.length})`],
+                ['all', `Todos (${rows.length})`],
+              ] as const
+            ).map(([value, label]) => {
+              const selected = !activeIndicator && activeSegment === value
+              return (
+                <button
+                  key={value}
+                  ref={activeSegment === value ? segmentButton : undefined}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setSegment(value)
+                    setIndicator(null)
+                  }}
+                  className={`min-h-9 rounded-[10px] px-3 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-600/40 pointer-coarse:min-h-11 ${
+                    selected
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          {activeIndicator && (
+            <div role="group" aria-label="Filtro de indicador" className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-700">
+                {activeIndicator.label} ({activeIndicator.rows.length})
+              </span>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setIndicator(null)
+                  segmentButton.current?.focus()
+                }}
+              >
+                Quitar filtro
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {visibleRows.length > 0 ? (
+        // La página anterior pertenece a otro conjunto de resultados.
+        <DailyAttendanceRows
+          key={activeIndicator?.id ?? activeSegment}
+          rows={visibleRows}
+          canWrite={canWrite}
+          onEditMark={setEditing}
+        />
+      ) : activeIndicator || activeSegment === 'attention' ? (
+        <EmptyState
+          icon={CircleCheck}
+          variant="no-results"
+          size="sm"
+          title="Todo en orden"
+          description={
+            activeIndicator?.emptyMessage ?? 'Nadie necesita que hagas algo en este día.'
+          }
+        />
+      ) : (
+        <EmptyState
+          icon={Users}
+          title="No hay colaboradores activos en esta sucursal"
+          description="Verifica que existan contratos activos asignados a esta sucursal."
+        />
       )}
 
       {editing &&
         (() => {
-          const mark = editing.mark ?? editing.row[MARK_FIELD[editing.tipo]]
+          const mark =
+            editing.mark === undefined ? editing.row[MARK_FIELD[editing.type]] : editing.mark
           return (
             <ManualMarkModal
               employmentHistoryId={editing.row.employmentHistoryId}
               employeeId={editing.row.employeeId}
               employeeName={editing.row.fullName}
-              sucursalId={editing.row.branchId}
-              tipo={editing.tipo}
+              sucursalId={editing.block?.branchId ?? editing.row.branchId}
+              tipo={editing.type}
               markId={mark?.id ?? null}
               currentFechaHora={mark ? `${dateISO} ${mark.time}:00` : null}
               defaultDateISO={dateISO}
+              defaultTime={
+                (editing.type === 'salida' ? editing.block?.fin : editing.block?.inicio) ??
+                editing.suggestedTime
+              }
               onClose={() => setEditing(null)}
             />
           )

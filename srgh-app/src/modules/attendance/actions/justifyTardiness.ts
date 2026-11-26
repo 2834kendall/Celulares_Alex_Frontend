@@ -39,8 +39,8 @@ async function notifyEmployee(
     ntf_canal: 'app',
     ntf_titulo: justificada ? 'Tardanza justificada' : 'Justificacion retirada',
     ntf_mensaje: justificada
-      ? 'Un encargado marco una de tus tardanzas como justificada: deja de contar para el mes.'
-      : 'Un encargado retiro la justificacion de una de tus tardanzas: vuelve a contar para el mes.',
+      ? 'Un encargado marcó una de tus tardanzas como justificada: deja de contar para el mes.'
+      : 'Un encargado retiró la justificación de una de tus tardanzas: vuelve a contar para el mes.',
   })
 }
 
@@ -62,7 +62,7 @@ export async function justifyTardiness(
   const parsed = justifyTardinessSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos invalidos.' }
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos.' }
   }
 
   const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
@@ -73,7 +73,7 @@ export async function justifyTardiness(
   // esta guarda, la sesion de la tablet podia invocar esta accion (SGRH-88).
   const permisos = (claims.app_metadata as { permisos?: string[] }).permisos ?? []
   if (!permisos.includes(PERMISOS.ASISTENCIA_READ)) {
-    return { ok: false, error: 'No tienes permiso para justificar tardias.' }
+    return { ok: false, error: 'No tienes permiso para justificar tardías.' }
   }
 
   // Sin usuario no se puede justificar: el CHECK de la base exige saber QUIEN
@@ -131,7 +131,7 @@ export async function justifyTardiness(
     .eq('mar_id', markId)
 
   if (error) {
-    return { ok: false, error: 'No se pudo guardar la justificacion.' }
+    return { ok: false, error: 'No se pudo guardar la justificación.' }
   }
 
   await notifyEmployee(

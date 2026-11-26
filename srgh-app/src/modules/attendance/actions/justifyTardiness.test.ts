@@ -14,7 +14,7 @@ const mockRequirePermission = vi.mocked(requirePermission)
 
 type ClientMock = ReturnType<typeof createSupabaseClientMock>
 
-const MOTIVO = 'El sistema estaba caido y no pudo marcar, ya estaba en tienda.'
+const MOTIVO = 'El sistema estaba caído y no pudo marcar, ya estaba en tienda.'
 
 const ENTRADA = {
   data: { mar_id: 5, mar_tipo: 'entrada', sgrh_historial_laboral: { lab_empleado_id: 10 } },
@@ -43,7 +43,7 @@ describe('justifyTardiness (server action)', () => {
   it('rechaza justificar sin motivo', async () => {
     const result = await justifyTardiness({ markId: 5, justificada: true, motivo: null })
 
-    expect(result).toEqual({ ok: false, error: 'Escriba un motivo de al menos 10 caracteres.' })
+    expect(result).toEqual({ ok: false, error: 'Escribe un motivo de al menos 10 caracteres.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -171,7 +171,7 @@ describe('justifyTardiness (server action)', () => {
 
     const result = await justifyTardiness({ markId: 5, justificada: true, motivo: MOTIVO })
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo guardar la justificacion.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo guardar la justificación.' })
   })
 
   it('la cuenta KIOSCO no puede justificar (tiene WRITE para marcar, pero no READ)', async () => {
@@ -189,7 +189,7 @@ describe('justifyTardiness (server action)', () => {
       motivo: 'El sistema estaba caido esa manana',
     })
 
-    expect(result).toEqual({ ok: false, error: 'No tienes permiso para justificar tardias.' })
+    expect(result).toEqual({ ok: false, error: 'No tienes permiso para justificar tardías.' })
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

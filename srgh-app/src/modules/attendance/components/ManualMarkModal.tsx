@@ -28,6 +28,7 @@ interface ManualMarkModalProps {
   currentFechaHora: string | null
   /** El dia que se esta viendo en el panel — valor inicial de la fecha. */
   defaultDateISO: string
+  defaultTime?: string
   onClose: () => void
   onSuccess?: () => void
 }
@@ -48,13 +49,14 @@ export function ManualMarkModal({
   markId,
   currentFechaHora,
   defaultDateISO,
+  defaultTime = '08:00',
   onClose,
   onSuccess,
 }: ManualMarkModalProps) {
   const [fecha, setFecha] = useState(
     currentFechaHora ? currentFechaHora.split(' ')[0] : defaultDateISO
   )
-  const [hora, setHora] = useState(currentFechaHora ? timeOfDay(currentFechaHora) : '08:00')
+  const [hora, setHora] = useState(currentFechaHora ? timeOfDay(currentFechaHora) : defaultTime)
   const [observacion, setObservacion] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState<string | null>(null)
@@ -156,7 +158,7 @@ export function ManualMarkModal({
 
         <div>
           <label className={LABEL} htmlFor="manual-mark-observacion">
-            Justificacion (obligatoria)
+            Justificación (obligatoria)
           </label>
           <textarea
             id="manual-mark-observacion"
@@ -165,7 +167,7 @@ export function ManualMarkModal({
             onChange={(e) => setObservacion(e.target.value)}
             disabled={isSaving}
             aria-invalid={!!errors.observacion}
-            placeholder="Explique por que se registra o corrige esta marca..."
+            placeholder="Explica por qué se registra o corrige esta marca..."
             className={INPUT}
           />
           {errors.observacion && <p className={FIELD_ERROR}>{errors.observacion}</p>}
@@ -177,7 +179,7 @@ export function ManualMarkModal({
               <Loader2 className={SPINNER} /> Guardando
             </>
           ) : markId ? (
-            'Guardar correccion'
+            'Guardar corrección'
           ) : (
             'Agregar marca'
           )}

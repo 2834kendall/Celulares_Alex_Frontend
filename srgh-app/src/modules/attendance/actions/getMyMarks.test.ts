@@ -37,7 +37,7 @@ describe('getMyMarks (server action)', () => {
 
     const result = await getMyMarks()
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo verificar tu sesion.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo verificar tu sesión.' })
   })
 
   it('devuelve vacio si el usuario no tiene empleado ligado', async () => {

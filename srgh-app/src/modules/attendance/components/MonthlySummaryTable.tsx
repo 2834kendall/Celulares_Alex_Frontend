@@ -97,7 +97,7 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
       {/* Mismo criterio que el panel diario: una columna o tres, nunca dos. */}
       <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-3">
         <StatCard icon={Users} label="Colaboradores" value={rows.length} />
-        <StatCard icon={Clock} tone="amber" label="Tardias del mes" value={totalTardias} />
+        <StatCard icon={Clock} tone="amber" label="Tardías del mes" value={totalTardias} />
         <StatCard icon={CalendarX2} tone="rose" label="Ausencias del mes" value={totalAusencias} />
       </div>
 
@@ -155,7 +155,7 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
         <EmptyState
           variant="no-results"
           icon={CalendarCheck2}
-          title="Nadie tiene tardias ni ausencias este mes"
+          title="Nadie tiene tardías ni ausencias este mes"
           description="Cambia a “Todos” para ver a todo el personal."
         />
       ) : (
@@ -189,7 +189,7 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
                       <span className="mt-1 flex flex-wrap gap-1.5">
                         {row.tardias > 0 && (
                           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
-                            {plural(row.tardias, 'tardia', 'tardias')}
+                            {plural(row.tardias, 'tardía', 'tardías')}
                           </span>
                         )}
                         {row.ausencias > 0 && (
@@ -219,7 +219,7 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
                     >
                       {detailItems(row).map((item) => (
                         <IncidentRow
-                          key={`${item.kind}-${item.date}-${item.kind === 'tardia' ? item.day.kind : ''}`}
+                          key={`${item.kind}-${item.date}-${item.kind === 'tardia' ? item.day.kind : (item.bloque ?? '')}`}
                           item={item}
                         />
                       ))}

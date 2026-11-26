@@ -49,12 +49,12 @@ describe('<ManualMarkModal />', () => {
     const user = userEvent.setup()
     render(<ManualMarkModal {...baseProps} />)
 
-    await user.type(screen.getByLabelText('Justificacion (obligatoria)'), 'corto')
+    await user.type(screen.getByLabelText('Justificación (obligatoria)'), 'corto')
     await user.click(screen.getByRole('button', { name: 'Agregar marca' }))
 
     expect(mockSaveManualMark).not.toHaveBeenCalled()
     expect(
-      screen.getByText('Escriba una justificacion de al menos 10 caracteres.')
+      screen.getByText('Escribe una justificación de al menos 10 caracteres.')
     ).toBeInTheDocument()
   })
 
@@ -67,7 +67,7 @@ describe('<ManualMarkModal />', () => {
     render(<ManualMarkModal {...baseProps} onClose={onClose} onSuccess={onSuccess} />)
 
     await user.type(
-      screen.getByLabelText('Justificacion (obligatoria)'),
+      screen.getByLabelText('Justificación (obligatoria)'),
       'La tablet del kiosco no encendio esta mañana.'
     )
     await user.click(screen.getByRole('button', { name: 'Agregar marca' }))
@@ -98,7 +98,7 @@ describe('<ManualMarkModal />', () => {
     render(<ManualMarkModal {...baseProps} onClose={onClose} />)
 
     await user.type(
-      screen.getByLabelText('Justificacion (obligatoria)'),
+      screen.getByLabelText('Justificación (obligatoria)'),
       'La tablet del kiosco no encendio esta mañana.'
     )
     await user.click(screen.getByRole('button', { name: 'Agregar marca' }))

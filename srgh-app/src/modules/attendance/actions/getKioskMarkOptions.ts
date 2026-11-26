@@ -9,6 +9,7 @@ import { allowedNextMarks, isExitWindowOpen, type MarkType } from '@/modules/att
 import {
   absenceBlocksMarkMessage,
   bloquesDelDia,
+  breakAvailable,
   findApprovedAbsence,
   loadDayJourney,
   resolveKioskSucursalIds,
@@ -32,7 +33,7 @@ const employeeIdSchema = z.number().int().positive()
  */
 export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskMarkOptionsResult> {
   if (!employeeIdSchema.safeParse(employeeId).success) {
-    return { ok: false, error: 'Colaborador invalido.' }
+    return { ok: false, error: 'Colaborador inválido.' }
   }
 
   const claims = await requireKioskAccess()
@@ -96,7 +97,7 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
         ahora,
         salidaDelBloqueActual(delDia.bloques, jornada.salidas, turno.expectedEnd)
       ),
-      breakScheduled: turno.expectedBreakStart !== null,
+      breakScheduled: breakAvailable(delDia.tieneReceso, jornada.recesoTomado),
     }),
   }
 }

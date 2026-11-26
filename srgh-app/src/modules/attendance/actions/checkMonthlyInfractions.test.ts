@@ -85,6 +85,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
@@ -154,6 +155,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [],
@@ -210,6 +212,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
@@ -268,6 +271,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         ],
         error: null,
       },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
       sgrh_marcas_asistencia: {
         data: [
@@ -315,6 +319,7 @@ describe('checkMonthlyInfractions (server action)', () => {
         error: null,
       },
       sgrh_marcas_asistencia: { data: null, error: { message: 'boom' } },
+      sgrh_justificaciones_bloque: { data: [], error: null },
       sgrh_ausencias: { data: [], error: null },
     })
     mockCreateClient.mockResolvedValue(
@@ -323,6 +328,9 @@ describe('checkMonthlyInfractions (server action)', () => {
 
     const result = await checkMonthlyInfractions()
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo calcular tardias/ausencias del mes.' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'No se pudieron calcular las tardías y las ausencias del mes.',
+    })
   })
 })

@@ -6,9 +6,20 @@ import { PERMISOS } from '@/lib/permissions/catalog'
 import { ERROR_FILTRO_MARCA, getFiltroMarca } from '@/lib/empresa/contexto-activo'
 import { getUsuarioSucursalScope } from '@/lib/empresa/get-usuario-sucursales'
 import { groupIntoDayJourney, type RawMark } from '@/modules/attendance/lib/marks'
-import { diffMinutes, timeOfDay } from '@/modules/attendance/lib/time'
+import {
+  diffMinutes,
+  nowInCostaRica,
+  timeOfDay,
+  todayInCostaRica,
+} from '@/modules/attendance/lib/time'
+import {
+  attendanceStatusOf,
+  type DayClock,
+  type DayStatus,
+} from '@/modules/attendance/lib/dayStatus'
 import { getDayAssignments, type DayAssignment } from '@/modules/attendance/lib/workingDay'
 import { secondBlockStart } from '@/modules/attendance/lib/secondBlock'
+import { scheduledBlockAtTime, type ScheduledBlock } from '@/modules/attendance/lib/dayJourney'
 import {
   classifyTardiness,
   LUNCH_MINUTES,
@@ -56,6 +67,55 @@ interface MarkDbRow {
   mar_tardia_justificacion: string | null
 }
 
+type DailyRawMark = RawMark & { branchId: number }
+
+export interface DailyScheduledBlock extends ScheduledBlock {
+  branchName: string | null
+  entrada: DailyMarkInfo | null
+  salida: DailyMarkInfo | null
+}
+
+function scheduledBlocksOf(assignments: DayAssignment[]) {
+  return assignments
+    .filter((assignment) => !assignment.isDayOff && !assignment.isHoliday)
+    .flatMap((assignment) => {
+      const branch = { branchId: assignment.branchId, branchName: assignment.branchName ?? null }
+      const blocks = []
+      if (assignment.expectedStart && assignment.expectedEnd) {
+        blocks.push({ ...branch, inicio: assignment.expectedStart, fin: assignment.expectedEnd })
+      }
+      if (assignment.expectedSecondBlockStart && assignment.expectedSecondBlockEnd) {
+        blocks.push({
+          ...branch,
+          inicio: assignment.expectedSecondBlockStart,
+          fin: assignment.expectedSecondBlockEnd,
+        })
+      }
+      return blocks
+    })
+    .sort((a, b) => a.inicio.localeCompare(b.inicio))
+}
+
+function splitBlockMarks(blocks: ScheduledBlock[], marks: DailyRawMark[]) {
+  const marksByBlock = blocks.map(() => [] as RawMark[])
+  for (const mark of marks) {
+    if (mark.tipo !== 'entrada' && mark.tipo !== 'salida') continue
+    const time = timeOfDay(mark.fechaHora)
+    const inRange = scheduledBlockAtTime(blocks, time, mark.tipo)
+    const atBranch = blocks.filter((block) => block.branchId === mark.branchId)
+    const candidates = atBranch.length ? atBranch : blocks
+    const boundary = mark.tipo === 'entrada' ? 'inicio' : 'fin'
+    // Las entradas anticipadas y las salidas tardías también pertenecen a un bloque.
+    const nearest = candidates.reduce((best, candidate) =>
+      Math.abs(diffMinutes(time, candidate[boundary])) < Math.abs(diffMinutes(time, best[boundary]))
+        ? candidate
+        : best
+    )
+    marksByBlock[blocks.indexOf(inRange ?? nearest)].push(mark)
+  }
+  return marksByBlock.map((blockMarks) => groupIntoDayJourney(blockMarks))
+}
+
 export interface DailyMarkInfo {
   /** mar_id — lo necesita el modal de correccion para saber que fila actualizar. */
   id: number
@@ -77,6 +137,11 @@ export interface DailyTardiness {
 }
 
 export interface DailyAttendanceRow {
+  /**
+   * Como esta la persona ese dia (SGRH-120), con la misma regla que la
+   * tarjeta del dashboard. Ver docs/estados-del-dia.md.
+   */
+  status: DayStatus
   employmentHistoryId: number
   employeeId: number
   fullName: string
@@ -108,6 +173,9 @@ export interface DailyAttendanceRow {
    * de un solo bloque.
    */
   blocks: { entrada: DailyMarkInfo; salida: DailyMarkInfo | null }[]
+  scheduledBlocks: DailyScheduledBlock[]
+  /** El 2.º bloque de ese dia tiene una justificacion por bloque (SGRH-120). */
+  isSecondBlockJustified: boolean
   duplicateMarksCount: number
   isOpen: boolean
   /**
@@ -252,7 +320,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
   }
 
   if (errMarks) {
-    return { ok: false, error: 'No se pudieron cargar las marcas del dia.' }
+    return { ok: false, error: 'No se pudieron cargar las marcas del día.' }
   }
 
   if (errRoster) {
@@ -281,7 +349,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     : { data: [], error: null }
 
   if (errElsewhere) {
-    return { ok: false, error: 'No se pudo cargar la programacion del dia.' }
+    return { ok: false, error: 'No se pudo cargar la programación del día.' }
   }
 
   const trasladados = new Set(
@@ -350,7 +418,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     if (!previo || empiezaAntes) assignmentByHistoryId.set(a.employmentHistoryId, a)
   }
 
-  const marksByHistoryId = new Map<number, RawMark[]>()
+  const marksByHistoryId = new Map<number, DailyRawMark[]>()
   // Sucursal donde de verdad se marco, para las filas sin programacion: sin
   // ella la fila caeria a la del contrato y el modal de correccion guardaria
   // la marca corregida en la tienda equivocada.
@@ -366,7 +434,12 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     const parsedTipo = marcaTipoSchema.safeParse(m.mar_tipo)
     if (!parsedTipo.success) continue
 
-    const rawMark: RawMark = { id: m.mar_id, tipo: parsedTipo.data, fechaHora: m.mar_fecha_hora }
+    const rawMark: DailyRawMark = {
+      id: m.mar_id,
+      tipo: parsedTipo.data,
+      fechaHora: m.mar_fecha_hora,
+      branchId: m.mar_sucursal_id,
+    }
     const list = marksByHistoryId.get(m.mar_historial_laboral_id) ?? []
     list.push(rawMark)
     marksByHistoryId.set(m.mar_historial_laboral_id, list)
@@ -389,7 +462,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
   const tipos = tiposResult.data
 
-  const [{ data: ausencias }, fotoUrls] = await Promise.all([
+  const [{ data: ausencias }, fotoUrls, { data: justificacionesBloque }] = await Promise.all([
     // Ausencias aprobadas que cubren el dia. Leerlas exige AUSENCIAS_READ,
     // que tienen todos los roles que ven este panel; sin el, RLS devuelve cero
     // filas y el panel se ve como antes. Un error tampoco tumba el panel: es un
@@ -407,7 +480,23 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       .returns<AusenciaDelDiaRow[]>(),
     // Una sola firma para toda la jornada (ver signEmployeePhotos).
     signEmployeePhotos(employmentHistory.map((h) => h.sgrh_empleados?.emp_foto_path)),
+    // 2.º bloque justificado sin goce (SGRH-120): no crea ausencia, pero el
+    // estado del dia tiene que dejar de pedir que alguien haga algo. Mismo
+    // criterio que las ausencias: si falla, el panel sigue.
+    supabase
+      .from('sgrh_justificaciones_bloque')
+      .select('jbl_historial_laboral_id')
+      .in(
+        'jbl_historial_laboral_id',
+        employmentHistory.map((h) => h.lab_id)
+      )
+      .eq('jbl_fecha', dateISO)
+      .eq('jbl_bloque', 2),
   ])
+
+  const segundoBloqueJustificado = new Set(
+    (justificacionesBloque ?? []).map((j) => j.jbl_historial_laboral_id)
+  )
 
   const ausenciaByHistoryId = new Map<number, string>()
   for (const a of ausencias ?? []) {
@@ -418,7 +507,7 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     }
   }
 
-  const data: DailyAttendanceRow[] = employmentHistory.map((h) => {
+  const built: Omit<DailyAttendanceRow, 'status'>[] = employmentHistory.map((h) => {
     const employee = h.sgrh_empleados
     const fullName = employee
       ? `${employee.emp_nombre} ${employee.emp_apellido_1}${employee.emp_apellido_2 ? ' ' + employee.emp_apellido_2 : ''}`
@@ -426,7 +515,12 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
 
     const assignment = assignmentByHistoryId.get(h.lab_id)
 
-    const journey = groupIntoDayJourney(marksByHistoryId.get(h.lab_id) ?? [], { byBlocks: true })
+    const marksForDay = marksByHistoryId.get(h.lab_id) ?? []
+    const journey = groupIntoDayJourney(marksForDay, { byBlocks: true })
+    const dayAssignments = assignmentsByHistoryId.get(h.lab_id) ?? []
+    const scheduledBlocks = scheduledBlocksOf(dayAssignments)
+    const hasSplitSchedule = scheduledBlocks.length === 2
+    const blockJourneys = hasSplitSchedule ? splitBlockMarks(scheduledBlocks, marksForDay) : []
 
     // Cada marca se compara contra SU hora programada: la entrada contra la
     // entrada y el receso contra el suyo (SGRH-88). La salida sigue sin
@@ -472,9 +566,10 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
     // El segundo bloque se mide contra su propia hora: la entrada de la tarde
     // contra la de la tarde, no contra la de la manana (SGRH-110). Sin dia
     // partido no hay segunda entrada y esto queda en null.
-    const segundoBloque = journey.blocks[1]?.entrada ?? null
+    const segundoBloque =
+      (hasSplitSchedule ? blockJourneys[1].entrada : journey.blocks[1]?.entrada) ?? null
     const segundaEntradaEsperada = secondBlockStart(
-      (assignmentsByHistoryId.get(h.lab_id) ?? [])
+      dayAssignments
         .filter((a) => !a.isDayOff && !a.isHoliday)
         .flatMap((a) => [a.expectedStart, a.expectedSecondBlockStart])
     )
@@ -508,6 +603,15 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
       inicioAlmuerzo,
       finAlmuerzo,
       salida: markInfo(journey.salida, null),
+      isSecondBlockJustified: segundoBloqueJustificado.has(h.lab_id),
+      scheduledBlocks: scheduledBlocks.map((block, index) => {
+        const marks = hasSplitSchedule ? blockJourneys[index] : index === 0 ? journey : null
+        return {
+          ...block,
+          entrada: markInfo(marks?.entrada ?? null, block.inicio),
+          salida: markInfo(marks?.salida ?? null, null),
+        }
+      }),
       blocks: journey.blocks.map((b, i) => ({
         entrada:
           i === 1 && segundaEntrada
@@ -515,8 +619,11 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
             : { id: b.entrada.id, time: timeOfDay(b.entrada.fechaHora), diffMinutes: null },
         salida: markInfo(b.salida, null),
       })),
-      duplicateMarksCount: journey.duplicates.length,
-      isOpen: journey.isOpen,
+      duplicateMarksCount: hasSplitSchedule
+        ? journey.duplicates.filter((mark) => mark.tipo !== 'entrada' && mark.tipo !== 'salida')
+            .length + blockJourneys.reduce((count, block) => count + block.duplicates.length, 0)
+        : journey.duplicates.length,
+      isOpen: hasSplitSchedule ? blockJourneys.some((block) => block.isOpen) : journey.isOpen,
       tardiness,
       lunchTardiness,
       secondBlockTardiness,
@@ -532,6 +639,20 @@ export async function getDailyAttendance(dateISO: string): Promise<GetDailyAtten
           : null,
     }
   })
+
+  // El estado de cada persona, con la misma regla que el dashboard: hoy se
+  // mide contra la hora actual; un dia pasado ya termino.
+  const today = todayInCostaRica()
+  const clock: DayClock =
+    dateISO === today
+      ? { when: 'today', nowTime: timeOfDay(nowInCostaRica()) }
+      : dateISO < today
+        ? { when: 'past' }
+        : { when: 'future' }
+  const data: DailyAttendanceRow[] = built.map((row) => ({
+    ...row,
+    status: attendanceStatusOf(row, clock, tipos),
+  }))
 
   data.sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'))
 

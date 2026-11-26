@@ -27,21 +27,21 @@ export async function deleteTipoTardia(id: number): Promise<DeleteTipoTardiaResu
     .select('tta_id')
 
   if (errTipos) {
-    return { ok: false, error: 'No se pudo eliminar el tipo de tardia.' }
+    return { ok: false, error: 'No se pudo eliminar el tipo de tardía.' }
   }
 
   if ((tipos ?? []).length <= 1) {
     return {
       ok: false,
       error:
-        'Tiene que quedar al menos un tipo de tardia: sin ninguno, no se registraria ninguna tardanza.',
+        'Tiene que quedar al menos un tipo de tardía: sin ninguno, no se registraría ninguna tardanza.',
     }
   }
 
   const { error } = await supabase.from('sgrh_cat_tipos_tardia').delete().eq('tta_id', id)
 
   if (error) {
-    return { ok: false, error: 'No se pudo eliminar el tipo de tardia.' }
+    return { ok: false, error: 'No se pudo eliminar el tipo de tardía.' }
   }
 
   revalidatePath('/settings', 'layout')

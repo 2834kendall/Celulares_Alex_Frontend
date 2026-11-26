@@ -22,7 +22,7 @@ export async function updateTipoTardia(
   const parsed = tipoTardiaSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos del tipo de tardia invalidos.' }
+    return { ok: false, error: 'Datos del tipo de tardía inválidos.' }
   }
 
   await requirePermission(PERMISOS.CATALOGOS_WRITE)

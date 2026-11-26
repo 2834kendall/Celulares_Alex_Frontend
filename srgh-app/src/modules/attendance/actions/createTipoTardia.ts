@@ -13,7 +13,7 @@ export async function createTipoTardia(input: TipoTardiaInput): Promise<CreateTi
   const parsed = tipoTardiaSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos del tipo de tardia invalidos.' }
+    return { ok: false, error: 'Datos del tipo de tardía inválidos.' }
   }
 
   const claims = await requirePermission(PERMISOS.CATALOGOS_WRITE)

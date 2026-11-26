@@ -13,8 +13,8 @@ export function tipoTardiaDbError(
   accion: 'crear' | 'actualizar'
 ): string {
   if (error.code === UNIQUE_VIOLATION) {
-    return `Ya hay un tipo de tardia que empieza en el minuto ${desdeMinutos}. Cada tipo tiene que empezar en un minuto distinto.`
+    return `Ya hay un tipo de tardía que empieza en el minuto ${desdeMinutos}. Cada tipo tiene que empezar en un minuto distinto.`
   }
 
-  return `No se pudo ${accion} el tipo de tardia.`
+  return `No se pudo ${accion} el tipo de tardía.`
 }

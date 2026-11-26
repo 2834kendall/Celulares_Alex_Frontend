@@ -20,6 +20,11 @@ export type LoadDayJourneyResult =
       snapshot: [number, string, string][]
       /** Salidas ya marcadas ese dia: cuantos bloques quedaron cerrados. */
       salidas: number
+      /**
+       * Ya marco un inicio de receso ese dia, en cualquier bloque y sucursal.
+       * El receso es uno por dia (SGRH-120), no uno por bloque.
+       */
+      recesoTomado: boolean
     }
   | { ok: false; error: string }
 
@@ -75,6 +80,7 @@ export async function loadDayJourney(
     ok: true,
     journey: groupIntoDayJourney(delBloqueActual),
     salidas: salidas.length,
+    recesoTomado: marks.some((m) => m.tipo === 'inicio_receso'),
     snapshot: [...(data ?? [])]
       .sort((a, b) => a.mar_id - b.mar_id)
       .map((m) => [m.mar_id, m.mar_tipo, m.mar_fecha_hora.replace('T', ' ').slice(0, 19)]),
@@ -97,19 +103,38 @@ export async function resolveKioskSucursalIds(
 }
 
 interface BloqueProgramacionRow {
+  prg_sucursal_id: number
   prg_es_dia_libre: boolean
   prg_hora_entrada_custom: string | null
   prg_hora_salida_custom: string | null
+  prg_hora_inicio_break_custom: string | null
   sgrh_cat_horarios: {
     hor_hora_entrada: string
     hor_hora_salida: string
     hor_hora_entrada_2: string | null
     hor_hora_salida_2: string | null
+    hor_hora_inicio_break: string | null
   } | null
 }
 
+export interface ScheduledBlock {
+  inicio: string
+  fin: string
+  branchId: number
+}
+
 export type BloquesDelDiaResult =
-  { ok: true; bloques: { inicio: string; fin: string }[] } | { ok: false; error: string }
+  | {
+      ok: true
+      bloques: ScheduledBlock[]
+      /**
+       * Algun tramo del dia trae receso (SGRH-120). Se toma una vez al dia,
+       * en la sucursal que la persona quiera de las que tiene turno: no
+       * importa si el tramo de ESTE kiosco es el que lo trae.
+       */
+      tieneReceso: boolean
+    }
+  | { ok: false; error: string }
 
 /**
  * Bloques de trabajo de UN contrato en UN dia, en TODAS sus sucursales y en
@@ -117,47 +142,82 @@ export type BloquesDelDiaResult =
  * plantilla con jornada partida. Con horas propias en entrada y salida, un
  * tramo es un solo bloque (mismo criterio del trigger de traslapes).
  *
- * Con el cliente ADMIN: la RLS de programacion solo deja ver las sucursales
- * del usuario, y el kiosco tiene que saber si queda un bloque en otra tienda.
+ * El kiosco usa el cliente ADMIN porque necesita saber si queda un bloque en
+ * otra tienda. El panel usa el cliente del usuario para respetar su alcance.
  */
 export async function bloquesDelDia(
-  admin: SupabaseAdminClient,
+  supabase: SupabaseServerClient | SupabaseAdminClient,
   employmentHistoryId: number,
   dateISO: string
 ): Promise<BloquesDelDiaResult> {
-  const { data, error } = await admin
+  const { data, error } = await supabase
     .from('sgrh_programacion_semanal')
     .select(
-      `prg_es_dia_libre, prg_hora_entrada_custom, prg_hora_salida_custom,
-       sgrh_cat_horarios ( hor_hora_entrada, hor_hora_salida, hor_hora_entrada_2, hor_hora_salida_2 )`
+      `prg_sucursal_id, prg_es_dia_libre, prg_hora_entrada_custom, prg_hora_salida_custom,
+       prg_hora_inicio_break_custom,
+       sgrh_cat_horarios ( hor_hora_entrada, hor_hora_salida, hor_hora_entrada_2, hor_hora_salida_2,
+         hor_hora_inicio_break )`
     )
     .eq('prg_historial_laboral_id', employmentHistoryId)
     .eq('prg_fecha', dateISO)
     .returns<BloqueProgramacionRow[]>()
 
   if (error) {
-    return { ok: false, error: 'No se pudo cargar la programacion del dia.' }
+    return { ok: false, error: 'No se pudo cargar la programación del día.' }
   }
 
   const hhmm = (h: string) => h.slice(0, 5)
-  const bloques = (data ?? [])
-    .filter((r) => !r.prg_es_dia_libre)
+  const tramos = (data ?? []).filter((r) => !r.prg_es_dia_libre)
+  // Mismo criterio que workingDay: con entrada y salida propias, el receso
+  // tambien es el propio (puede no haber); si no, el de la plantilla.
+  const tieneReceso = tramos.some((r) =>
+    r.prg_hora_entrada_custom && r.prg_hora_salida_custom
+      ? r.prg_hora_inicio_break_custom !== null
+      : Boolean(r.sgrh_cat_horarios?.hor_hora_inicio_break)
+  )
+  const bloques = tramos
     .flatMap((r) => {
       const cat = r.sgrh_cat_horarios
-      if (r.prg_hora_entrada_custom && r.prg_hora_salida_custom) {
-        return [{ inicio: hhmm(r.prg_hora_entrada_custom), fin: hhmm(r.prg_hora_salida_custom) }]
-      }
-      const entrada = r.prg_hora_entrada_custom ?? cat?.hor_hora_entrada ?? null
-      const salida = r.prg_hora_salida_custom ?? cat?.hor_hora_salida ?? null
+      const custom = r.prg_hora_entrada_custom && r.prg_hora_salida_custom
+      const entrada = custom ? r.prg_hora_entrada_custom : cat?.hor_hora_entrada
+      const salida = custom ? r.prg_hora_salida_custom : cat?.hor_hora_salida
       if (!entrada || !salida) return []
-      const primero = { inicio: hhmm(entrada), fin: hhmm(salida) }
-      return cat?.hor_hora_entrada_2 && cat.hor_hora_salida_2
-        ? [primero, { inicio: hhmm(cat.hor_hora_entrada_2), fin: hhmm(cat.hor_hora_salida_2) }]
+      const branchId = r.prg_sucursal_id
+      const primero = { inicio: hhmm(entrada), fin: hhmm(salida), branchId }
+      return !custom && cat?.hor_hora_entrada_2 && cat.hor_hora_salida_2
+        ? [
+            primero,
+            { inicio: hhmm(cat.hor_hora_entrada_2), fin: hhmm(cat.hor_hora_salida_2), branchId },
+          ]
         : [primero]
     })
     .sort((a, b) => a.inicio.localeCompare(b.inicio))
 
-  return { ok: true, bloques }
+  return { ok: true, bloques, tieneReceso }
+}
+
+/**
+ * Si el kiosco puede ofrecer «Inicio receso» ahora: el dia tiene receso y
+ * todavia no se tomo. Un receso ya abierto en este bloque lo maneja la
+ * secuencia (`allowedNextMarks` ofrece «Fin receso»).
+ */
+export function breakAvailable(tieneReceso: boolean, recesoTomado: boolean): boolean {
+  return tieneReceso && !recesoTomado
+}
+
+export function scheduledBlockAtTime(
+  blocks: ScheduledBlock[],
+  time: string,
+  markType: RawMark['tipo']
+): ScheduledBlock | undefined {
+  const matches = blocks.filter((block) => block.inicio <= time && time <= block.fin)
+  if (matches.length === 1) return matches[0]
+
+  // Si los bloques se tocan, la salida cierra uno y la entrada abre el otro.
+  const boundary = matches.filter((block) =>
+    markType === 'salida' ? block.fin === time : block.inicio === time
+  )
+  return boundary.length === 1 ? boundary[0] : undefined
 }
 
 /**

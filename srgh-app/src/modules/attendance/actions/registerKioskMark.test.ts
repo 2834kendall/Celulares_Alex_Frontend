@@ -134,7 +134,7 @@ describe('registerKioskMark (server action)', () => {
       tipo: 'ALMUERZO' as never,
     })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de marca invalidos.', definitivo: true })
+    expect(result).toEqual({ ok: false, error: 'Datos de marca inválidos.', definitivo: true })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -161,7 +161,7 @@ describe('registerKioskMark (server action)', () => {
     it('rechaza sin ticket: ya no hay PIN ni marca sin rostro', async () => {
       const result = await registerKioskMark({ ...(await validInput()), ticketFacial: '' })
 
-      expect(result).toEqual({ ok: false, error: 'Datos de marca invalidos.', definitivo: true })
+      expect(result).toEqual({ ok: false, error: 'Datos de marca inválidos.', definitivo: true })
     })
 
     it('rechaza un ticket de OTRO empleado', async () => {
@@ -379,7 +379,7 @@ describe('registerKioskMark (server action)', () => {
     it('rechaza una hora con formato invalido', async () => {
       const result = await registerKioskMark(await validInput({ fechaHora: '14/08/2026 8:00' }))
 
-      expect(result).toEqual({ ok: false, error: 'Datos de marca invalidos.', definitivo: true })
+      expect(result).toEqual({ ok: false, error: 'Datos de marca inválidos.', definitivo: true })
     })
   })
 
@@ -578,6 +578,58 @@ describe('registerKioskMark (server action)', () => {
 
       expect(await registerKioskMark(await validInput({ tipo: 'entrada' }))).toEqual({ ok: true })
       expect(insertedMark(client)).toEqual(expect.objectContaining({ mar_tipo: 'entrada' }))
+    })
+
+    // SGRH-120: el receso es uno por dia, en la sucursal que la persona quiera
+    // de las que tiene turno, aunque el tramo de ESE kiosco no lo traiga.
+    const CON_RECESO = { ...TRAMO_1, prg_hora_inicio_break_custom: '10:00:00' }
+
+    function mockRecesoEnElPrimero(marcas: unknown[]) {
+      return clientConTurno({
+        sgrh_programacion_semanal: { data: [CON_RECESO, TRAMO_2], error: null },
+        sgrh_marcas_asistencia: [
+          { data: marcas, error: null },
+          { data: null, error: null },
+        ],
+      })
+    }
+
+    it('deja tomar el receso del dia en el segundo tramo, aunque ese tramo no lo traiga', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T20:00:00Z')) // 14:00 en Costa Rica
+      const client = useClient(
+        mockRecesoEnElPrimero([
+          marca(1, 'entrada', '08:00'),
+          marca(2, 'salida', '12:00'),
+          marca(3, 'entrada', '13:00'),
+        ])
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'inicio_receso' }))).toEqual({
+        ok: true,
+      })
+      expect(insertedMark(client)).toEqual(expect.objectContaining({ mar_tipo: 'inicio_receso' }))
+    })
+
+    it('no deja tomar un segundo receso si ya lo tomo en el primer tramo', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-14T20:00:00Z')) // 14:00 en Costa Rica
+      const client = useClient(
+        mockRecesoEnElPrimero([
+          marca(1, 'entrada', '08:00'),
+          marca(2, 'inicio_receso', '10:00'),
+          marca(3, 'fin_receso', '10:10'),
+          marca(4, 'salida', '12:00'),
+          marca(5, 'entrada', '13:00'),
+        ])
+      )
+
+      expect(await registerKioskMark(await validInput({ tipo: 'inicio_receso' }))).toEqual({
+        ok: false,
+        error: 'Ya tomaste tu receso de hoy. El receso es uno por día.',
+        definitivo: true,
+      })
+      expect(insertedMark(client)).toBeUndefined()
     })
 
     it('entre tramos no deja marcar otra salida', async () => {

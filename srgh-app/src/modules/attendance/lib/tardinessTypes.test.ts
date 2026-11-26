@@ -52,7 +52,7 @@ describe('loadTardinessTypes', () => {
 
     expect(await loadTardinessTypes(asClient(client), 1)).toEqual({
       ok: false,
-      error: 'No se pudieron cargar los tipos de tardia.',
+      error: 'No se pudieron cargar los tipos de tardía.',
     })
   })
 })

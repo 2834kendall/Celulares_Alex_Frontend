@@ -61,9 +61,26 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   ])
 
   const canWrite = permisos.includes(PERMISOS.ASISTENCIA_WRITE)
+  // Justificar una tardía y registrar una ausencia aprobada tienen permisos distintos.
+  const canJustifyAbsences = permisos.includes(PERMISOS.AUSENCIAS_APPROVE)
+  const canJustify = canWrite || canJustifyAbsences
+  const pendingCount = monthlyResult.ok
+    ? buildJustificationQueue(monthlyResult.data).pending.length
+    : 0
+  const pendingParams = new URLSearchParams({ tab: 'justificar' })
+  // El enlace lleva al mismo mes para el que se calculó el aviso.
+  if (monthParam) pendingParams.set('month', monthISO)
+  if (dateParam) pendingParams.set('date', dateISO)
 
   const diarioContent = dailyResult.ok ? (
-    <DailyAttendanceTable dateISO={dailyResult.date} rows={dailyResult.data} canWrite={canWrite} />
+    <DailyAttendanceTable
+      key={dailyResult.date}
+      dateISO={dailyResult.date}
+      rows={dailyResult.data}
+      canWrite={canWrite}
+      pendingCount={canJustify ? pendingCount : undefined}
+      pendingHref={`?${pendingParams}`}
+    />
   ) : (
     <Alert size="md">{dailyResult.error}</Alert>
   )
@@ -73,11 +90,6 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   ) : (
     <Alert size="md">{monthlyResult.error}</Alert>
   )
-
-  // Justificar una tardia exige ASISTENCIA_WRITE; una ausencia, registrar una
-  // ausencia aprobada (AUSENCIAS_APPROVE). Sin ninguno, no hay pestaña.
-  const canJustifyAbsences = permisos.includes(PERMISOS.AUSENCIAS_APPROVE)
-  const canJustify = canWrite || canJustifyAbsences
 
   const justificarContent = !canJustify ? undefined : monthlyResult.ok ? (
     <PendingJustifications
@@ -89,10 +101,6 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   ) : (
     <Alert size="md">{monthlyResult.error}</Alert>
   )
-
-  const pendingCount = monthlyResult.ok
-    ? buildJustificationQueue(monthlyResult.data).pending.length
-    : 0
 
   return (
     <div className="min-w-0 space-y-4">

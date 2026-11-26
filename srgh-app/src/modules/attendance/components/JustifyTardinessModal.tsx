@@ -91,7 +91,7 @@ export function JustifyTardinessModal({
     })
 
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Datos invalidos.')
+      setError(parsed.error.issues[0]?.message ?? 'Datos inválidos.')
       return
     }
 
@@ -104,7 +104,7 @@ export function JustifyTardinessModal({
       return
     }
 
-    toast.success(justificada ? 'Tardanza justificada.' : 'Justificacion retirada.')
+    toast.success(justificada ? 'Tardanza justificada.' : 'Justificación retirada.')
     guard.acceptChanges()
     onSuccess?.()
     onClose()
@@ -151,7 +151,7 @@ export function JustifyTardinessModal({
             onChange={(e) => setMotivo(e.target.value)}
             disabled={isSaving}
             aria-invalid={!!error}
-            placeholder="Ej. el sistema estaba caido y no pudo marcar, ya estaba en tienda."
+            placeholder="Ej. el sistema estaba caído y no pudo marcar, ya estaba en tienda."
             className={INPUT}
           />
           {error && <p className={FIELD_ERROR}>{error}</p>}
@@ -178,7 +178,7 @@ export function JustifyTardinessModal({
             disabled={isSaving}
             onClick={() => void submit(false)}
           >
-            Retirar justificacion
+            Retirar justificación
           </Button>
         )}
       </form>

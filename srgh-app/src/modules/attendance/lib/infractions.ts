@@ -97,6 +97,7 @@ export interface DayForInfraction {
   secondBlockEntradaTime?: string | null
   /** Justificacion de la tardanza del segundo bloque, sobre su propia marca. */
   isJustifiedSecondBlockTardiness?: boolean
+  isJustifiedSecondBlockAbsence?: boolean
   /**
    * Cuantas entradas se marcaron ese dia. Con dos o mas el colaborador si
    * volvio, aunque las marcas no alternen y no se pueda emparejar el segundo
@@ -238,7 +239,8 @@ export function secondBlockTardinessOfDay(
  * libre, un feriado o una ausencia aprobada tampoco cuentan.
  */
 export function secondBlockAbsentOfDay(day: DayForInfraction): boolean {
-  if (day.isJustifiedAbsence || day.isDayOff || day.isHoliday) return false
+  if (day.isJustifiedAbsence || day.isJustifiedSecondBlockAbsence || day.isDayOff || day.isHoliday)
+    return false
   if (!day.secondBlockExpectedStart || !day.entradaTime) return false
   if (day.secondBlockEntradaTime) return false
   if ((day.entradaCount ?? 1) >= 2) return false

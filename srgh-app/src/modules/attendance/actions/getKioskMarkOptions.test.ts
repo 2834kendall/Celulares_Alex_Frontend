@@ -72,7 +72,7 @@ describe('getKioskMarkOptions (server action)', () => {
   })
 
   it('rechaza un colaborador invalido sin consultar nada', async () => {
-    expect(await getKioskMarkOptions(0)).toEqual({ ok: false, error: 'Colaborador invalido.' })
+    expect(await getKioskMarkOptions(0)).toEqual({ ok: false, error: 'Colaborador inválido.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 

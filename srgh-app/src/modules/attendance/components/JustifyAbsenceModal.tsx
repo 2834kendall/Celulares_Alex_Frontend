@@ -13,12 +13,14 @@ import { FIELD_ERROR, INPUT, LABEL, SPINNER } from '@/components/ui/styles'
 import { createAusencia } from '@/modules/absences/actions/createAusencia'
 import { getAusenciaTypes } from '@/modules/absences/actions/getAusenciaTypes'
 import type { AusenciaTypeRow } from '@/modules/absences/types'
+import { justifySecondBlock } from '@/modules/attendance/actions/justifySecondBlock'
 
 interface JustifyAbsenceModalProps {
   employmentHistoryId: number
   employeeName: string
   /** Dia de la ausencia, "YYYY-MM-DD". */
   dateISO: string
+  block?: 'segundo'
   onClose: () => void
 }
 
@@ -30,20 +32,13 @@ function formatDay(dateISO: string) {
   }).format(new Date(`${dateISO}T00:00:00`))
 }
 
-/**
- * Justifica un dia de ausencia registrando una ausencia APROBADA de un solo
- * dia (permiso, cita medica, incapacidad...), la misma que se crea desde el
- * panel de ausencias en Horarios. No hay una "justificacion" aparte: el
- * reporte ya descuenta los dias cubiertos por una ausencia aprobada, y asi la
- * nomina recibe el mismo registro que recibiria desde Horarios.
- *
- * Los tipos intradia (lactancia) se excluyen: se miden en horas dentro de un
- * dia trabajado, no cubren un dia completo sin marcar.
- */
+// La vía por bloque permite conservar el pago de las horas trabajadas cuando
+// el permiso es sin goce. Los tipos intradía se miden en horas dentro del turno.
 export function JustifyAbsenceModal({
   employmentHistoryId,
   employeeName,
   dateISO,
+  block,
   onClose,
 }: JustifyAbsenceModalProps) {
   const [tipos, setTipos] = useState<AusenciaTypeRow[] | null>(null)
@@ -74,6 +69,7 @@ export function JustifyAbsenceModal({
   }, [])
 
   const selected = tipos?.find((t) => String(t.tau_id) === tipoId) ?? null
+  const title = block ? 'Justificar 2.º bloque' : 'Justificar ausencia'
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -86,14 +82,21 @@ export function JustifyAbsenceModal({
     }
 
     setIsSaving(true)
-    const result = await createAusencia({
-      employmentHistoryId,
-      tipoAusenciaId: selected.tau_id,
-      fechaInicio: dateISO,
-      fechaFin: dateISO,
-      numeroBoletaCcss: selected.tau_requiere_documento_ccss ? boleta : undefined,
-      observaciones: observaciones || undefined,
-    })
+    const result = block
+      ? await justifySecondBlock({
+          employmentHistoryId,
+          tipoAusenciaId: selected.tau_id,
+          date: dateISO,
+          motivo: observaciones || undefined,
+        })
+      : await createAusencia({
+          employmentHistoryId,
+          tipoAusenciaId: selected.tau_id,
+          fechaInicio: dateISO,
+          fechaFin: dateISO,
+          numeroBoletaCcss: selected.tau_requiere_documento_ccss ? boleta : undefined,
+          observaciones: observaciones || undefined,
+        })
     setIsSaving(false)
 
     if (!result.ok) {
@@ -101,17 +104,13 @@ export function JustifyAbsenceModal({
       return
     }
 
-    toast.success('Ausencia justificada.')
+    toast.success(block ? '2.º bloque justificado.' : 'Ausencia justificada.')
     guard.acceptChanges()
     onClose()
   }
 
   return (
-    <Modal
-      title="Justificar ausencia"
-      subtitle={`${employeeName} — ${formatDay(dateISO)}`}
-      onClose={onClose}
-    >
+    <Modal title={title} subtitle={`${employeeName} — ${formatDay(dateISO)}`} onClose={onClose}>
       <form
         ref={(element) => guard.bindRoot(element)}
         onSubmit={handleSubmit}
@@ -125,8 +124,9 @@ export function JustifyAbsenceModal({
         )}
 
         <p className="text-sm text-slate-600">
-          Registra el motivo por el que no vino. El dia deja de contar como ausencia y queda
-          registrado en Horarios y en la nomina como cualquier otra ausencia.
+          {block
+            ? 'Sin goce: se paga lo trabajado en el 1.er bloque. Con goce: se paga el día completo.'
+            : 'Registra el motivo por el que no vino. El día deja de contar como ausencia y queda registrado en Horarios y en la nómina como cualquier otra ausencia.'}
         </p>
 
         <div>
@@ -148,10 +148,10 @@ export function JustifyAbsenceModal({
           {fieldError && <p className={FIELD_ERROR}>{fieldError}</p>}
         </div>
 
-        {selected?.tau_requiere_documento_ccss && (
+        {!block && selected?.tau_requiere_documento_ccss && (
           <div>
             <label className={LABEL} htmlFor="ausencia-boleta">
-              Numero de boleta CCSS
+              Número de boleta CCSS
             </label>
             <input
               id="ausencia-boleta"
@@ -175,7 +175,7 @@ export function JustifyAbsenceModal({
             onChange={(e) => setObservaciones(e.target.value)}
             disabled={isSaving}
             maxLength={300}
-            placeholder="Ej. aviso por telefono, trae el comprobante el lunes."
+            placeholder="Ej. aviso por teléfono, trae el comprobante el lunes."
             className={INPUT}
           />
         </div>
@@ -186,7 +186,7 @@ export function JustifyAbsenceModal({
               <Loader2 className={SPINNER} /> Guardando
             </>
           ) : (
-            'Justificar ausencia'
+            title
           )}
         </Button>
       </form>

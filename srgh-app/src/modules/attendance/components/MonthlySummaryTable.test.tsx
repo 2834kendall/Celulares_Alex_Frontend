@@ -70,7 +70,7 @@ describe('<MonthlySummaryTable />', () => {
     )
 
     const fila = screen.getByRole('button', { name: /Ana Perez/ })
-    expect(fila).toHaveTextContent('2 tardias')
+    expect(fila).toHaveTextContent('2 tardías')
     expect(fila).toHaveTextContent('1 ausencia')
   })
 
@@ -111,7 +111,7 @@ describe('<MonthlySummaryTable />', () => {
     expect(fila).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('Tardia grave')).toBeInTheDocument()
     expect(screen.getByText('+15 min', { exact: false })).toBeInTheDocument()
-    expect(screen.getByText('No vino y no marco')).toBeInTheDocument()
+    expect(screen.getByText('No vino y no marcó')).toBeInTheDocument()
 
     await user.click(fila)
 
@@ -126,8 +126,8 @@ describe('<MonthlySummaryTable />', () => {
     // Aparece entre quienes tienen incidencias aunque no tenga nada mas.
     await user.click(screen.getByRole('button', { name: /Ana Perez/ }))
 
-    expect(screen.getByText('No entro al segundo bloque')).toBeInTheDocument()
-    expect(screen.queryByText('No vino y no marco')).not.toBeInTheDocument()
+    expect(screen.getByText('No entró al 2.º bloque')).toBeInTheDocument()
+    expect(screen.queryByText('No vino y no marcó')).not.toBeInTheDocument()
   })
 
   it('es solo consulta: muestra lo justificado y no ofrece justificar', async () => {
@@ -147,7 +147,7 @@ describe('<MonthlySummaryTable />', () => {
 
     await user.click(screen.getByRole('button', { name: /Ana Perez/ }))
 
-    expect(screen.getByText('No vino y no marco')).toBeInTheDocument()
+    expect(screen.getByText('No vino y no marcó')).toBeInTheDocument()
     expect(screen.getByText('Cita Médica')).toBeInTheDocument()
     expect(screen.getByText('Ausencia justificada')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Justificar' })).not.toBeInTheDocument()

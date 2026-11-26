@@ -267,4 +267,13 @@ describe('ausencia del segundo bloque (SGRH-110)', () => {
     expect(summarizeMonth([faltoAlSegundo()], TIPOS)).toEqual({ tardias: 0, ausencias: 1 })
     expect(shouldWarn(summarizeMonth([faltoAlSegundo()], TIPOS))).toBe(true)
   })
+
+  it('excludes justified second blocks from the absence count and warning', () => {
+    const justified = faltoAlSegundo({ isJustifiedSecondBlockAbsence: true })
+    const summary = summarizeMonth([justified], TIPOS)
+
+    expect(secondBlockAbsentOfDay(justified)).toBe(false)
+    expect(summary).toEqual({ tardias: 0, ausencias: 0 })
+    expect(shouldWarn(summary)).toBe(false)
+  })
 })

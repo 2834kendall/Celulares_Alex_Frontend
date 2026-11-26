@@ -106,6 +106,24 @@ describe('tardia del segundo bloque en la bandeja (SGRH-110)', () => {
 })
 
 describe('ausencia del segundo bloque en la bandeja (SGRH-110)', () => {
+  it('keeps the block label for paid and unpaid resolved absences', () => {
+    const absences = [
+      { date: '2026-07-09', bloque: 'segundo', tipoNombre: 'Permiso con goce' },
+      { date: '2026-07-08', bloque: 'segundo', tipoNombre: 'Permiso sin goce' },
+    ] as const
+    const queue = buildJustificationQueue([row({ justifiedAbsences: [...absences] })])
+
+    expect(queue.pending).toEqual([])
+    expect(queue.resolved).toEqual(
+      absences.map((absence) => ({
+        ...absence,
+        kind: 'ausencia_justificada',
+        employmentHistoryId: 1,
+        employeeName: 'Ana Perez',
+      }))
+    )
+  })
+
   it('entra como pendiente y se distingue de no haber venido', () => {
     const queue = buildJustificationQueue([
       row({ absentDays: ['2026-07-05'], absentSecondBlockDays: ['2026-07-09'] }),

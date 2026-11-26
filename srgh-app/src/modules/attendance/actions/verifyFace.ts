@@ -58,7 +58,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
   const parsed = verifyFaceSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de verificacion invalidos.' }
+    return { ok: false, error: 'Datos de verificación inválidos.' }
   }
 
   const claims = await requireKioskAccess()
@@ -82,11 +82,11 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     probe = payload.vector
     liveness = payload.liveness
   } catch {
-    return { ok: false, error: 'No se pudo procesar la verificacion facial.' }
+    return { ok: false, error: 'No se pudo procesar la verificación facial.' }
   }
 
   if (probe.length !== FACE_EMBEDDING_DIM) {
-    return { ok: false, error: 'No se pudo procesar la verificacion facial.' }
+    return { ok: false, error: 'No se pudo procesar la verificación facial.' }
   }
 
   // Sin prueba de vida NO se emite ticket. Reconocer de quien es una cara y
@@ -177,7 +177,7 @@ export async function verifyFace(input: VerifyFaceInput): Promise<VerifyFaceResu
     .returns<BiometriaRow[]>()
 
   if (errVectores) {
-    return { ok: false, error: 'No se pudieron cargar los datos biometricos.' }
+    return { ok: false, error: 'No se pudieron cargar los datos biométricos.' }
   }
 
   let bestEmployeeId: number | null = null

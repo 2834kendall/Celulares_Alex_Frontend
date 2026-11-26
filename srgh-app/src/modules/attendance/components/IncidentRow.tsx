@@ -1,9 +1,10 @@
-import { CalendarCheck2, CalendarX2, Clock } from 'lucide-react'
+import { CalendarCheck2, CalendarX2, CircleCheck, CircleMinus, CircleX, Clock } from 'lucide-react'
 import type { TardyDay } from '@/modules/attendance/actions/getMonthlyAttendanceSummary'
 import type { JustificationItem } from '@/modules/attendance/lib/pendingJustifications'
 import { tardinessChipStyle } from '@/modules/attendance/components/tardinessChip'
 import { formatMinutes } from '@/modules/attendance/lib/time'
 import { Hora } from '@/components/ui/Hora'
+import { Badge } from '@/components/ui/Badge'
 
 const PILL = 'rounded-full px-2 py-0.5 text-[11px] font-semibold'
 
@@ -28,9 +29,9 @@ interface IncidentRowProps {
  * mismo dia se lea igual en los dos lugares.
  */
 const TARDY_TITLE: Record<TardyDay['kind'], string> = {
-  entrada: 'Llego a las ',
-  almuerzo: 'Volvio del almuerzo a las ',
-  segundo_bloque: 'Entro al segundo bloque a las ',
+  entrada: 'Llegó a las ',
+  almuerzo: 'Volvió del almuerzo a las ',
+  segundo_bloque: 'Entró al 2.º bloque a las ',
 }
 
 export function IncidentRow({ item, showName = false, action }: IncidentRowProps) {
@@ -60,25 +61,38 @@ export function IncidentRow({ item, showName = false, action }: IncidentRowProps
         {/* Un tipo configurado para no contar: se ve, pero hay que decir que
             no suma, o el conteo del mes parece no cuadrar con la lista. */}
         {!d.isJustified && !d.countsTowardWarning && (
-          <span className={`${PILL} bg-slate-100 text-slate-500`}>No suma</span>
+          <Badge tone="slate">
+            <CircleMinus className="size-3 shrink-0" aria-hidden="true" />
+            No suma
+          </Badge>
         )}
         {d.isJustified && (
-          <span
-            className={`${PILL} bg-emerald-50 text-emerald-700`}
-            title={d.justification ?? undefined}
-          >
-            Justificada
+          <span title={d.justification ?? undefined}>
+            <Badge tone="emerald">
+              <CircleCheck className="size-3 shrink-0" aria-hidden="true" />
+              Justificada
+            </Badge>
           </span>
         )}
       </>
     )
   } else if (item.kind === 'ausencia') {
-    title = item.bloque === 'segundo' ? 'No entro al segundo bloque' : 'No vino y no marco'
-    tags = <span className={`${PILL} bg-rose-50 text-rose-700`}>Ausencia</span>
+    title = item.bloque === 'segundo' ? 'No entró al 2.º bloque' : 'No vino y no marcó'
+    tags = (
+      <Badge tone="rose">
+        <CircleX className="size-3 shrink-0" aria-hidden="true" />
+        Ausencia
+      </Badge>
+    )
   } else {
     icon = <CalendarCheck2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-    title = item.tipoNombre
-    tags = <span className={`${PILL} bg-emerald-50 text-emerald-700`}>Ausencia justificada</span>
+    title = item.bloque === 'segundo' ? `2.º bloque · ${item.tipoNombre}` : item.tipoNombre
+    tags = (
+      <Badge tone="emerald">
+        <CircleCheck className="size-3 shrink-0" aria-hidden="true" />
+        Ausencia justificada
+      </Badge>
+    )
   }
 
   return (
