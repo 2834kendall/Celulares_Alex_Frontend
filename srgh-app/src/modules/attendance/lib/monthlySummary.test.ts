@@ -520,6 +520,29 @@ describe('gatherMonthlyAttendanceDays', () => {
       expect(await diaDe(client)).toMatchObject({ secondBlockDue: true })
     })
 
+    // SGRH-120: un bloque en cada tienda. La entrada de la manana en otra
+    // sucursal no puede contar como la del bloque de esta, o el encargado de
+    // la tienda de la tarde nunca ve que la persona no llego.
+    it('con alcance de sucursal, solo cuenta las marcas hechas en esas sucursales', async () => {
+      const client = createSupabaseClientMock(anaConUnDia({ sucursalId: 100 }))
+      await diaDe(client)
+
+      const marcasCall = client.from.mock.results.find(
+        (_r, i) => client.from.mock.calls[i][0] === 'sgrh_marcas_asistencia'
+      )!.value
+      expect(marcasCall.in).toHaveBeenCalledWith('mar_sucursal_id', [100])
+    })
+
+    it('sin alcance (todas las sucursales) cuenta todas las marcas', async () => {
+      const client = createSupabaseClientMock(anaConUnDia())
+      await diaDe(client)
+
+      const marcasCall = client.from.mock.results.find(
+        (_r, i) => client.from.mock.calls[i][0] === 'sgrh_marcas_asistencia'
+      )!.value
+      expect(marcasCall.in).not.toHaveBeenCalledWith('mar_sucursal_id', expect.anything())
+    })
+
     it('trae tambien las salidas para armar los bloques', async () => {
       const client = createSupabaseClientMock(anaConUnDia())
       await diaDe(client)

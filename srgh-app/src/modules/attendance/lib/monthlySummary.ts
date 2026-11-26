@@ -272,6 +272,29 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
     return { ok: true, data: [], tipos }
   }
 
+  // Las marcas de la persona, pero solo las hechas en las sucursales de este
+  // reporte (SGRH-120). Con un bloque por tienda, la entrada de la manana en
+  // otra sucursal no es la del bloque de aca: si se contara, el encargado de
+  // la tienda de la tarde nunca veria que la persona no llego. Mismo criterio
+  // que el Diario, que tambien filtra las marcas por sucursal.
+  let marksQuery = supabase
+    .from('sgrh_marcas_asistencia')
+    .select(
+      'mar_id, mar_historial_laboral_id, mar_tipo, mar_fecha_hora, mar_tardia_justificada, mar_tardia_justificacion'
+    )
+    .in('mar_historial_laboral_id', historyIds)
+    // La entrada y el regreso del almuerzo: las dos marcas que pueden
+    // llegar tarde (SGRH-88). El inicio del almuerzo es desde donde se
+    // cuenta su duracion (SGRH-95). La salida, para saber donde termina
+    // cada bloque y asi cual entrada es la del segundo (SGRH-110).
+    .in('mar_tipo', ['entrada', 'salida', 'inicio_almuerzo', 'fin_almuerzo'])
+    .gte('mar_fecha_hora', `${start} 00:00:00`)
+    .lte('mar_fecha_hora', `${end} 23:59:59`)
+
+  if (sucursalScope !== null) {
+    marksQuery = marksQuery.in('mar_sucursal_id', sucursalScope)
+  }
+
   // El cruce contra el historial acota por empresa y descarta contratos ya
   // cerrados: la programacion queda como historico y sobrevive a la salida
   // del colaborador — sin este filtro se le seguirian contando ausencias a un
@@ -296,20 +319,7 @@ export const gatherMonthlyAttendanceDays = cache(async function gatherMonthlyAtt
       .eq('lab_empresa_id', empresaId)
       .is('lab_fecha_fin', null)
       .returns<HistorialRow[]>(),
-    supabase
-      .from('sgrh_marcas_asistencia')
-      .select(
-        'mar_id, mar_historial_laboral_id, mar_tipo, mar_fecha_hora, mar_tardia_justificada, mar_tardia_justificacion'
-      )
-      .in('mar_historial_laboral_id', historyIds)
-      // La entrada y el regreso del almuerzo: las dos marcas que pueden
-      // llegar tarde (SGRH-88). El inicio del almuerzo es desde donde se
-      // cuenta su duracion (SGRH-95). La salida, para saber donde termina
-      // cada bloque y asi cual entrada es la del segundo (SGRH-110).
-      .in('mar_tipo', ['entrada', 'salida', 'inicio_almuerzo', 'fin_almuerzo'])
-      .gte('mar_fecha_hora', `${start} 00:00:00`)
-      .lte('mar_fecha_hora', `${end} 23:59:59`)
-      .returns<MarkDbRow[]>(),
+    marksQuery.returns<MarkDbRow[]>(),
     // Ausencias aprobadas que se SOLAPAN con el rango (no las contenidas en
     // el): una incapacidad del 28 de junio al 3 de julio cubre dias de julio
     // aunque empiece antes, por eso se compara inicio<=fin_rango y
