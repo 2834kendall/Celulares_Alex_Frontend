@@ -147,6 +147,7 @@ export function TerminateContractForm({
             <span className={LABEL_CLASSES}>Observaciones (opcional)</span>
             <textarea
               rows={2}
+              autoComplete="off"
               {...register('lab_observaciones_salida')}
               aria-invalid={Boolean(errors.lab_observaciones_salida)}
               className={`${INPUT_CLASSES} resize-none`}

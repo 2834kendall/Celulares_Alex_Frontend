@@ -15,6 +15,7 @@
 import { z } from 'zod'
 import type { Database } from '@/types/database.types'
 import { IBAN_CR_REGEX, isValidIbanChecksum, normalizeIban } from '@/modules/employees/lib/iban'
+import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 // ─── Aliases de tipos Supabase ────────────────────────────────────────────────
 
@@ -41,6 +42,29 @@ type DocumentoInsert = Database['public']['Tables']['sgrh_documentos']['Insert']
 const emptyToNull = <T extends z.ZodType>(schema: T) =>
   z.preprocess((value) => (value === '' ? null : value), schema)
 
+function esFechaCalendarioValida(iso: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!match) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const date = new Date(year, month - 1, day)
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+}
+
+function validarFechaNacimiento(iso: string, ctx: z.RefinementCtx) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return
+  if (!esFechaCalendarioValida(iso)) {
+    ctx.addIssue({ code: 'custom', message: 'Fecha de nacimiento inválida' })
+    return
+  }
+  if (iso > todayInCostaRica()) {
+    ctx.addIssue({ code: 'custom', message: 'La fecha de nacimiento no puede ser futura' })
+  }
+}
+
+const tieneMaxDosDecimales = (n: number) => Number.isFinite(n) && Number(n.toFixed(2)) === n
+
 // ─── Schema de creación de empleado ──────────────────────────────────────────
 // Sincronizado con EmpleadoInsert — si el tipo de la DB cambia, TS lo detecta.
 
@@ -66,6 +90,7 @@ export const crearEmpleadoSchema = z.object({
 
   emp_numero_identificacion: z
     .string({ error: 'El número de identificación es obligatorio' })
+    .trim()
     .min(1, 'El número de identificación es obligatorio')
     .max(30, 'Máximo 30 caracteres'),
 
@@ -78,7 +103,8 @@ export const crearEmpleadoSchema = z.object({
   emp_fecha_nacimiento: z
     .string({ error: 'La fecha de nacimiento es obligatoria' })
     .min(1, 'La fecha de nacimiento es obligatoria')
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
+    .superRefine(validarFechaNacimiento),
 
   // Valores alineados al CHECK de la DB: emp_genero IN ('M','F','O').
   emp_genero: z.enum(['M', 'F', 'O'], { error: 'El género es obligatorio' }),
@@ -133,6 +159,7 @@ export const editarEmpleadoSchema = crearEmpleadoSchema.partial().extend({
     z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
+      .superRefine(validarFechaNacimiento)
       .nullable()
       .optional()
   ),
@@ -299,11 +326,13 @@ export const crearHistorialLaboralSchema = z.object({
 
   lab_salario_base: z
     .number({ error: 'El salario base es obligatorio' })
-    .positive('El salario base debe ser mayor a 0'),
+    .positive('El salario base debe ser mayor a 0')
+    .refine(tieneMaxDosDecimales, 'El salario puede tener hasta 2 decimales'),
 
   lab_salario_real: z
     .number({ error: 'El salario real es obligatorio' })
-    .positive('El salario real debe ser mayor a 0'),
+    .positive('El salario real debe ser mayor a 0')
+    .refine(tieneMaxDosDecimales, 'El salario puede tener hasta 2 decimales'),
 }) satisfies z.ZodType<
   Omit<
     HistorialLaboralInsert,
@@ -618,7 +647,7 @@ const optionalPositiveSalary = z
   .refine(
     (val) =>
       val === undefined || val.trim() === '' || (Number.isFinite(Number(val)) && Number(val) > 0),
-    { message: 'Debe ser un numero positivo.' }
+    { message: 'Debe ser un número positivo.' }
   )
 
 export const puestoSchema = z.object({

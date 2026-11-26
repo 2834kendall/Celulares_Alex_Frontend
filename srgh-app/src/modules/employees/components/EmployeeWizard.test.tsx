@@ -5,11 +5,12 @@ import { EmployeeWizard, type EmployeeWizardPrefill } from './EmployeeWizard'
 import { TERRITORIO } from './testFixtures'
 import { toast } from 'sonner'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
+import { checkEmployeeIdentificacion } from '@/modules/employees/actions/checkEmployeeIdentificacion'
 import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
 import { linkPostulacionToEmployee } from '@/modules/recruitment/actions/linkPostulacionToEmployee'
 import { chooseSelectMenuOption } from '@/test/selectMenu'
-import { todayInCostaRica } from '@/modules/attendance/lib/time'
+import { shiftISODate, todayInCostaRica } from '@/modules/attendance/lib/time'
 
 const push = vi.fn()
 
@@ -19,6 +20,10 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/modules/employees/actions/createEmployee', () => ({
   createEmployee: vi.fn(),
+}))
+
+vi.mock('@/modules/employees/actions/checkEmployeeIdentificacion', () => ({
+  checkEmployeeIdentificacion: vi.fn(),
 }))
 
 vi.mock('@/modules/employees/actions/setEmployeePhoto', () => ({
@@ -38,6 +43,7 @@ vi.mock('sonner', () => ({
 }))
 
 const mockCreateEmployee = vi.mocked(createEmployee)
+const mockCheckEmployeeIdentificacion = vi.mocked(checkEmployeeIdentificacion)
 const mockSetEmployeePhoto = vi.mocked(setEmployeePhoto)
 const mockAddEmployeeDocument = vi.mocked(addEmployeeDocument)
 const mockLinkPostulacionToEmployee = vi.mocked(linkPostulacionToEmployee)
@@ -166,6 +172,7 @@ async function goToStepUsuario(user: UserEvent) {
 describe('<EmployeeWizard />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockCheckEmployeeIdentificacion.mockResolvedValue({ ok: true, disponible: true })
     mockLinkPostulacionToEmployee.mockResolvedValue({ ok: true })
   })
 
@@ -220,6 +227,7 @@ describe('<EmployeeWizard />', () => {
     // y el resumen debe mostrar lo capturado en los pasos anteriores.
     expect(mockCreateEmployee).not.toHaveBeenCalled()
     expect(screen.getByText('Ana Mora')).toBeInTheDocument()
+    expect(screen.getByText('10/03/1995')).toBeInTheDocument()
     expect(screen.getByText('Cajera')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /crear empleado/i }))
@@ -663,5 +671,64 @@ describe('<EmployeeWizard />', () => {
 
     expect(await screen.findByText('La fecha de nacimiento es obligatoria')).toBeInTheDocument()
     expect(screen.getByText('El género es obligatorio')).toBeInTheDocument()
+  })
+
+  it('bloquea avanzar del paso 1 cuando la fecha de nacimiento es futura', async () => {
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    const manana = shiftISODate(todayInCostaRica(), 1)
+    await elegirFecha(user, 'Fecha de nacimiento', manana)
+
+    expect(
+      screen.getByText(`Tiene que ser el ${comoSeVe(todayInCostaRica())} o antes.`)
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    expect(screen.queryByLabelText('Puesto *')).not.toBeInTheDocument()
+    expect(mockCheckEmployeeIdentificacion).not.toHaveBeenCalled()
+  })
+
+  it('bloquea avanzar del paso 1 si el número de identificación ya existe y permite continuar al corregirlo', async () => {
+    mockCheckEmployeeIdentificacion.mockResolvedValueOnce({ ok: true, disponible: false })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    expect(
+      await screen.findByText('Ya existe un empleado con ese número de identificación.')
+    ).toBeVisible()
+    const campoIdentificacion = screen.getByLabelText('Número de identificación *')
+    expect(campoIdentificacion).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByLabelText('Puesto *')).not.toBeInTheDocument()
+
+    mockCheckEmployeeIdentificacion.mockResolvedValueOnce({ ok: true, disponible: true })
+    await user.clear(campoIdentificacion)
+    await user.type(campoIdentificacion, '1-2222-3333')
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    expect(await screen.findByLabelText('Puesto *')).toBeInTheDocument()
+    expect(mockCheckEmployeeIdentificacion).toHaveBeenLastCalledWith('1-2222-3333')
+  })
+
+  it('bloquea avanzar del paso 1 y muestra alerta si falla la verificación de identificación', async () => {
+    mockCheckEmployeeIdentificacion.mockResolvedValue({
+      ok: false,
+      error: 'No se pudo verificar el número de identificación.',
+    })
+    const user = userEvent.setup()
+    renderWizard()
+
+    await fillStepPersonal(user)
+    await user.click(screen.getByRole('button', { name: /siguiente/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No se pudo verificar el número de identificación.'
+    )
+    expect(screen.queryByLabelText('Puesto *')).not.toBeInTheDocument()
   })
 })

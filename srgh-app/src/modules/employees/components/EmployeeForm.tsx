@@ -146,6 +146,7 @@ export function EmployeeForm({
       <form
         ref={(element) => guard.bindRoot(element)}
         onSubmit={handleSubmit(onSubmit)}
+        autoComplete="off"
         noValidate
         className="@container space-y-4"
       >

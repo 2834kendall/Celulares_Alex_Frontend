@@ -58,7 +58,13 @@ export function EmployeeProfileTabs({
   }
 
   if (rostroContent !== null) {
-    tabs.push({ id: 'rostro', label: 'Rostro', icon: ScanFace, content: rostroContent })
+    tabs.push({
+      id: 'rostro',
+      label: 'Rostro',
+      shortLabel: 'Rostro',
+      icon: ScanFace,
+      content: rostroContent,
+    })
   }
 
   // Con Rostro son cuatro pestañas y no entraban en un celular (la última quedaba

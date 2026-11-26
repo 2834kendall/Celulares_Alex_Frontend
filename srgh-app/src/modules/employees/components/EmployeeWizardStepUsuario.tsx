@@ -60,6 +60,7 @@ export function EmployeeWizardStepUsuario({
           <Labeled label="Email de acceso *" error={getFieldError(errors, 'usuario.email')}>
             <input
               type="email"
+              autoComplete="off"
               {...register('usuario.email')}
               aria-invalid={Boolean(getFieldError(errors, 'usuario.email'))}
               className={INPUT_CLASSES}

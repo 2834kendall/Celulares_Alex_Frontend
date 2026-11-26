@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ContractForm } from './ContractForm'
 import type { CrearHistorialLaboralInput } from '@/modules/employees/types'
+import { formatCurrencyInput } from '@/modules/employees/lib/format'
 import { todayInCostaRica } from '@/modules/attendance/lib/time'
 
 /** Hoy en hora de Costa Rica, como lo muestra el campo de fecha. */
@@ -214,5 +215,109 @@ describe('<ContractForm />', () => {
     )
 
     expect(screen.getByRole('combobox', { name: 'Inicio del contrato' })).toHaveValue(hoyComoSeVe())
+  })
+
+  it('permite digitar salarios con decimales, los formatea al salir y envía el monto exacto', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <ContractForm
+        modo="crear"
+        catalogos={CATALOGOS}
+        defaultValues={COMPLETO}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    )
+
+    const salarioBase = screen.getByLabelText('Salario base (₡) *')
+    await user.clear(salarioBase)
+    await user.type(salarioBase, '1234.56')
+    expect(salarioBase).toHaveValue('1234.56')
+
+    await user.tab()
+    expect(salarioBase).toHaveValue(formatCurrencyInput(1234.56))
+
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lab_salario_base: 1234.56,
+          lab_salario_real: 480000,
+        })
+      )
+    )
+  })
+
+  it('rechaza 0 y montos negativos sin convertir -500 en 500', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <ContractForm
+        modo="crear"
+        catalogos={CATALOGOS}
+        defaultValues={COMPLETO}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    )
+
+    const salarioBase = screen.getByLabelText('Salario base (₡) *')
+    await user.clear(salarioBase)
+    await user.type(salarioBase, '0')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(await screen.findByText('El salario base debe ser mayor a 0')).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    await user.clear(salarioBase)
+    await user.type(salarioBase, '-500')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(await screen.findByText('El salario base debe ser mayor a 0')).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('rechaza montos con más de 2 decimales', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <ContractForm
+        modo="crear"
+        catalogos={CATALOGOS}
+        defaultValues={COMPLETO}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    )
+
+    const salarioBase = screen.getByLabelText('Salario base (₡) *')
+    await user.clear(salarioBase)
+    await user.type(salarioBase, '350000.555')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(await screen.findByText('El salario puede tener hasta 2 decimales')).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('conserva el texto escrito al salir del campo si el formato es inválido para permitir corregirlo', async () => {
+    const user = userEvent.setup()
+    render(
+      <ContractForm
+        modo="crear"
+        catalogos={CATALOGOS}
+        defaultValues={COMPLETO}
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    )
+
+    const salarioBase = screen.getByLabelText('Salario base (₡) *')
+    await user.clear(salarioBase)
+    await user.type(salarioBase, '12.34.56')
+    await user.tab()
+
+    expect(salarioBase).toHaveValue('12.34.56')
   })
 })

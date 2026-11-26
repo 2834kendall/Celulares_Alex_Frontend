@@ -3,6 +3,7 @@
 import { Briefcase, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { Puesto } from '@/modules/employees/actions/listPuestos'
 import { deletePuesto } from '@/modules/employees/actions/deletePuesto'
+import { formatCRC } from '@/modules/employees/lib/format'
 import { useCrudList } from '@/modules/employees/hooks/useCrudList'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
@@ -26,10 +27,6 @@ import { EmptyState } from '@/components/ui/EmptyState'
 interface PuestosListProps {
   puestos: Puesto[]
   canWrite: boolean
-}
-
-function formatSalario(valor: number | null): string {
-  return valor === null ? '—' : valor.toLocaleString('es-CR', { maximumFractionDigits: 0 })
 }
 
 export function PuestosList({ puestos, canWrite }: PuestosListProps) {
@@ -137,7 +134,7 @@ export function PuestosList({ puestos, canWrite }: PuestosListProps) {
                 </div>
 
                 <p className="border-t border-slate-100 pt-3 text-xs tabular-nums text-slate-600">
-                  Salario mínimo: {formatSalario(puesto.pue_salario_minimo_referencia)}
+                  Salario mínimo: {formatCRC(puesto.pue_salario_minimo_referencia)}
                 </p>
 
                 {canWrite && (
@@ -181,7 +178,7 @@ export function PuestosList({ puestos, canWrite }: PuestosListProps) {
                     <td className={TABLE_TD_STRONG}>{puesto.pue_nombre}</td>
                     <td className={TABLE_TD}>{puesto.pue_descripcion ?? '—'}</td>
                     <td className={TABLE_TD_NUM}>
-                      {formatSalario(puesto.pue_salario_minimo_referencia)}
+                      {formatCRC(puesto.pue_salario_minimo_referencia)}
                     </td>
                     <td className="px-3 py-2">
                       {puesto.pue_activo ? (

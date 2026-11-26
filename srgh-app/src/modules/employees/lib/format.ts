@@ -60,14 +60,88 @@ export function esCumpleanosHoy(iso: string | null | undefined) {
   return Number(month) === hoy.getMonth() + 1 && Number(day) === hoy.getDate()
 }
 
-/** Monto en colones sin decimales; '—' cuando no hay dato. */
+/**
+ * Monto en colones: sin decimales cuando es entero (`₡500 000`) y con 2
+ * decimales cuando trae céntimos (`₡1 234,50`); `'—'` cuando no hay dato.
+ */
 export function formatCRC(amount: number | null | undefined) {
-  if (amount === null || amount === undefined) return '—'
+  if (amount === null || amount === undefined || Number.isNaN(amount)) return '—'
+  const fractionDigits = Number.isInteger(amount) ? 0 : 2
   return new Intl.NumberFormat('es-CR', {
     style: 'currency',
     currency: 'CRC',
-    maximumFractionDigits: 0,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(amount)
+}
+
+/**
+ * Formatea un monto numérico para mostrarlo en un `<input>` de moneda (sin `₡`,
+ * que ya vive en el label). Si trae más de 2 decimales conserva hasta 6 para no
+ * ocultar el dígito que dispara el error de validación.
+ */
+export function formatCurrencyInput(amount: number): string {
+  if (!Number.isFinite(amount)) return ''
+  const isInt = Number.isInteger(amount)
+  const minDigits = isInt ? 0 : 2
+  const maxDigits = isInt ? 0 : Number(amount.toFixed(2)) === amount ? 2 : 6
+  return new Intl.NumberFormat('es-CR', {
+    minimumFractionDigits: minDigits,
+    maximumFractionDigits: maxDigits,
+  }).format(amount)
+}
+
+/**
+ * Convierte lo que la persona escribe o pega en un campo de salario a `number`.
+ *
+ * - Conserva el signo `-` inicial para que Zod rechace negativos con su mensaje
+ *   explícito en vez de convertir `-500` en `500`.
+ * - Si aparecen `.` y `,` a la vez (`1,234.56` o `1.234,56`), el último actúa
+ *   como separador decimal y el otro como separador de miles.
+ * - Si aparece un único `.` o una única `,` (incluso con 3 dígitos detrás, como
+ *   `350000.555`), se trata SIEMPRE como separador decimal.
+ * - Solo cuando el mismo separador se repite 2 o más veces en grupos de miles
+ *   (`1.500.000` o `1,500,000`) se interpreta como separador de miles.
+ */
+export function parseCurrencyInput(raw: string): number {
+  const cleaned = raw.replace(/[\s\u00a0₡]+/g, '')
+  if (cleaned === '' || cleaned === '-') return NaN
+
+  const isNegative = cleaned.startsWith('-')
+  const unsigned = isNegative ? cleaned.slice(1) : cleaned
+  if (unsigned === '' || !/^[0-9.,]+$/.test(unsigned)) return NaN
+
+  const dots = (unsigned.match(/\./g) ?? []).length
+  const commas = (unsigned.match(/,/g) ?? []).length
+
+  let normalized: string
+  if (dots > 0 && commas > 0) {
+    const lastDot = unsigned.lastIndexOf('.')
+    const lastComma = unsigned.lastIndexOf(',')
+    if (lastDot > lastComma) {
+      if (dots > 1) return NaN
+      normalized = unsigned.replace(/,/g, '')
+    } else {
+      if (commas > 1) return NaN
+      normalized = unsigned.replace(/\./g, '').replace(',', '.')
+    }
+  } else if (dots + commas === 1) {
+    normalized = unsigned.replace(',', '.')
+    if (normalized === '.') return NaN
+  } else if (dots >= 2) {
+    if (!/^\d{1,3}(\.\d{3})+$/.test(unsigned)) return NaN
+    normalized = unsigned.replace(/\./g, '')
+  } else if (commas >= 2) {
+    if (!/^\d{1,3}(,\d{3})+$/.test(unsigned)) return NaN
+    normalized = unsigned.replace(/,/g, '')
+  } else {
+    normalized = unsigned
+  }
+
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) return NaN
+  if (parsed === 0) return 0
+  return isNegative ? -parsed : parsed
 }
 
 export function fullName(persona: {

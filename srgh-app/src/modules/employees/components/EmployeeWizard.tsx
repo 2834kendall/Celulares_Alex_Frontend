@@ -2,7 +2,7 @@
 
 import { useForm } from '@/hooks/useProtectedForm'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { FormProvider, type Path, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -15,6 +15,7 @@ import {
   type OnboardingEmpleadoInput,
   type TerritorioCatalogo,
 } from '@/modules/employees/types'
+import { checkEmployeeIdentificacion } from '@/modules/employees/actions/checkEmployeeIdentificacion'
 import { createEmployee } from '@/modules/employees/actions/createEmployee'
 import { setEmployeePhoto } from '@/modules/employees/actions/setEmployeePhoto'
 import { addEmployeeDocument } from '@/modules/employees/actions/addEmployeeDocument'
@@ -134,6 +135,10 @@ function OnboardingSummary({
         />
         <SummaryItem label="Identificación" value={empleado.emp_numero_identificacion} />
         <SummaryItem
+          label="Fecha de nacimiento"
+          value={formatDate(empleado.emp_fecha_nacimiento)}
+        />
+        <SummaryItem
           label="Ingreso a la empresa"
           value={formatDate(empleado.emp_fecha_ingreso_original)}
         />
@@ -235,6 +240,8 @@ export function EmployeeWizard({
   // El reintento tras confirmar no pasa por handleSubmit, así que isSubmitting
   // no lo cubre y los botones quedarían habilitados durante el alta.
   const [reintentando, setReintentando] = useState(false)
+  const [verificandoPaso, setVerificandoPaso] = useState(false)
+  const verificandoPasoRef = useRef(false)
   // Fuera de RHF: un File no viaja por el schema Zod ni por createEmployee
   // (que aún no tiene emp_id). Se sube en onSubmit, tras crear el empleado.
   const [foto, setFoto] = useState<File | null>(null)
@@ -301,19 +308,45 @@ export function EmployeeWizard({
   }
 
   async function goNext() {
+    if (verificandoPasoRef.current) return
     const valid = await trigger(STEP_FIELDS[step])
     if (!valid) return
 
-    // En un alta nueva el contrato arranca el mismo día que la persona entra
-    // a la empresa, así que pedir la fecha dos veces solo servía para que se
-    // confundieran. Se precarga y queda editable, para el caso de alguien que
-    // ya venía trabajando antes.
-    //
-    // Va acá y no en un efecto que observe la fecha de ingreso: un efecto
-    // correría también al volver al paso 1, y pisaría un inicio de contrato
-    // que el usuario ya hubiera ajustado a mano.
-    if (step === 0 && !getValues('contratacion.lab_fecha_inicio')) {
-      setValue('contratacion.lab_fecha_inicio', getValues('empleado.emp_fecha_ingreso_original'))
+    if (step === 0) {
+      setServerError(null)
+      verificandoPasoRef.current = true
+      setVerificandoPaso(true)
+      try {
+        const res = await checkEmployeeIdentificacion(
+          getValues('empleado.emp_numero_identificacion')
+        )
+        if (!res.ok) {
+          setServerError(res.error)
+          return
+        }
+        if (!res.disponible) {
+          methods.setError('empleado.emp_numero_identificacion', {
+            type: 'manual',
+            message: 'Ya existe un empleado con ese número de identificación.',
+          })
+          return
+        }
+      } finally {
+        verificandoPasoRef.current = false
+        setVerificandoPaso(false)
+      }
+
+      // En un alta nueva el contrato arranca el mismo día que la persona entra
+      // a la empresa, así que pedir la fecha dos veces solo servía para que se
+      // confundieran. Se precarga y queda editable, para el caso de alguien que
+      // ya venía trabajando antes.
+      //
+      // Va acá y no en un efecto que observe la fecha de ingreso: un efecto
+      // correría también al volver al paso 1, y pisaría un inicio de contrato
+      // que el usuario ya hubiera ajustado a mano.
+      if (!getValues('contratacion.lab_fecha_inicio')) {
+        setValue('contratacion.lab_fecha_inicio', getValues('empleado.emp_fecha_ingreso_original'))
+      }
     }
 
     setStep((current) => Math.min(current + 1, STEPS.length - 1))
@@ -424,6 +457,7 @@ export function EmployeeWizard({
           // El form solo puede enviarse desde el último paso; en los anteriores
           // cualquier submit accidental (Enter, activación por defecto) se anula.
           onSubmit={isLastStep ? handleSubmit(onSubmit) : (e) => e.preventDefault()}
+          autoComplete="off"
           noValidate
           onKeyDown={(e) => {
             // Enter no debe enviar el onboarding completo desde pasos intermedios.
@@ -492,7 +526,7 @@ export function EmployeeWizard({
             <button
               type="button"
               onClick={goBack}
-              disabled={step === 0 || isSubmitting || reintentando}
+              disabled={step === 0 || isSubmitting || reintentando || verificandoPaso}
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-40"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Anterior
@@ -511,12 +545,16 @@ export function EmployeeWizard({
                 Crear empleado
               </Button>
             ) : (
-              <Button
-                key="next"
-
-                onClick={goNext}
-              >
-                Siguiente <ArrowRight className="h-3.5 w-3.5" />
+              <Button key="next" onClick={goNext} disabled={verificandoPaso}>
+                {verificandoPaso ? (
+                  <>
+                    <Loader2 className={SPINNER} /> Siguiente
+                  </>
+                ) : (
+                  <>
+                    Siguiente <ArrowRight className="h-3.5 w-3.5" />
+                  </>
+                )}
               </Button>
             )}
           </div>

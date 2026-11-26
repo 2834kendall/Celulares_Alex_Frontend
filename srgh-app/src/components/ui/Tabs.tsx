@@ -33,10 +33,12 @@ interface TabsProps<T extends string> {
    */
   tabs: TabDefinition<T>[]
   /**
-   * En pantallas angostas, pestañas solo con texto: el ícono aparece desde
-   * `@sm`. Para barras de 4 pestañas que no entran en un celular ni con
-   * `shortLabel` (el perfil del empleado con Rostro, SGRH-117). Opcional para
-   * no cambiar las barras que ya entran.
+   * En pantallas angostas, pestañas solo con texto y etiqueta corta: el ícono
+   * y la etiqueta completa aparecen recién desde `@md` (448 px). Para barras
+   * de 4 pestañas que no entran en celulares medianos (412–430 px) si se
+   * activan los 4 íconos y nombres completos ya en `@sm` (el perfil del
+   * empleado con Rostro, SGRH-117 / SGRH-118). Opcional para no cambiar las
+   * barras de 2–3 pestañas que ya entran en `@sm`.
    */
   textOnlyWhenNarrow?: boolean
 }
@@ -129,15 +131,19 @@ export function Tabs<T extends string>({
           <span
             className={cn(
               'h-5 w-5 items-center justify-center rounded-full transition',
-              textOnlyWhenNarrow ? 'hidden @sm:flex' : 'flex',
+              textOnlyWhenNarrow ? 'hidden @md:flex' : 'flex',
               active ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-500'
             )}
           >
             <Icon className="h-3 w-3" aria-hidden="true" />
           </span>
         )}
-        <span className="@sm:hidden">{tab.shortLabel ?? label}</span>
-        <span className="hidden @sm:inline">{label}</span>
+        <span className={textOnlyWhenNarrow ? '@md:hidden' : '@sm:hidden'}>
+          {tab.shortLabel ?? label}
+        </span>
+        <span className={textOnlyWhenNarrow ? 'hidden @md:inline' : 'hidden @sm:inline'}>
+          {label}
+        </span>
       </button>
     )
   }

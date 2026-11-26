@@ -137,4 +137,43 @@ describe('<EmployeeProfileTabs />', () => {
     expect(screen.queryByRole('tab', { name: /Rostro/ })).not.toBeInTheDocument()
     expect(screen.getByText('Contenido perfil')).toBeInTheDocument()
   })
+
+  it('con las 4 pestañas usa modo compacto hasta @md (sin íconos y con etiquetas cortas Docs + Rostro)', () => {
+    render(
+      <EmployeeProfileTabs
+        perfilContent={<div>Contenido perfil</div>}
+        contratoContent={<div>Contenido contrato</div>}
+        documentosContent={<div>Contenido documentos</div>}
+        rostroContent={<div>Contenido rostro</div>}
+      />
+    )
+
+    const tabDocs = screen.getByRole('tab', { name: /Documentos/ })
+    const tabRostro = screen.getByRole('tab', { name: /Rostro/ })
+
+    // Ícono oculto hasta @md cuando textOnlyWhenNarrow está activo (4 pestañas).
+    expect(tabDocs.querySelector('span')?.className).toContain('hidden')
+    expect(tabDocs.querySelector('span')?.className).toContain('@md:flex')
+    expect(tabRostro.querySelector('span')?.className).toContain('hidden')
+    expect(tabRostro.querySelector('span')?.className).toContain('@md:flex')
+
+    // Etiquetas cortas activas hasta @md y completas desde @md.
+    const shortDocs = screen.getByText('Docs')
+    expect(shortDocs).toHaveClass('@md:hidden')
+    expect(screen.getByText('Documentos')).toHaveClass('hidden', '@md:inline')
+
+    const rostroSpans = Array.from(tabRostro.querySelectorAll('span')).slice(1)
+    expect(rostroSpans[0]).toHaveTextContent('Rostro')
+    expect(rostroSpans[0]).toHaveClass('@md:hidden')
+    expect(rostroSpans[1]).toHaveTextContent('Rostro')
+    expect(rostroSpans[1]).toHaveClass('hidden', '@md:inline')
+  })
+
+  it('con 3 pestañas mantiene íconos visibles y corte en @sm', () => {
+    renderTabs()
+
+    const tabDocs = screen.getByRole('tab', { name: /Documentos/ })
+    expect(tabDocs.querySelector('span')?.className).not.toContain('hidden')
+    expect(screen.getByText('Docs')).toHaveClass('@sm:hidden')
+  })
 })
