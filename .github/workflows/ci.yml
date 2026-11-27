@@ -121,10 +121,12 @@ jobs:
         with:
           version: 11
 
+      # Fijado en Node 22 LTS por el mismo bug de V8/WASM en Node 24
+      # documentado en el job `coverage` (Check failed: jit_page.has_value()).
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: ">=22.13"
+          node-version: "22"
           cache: pnpm
           cache-dependency-path: srgh-app/pnpm-lock.yaml
 
