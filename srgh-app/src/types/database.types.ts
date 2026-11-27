@@ -3455,6 +3455,14 @@ export type Database = {
         Args: { p_desde: string; p_hasta: string; p_lab_ids: number[] }
         Returns: Json
       }
+      obtener_salarios_historial: {
+        Args: { p_lab_ids: number[] }
+        Returns: {
+          lab_id: number
+          lab_salario_base: number
+          lab_salario_real: number
+        }[]
+      }
       registrar_etapa_postulacion: {
         Args: {
           p_etapa_id: number
