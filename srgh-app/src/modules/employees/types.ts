@@ -495,7 +495,6 @@ export type EmpleadoListItem = Pick<
   puesto_nombre: string | null
   sucursal_nombre: string | null
   tipo_contrato_nombre: string | null
-  salario_base: number | null
   fecha_inicio_contrato: string | null
   activo: boolean
   // URL firmada (SGRH-67), null sin foto o si el firmado en lote falló —
@@ -508,7 +507,9 @@ export type EmpleadoListItem = Pick<
 // DTO para la página de perfil /employees/[id].
 
 /** Un contrato (fila de sgrh_historial_laboral) con sus catálogos resueltos. */
-export type ContratoDetalle = HistorialLaboralRow & {
+export type ContratoDetalle = Omit<HistorialLaboralRow, 'lab_salario_base' | 'lab_salario_real'> & {
+  lab_salario_base: number | null
+  lab_salario_real: number | null
   puesto_nombre: string
   sucursal_nombre: string
   tipo_contrato_nombre: string

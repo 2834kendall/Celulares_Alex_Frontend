@@ -32,6 +32,8 @@ interface EmployeeContractActionsProps {
   contratos: ContratoDetalle[]
   /** NOMINA_WRITE: puede liquidar un contrato terminado. */
   canLiquidar: boolean
+  /** NOMINA_READ: puede ver y modificar los salarios del contrato. */
+  canReadSalarios?: boolean
   /** HISTORIAL_WRITE: crear, editar, terminar y revertir. */
   canEditContrato: boolean
   /** Solo llegan con canEditContrato (la página no los pide si no). */
@@ -67,6 +69,7 @@ export function EmployeeContractActions({
   empId,
   contratos,
   canLiquidar,
+  canReadSalarios = true,
   canEditContrato,
   catalogos,
   motivos = [],
@@ -79,7 +82,14 @@ export function EmployeeContractActions({
   const { vigente, ultimo, programada, pendienteDeLiquidar, revertible } =
     summarizeContracts(contratos)
 
+  const puedeEditarContrato =
+    canReadSalarios &&
+    vigente !== null &&
+    vigente.lab_salario_base !== null &&
+    vigente.lab_salario_real !== null
+
   function abrir(d: Exclude<Dialogo, null>) {
+    if (d === 'editar' && !puedeEditarContrato) return
     setDialogoError(null)
     setDialogo(d)
   }
@@ -153,10 +163,19 @@ export function EmployeeContractActions({
           sgrh_nomina_detalle) y lo nuevo entra en el siguiente. El aviso del
           diálogo lo explica.
         */}
-        <Button onClick={() => abrir('editar')}>
-          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-          Editar
-        </Button>
+        {puedeEditarContrato ? (
+          <Button onClick={() => abrir('editar')}>
+            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+            Editar
+          </Button>
+        ) : (
+          <ConMotivo motivo="Necesitas permiso de nómina para editar el contrato">
+            <Button disabled>
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+              Editar
+            </Button>
+          </ConMotivo>
+        )}
       </>
     )
   } else if (!vigente) {
@@ -207,45 +226,49 @@ export function EmployeeContractActions({
         </Modal>
       )}
 
-      {dialogo === 'editar' && vigente && catalogos && (
-        <Modal title="Editar contrato" subtitle={vigente.puesto_nombre} onClose={cerrarDialogo}>
-          {vigente.en_planilla && (
-            <Alert tone="info" size="md">
-              Este contrato ya pasó por planilla. Los cambios aplican desde el próximo período; los
-              que ya están calculados conservan sus montos. Si querés que apliquen al período
-              abierto, recalculalo desde Planilla.
-            </Alert>
-          )}
-          <ContractForm
-            modo="editar"
-            catalogos={catalogos}
-            sucursalNombre={vigente.sucursal_nombre}
-            fechaInicio={vigente.lab_fecha_inicio}
-            sucursalBloqueada={
-              vigente.quincena_sin_pagar
-                ? 'No se puede cambiar con una quincena sin pagar: terminá de pagarla en Planilla.'
-                : null
-            }
-            defaultValues={{
-              lab_puesto_id: vigente.lab_puesto_id,
-              // Desde que la sucursal se edita, tiene que venir precargada con
-              // la actual: un select vacío obliga a elegirla de nuevo en cada
-              // corrección de salario, y basta un descuido para mover la base
-              // sin querer. Además, bloqueada el campo no se renderiza y este
-              // valor es el que viaja, así que la RPC no detecta un cambio.
-              lab_sucursal_id: vigente.lab_sucursal_id,
-              lab_tipo_contrato_id: vigente.lab_tipo_contrato_id,
-              lab_tipo_jornada_id: vigente.lab_tipo_jornada_id,
-              lab_salario_base: vigente.lab_salario_base,
-              lab_salario_real: vigente.lab_salario_real,
-            }}
-            serverError={dialogoError}
-            submitLabel="Guardar cambios"
-            onCancel={cerrarDialogo}
-            onSubmit={onEditar}
-          />
-        </Modal>
-      )}
+      {dialogo === 'editar' &&
+        vigente &&
+        catalogos &&
+        vigente.lab_salario_base !== null &&
+        vigente.lab_salario_real !== null && (
+          <Modal title="Editar contrato" subtitle={vigente.puesto_nombre} onClose={cerrarDialogo}>
+            {vigente.en_planilla && (
+              <Alert tone="info" size="md">
+                Este contrato ya pasó por planilla. Los cambios aplican desde el próximo período;
+                los que ya están calculados conservan sus montos. Si querés que apliquen al período
+                abierto, recalculalo desde Planilla.
+              </Alert>
+            )}
+            <ContractForm
+              modo="editar"
+              catalogos={catalogos}
+              sucursalNombre={vigente.sucursal_nombre}
+              fechaInicio={vigente.lab_fecha_inicio}
+              sucursalBloqueada={
+                vigente.quincena_sin_pagar
+                  ? 'No se puede cambiar con una quincena sin pagar: terminá de pagarla en Planilla.'
+                  : null
+              }
+              defaultValues={{
+                lab_puesto_id: vigente.lab_puesto_id,
+                // Desde que la sucursal se edita, tiene que venir precargada con
+                // la actual: un select vacío obliga a elegirla de nuevo en cada
+                // corrección de salario, y basta un descuido para mover la base
+                // sin querer. Además, bloqueada el campo no se renderiza y este
+                // valor es el que viaja, así que la RPC no detecta un cambio.
+                lab_sucursal_id: vigente.lab_sucursal_id,
+                lab_tipo_contrato_id: vigente.lab_tipo_contrato_id,
+                lab_tipo_jornada_id: vigente.lab_tipo_jornada_id,
+                lab_salario_base: vigente.lab_salario_base,
+                lab_salario_real: vigente.lab_salario_real,
+              }}
+              serverError={dialogoError}
+              submitLabel="Guardar cambios"
+              onCancel={cerrarDialogo}
+              onSubmit={onEditar}
+            />
+          </Modal>
+        )}
 
       {dialogo === 'terminar' && vigente && (
         <Modal title="Terminar contrato" subtitle={vigente.puesto_nombre} onClose={cerrarDialogo}>

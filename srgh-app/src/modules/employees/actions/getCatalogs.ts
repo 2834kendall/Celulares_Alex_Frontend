@@ -8,6 +8,7 @@ import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import type { CatalogoItem, MotivoSalidaItem, TerritorioCatalogo } from '@/modules/employees/types'
 import { formatSucursalLabel } from '@/lib/empresa/marca-label'
+import { sucursalesVisibles } from '@/modules/payroll/lib/sucursalCuenta'
 
 export type GetCatalogoResult = { ok: true; data: CatalogoItem[] } | { ok: false; error: string }
 
@@ -191,25 +192,47 @@ export async function getPuestos(): Promise<GetCatalogoResult> {
   return { ok: true, data: data.map((p) => ({ id: p.pue_id, nombre: p.pue_nombre })) }
 }
 
+function resolverSucursalesVisibles(claims: { app_metadata?: unknown }): number[] | null {
+  const visibles = sucursalesVisibles(claims)
+  if (visibles !== null) return visibles
+  const sucursalId = ((claims.app_metadata ?? {}) as { sucursal_id?: unknown }).sucursal_id
+  return typeof sucursalId === 'number' ? [sucursalId] : null
+}
+
 /** Sucursales activas de la empresa (RLS filtra por empresa). */
-export async function getSucursales(): Promise<GetCatalogoResult> {
-  await requirePermission(PERMISOS.EMPLEADOS_READ)
+export async function getSucursales(options?: {
+  soloVisibles?: boolean
+}): Promise<GetCatalogoResult> {
+  const claims = await requirePermission(PERMISOS.EMPLEADOS_READ)
+  const visibles = options?.soloVisibles ? resolverSucursalesVisibles(claims) : null
+
+  if (visibles !== null && visibles.length === 0) {
+    return { ok: true, data: [] }
+  }
 
   const supabase = await createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('sgrh_sucursales')
     .select('suc_id, suc_nombre, sgrh_marcas_comerciales ( mco_nombre )')
     .eq('suc_activa', true)
     .order('suc_nombre', { ascending: true })
 
+  if (visibles !== null) {
+    query = query.in('suc_id', visibles)
+  }
+
+  const { data, error } = await query
+
   if (error) {
     return { ok: false, error: CATALOG_ERROR }
   }
 
+  const filtradas = visibles === null ? data : data.filter((s) => visibles.includes(s.suc_id))
+
   return {
     ok: true,
     // Se ordena por lo que se muestra: así quedan juntas las de cada marca.
-    data: data
+    data: filtradas
       .map((s) => ({
         id: s.suc_id,
         nombre: formatSucursalLabel(s.sgrh_marcas_comerciales?.mco_nombre, s.suc_nombre),

@@ -28,7 +28,6 @@ interface HistorialActivoRow {
   lab_empleado_id: number
   lab_sucursal_id: number
   lab_fecha_inicio: string
-  lab_salario_base: number
   sgrh_cat_puestos: { pue_nombre: string | null } | null
   sgrh_sucursales: {
     suc_nombre: string | null
@@ -127,7 +126,6 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
       lab_empleado_id,
       lab_sucursal_id,
       lab_fecha_inicio,
-      lab_salario_base,
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_tipos_contrato ( tco_nombre )
@@ -197,7 +195,6 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
       puesto_nombre: historial?.sgrh_cat_puestos?.pue_nombre ?? null,
       sucursal_nombre: sucursalLabel(historial?.sgrh_sucursales) ?? null,
       tipo_contrato_nombre: historial?.sgrh_cat_tipos_contrato?.tco_nombre ?? null,
-      salario_base: historial?.lab_salario_base ?? null,
       fecha_inicio_contrato: historial?.lab_fecha_inicio ?? null,
       activo: Boolean(historial),
       foto_url: emp_foto_path ? (fotoUrls[emp_foto_path] ?? null) : null,

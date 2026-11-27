@@ -456,4 +456,62 @@ describe('<EmployeeDetail />', () => {
       expect(screen.getByRole('button', { name: /capturar rostro/i })).toBeDisabled()
     })
   })
+
+  describe('permiso de salarios en el tab Contrato (SGRH-118)', () => {
+    const catalogosContrato = {
+      puestos: [{ id: 3, nombre: 'Cajera' }],
+      sucursales: [{ id: 2, nombre: 'Central' }],
+      tiposContrato: [{ id: 1, nombre: 'Indefinido' }],
+      tiposJornada: [{ id: 1, nombre: 'Diurna' }],
+    }
+
+    it('sin canReadSalarios oculta Salario base/real y deshabilita Editar contrato', () => {
+      searchString = 'tab=contrato'
+      const contratoSinSalarios = {
+        ...EMPLEADO_DETALLE.historial_activo!,
+        lab_salario_base: null,
+        lab_salario_real: null,
+      }
+      render(
+        <EmployeeDetail
+          empleado={{
+            ...EMPLEADO_DETALLE,
+            historial_activo: contratoSinSalarios,
+            historial_completo: [contratoSinSalarios],
+          }}
+          tiposIdentificacion={TIPOS_IDENTIFICACION}
+          bancos={BANCOS}
+          territorio={TERRITORIO}
+          canWrite
+          canEditContrato
+          canReadSalarios={false}
+          catalogosContrato={catalogosContrato}
+        />
+      )
+
+      expect(screen.queryByText('Salario base')).not.toBeInTheDocument()
+      expect(screen.queryByText('Salario real')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /editar/i })).toBeDisabled()
+    })
+
+    it('con canReadSalarios muestra los salarios y habilita Editar contrato', () => {
+      searchString = 'tab=contrato'
+      render(
+        <EmployeeDetail
+          empleado={EMPLEADO_DETALLE}
+          tiposIdentificacion={TIPOS_IDENTIFICACION}
+          bancos={BANCOS}
+          territorio={TERRITORIO}
+          canWrite
+          canEditContrato
+          canReadSalarios={true}
+          catalogosContrato={catalogosContrato}
+        />
+      )
+
+      expect(screen.getByText('Salario base')).toBeInTheDocument()
+      expect(screen.getByText('Salario real')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /editar/i })).toBeEnabled()
+    })
+  })
 })

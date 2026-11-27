@@ -49,6 +49,8 @@ interface EmployeeDetailProps {
   documentosError?: string | null
   /** NOMINA_WRITE: muestra el enlace a liquidación en el tab Contrato. */
   canLiquidar?: boolean
+  /** NOMINA_READ: muestra y permite editar salarios del contrato. */
+  canReadSalarios?: boolean
   /** HISTORIAL_WRITE: crear, editar, terminar y revertir contratos. */
   canEditContrato?: boolean
   /** Catálogos del formulario de contrato; solo llegan con canEditContrato. */
@@ -74,6 +76,7 @@ export function EmployeeDetail({
   canWriteDocs = false,
   documentosError = null,
   canLiquidar = false,
+  canReadSalarios = true,
   canEditContrato = false,
   catalogosContrato,
   motivosSalida,
@@ -244,11 +247,13 @@ export function EmployeeDetail({
     <EmployeeContractSection
       contratos={empleado.historial_completo}
       veLiquidaciones={canLiquidar || canEditContrato}
+      veSalarios={canReadSalarios}
       acciones={
         <EmployeeContractActions
           empId={empleado.emp_id}
           contratos={empleado.historial_completo}
           canLiquidar={canLiquidar}
+          canReadSalarios={canReadSalarios}
           canEditContrato={canEditContrato}
           catalogos={catalogosContrato}
           motivos={motivosSalida}

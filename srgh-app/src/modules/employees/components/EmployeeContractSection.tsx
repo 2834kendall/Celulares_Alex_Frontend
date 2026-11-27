@@ -21,6 +21,8 @@ interface EmployeeContractSectionProps {
    * RLS las oculta y todo contrato cerrado parecería "pendiente de liquidar".
    */
   veLiquidaciones: boolean
+  /** NOMINA_READ: habilita mostrar salario base y salario real. */
+  veSalarios?: boolean
   /** Los botones (EmployeeContractActions), a la derecha del título de la tarjeta. */
   acciones?: React.ReactNode
 }
@@ -33,6 +35,7 @@ interface EmployeeContractSectionProps {
 export function EmployeeContractSection({
   contratos,
   veLiquidaciones,
+  veSalarios = true,
   acciones,
 }: EmployeeContractSectionProps) {
   const { vigente, cerrados, ultimo, programada, pendienteDeLiquidar } =
@@ -58,8 +61,14 @@ export function EmployeeContractSection({
               <InfoItem label="Tipo de contrato" value={vigente.tipo_contrato_nombre} />
               <InfoItem label="Jornada" value={vigente.tipo_jornada_nombre} />
               <InfoItem label="Inicio del contrato" value={formatDate(vigente.lab_fecha_inicio)} />
-              <InfoItem label="Salario base" value={formatCRC(vigente.lab_salario_base)} />
-              <InfoItem label="Salario real" value={formatCRC(vigente.lab_salario_real)} />
+              {veSalarios &&
+                vigente.lab_salario_base !== null &&
+                vigente.lab_salario_real !== null && (
+                  <>
+                    <InfoItem label="Salario base" value={formatCRC(vigente.lab_salario_base)} />
+                    <InfoItem label="Salario real" value={formatCRC(vigente.lab_salario_real)} />
+                  </>
+                )}
             </dl>
           </div>
         ) : pendienteDeLiquidar && ultimo && veLiquidaciones ? (

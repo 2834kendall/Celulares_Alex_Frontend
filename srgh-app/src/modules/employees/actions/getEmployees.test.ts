@@ -100,27 +100,27 @@ describe('getEmployees (server action)', () => {
     })
   })
 
-  it('mezcla empleado + contrato vigente y marca activo', async () => {
+  it('mezcla empleado + contrato vigente y marca activo sin seleccionar ni exponer salario_base', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_empleados: {
+        data: [EMPLEADO_BASE, { ...EMPLEADO_BASE, emp_id: 20, emp_nombre: 'Luis' }],
+        error: null,
+      },
+      sgrh_historial_laboral: {
+        data: [
+          {
+            lab_empleado_id: 10,
+            lab_fecha_inicio: '2024-02-01',
+            sgrh_cat_puestos: { pue_nombre: 'Cajera' },
+            sgrh_sucursales: { suc_nombre: 'Central' },
+            sgrh_cat_tipos_contrato: { tco_nombre: 'Indefinido' },
+          },
+        ],
+        error: null,
+      },
+    })
     mockCreateClient.mockResolvedValue(
-      createSupabaseClientMock({
-        sgrh_empleados: {
-          data: [EMPLEADO_BASE, { ...EMPLEADO_BASE, emp_id: 20, emp_nombre: 'Luis' }],
-          error: null,
-        },
-        sgrh_historial_laboral: {
-          data: [
-            {
-              lab_empleado_id: 10,
-              lab_fecha_inicio: '2024-02-01',
-              lab_salario_base: 500000,
-              sgrh_cat_puestos: { pue_nombre: 'Cajera' },
-              sgrh_sucursales: { suc_nombre: 'Central' },
-              sgrh_cat_tipos_contrato: { tco_nombre: 'Indefinido' },
-            },
-          ],
-          error: null,
-        },
-      }) as unknown as Awaited<ReturnType<typeof createClient>>
+      client as unknown as Awaited<ReturnType<typeof createClient>>
     )
 
     const result = await getEmployees()
@@ -128,27 +128,32 @@ describe('getEmployees (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
+    const historialQuery = client.from.mock.results[1].value
+    const selectArg = historialQuery.select.mock.calls[0][0] as string
+    expect(selectArg).not.toContain('lab_salario_base')
+    expect(selectArg).not.toContain('lab_salario_real')
+
     expect(result.data).toHaveLength(2)
     expect(result.data[0]).toMatchObject({
       emp_id: 10,
       puesto_nombre: 'Cajera',
       sucursal_nombre: 'Central',
       tipo_contrato_nombre: 'Indefinido',
-      salario_base: 500000,
       fecha_inicio_contrato: '2024-02-01',
       activo: true,
       foto_url: null,
     })
+    expect(result.data[0]).not.toHaveProperty('salario_base')
     expect(result.data[1]).toMatchObject({
       emp_id: 20,
       puesto_nombre: null,
       sucursal_nombre: null,
       tipo_contrato_nombre: null,
-      salario_base: null,
       fecha_inicio_contrato: null,
       activo: false,
       foto_url: null,
     })
+    expect(result.data[1]).not.toHaveProperty('salario_base')
   })
 
   it('sin empleados con foto no llama al proveedor de storage', async () => {
@@ -240,7 +245,6 @@ describe('getEmployees con una marca elegida', () => {
     lab_empleado_id: id,
     lab_sucursal_id: sucursal,
     lab_fecha_inicio: '2024-01-01',
-    lab_salario_base: 1,
     sgrh_cat_puestos: null,
     sgrh_sucursales: null,
     sgrh_cat_tipos_contrato: null,

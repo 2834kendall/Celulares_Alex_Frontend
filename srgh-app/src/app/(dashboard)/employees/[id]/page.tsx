@@ -38,6 +38,7 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
   // Mismo criterio que PayrollHeader: sin NOMINA_WRITE la pantalla de
   // liquidación no deja procesar, así que el enlace no se ofrece.
   const canLiquidar = permisos.includes(PERMISOS.NOMINA_WRITE)
+  const canReadSalarios = permisos.includes(PERMISOS.NOMINA_READ)
   // SGRH-90: crear, editar, terminar y revertir contratos.
   const canEditContrato = permisos.includes(PERMISOS.HISTORIAL_WRITE)
   // SGRH-102: el tab Rostro existe solo para quien puede registrar rostros.
@@ -66,7 +67,7 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
     canEditContrato
       ? Promise.all([
           getPuestos(),
-          getSucursales(),
+          getSucursales({ soloVisibles: true }),
           getTiposContrato(),
           getTiposJornada(),
           getMotivosSalida(),
@@ -139,6 +140,7 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
       canWriteDocs={canWriteDocs}
       documentosError={documentosError}
       canLiquidar={canLiquidar}
+      canReadSalarios={canReadSalarios}
       canEditContrato={canEditContrato && catalogosContrato !== undefined}
       catalogosContrato={catalogosContrato}
       motivosSalida={motivosSalida}

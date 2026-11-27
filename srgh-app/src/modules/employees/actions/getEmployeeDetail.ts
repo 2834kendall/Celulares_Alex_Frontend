@@ -9,9 +9,13 @@ import { decryptField } from '@/lib/crypto/fieldCrypto'
 import type { Database } from '@/types/database.types'
 import type { ContratoDetalle, EmpleadoDetalle } from '@/modules/employees/types'
 import { sucursalLabel } from '@/lib/empresa/marca-label'
+import { fetchSalariosContratos } from '@/lib/employees/fetchSalariosContratos'
 
 type EmpleadoRow = Database['public']['Tables']['sgrh_empleados']['Row']
-type HistorialRow = Database['public']['Tables']['sgrh_historial_laboral']['Row']
+type HistorialRow = Omit<
+  Database['public']['Tables']['sgrh_historial_laboral']['Row'],
+  'lab_salario_base' | 'lab_salario_real'
+>
 
 type DireccionQueryRow = {
   dir_distrito_id: number
@@ -63,6 +67,8 @@ function toContrato(row: HistorialQueryRow): ContratoDetalle {
 
   return {
     ...base,
+    lab_salario_base: null,
+    lab_salario_real: null,
     puesto_nombre: sgrh_cat_puestos?.pue_nombre ?? '—',
     sucursal_nombre: sucursalLabel(sgrh_sucursales) ?? '—',
     tipo_contrato_nombre: sgrh_cat_tipos_contrato?.tco_nombre ?? '—',
@@ -84,7 +90,9 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
   }
 
   const claims = await requirePermission(PERMISOS.EMPLEADOS_READ)
-  const empresaId = (claims.app_metadata as { empresa_id?: number })?.empresa_id
+  const meta = claims.app_metadata as { empresa_id?: number; permisos?: string[] } | undefined
+  const empresaId = meta?.empresa_id
+  const canReadSalarios = (meta?.permisos ?? []).includes(PERMISOS.NOMINA_READ)
 
   if (!empresaId) {
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
@@ -125,7 +133,20 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
       .from('sgrh_historial_laboral')
       .select(
         `
-      *,
+      lab_id,
+      lab_empleado_id,
+      lab_empresa_id,
+      lab_puesto_id,
+      lab_sucursal_id,
+      lab_tipo_contrato_id,
+      lab_tipo_jornada_id,
+      lab_fecha_inicio,
+      lab_fecha_fin,
+      lab_fecha_fin_programada,
+      lab_motivo_salida_id,
+      lab_observaciones_salida,
+      lab_recontratable,
+      lab_created_at,
       sgrh_cat_puestos ( pue_nombre ),
       sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) ),
       sgrh_cat_tipos_contrato ( tco_nombre ),
@@ -176,7 +197,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
 
   // Segunda tanda, también en paralelo: dependen de lo leído arriba pero no
   // entre sí.
-  const [fotoUrl, estadoPlanilla, cuenta] = await Promise.all([
+  const [fotoUrl, estadoPlanilla, cuenta, salariosResult] = await Promise.all([
     // Una sola foto: getSignedUrl (no el batch). Si falla o no hay path, la
     // ficha igual se muestra — Avatar cae a iniciales.
     empleado.emp_foto_path
@@ -212,7 +233,27 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
           )
       : Promise.resolve({ enPlanilla: false, sinPagar: false }),
     datosPago ? decryptField(datosPago.edp_numero_cuenta) : Promise.resolve(null),
+    canReadSalarios && historialCompleto.length > 0
+      ? fetchSalariosContratos(
+          supabase,
+          historialCompleto.map((c) => c.lab_id)
+        )
+      : Promise.resolve(null),
   ])
+
+  if (salariosResult && !salariosResult.ok) {
+    return { ok: false, error: 'No se pudieron cargar los salarios de los contratos.' }
+  }
+
+  if (salariosResult?.ok) {
+    for (const contrato of historialCompleto) {
+      const salario = salariosResult.data.get(contrato.lab_id)
+      if (salario) {
+        contrato.lab_salario_base = salario.lab_salario_base
+        contrato.lab_salario_real = salario.lab_salario_real
+      }
+    }
+  }
 
   if (historialActivo) {
     historialActivo.en_planilla = estadoPlanilla.enPlanilla

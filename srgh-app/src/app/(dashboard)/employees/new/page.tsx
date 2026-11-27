@@ -34,7 +34,7 @@ export default async function NewEmployeePage() {
   ] = await Promise.all([
     getTiposIdentificacion(),
     getPuestos(),
-    getSucursales(),
+    getSucursales({ soloVisibles: true }),
     getTiposContrato(),
     getTiposJornada(),
     getBancos(),

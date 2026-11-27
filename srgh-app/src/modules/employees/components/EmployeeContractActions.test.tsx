@@ -61,7 +61,7 @@ const PROGRAMADO: ContratoDetalle = {
 
 function renderActions(
   contratos: ContratoDetalle[],
-  permisos: { canLiquidar?: boolean; canEditContrato?: boolean } = {}
+  permisos: { canLiquidar?: boolean; canEditContrato?: boolean; canReadSalarios?: boolean } = {}
 ) {
   return render(
     <EmployeeContractActions
@@ -69,6 +69,7 @@ function renderActions(
       contratos={contratos}
       canLiquidar={permisos.canLiquidar ?? false}
       canEditContrato={permisos.canEditContrato ?? false}
+      canReadSalarios={permisos.canReadSalarios ?? true}
       catalogos={CATALOGOS}
       motivos={MOTIVOS}
     />
@@ -213,6 +214,41 @@ describe('<EmployeeContractActions /> — botones por estado y permiso', () => {
 
     await waitFor(() => expect(mockRevertir).toHaveBeenCalledWith(5))
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('sin NOMINA_READ o con salarios en null deshabilita Editar con motivo', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderActions([HISTORIAL_ACTIVO], {
+      canEditContrato: true,
+      canReadSalarios: false,
+    })
+
+    const btnSinPermiso = screen.getByRole('button', { name: /editar/i })
+    expect(btnSinPermiso).toBeDisabled()
+    expect(btnSinPermiso.parentElement).toHaveAttribute(
+      'title',
+      'Necesitas permiso de nómina para editar el contrato'
+    )
+    await user.click(btnSinPermiso)
+    expect(screen.queryByRole('dialog', { name: 'Editar contrato' })).not.toBeInTheDocument()
+
+    rerender(
+      <EmployeeContractActions
+        empId={10}
+        contratos={[{ ...HISTORIAL_ACTIVO, lab_salario_base: null, lab_salario_real: null }]}
+        canLiquidar={false}
+        canEditContrato={true}
+        canReadSalarios={true}
+        catalogos={CATALOGOS}
+        motivos={MOTIVOS}
+      />
+    )
+    const btnSalariosNull = screen.getByRole('button', { name: /editar/i })
+    expect(btnSalariosNull).toBeDisabled()
+    expect(btnSalariosNull.parentElement).toHaveAttribute(
+      'title',
+      'Necesitas permiso de nómina para editar el contrato'
+    )
   })
 })
 

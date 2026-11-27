@@ -48,7 +48,6 @@ const EMPLEADO_ROW = {
 const HISTORIAL_ROW = {
   lab_id: 5,
   lab_empleado_id: 10,
-  lab_salario_base: 500000,
   lab_fecha_inicio: '2024-02-01',
   lab_fecha_fin: null,
   sgrh_cat_puestos: { pue_nombre: 'Cajera' },
@@ -65,7 +64,6 @@ const SIN_PLANILLA = { data: [], error: null }
 const HISTORIAL_CERRADO_ROW = {
   lab_id: 4,
   lab_empleado_id: 10,
-  lab_salario_base: 400000,
   lab_fecha_inicio: '2022-03-01',
   lab_fecha_fin: '2023-06-30',
   sgrh_cat_puestos: { pue_nombre: 'Bodeguero' },
@@ -408,5 +406,111 @@ describe('getEmployeeDetail (server action)', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data.foto_url).toBeNull()
+  })
+
+  it('sin NOMINA_READ no llama a obtener_salarios_historial y devuelve salarios en null', async () => {
+    const client = createSupabaseClientMock({
+      sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+      sgrh_historial_laboral: { data: [HISTORIAL_ROW, HISTORIAL_CERRADO_ROW], error: null },
+      sgrh_nomina_detalle: SIN_PLANILLA,
+      sgrh_empleado_datos_pago: { data: null, error: null },
+    })
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(client.rpc).not.toHaveBeenCalled()
+    const historialQuery = client.from.mock.results[1].value
+    const selectArg = historialQuery.select.mock.calls[0][0] as string
+    expect(selectArg).not.toContain('lab_salario_base')
+    expect(selectArg).not.toContain('lab_salario_real')
+    expect(result.data.historial_activo).toMatchObject({
+      lab_id: 5,
+      lab_salario_base: null,
+      lab_salario_real: null,
+    })
+    expect(result.data.historial_completo[1]).toMatchObject({
+      lab_id: 4,
+      lab_salario_base: null,
+      lab_salario_real: null,
+    })
+  })
+
+  it('con NOMINA_READ llama a obtener_salarios_historial y combina los salarios', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, permisos: ['EMPLEADOS_READ', 'NOMINA_READ'] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const client = createSupabaseClientMock(
+      {
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [HISTORIAL_ROW, HISTORIAL_CERRADO_ROW], error: null },
+        sgrh_nomina_detalle: SIN_PLANILLA,
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      },
+      {
+        rpcResponses: {
+          obtener_salarios_historial: {
+            data: [
+              { lab_id: 5, lab_salario_base: 500000, lab_salario_real: 550000 },
+              { lab_id: 4, lab_salario_base: 400000, lab_salario_real: 420000 },
+            ],
+            error: null,
+          },
+        },
+      }
+    )
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(client.rpc).toHaveBeenCalledWith('obtener_salarios_historial', { p_lab_ids: [5, 4] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data.historial_activo).toMatchObject({
+      lab_id: 5,
+      lab_salario_base: 500000,
+      lab_salario_real: 550000,
+    })
+    expect(result.data.historial_completo[1]).toMatchObject({
+      lab_id: 4,
+      lab_salario_base: 400000,
+      lab_salario_real: 420000,
+    })
+  })
+
+  it('con NOMINA_READ devuelve error si falla obtener_salarios_historial', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, permisos: ['EMPLEADOS_READ', 'NOMINA_READ'] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock(
+        {
+          sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+          sgrh_historial_laboral: { data: [HISTORIAL_ROW], error: null },
+          sgrh_nomina_detalle: SIN_PLANILLA,
+          sgrh_empleado_datos_pago: { data: null, error: null },
+        },
+        {
+          rpcResponses: {
+            obtener_salarios_historial: { data: null, error: { message: 'rpc boom' } },
+          },
+        }
+      ) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'No se pudieron cargar los salarios de los contratos.',
+    })
   })
 })
