@@ -14,8 +14,15 @@ vi.mock('@/lib/crypto/fieldCrypto', () => ({
 const IBAN_BAC = 'CR02010200000000000001' // código de entidad 102
 const SINPE = '88887777'
 
-function cliente(responses: Parameters<typeof createSupabaseClientMock>[0]) {
-  const client = createSupabaseClientMock(responses)
+function cliente(
+  responses: Parameters<typeof createSupabaseClientMock>[0],
+  rpcResponses?: Parameters<typeof createSupabaseClientMock>[1] extends infer O
+    ? O extends { rpcResponses?: infer R }
+      ? R
+      : never
+    : never
+) {
+  const client = createSupabaseClientMock(responses, { rpcResponses })
   return {
     client,
     supabase: client as unknown as Awaited<ReturnType<typeof createClient>>,
@@ -23,7 +30,7 @@ function cliente(responses: Parameters<typeof createSupabaseClientMock>[0]) {
 }
 
 const BAC = { data: { ban_codigo: '102' }, error: null }
-const SIN_REPETIDAS = { data: [], error: null }
+const SIN_REPETIDAS = { data: [{ duplicada: false, empleado_nombre: null }], error: null }
 
 describe('validateDatosPago', () => {
   beforeEach(() => {
@@ -69,10 +76,10 @@ describe('validateDatosPago', () => {
   })
 
   it('no exige código de entidad en SINPE (es un teléfono, no un IBAN)', async () => {
-    const { supabase } = cliente({
-      sgrh_cat_bancos: BAC,
-      sgrh_empleado_datos_pago: SIN_REPETIDAS,
-    })
+    const { supabase } = cliente(
+      { sgrh_cat_bancos: BAC },
+      { verificar_cuenta_pago_duplicada: SIN_REPETIDAS }
+    )
 
     await expect(
       validateDatosPago(supabase, {
@@ -84,10 +91,10 @@ describe('validateDatosPago', () => {
   })
 
   it('devuelve el hmac cuando todo está bien', async () => {
-    const { supabase } = cliente({
-      sgrh_cat_bancos: BAC,
-      sgrh_empleado_datos_pago: SIN_REPETIDAS,
-    })
+    const { supabase } = cliente(
+      { sgrh_cat_bancos: BAC },
+      { verificar_cuenta_pago_duplicada: SIN_REPETIDAS }
+    )
 
     await expect(
       validateDatosPago(supabase, { edp_banco_id: 3, edp_numero_cuenta: IBAN_BAC })
@@ -97,11 +104,15 @@ describe('validateDatosPago', () => {
   // ── Detección de cuentas repetidas ────────────────────────────────────────
 
   it('pide confirmación si la cuenta ya está en otro empleado', async () => {
-    const { supabase } = cliente({
-      sgrh_cat_bancos: BAC,
-      sgrh_empleado_datos_pago: { data: [{ edp_empleado_id: 42 }], error: null },
-      sgrh_empleados: { data: { emp_nombre: 'María', emp_apellido_1: 'Rodríguez' }, error: null },
-    })
+    const { supabase } = cliente(
+      { sgrh_cat_bancos: BAC },
+      {
+        verificar_cuenta_pago_duplicada: {
+          data: [{ duplicada: true, empleado_nombre: 'María Rodríguez' }],
+          error: null,
+        },
+      }
+    )
 
     const result = await validateDatosPago(supabase, {
       edp_banco_id: 3,
@@ -115,10 +126,15 @@ describe('validateDatosPago', () => {
 
   it('deja pasar el duplicado cuando el usuario ya confirmó', async () => {
     // Compartir cuenta puede ser legítimo (cónyuges): se avisa, no se bloquea.
-    const { supabase } = cliente({
-      sgrh_cat_bancos: BAC,
-      sgrh_empleado_datos_pago: { data: [{ edp_empleado_id: 42 }], error: null },
-    })
+    const { supabase } = cliente(
+      { sgrh_cat_bancos: BAC },
+      {
+        verificar_cuenta_pago_duplicada: {
+          data: [{ duplicada: true, empleado_nombre: 'María Rodríguez' }],
+          error: null,
+        },
+      }
+    )
 
     await expect(
       validateDatosPago(
@@ -129,12 +145,16 @@ describe('validateDatosPago', () => {
     ).resolves.toEqual({ ok: true, hmac: `hmac:${IBAN_BAC}` })
   })
 
-  it('avisa sin nombre si no se pudo resolver el empleado en conflicto', async () => {
-    const { supabase } = cliente({
-      sgrh_cat_bancos: BAC,
-      sgrh_empleado_datos_pago: { data: [{ edp_empleado_id: 42 }], error: null },
-      sgrh_empleados: { data: null, error: { message: 'boom' } },
-    })
+  it('avisa sin nombre si la RPC no trae empleado_nombre', async () => {
+    const { supabase } = cliente(
+      { sgrh_cat_bancos: BAC },
+      {
+        verificar_cuenta_pago_duplicada: {
+          data: [{ duplicada: true, empleado_nombre: null }],
+          error: null,
+        },
+      }
+    )
 
     const result = await validateDatosPago(supabase, {
       edp_banco_id: 3,
@@ -146,10 +166,10 @@ describe('validateDatosPago', () => {
   })
 
   it('excluye al propio empleado al editar', async () => {
-    const { client, supabase } = cliente({
-      sgrh_cat_bancos: BAC,
-      sgrh_empleado_datos_pago: SIN_REPETIDAS,
-    })
+    const { client, supabase } = cliente(
+      { sgrh_cat_bancos: BAC },
+      { verificar_cuenta_pago_duplicada: SIN_REPETIDAS }
+    )
 
     await validateDatosPago(
       supabase,
@@ -157,16 +177,18 @@ describe('validateDatosPago', () => {
       { empIdActual: 10 }
     )
 
-    // Sin el neq, guardar una ficha sin tocar la cuenta se detectaría a sí misma.
-    const pagoBuilder = client.from.mock.results[1].value
-    expect(pagoBuilder.neq).toHaveBeenCalledWith('edp_empleado_id', 10)
+    // Sin p_excluir_emp_id, guardar una ficha sin tocar la cuenta se detectaría a sí misma.
+    expect(client.rpc).toHaveBeenCalledWith('verificar_cuenta_pago_duplicada', {
+      p_cuenta_hmac: `hmac:${IBAN_BAC}`,
+      p_excluir_emp_id: 10,
+    })
   })
 
   it('falla cerrado si la consulta de duplicados revienta', async () => {
-    const { supabase } = cliente({
-      sgrh_cat_bancos: BAC,
-      sgrh_empleado_datos_pago: { data: null, error: { message: 'boom' } },
-    })
+    const { supabase } = cliente(
+      { sgrh_cat_bancos: BAC },
+      { verificar_cuenta_pago_duplicada: { data: null, error: { message: 'boom' } } }
+    )
 
     // Guardar es reintentable; saltarse un control antifraude en silencio, no.
     await expect(

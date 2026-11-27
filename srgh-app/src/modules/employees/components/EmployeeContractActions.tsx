@@ -36,6 +36,8 @@ interface EmployeeContractActionsProps {
   canReadSalarios?: boolean
   /** HISTORIAL_WRITE: crear, editar, terminar y revertir. */
   canEditContrato: boolean
+  /** Tiene un contrato vigente en otra sucursal oculta por RLS. */
+  contratoVigenteOtraSucursal?: boolean
   /** Solo llegan con canEditContrato (la página no los pide si no). */
   catalogos?: ContractCatalogs
   motivos?: MotivoSalidaItem[]
@@ -71,6 +73,7 @@ export function EmployeeContractActions({
   canLiquidar,
   canReadSalarios = true,
   canEditContrato,
+  contratoVigenteOtraSucursal = false,
   catalogos,
   motivos = [],
 }: EmployeeContractActionsProps) {
@@ -194,6 +197,13 @@ export function EmployeeContractActions({
         {canEditContrato &&
           (pendienteDeLiquidar ? (
             <ConMotivo motivo="El contrato anterior está pendiente de liquidar">
+              <Button disabled>
+                <FilePlus2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Nuevo contrato
+              </Button>
+            </ConMotivo>
+          ) : contratoVigenteOtraSucursal ? (
+            <ConMotivo motivo="El empleado ya tiene un contrato vigente en otra sucursal">
               <Button disabled>
                 <FilePlus2 className="h-3.5 w-3.5" aria-hidden="true" />
                 Nuevo contrato

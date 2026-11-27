@@ -250,6 +250,27 @@ describe('<EmployeeContractActions /> — botones por estado y permiso', () => {
       'Necesitas permiso de nómina para editar el contrato'
     )
   })
+
+  it('deshabilita Nuevo contrato con tooltip cuando hay contrato vigente en otra sucursal', () => {
+    render(
+      <EmployeeContractActions
+        empId={10}
+        contratos={[HISTORIAL_CERRADO]}
+        canLiquidar={true}
+        canEditContrato={true}
+        contratoVigenteOtraSucursal={true}
+        catalogos={CATALOGOS}
+        motivos={MOTIVOS}
+      />
+    )
+
+    const btn = screen.getByRole('button', { name: /nuevo contrato/i })
+    expect(btn).toBeDisabled()
+    expect(btn.parentElement).toHaveAttribute(
+      'title',
+      'El empleado ya tiene un contrato vigente en otra sucursal'
+    )
+  })
 })
 
 describe('liquidacionHref', () => {

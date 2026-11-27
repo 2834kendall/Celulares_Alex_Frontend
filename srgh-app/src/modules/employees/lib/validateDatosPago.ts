@@ -67,56 +67,35 @@ export async function validateDatosPago(
 
   // ─── Detección de cuentas repetidas ──────────────────────────────────────
   // El cifrado usa IV aleatorio, así que dos filas con el mismo número no se
-  // parecen: la comparación va por el índice ciego. Con el cliente de SESIÓN,
-  // nunca el admin — datos_pago_select ya acota a los empleados de la empresa
-  // del JWT, así que la RLS pone el alcance multi-tenant y no hay que
-  // reimplementarlo (ese chequeo hecho a mano es el error que este repo ya
-  // cometió tres veces).
+  // parecen: la comparación va por el índice ciego vía RPC SECURITY DEFINER,
+  // que revisa toda la empresa del usuario aunque el registro pertenezca a
+  // otra sucursal (sin exponer filas de pago ni salario entre sucursales).
   const hmac = await hmacField(cuenta)
 
-  let query = supabase
-    .from('sgrh_empleado_datos_pago')
-    .select('edp_empleado_id')
-    .eq('edp_cuenta_hmac', hmac)
-
-  if (opts.empIdActual) {
-    query = query.neq('edp_empleado_id', opts.empIdActual)
-  }
-
-  const { data: repetidas, error: errRepetidas } = await query
+  const { data: repetidas, error: errRepetidas } = await supabase.rpc(
+    'verificar_cuenta_pago_duplicada',
+    {
+      p_cuenta_hmac: hmac,
+      ...(opts.empIdActual ? { p_excluir_emp_id: opts.empIdActual } : {}),
+    }
+  )
 
   // Falla cerrado: un error acá no puede degradarse en "seguí sin control".
   // Guardar es reintentable, saltarse un control antifraude en silencio no.
-  if (errRepetidas || !repetidas) {
+  if (errRepetidas || !Array.isArray(repetidas) || repetidas.length === 0) {
     return { ok: false, error: 'No se pudo verificar la cuenta bancaria. Intenta de nuevo.' }
   }
 
-  if (repetidas.length > 0 && !opts.confirmado) {
+  const coincidencia = repetidas[0]
+  if (coincidencia.duplicada && !opts.confirmado) {
     return {
       ok: false,
       requiereConfirmacion: true,
-      error: `Esta cuenta ya está registrada para ${await nombreEmpleado(
-        supabase,
-        repetidas[0].edp_empleado_id
-      )}. Puede ser legítimo (una cuenta compartida) o un error de digitación.`,
+      error: `Esta cuenta ya está registrada para ${
+        coincidencia.empleado_nombre?.trim() || 'otro empleado'
+      }. Puede ser legítimo (una cuenta compartida) o un error de digitación.`,
     }
   }
 
   return { ok: true, hmac }
-}
-
-/**
- * Nombre del empleado con el que choca la cuenta, para que la advertencia sea
- * accionable. Si la consulta falla se cae a una descripción genérica: el aviso
- * sigue sirviendo sin el nombre, y no vale la pena abortar el guardado por eso.
- */
-async function nombreEmpleado(supabase: SupabaseServerClient, empId: number): Promise<string> {
-  const { data } = await supabase
-    .from('sgrh_empleados')
-    .select('emp_nombre, emp_apellido_1')
-    .eq('emp_id', empId)
-    .maybeSingle()
-
-  if (!data) return 'otro empleado'
-  return `${data.emp_nombre} ${data.emp_apellido_1}`.trim()
 }

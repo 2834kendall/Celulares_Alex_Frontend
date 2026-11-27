@@ -50,7 +50,8 @@ function soloDeLaMarca(
   empleados: EmpleadoQueryRow[],
   sucursalIds: number[] | null,
   vigentes: Map<number, HistorialActivoRow>,
-  cerrados: ContratoCerradoRow[]
+  cerrados: ContratoCerradoRow[],
+  ocultosVigentes: Set<number>
 ): EmpleadoQueryRow[] {
   if (!sucursalIds) return empleados
 
@@ -65,6 +66,9 @@ function soloDeLaMarca(
   }
 
   return empleados.filter((empleado) => {
+    if (!vigentes.has(empleado.emp_id) && ocultosVigentes.has(empleado.emp_id)) {
+      return false
+    }
     const sucursal =
       vigentes.get(empleado.emp_id)?.lab_sucursal_id ??
       ultimoCerrado.get(empleado.emp_id)?.lab_sucursal_id
@@ -82,7 +86,10 @@ function soloDeLaMarca(
  */
 export async function getEmployees(): Promise<GetEmployeesResult> {
   const claims = await requirePermission(PERMISOS.EMPLEADOS_READ)
-  const empresaId = (claims.app_metadata as { empresa_id?: number })?.empresa_id
+  const appMeta = claims.app_metadata as
+    { empresa_id?: number; sucursal_ids?: number[] | null } | undefined
+  const empresaId = appMeta?.empresa_id
+  const tieneRestriccionSucursal = Array.isArray(appMeta?.sucursal_ids)
 
   if (!empresaId) {
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
@@ -162,11 +169,30 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
     historialPorEmpleado.set(historial.lab_empleado_id, historial)
   }
 
+  const sinContratoVisibleIds = (empleados ?? [])
+    .map((empleado) => empleado.emp_id)
+    .filter((empId) => !historialPorEmpleado.has(empId))
+
+  let ocultosVigentes = new Set<number>()
+  if (tieneRestriccionSucursal && sinContratoVisibleIds.length > 0) {
+    const { data: idsOcultos, error: errOcultos } = await supabase.rpc(
+      'empleados_con_contrato_vigente_oculto',
+      { p_emp_ids: sinContratoVisibleIds }
+    )
+    if (errOcultos) {
+      return { ok: false, error: 'No se pudieron verificar los contratos en otras sucursales.' }
+    }
+    if (Array.isArray(idsOcultos)) {
+      ocultosVigentes = new Set(idsOcultos as number[])
+    }
+  }
+
   const visibles = soloDeLaMarca(
     empleados ?? [],
     filtro.sucursalIds,
     historialPorEmpleado,
-    cerrados
+    cerrados,
+    ocultosVigentes
   )
 
   // Firmado EN LOTE: una sola llamada al proveedor para toda la lista, no una
@@ -187,16 +213,19 @@ export async function getEmployees(): Promise<GetEmployeesResult> {
 
   const data: EmpleadoListItem[] = visibles.map((empleado) => {
     const historial = historialPorEmpleado.get(empleado.emp_id)
+    const vigenteEnOtraSucursal = !historial && ocultosVigentes.has(empleado.emp_id)
     // emp_foto_path nunca sale hacia el cliente: solo la URL firmada opaca.
     const { emp_foto_path, ...empleadoSinFoto } = empleado
 
     return {
       ...empleadoSinFoto,
       puesto_nombre: historial?.sgrh_cat_puestos?.pue_nombre ?? null,
-      sucursal_nombre: sucursalLabel(historial?.sgrh_sucursales) ?? null,
+      sucursal_nombre:
+        sucursalLabel(historial?.sgrh_sucursales) ??
+        (vigenteEnOtraSucursal ? 'Otra sucursal' : null),
       tipo_contrato_nombre: historial?.sgrh_cat_tipos_contrato?.tco_nombre ?? null,
       fecha_inicio_contrato: historial?.lab_fecha_inicio ?? null,
-      activo: Boolean(historial),
+      activo: Boolean(historial) || vigenteEnOtraSucursal,
       foto_url: emp_foto_path ? (fotoUrls[emp_foto_path] ?? null) : null,
     }
   })

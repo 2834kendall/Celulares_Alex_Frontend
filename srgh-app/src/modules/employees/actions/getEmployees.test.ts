@@ -346,4 +346,56 @@ describe('getEmployees con una marca elegida', () => {
     })
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
+
+  it('usuario acotado por sucursal: marca activo (Otra sucursal) al que tiene contrato vigente oculto en "Todas"', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, sucursal_ids: [5] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const client = createSupabaseClientMock(
+      {
+        sgrh_empleados: {
+          data: [
+            { ...EMPLEADO_BASE, emp_id: 10, emp_nombre: 'Visible' },
+            { ...EMPLEADO_BASE, emp_id: 11, emp_nombre: 'OtraSucursal' },
+            { ...EMPLEADO_BASE, emp_id: 12, emp_nombre: 'Inactivo' },
+          ],
+          error: null,
+        },
+        sgrh_historial_laboral: {
+          data: [
+            {
+              lab_empleado_id: 10,
+              lab_sucursal_id: 5,
+              lab_fecha_inicio: '2024-01-01',
+              sgrh_cat_puestos: { pue_nombre: 'Cajero' },
+              sgrh_sucursales: { suc_nombre: 'Central', sgrh_marcas_comerciales: null },
+              sgrh_cat_tipos_contrato: { tco_nombre: 'Indefinido' },
+            },
+          ],
+          error: null,
+        },
+      },
+      {
+        rpcResponses: {
+          empleados_con_contrato_vigente_oculto: { data: [11], error: null },
+        },
+      }
+    )
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployees()
+
+    expect(client.rpc).toHaveBeenCalledWith('empleados_con_contrato_vigente_oculto', {
+      p_emp_ids: [11, 12],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data).toEqual([
+      expect.objectContaining({ emp_id: 10, activo: true, sucursal_nombre: 'Central' }),
+      expect.objectContaining({ emp_id: 11, activo: true, sucursal_nombre: 'Otra sucursal' }),
+      expect.objectContaining({ emp_id: 12, activo: false, sucursal_nombre: null }),
+    ])
+  })
 })

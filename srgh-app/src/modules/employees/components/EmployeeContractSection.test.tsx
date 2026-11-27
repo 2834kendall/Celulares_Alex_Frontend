@@ -120,4 +120,21 @@ describe('<EmployeeContractSection />', () => {
     expect(screen.queryByText('Salario base')).not.toBeInTheDocument()
     expect(screen.queryByText('Salario real')).not.toBeInTheDocument()
   })
+
+  it('indica cuando el empleado tiene un contrato vigente en otra sucursal oculta', () => {
+    render(
+      <EmployeeContractSection
+        contratos={[]}
+        veLiquidaciones={true}
+        contratoVigenteOtraSucursal={true}
+      />
+    )
+
+    expect(
+      screen.getByText('Este empleado tiene un contrato vigente en otra sucursal.')
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(/no tiene un contrato vigente en la empresa/i)
+    ).not.toBeInTheDocument()
+  })
 })

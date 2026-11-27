@@ -248,6 +248,7 @@ export function EmployeeDetail({
       contratos={empleado.historial_completo}
       veLiquidaciones={canLiquidar || canEditContrato}
       veSalarios={canReadSalarios}
+      contratoVigenteOtraSucursal={Boolean(empleado.contrato_vigente_otra_sucursal)}
       acciones={
         <EmployeeContractActions
           empId={empleado.emp_id}
@@ -255,6 +256,7 @@ export function EmployeeDetail({
           canLiquidar={canLiquidar}
           canReadSalarios={canReadSalarios}
           canEditContrato={canEditContrato}
+          contratoVigenteOtraSucursal={Boolean(empleado.contrato_vigente_otra_sucursal)}
           catalogos={catalogosContrato}
           motivos={motivosSalida}
         />
@@ -316,11 +318,15 @@ export function EmployeeDetail({
             </span>
             <span
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                historial ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                historial || empleado.contrato_vigente_otra_sucursal
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-rose-50 text-rose-700'
               }`}
             >
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
-              {historial ? 'Activo' : 'Sin contrato vigente'}
+              {historial || empleado.contrato_vigente_otra_sucursal
+                ? 'Activo'
+                : 'Sin contrato vigente'}
             </span>
           </span>
         }
