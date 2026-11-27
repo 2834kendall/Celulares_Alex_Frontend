@@ -1,4 +1,5 @@
 import type { AuthError } from '@supabase/supabase-js'
+import { getActiveSessionClaims } from '@/lib/auth/session-active'
 import { createClient } from '@/lib/supabase/server'
 import type { SgrhJwtClaims } from '@/types/auth'
 
@@ -36,13 +37,12 @@ export async function updatePasswordWithSession(
   password: string,
   expiredMessage: string
 ): Promise<UpdatePasswordResult> {
-  const supabase = await createClient()
-
-  const { data: claimsData } = await supabase.auth.getClaims()
-  if (!claimsData?.claims) {
+  const claims = await getActiveSessionClaims()
+  if (!claims) {
     return { ok: false, error: expiredMessage }
   }
 
+  const supabase = await createClient()
   const { error } = await supabase.auth.updateUser({ password })
 
   if (error) {
@@ -50,7 +50,7 @@ export async function updatePasswordWithSession(
   }
 
   // Mismo criterio que el login: sin permisos en el JWT no hay dashboard.
-  const meta = (claimsData.claims.app_metadata ?? {}) as Partial<SgrhJwtClaims>
+  const meta = (claims.app_metadata ?? {}) as Partial<SgrhJwtClaims>
   const permisos = Array.isArray(meta.permisos) ? meta.permisos : []
 
   return { ok: true, destination: permisos.length > 0 ? '/dashboard' : '/unauthorized' }

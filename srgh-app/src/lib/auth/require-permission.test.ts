@@ -17,11 +17,16 @@ const mockCreateClient = vi.mocked(createClient)
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
-function mockClaims(claims: Record<string, unknown> | null, error: Error | null = null) {
+function mockClaims(
+  claims: Record<string, unknown> | null,
+  error: Error | null = null,
+  rpcResult: { data: unknown; error: unknown } = { data: true, error: null }
+) {
   mockCreateClient.mockResolvedValue({
     auth: {
       getClaims: vi.fn().mockResolvedValue({ data: claims ? { claims } : null, error }),
     },
+    rpc: vi.fn().mockResolvedValue(rpcResult),
   } as unknown as SupabaseServerClient)
 }
 
@@ -37,6 +42,20 @@ describe('requirePermission', () => {
 
   it('redirige a /login si no hay claims (sin sesion)', async () => {
     mockClaims(null)
+    await expect(requirePermission(PERMISOS.EMPLEADOS_READ)).rejects.toThrow('NEXT_REDIRECT:/login')
+  })
+
+  it('redirige a /login si la sesión fue revocada o sgrh_sesion_vigente falla', async () => {
+    mockClaims({ app_metadata: { permisos: [PERMISOS.EMPLEADOS_READ] } }, null, {
+      data: false,
+      error: null,
+    })
+    await expect(requirePermission(PERMISOS.EMPLEADOS_READ)).rejects.toThrow('NEXT_REDIRECT:/login')
+
+    mockClaims({ app_metadata: { permisos: [PERMISOS.EMPLEADOS_READ] } }, null, {
+      data: null,
+      error: { message: 'rpc fail' },
+    })
     await expect(requirePermission(PERMISOS.EMPLEADOS_READ)).rejects.toThrow('NEXT_REDIRECT:/login')
   })
 

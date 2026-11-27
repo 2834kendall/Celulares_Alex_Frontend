@@ -1,30 +1,29 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getActiveSessionClaims } from '@/lib/auth/session-active'
 import { Permiso } from '@/lib/permissions/catalog'
 import type { SgrhJwtClaims } from '@/types/auth'
 
 /**
- * Guards server-side por permiso. Se llaman al inicio de cada page.tsx protegida.
- * Leen los permisos del JWT via getClaims() — el hook de Supabase los inyecta
- * en el token, NO en el registro del usuario (getUser() no los trae).
+ * Guards server-side por permiso. Se llaman al inicio de cada page.tsx protegida
+ * y de cada Server Action autenticada. Validan tanto los claims del JWT como la
+ * vigencia de la sesión en BD (`getActiveSessionClaims`).
  *
- * `cache`: una página con N acciones de catálogo verifica el JWT una sola vez
+ * `cache`: una página con N acciones de catálogo verifica la sesión una sola vez
  * por request. Solo se memoiza la lectura de la sesión; la decisión de cada
  * guard se evalúa en cada llamada.
  */
 const getSessionPermisos = cache(async () => {
-  const supabase = await createClient()
-  const { data, error } = await supabase.auth.getClaims()
+  const claims = await getActiveSessionClaims()
 
-  if (error || !data?.claims) {
+  if (!claims) {
     redirect('/login')
   }
 
-  const meta = (data.claims.app_metadata ?? {}) as Partial<SgrhJwtClaims>
+  const meta = (claims.app_metadata ?? {}) as Partial<SgrhJwtClaims>
   const permisos = Array.isArray(meta.permisos) ? meta.permisos : []
 
-  return { claims: data.claims, permisos }
+  return { claims, permisos }
 })
 
 /** Exige UN permiso especifico. */

@@ -1,12 +1,11 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getActiveSessionClaims } from '@/lib/auth/session-active'
 import { LoginForm } from '@/modules/auth/components/LoginForm'
 
 export default async function LoginPage() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
+  const claims = await getActiveSessionClaims()
 
-  if (data?.claims) {
+  if (claims) {
     redirect('/dashboard')
   }
 
