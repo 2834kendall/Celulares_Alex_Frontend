@@ -22,7 +22,7 @@ export default async function PayrollPage() {
     return (
       <ModulePlaceholder
         title="Nómina"
-        description="Aquí podrás consultar tus comprobantes de pago. Disponible próximamente."
+        description="Aquí vas a poder consultar tus comprobantes de pago. Disponible próximamente."
       />
     )
   }

@@ -14,7 +14,7 @@ export default function NotFound() {
       kind="not-found"
       badge={<Compass className="h-6 w-6" />}
       title="Página no encontrada"
-      description="La dirección no existe o cambió. Revise el enlace o vuelva al inicio."
+      description="La dirección no existe o cambió. Revisá el enlace o volvé al inicio."
     >
       <Link href="/dashboard" className={AUTH_SUBMIT}>
         <SubmitSheen />

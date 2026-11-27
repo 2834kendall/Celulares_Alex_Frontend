@@ -611,7 +611,7 @@ export function DateField({
   }, [texto])
 
   function mensajeDeRango(iso: string) {
-    if (minISO && iso < minISO) return `Tiene que ser el ${formatShortDate(minISO)} o despues.`
+    if (minISO && iso < minISO) return `Tiene que ser el ${formatShortDate(minISO)} o después.`
     if (maxISO && iso > maxISO) return `Tiene que ser el ${formatShortDate(maxISO)} o antes.`
     return null
   }

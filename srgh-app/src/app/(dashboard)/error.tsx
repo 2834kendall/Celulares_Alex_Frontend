@@ -22,7 +22,7 @@ export default function DashboardError({
     <StatePanel
       kind="error"
       title="No se pudo cargar esta sección"
-      description="Hubo un problema al cargar el contenido. Intente de nuevo en unos segundos."
+      description="Hubo un problema al cargar el contenido. Intentá de nuevo en unos segundos."
       actions={
         <>
           <Button size="lg" onClick={reset}>

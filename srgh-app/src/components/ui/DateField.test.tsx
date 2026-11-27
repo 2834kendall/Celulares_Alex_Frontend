@@ -157,7 +157,7 @@ describe('DateField — fechas que no sirven', () => {
 
     await user.type(campo(), '01082026')
 
-    expect(screen.getByText('Tiene que ser el 10/08/2026 o despues.')).toBeInTheDocument()
+    expect(screen.getByText('Tiene que ser el 10/08/2026 o después.')).toBeInTheDocument()
     expect(alCambiar).not.toHaveBeenCalledWith('2026-08-01')
   })
 

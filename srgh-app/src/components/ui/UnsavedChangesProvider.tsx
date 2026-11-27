@@ -238,7 +238,7 @@ function UnsavedChangesDialog({
             Si salís, se perderán.
           </p>
           {hasFiles && (
-            <p>Hay archivos sin guardar. Si salís, tendrás que seleccionarlos de nuevo.</p>
+            <p>Hay archivos sin guardar. Si salís, vas a tener que seleccionarlos de nuevo.</p>
           )}
         </div>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">

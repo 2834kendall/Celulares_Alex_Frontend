@@ -19,10 +19,10 @@ describe('EmptyState', () => {
   })
 
   it('muestra título y descripción', () => {
-    render(<EmptyState title="Sin resultados" description="Prueba con otro nombre." />)
+    render(<EmptyState title="Sin resultados" description="Probá con otro nombre." />)
 
     expect(screen.getByText('Sin resultados')).toBeInTheDocument()
-    expect(screen.getByText('Prueba con otro nombre.')).toBeInTheDocument()
+    expect(screen.getByText('Probá con otro nombre.')).toBeInTheDocument()
   })
 
   it('renderiza la acción', () => {
