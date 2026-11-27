@@ -315,7 +315,7 @@ describe('enrollFace (server action)', () => {
 
       expect(result).toEqual({
         ok: false,
-        error: 'No se pudo comprobar el registro facial. Intenta de nuevo.',
+        error: 'No se pudo comprobar el registro facial. Intentá de nuevo.',
       })
       expect(client.from).not.toHaveBeenCalledWith('sgrh_biometria_empleado')
     })

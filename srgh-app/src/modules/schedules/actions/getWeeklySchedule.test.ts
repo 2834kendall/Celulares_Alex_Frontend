@@ -118,7 +118,7 @@ describe('getWeeklySchedule (server action)', () => {
 
     const result = await getWeeklySchedule(WEEK_START)
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo cargar la programacion semanal.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo cargar la programación semanal.' })
   })
 
   it('calcula horas y arma la matriz semanal en exito', async () => {

@@ -32,9 +32,9 @@ export interface TardinessType {
  * y deleteTipoTardia no deja borrar el ultimo.
  */
 export const DEFAULT_TARDINESS_TYPES: TardinessType[] = [
-  { id: -1, nombre: 'Tardia leve', desdeMinutos: 1, cuentaAdvertencia: true, color: '#F59E0B' },
-  { id: -2, nombre: 'Tardia', desdeMinutos: 6, cuentaAdvertencia: true, color: '#EA580C' },
-  { id: -3, nombre: 'Tardia grave', desdeMinutos: 11, cuentaAdvertencia: true, color: '#E11D48' },
+  { id: -1, nombre: 'Tardía leve', desdeMinutos: 1, cuentaAdvertencia: true, color: '#F59E0B' },
+  { id: -2, nombre: 'Tardía', desdeMinutos: 6, cuentaAdvertencia: true, color: '#EA580C' },
+  { id: -3, nombre: 'Tardía grave', desdeMinutos: 11, cuentaAdvertencia: true, color: '#E11D48' },
 ]
 
 /** Lo que la pantalla necesita de un tipo para pintarlo: nombre y color. */

@@ -43,7 +43,7 @@ describe('justifyTardiness (server action)', () => {
   it('rechaza justificar sin motivo', async () => {
     const result = await justifyTardiness({ markId: 5, justificada: true, motivo: null })
 
-    expect(result).toEqual({ ok: false, error: 'Escribe un motivo de al menos 10 caracteres.' })
+    expect(result).toEqual({ ok: false, error: 'Escribí un motivo de al menos 10 caracteres.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -158,7 +158,7 @@ describe('justifyTardiness (server action)', () => {
     await justifyTardiness({ markId: 5, justificada: false, motivo: null })
 
     expect(lastCallOn(client, 'sgrh_notificaciones').insert).toHaveBeenCalledWith(
-      expect.objectContaining({ ntf_titulo: 'Justificacion retirada' })
+      expect.objectContaining({ ntf_titulo: 'Justificación retirada' })
     )
   })
 
@@ -189,7 +189,7 @@ describe('justifyTardiness (server action)', () => {
       motivo: 'El sistema estaba caido esa manana',
     })
 
-    expect(result).toEqual({ ok: false, error: 'No tienes permiso para justificar tardías.' })
+    expect(result).toEqual({ ok: false, error: 'No tenés permiso para justificar tardías.' })
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 })

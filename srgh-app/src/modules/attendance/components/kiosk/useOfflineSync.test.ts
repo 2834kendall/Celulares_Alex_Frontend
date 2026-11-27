@@ -261,7 +261,7 @@ describe('useOfflineSync', () => {
 
     mockRegisterKioskMark.mockResolvedValue({
       ok: false,
-      error: 'No tienes turno asignado en esta sucursal para esta fecha.',
+      error: 'No tenés turno asignado en esta sucursal para esta fecha.',
       definitivo: true,
     })
 

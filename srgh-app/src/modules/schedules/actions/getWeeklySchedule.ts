@@ -284,7 +284,7 @@ export async function getWeeklySchedule(weekStartISO: string): Promise<GetWeekly
   ])
 
   if (errAssignments) {
-    return { ok: false, error: 'No se pudo cargar la programacion semanal.' }
+    return { ok: false, error: 'No se pudo cargar la programación semanal.' }
   }
 
   // Index by employmentHistoryId+date to avoid a linear find() per cell. Una

@@ -279,7 +279,7 @@ export function CustomHoursModal({
               </div>
             )}
             {applyToDates.length === 0 && (
-              <p className="mt-1 text-[10px] text-rose-600">Seleccione al menos un día.</p>
+              <p className="mt-1 text-[10px] text-rose-600">Seleccioná al menos un día.</p>
             )}
           </div>
 

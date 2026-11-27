@@ -228,17 +228,17 @@ export function assessQuality(
 
 /** Mensaje para la persona frente al kiosco. Prioriza el problema dominante. */
 export function qualityMessage(issues: QualityIssue[]): string | null {
-  if (issues.includes('rostro_lejos')) return 'Acércate un poco más a la cámara'
-  if (issues.includes('rostro_cerca')) return 'Aléjate un poco de la cámara'
+  if (issues.includes('rostro_lejos')) return 'Acercate un poco más a la cámara'
+  if (issues.includes('rostro_cerca')) return 'Alejate un poco de la cámara'
   if (issues.includes('fuera_del_ovalo')) return 'Coloca tu rostro dentro del óvalo'
   if (issues.includes('rostro_cortado')) return 'Centra tu rostro en el recuadro'
-  if (issues.includes('rostro_girado')) return 'Mira de frente a la cámara'
+  if (issues.includes('rostro_girado')) return 'Mirá de frente a la cámara'
   if (issues.includes('rostro_inclinado')) return 'Endereza un poco la cabeza'
   return null
 }
 
 /** Mensaje cuando los ojos quedan tapados por lentes oscuros (registro, SGRH-117). */
-export const DARK_GLASSES_MESSAGE = 'Quítate los lentes oscuros'
+export const DARK_GLASSES_MESSAGE = 'Quitate los lentes oscuros'
 
 /** Imagen minima que necesita eyeShade: la de un canvas o un ImageData. */
 export interface PixelGrid {

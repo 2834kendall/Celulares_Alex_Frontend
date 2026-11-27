@@ -35,7 +35,7 @@ export async function justifySecondBlock(
   ])
 
   if (typeError || !type || type.tau_es_intradia) {
-    return { ok: false, error: 'Selecciona un tipo de ausencia válido para el bloque.' }
+    return { ok: false, error: 'Seleccioná un tipo de ausencia válido para el bloque.' }
   }
   if (!schedule.ok) return schedule
   const secondBlock = schedule.bloques[1]

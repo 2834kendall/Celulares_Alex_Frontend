@@ -26,7 +26,7 @@ describe('getScanVisual', () => {
     const half = getScanVisual({ phase: 'evaluando', livenessSamples: 2, livenessNeeded: 4 })
     expect(half.tone).toBe('progress')
     expect(half.progress).toBeCloseTo(LIVENESS_SHARE / 2)
-    expect(half.message).toBe('Quédate quieto, mirando a la cámara')
+    expect(half.message).toBe('Quedate quieto, mirando a la cámara')
     // Más lecturas que las necesarias no pasan de su parte.
     expect(
       getScanVisual({ phase: 'evaluando', livenessSamples: 9, livenessNeeded: 4 }).progress
@@ -59,7 +59,7 @@ describe('getScanVisual', () => {
     expect(getScanVisual({ phase: 'listo' })).toEqual({
       tone: 'done',
       progress: 1,
-      message: 'Listo, ya puedes moverte',
+      message: 'Listo, ya podés moverte',
     })
   })
 })

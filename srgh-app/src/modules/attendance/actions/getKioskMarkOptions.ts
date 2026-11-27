@@ -59,7 +59,7 @@ export async function getKioskMarkOptions(employeeId: number): Promise<GetKioskM
   const turno = await findWorkableDay(admin, hoy, employeeId, sucursalIds)
 
   if (!turno) {
-    return { ok: false, error: 'No tienes turno asignado en esta sucursal hoy.' }
+    return { ok: false, error: 'No tenés turno asignado en esta sucursal hoy.' }
   }
 
   const [ausencia, delDia] = await Promise.all([

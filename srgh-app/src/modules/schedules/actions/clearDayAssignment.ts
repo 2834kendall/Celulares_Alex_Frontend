@@ -19,7 +19,7 @@ export async function clearDayAssignment(assignmentId: number): Promise<ClearDay
     .eq('prg_id', assignmentId)
 
   if (error) {
-    return { ok: false, error: 'No se pudo quitar la asignacion.' }
+    return { ok: false, error: 'No se pudo quitar la asignación.' }
   }
 
   revalidatePath('/schedule')

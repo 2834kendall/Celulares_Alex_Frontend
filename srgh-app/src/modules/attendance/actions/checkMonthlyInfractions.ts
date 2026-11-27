@@ -63,7 +63,7 @@ export async function checkMonthlyInfractions(): Promise<CheckMonthlyInfractions
       ntf_tipo_notificacion: 'advertencia',
       ntf_canal: 'app',
       ntf_titulo: 'Advertencia de asistencia',
-      ntf_mensaje: `Este mes acumulaste ${summary.tardias} tardía(s) y ${summary.ausencias} ausencia(s). Conversa con tu encargado si necesitas ayuda.`,
+      ntf_mensaje: `Este mes acumulaste ${summary.tardias} tardía(s) y ${summary.ausencias} ausencia(s). Conversá con tu encargado si necesitás ayuda.`,
     })
   }
 

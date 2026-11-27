@@ -141,7 +141,7 @@ export function PendingJustifications({
           description={
             view === 'pendientes'
               ? 'Las tardías y ausencias nuevas van a aparecer acá.'
-              : 'Lo que justifiques desde Pendientes va a quedar acá.'
+              : 'Lo que justifiqués desde Pendientes va a quedar acá.'
           }
         />
       ) : (

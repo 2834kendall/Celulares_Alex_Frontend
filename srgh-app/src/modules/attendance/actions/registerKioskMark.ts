@@ -125,7 +125,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   if (!rostroVerificado) {
     return {
       ok: false,
-      error: 'No se pudo verificar tu rostro. Avisa al encargado para que registre tu marca.',
+      error: 'No se pudo verificar tu rostro. Avisá al encargado para que registre tu marca.',
       definitivo: true,
     }
   }
@@ -186,7 +186,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   if (!assignment) {
     return {
       ok: false,
-      error: 'No tienes turno asignado en esta sucursal para esta fecha.',
+      error: 'No tenés turno asignado en esta sucursal para esta fecha.',
       definitivo: true,
     }
   }
@@ -344,7 +344,7 @@ export async function registerKioskMark(input: KioskMarkInput): Promise<Register
   }
 
   if (saved === 'stale')
-    return { ok: false, error: 'Tus marcas cambiaron mientras se guardaba. Intenta de nuevo.' }
+    return { ok: false, error: 'Tus marcas cambiaron mientras se guardaba. Intentá de nuevo.' }
   if (saved !== 'inserted' && saved !== 'duplicate') {
     return { ok: false, error: 'No se pudo validar la marca.', definitivo: true }
   }

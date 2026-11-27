@@ -145,7 +145,7 @@ describe('pasteWeeklySchedule (server action)', () => {
 
     const result = await pasteWeeklySchedule(baseInput)
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo aplicar el horario en todos los dias.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo aplicar el horario en todos los días.' })
     expect(revalidatePath).not.toHaveBeenCalled()
   })
 
@@ -350,7 +350,7 @@ describe('pasteWeeklySchedule (server action)', () => {
 
       expect(result).toEqual({
         ok: false,
-        error: 'No se pudo aplicar el horario en todos los dias.',
+        error: 'No se pudo aplicar el horario en todos los días.',
       })
       // Las dos bajas salen juntas (misma fase); despues no se escribe el primer tramo ni el extra.
       expect(operations(client).map((op) => op.kind)).toEqual(['delete', 'delete'])

@@ -65,7 +65,7 @@ describe('assignCustomScheduleBulk (server action)', () => {
   it('rechaza una lista vacia de dias sin llamar a requirePermission', async () => {
     const result = await assignCustomScheduleBulk({ ...baseInput, days: [] })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de asignacion invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos de asignación inválidos.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -115,7 +115,7 @@ describe('assignCustomScheduleBulk (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo guardar la asignacion en todos los dias.',
+      error: 'No se pudo guardar la asignación en todos los días.',
     })
   })
 })

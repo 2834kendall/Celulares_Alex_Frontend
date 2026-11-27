@@ -18,7 +18,7 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
   const parsed = assignDayScheduleSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de asignacion invalidos.' }
+    return { ok: false, error: 'Datos de asignación inválidos.' }
   }
 
   // RLS policies on sgrh_programacion_semanal require ASISTENCIA_WRITE.
@@ -35,8 +35,7 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
   if (!data.isDayOff && !data.scheduleId && !isCustom) {
     return {
       ok: false,
-      error:
-        'Debe seleccionar un horario, definir uno personalizado, o marcar el dia como descanso.',
+      error: 'Seleccioná un horario, definí uno personalizado o marcá el día como descanso.',
     }
   }
 
@@ -81,7 +80,7 @@ export async function assignDaySchedule(input: AssignDayInput): Promise<AssignDa
   const { error } = await upsertDayAssignment(supabase, data.assignmentId, payload)
 
   if (error) {
-    return { ok: false, error: describeAssignmentError(error, 'No se pudo guardar la asignacion.') }
+    return { ok: false, error: describeAssignmentError(error, 'No se pudo guardar la asignación.') }
   }
 
   revalidatePath('/schedule')

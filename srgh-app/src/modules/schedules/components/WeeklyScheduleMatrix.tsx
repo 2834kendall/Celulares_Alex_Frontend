@@ -982,14 +982,14 @@ export function WeeklyScheduleMatrix({
     if (!canWrite || isPasting) return
 
     if (!clipboard) {
-      toast.error('No hay ningun horario copiado.')
+      toast.error('No hay ningún horario copiado.')
       return
     }
 
     setIsPasting(true)
     await applySource(
       clipboard.byEmployment,
-      'No hay dias disponibles para pegar en esta vista.',
+      'No hay días disponibles para pegar en esta vista.',
       'Horario pegado.'
     )
     setIsPasting(false)
@@ -1062,12 +1062,12 @@ export function WeeklyScheduleMatrix({
                 value={weekStartISO}
                 onChange={(picked) => goToWeekStart(getWeekDates(picked)[0])}
                 disabled={isNavigating}
-                label="Ir a una semana especifica"
+                label="Ir a una semana específica"
                 trigger={(props) => (
                   <button
                     {...props}
                     type="button"
-                    aria-label="Ir a una semana especifica"
+                    aria-label="Ir a una semana específica"
                     className="inline-flex min-w-[124px] items-center justify-center gap-1.5 rounded-full px-2 py-1 outline-none transition hover:bg-white focus-visible:ring-2 focus-visible:ring-slate-400/50 disabled:cursor-not-allowed"
                   >
                     {isNavigating ? (
@@ -1111,7 +1111,7 @@ export function WeeklyScheduleMatrix({
                   title={
                     clipboard
                       ? 'Pegar horario copiado'
-                      : 'Copia un horario primero para poder pegarlo'
+                      : 'Copiá un horario primero para poder pegarlo'
                   }
                 >
                   {isPasting ? (
@@ -1124,8 +1124,8 @@ export function WeeklyScheduleMatrix({
                 <IconButton
                   onClick={handleGenerateSuggestion}
                   disabled={isGenerating}
-                  aria-label="Generar horario sugerido segun el historial"
-                  title="Generar horario sugerido segun el historial"
+                  aria-label="Generar horario sugerido según el historial"
+                  title="Generar horario sugerido según el historial"
                 >
                   {isGenerating ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1515,7 +1515,7 @@ function MatrixEmptyState({ hasUnfilteredRows = false }: { hasUnfilteredRows?: b
       }
       description={
         hasUnfilteredRows
-          ? 'Ajusta el filtro de sucursal o de días para ver resultados.'
+          ? 'Ajustá el filtro de sucursal o de días para ver resultados.'
           : 'Cuando el equipo tenga historial laboral activo, la matriz semanal aparecerá aquí.'
       }
       className="px-4 py-8"

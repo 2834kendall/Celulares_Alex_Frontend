@@ -19,7 +19,7 @@ const TARDY: TardyDay = {
   kind: 'entrada',
   time: '08:15',
   diffMinutes: 15,
-  tipo: { nombre: 'Tardia grave', color: '#E11D48' },
+  tipo: { nombre: 'Tardía grave', color: '#E11D48' },
   countsTowardWarning: true,
   markId: 77,
   isJustified: false,
@@ -103,19 +103,19 @@ describe('<MonthlySummaryTable />', () => {
     const user = userEvent.setup()
     render(<MonthlySummaryTable monthISO="2026-07-01" rows={[ANA_CON_INCIDENCIAS]} />)
 
-    expect(screen.queryByText('Tardia grave')).not.toBeInTheDocument()
+    expect(screen.queryByText('Tardía grave')).not.toBeInTheDocument()
 
     const fila = screen.getByRole('button', { name: /Ana Perez/ })
     await user.click(fila)
 
     expect(fila).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('Tardia grave')).toBeInTheDocument()
+    expect(screen.getByText('Tardía grave')).toBeInTheDocument()
     expect(screen.getByText('+15 min', { exact: false })).toBeInTheDocument()
     expect(screen.getByText('No vino y no marcó')).toBeInTheDocument()
 
     await user.click(fila)
 
-    expect(screen.queryByText('Tardia grave')).not.toBeInTheDocument()
+    expect(screen.queryByText('Tardía grave')).not.toBeInTheDocument()
   })
 
   it('una falta al segundo bloque se cuenta y se lee distinta a no haber venido', async () => {

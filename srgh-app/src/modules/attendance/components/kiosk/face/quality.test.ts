@@ -163,7 +163,7 @@ describe('assessQuality', () => {
 describe('qualityMessage', () => {
   it('prioriza la cercania sobre lo demas', () => {
     expect(qualityMessage(['rostro_girado', 'rostro_lejos'])).toBe(
-      'Acércate un poco más a la cámara'
+      'Acercate un poco más a la cámara'
     )
   })
 
@@ -276,7 +276,7 @@ describe('óvalo de la pantalla', () => {
     })!
     expect(report.issues).toContain('rostro_cerca')
     expect(report.issues).not.toContain('fuera_del_ovalo')
-    expect(qualityMessage(report.issues)).toBe('Aléjate un poco de la cámara')
+    expect(qualityMessage(report.issues)).toBe('Alejate un poco de la cámara')
   })
 
   it('sin óvalo se comporta como antes', () => {

@@ -149,14 +149,14 @@ export function MonthlySummaryTable({ monthISO, rows }: MonthlySummaryTableProps
         <EmptyState
           icon={Users}
           title="No hay colaboradores activos en esta sucursal"
-          description="Verifica que existan contratos activos asignados a esta sucursal."
+          description="Verificá que existan contratos activos asignados a esta sucursal."
         />
       ) : visibleRows.length === 0 ? (
         <EmptyState
           variant="no-results"
           icon={CalendarCheck2}
           title="Nadie tiene tardías ni ausencias este mes"
-          description="Cambia a “Todos” para ver a todo el personal."
+          description="Cambiá a “Todos” para ver a todo el personal."
         />
       ) : (
         <div className={TABLE_WRAP}>

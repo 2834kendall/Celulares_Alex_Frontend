@@ -37,7 +37,7 @@ async function notifyEmployee(
     ntf_empleado_id: employeeId,
     ntf_tipo_notificacion: 'informacion',
     ntf_canal: 'app',
-    ntf_titulo: justificada ? 'Tardanza justificada' : 'Justificacion retirada',
+    ntf_titulo: justificada ? 'Tardanza justificada' : 'Justificación retirada',
     ntf_mensaje: justificada
       ? 'Un encargado marcó una de tus tardanzas como justificada: deja de contar para el mes.'
       : 'Un encargado retiró la justificación de una de tus tardanzas: vuelve a contar para el mes.',
@@ -73,7 +73,7 @@ export async function justifyTardiness(
   // esta guarda, la sesion de la tablet podia invocar esta accion (SGRH-88).
   const permisos = (claims.app_metadata as { permisos?: string[] }).permisos ?? []
   if (!permisos.includes(PERMISOS.ASISTENCIA_READ)) {
-    return { ok: false, error: 'No tienes permiso para justificar tardías.' }
+    return { ok: false, error: 'No tenés permiso para justificar tardías.' }
   }
 
   // Sin usuario no se puede justificar: el CHECK de la base exige saber QUIEN

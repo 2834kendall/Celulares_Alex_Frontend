@@ -138,7 +138,7 @@ export async function enrollFace(input: EnrollFaceInput): Promise<EnrollFaceResu
 
   const duplicate = await findSimilarFace(meta.empresa_id, parsed.data.employeeId, vector)
   if (duplicate === 'error') {
-    return { ok: false, error: 'No se pudo comprobar el registro facial. Intenta de nuevo.' }
+    return { ok: false, error: 'No se pudo comprobar el registro facial. Intentá de nuevo.' }
   }
   if (duplicate) {
     // Best-effort, como el DENIED del kiosco: si el log falla, el rechazo

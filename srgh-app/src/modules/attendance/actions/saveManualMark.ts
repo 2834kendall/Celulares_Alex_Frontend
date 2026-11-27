@@ -56,7 +56,7 @@ export async function saveManualMark(input: ManualMarkInput): Promise<SaveManual
   // esta guarda, la sesion de la tablet podia invocar esta accion (SGRH-88).
   const permisos = (claims.app_metadata as { permisos?: string[] }).permisos ?? []
   if (!permisos.includes(PERMISOS.ASISTENCIA_READ)) {
-    return { ok: false, error: 'No tienes permiso para registrar marcas manuales.' }
+    return { ok: false, error: 'No tenés permiso para registrar marcas manuales.' }
   }
 
   const { markId, employmentHistoryId, employeeId, sucursalId, tipo, fecha, hora, observacion } =

@@ -77,7 +77,7 @@ export function JustifyAbsenceModal({
     setServerError(null)
 
     if (!selected) {
-      setFieldError('Selecciona el tipo de ausencia.')
+      setFieldError('Seleccioná el tipo de ausencia.')
       return
     }
 
@@ -126,7 +126,7 @@ export function JustifyAbsenceModal({
         <p className="text-sm text-slate-600">
           {block
             ? 'Sin goce: se paga lo trabajado en el 1.er bloque. Con goce: se paga el día completo.'
-            : 'Registra el motivo por el que no vino. El día deja de contar como ausencia y queda registrado en Horarios y en la nómina como cualquier otra ausencia.'}
+            : 'Registrá el motivo por el que no vino. El día deja de contar como ausencia y queda registrado en Horarios y en la nómina como cualquier otra ausencia.'}
         </p>
 
         <div>
@@ -142,7 +142,7 @@ export function JustifyAbsenceModal({
             onChange={setTipoId}
             disabled={isSaving || !tipos}
             invalid={!!fieldError}
-            placeholder={tipos ? 'Selecciona un tipo' : 'Cargando tipos…'}
+            placeholder={tipos ? 'Seleccioná un tipo' : 'Cargando tipos…'}
             options={(tipos ?? []).map((t) => ({ value: String(t.tau_id), label: t.tau_nombre }))}
           />
           {fieldError && <p className={FIELD_ERROR}>{fieldError}</p>}

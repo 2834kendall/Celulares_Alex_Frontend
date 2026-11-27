@@ -23,7 +23,7 @@ import { Alert } from '@/components/ui/Alert'
  * modules/schedules, y cada modulo de negocio es independiente.
  */
 const PRESETS = [
-  { hex: '#F59E0B', nombre: 'Ambar' },
+  { hex: '#F59E0B', nombre: 'Ámbar' },
   { hex: '#EA580C', nombre: 'Naranja' },
   { hex: '#E11D48', nombre: 'Rosa' },
   { hex: '#DC2626', nombre: 'Rojo' },

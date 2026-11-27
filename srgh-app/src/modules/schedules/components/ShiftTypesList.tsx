@@ -94,7 +94,7 @@ export function ShiftTypesList({ shiftTypes, canWrite }: ShiftTypesListProps) {
         <EmptyState
           icon={Layers}
           title="No hay tipos de jornada"
-          description="Crea el primero para poder clasificar tus plantillas de horario."
+          description="Creá el primero para poder clasificar tus plantillas de horario."
           action={
             canWrite && (
               <Button onClick={() => setEditing('new')} className="mt-1">

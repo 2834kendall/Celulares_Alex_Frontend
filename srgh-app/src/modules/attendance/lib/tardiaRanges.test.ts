@@ -7,7 +7,7 @@ describe('rangeLabel', () => {
   })
 
   it('deja abierto el ultimo tipo', () => {
-    expect(rangeLabel(11, null)).toBe('11 min o mas')
+    expect(rangeLabel(11, null)).toBe('11 min o más')
   })
 
   it('un rango de un solo minuto no se escribe "5 a 5"', () => {

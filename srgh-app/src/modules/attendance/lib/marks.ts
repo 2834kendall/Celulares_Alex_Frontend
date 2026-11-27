@@ -173,7 +173,7 @@ export function isExitWindowOpen(
 
 /** El aviso de que su horario no contempla receso. */
 export function describeNoBreak() {
-  return 'Tu horario no tiene receso asignado. Avisa al encargado si necesitas uno.'
+  return 'Tu horario no tiene receso asignado. Avisá al encargado si necesitás uno.'
 }
 
 /** Ya tomo el receso del dia, en este u otro bloque o sucursal (SGRH-120). */
@@ -183,7 +183,7 @@ export function describeBreakTaken() {
 
 /** El aviso de que todavia no es la hora de salir. */
 export function describeExitWindow(expectedEnd: string) {
-  return `Tu salida es a las ${expectedEnd}. Si necesitas salir antes, avisa al encargado.`
+  return `Tu salida es a las ${expectedEnd}. Si necesitás salir antes, avisá al encargado.`
 }
 
 /** * Las marcas que tienen sentido AHORA, dada la jornada hasta aca (SGRH-88).
@@ -243,5 +243,5 @@ export function describeSequenceRejection(tipo: MarkType, allowed: MarkType[]): 
   if (allowed.length === 0) return 'Ya registraste tu salida de hoy.'
 
   const opciones = allowed.map((t) => MARK_LABELS[t].toLowerCase()).join(', ')
-  return `No corresponde marcar ${MARK_LABELS[tipo].toLowerCase()} ahora. Puedes marcar: ${opciones}.`
+  return `No corresponde marcar ${MARK_LABELS[tipo].toLowerCase()} ahora. Podés marcar: ${opciones}.`
 }

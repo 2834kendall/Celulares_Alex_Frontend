@@ -35,7 +35,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
         {header}
         <Alert tone="info" size="md">
           Tu rol no tiene permiso para ver el panel de asistencia de la sucursal. Tu historial
-          personal de marcas estara disponible en tu perfil.
+          personal de marcas estará disponible en tu perfil.
         </Alert>
       </div>
     )

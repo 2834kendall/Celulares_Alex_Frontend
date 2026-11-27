@@ -35,7 +35,7 @@ function tardy(overrides: Partial<TardyDay> = {}): TardyDay {
     kind: 'entrada',
     time: '08:15',
     diffMinutes: 15,
-    tipo: { nombre: 'Tardia grave', color: '#E11D48' },
+    tipo: { nombre: 'Tardía grave', color: '#E11D48' },
     countsTowardWarning: true,
     markId: 77,
     isJustified: false,
@@ -109,7 +109,7 @@ describe('<PendingJustifications />', () => {
       'true'
     )
     expect(filas[1]).toHaveTextContent('Ana Perez')
-    expect(filas[1]).toHaveTextContent('Tardia grave')
+    expect(filas[1]).toHaveTextContent('Tardía grave')
     expect(screen.getAllByRole('button', { name: 'Justificar' })).toHaveLength(2)
   })
 

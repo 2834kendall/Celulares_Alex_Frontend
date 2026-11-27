@@ -144,7 +144,7 @@ describe('<DailyAttendanceTable />', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Requieren atención (0)' }))
     expect(screen.getByRole('status')).toHaveTextContent('Todo en orden')
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Nadie necesita que hagas algo en este día.'
+      'Nadie necesita que hagás algo en este día.'
     )
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
 
@@ -182,7 +182,7 @@ describe('<DailyAttendanceTable />', () => {
 
     rerender(<DailyAttendanceTable {...props} pendingCount={2} />)
     const alert = screen.getByRole('alert')
-    expect(alert).toHaveTextContent('Tienes 2 incidencias del mes por justificar.')
+    expect(alert).toHaveTextContent('Tenés 2 incidencias del mes por justificar.')
     expect(within(alert).getByRole('link', { name: 'Ver' })).toHaveAttribute(
       'href',
       '?tab=justificar'

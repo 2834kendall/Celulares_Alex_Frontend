@@ -106,7 +106,7 @@ describe('getKioskMarkOptions (server action)', () => {
 
     expect(await getKioskMarkOptions(10)).toEqual({
       ok: false,
-      error: 'No tienes turno asignado en esta sucursal hoy.',
+      error: 'No tenés turno asignado en esta sucursal hoy.',
     })
   })
 
@@ -132,7 +132,7 @@ describe('getKioskMarkOptions (server action)', () => {
 
     expect(await getKioskMarkOptions(10)).toEqual({
       ok: false,
-      error: 'No se pudieron cargar las marcas del dia.',
+      error: 'No se pudieron cargar las marcas del día.',
     })
   })
 

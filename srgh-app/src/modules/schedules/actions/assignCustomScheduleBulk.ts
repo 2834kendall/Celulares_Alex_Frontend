@@ -21,7 +21,7 @@ export async function assignCustomScheduleBulk(
   const parsed = assignCustomScheduleBulkSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de asignacion invalidos.' }
+    return { ok: false, error: 'Datos de asignación inválidos.' }
   }
 
   const claims = await requirePermission(PERMISOS.ASISTENCIA_WRITE)
@@ -82,7 +82,7 @@ export async function assignCustomScheduleBulk(
       ok: false,
       error: describeAssignmentError(
         failed.error,
-        'No se pudo guardar la asignacion en todos los dias.'
+        'No se pudo guardar la asignación en todos los días.'
       ),
     }
   }

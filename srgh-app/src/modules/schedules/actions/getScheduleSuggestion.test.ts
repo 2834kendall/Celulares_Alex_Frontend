@@ -72,7 +72,7 @@ describe('getScheduleSuggestion (server action)', () => {
   it('rechaza una fecha invalida', async () => {
     const result = await getScheduleSuggestion([1], 'no-es-fecha')
 
-    expect(result).toEqual({ ok: false, error: 'Fecha invalida.' })
+    expect(result).toEqual({ ok: false, error: 'Fecha inválida.' })
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 

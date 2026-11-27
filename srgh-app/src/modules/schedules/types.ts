@@ -10,7 +10,7 @@ const hexColorRegex = /^#[0-9a-fA-F]{6}$/
 const optionalTime = z
   .string()
   .refine((val) => val === '' || timeRegex.test(val), {
-    message: 'Formato de hora invalido (HH:mm).',
+    message: 'Formato de hora inválido (HH:mm).',
   })
   .nullable()
   .optional()
@@ -24,10 +24,10 @@ export const scheduleSchema = z
       .string('El nombre es requerido.')
       .trim()
       .min(3, 'El nombre debe tener al menos 3 caracteres.')
-      .max(100, 'Maximo 100 caracteres.'),
-    hor_tipo_jornada_id: z.number('Seleccione un tipo de jornada.').int().positive(),
-    hor_hora_entrada: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
-    hor_hora_salida: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+      .max(100, 'Máximo 100 caracteres.'),
+    hor_tipo_jornada_id: z.number('Seleccioná un tipo de jornada.').int().positive(),
+    hor_hora_entrada: z.string().regex(timeRegex, 'Formato de hora inválido (HH:mm).'),
+    hor_hora_salida: z.string().regex(timeRegex, 'Formato de hora inválido (HH:mm).'),
     /** Segundo bloque (jornada partida): las dos horas o ninguna. */
     hor_hora_entrada_2: optionalTime,
     hor_hora_salida_2: optionalTime,
@@ -37,22 +37,22 @@ export const scheduleSchema = z
      */
     hor_sucursal_id: z.number().int().positive().nullable().optional(),
     hor_sucursal_id_2: z.number().int().positive().nullable().optional(),
-    hor_hora_inicio_almuerzo: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
-    hor_hora_fin_almuerzo: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+    hor_hora_inicio_almuerzo: z.string().regex(timeRegex, 'Formato de hora inválido (HH:mm).'),
+    hor_hora_fin_almuerzo: z.string().regex(timeRegex, 'Formato de hora inválido (HH:mm).'),
     hor_duracion_almuerzo_min: z.number().int().min(0).default(60),
     hor_hora_inicio_break: optionalTime,
     hor_hora_fin_break: optionalTime,
     hor_duracion_break_min: z.number().int().min(0).default(10),
     hor_activo: z.boolean().default(true),
     /** null = sin color propio, la matriz semanal asigna uno automatico por hor_id. */
-    hor_color: z.string().regex(hexColorRegex, 'Color invalido.').nullable().optional(),
+    hor_color: z.string().regex(hexColorRegex, 'Color inválido.').nullable().optional(),
   })
   .refine((data) => data.hor_hora_salida > data.hor_hora_entrada, {
     message: 'La hora de salida debe ser posterior a la hora de entrada.',
     path: ['hor_hora_salida'],
   })
   .refine((data) => Boolean(data.hor_hora_entrada_2) === Boolean(data.hor_hora_salida_2), {
-    message: 'Indique la entrada y la salida del segundo bloque.',
+    message: 'Indicá la entrada y la salida del segundo bloque.',
     path: ['hor_hora_salida_2'],
   })
   .refine(
@@ -66,7 +66,7 @@ export const scheduleSchema = z
     }
   )
   .refine((data) => !data.hor_hora_entrada_2 || data.hor_hora_entrada_2 >= data.hor_hora_salida, {
-    message: 'El segundo bloque debe empezar cuando termina el primero o despues.',
+    message: 'El segundo bloque debe empezar cuando termina el primero o después.',
     path: ['hor_hora_entrada_2'],
   })
   .refine(
@@ -80,7 +80,7 @@ export const scheduleSchema = z
     }
   )
   .refine((data) => Boolean(data.hor_sucursal_id) === Boolean(data.hor_sucursal_id_2), {
-    message: 'Elija la sucursal de los dos bloques, o deje las dos como la de la asignacion.',
+    message: 'Elegí la sucursal de los dos bloques, o dejá las dos como la de la asignación.',
     path: ['hor_sucursal_id_2'],
   })
   .refine((data) => !data.hor_sucursal_id || Boolean(data.hor_hora_entrada_2), {
@@ -156,16 +156,16 @@ const optionalPositiveHours = z
   .refine(
     (val) =>
       val === undefined || val.trim() === '' || (Number.isFinite(Number(val)) && Number(val) > 0),
-    { message: 'Debe ser un numero positivo.' }
+    { message: 'Debe ser un número positivo.' }
   )
 
 export const shiftTypeSchema = z.object({
   tjo_codigo: z
-    .string('El codigo es requerido.')
+    .string('El código es requerido.')
     .trim()
-    .min(2, 'El codigo es requerido.')
-    .max(30, 'Maximo 30 caracteres.')
-    .regex(/^[A-Z_]+$/, 'Use mayusculas y guion bajo (ej: JORNADA_MIXTA).'),
+    .min(2, 'El código es requerido.')
+    .max(30, 'Máximo 30 caracteres.')
+    .regex(/^[A-Z_]+$/, 'Usá mayúsculas y guion bajo (ej: JORNADA_MIXTA).'),
   tjo_nombre: z.string('El nombre es requerido.').trim().min(3, 'El nombre es requerido.').max(100),
   tjo_horas_max_diarias: optionalPositiveHours,
   tjo_horas_max_semanales: optionalPositiveHours,
@@ -186,17 +186,17 @@ export const assignDayScheduleSchema = z.object({
   employmentHistoryId: z.number().int().positive(),
   employeeId: z.number().int().positive(),
   branchId: z.number().int().positive(),
-  date: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+  date: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
   scheduleId: z.number().int().positive().nullable(),
   isDayOff: z.boolean(),
   customStartTime: z
     .string()
-    .regex(timeRegex, 'Formato de hora invalido (HH:mm).')
+    .regex(timeRegex, 'Formato de hora inválido (HH:mm).')
     .nullable()
     .optional(),
   customEndTime: z
     .string()
-    .regex(timeRegex, 'Formato de hora invalido (HH:mm).')
+    .regex(timeRegex, 'Formato de hora inválido (HH:mm).')
     .nullable()
     .optional(),
   customLunchStart: optionalTime,
@@ -217,15 +217,15 @@ export const assignSplitScheduleSchema = z.object({
   assignmentId: z.number().int().positive().nullable(),
   employmentHistoryId: z.number().int().positive(),
   employeeId: z.number().int().positive(),
-  date: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+  date: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
   scheduleId: z.number().int().positive(),
 })
 
 export type AssignSplitScheduleInput = z.input<typeof assignSplitScheduleSchema>
 
 const customTimeFields = {
-  customStartTime: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
-  customEndTime: z.string().regex(timeRegex, 'Formato de hora invalido (HH:mm).'),
+  customStartTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:mm).'),
+  customEndTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:mm).'),
   customLunchStart: optionalTime,
   customLunchEnd: optionalTime,
   customBreakStart: optionalTime,
@@ -244,10 +244,10 @@ export const assignCustomScheduleBulkSchema = z.object({
     .array(
       z.object({
         assignmentId: z.number().int().positive().nullable(),
-        date: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+        date: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
       })
     )
-    .min(1, 'Seleccione al menos un dia.'),
+    .min(1, 'Seleccioná al menos un día.'),
   ...customTimeFields,
 })
 
@@ -263,12 +263,12 @@ const pasteTramoFields = {
   scheduleId: z.number().int().positive().nullable(),
   customStartTime: z
     .string()
-    .regex(timeRegex, 'Formato de hora invalido (HH:mm).')
+    .regex(timeRegex, 'Formato de hora inválido (HH:mm).')
     .nullable()
     .optional(),
   customEndTime: z
     .string()
-    .regex(timeRegex, 'Formato de hora invalido (HH:mm).')
+    .regex(timeRegex, 'Formato de hora inválido (HH:mm).')
     .nullable()
     .optional(),
   customLunchStart: optionalTime,
@@ -289,7 +289,7 @@ const pasteDaySchema = z
   .object({
     // Fila destino del PRIMER tramo del dia (null si el dia no tiene fila todavia).
     assignmentId: z.number().int().positive().nullable(),
-    date: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+    date: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
     isDayOff: z.boolean(),
     ...pasteTramoFields,
     // Los demas tramos del dia que se copian (SGRH-110).
@@ -299,7 +299,7 @@ const pasteDaySchema = z
     replaceTramoIds: z.array(z.number().int().positive()).max(MAX_TRAMOS_POR_DIA).optional(),
   })
   .refine((day) => !(day.isDayOff && (day.extraTramos?.length ?? 0) > 0), {
-    message: 'Un dia libre no puede tener otros tramos.',
+    message: 'Un día libre no puede tener otros tramos.',
   })
 
 /**
@@ -318,7 +318,7 @@ export const pasteWeeklyScheduleSchema = z.object({
         days: z.array(pasteDaySchema).min(1).max(7),
       })
     )
-    .min(1, 'No hay dias disponibles para aplicar.'),
+    .min(1, 'No hay días disponibles para aplicar.'),
 })
 
 export type PasteWeeklyScheduleInput = z.input<typeof pasteWeeklyScheduleSchema>

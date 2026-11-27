@@ -200,7 +200,7 @@ describe('saveManualMark (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No tienes permiso para registrar marcas manuales.',
+      error: 'No tenés permiso para registrar marcas manuales.',
     })
     expect(mockCreateClient).not.toHaveBeenCalled()
   })

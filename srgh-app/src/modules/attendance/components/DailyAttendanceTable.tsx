@@ -842,7 +842,7 @@ export function DailyAttendanceTable({
         <Alert tone="info" className="items-center! py-1!">
           <div className="flex flex-wrap items-center gap-x-2">
             <span>
-              Tienes {pendingCount} {pendingCount === 1 ? 'incidencia' : 'incidencias'} del mes por
+              Tenés {pendingCount} {pendingCount === 1 ? 'incidencia' : 'incidencias'} del mes por
               justificar.
             </span>
             <Link
@@ -963,14 +963,14 @@ export function DailyAttendanceTable({
           size="sm"
           title="Todo en orden"
           description={
-            activeIndicator?.emptyMessage ?? 'Nadie necesita que hagas algo en este día.'
+            activeIndicator?.emptyMessage ?? 'Nadie necesita que hagás algo en este día.'
           }
         />
       ) : (
         <EmptyState
           icon={Users}
           title="No hay colaboradores activos en esta sucursal"
-          description="Verifica que existan contratos activos asignados a esta sucursal."
+          description="Verificá que existan contratos activos asignados a esta sucursal."
         />
       )}
 
