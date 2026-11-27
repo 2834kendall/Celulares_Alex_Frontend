@@ -54,7 +54,13 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DetalleEditForm } from './DetalleEditForm'
 import { RegistrarIncapacidadForm } from './RegistrarIncapacidadForm'
 import { ICON_CONTROL_BASE, ICON_CONTROL_TONES, IconButton } from '@/components/ui/IconButton'
-import { META_LABEL, TABLE_DESKTOP_WRAP, TABLE_TH, TABLE_TH_RIGHT } from '@/components/ui/styles'
+import {
+  META_LABEL,
+  TABLE_DESKTOP_WRAP,
+  TABLE_TH,
+  TABLE_TH_RIGHT,
+  TOQUE_AMPLIADO,
+} from '@/components/ui/styles'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
 
@@ -723,7 +729,7 @@ export function PeriodoDetail({
         type="button"
         onClick={() => setConfirmandoPago(d)}
         disabled={pagandoId === d.id}
-        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold outline-none ring-1 ring-inset transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
+        className={`${TOQUE_AMPLIADO} inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold outline-none ring-1 ring-inset transition active:scale-95 motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:cursor-not-allowed disabled:opacity-60 ${
           d.pagado
             ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100'
             : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'

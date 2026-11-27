@@ -18,6 +18,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
+import { TOQUE_AMPLIADO } from '@/components/ui/styles'
 import {
   META_LABEL,
   TABLE_DESKTOP_WRAP,
@@ -108,7 +109,7 @@ function BotonDetalle({ abierto, onClick }: { abierto: boolean; onClick: () => v
       type="button"
       onClick={onClick}
       aria-expanded={abierto}
-      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 outline-none transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+      className={`${TOQUE_AMPLIADO} inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 outline-none transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-500/60`}
     >
       {abierto ? 'Ocultar detalle' : 'Ver detalle'}
       <ChevronDown

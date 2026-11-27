@@ -147,3 +147,11 @@ export const TABLE_ROW_CLICKABLE = `cursor-pointer ${TABLE_ROW}`
 
 /** Spinner en linea (se usa junto a `Loader2` de lucide). */
 export const SPINNER = 'h-3.5 w-3.5 animate-spin'
+
+/**
+ * Área de toque de 44 px en pantallas táctiles para un control que se ve chico
+ * (un enlace de texto, una píldora): un ::after invisible extiende el blanco
+ * sin cambiar cómo se ve. El control necesita `relative` (ya va incluido).
+ */
+export const TOQUE_AMPLIADO =
+  "relative pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-3.5 pointer-coarse:after:content-['']"

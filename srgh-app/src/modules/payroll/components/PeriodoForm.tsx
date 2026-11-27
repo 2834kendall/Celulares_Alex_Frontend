@@ -18,14 +18,13 @@ import { createPeriodo } from '@/modules/payroll/actions/createPeriodo'
 import { MESES } from '@/modules/payroll/lib/format'
 import { rangoQuincena } from '@/modules/payroll/lib/fechas'
 import { Button } from '@/components/ui/Button'
-import { INPUT, LABEL, SPINNER } from '@/components/ui/styles'
+import { INPUT, LABEL, SPINNER, TOQUE_AMPLIADO } from '@/components/ui/styles'
 import { ControlledDateField } from '@/components/ui/ControlledDateField'
 import { ControlledSelectMenu, parseNumber } from '@/components/ui/SelectMenu'
 
 const ERROR_CLASSES = 'mt-1 text-[11px] font-medium text-rose-600'
 
-const BORRAR_FECHA =
-  'rounded text-[11px] font-semibold text-slate-500 outline-none transition hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-brand-500/60'
+const BORRAR_FECHA = `${TOQUE_AMPLIADO} rounded text-[11px] font-semibold text-slate-500 outline-none transition hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-brand-500/60`
 
 interface PeriodoFormProps {
   sucursales: CatalogoItem[]

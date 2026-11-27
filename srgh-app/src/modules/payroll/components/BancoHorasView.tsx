@@ -154,7 +154,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`rounded-lg px-3 py-1.5 transition ${
+            className={`pointer-coarse:min-h-11 rounded-lg px-3 py-1.5 transition ${
               tab === t.id
                 ? 'bg-white text-brand-700 shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
