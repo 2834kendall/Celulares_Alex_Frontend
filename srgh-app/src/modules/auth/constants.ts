@@ -15,7 +15,7 @@ export const brandConfig = {
 
 export const loginScreenContent = {
   title: 'SGRH',
-  subtitle: 'Gestion de talento, asistencia y planillas en un solo lugar.',
+  subtitle: 'Gestión de talento, asistencia y planillas en un solo lugar.',
   features: [
     { key: 'expedientes', label: 'Expedientes' },
     { key: 'asistencia', label: 'Asistencia' },

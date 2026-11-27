@@ -23,7 +23,7 @@ function getLoginMessage(error: AuthError) {
     return 'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
   }
 
-  return 'Credenciales invalidas.'
+  return 'Credenciales inválidas.'
 }
 
 /**
@@ -35,7 +35,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   const parsed = loginSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de acceso invalidos.' }
+    return { ok: false, error: 'Datos de acceso inválidos.' }
   }
 
   // Usuario de kiosco (SGRH-111): sin `@`, se busca el correo interno de su
@@ -55,7 +55,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
           'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
       }
     }
-    if (!kiosk) return { ok: false, error: 'Credenciales invalidas.' }
+    if (!kiosk) return { ok: false, error: 'Credenciales inválidas.' }
     email = kiosk.kio_email
   }
 
