@@ -51,7 +51,7 @@ describe('login (server action)', () => {
     const client = mockSupabase()
     const result = await login({ email: 'invalido@', password: '' })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de acceso invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos de acceso inválidos.' })
     expect(client.auth.signInWithPassword).not.toHaveBeenCalled()
   })
 
@@ -87,7 +87,7 @@ describe('login (server action)', () => {
 
       const result = await login({ email: 'nadie', password: 'secreto' })
 
-      expect(result).toEqual({ ok: false, error: 'Credenciales invalidas.' })
+      expect(result).toEqual({ ok: false, error: 'Credenciales inválidas.' })
       expect(client.auth.signInWithPassword).not.toHaveBeenCalled()
     })
 
@@ -179,7 +179,7 @@ describe('login (server action)', () => {
         { message: 'network error occurred' },
         'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
       ],
-      [{ message: 'Invalid login credentials' }, 'Credenciales invalidas.'],
+      [{ message: 'Invalid login credentials' }, 'Credenciales inválidas.'],
     ])('mapea %o a "%s"', async (signInError, expected) => {
       mockSupabase({ signInError })
       const result = await login(validInput)

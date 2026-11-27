@@ -35,9 +35,8 @@ export type GetUsersResult = { ok: true; data: UsuarioListItem[] } | { ok: false
 /**
  * Usuarios de la empresa con su estado real de acceso. Los datos de negocio
  * (rol, sucursal, vínculo, flags) salen de nuestras tablas vía RLS; el "nunca
- * inició sesión" y el último acceso solo los sabe Supabase Auth
- * (last_sign_in_at — usr_ultimo_acceso no lo actualiza nadie hoy), por eso se
- * cruza con listUsers() de la API admin.
+ * inició sesión" y el último acceso salen en paralelo desde la RPC
+ * `sgrh_usuarios_ultimo_acceso_empresa` acotada por empresa.
  */
 export async function getUsers(): Promise<GetUsersResult> {
   const claims = await requirePermission(PERMISOS.USUARIOS_WRITE)
@@ -48,44 +47,45 @@ export async function getUsers(): Promise<GetUsersResult> {
   }
 
   const supabase = await createClient()
+  const admin = createAdminClient()
 
-  const { data: asignaciones, error: uerError } = await supabase
-    .from('sgrh_usuarios_empresa_rol')
-    .select(
-      `
-      uer_rol_id,
-      uer_sucursal_id,
-      uer_activo,
-      sgrh_usuarios (
-        usr_id,
-        usr_email,
-        usr_activo,
-        usr_auth_id,
-        usr_empleado_id,
-        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
-      ),
-      sgrh_cat_roles ( rol_nombre ),
-      sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
-    `
-    )
-    .eq('uer_empresa_id', empresaId)
-    .returns<UerQueryRow[]>()
+  const [{ data: asignaciones, error: uerError }, { data: accessRows, error: accessError }] =
+    await Promise.all([
+      supabase
+        .from('sgrh_usuarios_empresa_rol')
+        .select(
+          `
+          uer_rol_id,
+          uer_sucursal_id,
+          uer_activo,
+          sgrh_usuarios (
+            usr_id,
+            usr_email,
+            usr_activo,
+            usr_auth_id,
+            usr_empleado_id,
+            sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2 )
+          ),
+          sgrh_cat_roles ( rol_nombre ),
+          sgrh_sucursales ( suc_nombre, sgrh_marcas_comerciales ( mco_nombre ) )
+        `
+        )
+        .eq('uer_empresa_id', empresaId)
+        .returns<UerQueryRow[]>(),
+      admin.rpc('sgrh_usuarios_ultimo_acceso_empresa', { p_empresa_id: empresaId }),
+    ])
 
   if (uerError) {
     return { ok: false, error: 'No se pudieron cargar los usuarios.' }
   }
 
-  const admin = createAdminClient()
-  const { data: authData, error: authError } = await admin.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  })
-
-  if (authError) {
+  if (accessError) {
     return { ok: false, error: 'No se pudo consultar el estado de acceso de los usuarios.' }
   }
 
-  const authPorId = new Map(authData.users.map((user) => [user.id, user]))
+  const ultimoAccesoPorAuthId = new Map<string, string | null>(
+    (accessRows ?? []).map((row) => [row.usr_auth_id, row.last_sign_in_at ?? null])
+  )
 
   // Un usuario a cargo de varias sucursales aparece como varias filas uer
   // (misma empresa, mismo rol, distinta sucursal): se agrupan por usr_id
@@ -105,8 +105,9 @@ export async function getUsers(): Promise<GetUsersResult> {
     .map((filas) => {
       const primera = filas[0]
       const usuario = primera.sgrh_usuarios!
-      const authUser = usuario.usr_auth_id ? authPorId.get(usuario.usr_auth_id) : undefined
-      const ultimoAcceso = authUser?.last_sign_in_at ?? null
+      const ultimoAcceso = usuario.usr_auth_id
+        ? (ultimoAccesoPorAuthId.get(usuario.usr_auth_id) ?? null)
+        : null
 
       let estado: UsuarioEstado
       if (!usuario.usr_activo || !primera.uer_activo) {

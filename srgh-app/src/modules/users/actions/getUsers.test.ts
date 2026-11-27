@@ -40,12 +40,19 @@ function uerRow(overrides: Record<string, unknown> = {}, usuario: Record<string,
 
 function mockClients(
   uerResult: { data: unknown; error: unknown },
-  listUsersResult?: { data: { users: unknown[] }; error: unknown }
+  accessRpcResult: { data: unknown; error: unknown } = { data: [], error: null }
 ) {
   const session = createSupabaseClientMock({ sgrh_usuarios_empresa_rol: uerResult })
   mockCreateClient.mockResolvedValue(session as unknown as Awaited<ReturnType<typeof createClient>>)
 
-  const admin = createSupabaseAdminClientMock({}, { listUsersResult })
+  const admin = createSupabaseAdminClientMock(
+    {},
+    {
+      rpcResponses: {
+        sgrh_usuarios_ultimo_acceso_empresa: accessRpcResult,
+      },
+    }
+  )
   mockCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>)
   return { session, admin }
 }
@@ -82,8 +89,8 @@ describe('getUsers (server action)', () => {
     expect(result).toEqual({ ok: false, error: 'No se pudieron cargar los usuarios.' })
   })
 
-  it('devuelve error si listUsers falla', async () => {
-    mockClients({ data: [uerRow()], error: null }, { data: { users: [] }, error: { message: 'x' } })
+  it('devuelve error si sgrh_usuarios_ultimo_acceso_empresa falla', async () => {
+    mockClients({ data: [uerRow()], error: null }, { data: null, error: { message: 'x' } })
 
     const result = await getUsers()
 
@@ -93,11 +100,11 @@ describe('getUsers (server action)', () => {
     })
   })
 
-  it('cruza nuestras tablas con Auth para calcular el estado', async () => {
-    const authUsers = [
-      { id: 'auth-ana', last_sign_in_at: '2026-07-01T10:00:00Z' },
-      { id: 'auth-luis', last_sign_in_at: null },
-      { id: 'auth-eva', last_sign_in_at: '2026-06-01T10:00:00Z' },
+  it('usa sgrh_usuarios_ultimo_acceso_empresa (nunca listUsers) para calcular el estado', async () => {
+    const accessRows = [
+      { usr_auth_id: 'auth-ana', last_sign_in_at: '2026-07-01T10:00:00Z' },
+      { usr_auth_id: 'auth-luis', last_sign_in_at: null },
+      { usr_auth_id: 'auth-eva', last_sign_in_at: '2026-06-01T10:00:00Z' },
     ]
     const rows = [
       uerRow(),
@@ -116,15 +123,19 @@ describe('getUsers (server action)', () => {
         { usr_id: 9, usr_email: 'eva@empresa.com', usr_auth_id: 'auth-eva' }
       ),
     ]
-    mockClients({ data: rows, error: null }, { data: { users: authUsers }, error: null })
+    const { admin } = mockClients({ data: rows, error: null }, { data: accessRows, error: null })
 
     const result = await getUsers()
+
+    expect(admin.rpc).toHaveBeenCalledWith('sgrh_usuarios_ultimo_acceso_empresa', {
+      p_empresa_id: 1,
+    })
+    expect(admin.auth.admin.listUsers).not.toHaveBeenCalled()
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
     const porEmail = new Map(result.data.map((u) => [u.email, u]))
-    // Activo: flags propios en true + Auth registra un inicio de sesión.
     expect(porEmail.get('ana@empresa.com')).toMatchObject({
       estado: 'activo',
       ultimo_acceso: '2026-07-01T10:00:00Z',
@@ -132,19 +143,17 @@ describe('getUsers (server action)', () => {
       rol_nombre: 'Empleado',
       sucursales: [{ id: 2, nombre: 'Central' }],
     })
-    // Pendiente: solo Auth puede decirlo (nunca ha iniciado sesión).
     expect(porEmail.get('luis@empresa.com')).toMatchObject({
       estado: 'pendiente',
       empleado_nombre: null,
     })
-    // Desactivado: sale de NUESTROS flags aunque Auth tenga accesos previos.
     expect(porEmail.get('eva@empresa.com')).toMatchObject({ estado: 'desactivado' })
   })
 
   it('marca pendiente al usuario sin auth user vinculado', async () => {
     mockClients(
       { data: [uerRow({}, { usr_auth_id: null })], error: null },
-      { data: { users: [] }, error: null }
+      { data: [], error: null }
     )
 
     const result = await getUsers()
@@ -159,7 +168,7 @@ describe('getUsers (server action)', () => {
       uerRow({ uer_sucursal_id: 2, sgrh_sucursales: { suc_nombre: 'Central' } }),
       uerRow({ uer_sucursal_id: 3, sgrh_sucursales: { suc_nombre: 'Escazu' } }),
     ]
-    mockClients({ data: rows, error: null }, { data: { users: [] }, error: null })
+    mockClients({ data: rows, error: null }, { data: [], error: null })
 
     const result = await getUsers()
 
@@ -179,7 +188,7 @@ describe('getUsers (server action)', () => {
   it('un usuario a nivel empresa (uer_sucursal_id null) queda con sucursales vacio', async () => {
     mockClients(
       { data: [uerRow({ uer_sucursal_id: null, sgrh_sucursales: null })], error: null },
-      { data: { users: [] }, error: null }
+      { data: [], error: null }
     )
 
     const result = await getUsers()
@@ -198,7 +207,7 @@ describe('getUsers (server action)', () => {
         ],
         error: null,
       },
-      { data: { users: [] }, error: null }
+      { data: [], error: null }
     )
 
     const result = await getUsers()

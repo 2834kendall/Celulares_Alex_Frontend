@@ -101,7 +101,7 @@ export function SetPasswordForm({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6 font-sans text-slate-800">
+    <main className="login-screen flex min-h-screen items-center justify-center bg-slate-50 p-6 font-sans text-slate-800">
       <div className="w-full max-w-md">
         <div className="space-y-7 rounded-2xl border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/60 md:p-10">
           <div>
@@ -112,11 +112,13 @@ export function SetPasswordForm({
                 {brandConfig.logo}
               </span>
               <div className="leading-tight">
-                <h2 className="text-lg font-extrabold text-slate-900">{brandConfig.systemName}</h2>
+                <h2 className="text-lg font-extrabold text-(--login-ink)">
+                  {brandConfig.systemName}
+                </h2>
                 <p className="text-[11px] text-slate-500">{brandConfig.tagline}</p>
               </div>
             </div>
-            <h3 className="text-2xl font-black text-slate-900">{title}</h3>
+            <h3 className="text-2xl font-black text-(--login-ink)">{title}</h3>
             <p className="mt-1.5 text-sm text-slate-500">{description}</p>
           </div>
 
@@ -145,7 +147,7 @@ export function SetPasswordForm({
                   aria-expanded={mostrarRequisitos}
                   aria-controls="password-requisitos"
                   aria-label="Ver requisitos de la contraseña"
-                  className="rounded-full text-slate-400 transition hover:text-slate-600"
+                  className="rounded-full text-slate-400 transition hover:text-brand-600"
                 >
                   <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -167,7 +169,7 @@ export function SetPasswordForm({
                   onClick={() => setShowPassword((visible) => !visible)}
                   disabled={isSubmitting}
                   aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition hover:text-slate-600 disabled:cursor-not-allowed"
+                  className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition hover:text-brand-600 disabled:cursor-not-allowed"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

@@ -99,6 +99,12 @@ describe('<ActivateAccountForm />', () => {
     )
   })
 
+  it('aplica la paleta de marca del sistema (.login-screen)', () => {
+    const { container } = render(<ActivateAccountForm email="ana@empresa.com" />)
+
+    expect(container.querySelector('main')).toHaveClass('login-screen')
+  })
+
   it('permite mostrar y ocultar la contraseña', async () => {
     render(<ActivateAccountForm email="ana@empresa.com" />)
     const user = userEvent.setup()

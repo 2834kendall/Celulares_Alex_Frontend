@@ -18,7 +18,7 @@ interface ExpiredLinkProps {
  */
 export function ExpiredLink({ title, description, ctaHref, ctaLabel }: ExpiredLinkProps) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6 font-sans text-slate-800">
+    <main className="login-screen flex min-h-screen items-center justify-center bg-slate-50 p-6 font-sans text-slate-800">
       <div className="w-full max-w-md space-y-6 rounded-2xl border border-slate-100 bg-white p-8 text-center shadow-xl shadow-slate-200/60 md:p-10">
         <div className="flex items-center justify-center gap-2.5">
           <span
@@ -27,7 +27,7 @@ export function ExpiredLink({ title, description, ctaHref, ctaLabel }: ExpiredLi
             {brandConfig.logo}
           </span>
           <div className="text-left leading-tight">
-            <h2 className="text-lg font-extrabold text-slate-900">{brandConfig.systemName}</h2>
+            <h2 className="text-lg font-extrabold text-(--login-ink)">{brandConfig.systemName}</h2>
             <p className="text-[11px] text-slate-500">{brandConfig.tagline}</p>
           </div>
         </div>
@@ -36,7 +36,7 @@ export function ExpiredLink({ title, description, ctaHref, ctaLabel }: ExpiredLi
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
             <MailX className="h-6 w-6" />
           </div>
-          <h1 className="text-xl font-black text-slate-900">{title}</h1>
+          <h1 className="text-xl font-black text-(--login-ink)">{title}</h1>
           <p className="text-sm leading-relaxed text-slate-500">{description}</p>
         </div>
 

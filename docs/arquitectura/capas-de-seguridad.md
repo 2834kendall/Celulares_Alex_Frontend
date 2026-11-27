@@ -24,9 +24,9 @@ El frontend nunca es la única línea de defensa: es defensa en profundidad.
 
 | capa            | responsabilidad                                                   | dónde vive                                                                | qué NO hace                                                  |
 | --------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| **Proxy**       | autenticación: sin sesión, redirige a `/login`                    | `src/proxy.ts` + `lib/supabase/proxy.ts`                                  | no valida permisos ni roles                                  |
-| **Layout**      | lee y valida los claims del token con `supabase.auth.getClaims()` | `app/(dashboard)/layout.tsx`                                              | no consulta a Auth en cada request si la sesión fue revocada |
-| **Guard**       | autorización por permiso, antes de renderizar o escribir          | `lib/auth/require-permission.ts`, en cada `page.tsx` y cada Server Action | no oculta botones: eso es UI                                 |
+| **Proxy**       | autenticación y vigencia de sesión (`sgrh_sesion_vigente()`): sin sesión viva, limpia cookies y redirige a `/login` | `src/proxy.ts` + `lib/supabase/proxy.ts`                                  | no valida permisos ni roles                                  |
+| **Layout**      | valida claims y vigencia de sesión en paralelo (`isSessionActive()`) | `app/(dashboard)/layout.tsx`                                              | no reemplaza la autorización granular por permiso            |
+| **Guard**       | autorización por permiso y sesión activa (`getActiveSessionClaims()`), antes de renderizar o escribir | `lib/auth/require-permission.ts`, en cada `page.tsx` y cada Server Action | no oculta botones: eso es UI                                 |
 | **RLS**         | la última línea: protege filas aunque alguien rodee la UI         | Postgres                                                                  | no da feedback de UX, solo bloquea                           |
 | `usePermisos()` | muestra u oculta elementos dentro de una página ya autorizada     | `hooks/usePermisos.ts`                                                    | **no es seguridad**, es UX                                   |
 

@@ -1,17 +1,16 @@
-import { createClient } from '@/lib/supabase/server'
+import { getActiveSessionClaims } from '@/lib/auth/session-active'
 import { expiredLinkContent } from '@/modules/auth/constants'
 import { ActivateAccountForm } from '@/modules/auth/components/ActivateAccountForm'
 import { ExpiredLink } from '@/modules/auth/components/ExpiredLink'
 
 export default async function ActivateAccountPage() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
+  const claims = await getActiveSessionClaims()
 
-  // Sin sesión no hay a quién ponerle contraseña: el token de la invitación
-  // era inválido o ya venció (aquí redirige /auth/confirm en ese caso).
-  if (!data?.claims) {
+  // Sin sesión vigente no hay a quién ponerle contraseña: el token era
+  // inválido, venció o la cuenta fue desactivada antes de activarla.
+  if (!claims) {
     return <ExpiredLink {...expiredLinkContent.invite} />
   }
 
-  return <ActivateAccountForm email={data.claims.email ?? ''} />
+  return <ActivateAccountForm email={claims.email ?? ''} />
 }

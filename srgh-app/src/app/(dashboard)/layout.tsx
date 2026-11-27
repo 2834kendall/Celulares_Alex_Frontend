@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { isSessionActive } from '@/lib/auth/session-active'
 import { AppShell } from '@/components/layout/AppShell'
 import { getEmpresaNombre } from '@/lib/empresa/get-empresa-nombre'
 import { resolveShellTheme } from '@/lib/empresa/resolve-shell-theme'
@@ -42,12 +43,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // o, sin selector, la propia (sucursal de la cuenta o del contrato vigente); sin
   // marca, el tema de la empresa. El rol se muestra por su nombre: el código del
   // JWT es un identificador, no un texto.
-  const [empresaNombre, theme, formatoHora, rol] = await Promise.all([
+  // Validar vigencia de sesión en paralelo con las lecturas de shell (0 ms
+  // extra en serie; las 4 lecturas ya pasan por RLS con sesion_activa()).
+  const [sessionActive, empresaNombre, theme, formatoHora, rol] = await Promise.all([
+    isSessionActive(),
     getEmpresaNombre(),
     resolveShellTheme(meta.usr_id, meta.emp_id),
     getFormatoHora(),
     getRolNombre(typeof meta.rol === 'string' ? meta.rol : null),
   ])
+
+  if (!sessionActive) {
+    redirect('/login')
+  }
+
   // Depende de la marca resuelta: el logo de la marca, o el de la empresa.
   const logoUrl = await getEmpresaLogoUrl(theme.logoPath)
 

@@ -10,6 +10,7 @@ const VALID_INPUT = { password: 'Secreto1234!', confirmPassword: 'Secreto1234!' 
 
 function mockAuth({
   claims = { app_metadata: { permisos: ['EMPLEADOS_READ'] } } as unknown,
+  sessionActive = true,
   updateError = null as unknown,
 } = {}) {
   const client = {
@@ -17,6 +18,7 @@ function mockAuth({
       getClaims: vi.fn(async () => ({ data: claims ? { claims } : null })),
       updateUser: vi.fn(async () => ({ data: {}, error: updateError })),
     },
+    rpc: vi.fn(async () => ({ data: sessionActive, error: null })),
   }
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
@@ -36,6 +38,18 @@ describe('activateAccount (server action)', () => {
 
   it('avisa cuando el enlace no dejó sesión (expirado)', async () => {
     const client = mockAuth({ claims: null })
+
+    const result = await activateAccount(VALID_INPUT)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'El enlace de activación expiró. Solicite que le reenvíen la invitación.',
+    })
+    expect(client.auth.updateUser).not.toHaveBeenCalled()
+  })
+
+  it('rechaza si el usuario fue desactivado o su sesión fue revocada en BD', async () => {
+    const client = mockAuth({ sessionActive: false })
 
     const result = await activateAccount(VALID_INPUT)
 

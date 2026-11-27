@@ -5,7 +5,7 @@ import { env } from '@/lib/env'
 import { sessionCookieOptions } from '@/lib/supabase/cookieOptions'
 
 export async function updateSession(request: NextRequest) {
-  const supabaseResponse = NextResponse.next({
+  let supabaseResponse = NextResponse.next({
     request,
   })
 
@@ -19,7 +19,11 @@ export async function updateSession(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-
+          const prevCookies = supabaseResponse.cookies.getAll()
+          supabaseResponse = NextResponse.next({
+            request,
+          })
+          prevCookies.forEach((cookie) => supabaseResponse.cookies.set(cookie))
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           )
@@ -30,8 +34,28 @@ export async function updateSession(request: NextRequest) {
   )
 
   const { data: claimsData } = await supabase.auth.getClaims()
-  const claims = claimsData?.claims
-  const hasSession = !!claims
+  let claims = claimsData?.claims
+  let hasSession = !!claims
+
+  // Un JWT ya emitido sigue siendo criptográficamente válido hasta `exp`
+  // aunque el usuario haya sido desactivado o sus sesiones revocadas. Validamos
+  // contra Postgres en cada navegación autenticada y limpiamos cookies locales
+  // si dejó de estar vigente para cortar el acceso y evitar bucles con /login.
+  if (hasSession) {
+    let sessionValid = false
+    try {
+      const { data: active, error: activeError } = await supabase.rpc('sgrh_sesion_vigente')
+      sessionValid = !activeError && active === true
+    } catch {
+      sessionValid = false
+    }
+
+    if (!sessionValid) {
+      await supabase.auth.signOut({ scope: 'local' })
+      claims = undefined
+      hasSession = false
+    }
+  }
 
   // El rol decide el destino, no solo el hecho de tener sesion. KIOSCO es un
   // dispositivo compartido con sesion permanente: si aterriza en /dashboard

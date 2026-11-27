@@ -1,17 +1,16 @@
-import { createClient } from '@/lib/supabase/server'
+import { getActiveSessionClaims } from '@/lib/auth/session-active'
 import { expiredLinkContent } from '@/modules/auth/constants'
 import { ExpiredLink } from '@/modules/auth/components/ExpiredLink'
 import { ResetPasswordForm } from '@/modules/auth/components/ResetPasswordForm'
 
 export default async function ResetPasswordPage() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
+  const claims = await getActiveSessionClaims()
 
-  // Sin sesión no hay a quién cambiarle la contraseña: el token del correo
-  // era inválido, ya se usó o venció (aquí redirige /auth/confirm en ese caso).
-  if (!data?.claims) {
+  // Sin sesión vigente no hay a quién cambiarle la contraseña: el token era
+  // inválido, ya se usó, venció o la cuenta fue desactivada.
+  if (!claims) {
     return <ExpiredLink {...expiredLinkContent.recovery} />
   }
 
-  return <ResetPasswordForm email={data.claims.email ?? ''} />
+  return <ResetPasswordForm email={claims.email ?? ''} />
 }

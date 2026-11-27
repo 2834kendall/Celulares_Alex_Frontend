@@ -1,11 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
+import { getActiveSessionClaims } from '@/lib/auth/session-active'
 import { AccessDenied } from '@/modules/auth/components/AccessDenied'
 import { accessExit } from '@/modules/auth/lib/accessExit'
 
 export default async function UnauthorizedPage() {
-  // Solo para elegir la salida (ver accessExit): la pagina no muestra datos.
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
+  // Solo para elegir la salida (ver accessExit): si la sesión fue revocada,
+  // ofrece "Iniciar sesión" en lugar de "Cerrar sesión".
+  const claims = await getActiveSessionClaims()
 
-  return <AccessDenied exit={accessExit(data?.claims)} />
+  return <AccessDenied exit={accessExit(claims)} />
 }

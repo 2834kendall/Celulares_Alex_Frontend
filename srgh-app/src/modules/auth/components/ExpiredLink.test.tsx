@@ -4,6 +4,12 @@ import { ExpiredLink } from './ExpiredLink'
 import { expiredLinkContent } from '@/modules/auth/constants'
 
 describe('<ExpiredLink />', () => {
+  it('aplica la paleta de marca del sistema (.login-screen)', () => {
+    const { container } = render(<ExpiredLink {...expiredLinkContent.invite} />)
+
+    expect(container.querySelector('main')).toHaveClass('login-screen')
+  })
+
   it('explica la invitación vencida y ofrece volver al login', () => {
     render(<ExpiredLink {...expiredLinkContent.invite} />)
 

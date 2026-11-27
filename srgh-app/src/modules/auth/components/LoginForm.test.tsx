@@ -129,12 +129,12 @@ describe('<LoginForm />', () => {
   })
 
   it('muestra el mensaje de error que devuelve la action', async () => {
-    mockLogin.mockResolvedValue({ ok: false, error: 'Credenciales invalidas.' })
+    mockLogin.mockResolvedValue({ ok: false, error: 'Credenciales inválidas.' })
     render(<LoginForm />)
 
     await fillAndSubmit()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Credenciales invalidas.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Credenciales inválidas.')
     expect(replace).not.toHaveBeenCalled()
   })
 

@@ -191,6 +191,12 @@ describe('<ResetPasswordForm />', () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'))
   })
 
+  it('aplica la paleta de marca del sistema (.login-screen)', () => {
+    const { container } = render(<ResetPasswordForm email="ana@empresa.com" />)
+
+    expect(container.querySelector('main')).toHaveClass('login-screen')
+  })
+
   it('permite mostrar y ocultar la contraseña', async () => {
     render(<ResetPasswordForm email="ana@empresa.com" />)
     const user = userEvent.setup()

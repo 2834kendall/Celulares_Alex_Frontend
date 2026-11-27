@@ -3527,6 +3527,10 @@ export type Database = {
         }
         Returns: string
       }
+      sgrh_revoke_user_sessions: {
+        Args: { p_auth: string }
+        Returns: undefined
+      }
       sgrh_save_branch: {
         Args: {
           p_actor: string
@@ -3551,6 +3555,14 @@ export type Database = {
           p_permisos: string[]
         }
         Returns: number
+      }
+      sgrh_sesion_vigente: { Args: never; Returns: boolean }
+      sgrh_usuarios_ultimo_acceso_empresa: {
+        Args: { p_empresa_id: number }
+        Returns: {
+          last_sign_in_at: string | null
+          usr_auth_id: string
+        }[]
       }
       sucursal_visible: { Args: { p_sucursal_id: number }; Returns: boolean }
       terminar_contrato: {

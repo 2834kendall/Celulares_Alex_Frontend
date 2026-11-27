@@ -25,11 +25,14 @@ Ruta: tab "Usuarios" dentro de `/employees` (`?tab=usuarios`), con `USUARIOS_WRI
 
 ## Reglas de negocio
 
-- **Desactivar no borra filas.** Banea al usuario en Supabase Auth y apaga `usr_activo` y
-  `uer_activo`. El despido, como evento de negocio, vive en el historial laboral.
+- **Desactivar no borra filas.** Revoca las sesiones activas de inmediato
+  (`sgrh_revoke_user_sessions`) y apaga `uer_activo` en la empresa actual; si el usuario no
+  conserva asignaciones activas en otras empresas, además lo banea en Supabase Auth y apaga
+  `usr_activo`. El despido, como evento de negocio, vive en el historial laboral.
 - **Estado de cada usuario** (`activo` / `pendiente` / `desactivado`): se cruzan los flags
-  propios con `listUsers()` de Auth, de donde sale `last_sign_in_at`. **La columna
-  `usr_ultimo_acceso` no la actualiza nadie: no confiar en ella.**
+  propios con la RPC `sgrh_usuarios_ultimo_acceso_empresa` acotada por empresa, de donde sale
+  `last_sign_in_at` sin depender de `listUsers()`. **La columna `usr_ultimo_acceso` no la
+  actualiza nadie: no confiar en ella.**
 - **El alcance lo decide la sucursal de la asignación** (`uer_sucursal_id`), no el rol.
   `NULL` = sin restricción de sucursal. Roles y alcance: tabla en
   [RLS y alcance](../../../supabase/docs/rls-y-alcance.md).

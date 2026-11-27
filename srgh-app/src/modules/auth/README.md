@@ -37,8 +37,10 @@ Rutas: `/login`, `/forgot-password`, `/auth/confirm` (route handler), `/activate
 
 Compartido entre los dos: `SetPasswordForm` (la pantalla), `lib/updatePassword.ts` (la Server
 Action) y `ExpiredLink` (enlace vencido; los textos de cada flujo están en `constants.ts`).
-`setPasswordSchema` es la única regla de contraseñas; `activateAccountSchema` y
-`resetPasswordSchema` son alias suyos.
+Todas las pantallas de acceso (`/login`, `/forgot-password`, `/activate-account`,
+`/reset-password`, `ExpiredLink` y `PublicStateScreen`) comparten la paleta del sistema
+(`.login-screen`). `setPasswordSchema` es la única regla de contraseñas; `activateAccountSchema`
+y `resetPasswordSchema` son alias suyos.
 
 ## Reglas de negocio
 
@@ -67,5 +69,10 @@ Action) y `ExpiredLink` (enlace vencido; los textos de cada flujo están en `con
   sesión en el _fragmento_ de la URL (`#access_token=…`), que el servidor nunca ve. Con
   `@supabase/ssr` (sesión en cookies) es un callejón sin salida. Siempre `token_hash` +
   `verifyOtp` en un route handler.
+- **Validación de sesión viva:** cuando hay sesión, `proxy.ts`, `DashboardLayout`,
+  `requirePermission()` (`lib/auth/session-active.ts` con `React.cache`) y los helpers RLS
+  verifican en Postgres (`sgrh_sesion_vigente()` → `sgrh_private.sesion_activa()`) que la
+  sesión siga activa y sin ban ni desactivación; si fue revocada, el proxy limpia las cookies
+  localmente y expulsa a `/login` en la siguiente petición.
 - **Cobertura 100 % obligatoria** en `modules/auth/**` y `lib/auth/**` (`vitest.config.ts`).
   Si tocás algo acá, corré `pnpm test:coverage` antes de darlo por cerrado.
