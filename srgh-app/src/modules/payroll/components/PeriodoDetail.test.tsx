@@ -367,7 +367,7 @@ describe('PeriodoDetail: confirmar antes de pagar o desmarcar', () => {
 
     await userEvent.click(botonEstado('Pendiente'))
 
-    const dialogo = screen.getByRole('alertdialog', { name: '¿Desea pagarle a Ana Mora?' })
+    const dialogo = screen.getByRole('alertdialog', { name: '¿Querés pagarle a Ana Mora?' })
     expect(dialogo).toHaveTextContent(
       `Se registrará el pago de ${monto(356680)} a Ana Mora y se le enviará el comprobante en PDF a ana@correo.com.`
     )
@@ -702,7 +702,7 @@ describe('PeriodoDetail: pagar a todos', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Pagar a todos' }))
     const dialogo = screen.getByRole('alertdialog', {
-      name: '¿Desea pagarle a los 2 empleado(s) que faltan?',
+      name: '¿Querés pagarle a los 2 empleado(s) que faltan?',
     })
     expect(dialogo).toHaveTextContent(monto(150000))
     await userEvent.click(within(dialogo).getByRole('button', { name: 'Sí, pagar a todos' }))

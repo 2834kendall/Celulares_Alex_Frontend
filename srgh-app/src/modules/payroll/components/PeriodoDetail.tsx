@@ -237,7 +237,7 @@ function textoCuenta(d: DetalleNominaItem): string {
   if (d.numeroCuenta) {
     return `${d.bancoNombre ? d.bancoNombre + ' · ' : ''}${formatIban(d.numeroCuenta)}`
   }
-  if (d.cuentaIlegible) return 'Cuenta registrada, ilegible — avisa a soporte'
+  if (d.cuentaIlegible) return 'Cuenta registrada, ilegible — avisá a soporte'
   return 'Sin cuenta IBAN registrada'
 }
 
@@ -1618,7 +1618,7 @@ export function PeriodoDetail({
           title={
             confirmandoPago.pagado
               ? `¿Volver a editar el pago de ${confirmandoPago.empleadoNombre}?`
-              : `¿Desea pagarle a ${confirmandoPago.empleadoNombre}?`
+              : `¿Querés pagarle a ${confirmandoPago.empleadoNombre}?`
           }
           message={mensajeConfirmacionPago(confirmandoPago, correoConfigurado)}
           confirmLabel={confirmandoPago.pagado ? 'Desmarcar pago' : 'Sí, pagar'}
@@ -1630,7 +1630,7 @@ export function PeriodoDetail({
 
       {confirmandoPagarTodos && (
         <ConfirmDialog
-          title={`¿Desea pagarle a los ${pendientesDePago.length} empleado(s) que faltan?`}
+          title={`¿Querés pagarle a los ${pendientesDePago.length} empleado(s) que faltan?`}
           message={`${
             pendientesDePago.every((d) => d.totalAPagar === 0)
               ? 'Todas estas filas están en ₡0: solo se pagan las que tengan el ₡0 justificado (incapacidad, ausencia sin goce, no vino ningún día) y las demás quedan sin pagar. Si falta el salario en algún contrato, corregilo y usá "Recalcular desde asistencia" antes. Se intentará pagar a'

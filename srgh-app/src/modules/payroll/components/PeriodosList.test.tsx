@@ -117,7 +117,7 @@ describe('<PeriodosList /> tarjetas de filtro', () => {
     await userEvent.click(screen.getByRole('button', { name: /Eliminar Enero/ }))
 
     expect(
-      screen.getByRole('alertdialog', { name: '¿Desea eliminar este periodo?' })
+      screen.getByRole('alertdialog', { name: '¿Querés eliminar este periodo?' })
     ).toBeInTheDocument()
     expect(deletePeriodo).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Sí, eliminar' })).toBeInTheDocument()

@@ -553,7 +553,7 @@ function validarProcedencia(
 
   if (!meta || meta.celda(1, 2) !== META_VERSION) {
     return error(
-      'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descargá la plantilla de este periodo y volvve a intentar.'
+      'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descargá la plantilla de este periodo y volvé a intentar.'
     )
   }
 

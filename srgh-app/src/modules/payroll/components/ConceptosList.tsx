@@ -95,7 +95,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
           </span>{' '}
           (ingreso o deducción de monto manual) salen como una columna que se llena a mano; los
           demás (% del bruto, horas extra automático) se calculan solos, igual que en la edición
-          manual. Si desactivas un concepto, deja de aparecer en la próxima planilla.
+          manual. Si desactivás un concepto, deja de aparecer en la próxima planilla.
         </TextoPlegable>
       </div>
 

@@ -80,7 +80,7 @@ describe('<AguinaldoTab />', () => {
     await user.click(tabla().getByRole('button', { name: 'Pagar' }))
     // Antes de pagar pregunta, y dice adónde va el comprobante.
     const dialogo = screen.getByRole('alertdialog', {
-      name: '¿Desea pagarle el aguinaldo a Ana Pérez?',
+      name: '¿Querés pagarle el aguinaldo a Ana Pérez?',
     })
     expect(dialogo).toHaveTextContent('se le enviará el comprobante en PDF a ana@correo.com')
     expect(mockPagar).not.toHaveBeenCalled()

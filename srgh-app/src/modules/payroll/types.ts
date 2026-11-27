@@ -280,7 +280,7 @@ export const crearPeriodoSchema = z
     npe_sucursal_id: z
       .number({ error: 'La sucursal es obligatoria' })
       .int()
-      .positive('Debe seleccionar una sucursal válida')
+      .positive('Seleccioná una sucursal válida')
       .nullable(),
 
     npe_periodo_mes: z

@@ -349,7 +349,7 @@ export function LiquidacionesHistorial({
 
       {confirmando && (
         <ConfirmDialog
-          title={`¿Desea pagarle la liquidación a ${confirmando.empleadoNombre}?`}
+          title={`¿Querés pagarle la liquidación a ${confirmando.empleadoNombre}?`}
           message={`${mensajeConfirmarPago(
             `Se registrará el pago de ${formatCRC(confirmando.neto)} netos`,
             confirmando.empleadoEmail,
