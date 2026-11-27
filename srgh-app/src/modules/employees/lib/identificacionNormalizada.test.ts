@@ -7,6 +7,10 @@ const MIGRACION = readFileSync(
   'supabase/migrations/20261126130000_identificacion_normalizada.sql',
   'utf8'
 )
+const GRANT_SERVICE_ROLE = readFileSync(
+  'supabase/migrations/20261127030000_identificacion_en_uso_service_role.sql',
+  'utf8'
+)
 
 describe('identificación normalizada (migración)', () => {
   let db: PGlite
@@ -16,6 +20,7 @@ describe('identificación normalizada (migración)', () => {
     await db.exec(`
       CREATE ROLE anon NOLOGIN;
       CREATE ROLE authenticated NOLOGIN;
+      CREATE ROLE service_role NOLOGIN;
       CREATE TABLE public.sgrh_empleados (
         emp_id int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         emp_numero_identificacion varchar NOT NULL UNIQUE
@@ -24,6 +29,7 @@ describe('identificación normalizada (migración)', () => {
         VALUES ('1-3000-0300'), ('PC-20260926'), ('134f');
     `)
     await db.exec(MIGRACION)
+    await db.exec(GRANT_SERVICE_ROLE)
   }, 30_000)
 
   afterAll(async () => {
@@ -68,6 +74,13 @@ describe('identificación normalizada (migración)', () => {
     expect(await uso('130000300')).toBe(true)
     expect(await uso('pc 20260926')).toBe(true)
     expect(await uso('2-0000-0000')).toBe(false)
+  })
+
+  it('el cliente admin (service_role) puede usar la consulta del aviso', async () => {
+    const { rows } = await db.query<{ puede: boolean }>(
+      "SELECT has_function_privilege('service_role', 'public.identificacion_en_uso(text)', 'EXECUTE') AS puede"
+    )
+    expect(rows[0].puede).toBe(true)
   })
 
   it('la consulta del aviso no queda abierta para anon', async () => {
