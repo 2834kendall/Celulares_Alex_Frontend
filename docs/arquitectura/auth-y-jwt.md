@@ -41,14 +41,17 @@ La RLS necesita saber empresa, empleado y permisos en **cada** consulta.
 
 `public.custom_access_token_hook` los inyecta en `app_metadata` al emitir el token:
 
-| claim         | para qué                                                                               |
-| ------------- | -------------------------------------------------------------------------------------- |
-| `empresa_id`  | aislamiento por empresa en todas las policies                                          |
-| `sucursal_id` | alcance por sucursal. `NULL` = sin restricción                                         |
-| `emp_id`      | "es mío" sin subconsultas anidadas por fila, crítico en tablas grandes como las marcas |
-| `rol`         | informativo; **las policies no comparan nombres de rol**                               |
-| `permisos`    | array que lee `tiene_permiso()` en memoria, y que usa la UI sin consultar              |
+| claim          | para qué                                                                               |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `empresa_id`   | aislamiento por empresa en todas las policies                                          |
+| `sucursal_ids` | array de sucursales visibles. `NULL` = sin restricción                                 |
+| `emp_id`       | "es mío" sin subconsultas anidadas por fila, crítico en tablas grandes como las marcas |
+| `rol`          | informativo; **las policies no comparan nombres de rol**                               |
+| `permisos`     | array que lee `tiene_permiso()` en memoria, y que usa la UI sin consultar              |
 
+- El hook filtra usuarios activos (`usr_activo = true`) y roles activos
+  (`rol_activo = true OR rol_codigo = 'KIOSCO'`); si no hay rol o usuario activo, limpia los
+  claims de negocio (`rol: 'SIN_ROL'`, `permisos: []`).
 - El hook es `VOLATILE` (Supabase lo exige) y corre como `supabase_auth_admin`, que necesita
   grants explícitos sobre `public`. Sin ellos falla **en silencio** y el token sale sin claims.
 - **Activarlo es un paso manual en el Dashboard** que no viaja en las migraciones. Sin él,
@@ -57,20 +60,24 @@ La RLS necesita saber empresa, empleado y permisos en **cada** consulta.
 
 ## Helpers que leen el token
 
-`get_empresa_id()`, `get_sucursal_id()`, `get_emp_id()`, `tiene_permiso()` y
-`sucursal_visible()` (`20260101000400_funciones_auth.sql`).
+`get_empresa_id()`, `get_sucursal_ids()`, `get_emp_id()`, `get_usr_id()`, `get_rol()`,
+`tiene_permiso()` y `sucursal_visible()` (`20261127065500_usuarios_acceso_hardening.sql`),
+respaldados por `sgrh_private.sesion_activa()`.
 
 - Viven en `public` porque Supabase no permite crear funciones en `auth`.
-- Son `STABLE`: Postgres los evalúa una vez por consulta, no por fila.
+- Son `STABLE`: Postgres los evalúa una vez por consulta, no por fila, validando en cada
+  sentencia que la sesión siga en `auth.sessions`, sin ban, con `usr_activo = true` y
+  asignación activa en la empresa del JWT.
 - `EXECUTE` revocado de `PUBLIC` y devuelto **solo** a `authenticated`: las policies los
   necesitan, y un usuario anónimo no.
 
-## Consecuencia: los permisos se congelan al emitir el token
+## Consecuencia: permisos nuevos y revocación inmediata
 
-Si cambian los permisos de un rol o una asignación, **el usuario tiene que cerrar sesión y
-volver a entrar** para recibir un token nuevo. Pasa lo mismo con un permiso nuevo después de
-una migración (p. ej. `BIOMETRIA_WRITE`). Para un sistema interno es aceptable, pero es la
-primera sospecha cuando "a alguien no le aparece algo".
+Si cambian los permisos de un rol o una asignación activa, **el usuario tiene que cerrar sesión y
+volver a entrar** para recibir permisos nuevos en el token. En cambio, al desactivar un usuario
+se revocan sus sesiones de inmediato (`sgrh_revoke_user_sessions`) y `sgrh_sesion_vigente()` +
+`sgrh_private.sesion_activa()` cortan tanto el SSR/proxy como la RLS en la siguiente petición,
+sin esperar a que expire el JWT.
 
 ## Dónde se consume en Next
 
@@ -79,6 +86,7 @@ primera sospecha cuando "a alguien no le aparece algo".
 | `lib/supabase/server.ts`         | cliente de sesión para Server Components y Actions (RLS activa)                                                                                                        |
 | `lib/supabase/client.ts`         | cliente de navegador                                                                                                                                                   |
 | `lib/supabase/admin.ts`          | `createAdminClient`, con la secret key; se salta la RLS                                                                                                                |
-| `lib/supabase/proxy.ts`          | refresco de sesión en el proxy                                                                                                                                         |
-| `lib/auth/require-permission.ts` | guard; lee los permisos con `getClaims()` (`getUser()` no los trae, porque viven en el token y no en el registro del usuario), memoizado por request con `React.cache` |
+| `lib/supabase/proxy.ts`          | refresco de sesión y validación contra `sgrh_sesion_vigente()`, limpiando cookies localmente si la sesión fue revocada                                                 |
+| `lib/auth/session-active.ts`     | `isSessionActive()` y `getActiveSessionClaims()` memoizados con `React.cache` por request                                                                              |
+| `lib/auth/require-permission.ts` | guard; valida claims y sesión activa (`getActiveSessionClaims()`), memoizado por request con `React.cache`                                                             |
 | `hooks/usePermisos.ts`           | permisos del token para la UI                                                                                                                                          |

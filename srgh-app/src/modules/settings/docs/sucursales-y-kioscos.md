@@ -28,7 +28,7 @@ coordenadas informativas y cuentas de acceso de los kioscos de cada sucursal. C�
     `.internal` es un dominio reservado: nunca llega a un tercero. Si un proyecto de Supabase
     lo rechazara, se cambia con la variable `KIOSK_EMAIL_DOMAIN` sin tocar código.
   - El login traduce un usuario sin `@` a ese correo con el cliente admin. Un usuario
-    inexistente responde "Credenciales invalidas.", igual que una contraseña mala.
+    inexistente responde "Credenciales inválidas.", igual que una contraseña mala.
   - "Olvidé mi contraseña" ignora los correos internos: la contraseña de un kiosco la cambia el
     administrador.
 - **Controla cuentas, no hardware**: con el usuario y la contraseña se abre el kiosco en

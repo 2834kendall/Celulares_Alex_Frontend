@@ -36,7 +36,8 @@ entorno local.
 2. **Plantilla Invite**: Authentication → Email Templates → Invite user, con el contenido de
    `supabase/templates/invite.html`.
 3. **Plantilla Reset Password**: Authentication → Email Templates → Reset Password, con
-   `supabase/templates/reset-password.html`. Sin esto, el correo sale con el
+   `supabase/templates/reset-password.html` y el asunto `"Restablecer su contraseña de SGRH"`
+   (sincronizado con `supabase/config.toml`). Sin esto, el correo sale con el
    `{{ .ConfirmationURL }}` de fábrica y la recuperación muere en el fragmento de la URL (ver
    [auth](../../src/modules/auth/README.md)).
 
