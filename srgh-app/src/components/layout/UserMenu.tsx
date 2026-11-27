@@ -65,8 +65,8 @@ export function UserMenu({ email, rol }: UserMenuProps) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label="Menu de usuario"
-        className="shrink-0 rounded-full transition hover:brightness-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2"
+        aria-label="Menú de usuario"
+        className="shrink-0 rounded-full pointer-coarse:grid pointer-coarse:size-11 pointer-coarse:place-items-center transition hover:brightness-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2"
       >
         <Avatar size="md" nombre={email} iniciales={initialsOfEmail(email)} />
       </button>
