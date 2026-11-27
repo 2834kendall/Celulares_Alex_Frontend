@@ -43,7 +43,7 @@ export function EmployeesWithoutUserBanner({
                 : `${empleados.length} empleados activos sin cuenta de usuario`}
             </p>
             <p className="text-[11px] text-amber-700">
-              Puedes crearles la cuenta con la invitación precargada.
+              Podés crearles la cuenta con la invitación precargada.
             </p>
           </div>
         </div>
