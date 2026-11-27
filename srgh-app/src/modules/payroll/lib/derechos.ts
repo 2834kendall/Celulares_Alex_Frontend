@@ -404,7 +404,8 @@ export function contratosDeLaRelacion(
 export function inicioDeLaRelacion(
   ingresoOriginal: string | null,
   labId: number,
-  contratos: readonly ContratoDelEmpleado[]
+  contratos: readonly ContratoDelEmpleado[],
+  ultimoCorteExterno: string | null = null
 ): string {
   const relacion = contratosDeLaRelacion(labId, contratos)
   const primero = relacion[0]?.fechaInicio ?? contratos.find((c) => c.labId === labId)?.fechaInicio
@@ -415,7 +416,13 @@ export function inicioDeLaRelacion(
     )
     .map((c) => c.fechaFin ?? c.fechaInicio)
     .sort()
-  const ultimoCorte = cortes.at(-1) ?? null
+  const ultimoCorteLocal = cortes.at(-1) ?? null
+  const ultimoCorte =
+    ultimoCorteLocal && ultimoCorteExterno
+      ? ultimoCorteLocal > ultimoCorteExterno
+        ? ultimoCorteLocal
+        : ultimoCorteExterno
+      : (ultimoCorteLocal ?? ultimoCorteExterno)
 
   if (ingresoOriginal && (ultimoCorte === null || ingresoOriginal > ultimoCorte)) {
     return ingresoOriginal

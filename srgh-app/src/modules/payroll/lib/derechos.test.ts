@@ -342,6 +342,14 @@ describe('contratosDeLaRelacion', () => {
   it('con ingreso original y sin liquidaciones, manda la ficha', () => {
     expect(inicioDeLaRelacion('2015-05-05', 1, [c(1, '2021-01-01', null)])).toBe('2015-05-05')
   })
+
+  it('recontratación tras contrato liquidado en otra sucursal (emp 104): usa fecha del contrato actual y no ingreso original', () => {
+    // El contrato previo en otra sucursal está oculto por RLS, pero la RPC
+    // devuelve su fecha de corte liquidado ('2026-04-30').
+    expect(inicioDeLaRelacion('2025-01-01', 7, [c(7, '2026-05-01', null)], '2026-04-30')).toBe(
+      '2026-05-01'
+    )
+  })
 })
 
 describe('completarQuincenasDeLicencia', () => {

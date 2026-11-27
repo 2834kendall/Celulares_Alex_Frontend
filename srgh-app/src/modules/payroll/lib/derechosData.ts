@@ -126,6 +126,48 @@ export async function contratosConFilasOcultas(
   return new Set(Array.isArray(data) ? (data as number[]) : [])
 }
 
+export interface AlcanceRelacion {
+  ocultos: Set<number>
+  ultimosCortes: Map<number, string>
+}
+
+/**
+ * De los contratos pedidos, reporta (`nomina_alcance_relacion`):
+ *  - qué `lab_id` tienen algún contrato no liquidado de la misma relación en
+ *    una sucursal que el usuario no ve (`ocultos`),
+ *  - el último corte liquidado previo en la empresa (`ultimosCortes`), incluso
+ *    si ese contrato liquidado pertenece a otra sucursal invisible por RLS,
+ *    evitando arrastrar `emp_fecha_ingreso_original` de relaciones ya finiquitadas.
+ */
+export async function alcanceRelacionContratos(
+  supabase: SupabaseServerClient,
+  labIds: readonly number[],
+  visibles: readonly number[] | null,
+  rango?: { desde: string; hasta: string }
+): Promise<AlcanceRelacion | null> {
+  if (visibles === null || labIds.length === 0) {
+    return { ocultos: new Set(), ultimosCortes: new Map() }
+  }
+  const { data, error } = await supabase.rpc('nomina_alcance_relacion', {
+    p_lab_ids: [...labIds],
+    ...(rango ? { p_desde: rango.desde, p_hasta: rango.hasta } : {}),
+  })
+  if (error) return null
+  const ocultos = new Set<number>()
+  const ultimosCortes = new Map<number, string>()
+  for (const row of Array.isArray(data)
+    ? (data as {
+        lab_id: number
+        tiene_alcance_oculto: boolean
+        ultimo_corte_liquidado: string | null
+      }[])
+    : []) {
+    if (row.tiene_alcance_oculto) ocultos.add(row.lab_id)
+    if (row.ultimo_corte_liquidado) ultimosCortes.set(row.lab_id, row.ultimo_corte_liquidado)
+  }
+  return { ocultos, ultimosCortes }
+}
+
 /** Mensaje para cuando la relación tiene contratos en sucursales que el usuario no ve. */
 export const ERROR_SUCURSAL_NO_VISIBLE =
   'Este empleado trabajó en una sucursal que tu usuario no ve (por ejemplo, antes de un traslado): su planilla y sus ausencias de allá no se pueden leer, y el monto saldría de menos. Pedile a alguien con acceso a todas sus sucursales que lo calcule.'

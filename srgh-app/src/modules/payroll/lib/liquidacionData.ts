@@ -36,6 +36,7 @@ import {
   ERROR_SUCURSAL_NO_VISIBLE,
   SELECT_CONTRATO,
   aContrato,
+  alcanceRelacionContratos,
   cargarAusencias,
   contratosConFilasOcultas,
   contratosFueraDeAlcance,
@@ -219,14 +220,23 @@ export async function calcularBasesLiquidacion(
   const labIds = relacion.map((c) => c.labId)
   // Un traslado deja las quincenas de antes en la sucursal vieja aunque el
   // contrato ya sea de esta: la RLS las esconde y el promedio saldría de menos.
-  const conFilasOcultas = await contratosConFilasOcultas(supabase, labIds, visibles)
-  if (conFilasOcultas === null) {
+  // También puede ocultar contratos anteriores (activos o liquidados) en otra sucursal.
+  const [conFilasOcultas, alcanceRelacion] = await Promise.all([
+    contratosConFilasOcultas(supabase, labIds, visibles),
+    alcanceRelacionContratos(supabase, labIds, visibles),
+  ])
+  if (conFilasOcultas === null || alcanceRelacion === null) {
     return { ok: false, error: 'No se pudo revisar en qué sucursales trabajó el empleado.' }
   }
-  if (conFilasOcultas.size > 0) {
+  if (conFilasOcultas.size > 0 || alcanceRelacion.ocultos.size > 0) {
     return { ok: false, error: ERROR_SUCURSAL_NO_VISIBLE }
   }
-  const inicioRelacion = inicioDeLaRelacion(ingresoOriginal, historial.lab_id, contratos)
+  const inicioRelacion = inicioDeLaRelacion(
+    ingresoOriginal,
+    historial.lab_id,
+    contratos,
+    alcanceRelacion.ultimosCortes.get(historial.lab_id) ?? null
+  )
 
   const quincenasResult = await cargarQuincenas(supabase, relacion)
   if (!quincenasResult.ok) return { ok: false, error: quincenasResult.error }

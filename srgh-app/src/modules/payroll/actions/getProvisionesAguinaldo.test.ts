@@ -552,6 +552,43 @@ describe('getProvisionesAguinaldo (server action)', () => {
     })
   })
 
+  it('traslado con contrato anterior oculto por RLS: avisa via nomina_alcance_relacion', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { permisos: ['NOMINA_READ', 'AUSENCIAS_READ'], sucursal_ids: [2] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const pedro = { ...contrato(8, '2026-06-01'), lab_sucursal_id: 2 }
+    const client = mockSupabase({
+      sgrh_historial_laboral: {
+        data: [
+          { ...candidato(8, 'Pedro', '2026-06-01', { contratos: [pedro] }), lab_sucursal_id: 2 },
+        ],
+        error: null,
+      },
+      sgrh_nomina_detalle: { data: ciclo2026(8), error: null },
+    })
+    client.rpc.mockImplementation(async (fn: string) =>
+      fn === 'nomina_alcance_relacion'
+        ? {
+            data: [{ lab_id: 8, tiene_alcance_oculto: true, ultimo_corte_liquidado: null }],
+            error: null,
+          }
+        : fn === 'nomina_contratos_con_filas_ocultas'
+          ? { data: [], error: null }
+          : { data: null, error: null }
+    )
+
+    const result = await getProvisionesAguinaldo(2026)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items[0]).toMatchObject({ sucursalesOcultas: true })
+    expect(client.rpc).toHaveBeenCalledWith('nomina_alcance_relacion', {
+      p_lab_ids: [8],
+      p_desde: '2025-12-01',
+      p_hasta: '2026-11-30',
+    })
+  })
+
   it('una cuenta de toda la empresa no pregunta por filas ocultas', async () => {
     const client = mockSupabase({
       sgrh_historial_laboral: { data: [candidato(9, 'Dani', '2020-01-15')], error: null },

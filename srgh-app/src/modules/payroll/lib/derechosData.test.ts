@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   SELECT_CONTRATO,
   aContrato,
+  alcanceRelacionContratos,
   cargarAusencias,
   cargarQuincenas,
   contratosFueraDeAlcance,
@@ -234,5 +235,36 @@ describe('alcance por sucursal', () => {
     expect(contratosFueraDeAlcance([a, b], [1, 2])).toBe(false)
     expect(contratosFueraDeAlcance([b], [2])).toBe(false)
     expect(contratosFueraDeAlcance([a, b], [2])).toBe(true)
+  })
+
+  it('alcanceRelacionContratos: omite RPC para acceso empresa y reporta ids ocultos y cortes liquidados', async () => {
+    const supabase = cliente({}) as ReturnType<typeof cliente> & { rpc: ReturnType<typeof vi.fn> }
+    expect(await alcanceRelacionContratos(supabase, [1], null)).toEqual({
+      ocultos: new Set(),
+      ultimosCortes: new Map(),
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+
+    supabase.rpc.mockResolvedValueOnce({
+      data: [
+        { lab_id: 8, tiene_alcance_oculto: true, ultimo_corte_liquidado: null },
+        { lab_id: 9, tiene_alcance_oculto: false, ultimo_corte_liquidado: '2026-04-30' },
+      ],
+      error: null,
+    })
+    const res = await alcanceRelacionContratos(supabase, [8, 9], [2], {
+      desde: '2025-12-01',
+      hasta: '2026-11-30',
+    })
+    expect(res?.ocultos).toEqual(new Set([8]))
+    expect(res?.ultimosCortes.get(9)).toBe('2026-04-30')
+    expect(supabase.rpc).toHaveBeenCalledWith('nomina_alcance_relacion', {
+      p_lab_ids: [8, 9],
+      p_desde: '2025-12-01',
+      p_hasta: '2026-11-30',
+    })
+
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } })
+    expect(await alcanceRelacionContratos(supabase, [8], [2])).toBeNull()
   })
 })
