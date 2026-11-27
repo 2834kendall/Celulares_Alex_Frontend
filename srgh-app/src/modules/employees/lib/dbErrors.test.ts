@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapContractError, mapEmployeeUniqueError } from './dbErrors'
+import { mapContractError, mapEmployeeUniqueError, mensajeDeLaBase } from './dbErrors'
 
 describe('mapEmployeeUniqueError', () => {
   it('devuelve null si no es una violación de unicidad', () => {
@@ -76,5 +76,26 @@ describe('mapContractError', () => {
 
   it('sin mensaje de la RPC cae al genérico', () => {
     expect(mapContractError({ code: '23514' }, GENERICO)).toBe(GENERICO)
+  })
+})
+
+describe('mensajeDeLaBase', () => {
+  it('pasa a voseo los mensajes de las funciones de la base', () => {
+    expect(mensajeDeLaBase('No tienes acceso a la sucursal del contrato.')).toBe(
+      'No tenés acceso a la sucursal del contrato.'
+    )
+    expect(
+      mapContractError(
+        { code: '42501', message: 'No tienes permiso para modificar salarios del contrato.' },
+        'genérico'
+      )
+    ).toBe('No tenés permiso para modificar salarios del contrato.')
+  })
+
+  it('deja igual lo que no es tuteo, y un mensaje vacío sigue vacío', () => {
+    expect(mensajeDeLaBase('Este contrato ya pasó por planilla.')).toBe(
+      'Este contrato ya pasó por planilla.'
+    )
+    expect(mensajeDeLaBase(undefined)).toBeUndefined()
   })
 })

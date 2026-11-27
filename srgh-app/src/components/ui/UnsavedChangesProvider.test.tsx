@@ -81,7 +81,7 @@ describe('unsaved changes decisions', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cerrar' }))
     expect(close).not.toHaveBeenCalled()
     expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-    expect(screen.getByText(/tendrás que seleccionarlos/)).toBeInTheDocument()
+    expect(screen.getByText(/vas a tener que seleccionarlos/)).toBeInTheDocument()
   })
   it('does not interrupt an untouched form or a reverted edit', async () => {
     const { close, user } = setup()
@@ -184,7 +184,7 @@ describe('unsaved changes decisions', () => {
     const file = new File(['demo'], 'documento.pdf', { type: 'application/pdf' })
     await user.upload(screen.getByLabelText('Archivo'), file)
     await user.click(screen.getByRole('button', { name: 'Cerrar' }))
-    expect(screen.getByText(/tendrás que seleccionarlos/)).toBeInTheDocument()
+    expect(screen.getByText(/vas a tener que seleccionarlos/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Seguir editando' }))
     expect((screen.getByLabelText('Archivo') as HTMLInputElement).files?.[0]).toBe(file)
     await user.click(screen.getByRole('button', { name: 'Quitar selección' }))

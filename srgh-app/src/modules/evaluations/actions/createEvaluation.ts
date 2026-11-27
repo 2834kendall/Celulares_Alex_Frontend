@@ -19,14 +19,14 @@ export async function createEvaluation(input: EvaluationInput): Promise<CreateEv
   const parsed = evaluationSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Datos de la evaluacion invalidos.' }
+    return { ok: false, error: 'Datos de la evaluación inválidos.' }
   }
 
   const claims = await requirePermission(PERMISOS.EVALUACIONES_WRITE)
   const meta = claims.app_metadata as { empresa_id?: number; usr_id?: number }
 
   if (!meta.empresa_id || !meta.usr_id) {
-    return { ok: false, error: 'No se pudo determinar la sesion del evaluador.' }
+    return { ok: false, error: 'No se pudo determinar la sesión del evaluador.' }
   }
 
   const supabase = await createClient()
@@ -40,7 +40,7 @@ export async function createEvaluation(input: EvaluationInput): Promise<CreateEv
     .single()
 
   if (historialError || !historial) {
-    return { ok: false, error: 'El colaborador seleccionado no es valido.' }
+    return { ok: false, error: 'El colaborador seleccionado no es válido.' }
   }
 
   const applicable = parsed.data.scores.filter((s) => !s.noAplica && s.puntaje !== null)
@@ -72,7 +72,7 @@ export async function createEvaluation(input: EvaluationInput): Promise<CreateEv
     .single()
 
   if (evalError || !evaluacion) {
-    return { ok: false, error: 'No se pudo registrar la evaluacion.' }
+    return { ok: false, error: 'No se pudo registrar la evaluación.' }
   }
 
   const { error: resultsError } = await supabase.from('sgrh_evaluacion_resultados').insert(

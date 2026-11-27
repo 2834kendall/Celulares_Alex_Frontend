@@ -54,7 +54,7 @@ describe('<ManualMarkModal />', () => {
 
     expect(mockSaveManualMark).not.toHaveBeenCalled()
     expect(
-      screen.getByText('Escribe una justificación de al menos 10 caracteres.')
+      screen.getByText('Escribí una justificación de al menos 10 caracteres.')
     ).toBeInTheDocument()
   })
 

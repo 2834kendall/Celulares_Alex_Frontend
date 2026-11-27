@@ -142,7 +142,7 @@ export function LoginForm() {
       router.replace(result.destination)
     } catch {
       setServerError(
-        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
+        'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.'
       )
       setErrorPulse(true)
     }
@@ -271,7 +271,7 @@ export function LoginForm() {
               href="/forgot-password"
               className="auth-link text-xs font-semibold text-brand-700 transition-colors duration-200 hover:text-brand-800"
             >
-              ¿Olvidó su contraseña?
+              ¿Olvidaste tu contraseña?
             </Link>
           </div>
         </div>

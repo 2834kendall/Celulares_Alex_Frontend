@@ -22,9 +22,9 @@ export const loginSchema = z.object({
         value.includes('@')
           ? emailFormat.safeParse(value).success
           : KIOSK_LOGIN_PATTERN.test(value),
-      'Ingrese un correo electrónico o un usuario válido.'
+      'Ingresá un correo electrónico o un usuario válido.'
     ),
-  password: z.string({ message: 'La contraseña es requerida.' }).min(1, 'Ingrese su contraseña.'),
+  password: z.string({ message: 'La contraseña es requerida.' }).min(1, 'Ingresá tu contraseña.'),
 })
 
 export type LoginInput = z.infer<typeof loginSchema>
@@ -72,8 +72,8 @@ export const setPasswordSchema = z
       z.string({ message: 'La contraseña es requerida.' })
     ),
     confirmPassword: z
-      .string({ message: 'Confirme su contraseña.' })
-      .min(1, 'Confirme su contraseña.'),
+      .string({ message: 'Confirmá tu contraseña.' })
+      .min(1, 'Confirmá tu contraseña.'),
   })
   .refine((value) => value.password === value.confirmPassword, {
     path: ['confirmPassword'],
@@ -98,7 +98,7 @@ export const forgotPasswordSchema = z.object({
     .trim()
     .toLowerCase()
     .min(1, 'El correo electrónico es requerido.')
-    .email('Ingrese un correo electrónico válido.'),
+    .email('Ingresá un correo electrónico válido.'),
 })
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>

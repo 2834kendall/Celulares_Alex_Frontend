@@ -11,7 +11,7 @@ function tardy(overrides: Partial<TardyDay> = {}): TardyDay {
     kind: 'entrada',
     time: '08:15',
     diffMinutes: 15,
-    tipo: { nombre: 'Tardia grave', color: null },
+    tipo: { nombre: 'Tardía grave', color: null },
     countsTowardWarning: true,
     markId: 77,
     isJustified: false,

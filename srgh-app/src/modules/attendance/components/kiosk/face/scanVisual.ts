@@ -44,8 +44,8 @@ const MESSAGES = {
   iniciando: 'Preparando el reconocimiento…',
   buscando_rostro: 'Coloca tu rostro dentro del óvalo',
   ajusta_encuadre: 'Acomoda tu rostro dentro del óvalo',
-  quieto: 'Quédate quieto, mirando a la cámara',
-  listo: 'Listo, ya puedes moverte',
+  quieto: 'Quedate quieto, mirando a la cámara',
+  listo: 'Listo, ya podés moverte',
 } as const
 
 const clamp01 = (n: number) => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0)

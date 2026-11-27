@@ -48,7 +48,7 @@ export async function createConcepto(input: ConceptoNominaInput): Promise<Create
     }
     return {
       ok: false,
-      error: 'No se pudo crear el concepto. Verifique que el código no se repita.',
+      error: 'No se pudo crear el concepto. Verificá que el código no se repita.',
     }
   }
 

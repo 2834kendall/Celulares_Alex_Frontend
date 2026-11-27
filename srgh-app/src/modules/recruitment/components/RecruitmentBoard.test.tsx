@@ -178,7 +178,7 @@ describe('<RecruitmentBoard />', () => {
   it('si el servidor rechaza el movimiento, avisa con su mensaje', async () => {
     vi.mocked(moveApplicationToStage).mockResolvedValue({
       ok: false,
-      error: 'Esa columna ya no existe. Recargue el tablero.',
+      error: 'Esa columna ya no existe. Recargá el tablero.',
     })
     const user = userEvent.setup()
     renderBoard()
@@ -187,7 +187,7 @@ describe('<RecruitmentBoard />', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Entrevista' }))
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Esa columna ya no existe. Recargue el tablero.')
+      expect(toast.error).toHaveBeenCalledWith('Esa columna ya no existe. Recargá el tablero.')
     )
     expect(toast.success).not.toHaveBeenCalled()
     // La tarjeta vuelve a su columna cuando termina la transición.

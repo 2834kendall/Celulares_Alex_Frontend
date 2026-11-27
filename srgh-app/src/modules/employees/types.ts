@@ -86,7 +86,7 @@ export const crearEmpleadoSchema = z.object({
   emp_tipo_identificacion_id: z
     .number({ error: 'El tipo de identificación es obligatorio' })
     .int()
-    .positive('Debe seleccionar un tipo de identificación válido'),
+    .positive('Seleccioná un tipo de identificación válido'),
 
   emp_numero_identificacion: z
     .string({ error: 'El número de identificación es obligatorio' })
@@ -178,7 +178,7 @@ export const datosPagoSchema = z
     edp_banco_id: z.preprocess(
       (value) =>
         value === '' || (typeof value === 'number' && Number.isNaN(value)) ? null : value,
-      z.number().int().positive('Seleccione un banco válido').nullable().optional()
+      z.number().int().positive('Seleccioná un banco válido').nullable().optional()
     ),
 
     edp_tipo_cuenta: emptyToNull(z.enum(['CORRIENTE', 'AHORRO', 'SINPE']).nullable().optional()),
@@ -269,7 +269,7 @@ export const direccionSchema = z.object({
   dir_distrito_id: z
     .number({ error: 'El distrito es obligatorio' })
     .int()
-    .positive('Seleccione un distrito válido'),
+    .positive('Seleccioná un distrito válido'),
 
   // En Costa Rica las señas SON la dirección: sin ellas provincia/cantón/distrito
   // no alcanzan para ubicar a nadie. La columna es nullable en la DB, así que la
@@ -303,22 +303,22 @@ export const crearHistorialLaboralSchema = z.object({
   lab_puesto_id: z
     .number({ error: 'El puesto es obligatorio' })
     .int()
-    .positive('Seleccione un puesto válido'),
+    .positive('Seleccioná un puesto válido'),
 
   lab_sucursal_id: z
     .number({ error: 'La sucursal es obligatoria' })
     .int()
-    .positive('Seleccione una sucursal válida'),
+    .positive('Seleccioná una sucursal válida'),
 
   lab_tipo_contrato_id: z
     .number({ error: 'El tipo de contrato es obligatorio' })
     .int()
-    .positive('Seleccione un tipo de contrato válido'),
+    .positive('Seleccioná un tipo de contrato válido'),
 
   lab_tipo_jornada_id: z
     .number({ error: 'El tipo de jornada es obligatorio' })
     .int()
-    .positive('Seleccione un tipo de jornada válido'),
+    .positive('Seleccioná un tipo de jornada válido'),
 
   lab_fecha_inicio: z
     .string({ error: 'La fecha de inicio es obligatoria' })
@@ -384,7 +384,7 @@ export const terminarContratoSchema = z.object({
   lab_motivo_salida_id: z
     .number({ error: 'El motivo de salida es obligatorio' })
     .int()
-    .positive('Seleccione un motivo de salida válido'),
+    .positive('Seleccioná un motivo de salida válido'),
 
   lab_recontratable: z.boolean(),
 
@@ -408,9 +408,9 @@ export const crearUsuarioEmpleadoSchema = z.object({
     z.email('Correo electrónico inválido').transform((value) => value.toLowerCase())
   ),
 
-  rol_id: z.number({ error: 'El rol es obligatorio' }).int().positive('Seleccione un rol válido'),
+  rol_id: z.number({ error: 'El rol es obligatorio' }).int().positive('Seleccioná un rol válido'),
 
-  sucursal_id: z.number().int().positive('Seleccione una sucursal válida').nullable().optional(),
+  sucursal_id: z.number().int().positive('Seleccioná una sucursal válida').nullable().optional(),
 })
 
 export type CrearUsuarioEmpleadoInput = z.infer<typeof crearUsuarioEmpleadoSchema>
@@ -585,7 +585,7 @@ export const documentoMetadataSchema = z.object({
   doc_tipo_id: z
     .number({ error: 'El tipo de documento es obligatorio' })
     .int()
-    .positive('Seleccione un tipo de documento válido'),
+    .positive('Seleccioná un tipo de documento válido'),
 
   doc_descripcion: emptyToNull(z.string().max(300, 'Máximo 300 caracteres').nullable().optional()),
 

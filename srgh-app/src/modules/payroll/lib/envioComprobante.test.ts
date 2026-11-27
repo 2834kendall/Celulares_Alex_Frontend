@@ -253,7 +253,7 @@ describe('enviarComprobanteExtraordinarioPorCorreo', () => {
     const correo = vi.mocked(enviarCorreo).mock.calls[0][1]
     expect(correo.to).toBe('ana@correo.com')
     expect(correo.subject).toBe('Comprobante de pago del aguinaldo 2026 · Celulares Alex')
-    expect(correo.text).toContain('registró el pago de su aguinaldo 2026')
+    expect(correo.text).toContain('registró el pago de tu aguinaldo 2026')
     expect(correo.text).toContain(`Neto pagado: ${formatCRC(430000)}`)
     expect(correo.text).toContain('Código de verificación: WXYZ-2345-6789')
     // Exento: sin línea de deducciones en ₡0.
@@ -271,7 +271,7 @@ describe('enviarComprobanteExtraordinarioPorCorreo', () => {
     expect(r.estado).toBe('enviado')
     const correo = vi.mocked(enviarCorreo).mock.calls[0][1]
     expect(correo.subject).toBe('Comprobante de liquidación · Celulares Alex')
-    expect(correo.text).toContain('registró el pago de su liquidación laboral')
+    expect(correo.text).toContain('registró el pago de tu liquidación laboral')
     expect(correo.text).toContain('Salida: 10/09/2026 · Despido con responsabilidad patronal')
     expect(correo.text).toContain(`Deducciones: − ${formatCRC(21660)}`)
     expect(correo.text).toContain(`Neto pagado: ${formatCRC(878340)}`)

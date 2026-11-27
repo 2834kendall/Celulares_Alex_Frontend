@@ -163,7 +163,7 @@ export async function pasteWeeklySchedule(
         ok: false,
         error: describeAssignmentError(
           failed.error,
-          'No se pudo aplicar el horario en todos los dias.'
+          'No se pudo aplicar el horario en todos los días.'
         ),
       }
     }

@@ -59,7 +59,7 @@ export async function loadDayJourney(
     .returns<MarkDbRow[]>()
 
   if (error) {
-    return { ok: false, error: 'No se pudieron cargar las marcas del dia.' }
+    return { ok: false, error: 'No se pudieron cargar las marcas del día.' }
   }
 
   const marks: RawMark[] = []
@@ -269,7 +269,7 @@ export async function findApprovedAbsence(
     .returns<AusenciaTipoRow[]>()
 
   if (error) {
-    return { ok: false, error: 'No se pudo revisar si tienes una ausencia registrada hoy.' }
+    return { ok: false, error: 'No se pudo revisar si tenés una ausencia registrada hoy.' }
   }
 
   const cubre = (data ?? []).find(
@@ -281,5 +281,5 @@ export async function findApprovedAbsence(
 
 /** Lo que ve en el kiosco quien tiene una ausencia aprobada ese dia. */
 export function absenceBlocksMarkMessage(tipo: string) {
-  return `Tienes registrado "${tipo}" para hoy, asi que no puedes marcar. Si ya te reincorporaste, avisa al encargado.`
+  return `Tenés registrado "${tipo}" para hoy, así que no podés marcar. Si ya te reincorporaste, avisá al encargado.`
 }

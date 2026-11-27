@@ -380,7 +380,7 @@ describe('getDailyAttendance (server action)', () => {
       // La manana fue a tiempo: no hay tardia de entrada, solo la de la tarde.
       expect(row.tardiness).toBeNull()
       expect(row.secondBlockTardiness).toMatchObject({
-        tipo: { nombre: 'Tardia grave' },
+        tipo: { nombre: 'Tardía grave' },
         diffMinutes: 12,
         isJustified: false,
       })

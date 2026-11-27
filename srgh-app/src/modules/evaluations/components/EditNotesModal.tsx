@@ -16,12 +16,12 @@ export type NotesField = 'fortalezas' | 'mejoras' | 'comentarios'
 const FIELD_META: Record<NotesField, { title: string; subtitle: string; placeholder: string }> = {
   fortalezas: {
     title: 'Agregar puntos fuertes',
-    subtitle: 'Registre las fortalezas detectadas en la evaluación de este colaborador.',
+    subtitle: 'Registrá las fortalezas detectadas en la evaluación de este colaborador.',
     placeholder: 'Ej: Compromiso con las guardias',
   },
   mejoras: {
     title: 'Agregar aspectos a mejorar',
-    subtitle: 'Registre los aspectos a mejorar detectados para este colaborador.',
+    subtitle: 'Registrá los aspectos a mejorar detectados para este colaborador.',
     placeholder: 'Ej: Orden',
   },
   comentarios: {

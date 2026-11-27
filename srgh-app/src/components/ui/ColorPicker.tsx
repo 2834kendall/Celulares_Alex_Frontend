@@ -84,7 +84,7 @@ export function ColorPicker({
   disabled,
   label,
   description,
-  emptyLabel = 'Automatico',
+  emptyLabel = 'Automático',
   storageKey,
 }: ColorPickerProps) {
   const [customColors, setCustomColors] = useState<string[]>(() => loadCustomColors(storageKey))
@@ -418,7 +418,7 @@ function CustomColorPopover({
               />
               <input
                 type="text"
-                aria-label="Codigo hexadecimal"
+                aria-label="Código hexadecimal"
                 maxLength={7}
                 value={hexText ?? hex}
                 onChange={(event) => setHexText(event.target.value)}

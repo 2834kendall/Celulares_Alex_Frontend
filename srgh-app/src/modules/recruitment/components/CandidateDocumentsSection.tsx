@@ -61,7 +61,7 @@ export function CandidateDocumentsSection({
     e.preventDefault()
     if (!pendingFile) return
     if (nombre.trim().length < 2) {
-      setAddError('Ingrese un nombre para el documento.')
+      setAddError('Ingresá un nombre para el documento.')
       return
     }
 

@@ -57,7 +57,7 @@ describe('createAusenciasBulk (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Hay periodos que se traslapan entre si. Revise las fechas.',
+      error: 'Hay periodos que se traslapan entre sí. Revisá las fechas.',
     })
   })
 

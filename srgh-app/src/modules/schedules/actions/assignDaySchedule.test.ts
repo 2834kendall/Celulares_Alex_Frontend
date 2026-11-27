@@ -68,7 +68,7 @@ describe('assignDaySchedule (server action)', () => {
   it('rechaza una fecha con formato invalido sin llamar a requirePermission', async () => {
     const result = await assignDaySchedule({ ...baseInput, date: '05-01-2026' })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de asignacion invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos de asignación inválidos.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -77,8 +77,7 @@ describe('assignDaySchedule (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error:
-        'Debe seleccionar un horario, definir uno personalizado, o marcar el dia como descanso.',
+      error: 'Seleccioná un horario, definí uno personalizado o marcá el día como descanso.',
     })
   })
 
@@ -180,7 +179,7 @@ describe('assignDaySchedule (server action)', () => {
 
     const result = await assignDaySchedule({ ...baseInput, scheduleId: 4 })
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo guardar la asignacion.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo guardar la asignación.' })
   })
 
   describe('cuando la base rechaza el tramo (SGRH-110)', () => {
@@ -231,7 +230,7 @@ describe('assignDaySchedule (server action)', () => {
 
       const result = await assignDaySchedule({ ...baseInput, scheduleId: 4 })
 
-      expect(result).toEqual({ ok: false, error: 'No se pudo guardar la asignacion.' })
+      expect(result).toEqual({ ok: false, error: 'No se pudo guardar la asignación.' })
     })
   })
 })

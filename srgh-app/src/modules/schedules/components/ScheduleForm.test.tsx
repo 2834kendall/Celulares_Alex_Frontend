@@ -260,7 +260,7 @@ describe('<ScheduleForm />', () => {
       await userEvent.selectOptions(screen.getByLabelText('Sucursal del primer bloque'), '10')
       await userEvent.click(screen.getByRole('button', { name: /crear horario/i }))
 
-      expect(await screen.findByText(/Elija la sucursal de los dos bloques/)).toBeInTheDocument()
+      expect(await screen.findByText(/Elegí la sucursal de los dos bloques/)).toBeInTheDocument()
       expect(mockCreateSchedule).not.toHaveBeenCalled()
     })
 

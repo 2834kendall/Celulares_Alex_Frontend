@@ -137,7 +137,7 @@ export function PayrollWidget({
                     {/* Sample periods have negative ids and no page to open. */}
                     <Link
                       href={periodo.id > 0 ? `/payroll/${periodo.id}` : '/payroll'}
-                      className="dash-line group flex items-center gap-2 rounded-xl px-2 py-1.5 text-xs transition duration-200 hover:bg-slate-50"
+                      className="dash-line group flex items-center pointer-coarse:min-h-11 gap-2 rounded-xl px-2 py-1.5 text-xs transition duration-200 hover:bg-slate-50"
                     >
                       <span className="min-w-0 flex-1 truncate font-semibold text-slate-700 transition-colors duration-200 group-hover:text-slate-900">
                         {periodoLabel(periodo.mes, periodo.anio, periodo.quincena)}

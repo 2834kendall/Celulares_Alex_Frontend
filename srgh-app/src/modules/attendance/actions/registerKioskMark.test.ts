@@ -173,7 +173,7 @@ describe('registerKioskMark (server action)', () => {
 
       expect(result).toEqual({
         ok: false,
-        error: 'No se pudo verificar tu rostro. Avisa al encargado para que registre tu marca.',
+        error: 'No se pudo verificar tu rostro. Avisá al encargado para que registre tu marca.',
         definitivo: true,
       })
       expect(client.from).not.toHaveBeenCalledWith('sgrh_marcas_asistencia')
@@ -221,7 +221,7 @@ describe('registerKioskMark (server action)', () => {
 
       expect(result).toEqual({
         ok: false,
-        error: 'No tienes turno asignado en esta sucursal para esta fecha.',
+        error: 'No tenés turno asignado en esta sucursal para esta fecha.',
         definitivo: true,
       })
       expect(client.from).not.toHaveBeenCalledWith('sgrh_marcas_asistencia')
@@ -277,7 +277,7 @@ describe('registerKioskMark (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No corresponde marcar salida ahora. Puedes marcar: entrada.',
+      error: 'No corresponde marcar salida ahora. Podés marcar: entrada.',
       definitivo: true,
     })
     expect(insertedMark(client)).toBeUndefined()
@@ -435,7 +435,7 @@ describe('registerKioskMark (server action)', () => {
     atomicWrite.mockResolvedValue({ data: 'stale', error: null })
     expect(await registerKioskMark(await validInput())).toEqual({
       ok: false,
-      error: 'Tus marcas cambiaron mientras se guardaba. Intenta de nuevo.',
+      error: 'Tus marcas cambiaron mientras se guardaba. Intentá de nuevo.',
     })
   })
 
@@ -479,7 +479,7 @@ describe('registerKioskMark (server action)', () => {
 
       expect(await registerKioskMark(await validInput())).toEqual({
         ok: false,
-        error: 'No se pudo revisar si tienes una ausencia registrada hoy.',
+        error: 'No se pudo revisar si tenés una ausencia registrada hoy.',
       })
     })
   })
@@ -641,7 +641,7 @@ describe('registerKioskMark (server action)', () => {
 
       expect(await registerKioskMark(await validInput({ tipo: 'salida' }))).toEqual({
         ok: false,
-        error: 'No corresponde marcar salida ahora. Puedes marcar: entrada.',
+        error: 'No corresponde marcar salida ahora. Podés marcar: entrada.',
         definitivo: true,
       })
       expect(insertedMark(client)).toBeUndefined()
@@ -660,7 +660,7 @@ describe('registerKioskMark (server action)', () => {
 
       expect(await registerKioskMark(await validInput({ tipo: 'salida' }))).toEqual({
         ok: false,
-        error: 'Tu salida es a las 17:00. Si necesitas salir antes, avisa al encargado.',
+        error: 'Tu salida es a las 17:00. Si necesitás salir antes, avisá al encargado.',
         definitivo: true,
       })
       expect(insertedMark(client)).toBeUndefined()
@@ -754,7 +754,7 @@ describe('registerKioskMark (server action)', () => {
 
       expect(result).toEqual({
         ok: false,
-        error: 'Tu salida es a las 17:00. Si necesitas salir antes, avisa al encargado.',
+        error: 'Tu salida es a las 17:00. Si necesitás salir antes, avisá al encargado.',
         definitivo: true,
       })
       expect(insertedMark(client)).toBeUndefined()
@@ -786,7 +786,7 @@ describe('registerKioskMark (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Tu horario no tiene receso asignado. Avisa al encargado si necesitas uno.',
+      error: 'Tu horario no tiene receso asignado. Avisá al encargado si necesitás uno.',
       definitivo: true,
     })
     expect(insertedMark(client)).toBeUndefined()

@@ -51,7 +51,7 @@ export async function reorderSelectionStages(
   const sameSet =
     activeIds.size === parsed.data.length && parsed.data.every((id) => activeIds.has(id))
   if (!sameSet) {
-    return { ok: false, error: 'Las columnas cambiaron mientras tanto. Recargue el tablero.' }
+    return { ok: false, error: 'Las columnas cambiaron mientras tanto. Recargá el tablero.' }
   }
 
   const results = await Promise.all(

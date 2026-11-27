@@ -99,7 +99,7 @@ export function RubroForm({ rubro, onSuccess }: RubroFormProps) {
           aria-invalid={!!errors.descripcion}
           {...register('descripcion')}
           className={`${INPUT} resize-none`}
-          placeholder="Defina qué se evalúa con este indicador..."
+          placeholder="Definí qué se evalúa con este indicador..."
         />
         {errors.descripcion && <p className={FIELD_ERROR}>{errors.descripcion.message}</p>}
       </div>

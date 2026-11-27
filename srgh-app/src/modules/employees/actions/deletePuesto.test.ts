@@ -32,7 +32,7 @@ describe('deletePuesto (server action)', () => {
     expect(result).toEqual({
       ok: false,
       error:
-        'No se pudo eliminar el puesto. Verifique que no este en uso por algun empleado o postulacion.',
+        'No se pudo eliminar el puesto. Verificá que no esté en uso por algún empleado o postulación.',
     })
   })
 

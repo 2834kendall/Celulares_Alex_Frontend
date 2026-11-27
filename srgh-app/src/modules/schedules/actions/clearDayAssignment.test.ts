@@ -29,7 +29,7 @@ describe('clearDayAssignment (server action)', () => {
 
     const result = await clearDayAssignment(1)
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo quitar la asignacion.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo quitar la asignación.' })
     expect(mockRequirePermission).toHaveBeenCalled()
   })
 

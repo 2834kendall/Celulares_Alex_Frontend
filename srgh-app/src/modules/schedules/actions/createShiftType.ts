@@ -33,7 +33,7 @@ export async function createShiftType(input: ShiftTypeInput): Promise<CreateShif
   if (error) {
     return {
       ok: false,
-      error: 'No se pudo crear el tipo de jornada. Verifique que el codigo no este repetido.',
+      error: 'No se pudo crear el tipo de jornada. Verificá que el código no esté repetido.',
     }
   }
 

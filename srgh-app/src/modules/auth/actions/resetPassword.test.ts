@@ -50,7 +50,7 @@ describe('resetPassword (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'El enlace de recuperación expiró. Solicite uno nuevo desde la pantalla de acceso.',
+      error: 'El enlace de recuperación expiró. Pedí uno nuevo desde la pantalla de acceso.',
     })
     expect(client.auth.updateUser).not.toHaveBeenCalled()
   })
@@ -62,7 +62,7 @@ describe('resetPassword (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'El enlace de recuperación expiró. Solicite uno nuevo desde la pantalla de acceso.',
+      error: 'El enlace de recuperación expiró. Pedí uno nuevo desde la pantalla de acceso.',
     })
     expect(client.auth.updateUser).not.toHaveBeenCalled()
   })
@@ -104,7 +104,7 @@ describe('resetPassword (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'La contraseña es demasiado débil. Use una combinación más segura.',
+      error: 'La contraseña es demasiado débil. Usá una combinación más segura.',
     })
   })
 
@@ -115,7 +115,7 @@ describe('resetPassword (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo guardar la contraseña. Intente de nuevo.',
+      error: 'No se pudo guardar la contraseña. Intentá de nuevo.',
     })
   })
 })

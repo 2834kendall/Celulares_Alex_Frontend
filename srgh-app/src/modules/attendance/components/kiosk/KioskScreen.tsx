@@ -73,7 +73,7 @@ interface Failure {
 }
 
 const AVISA_AL_ENCARGADO =
-  'Si trabajas aquí, avisa al encargado para que registre tu marca desde el panel.'
+  'Si trabajás aquí, avisá al encargado para que registre tu marca desde el panel.'
 
 const FAILURES = {
   noReconocido: {
@@ -83,12 +83,12 @@ const FAILURES = {
   dudoso: {
     titulo: 'No pudimos confirmar tu identidad',
     detalle:
-      'Mira de frente a la cámara, con buena luz y sin nada que tape tu cara, e intenta de nuevo.',
+      'Mirá de frente a la cámara, con buena luz y sin nada que tape tu cara, e intentá de nuevo.',
   },
   foto: {
     titulo: 'Necesitamos a la persona',
     detalle:
-      'La cámara está viendo una imagen, no a una persona. Marca mirando directo a la cámara.',
+      'La cámara está viendo una imagen, no a una persona. Marcá mirando directo a la cámara.',
   },
 } satisfies Record<string, Failure>
 
@@ -287,7 +287,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
       } catch {
         setFailure({
           titulo: 'No pudimos verificarte',
-          detalle: `No se pudo completar la verificación. Intenta de nuevo. ${AVISA_AL_ENCARGADO}`,
+          detalle: `No se pudo completar la verificación. Intentá de nuevo. ${AVISA_AL_ENCARGADO}`,
         })
       } finally {
         setVerifying(false)
@@ -348,7 +348,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
       )
       playConfirmationCue()
     } catch {
-      toast.error('No se pudo guardar la marca en este dispositivo. Intenta de nuevo.')
+      toast.error('No se pudo guardar la marca en este dispositivo. Intentá de nuevo.')
     } finally {
       marking.current = false
       setSubmittingTipo(null)
@@ -371,7 +371,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
           icon={CalendarOff}
           tone="slate"
           titulo="Hoy no hay turnos en esta sucursal"
-          detalle="Si deberías estar trabajando, avisa al encargado para que revise la programación."
+          detalle="Si deberías estar trabajando, avisá al encargado para que revise la programación."
         />
       )
     }
@@ -420,7 +420,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
           icon={AlertTriangle}
           tone="amber"
           titulo="Face ID no está configurado"
-          detalle="Este kiosco no puede marcar asistencia hasta que se configure el reconocimiento facial. Avisa al encargado."
+          detalle="Este kiosco no puede marcar asistencia hasta que se configure el reconocimiento facial. Avisá al encargado."
         />
       )
     }
@@ -487,7 +487,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
     return (
       <div className="flex flex-col items-center gap-4 text-center">
         <div>
-          <p className="text-xl font-bold text-slate-900 sm:text-2xl">Mira a la cámara</p>
+          <p className="text-xl font-bold text-slate-900 sm:text-2xl">Mirá a la cámara</p>
           <p className="mt-1 text-sm text-slate-500 sm:text-base">
             {verifying ? 'Verificando tu rostro…' : 'Te reconocemos en un momento.'}
           </p>
@@ -518,7 +518,7 @@ export function KioskScreen({ employees, formatoHora = FORMATO_HORA_DEFAULT }: K
         <div className="flex max-w-full items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-center text-sm font-semibold text-rose-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="min-w-0">
-            {discardedCount} marca{discardedCount === 1 ? '' : 's'} sin registrar — avisa al
+            {discardedCount} marca{discardedCount === 1 ? '' : 's'} sin registrar — avisá al
             encargado
           </span>
         </div>

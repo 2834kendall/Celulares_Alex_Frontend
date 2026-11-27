@@ -69,14 +69,14 @@ describe('<ShiftTypeForm />', () => {
     await user.type(screen.getByLabelText('Nombre'), 'Jornada Mixta')
     await user.click(screen.getByRole('button', { name: /crear tipo de jornada/i }))
 
-    expect(await screen.findByText(/mayusculas/i)).toBeInTheDocument()
+    expect(await screen.findByText(/mayúsculas/i)).toBeInTheDocument()
     expect(mockCreateShiftType).not.toHaveBeenCalled()
   })
 
   it('muestra el error del servidor cuando la action falla', async () => {
     mockCreateShiftType.mockResolvedValue({
       ok: false,
-      error: 'No se pudo crear el tipo de jornada. Verifique que el codigo no este repetido.',
+      error: 'No se pudo crear el tipo de jornada. Verificá que el código no esté repetido.',
     })
     render(<ShiftTypeForm />)
 
@@ -85,6 +85,6 @@ describe('<ShiftTypeForm />', () => {
     await user.type(screen.getByLabelText('Nombre'), 'Jornada Mixta')
     await user.click(screen.getByRole('button', { name: /crear tipo de jornada/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('codigo no este repetido')
+    expect(await screen.findByRole('alert')).toHaveTextContent('código no esté repetido')
   })
 })

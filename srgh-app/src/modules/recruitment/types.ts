@@ -60,7 +60,7 @@ export const candidatoSchema = z.object({
   cdt_tipo_identificacion_id: z
     .number({ error: 'El tipo de identificación es obligatorio' })
     .int()
-    .positive('Seleccione un tipo de identificación válido'),
+    .positive('Seleccioná un tipo de identificación válido'),
 
   cdt_numero_identificacion: z
     .string({ error: 'El número de identificación es obligatorio' })
@@ -95,11 +95,11 @@ export const postulacionSchema = z.object({
   pos_puesto_id: z
     .number({ error: 'El puesto es obligatorio' })
     .int()
-    .positive('Seleccione un puesto válido'),
+    .positive('Seleccioná un puesto válido'),
 
   pos_sucursal_id: z.preprocess(
     (value) => (value === '' || (typeof value === 'number' && Number.isNaN(value)) ? null : value),
-    z.number().int().positive('Seleccione una sucursal válida').nullable().optional()
+    z.number().int().positive('Seleccioná una sucursal válida').nullable().optional()
   ),
 
   pos_observaciones: emptyToNull(
@@ -140,7 +140,7 @@ export type NuevoCandidatoInput = z.infer<typeof nuevoCandidatoSchema>
 
 export const candidatoDocumentoMetadataSchema = z.object({
   cdo_tipo: z.enum(['CV', 'CEDULA', 'REFERENCIA', 'TITULO', 'OTRO'], {
-    error: 'Seleccione el tipo de documento',
+    error: 'Seleccioná el tipo de documento',
   }),
 
   cdo_nombre: z
@@ -175,7 +175,7 @@ export type CandidatoDocumentoMetadataInput = z.infer<typeof candidatoDocumentoM
 
 export const moveToStageSchema = z.object({
   applicationId: z.number().int().positive(),
-  stageId: z.number({ error: 'Seleccione una etapa' }).int().positive(),
+  stageId: z.number({ error: 'Seleccioná una etapa' }).int().positive(),
   note: emptyToNull(z.string().trim().max(300, 'Máximo 300 caracteres').nullable().optional()),
 })
 
@@ -186,7 +186,7 @@ export type MoveToStageInput = z.infer<typeof moveToStageSchema>
 export const rechazarPostulacionSchema = z.object({
   postulacionId: z.number().int().positive(),
   motivo: z
-    .string({ error: 'Indique el motivo del descarte' })
+    .string({ error: 'Indicá el motivo del descarte' })
     .trim()
     .min(3, 'Describe brevemente el motivo')
     .max(300, 'Máximo 300 caracteres'),
@@ -208,7 +208,7 @@ const puntajeCriterioSchema = z
     ),
   })
   .refine((data) => data.noAplica || data.puntaje !== null, {
-    message: 'Ingrese un puntaje o marque "No aplica"',
+    message: 'Ingresá un puntaje o marcá "No aplica"',
     path: ['puntaje'],
   })
 

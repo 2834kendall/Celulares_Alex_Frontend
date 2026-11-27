@@ -63,7 +63,7 @@ describe('createEtapaSeleccion (server action)', () => {
     expect(result).toEqual({
       ok: false,
       error:
-        'Ya existe una etapa desactivada con ese nombre. Restáurela desde Configuración → Etapas de selección.',
+        'Ya existe una etapa desactivada con ese nombre. Restaurala desde Configuración → Etapas de selección.',
     })
   })
 

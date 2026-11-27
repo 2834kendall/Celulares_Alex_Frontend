@@ -48,13 +48,13 @@ describe('scheduleSchema · segundo bloque (jornada partida)', () => {
   it('rechaza solo la entrada del segundo bloque', () => {
     expect(
       errorEn({ hor_hora_entrada_2: '14:00', hor_hora_salida_2: '' }, 'hor_hora_salida_2')
-    ).toBe('Indique la entrada y la salida del segundo bloque.')
+    ).toBe('Indicá la entrada y la salida del segundo bloque.')
   })
 
   it('rechaza solo la salida del segundo bloque', () => {
     expect(
       errorEn({ hor_hora_entrada_2: '', hor_hora_salida_2: '18:00' }, 'hor_hora_salida_2')
-    ).toBe('Indique la entrada y la salida del segundo bloque.')
+    ).toBe('Indicá la entrada y la salida del segundo bloque.')
   })
 
   it('rechaza un segundo bloque que termina antes de empezar', () => {
@@ -66,7 +66,7 @@ describe('scheduleSchema · segundo bloque (jornada partida)', () => {
   it('rechaza un segundo bloque que empieza antes de que termine el primero', () => {
     expect(
       errorEn({ hor_hora_entrada_2: '11:00', hor_hora_salida_2: '15:00' }, 'hor_hora_entrada_2')
-    ).toBe('El segundo bloque debe empezar cuando termina el primero o despues.')
+    ).toBe('El segundo bloque debe empezar cuando termina el primero o después.')
   })
 
   it('rechaza un formato de hora invalido en el segundo bloque', () => {
@@ -92,13 +92,13 @@ describe('scheduleSchema · sucursal de cada bloque', () => {
   it('rechaza definir solo la sucursal del primer bloque', () => {
     expect(
       errorEn({ ...partida, hor_sucursal_id: 10, hor_sucursal_id_2: null }, 'hor_sucursal_id_2')
-    ).toBe('Elija la sucursal de los dos bloques, o deje las dos como la de la asignacion.')
+    ).toBe('Elegí la sucursal de los dos bloques, o dejá las dos como la de la asignación.')
   })
 
   it('rechaza definir solo la sucursal del segundo bloque', () => {
     expect(
       errorEn({ ...partida, hor_sucursal_id: null, hor_sucursal_id_2: 20 }, 'hor_sucursal_id_2')
-    ).toBe('Elija la sucursal de los dos bloques, o deje las dos como la de la asignacion.')
+    ).toBe('Elegí la sucursal de los dos bloques, o dejá las dos como la de la asignación.')
   })
 
   it('rechaza sucursales sin segundo bloque', () => {

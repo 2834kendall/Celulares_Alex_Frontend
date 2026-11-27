@@ -53,7 +53,7 @@ export function WidgetCard({
           <Link
             href={href}
             aria-label={`Abrir ${title}`}
-            className="group ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition duration-200 hover:bg-brand-50 active:scale-95 pointer-coarse:min-h-10"
+            className="group ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition duration-200 hover:bg-brand-50 active:scale-95 pointer-coarse:min-h-11"
           >
             Abrir
             <ArrowUpRight

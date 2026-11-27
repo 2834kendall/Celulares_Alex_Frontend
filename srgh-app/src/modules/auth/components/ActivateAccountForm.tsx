@@ -16,10 +16,10 @@ export function ActivateAccountForm({ email }: ActivateAccountFormProps) {
   return (
     <SetPasswordForm
       action={activateAccount}
-      title="Activa tu cuenta"
+      title="Activá tu cuenta"
       description={
         <>
-          Define la contraseña con la que ingresarás
+          Definí la contraseña con la que vas a ingresar
           {email ? (
             <>
               {' '}
@@ -31,7 +31,7 @@ export function ActivateAccountForm({ email }: ActivateAccountFormProps) {
       }
       submitLabel="Activar cuenta"
       pendingLabel="Guardando contraseña"
-      footer="¿Dificultades con la activación? Contacte al soporte interno de TI."
+      footer="¿Dificultades con la activación? Contactá al soporte interno de TI."
     />
   )
 }

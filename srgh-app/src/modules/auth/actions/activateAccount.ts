@@ -22,6 +22,6 @@ export async function activateAccount(input: ActivateAccountInput): Promise<Acti
 
   return updatePasswordWithSession(
     parsed.data.password,
-    'El enlace de activación expiró. Solicite que le reenvíen la invitación.'
+    'El enlace de activación expiró. Pedí que te reenvíen la invitación.'
   )
 }

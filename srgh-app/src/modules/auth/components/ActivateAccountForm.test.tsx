@@ -37,7 +37,7 @@ describe('<ActivateAccountForm />', () => {
   it('funciona sin email (solo omite la mención)', () => {
     render(<ActivateAccountForm email="" />)
 
-    expect(screen.getByText(/define la contraseña/i)).toBeInTheDocument()
+    expect(screen.getByText(/definí la contraseña/i)).toBeInTheDocument()
   })
 
   it('valida la coincidencia antes de llamar la action', async () => {

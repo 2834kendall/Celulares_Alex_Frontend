@@ -109,7 +109,7 @@ export function DocumentDropzone({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 active:scale-[0.98]"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 pointer-coarse:min-h-11 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 active:scale-[0.98]"
             >
               <Plus className="h-3.5 w-3.5" /> {triggerLabel}
             </button>

@@ -37,7 +37,7 @@ export const manualMarkSchema = z.object({
   observacion: z
     .string('La justificación es requerida.')
     .trim()
-    .min(10, 'Escribe una justificación de al menos 10 caracteres.')
+    .min(10, 'Escribí una justificación de al menos 10 caracteres.')
     .max(500, 'Máximo 500 caracteres.'),
 })
 
@@ -78,7 +78,7 @@ export const kioskMarkSchema = z.object({
   // su propio reloj, que en ese caso son el mismo instante.
   fechaHora: z
     .string()
-    .regex(naiveTimestampRegex, 'Formato de fecha y hora invalido.')
+    .regex(naiveTimestampRegex, 'Formato de fecha y hora inválido.')
     .nullable()
     .default(null),
 })
@@ -147,7 +147,7 @@ export const justifyTardinessSchema = z
     motivo: z.string().trim().max(500, 'Máximo 500 caracteres.').nullable().default(null),
   })
   .refine((v) => !v.justificada || (v.motivo !== null && v.motivo.length >= MOTIVO_MINIMO), {
-    message: `Escribe un motivo de al menos ${MOTIVO_MINIMO} caracteres.`,
+    message: `Escribí un motivo de al menos ${MOTIVO_MINIMO} caracteres.`,
     path: ['motivo'],
   })
 
@@ -174,7 +174,7 @@ export const tipoTardiaSchema = z.object({
     .min(2, 'El nombre es requerido.')
     .max(60, 'Máximo 60 caracteres.'),
   tta_desde_minutos: z
-    .number('Indica desde qué minuto de atraso empieza.')
+    .number('Indicá desde qué minuto de atraso empieza.')
     .int('Tiene que ser un número entero de minutos.')
     .min(1, 'Tiene que empezar en el minuto 1 o después.')
     .max(720, 'Máximo 720 minutos (12 horas).'),

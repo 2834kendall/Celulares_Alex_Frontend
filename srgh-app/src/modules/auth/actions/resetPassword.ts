@@ -22,6 +22,6 @@ export async function resetPassword(input: ResetPasswordInput): Promise<ResetPas
 
   return updatePasswordWithSession(
     parsed.data.password,
-    'El enlace de recuperación expiró. Solicite uno nuevo desde la pantalla de acceso.'
+    'El enlace de recuperación expiró. Pedí uno nuevo desde la pantalla de acceso.'
   )
 }

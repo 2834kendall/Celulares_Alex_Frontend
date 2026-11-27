@@ -87,7 +87,7 @@ describe('<LogoutButton />', () => {
 
     await waitFor(() => expect(screen.getByRole('button')).toBeEnabled())
     expect(toast.error).toHaveBeenCalledWith(
-      'No se pudo conectar para cerrar la sesión. Revise su conexión e intente de nuevo.'
+      'No se pudo conectar para cerrar la sesión. Revisá tu conexión e intentá de nuevo.'
     )
     expect(replace).not.toHaveBeenCalled()
   })

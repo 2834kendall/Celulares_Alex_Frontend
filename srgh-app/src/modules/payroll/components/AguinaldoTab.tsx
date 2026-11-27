@@ -424,7 +424,7 @@ export function AguinaldoTab({
 
       {confirmando && (
         <ConfirmDialog
-          title={`¿Desea pagarle el aguinaldo a ${confirmando.empleadoNombre}?`}
+          title={`¿Querés pagarle el aguinaldo a ${confirmando.empleadoNombre}?`}
           message={`${mensajeConfirmarPago(
             `Se registrará el pago de ${formatCRC(confirmando.monto)}`,
             confirmando.empleadoEmail,

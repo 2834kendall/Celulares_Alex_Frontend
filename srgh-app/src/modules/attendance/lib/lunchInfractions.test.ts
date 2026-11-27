@@ -38,10 +38,10 @@ describe('lunchTardinessOfDay', () => {
 
   it('usa el mismo catalogo que la entrada', () => {
     expect(lunchTardinessOfDay(day({ finAlmuerzoTime: '13:03' }), TIPOS)?.nombre).toBe(
-      'Tardia leve'
+      'Tardía leve'
     )
     expect(lunchTardinessOfDay(day({ finAlmuerzoTime: '13:12' }), TIPOS)?.nombre).toBe(
-      'Tardia grave'
+      'Tardía grave'
     )
   })
 
@@ -53,14 +53,14 @@ describe('lunchTardinessOfDay', () => {
     expect(
       lunchTardinessOfDay(day({ inicioAlmuerzoTime: '12:40', finAlmuerzoTime: '13:43' }), TIPOS)
         ?.nombre
-    ).toBe('Tardia leve')
+    ).toBe('Tardía leve')
   })
 
   it('empezar antes no regala tiempo: volver a la hora del horario puede ser tarde', () => {
     expect(
       lunchTardinessOfDay(day({ inicioAlmuerzoTime: '11:30', finAlmuerzoTime: '13:00' }), TIPOS)
         ?.nombre
-    ).toBe('Tardia grave')
+    ).toBe('Tardía grave')
   })
 
   it('se puede almorzar a cualquier hora del dia', () => {
@@ -156,13 +156,13 @@ describe('tardanza del segundo bloque (SGRH-110)', () => {
     const d = partido({ secondBlockEntradaTime: '16:12' })
 
     expect(secondBlockLateMinutes(d)).toBe(12)
-    expect(secondBlockTardinessOfDay(d, TIPOS)?.nombre).toBe('Tardia grave')
+    expect(secondBlockTardinessOfDay(d, TIPOS)?.nombre).toBe('Tardía grave')
   })
 
   it('usa el mismo catalogo que la entrada', () => {
     expect(
       secondBlockTardinessOfDay(partido({ secondBlockEntradaTime: '16:03' }), TIPOS)?.nombre
-    ).toBe('Tardia leve')
+    ).toBe('Tardía leve')
   })
 
   it('un dia de un solo bloque no tiene tardanza de segundo bloque', () => {

@@ -53,7 +53,7 @@ describe('<ColorPicker />', () => {
     const onChange = setup()
     await user.click(screen.getByRole('button', { name: 'Agregar color personalizado' }))
 
-    const input = screen.getByLabelText('Codigo hexadecimal')
+    const input = screen.getByLabelText('Código hexadecimal')
     await user.clear(input)
     await user.type(input, '#ff8800')
     await user.tab()
@@ -67,13 +67,13 @@ describe('<ColorPicker />', () => {
     const onChange = setup()
     await user.click(screen.getByRole('button', { name: 'Agregar color personalizado' }))
 
-    const before = (screen.getByLabelText('Codigo hexadecimal') as HTMLInputElement).value
-    const input = screen.getByLabelText('Codigo hexadecimal')
+    const before = (screen.getByLabelText('Código hexadecimal') as HTMLInputElement).value
+    const input = screen.getByLabelText('Código hexadecimal')
     await user.clear(input)
     await user.type(input, 'zzz')
     await user.tab()
 
-    expect((screen.getByLabelText('Codigo hexadecimal') as HTMLInputElement).value).toBe(before)
+    expect((screen.getByLabelText('Código hexadecimal') as HTMLInputElement).value).toBe(before)
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -109,7 +109,7 @@ describe('<ColorPicker />', () => {
     expect(container.contains(panel)).toBe(false)
 
     // Usar el panel no lo cierra, aunque ya no sea hijo del botón...
-    await user.click(screen.getByLabelText('Codigo hexadecimal'))
+    await user.click(screen.getByLabelText('Código hexadecimal'))
     expect(screen.getByLabelText('Tono')).toBeInTheDocument()
 
     // ...y tocar fuera sí.

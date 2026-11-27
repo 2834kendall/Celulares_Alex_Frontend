@@ -89,7 +89,7 @@ describe('allowedNextMarks', () => {
 describe('describeSequenceRejection', () => {
   it('explica que marcas corresponden', () => {
     expect(describeSequenceRejection('salida', ['fin_almuerzo'])).toBe(
-      'No corresponde marcar salida ahora. Puedes marcar: fin de almuerzo.'
+      'No corresponde marcar salida ahora. Podés marcar: fin de almuerzo.'
     )
   })
 

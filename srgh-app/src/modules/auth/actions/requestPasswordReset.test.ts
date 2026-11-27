@@ -24,7 +24,7 @@ describe('requestPasswordReset (server action)', () => {
   it('rechaza un correo inválido antes de tocar Supabase', async () => {
     const result = await requestPasswordReset({ email: 'no-es-correo' })
 
-    expect(result).toEqual({ ok: false, error: 'Ingrese un correo electrónico válido.' })
+    expect(result).toEqual({ ok: false, error: 'Ingresá un correo electrónico válido.' })
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
 
@@ -75,7 +75,7 @@ describe('requestPasswordReset (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Demasiadas solicitudes. Espere unos minutos antes de volver a intentar.',
+      error: 'Demasiadas solicitudes. Esperá unos minutos antes de volver a intentar.',
     })
   })
 
@@ -86,7 +86,7 @@ describe('requestPasswordReset (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Demasiadas solicitudes. Espere unos minutos antes de volver a intentar.',
+      error: 'Demasiadas solicitudes. Esperá unos minutos antes de volver a intentar.',
     })
   })
 
@@ -98,7 +98,7 @@ describe('requestPasswordReset (server action)', () => {
     expect(result).toEqual({
       ok: false,
       error:
-        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
+        'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.',
     })
   })
 })

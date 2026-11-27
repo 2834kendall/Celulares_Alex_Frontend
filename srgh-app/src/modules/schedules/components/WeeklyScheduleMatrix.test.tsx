@@ -268,7 +268,7 @@ describe('<WeeklyScheduleMatrix />', () => {
 
     // Calendario propio (DatePopover), ya no el <input type="date"> nativo: se
     // abre el panel y se elige el dia por su nombre accesible completo.
-    await user.click(screen.getByRole('button', { name: 'Ir a una semana especifica' }))
+    await user.click(screen.getByRole('button', { name: 'Ir a una semana específica' }))
     await user.click(screen.getByRole('button', { name: /14 de enero de 2026/ }))
 
     expect(push).toHaveBeenCalledWith('/schedule?week=2026-01-12')
@@ -491,7 +491,7 @@ describe('<WeeklyScheduleMatrix />', () => {
     renderMatrix([makeRow()])
 
     await user.click(
-      screen.getByRole('button', { name: 'Generar horario sugerido segun el historial' })
+      screen.getByRole('button', { name: 'Generar horario sugerido según el historial' })
     )
 
     await waitFor(() => expect(mockGetScheduleSuggestion).toHaveBeenCalledWith([1], WEEK_START))
@@ -840,7 +840,7 @@ describe('<WeeklyScheduleMatrix />', () => {
         renderMatrix([makeRow()])
 
         await user.click(
-          screen.getByRole('button', { name: 'Generar horario sugerido segun el historial' })
+          screen.getByRole('button', { name: 'Generar horario sugerido según el historial' })
         )
 
         await waitFor(() => expect(mockPasteWeeklySchedule).toHaveBeenCalledTimes(1))

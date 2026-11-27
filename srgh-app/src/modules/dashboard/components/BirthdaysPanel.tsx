@@ -148,7 +148,7 @@ export function BirthdaysPanel({
   }
 
   function copyMessage(birthday: UpcomingBirthday) {
-    const message = `¡Feliz cumpleaños, ${firstName(birthday.nombre)}! Que tengas un gran día.`
+    const message = `¡Feliz cumpleaños, ${firstName(birthday.nombre)}! Que tengás un gran día.`
     /* Clipboard needs a secure context and can be denied: the button simply
        does not confirm in that case. */
     void navigator.clipboard
@@ -208,7 +208,7 @@ export function BirthdaysPanel({
                   setOpenId(null)
                 }}
                 className={cn(
-                  'relative rounded-lg px-3.5 py-1.5 transition-colors duration-200 pointer-coarse:min-h-10',
+                  'relative rounded-lg px-3.5 py-1.5 transition-colors duration-200 pointer-coarse:min-h-11',
                   view === key ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'
                 )}
               >
@@ -224,7 +224,7 @@ export function BirthdaysPanel({
             onClick={toggleExpanded}
             aria-expanded={expanded}
             className={cn(
-              'group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition duration-200 hover:bg-brand-50 active:scale-95 pointer-coarse:min-h-10',
+              'group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition duration-200 hover:bg-brand-50 active:scale-95 pointer-coarse:min-h-11',
               !expanded && 'ml-auto'
             )}
           >
@@ -491,7 +491,7 @@ export function BirthdaysPanel({
                                   tabIndex={isOpen ? 0 : -1}
                                   onClick={() => congratulate(birthday.id)}
                                   className={cn(
-                                    'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-95 pointer-coarse:min-h-10',
+                                    'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-95 pointer-coarse:min-h-11',
                                     wasCongratulated
                                       ? 'bg-emerald-50 text-emerald-700'
                                       : 'bg-brand-700 text-white hover:-translate-y-0.5 hover:bg-brand-800'
@@ -513,7 +513,7 @@ export function BirthdaysPanel({
                                   type="button"
                                   tabIndex={isOpen ? 0 : -1}
                                   onClick={() => copyMessage(birthday)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 active:scale-95 pointer-coarse:min-h-10"
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 active:scale-95 pointer-coarse:min-h-11"
                                 >
                                   {copiedId === birthday.id ? (
                                     <>
@@ -534,7 +534,7 @@ export function BirthdaysPanel({
                                   <Link
                                     href={`/employees/${birthday.id}`}
                                     tabIndex={isOpen ? 0 : -1}
-                                    className="group/link inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 active:scale-95 pointer-coarse:min-h-10"
+                                    className="group/link inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 active:scale-95 pointer-coarse:min-h-11"
                                   >
                                     <UserRound
                                       className="h-3.5 w-3.5 transition-transform duration-200 group-hover/link:scale-110"

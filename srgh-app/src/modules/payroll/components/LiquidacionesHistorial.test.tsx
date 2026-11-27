@@ -135,7 +135,7 @@ describe('<LiquidacionesHistorial />', () => {
 
     await user.click(tabla().getByRole('button', { name: 'Pagar' }))
     const dialogo = screen.getByRole('alertdialog', {
-      name: '¿Desea pagarle la liquidación a Ana Pérez?',
+      name: '¿Querés pagarle la liquidación a Ana Pérez?',
     })
     expect(dialogo).toHaveTextContent('se le enviará el comprobante en PDF a ana@correo.com')
     expect(mockPagar).not.toHaveBeenCalled()

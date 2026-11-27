@@ -9,14 +9,14 @@ describe('<ConfirmDialog />', () => {
     render(
       <ConfirmDialog
         title="Eliminar horario"
-        message="Esta accion no se puede deshacer."
+        message="Esta acción no se puede deshacer."
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
       />
     )
 
     expect(screen.getByRole('alertdialog', { name: 'Eliminar horario' })).toBeInTheDocument()
-    expect(screen.getByText('Esta accion no se puede deshacer.')).toBeInTheDocument()
+    expect(screen.getByText('Esta acción no se puede deshacer.')).toBeInTheDocument()
   })
 
   it('usa "Eliminar" como texto de confirmacion por defecto', () => {

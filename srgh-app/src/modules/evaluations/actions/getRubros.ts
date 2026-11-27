@@ -38,7 +38,7 @@ export async function getRubros(): Promise<GetRubrosResult> {
     .returns<AreaRow[]>()
 
   if (error) {
-    return { ok: false, error: 'No se pudieron cargar los rubros de evaluacion.' }
+    return { ok: false, error: 'No se pudieron cargar los rubros de evaluación.' }
   }
 
   const rubros: RubroRow[] = (data ?? []).map((area) => {

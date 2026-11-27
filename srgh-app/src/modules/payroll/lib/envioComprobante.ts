@@ -105,11 +105,11 @@ async function mandarComprobante(c: CorreoComprobante): Promise<ResultadoEnvioCo
   const text = [
     `Hola ${c.empleadoNombre}:`,
     '',
-    `${c.empresaNombre} registró el pago de su ${c.queSePago}. Le adjuntamos el comprobante en PDF.`,
+    `${c.empresaNombre} registró el pago de tu ${c.queSePago}. Te adjuntamos el comprobante en PDF.`,
     '',
     ...c.resumen.map((r) => `${r.label}: ${r.valor}`),
     '',
-    'Si algo no coincide con lo que recibió, comuníquese con el encargado de planillas.',
+    'Si algo no coincide con lo que recibiste, comunicate con el encargado de planillas.',
   ].join('\n')
 
   const filas = c.resumen
@@ -128,9 +128,9 @@ async function mandarComprobante(c: CorreoComprobante): Promise<ResultadoEnvioCo
 <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;">${escaparHtml(c.empresaNombre)}</p>
 <h1 style="margin:0 0 16px;font-size:18px;">Comprobante de pago</h1>
 <p style="margin:0 0 12px;">Hola ${escaparHtml(c.empleadoNombre)}:</p>
-<p style="margin:0 0 16px;line-height:1.5;">Registramos el pago de su <strong>${escaparHtml(c.queSePago)}</strong>. Le adjuntamos el comprobante completo en PDF.</p>
+<p style="margin:0 0 16px;line-height:1.5;">Registramos el pago de tu <strong>${escaparHtml(c.queSePago)}</strong>. Te adjuntamos el comprobante completo en PDF.</p>
 <table role="presentation" style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;">${filas}</table>
-<p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#64748b;">Si algo no coincide con lo que recibió, comuníquese con el encargado de planillas.</p>
+<p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#64748b;">Si algo no coincide con lo que recibiste, comunicate con el encargado de planillas.</p>
 </div></body></html>`
 
   try {

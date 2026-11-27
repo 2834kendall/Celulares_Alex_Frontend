@@ -119,7 +119,7 @@ export function RubroSeleccionForm({ rubro, onSuccess }: RubroSeleccionFormProps
           aria-invalid={!!errors.descripcion}
           {...register('descripcion')}
           className={`${INPUT} resize-none`}
-          placeholder="Defina qué se califica con este criterio..."
+          placeholder="Definí qué se califica con este criterio..."
         />
         {errors.descripcion && <p className={FIELD_ERROR}>{errors.descripcion.message}</p>}
       </div>

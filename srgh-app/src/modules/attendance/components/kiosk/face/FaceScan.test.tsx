@@ -49,12 +49,12 @@ vi.mock('./landmarks', () => ({
 }))
 vi.mock('./quality', () => ({
   assessQuality: () => ({ ok: mocks.qualityOk, issues: [] }),
-  qualityMessage: () => 'Acércate un poco más a la cámara',
+  qualityMessage: () => 'Acercate un poco más a la cámara',
   assessPixels: () => ({ ok: true, sharpness: 100, light: 120 }),
   handCoversFace: () => mocks.covered,
   eyeShade: () => ({ right: 0.5, left: 0.5 }),
   looksLikeDarkGlasses: () => mocks.dark,
-  DARK_GLASSES_MESSAGE: 'Quítate los lentes oscuros',
+  DARK_GLASSES_MESSAGE: 'Quitate los lentes oscuros',
   ovalInVideo: () => null,
   HAND_ON_FACE_MESSAGE: 'Quita la mano de la cara',
 }))
@@ -287,7 +287,7 @@ describe('FaceScan continuity', () => {
     const { getByTestId, findByText } = await mount(true)
     const ring = getByTestId('scan-ring')
     await frame()
-    expect(await findByText('Quédate quieto, mirando a la cámara')).toBeInTheDocument()
+    expect(await findByText('Quedate quieto, mirando a la cámara')).toBeInTheDocument()
     let previous = 0
     for (let i = 0; i < 12; i++) {
       await frame()
@@ -299,12 +299,12 @@ describe('FaceScan continuity', () => {
     for (let i = 0; i < 20; i++) await frame()
     expect(ring).toHaveAttribute('data-tone', 'done')
     expect(ring).toHaveAttribute('data-progress', '1.00')
-    expect(await findByText('Listo, ya puedes moverte')).toBeInTheDocument()
+    expect(await findByText('Listo, ya podés moverte')).toBeInTheDocument()
   })
   it('does not flash a message that only lasts one frame', async () => {
     const { findByText, queryByText } = await mount(true)
     await frame()
-    await findByText('Quédate quieto, mirando a la cámara')
+    await findByText('Quedate quieto, mirando a la cámara')
     mocks.covered = true
     await frame()
     mocks.covered = false
@@ -317,7 +317,7 @@ describe('FaceScan continuity', () => {
     const { onUnavailable } = await mount()
     for (let i = 0; i < 90; i++) await frame()
     expect(onUnavailable).toHaveBeenCalledWith(
-      'No pudimos completar la captura. Acércate un poco más a la cámara e intenta de nuevo.'
+      'No pudimos completar la captura. Acercate un poco más a la cámara e intentá de nuevo.'
     )
   })
   it('shows the loading skeleton until the camera answers, then the live guidance', async () => {
@@ -339,7 +339,7 @@ describe('FaceScan continuity', () => {
     const { onEmbedding, findByText } = await mount(true)
     for (let i = 0; i < 30; i++) await frame()
     expect(onEmbedding).not.toHaveBeenCalled()
-    expect(await findByText('Quítate los lentes oscuros')).toBeInTheDocument()
+    expect(await findByText('Quitate los lentes oscuros')).toBeInTheDocument()
 
     mocks.dark = false
     for (let i = 0; i < 30; i++) await frame()
@@ -359,7 +359,7 @@ describe('FaceScan continuity', () => {
     expect(getByText('De frente, sin nada en la cara')).toBeInTheDocument()
     for (let i = 0; i < 85; i++) await frame()
     expect(onUnavailable).toHaveBeenCalledWith(
-      expect.stringContaining('Si usas lentes de sol, quítatelos e intenta de nuevo.')
+      expect.stringContaining('Si usás lentes de sol, quitátelos e intentá de nuevo.')
     )
   })
 
@@ -406,7 +406,7 @@ describe('FaceScan continuity', () => {
     for (let i = 0; i < 30; i++) await frame()
     await waitFor(() =>
       expect(onUnavailable).toHaveBeenCalledWith(
-        'Las tomas salieron distintas entre sí. Quédate quieto, de frente, e intenta de nuevo.'
+        'Las tomas salieron distintas entre sí. Quedate quieto, de frente, e intentá de nuevo.'
       )
     )
     expect(onEmbedding).not.toHaveBeenCalled()

@@ -7,7 +7,7 @@
  * pasar con un atraso de, digamos, 7 minutos.
  */
 export function rangeLabel(desde: number, siguienteDesde: number | null): string {
-  if (siguienteDesde === null) return `${desde} min o mas`
+  if (siguienteDesde === null) return `${desde} min o más`
 
   const hasta = siguienteDesde - 1
   return hasta === desde ? `${desde} min` : `${desde} a ${hasta} min`

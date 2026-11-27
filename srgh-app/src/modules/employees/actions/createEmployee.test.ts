@@ -246,9 +246,10 @@ describe('createEmployee (server action)', () => {
     })
 
     const resConMensaje = await createEmployee(VALID_INPUT)
+    // El mensaje de la base viene en tuteo: se muestra en voseo (SGRH-123).
     expect(resConMensaje).toEqual({
       ok: false,
-      error: 'No tienes acceso a la sucursal seleccionada.',
+      error: 'No tenés acceso a la sucursal seleccionada.',
     })
 
     mockRpc({ data: null, error: { code: '42501', message: '' } })

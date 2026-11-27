@@ -425,10 +425,10 @@ export function FaceScan({
 
       function timeoutMessage(fallback: string) {
         if (!enrollment && darkStreak >= DARK_STREAK) {
-          return 'No pudimos completar la captura. Si usas lentes de sol, quítatelos e intenta de nuevo.'
+          return 'No pudimos completar la captura. Si usás lentes de sol, quitátelos e intentá de nuevo.'
         }
         return lastHint
-          ? `No pudimos completar la captura. ${lastHint} e intenta de nuevo.`
+          ? `No pudimos completar la captura. ${lastHint} e intentá de nuevo.`
           : fallback
       }
 
@@ -556,7 +556,7 @@ export function FaceScan({
         ) {
           fail(
             timeoutMessage(
-              'No pudimos completar una captura válida. Ajusta la luz e intenta de nuevo.'
+              'No pudimos completar una captura válida. Ajustá la luz e intentá de nuevo.'
             )
           )
           return
@@ -591,7 +591,7 @@ export function FaceScan({
           detectionFrames += 1
           detectionMs += performance.now() - now
         } catch {
-          const reportFailure = () => fail('No se pudo analizar la cámara. Intenta de nuevo.')
+          const reportFailure = () => fail('No se pudo analizar la cámara. Intentá de nuevo.')
           if (enrollment) reportFailure()
           else void discardFaceLandmarker(FACE_LIMIT).then(reportFailure)
           return
@@ -670,7 +670,7 @@ export function FaceScan({
             const hands = handLandmarker.detectForVideo(v, now).landmarks ?? []
             covered = hands.length > 0 && handCoversFace(landmarks, hands)
           } catch {
-            fail('No se pudo analizar la cámara. Intenta de nuevo.')
+            fail('No se pudo analizar la cámara. Intentá de nuevo.')
             return
           }
           if (covered) {

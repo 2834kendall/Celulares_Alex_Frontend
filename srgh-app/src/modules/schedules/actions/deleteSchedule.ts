@@ -14,7 +14,7 @@ export async function deleteSchedule(id: number): Promise<DeleteScheduleResult> 
   const { error } = await supabase.from('sgrh_cat_horarios').delete().eq('hor_id', id)
 
   if (error) {
-    return { ok: false, error: 'No se pudo eliminar el horario. Verifique que no este en uso.' }
+    return { ok: false, error: 'No se pudo eliminar el horario. Verificá que no esté en uso.' }
   }
 
   revalidatePath('/schedule')

@@ -252,7 +252,7 @@ describe('selection stage editing', () => {
       ok: false,
       error: active
         ? 'Ya existe una columna con ese nombre.'
-        : 'Ya existe una etapa desactivada con ese nombre. Restáurela desde Configuración → Etapas de selección.',
+        : 'Ya existe una etapa desactivada con ese nombre. Restaurala desde Configuración → Etapas de selección.',
     })
     expect(revalidatePath).not.toHaveBeenCalled()
   })

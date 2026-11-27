@@ -38,7 +38,7 @@ describe('<ResetPasswordForm />', () => {
   it('funciona sin email (solo omite la mención)', () => {
     render(<ResetPasswordForm email="" />)
 
-    expect(screen.getByText(/elija la contraseña nueva/i)).toBeInTheDocument()
+    expect(screen.getByText(/elegí la contraseña nueva/i)).toBeInTheDocument()
   })
 
   it('valida la coincidencia antes de llamar la action', async () => {
@@ -152,7 +152,7 @@ describe('<ResetPasswordForm />', () => {
   it('muestra el error del servidor sin navegar', async () => {
     mockResetPassword.mockResolvedValue({
       ok: false,
-      error: 'El enlace de recuperación expiró. Solicite uno nuevo desde la pantalla de acceso.',
+      error: 'El enlace de recuperación expiró. Pedí uno nuevo desde la pantalla de acceso.',
     })
     render(<ResetPasswordForm email="ana@empresa.com" />)
 

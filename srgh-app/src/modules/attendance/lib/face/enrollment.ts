@@ -15,7 +15,7 @@ export const ENROLLMENT_MAX_SPREAD = UMBRAL_MATCH_ALTA
 
 /** Mensaje para la persona cuando las tomas no coinciden entre si. */
 export const ENROLLMENT_INCONSISTENT_MESSAGE =
-  'Las tomas salieron distintas entre sí. Quédate quieto, de frente, e intenta de nuevo.'
+  'Las tomas salieron distintas entre sí. Quedate quieto, de frente, e intentá de nuevo.'
 
 export class InconsistentEnrollmentError extends Error {
   constructor() {

@@ -81,13 +81,13 @@ describe('evaluation creation form', () => {
     render(<EvaluationForm collaborators={collaborators} rubros={rubros} initialLabId={999} />)
     dates()
     await userEvent.click(save())
-    expect(await screen.findByText('Seleccione un colaborador.')).toBeInTheDocument()
+    expect(await screen.findByText('Seleccioná un colaborador.')).toBeInTheDocument()
     expect(createEvaluation).not.toHaveBeenCalled()
   })
   it('rejects missing dates before making a request', async () => {
     render(<EvaluationForm collaborators={collaborators} rubros={rubros} initialLabId={4} />)
     await userEvent.click(save())
-    expect(await screen.findByText('Seleccione la fecha de inicio.')).toBeInTheDocument()
+    expect(await screen.findByText('Seleccioná la fecha de inicio.')).toBeInTheDocument()
     expect(createEvaluation).not.toHaveBeenCalled()
   })
   it('rejects a reversed period', async () => {
@@ -108,9 +108,7 @@ describe('evaluation creation form', () => {
     expect(screen.getByText(/^Promedio:/)).toHaveTextContent('8/10')
     await userEvent.click(screen.getAllByRole('checkbox')[1])
     await userEvent.click(save())
-    expect(
-      await screen.findByText('Debe calificar al menos un rubro que aplique.')
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Calificá al menos un rubro que aplique.')).toBeInTheDocument()
     expect(createEvaluation).not.toHaveBeenCalled()
   })
   it('submits selected identity/type, scores and notes, then preserves other URL filters', async () => {

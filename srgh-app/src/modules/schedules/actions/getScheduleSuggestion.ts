@@ -121,7 +121,7 @@ export async function getScheduleSuggestion(
   }
 
   if (!isValidISODate(beforeDateISO)) {
-    return { ok: false, error: 'Fecha invalida.' }
+    return { ok: false, error: 'Fecha inválida.' }
   }
 
   const supabase = await createClient()

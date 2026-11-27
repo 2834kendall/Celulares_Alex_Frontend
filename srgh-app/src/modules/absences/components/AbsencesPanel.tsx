@@ -145,9 +145,9 @@ export function AbsencesPanel({
                 id="aus_tipo"
                 value={form.tipoAusenciaId}
                 onChange={(v) => setField('tipoAusenciaId', v)}
-                placeholder="Seleccione un tipo"
+                placeholder="Seleccioná un tipo"
                 options={[
-                  { value: '', label: 'Seleccione un tipo' },
+                  { value: '', label: 'Seleccioná un tipo' },
                   ...ausenciaTypes.map((t) => ({
                     value: String(t.tau_id),
                     label: t.tau_nombre,
@@ -241,7 +241,7 @@ export function AbsencesPanel({
             {selectedType?.tau_requiere_documento_ccss && (
               <div>
                 <label className={LABEL} htmlFor="aus_boleta">
-                  Numero de boleta CCSS
+                  Número de boleta CCSS
                 </label>
                 <input
                   id="aus_boleta"
@@ -316,7 +316,7 @@ export function AbsencesPanel({
                   </p>
                   <p className="text-[11px] text-slate-500">
                     {a.tipoNombre} · {formatRange(a.fechaInicio, a.fechaFin)}
-                    {a.esIntradia ? ' · permiso intradia' : ''}
+                    {a.esIntradia ? ' · permiso intradía' : ''}
                   </p>
                 </div>
                 {canManageAbsences && (
@@ -343,7 +343,7 @@ export function AbsencesPanel({
       {confirmingDeleteId !== null && (
         <ConfirmDialog
           title="Eliminar registro"
-          message="Se eliminara esta incapacidad o licencia y la matriz de horarios liberara esos dias. Esta accion no se puede deshacer."
+          message="Se eliminará esta incapacidad o licencia y la matriz de horarios liberará esos días. Esta acción no se puede deshacer."
           onCancel={cancelDelete}
           onConfirm={confirmDelete}
         />

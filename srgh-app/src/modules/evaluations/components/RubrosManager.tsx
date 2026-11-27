@@ -54,7 +54,7 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
           Gestión de rubros y criterios de evaluación
         </h2>
         <p className="text-xs text-slate-500">
-          Defina, edite o elimine las competencias y rubros de desempeño que se evalúan en cada
+          Definí, editá o eliminá las competencias y rubros de desempeño que se evalúan en cada
           colaborador.
         </p>
       </div>
@@ -178,7 +178,7 @@ export function RubrosManager({ rubros, canWrite }: RubrosManagerProps) {
           title={isEditing ? `Editar rubro: ${editing.nombre}` : 'Crear rubro'}
           subtitle={
             isEditing
-              ? 'Actualice el nombre o la descripción del rubro de evaluación.'
+              ? 'Actualizá el nombre o la descripción del rubro de evaluación.'
               : 'Los rubros nuevos aparecen de inmediato como criterios en la vista individual y en las próximas evaluaciones.'
           }
           onClose={() => setEditing(null)}

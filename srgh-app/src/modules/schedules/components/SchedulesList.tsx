@@ -213,7 +213,7 @@ export function SchedulesList({
         <EmptyState
           icon={CalendarX}
           title="Todavía no hay horarios registrados"
-          description="Crea una plantilla de jornada para poder asignarla luego en la matriz semanal."
+          description="Creá una plantilla de jornada para poder asignarla luego en la matriz semanal."
           action={
             canWrite && (
               <Button onClick={() => setEditing('new')} className="mt-1">
@@ -231,9 +231,7 @@ export function SchedulesList({
               : 'No hay plantillas activas'
           }
           description={
-            nameFilter.trim()
-              ? 'Prueba con otro nombre.'
-              : 'Toca “Total plantillas” para ver todas.'
+            nameFilter.trim() ? 'Probá con otro nombre.' : 'Tocá “Total plantillas” para ver todas.'
           }
         />
       ) : (

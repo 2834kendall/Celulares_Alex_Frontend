@@ -94,15 +94,15 @@ export function useAbsencesPanel({ ausenciaTypes }: UseAbsencesPanelParams) {
     const tipoAusenciaId = Number(form.tipoAusenciaId)
 
     if (!employmentHistoryId) {
-      setFormError('Seleccione un colaborador.')
+      setFormError('Seleccioná un colaborador.')
       return
     }
     if (!tipoAusenciaId) {
-      setFormError('Seleccione un tipo de incapacidad o licencia.')
+      setFormError('Seleccioná un tipo de incapacidad o licencia.')
       return
     }
     if (form.ranges.some((range) => !range.fechaInicio || !range.fechaFin)) {
-      setFormError('Indique la fecha de inicio y la fecha final de cada periodo.')
+      setFormError('Indicá la fecha de inicio y la fecha final de cada periodo.')
       return
     }
 

@@ -43,7 +43,7 @@ describe('activateAccount (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'El enlace de activación expiró. Solicite que le reenvíen la invitación.',
+      error: 'El enlace de activación expiró. Pedí que te reenvíen la invitación.',
     })
     expect(client.auth.updateUser).not.toHaveBeenCalled()
   })
@@ -55,7 +55,7 @@ describe('activateAccount (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'El enlace de activación expiró. Solicite que le reenvíen la invitación.',
+      error: 'El enlace de activación expiró. Pedí que te reenvíen la invitación.',
     })
     expect(client.auth.updateUser).not.toHaveBeenCalled()
   })
@@ -105,7 +105,7 @@ describe('activateAccount (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'La contraseña es demasiado débil. Use una combinación más segura.',
+      error: 'La contraseña es demasiado débil. Usá una combinación más segura.',
     })
   })
 
@@ -116,7 +116,7 @@ describe('activateAccount (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo guardar la contraseña. Intente de nuevo.',
+      error: 'No se pudo guardar la contraseña. Intentá de nuevo.',
     })
   })
 })

@@ -30,7 +30,7 @@ export async function requestPasswordReset(
   const parsed = forgotPasswordSchema.safeParse(input)
 
   if (!parsed.success) {
-    return { ok: false, error: 'Ingrese un correo electrónico válido.' }
+    return { ok: false, error: 'Ingresá un correo electrónico válido.' }
   }
 
   // Correo interno de un kiosco (SGRH-111): nadie lo lee y su contraseña la
@@ -51,7 +51,7 @@ export async function requestPasswordReset(
     if (error.status === 429 || error.code === 'over_email_send_rate_limit') {
       return {
         ok: false,
-        error: 'Demasiadas solicitudes. Espere unos minutos antes de volver a intentar.',
+        error: 'Demasiadas solicitudes. Esperá unos minutos antes de volver a intentar.',
       }
     }
 
@@ -61,7 +61,7 @@ export async function requestPasswordReset(
       return {
         ok: false,
         error:
-          'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
+          'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.',
       }
     }
 

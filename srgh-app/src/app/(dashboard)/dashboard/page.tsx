@@ -120,7 +120,7 @@ function PanelUnavailable({ label }: { label: string }) {
   return (
     <section className={`${CARD} flex min-h-32 items-center justify-center p-5`}>
       <p className="text-center text-sm text-slate-500">
-        No se pudo cargar «{label}». Recargue la página para intentarlo de nuevo.
+        No se pudo cargar «{label}». Recargá la página para intentarlo de nuevo.
       </p>
     </section>
   )

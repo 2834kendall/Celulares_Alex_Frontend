@@ -158,7 +158,7 @@ export async function updateEmployee(
           ok: false,
           error:
             'Los datos personales se guardaron, pero la cuenta bancaria quedó pendiente de ' +
-            'migración. Avisa a soporte antes de volver a intentarlo.',
+            'migración. Avisá a soporte antes de volver a intentarlo.',
         }
       }
       return {

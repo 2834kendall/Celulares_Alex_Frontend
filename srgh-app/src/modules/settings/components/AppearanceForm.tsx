@@ -66,7 +66,7 @@ function ColorField({
           value={hereda ? heredado : (normalizado ?? heredado)}
           disabled={hereda}
           onChange={(event) => onChange(event.target.value)}
-          className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-slate-200 bg-white p-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-10 w-14 shrink-0 cursor-pointer pointer-coarse:h-11 rounded-lg border border-slate-200 bg-white p-1 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <input
           id={id}
@@ -77,7 +77,7 @@ function ColorField({
           aria-describedby={invalido ? errorId : undefined}
           onChange={(event) => onChange(event.target.value)}
           placeholder={heredado}
-          className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-xs text-slate-800 outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10 disabled:bg-slate-50 disabled:text-slate-500 aria-invalid:border-rose-400"
+          className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 pointer-coarse:min-h-11 font-mono text-xs text-slate-800 outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10 disabled:bg-slate-50 disabled:text-slate-500 aria-invalid:border-rose-400"
         />
       </div>
       {invalido && (
@@ -267,7 +267,7 @@ export function AppearanceForm({
                 type="button"
                 onClick={() => setAcento(sugerencia)}
                 disabled={sugerenciaAplicada}
-                className="mt-2 flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 transition hover:border-brand-400 hover:text-brand-700 disabled:cursor-default disabled:border-brand-300 disabled:text-brand-700"
+                className="mt-2 flex items-center gap-1.5 rounded-lg border border-dashed pointer-coarse:min-h-11 border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 transition hover:border-brand-400 hover:text-brand-700 disabled:cursor-default disabled:border-brand-300 disabled:text-brand-700"
               >
                 <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
                 <span

@@ -30,7 +30,7 @@ function lastCallOn(client: ClientMock, table: string) {
 }
 
 const valido: TipoTardiaInput = {
-  tta_nombre: 'Tardia leve',
+  tta_nombre: 'Tardía leve',
   tta_desde_minutos: 1,
   tta_cuenta_advertencia: true,
   tta_color: '#F59E0B',
@@ -79,7 +79,7 @@ describe('createTipoTardia', () => {
     expect(result).toEqual({ ok: true, id: 9 })
     expect(lastCallOn(client, 'sgrh_cat_tipos_tardia').insert).toHaveBeenCalledWith({
       tta_empresa_id: 1,
-      tta_nombre: 'Tardia leve',
+      tta_nombre: 'Tardía leve',
       tta_desde_minutos: 1,
       tta_cuenta_advertencia: true,
       tta_color: '#F59E0B',

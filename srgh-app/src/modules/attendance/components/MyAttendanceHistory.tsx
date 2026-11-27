@@ -51,7 +51,7 @@ export function MyAttendanceHistory({ data }: MyAttendanceHistoryProps) {
         </div>
 
         {data.length === 0 ? (
-          <EmptyState icon={Inbox} title="Todavía no tienes marcas registradas." className="mt-6" />
+          <EmptyState icon={Inbox} title="Todavía no tenés marcas registradas." className="mt-6" />
         ) : (
           <div className="mt-6 overflow-x-auto">
             <table className="w-full text-xs">

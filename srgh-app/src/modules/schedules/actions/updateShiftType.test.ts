@@ -47,7 +47,7 @@ describe('updateShiftType (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo actualizar el tipo de jornada. Verifique que el codigo no este repetido.',
+      error: 'No se pudo actualizar el tipo de jornada. Verificá que el código no esté repetido.',
     })
   })
 

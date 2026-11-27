@@ -17,7 +17,7 @@ export async function deleteShiftType(id: number): Promise<DeleteShiftTypeResult
     return {
       ok: false,
       error:
-        'No se pudo eliminar el tipo de jornada. Verifique que no este en uso por algun horario.',
+        'No se pudo eliminar el tipo de jornada. Verificá que no esté en uso por algún horario.',
     }
   }
 

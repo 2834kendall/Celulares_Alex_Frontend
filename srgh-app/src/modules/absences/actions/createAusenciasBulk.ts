@@ -54,7 +54,7 @@ export async function createAusenciasBulk(
   const data = parsed.data
 
   if (findSelfOverlap(data.ranges)) {
-    return { ok: false, error: 'Hay periodos que se traslapan entre si. Revise las fechas.' }
+    return { ok: false, error: 'Hay periodos que se traslapan entre sí. Revisá las fechas.' }
   }
 
   const supabase = await createClient()

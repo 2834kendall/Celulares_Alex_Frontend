@@ -38,7 +38,7 @@ export async function assignSplitSchedule(
   if (!parsed.success) {
     return {
       ok: false,
-      error: parsed.error.issues[0]?.message ?? 'Datos de asignacion invalidos.',
+      error: parsed.error.issues[0]?.message ?? 'Datos de asignación inválidos.',
     }
   }
 
@@ -107,7 +107,7 @@ export async function assignSplitSchedule(
   if (first.error) {
     return {
       ok: false,
-      error: describeAssignmentError(first.error, 'No se pudo guardar la asignacion.'),
+      error: describeAssignmentError(first.error, 'No se pudo guardar la asignación.'),
     }
   }
 
@@ -123,7 +123,7 @@ export async function assignSplitSchedule(
       ok: false,
       error: `Se guardó el primer bloque, pero no el segundo. ${describeAssignmentError(
         second.error,
-        'No se pudo guardar la asignacion.'
+        'No se pudo guardar la asignación.'
       )}`,
     }
   }

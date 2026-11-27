@@ -167,7 +167,7 @@ export function ManualMarkModal({
             onChange={(e) => setObservacion(e.target.value)}
             disabled={isSaving}
             aria-invalid={!!errors.observacion}
-            placeholder="Explica por qué se registra o corrige esta marca..."
+            placeholder="Explicá por qué se registra o corrige esta marca..."
             className={INPUT}
           />
           {errors.observacion && <p className={FIELD_ERROR}>{errors.observacion}</p>}

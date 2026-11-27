@@ -28,7 +28,7 @@ export async function addCandidateDocument(
 ): Promise<AddCandidateDocumentResult> {
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: 'Selecciona un archivo.' }
+    return { ok: false, error: 'Seleccioná un archivo.' }
   }
 
   if (!Number.isInteger(candidatoId) || candidatoId <= 0) {

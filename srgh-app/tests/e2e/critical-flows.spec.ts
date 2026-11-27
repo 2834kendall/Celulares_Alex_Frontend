@@ -58,7 +58,7 @@ test('candidate document validation preserves the selected file, then upload and
   await expect(dialog).toBeVisible()
   await dialog.getByLabel('Nombre', { exact: true }).fill('A')
   await dialog.getByRole('button', { name: 'Guardar documento', exact: true }).click()
-  await expect(dialog.getByText('Ingrese un nombre para el documento.')).toBeVisible()
+  await expect(dialog.getByText('Ingresá un nombre para el documento.')).toBeVisible()
   await expect(dialog.getByText('Archivo: CV-E2E.pdf')).toBeVisible()
   await dialog.getByLabel('Nombre', { exact: true }).fill(documentName)
   await dialog.getByRole('button', { name: 'Guardar documento', exact: true }).click()

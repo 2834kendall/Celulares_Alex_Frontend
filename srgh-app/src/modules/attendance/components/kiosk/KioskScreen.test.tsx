@@ -122,7 +122,7 @@ describe('<KioskScreen />', () => {
       render(<KioskScreen employees={employees} />)
 
       expect(screen.getByTestId('face-scan')).toBeInTheDocument()
-      expect(screen.getByText('Mira a la cámara')).toBeInTheDocument()
+      expect(screen.getByText('Mirá a la cámara')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     })
@@ -147,7 +147,7 @@ describe('<KioskScreen />', () => {
       render(<KioskScreen employees={employees} />)
 
       expect(await screen.findByText('Sin conexión')).toBeInTheDocument()
-      expect(screen.getByText(/avisa al encargado/)).toBeInTheDocument()
+      expect(screen.getByText(/avisá al encargado/)).toBeInTheDocument()
       expect(screen.queryByTestId('face-scan')).not.toBeInTheDocument()
     })
   })
@@ -186,12 +186,12 @@ describe('<KioskScreen />', () => {
     it('muestra el motivo si el servidor no deja marcar, sin botones', async () => {
       mockGetKioskMarkOptions.mockResolvedValue({
         ok: false,
-        error: 'No tienes turno asignado en esta sucursal hoy.',
+        error: 'No tenés turno asignado en esta sucursal hoy.',
       })
       await renderRecognized()
 
       expect(
-        await screen.findByText('No tienes turno asignado en esta sucursal hoy.')
+        await screen.findByText('No tenés turno asignado en esta sucursal hoy.')
       ).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
     })
@@ -392,7 +392,7 @@ describe('<KioskScreen />', () => {
       await emitEmbedding()
 
       expect(screen.getByText('No te reconocimos')).toBeInTheDocument()
-      expect(screen.getByText(/avisa al encargado/)).toBeInTheDocument()
+      expect(screen.getByText(/avisá al encargado/)).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Entrada' })).not.toBeInTheDocument()
     })
 

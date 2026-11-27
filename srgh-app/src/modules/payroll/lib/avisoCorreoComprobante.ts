@@ -47,7 +47,7 @@ export function avisarCorreoComprobante(
   }
   if (correo.estado === 'sin_email') {
     toast.warning(
-      `${prefijo}. ${empleadoNombre} no tiene correo registrado: entrégale el comprobante impreso.`
+      `${prefijo}. ${empleadoNombre} no tiene correo registrado: entregale el comprobante impreso.`
     )
     return
   }

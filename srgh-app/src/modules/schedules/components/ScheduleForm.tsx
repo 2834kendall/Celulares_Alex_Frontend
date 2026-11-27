@@ -258,14 +258,14 @@ export function ScheduleForm({
             <span className="absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
           </span>
           <span className="text-xs text-slate-700 sm:text-sm">
-            Jornada partida: dos bloques de trabajo en el mismo dia
+            Jornada partida: dos bloques de trabajo en el mismo día
           </span>
         </label>
 
         {hasSecondBlock && (
           <>
             <p className="mt-2 text-xs text-slate-500">
-              Las horas del dia son la suma de los dos bloques; el hueco entre ambos no cuenta.
+              Las horas del día son la suma de los dos bloques; el hueco entre ambos no cuenta.
             </p>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
@@ -455,7 +455,7 @@ export function ScheduleForm({
         disabled={isSubmitting}
         onChange={(color) => setValue('hor_color', color)}
         label="Color de la plantilla"
-        description="Se usa en la matriz semanal para distinguir el turno de un vistazo. Sin color propio, se asigna uno automatico."
+        description="Se usa en la matriz semanal para distinguir el turno de un vistazo. Sin color propio, se asigna uno automático."
         storageKey="sgrh_schedule_custom_colors"
       />
 

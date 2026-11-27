@@ -31,7 +31,7 @@ describe('deleteSchedule (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo eliminar el horario. Verifique que no este en uso.',
+      error: 'No se pudo eliminar el horario. Verificá que no esté en uso.',
     })
     expect(mockRequirePermission).toHaveBeenCalled()
   })

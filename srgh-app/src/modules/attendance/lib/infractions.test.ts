@@ -44,18 +44,18 @@ describe('classifyTardiness', () => {
 
   it('desde el primer minuto ya es tardia leve', () => {
     // 10:00 de turno y entro 10:01 — el caso textual del cliente.
-    expect(classifyTardiness(1, TIPOS)?.nombre).toBe('Tardia leve')
+    expect(classifyTardiness(1, TIPOS)?.nombre).toBe('Tardía leve')
   })
 
   it('cada tipo llega hasta un minuto antes del siguiente', () => {
-    expect(classifyTardiness(5, TIPOS)?.nombre).toBe('Tardia leve')
-    expect(classifyTardiness(6, TIPOS)?.nombre).toBe('Tardia')
-    expect(classifyTardiness(10, TIPOS)?.nombre).toBe('Tardia')
+    expect(classifyTardiness(5, TIPOS)?.nombre).toBe('Tardía leve')
+    expect(classifyTardiness(6, TIPOS)?.nombre).toBe('Tardía')
+    expect(classifyTardiness(10, TIPOS)?.nombre).toBe('Tardía')
   })
 
   it('el ultimo tipo queda abierto', () => {
-    expect(classifyTardiness(11, TIPOS)?.nombre).toBe('Tardia grave')
-    expect(classifyTardiness(90, TIPOS)?.nombre).toBe('Tardia grave')
+    expect(classifyTardiness(11, TIPOS)?.nombre).toBe('Tardía grave')
+    expect(classifyTardiness(90, TIPOS)?.nombre).toBe('Tardía grave')
   })
 
   it('un atraso menor al primer tipo no es tardanza: ese umbral reemplaza a la tolerancia', () => {
@@ -68,7 +68,7 @@ describe('classifyTardiness', () => {
   it('no depende del orden en que venga el catalogo', () => {
     const desordenado = [TIPOS[2], TIPOS[0], TIPOS[1]]
 
-    expect(classifyTardiness(7, desordenado)?.nombre).toBe('Tardia')
+    expect(classifyTardiness(7, desordenado)?.nombre).toBe('Tardía')
   })
 
   it('sin tipos no hay tardanza', () => {

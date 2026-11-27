@@ -89,6 +89,6 @@ export async function buscarComprobante(codigo: string): Promise<BuscarComproban
 
   return {
     ok: false,
-    error: `No hay ningún comprobante con el código ${normalizado} que puedas ver. Puede que el pago se haya desmarcado (su comprobante dejó de valer: al volver a pagarlo se emite otro código) o que sea de una sucursal que no tenés asignada.`,
+    error: `No hay ningún comprobante con el código ${normalizado} que podás ver. Puede que el pago se haya desmarcado (su comprobante dejó de valer: al volver a pagarlo se emite otro código) o que sea de una sucursal que no tenés asignada.`,
   }
 }

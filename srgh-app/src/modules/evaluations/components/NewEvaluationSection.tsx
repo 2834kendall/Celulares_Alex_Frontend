@@ -69,7 +69,7 @@ export function NewEvaluationSection({ collaborators, rubros }: NewEvaluationSec
         <div className="min-w-0">
           <h2 className="text-sm font-bold text-slate-900">Nueva evaluación de desempeño</h2>
           <p className="text-xs text-slate-500">
-            Registre la evaluación del período indicando el rango de fechas evaluado y la nota de
+            Registrá la evaluación del período indicando el rango de fechas evaluado y la nota de
             cada rubro.
           </p>
         </div>

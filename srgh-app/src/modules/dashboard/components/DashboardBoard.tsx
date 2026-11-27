@@ -45,7 +45,7 @@ const SIZE_LABEL: Record<PanelSize, string> = {
 }
 
 const CONTROL =
-  'flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition duration-150 hover:bg-slate-100 hover:text-slate-900 active:scale-90 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:h-10 pointer-coarse:w-10'
+  'flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition duration-150 hover:bg-slate-100 hover:text-slate-900 active:scale-90 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:h-11 pointer-coarse:w-11'
 
 function move<T>(list: readonly T[], from: number, to: number): T[] {
   const next = [...list]
@@ -182,7 +182,7 @@ export function DashboardBoard({
           <button
             type="button"
             onClick={reset}
-            className="group inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition duration-200 hover:bg-slate-100 hover:text-slate-900 active:scale-95 pointer-coarse:min-h-10"
+            className="group inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition duration-200 hover:bg-slate-100 hover:text-slate-900 active:scale-95 pointer-coarse:min-h-11"
           >
             <RotateCcw
               className="h-3.5 w-3.5 transition-transform duration-300 group-hover:-rotate-90"
@@ -196,7 +196,7 @@ export function DashboardBoard({
           onClick={() => setEditing((current) => !current)}
           aria-pressed={editing}
           className={cn(
-            'group inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition duration-200 active:scale-95 pointer-coarse:min-h-10',
+            'group inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition duration-200 active:scale-95 pointer-coarse:min-h-11',
             editing
               ? 'bg-brand-700 text-white shadow-sm hover:bg-brand-800'
               : 'text-brand-700 hover:bg-brand-50'
@@ -228,7 +228,7 @@ export function DashboardBoard({
               type="button"
               title={panel.description}
               onClick={() => update(panel.id, { hidden: false })}
-              className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white py-1 pr-3 pl-2 text-xs font-semibold text-slate-700 transition duration-200 hover:-translate-y-0.5 hover:border-brand-300 hover:text-brand-700 hover:shadow-sm active:scale-95 pointer-coarse:min-h-10"
+              className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white py-1 pr-3 pl-2 text-xs font-semibold text-slate-700 transition duration-200 hover:-translate-y-0.5 hover:border-brand-300 hover:text-brand-700 hover:shadow-sm active:scale-95 pointer-coarse:min-h-11"
             >
               <Plus
                 className="h-3.5 w-3.5 text-brand-600 transition-transform duration-200 group-hover:rotate-90"
