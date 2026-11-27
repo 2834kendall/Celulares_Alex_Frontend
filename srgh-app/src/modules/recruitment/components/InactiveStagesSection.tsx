@@ -79,7 +79,7 @@ export function InactiveStagesSection({ stages, onRestored }: InactiveStagesSect
       className="border-t-0"
     >
       <p className="pb-2 text-[11px] leading-relaxed text-slate-500">
-        No aparecen en el tablero, pero siguen ocupando su nombre. Restaurá las que quieras volver a
+        No aparecen en el tablero, pero siguen ocupando su nombre. Restaurá las que querás volver a
         usar; las que no tengan historial se pueden eliminar del todo.
       </p>
       <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">

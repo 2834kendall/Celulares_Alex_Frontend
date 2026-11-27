@@ -43,7 +43,7 @@ export async function purgeSelectionStage(stageId: number): Promise<PurgeSelecti
     return { ok: false, error: 'No se pudo eliminar la etapa.' }
   }
   if (!data || data.length === 0) {
-    return { ok: false, error: 'Esa etapa ya no está desactivada. Recargue la página.' }
+    return { ok: false, error: 'Esa etapa ya no está desactivada. Recargá la página.' }
   }
 
   revalidatePath('/settings/recruitment/stages')

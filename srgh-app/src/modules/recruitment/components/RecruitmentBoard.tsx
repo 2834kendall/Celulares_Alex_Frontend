@@ -137,7 +137,7 @@ const announcements: Announcements = {
 
 const screenReaderInstructions = {
   draggable:
-    'Para reordenar una columna presione espacio, muévala con las flechas y presione espacio de nuevo para soltarla; Escape cancela. Para mover un candidato use el botón de acciones de su tarjeta.',
+    'Para reordenar una columna presioná espacio, movela con las flechas y presioná espacio de nuevo para soltarla; Escape cancela. Para mover un candidato usá el botón de acciones de su tarjeta.',
 }
 
 /**
@@ -567,7 +567,7 @@ export function RecruitmentBoard({
       {showNewCandidate && (
         <Modal
           title="Nuevo candidato"
-          subtitle="Registra al candidato y su primera postulación."
+          subtitle="Registrá al candidato y su primera postulación."
           onClose={() => setShowNewCandidate(false)}
         >
           <NuevoCandidatoForm

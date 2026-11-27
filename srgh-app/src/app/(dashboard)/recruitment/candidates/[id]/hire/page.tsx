@@ -162,7 +162,7 @@ export default async function HireCandidatePage({ params, searchParams }: HireCa
       {!puestoPrefill && (
         <Alert tone="info" size="md">
           El puesto de la postulación (&ldquo;{postulacion.puestoNombre}&rdquo;) no se pudo
-          preseleccionar automáticamente — elígelo en el paso de nómina.
+          preseleccionar automáticamente — elegilo en el paso de nómina.
         </Alert>
       )}
 

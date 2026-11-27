@@ -87,7 +87,7 @@ describe('<StageColumnsManager />', () => {
   it('si el servidor rechaza el orden, avisa y la lista vuelve a como estaba', async () => {
     vi.mocked(reorderSelectionStages).mockResolvedValue({
       ok: false,
-      error: 'Las columnas cambiaron mientras tanto. Recargue el tablero.',
+      error: 'Las columnas cambiaron mientras tanto. Recargá el tablero.',
     })
     const user = userEvent.setup()
     render(<StageColumnsManager stages={STAGES} />)
@@ -96,7 +96,7 @@ describe('<StageColumnsManager />', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        'Las columnas cambiaron mientras tanto. Recargue el tablero.'
+        'Las columnas cambiaron mientras tanto. Recargá el tablero.'
       )
     )
     await waitFor(() => expect(rowNames()).toEqual(['Recibido', 'Entrevista', 'Prueba práctica']))

@@ -34,7 +34,7 @@ export async function updateCriterioSeleccion(
   if (areaError) {
     return {
       ok: false,
-      error: 'No se pudo actualizar el criterio. Verifique que el nombre no esté repetido.',
+      error: 'No se pudo actualizar el criterio. Verificá que el nombre no esté repetido.',
     }
   }
 

@@ -41,7 +41,7 @@ describe('deleteEtapaSeleccion (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Hay 2 candidatos en esta columna. Muévalos a otra antes de eliminarla.',
+      error: 'Hay 2 candidatos en esta columna. Movelos a otra antes de eliminarla.',
     })
     // Solo se consultó el conteo: el catálogo ni se tocó.
     expect(client.from).toHaveBeenCalledTimes(1)
@@ -55,7 +55,7 @@ describe('deleteEtapaSeleccion (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Hay 1 candidato en esta columna. Muévalo a otra antes de eliminarla.',
+      error: 'Hay 1 candidato en esta columna. Movelo a otra antes de eliminarla.',
     })
   })
 

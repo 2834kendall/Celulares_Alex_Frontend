@@ -18,7 +18,7 @@ export async function rejectPostulacion(
 ): Promise<RejectPostulacionResult> {
   const parsed = rechazarPostulacionSchema.safeParse(input)
   if (!parsed.success) {
-    return { ok: false, error: 'Indica el motivo del descarte.' }
+    return { ok: false, error: 'Indicá el motivo del descarte.' }
   }
 
   await requirePermission(PERMISOS.RECLUTAMIENTO_WRITE)

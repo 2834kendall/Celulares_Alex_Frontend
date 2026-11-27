@@ -42,8 +42,8 @@ export async function deleteEtapaSeleccion(etapaId: number): Promise<DeleteEtapa
       ok: false,
       error:
         count === 1
-          ? 'Hay 1 candidato en esta columna. Muévalo a otra antes de eliminarla.'
-          : `Hay ${count} candidatos en esta columna. Muévalos a otra antes de eliminarla.`,
+          ? 'Hay 1 candidato en esta columna. Movelo a otra antes de eliminarla.'
+          : `Hay ${count} candidatos en esta columna. Movelos a otra antes de eliminarla.`,
     }
   }
 

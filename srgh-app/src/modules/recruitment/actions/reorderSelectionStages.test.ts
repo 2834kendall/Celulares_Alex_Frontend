@@ -74,7 +74,7 @@ describe('reorderSelectionStages (server action)', () => {
   it('si la lista no coincide con las columnas activas, pide recargar y no escribe nada', async () => {
     const esperado = {
       ok: false,
-      error: 'Las columnas cambiaron mientras tanto. Recargue el tablero.',
+      error: 'Las columnas cambiaron mientras tanto. Recargá el tablero.',
     }
 
     // Falta la 30: alguien la creó mientras el tablero estaba abierto.

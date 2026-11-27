@@ -71,7 +71,7 @@ export function DiscardApplicationDialog({
   return (
     <Modal
       title={candidateName ? `Descartar a ${candidateName}` : 'Descartar postulación'}
-      subtitle="Indica el motivo del descarte. No se puede deshacer."
+      subtitle="Indicá el motivo del descarte. No se puede deshacer."
       onClose={onClose}
     >
       <form

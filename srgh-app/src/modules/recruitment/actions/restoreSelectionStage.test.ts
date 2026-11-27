@@ -63,7 +63,7 @@ describe('restoreSelectionStage (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Esa etapa ya no está desactivada. Recargue la página.',
+      error: 'Esa etapa ya no está desactivada. Recargá la página.',
     })
     expect(revalidatePath).not.toHaveBeenCalled()
   })

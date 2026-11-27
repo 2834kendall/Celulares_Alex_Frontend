@@ -130,7 +130,7 @@ describe('moveApplicationToStage (server action)', () => {
 
     const result = await moveApplicationToStage(INPUT)
 
-    expect(result).toEqual({ ok: false, error: 'Esa columna ya no existe. Recargue el tablero.' })
+    expect(result).toEqual({ ok: false, error: 'Esa columna ya no existe. Recargá el tablero.' })
     expect(client.rpc).not.toHaveBeenCalled()
   })
 
@@ -149,7 +149,7 @@ describe('moveApplicationToStage (server action)', () => {
 
     const result = await moveApplicationToStage(INPUT)
 
-    expect(result).toEqual({ ok: false, error: 'No tienes permiso para mover esta postulación.' })
+    expect(result).toEqual({ ok: false, error: 'No tenés permiso para mover esta postulación.' })
   })
 
   it('camino feliz: revalida el tablero y la ficha del candidato', async () => {

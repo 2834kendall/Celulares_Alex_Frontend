@@ -61,7 +61,7 @@ export async function moveApplicationToStage(
     return { ok: false, error: 'La postulación ya está cerrada.' }
   }
   if (!stage || !stage.eta_activo) {
-    return { ok: false, error: 'Esa columna ya no existe. Recargue el tablero.' }
+    return { ok: false, error: 'Esa columna ya no existe. Recargá el tablero.' }
   }
   // Soltar la tarjeta en su misma columna no es un movimiento: no se ensucia
   // el historial con una fila que no dice nada.
@@ -78,7 +78,7 @@ export async function moveApplicationToStage(
 
   if (error) {
     if (error.code === '42501') {
-      return { ok: false, error: 'No tienes permiso para mover esta postulación.' }
+      return { ok: false, error: 'No tenés permiso para mover esta postulación.' }
     }
     return { ok: false, error: 'No se pudo mover la postulación.' }
   }

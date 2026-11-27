@@ -31,7 +31,7 @@ describe('rejectPostulacion (server action)', () => {
   it('rechaza un motivo vacío SIN tocar permisos', async () => {
     const result = await rejectPostulacion({ postulacionId: 1, motivo: 'x' })
 
-    expect(result).toEqual({ ok: false, error: 'Indica el motivo del descarte.' })
+    expect(result).toEqual({ ok: false, error: 'Indicá el motivo del descarte.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 

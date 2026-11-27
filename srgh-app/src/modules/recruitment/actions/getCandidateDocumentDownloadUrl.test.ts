@@ -98,7 +98,7 @@ describe('getCandidateDocumentDownloadUrl (server action)', () => {
 
     const result = await getCandidateDocumentDownloadUrl(1)
 
-    expect(result).toEqual({ ok: false, error: 'No tienes permiso para acceder a este archivo.' })
+    expect(result).toEqual({ ok: false, error: 'No tenés permiso para acceder a este archivo.' })
     expect(provider.getSignedUrl).not.toHaveBeenCalled()
   })
 

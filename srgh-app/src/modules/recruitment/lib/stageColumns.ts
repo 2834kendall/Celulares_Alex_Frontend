@@ -89,7 +89,7 @@ export async function duplicateStageNameError(
     .maybeSingle()
 
   return data && !data.eta_activo
-    ? 'Ya existe una etapa desactivada con ese nombre. Restáurela desde Configuración → Etapas de selección.'
+    ? 'Ya existe una etapa desactivada con ese nombre. Restaurala desde Configuración → Etapas de selección.'
     : 'Ya existe una columna con ese nombre.'
 }
 

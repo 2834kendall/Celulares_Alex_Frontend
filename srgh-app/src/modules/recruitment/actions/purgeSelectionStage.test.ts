@@ -67,7 +67,7 @@ describe('purgeSelectionStage (server action)', () => {
 
     expect(await purgeSelectionStage(4)).toEqual({
       ok: false,
-      error: 'Esa etapa ya no está desactivada. Recargue la página.',
+      error: 'Esa etapa ya no está desactivada. Recargá la página.',
     })
   })
 })

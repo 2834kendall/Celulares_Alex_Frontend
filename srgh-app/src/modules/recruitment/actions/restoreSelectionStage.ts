@@ -40,7 +40,7 @@ export async function restoreSelectionStage(stageId: number): Promise<RestoreSel
     return { ok: false, error: 'No se pudo restaurar la etapa.' }
   }
   if (!data || data.length === 0) {
-    return { ok: false, error: 'Esa etapa ya no está desactivada. Recargue la página.' }
+    return { ok: false, error: 'Esa etapa ya no está desactivada. Recargá la página.' }
   }
 
   revalidatePath('/recruitment')

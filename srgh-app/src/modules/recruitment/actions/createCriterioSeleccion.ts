@@ -41,7 +41,7 @@ export async function createCriterioSeleccion(
   if (areaError) {
     return {
       ok: false,
-      error: 'No se pudo crear el criterio. Verifique que el nombre no esté repetido.',
+      error: 'No se pudo crear el criterio. Verificá que el nombre no esté repetido.',
     }
   }
 

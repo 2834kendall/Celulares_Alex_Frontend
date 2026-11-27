@@ -128,7 +128,7 @@ describe('<StageColumnForm />', () => {
   it('si el servidor no deja eliminar (alguien movió un candidato ahí), muestra el motivo', async () => {
     vi.mocked(deleteEtapaSeleccion).mockResolvedValue({
       ok: false,
-      error: 'Hay 1 candidato en esta columna. Muévalo a otra antes de eliminarla.',
+      error: 'Hay 1 candidato en esta columna. Movelo a otra antes de eliminarla.',
     })
     const user = userEvent.setup()
     render(<StageColumnForm stage={STAGE} onDone={onDone} />)

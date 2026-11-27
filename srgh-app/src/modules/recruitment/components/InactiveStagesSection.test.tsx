@@ -72,7 +72,7 @@ describe('<InactiveStagesSection />', () => {
   it('si restaurar falla muestra el motivo', async () => {
     vi.mocked(restoreSelectionStage).mockResolvedValue({
       ok: false,
-      error: 'Esa etapa ya no está desactivada. Recargue la página.',
+      error: 'Esa etapa ya no está desactivada. Recargá la página.',
     })
     const onRestored = vi.fn()
     const user = userEvent.setup()
@@ -83,7 +83,7 @@ describe('<InactiveStagesSection />', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        'Esa etapa ya no está desactivada. Recargue la página.'
+        'Esa etapa ya no está desactivada. Recargá la página.'
       )
     )
     expect(onRestored).not.toHaveBeenCalled()
