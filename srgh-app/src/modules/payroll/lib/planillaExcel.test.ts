@@ -806,3 +806,23 @@ describe('parsePlanillaWorkbook: archivo que se infla (zip bomb)', () => {
     expect(errors[0].mensaje).toContain('No se puede abrir el archivo')
   })
 })
+
+describe('parsePlanillaWorkbook: lectura en un proceso aparte', () => {
+  it('un archivo con más filas de las que tiene cualquier planilla se rechaza sin procesarlo', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Planilla')
+    for (let f = 1; f <= 5_001; f += 1) ws.getCell(f, 1).value = f
+    const buffer = new Uint8Array(await wb.xlsx.writeBuffer())
+
+    const { rows, errors } = await parsePlanillaWorkbook(buffer.buffer, CONCEPTOS, PERIODO_ID)
+
+    expect(rows).toEqual([])
+    expect(errors).toEqual([
+      {
+        fila: 0,
+        mensaje:
+          'El archivo es demasiado grande o complejo para leerlo. Descargá la plantilla de nuevo y volvé a intentar.',
+      },
+    ])
+  })
+})
