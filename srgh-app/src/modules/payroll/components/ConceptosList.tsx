@@ -129,7 +129,7 @@ export function ConceptosList({ conceptos, canWrite }: ConceptosListProps) {
         <EmptyState
           icon={Coins}
           title="No hay conceptos de nómina"
-          description="Crea el primero (por ejemplo, BASE o CCSS_OBRERA) para poder procesar planillas."
+          description="Creá el primero (por ejemplo, BASE o CCSS_OBRERA) para poder procesar planillas."
           action={
             canWrite && (
               <Button onClick={() => setEditing('new')} className="mt-1">

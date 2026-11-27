@@ -96,7 +96,7 @@ describe('createEmployee (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No tienes permiso para crear usuarios del sistema.',
+      error: 'No tenés permiso para crear usuarios del sistema.',
     })
     expect(mockCreateClient).not.toHaveBeenCalled()
   })
@@ -255,7 +255,7 @@ describe('createEmployee (server action)', () => {
     const resSinMensaje = await createEmployee(VALID_INPUT)
     expect(resSinMensaje).toEqual({
       ok: false,
-      error: 'No tienes permiso para crear empleados.',
+      error: 'No tenés permiso para crear empleados.',
     })
   })
 

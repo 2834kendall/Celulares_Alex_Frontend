@@ -126,7 +126,7 @@ export async function updateDetalleManual(
   if (!conceptos || conceptos.length === 0) {
     return {
       ok: false,
-      error: 'No hay conceptos activos en el catálogo. Crea al menos uno en "Conceptos de nómina".',
+      error: 'No hay conceptos activos en el catálogo. Creá al menos uno en "Conceptos de nómina".',
     }
   }
 

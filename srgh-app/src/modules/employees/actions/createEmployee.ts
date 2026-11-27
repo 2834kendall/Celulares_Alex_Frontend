@@ -34,7 +34,7 @@ export async function createEmployee(
   const meta = claims.app_metadata as { permisos?: string[] }
 
   if (parsed.data.usuario && !(meta?.permisos ?? []).includes(PERMISOS.USUARIOS_WRITE)) {
-    return { ok: false, error: 'No tienes permiso para crear usuarios del sistema.' }
+    return { ok: false, error: 'No tenés permiso para crear usuarios del sistema.' }
   }
 
   const supabase = await createClient()
@@ -74,7 +74,7 @@ export async function createEmployee(
       return { ok: false, error: uniqueError }
     }
     if (error?.code === '42501') {
-      return { ok: false, error: error.message || 'No tienes permiso para crear empleados.' }
+      return { ok: false, error: error.message || 'No tenés permiso para crear empleados.' }
     }
     if (error?.code === '23514') {
       // check_violation: las validaciones de coherencia que le quedan a la RPC

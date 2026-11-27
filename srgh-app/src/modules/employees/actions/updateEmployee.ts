@@ -96,7 +96,7 @@ export async function updateEmployee(
   // se crea y se enlaza. dir_codigo_postal nunca se envía — lo recalcula el
   // trigger desde el distrito.
   const direccionError =
-    'Los datos personales se guardaron, pero la dirección no. Intenta de nuevo.'
+    'Los datos personales se guardaron, pero la dirección no. Intentá de nuevo.'
 
   if (data.emp_direccion_id) {
     const { error: errDireccion } = await supabase
@@ -163,7 +163,7 @@ export async function updateEmployee(
       }
       return {
         ok: false,
-        error: 'Los datos personales se guardaron, pero los datos de pago no. Intenta de nuevo.',
+        error: 'Los datos personales se guardaron, pero los datos de pago no. Intentá de nuevo.',
       }
     }
   }

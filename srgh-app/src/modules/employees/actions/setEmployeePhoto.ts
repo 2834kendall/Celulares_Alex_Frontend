@@ -29,7 +29,7 @@ export async function setEmployeePhoto(
 ): Promise<SetEmployeePhotoResult> {
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: 'Selecciona un archivo.' }
+    return { ok: false, error: 'Seleccioná un archivo.' }
   }
 
   if (!Number.isInteger(empId) || empId <= 0) {

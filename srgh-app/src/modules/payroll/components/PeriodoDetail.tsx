@@ -676,9 +676,9 @@ export function PeriodoDetail({
           disabled={refrescandoId === d.id}
           title={
             filaEnCero(d)
-              ? 'Esta fila tiene horas pero está en ₡0. Recalcula el salario desde la asistencia.'
+              ? 'Esta fila tiene horas pero está en ₡0. Recalculá el salario desde la asistencia.'
               : !nuevas
-                ? `El salario guardado ya no corresponde; con la regla actual es ${formatCRC(d.baseEsperado ?? 0)} de base y ${formatCRC(d.ajusteEsperado ?? 0)} de ajuste. Recalcula esta fila.`
+                ? `El salario guardado ya no corresponde; con la regla actual es ${formatCRC(d.baseEsperado ?? 0)} de base y ${formatCRC(d.ajusteEsperado ?? 0)} de ajuste. Recalculá esta fila.`
                 : `La asistencia dice ${formatHoras(nuevas.horas)} h${
                     nuevas.horasExtra > 0 ? ` y ${formatHoras(nuevas.horasExtra)} h extra` : ''
                   }. Recalcula esta fila con esas horas.`
@@ -939,7 +939,7 @@ export function PeriodoDetail({
               type="button"
               onClick={handleCargarEmpleados}
               disabled={cargandoEmpleados}
-              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 outline-none transition hover:underline disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+              className="pointer-coarse:min-h-11 mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 outline-none transition hover:underline disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
             >
               {cargandoEmpleados ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1220,7 +1220,7 @@ export function PeriodoDetail({
                 onClick={handleRecalcularTodo}
                 disabled={recalculandoTodo}
                 title="Vuelve a calcular todas las filas con las horas de la asistencia y el salario del contrato. No toca las filas ya pagadas ni las horas corregidas a mano."
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                className="pointer-coarse:min-h-11 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
               >
                 {recalculandoTodo ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1235,7 +1235,7 @@ export function PeriodoDetail({
                   onClick={() => setConfirmandoPagarTodos(true)}
                   disabled={pagandoTodos}
                   title="Marca el pago de todos los que faltan en esta vista. Cada fila pasa por las mismas revisiones que su botón de pagar."
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                  className="pointer-coarse:min-h-11 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
                 >
                   {pagandoTodos ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1254,7 +1254,7 @@ export function PeriodoDetail({
                     ? 'Agrega a los empleados activos de las sucursales que ves que falten, con las horas de la asistencia. No toca a los que ya están.'
                     : 'Agrega a los empleados activos de la sucursal que falten, con las horas de la asistencia. No toca a los que ya están.'
                 }
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                className="pointer-coarse:min-h-11 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-brand-500/60"
               >
                 {cargandoEmpleados ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1627,7 +1627,7 @@ export function PeriodoDetail({
           title={`¿Desea pagarle a los ${pendientesDePago.length} empleado(s) que faltan?`}
           message={`${
             pendientesDePago.every((d) => d.totalAPagar === 0)
-              ? 'Todas estas filas están en ₡0: solo se pagan las que tengan el ₡0 justificado (incapacidad, ausencia sin goce, no vino ningún día) y las demás quedan sin pagar. Si falta el salario en algún contrato, corrígelo y usá "Recalcular desde asistencia" antes. Se intentará pagar a'
+              ? 'Todas estas filas están en ₡0: solo se pagan las que tengan el ₡0 justificado (incapacidad, ausencia sin goce, no vino ningún día) y las demás quedan sin pagar. Si falta el salario en algún contrato, corregilo y usá "Recalcular desde asistencia" antes. Se intentará pagar a'
               : `Se registrará el pago de ${formatCRC(
                   pendientesDePago.reduce((sum, d) => sum + d.totalAPagar, 0)
                 )} a`

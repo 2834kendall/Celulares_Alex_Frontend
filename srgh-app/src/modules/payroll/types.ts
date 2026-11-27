@@ -429,7 +429,7 @@ export const conceptoNominaSchema = z
       .toUpperCase()
       .min(2, 'El código debe tener al menos 2 caracteres')
       .max(50, 'El código no puede superar 50 caracteres')
-      .regex(/^[A-Z0-9_]+$/, 'Usa solo letras, números y guion bajo (ej. BONO_ANUAL)'),
+      .regex(/^[A-Z0-9_]+$/, 'Usá solo letras, números y guion bajo (ej. BONO_ANUAL)'),
 
     con_nombre: z
       .string({ error: 'El nombre es obligatorio' })
@@ -437,10 +437,10 @@ export const conceptoNominaSchema = z
       .min(2, 'El nombre debe tener al menos 2 caracteres')
       .max(100, 'El nombre no puede superar 100 caracteres'),
 
-    con_tipo: z.enum(CONCEPTO_TIPOS, { error: 'Selecciona un tipo válido' }),
+    con_tipo: z.enum(CONCEPTO_TIPOS, { error: 'Seleccioná un tipo válido' }),
 
     con_tipo_calculo: z.enum(TIPOS_CALCULO_CONCEPTO, {
-      error: 'Selecciona cómo se calcula este concepto',
+      error: 'Seleccioná cómo se calcula este concepto',
     }),
 
     // Mismo motivo que con_codigo: sin z.preprocess, para que el tipo de
@@ -534,11 +534,11 @@ export const editarDetalleSchema = z.object({
   montos: z.record(z.string(), montoNoNegativo('El monto no puede ser negativo')),
   horasTrabajadas: montoNoNegativo('Las horas trabajadas son obligatorias').max(
     999,
-    'Revisa las horas trabajadas'
+    'Revisá las horas trabajadas'
   ),
   horasExtra: montoNoNegativo('Las horas extra son obligatorias').max(
     999,
-    'Revisa las horas extra'
+    'Revisá las horas extra'
   ),
   salarioPorHora: montoNoNegativo('El salario por hora es obligatorio'),
 })

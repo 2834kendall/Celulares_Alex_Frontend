@@ -201,7 +201,7 @@ export const datosPagoSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['edp_banco_id'],
-        message: 'Selecciona el banco de la cuenta',
+        message: 'Seleccioná el banco de la cuenta',
       })
     }
 
@@ -211,7 +211,7 @@ export const datosPagoSchema = z
         ctx.addIssue({
           code: 'custom',
           path: ['edp_numero_cuenta'],
-          message: 'Para SINPE Móvil ingresa el teléfono de 8 dígitos',
+          message: 'Para SINPE Móvil ingresá el teléfono de 8 dígitos',
         })
       }
       return
@@ -660,8 +660,8 @@ export const puestoSchema = z.object({
     .string('El nombre es requerido.')
     .trim()
     .min(2, 'El nombre es requerido.')
-    .max(150, 'Maximo 150 caracteres.'),
-  pue_descripcion: z.string().trim().max(500, 'Maximo 500 caracteres.').optional(),
+    .max(150, 'Máximo 150 caracteres.'),
+  pue_descripcion: z.string().trim().max(500, 'Máximo 500 caracteres.').optional(),
   pue_salario_minimo_referencia: optionalPositiveSalary,
   pue_activo: z.boolean().default(true),
 })

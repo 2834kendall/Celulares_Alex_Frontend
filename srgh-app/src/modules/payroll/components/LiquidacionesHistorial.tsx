@@ -82,7 +82,7 @@ function AccionLiquidacion({
       type="button"
       onClick={() => onPagar(item)}
       disabled={pagando}
-      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
+      className="pointer-coarse:min-h-11 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
     >
       {pagando ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Pagar'}
     </button>

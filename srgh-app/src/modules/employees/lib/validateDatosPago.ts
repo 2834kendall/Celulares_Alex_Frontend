@@ -41,7 +41,7 @@ export async function validateDatosPago(
   // así que por la vía normal esto no se alcanza. Se conserva porque el banco es
   // lo que define la entidad del IBAN y ningún camino debería poder saltárselo.
   if (!pago.edp_banco_id) {
-    return { ok: false, error: 'Selecciona el banco de la cuenta.' }
+    return { ok: false, error: 'Seleccioná el banco de la cuenta.' }
   }
 
   const { data: banco, error: errBanco } = await supabase
@@ -83,7 +83,7 @@ export async function validateDatosPago(
   // Falla cerrado: un error acá no puede degradarse en "seguí sin control".
   // Guardar es reintentable, saltarse un control antifraude en silencio no.
   if (errRepetidas || !Array.isArray(repetidas) || repetidas.length === 0) {
-    return { ok: false, error: 'No se pudo verificar la cuenta bancaria. Intenta de nuevo.' }
+    return { ok: false, error: 'No se pudo verificar la cuenta bancaria. Intentá de nuevo.' }
   }
 
   const coincidencia = repetidas[0]

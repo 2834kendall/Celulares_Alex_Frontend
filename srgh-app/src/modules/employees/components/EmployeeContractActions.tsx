@@ -172,7 +172,7 @@ export function EmployeeContractActions({
             Editar
           </Button>
         ) : (
-          <ConMotivo motivo="Necesitas permiso de nómina para editar el contrato">
+          <ConMotivo motivo="Necesitás permiso de nómina para editar el contrato">
             <Button disabled>
               <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
               Editar

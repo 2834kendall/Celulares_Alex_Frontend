@@ -85,7 +85,7 @@ export function EmployeeWizardStepDocumentos({
         Documentos del expediente
       </h2>
       <p className="mt-1 text-xs text-slate-500">
-        Adjunta los documentos del colaborador. Este paso es opcional: también puedes agregarlos
+        Adjuntá los documentos del colaborador. Este paso es opcional: también podés agregarlos
         después desde su perfil.
       </p>
     </div>

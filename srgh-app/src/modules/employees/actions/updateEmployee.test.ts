@@ -297,7 +297,7 @@ describe('updateEmployee (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Los datos personales se guardaron, pero los datos de pago no. Intenta de nuevo.',
+      error: 'Los datos personales se guardaron, pero los datos de pago no. Intentá de nuevo.',
     })
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
@@ -474,7 +474,7 @@ describe('updateEmployee (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Los datos personales se guardaron, pero la dirección no. Intenta de nuevo.',
+      error: 'Los datos personales se guardaron, pero la dirección no. Intentá de nuevo.',
     })
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
@@ -492,7 +492,7 @@ describe('updateEmployee (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'Los datos personales se guardaron, pero la dirección no. Intenta de nuevo.',
+      error: 'Los datos personales se guardaron, pero la dirección no. Intentá de nuevo.',
     })
   })
 

@@ -227,7 +227,7 @@ describe('<EmployeeContractActions /> — botones por estado y permiso', () => {
     expect(btnSinPermiso).toBeDisabled()
     expect(btnSinPermiso.parentElement).toHaveAttribute(
       'title',
-      'Necesitas permiso de nómina para editar el contrato'
+      'Necesitás permiso de nómina para editar el contrato'
     )
     await user.click(btnSinPermiso)
     expect(screen.queryByRole('dialog', { name: 'Editar contrato' })).not.toBeInTheDocument()
@@ -247,7 +247,7 @@ describe('<EmployeeContractActions /> — botones por estado y permiso', () => {
     expect(btnSalariosNull).toBeDisabled()
     expect(btnSalariosNull.parentElement).toHaveAttribute(
       'title',
-      'Necesitas permiso de nómina para editar el contrato'
+      'Necesitás permiso de nómina para editar el contrato'
     )
   })
 

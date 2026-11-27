@@ -273,7 +273,7 @@ export async function buildPlanillaTemplate(
   ws.getCell('A2').value = textoSeguroExcel(info.subtitulo)
   ws.getCell('A2').font = { color: { argb: 'FF64748B' }, size: 10 }
   ws.getCell('A3').value =
-    'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues o borres columnas (tampoco las ocultas) — las columnas grises se calculan solas.'
+    'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revisalos antes de subir. Editá solo las columnas azules. No cambiés la cédula ni agregués o borrés columnas (tampoco las ocultas) — las columnas grises se calculan solas.'
   ws.getCell('A3').font = { color: { argb: 'FFB45309' }, size: 10 }
 
   const headerRow = ws.getRow(HEADER_ROW)
@@ -568,34 +568,34 @@ function validarProcedencia(
   // qué sucursales es, así que no se puede saber a quién sacar y a quién no.
   if (meta && cellValue(meta.getCell('B1')) === 1) {
     return error(
-      'Esta plantilla se descargó antes de una actualización del sistema y ya no se puede subir. Descarga la plantilla de nuevo y vuelve a llenarla.'
+      'Esta plantilla se descargó antes de una actualización del sistema y ya no se puede subir. Descargá la plantilla de nuevo y volvé a llenarla.'
     )
   }
 
   if (!meta || cellValue(meta.getCell('B1')) !== META_VERSION) {
     return error(
-      'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descarga la plantilla de este periodo y vuelve a intentar.'
+      'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descargá la plantilla de este periodo y volvve a intentar.'
     )
   }
 
   const periodoDelArchivo = Number(cellValue(meta.getCell('B2')))
   if (periodoDelArchivo !== periodoId) {
     return error(
-      `Esta plantilla es del periodo ${periodoDelArchivo}, no del que estás subiendo. Descarga la plantilla de este periodo.`
+      `Esta plantilla es del periodo ${periodoDelArchivo}, no del que estás subiendo. Descargá la plantilla de este periodo.`
     )
   }
 
   const catalogoDelArchivo = String(cellValue(meta.getCell('B3')) ?? '')
   if (catalogoDelArchivo !== firmaCatalogo(conceptos)) {
     return error(
-      'Los conceptos de nómina cambiaron desde que se descargó esta plantilla, así que sus columnas ya no corresponden. Descarga la plantilla de nuevo y vuelve a llenarla.'
+      'Los conceptos de nómina cambiaron desde que se descargó esta plantilla, así que sus columnas ya no corresponden. Descargá la plantilla de nuevo y volvé a llenarla.'
     )
   }
 
   const alcance = leerAlcance(cellValue(meta.getCell('B4')))
   if (!alcance) {
     return error(
-      'El archivo perdió la información de las sucursales que incluye. Descarga la plantilla de nuevo y vuelve a llenarla.'
+      'El archivo perdió la información de las sucursales que incluye. Descargá la plantilla de nuevo y volvé a llenarla.'
     )
   }
 
@@ -642,7 +642,7 @@ export async function parsePlanillaWorkbook(
         {
           fila: 0,
           mensaje:
-            'El archivo no es un Excel válido (.xlsx) o está dañado. Descarga la plantilla de nuevo y vuelve a intentar.',
+            'El archivo no es un Excel válido (.xlsx) o está dañado. Descargá la plantilla de nuevo y volvé a intentar.',
         },
       ],
     }
@@ -713,7 +713,7 @@ export async function parsePlanillaWorkbook(
       errors: [
         {
           fila: headerRowNumber,
-          mensaje: `Al archivo le faltan columnas obligatorias: ${faltantes.join(', ')}. No cambies ni borres los encabezados; descarga la plantilla de nuevo si hace falta.`,
+          mensaje: `Al archivo le faltan columnas obligatorias: ${faltantes.join(', ')}. No cambiés ni borrés los encabezados; descargá la plantilla de nuevo si hace falta.`,
         },
       ],
     }

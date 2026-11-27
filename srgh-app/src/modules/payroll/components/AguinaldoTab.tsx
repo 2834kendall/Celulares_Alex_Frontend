@@ -249,7 +249,7 @@ export function AguinaldoTab({
                 ? '/payroll/aguinaldo-liquidacion'
                 : `/payroll/aguinaldo-liquidacion?anio=${a}`
             }
-            className={`rounded-lg px-2.5 py-1 transition ${
+            className={`pointer-coarse:min-h-11 inline-flex items-center rounded-lg px-2.5 py-1 transition ${
               a === anio
                 ? 'bg-brand-600 text-white'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

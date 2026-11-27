@@ -60,7 +60,7 @@ export function PlanillaImport({ periodoId, estado, porEmpresa = false }: Planil
       link.click()
       URL.revokeObjectURL(url)
     } catch {
-      setError('No se pudo descargar la plantilla. Revisa tu conexión e intenta de nuevo.')
+      setError('No se pudo descargar la plantilla. Revisá tu conexión e intentá de nuevo.')
     } finally {
       setIsDownloading(false)
     }
@@ -118,8 +118,8 @@ export function PlanillaImport({ periodoId, estado, porEmpresa = false }: Planil
           <p className="text-sm font-semibold text-slate-900">Planilla en Excel</p>
           <TextoPlegable className="text-xs text-slate-500">
             {porEmpresa
-              ? 'Descarga la plantilla con los empleados de las sucursales que ves, llena los montos y súbela. La subida solo toca a los empleados de esas sucursales.'
-              : 'Descarga la plantilla con los empleados de la sucursal, llena los montos y súbela.'}
+              ? 'Descargá la plantilla con los empleados de las sucursales que ves, llená los montos y subila. La subida solo toca a los empleados de esas sucursales.'
+              : 'Descargá la plantilla con los empleados de la sucursal, llená los montos y subila.'}
             {!esBorrador && ' Este periodo ya no está en borrador: la subida está deshabilitada.'}
           </TextoPlegable>
         </div>
@@ -128,14 +128,14 @@ export function PlanillaImport({ periodoId, estado, porEmpresa = false }: Planil
           type="button"
           onClick={onDownload}
           disabled={isDownloading}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60"
+          className="pointer-coarse:min-h-11 flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60"
         >
           {isDownloading ? <Loader2 className={SPINNER} /> : <FileDown className="h-3.5 w-3.5" />}
           {isDownloading ? 'Descargando…' : 'Descargar plantilla'}
         </button>
 
         <label
-          className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition focus-within:ring-2 focus-within:ring-brand-600 focus-within:ring-offset-2 ${
+          className={`pointer-coarse:min-h-11 flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition focus-within:ring-2 focus-within:ring-brand-600 focus-within:ring-offset-2 ${
             esBorrador && !isPending
               ? 'cursor-pointer bg-brand-600 hover:bg-brand-700 active:scale-[0.98]'
               : 'cursor-not-allowed bg-slate-300'

@@ -122,7 +122,7 @@ function OnboardingSummary({
   return (
     <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
       <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-600">
-        Revisa antes de crear
+        Revisá antes de crear
       </h3>
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryItem
@@ -166,7 +166,7 @@ function OnboardingSummary({
         </div>
       </dl>
       <p className="mt-3 text-[11px] text-slate-500">
-        Usa «Anterior» si necesitas corregir algo. El empleado se crea únicamente al presionar
+        Usá «Anterior» si necesitás corregir algo. El empleado se crea únicamente al presionar
         «Crear empleado».
       </p>
     </section>
@@ -400,7 +400,7 @@ export function EmployeeWizard({
       const fotoResult = await setEmployeePhoto(result.empId, formData)
       if (!fotoResult.ok) {
         toast.warning(
-          `Empleado creado, pero la foto no se pudo subir: ${fotoResult.error} Puedes agregarla desde su perfil.`
+          `Empleado creado, pero la foto no se pudo subir: ${fotoResult.error} Podés agregarla desde su perfil.`
         )
       }
     }
@@ -427,7 +427,7 @@ export function EmployeeWizard({
     }
     if (documentosFallidos.length > 0) {
       toast.warning(
-        `Empleado creado, pero no se pudieron subir: ${documentosFallidos.join(', ')}. Puedes agregarlos desde su perfil.`
+        `Empleado creado, pero no se pudieron subir: ${documentosFallidos.join(', ')}. Podés agregarlos desde su perfil.`
       )
     }
 
@@ -527,7 +527,7 @@ export function EmployeeWizard({
               type="button"
               onClick={goBack}
               disabled={step === 0 || isSubmitting || reintentando || verificandoPaso}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-40"
+              className="pointer-coarse:min-h-11 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-40"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Anterior
             </button>

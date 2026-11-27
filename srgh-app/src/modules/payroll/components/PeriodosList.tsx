@@ -187,7 +187,7 @@ export function PeriodosList({
             onClick={handleRecalcularEstados}
             disabled={recalculando}
             title="Vuelve a calcular si cada periodo está en borrador o pagado, a partir de los pagos de sus filas. No cambia montos ni pagos."
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:opacity-50"
+            className="pointer-coarse:min-h-11 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 outline-none transition hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60 disabled:opacity-50"
           >
             {recalculando ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -204,7 +204,7 @@ export function PeriodosList({
           <EmptyState
             icon={CalendarDays}
             title="Sin periodos de nómina"
-            description="Crea el primer periodo de planilla para empezar a procesar la nómina."
+            description="Creá el primer periodo de planilla para empezar a procesar la nómina."
           />
         ) : (
           <EmptyState
@@ -320,7 +320,7 @@ export function PeriodosList({
                             disabled={deletingId === p.id}
                             aria-label={`Eliminar ${periodoLabel(p.mes, p.anio, p.quincena)}`}
                             title="Eliminar periodo"
-                            className="rounded-lg p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500 disabled:opacity-50"
+                            className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-lg p-1.5 text-slate-400 outline-none transition hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500 disabled:opacity-50"
                           >
                             {deletingId === p.id ? (
                               <Loader2 className={SPINNER} />

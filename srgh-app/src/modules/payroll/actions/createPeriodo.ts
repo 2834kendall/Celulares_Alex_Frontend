@@ -120,7 +120,7 @@ export async function createPeriodo(input: CrearPeriodoInput): Promise<CreatePer
       }
     }
     if (error?.code === '42501') {
-      return { ok: false, error: 'No tienes permiso para crear periodos de nómina.' }
+      return { ok: false, error: 'No tenés permiso para crear periodos de nómina.' }
     }
     return { ok: false, error: 'No se pudo crear el periodo de nómina.' }
   }

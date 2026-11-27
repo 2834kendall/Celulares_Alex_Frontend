@@ -169,7 +169,7 @@ export function PeriodoForm({ sucursales, porEmpresa = false }: PeriodoFormProps
                 name="npe_sucursal_id"
                 id="npe_sucursal_id"
                 parse={parseNumber}
-                placeholder="Selecciona una sucursal"
+                placeholder="Seleccioná una sucursal"
                 invalid={!!errors.npe_sucursal_id}
                 options={sucursales.map((s) => ({ value: String(s.id), label: s.nombre }))}
               />
@@ -330,7 +330,7 @@ export function PeriodoForm({ sucursales, porEmpresa = false }: PeriodoFormProps
         <button
           type="button"
           onClick={() => router.push('/payroll')}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+          className="pointer-coarse:min-h-11 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
         >
           Cancelar
         </button>
