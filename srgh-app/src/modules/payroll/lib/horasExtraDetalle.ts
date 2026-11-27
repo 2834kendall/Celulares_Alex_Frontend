@@ -21,6 +21,7 @@ import {
   fusionarAjenas,
   leerMontosGuardados,
 } from '@/modules/payroll/lib/lineasAjenas'
+import { formatCRC } from '@/modules/payroll/lib/format'
 import { round2 } from '@/modules/payroll/lib/numeros'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -124,7 +125,7 @@ export async function aplicarHorasExtraEnDetalle(
 
   if (nuevoMonto < -TOLERANCIA) {
     return {
-      error: `La quincena tiene ₡${horasExtraActual.toLocaleString('es-CR')} de horas extra y este movimiento dice haber pagado ₡${Math.abs(delta).toLocaleString('es-CR')}. Alguien ya cambió ese monto, así que revertirlo dejaría la planilla mal. Revisá el detalle del periodo antes de seguir.`,
+      error: `La quincena tiene ${formatCRC(horasExtraActual)} de horas extra y este movimiento dice haber pagado ${formatCRC(Math.abs(delta))}. Alguien ya cambió ese monto, así que revertirlo dejaría la planilla mal. Revisá el detalle del periodo antes de seguir.`,
     }
   }
 

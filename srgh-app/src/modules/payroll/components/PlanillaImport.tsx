@@ -112,7 +112,9 @@ export function PlanillaImport({ periodoId, estado, porEmpresa = false }: Planil
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="min-w-0 flex-1">
+        {/* En celular el texto toma toda la fila y los botones bajan debajo: con
+            flex-1 solo, el título quedaba en una columna angosta junto a ellos. */}
+        <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
           <p className="text-sm font-semibold text-slate-900">Planilla en Excel</p>
           <TextoPlegable className="text-xs text-slate-500">
             {porEmpresa

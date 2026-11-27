@@ -106,7 +106,10 @@ export async function getPeriodos(): Promise<GetPeriodosResult> {
         sucursalLabel(row.sgrh_sucursales) ??
         (row.npe_sucursal_id === null ? ETIQUETA_TODA_LA_EMPRESA : '—'),
       totalEmpleados,
-      puedeEliminar: row.npe_sucursal_id !== null || cuentaDeEmpresa,
+      // Un periodo pagado no se elimina (la acción lo rechazaría con pagos
+      // marcados): no se ofrece el botón.
+      puedeEliminar:
+        row.npe_estado !== 'pagado' && (row.npe_sucursal_id !== null || cuentaDeEmpresa),
     }
   })
 
