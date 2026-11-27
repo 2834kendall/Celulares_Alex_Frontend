@@ -72,7 +72,7 @@ export function RubrosSeleccionManager({ rubros, canWrite }: RubrosSeleccionMana
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Buscar criterio…"
               aria-label="Buscar criterio"
-              className="min-w-0 flex-1 bg-transparent text-xs font-medium text-slate-700 outline-none placeholder:text-slate-500"
+              className="min-w-0 flex-1 self-stretch bg-transparent text-xs font-medium text-slate-700 outline-none placeholder:text-slate-500"
             />
           </div>
         )}

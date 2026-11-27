@@ -63,7 +63,7 @@ export function BranchesPanel({
       <div className="flex justify-end">
         <Link
           href={`/settings/branches/new${listQuery}`}
-          className="rounded-lg bg-brand-action px-4 py-2 text-sm font-bold text-white hover:bg-brand-action-hover"
+          className="inline-flex items-center rounded-lg bg-brand-action px-4 py-2 text-sm font-bold text-white pointer-coarse:min-h-11 hover:bg-brand-action-hover"
         >
           Nueva sucursal
         </Link>

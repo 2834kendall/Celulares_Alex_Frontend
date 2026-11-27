@@ -78,7 +78,7 @@ function PeopleList({
         {people.slice(0, PEOPLE_SHOWN).map((person) => (
           <li
             key={person.id}
-            className="dash-line group flex items-center gap-2 rounded-xl px-2 py-1 transition duration-200 hover:bg-slate-50"
+            className="dash-line group flex items-center pointer-coarse:min-h-11 gap-2 rounded-xl px-2 py-1 transition duration-200 hover:bg-slate-50"
           >
             <Avatar
               nombre={person.nombre}

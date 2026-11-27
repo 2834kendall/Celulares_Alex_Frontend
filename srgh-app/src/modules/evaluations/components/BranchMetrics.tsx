@@ -356,7 +356,7 @@ export function BranchMetrics({ collaborators, branches, rubros }: BranchMetrics
                             e.stopPropagation()
                             goToIndividual(c.labId)
                           }}
-                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-1"
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] pointer-coarse:min-h-11 font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-1"
                         >
                           Ver evaluaciones
                         </button>

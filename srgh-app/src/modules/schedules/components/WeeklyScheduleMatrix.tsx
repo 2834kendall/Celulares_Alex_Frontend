@@ -1068,7 +1068,7 @@ export function WeeklyScheduleMatrix({
                     {...props}
                     type="button"
                     aria-label="Ir a una semana específica"
-                    className="inline-flex min-w-[124px] items-center justify-center gap-1.5 rounded-full px-2 py-1 outline-none transition hover:bg-white focus-visible:ring-2 focus-visible:ring-slate-400/50 disabled:cursor-not-allowed"
+                    className="inline-flex min-w-[124px] items-center justify-center gap-1.5 rounded-full px-2 py-1 outline-none pointer-coarse:min-h-11 transition hover:bg-white focus-visible:ring-2 focus-visible:ring-slate-400/50 disabled:cursor-not-allowed"
                   >
                     {isNavigating ? (
                       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-400" />
@@ -1144,7 +1144,7 @@ export function WeeklyScheduleMatrix({
               type="button"
               onClick={() => goToWeekStart(currentMondayISO())}
               disabled={isNavigating || isCurrentWeek}
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 outline-none transition hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-slate-400/50 disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:text-slate-400"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 outline-none transition pointer-coarse:min-h-11 hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-slate-400/50 disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:text-slate-400"
             >
               <RotateCcw className="h-3 w-3" />
               Semana actual
@@ -1185,7 +1185,7 @@ export function WeeklyScheduleMatrix({
               onClick={dismissGapAlert}
               aria-label="Descartar este aviso"
               title="Ya lo vi, no avisar más esta semana"
-              className="shrink-0 rounded-full p-0.5 text-amber-600 outline-none transition hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500/60"
+              className="inline-flex shrink-0 items-center justify-center rounded-full p-0.5 text-amber-600 outline-none pointer-coarse:size-11 transition hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500/60"
             >
               <X className="h-3.5 w-3.5" />
             </button>

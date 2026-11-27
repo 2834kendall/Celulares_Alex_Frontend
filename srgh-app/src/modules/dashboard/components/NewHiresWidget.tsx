@@ -43,7 +43,7 @@ export function NewHiresWidget({
             {hires.slice(0, SHOWN).map((hire) => (
               <li
                 key={hire.id}
-                className="dash-line group flex items-center gap-2 rounded-xl px-2 py-1.5 transition duration-200 hover:bg-slate-50"
+                className="dash-line group flex items-center pointer-coarse:min-h-11 gap-2 rounded-xl px-2 py-1.5 transition duration-200 hover:bg-slate-50"
               >
                 <Avatar
                   nombre={hire.nombre}

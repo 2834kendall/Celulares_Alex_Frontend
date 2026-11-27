@@ -143,7 +143,7 @@ export function BranchForm({
                 <input {...register('suc_email_sucursal')} type="email" className={INPUT_CLASSES} />
               </Labeled>
             </div>
-            <label className="flex items-center gap-2 text-sm font-medium">
+            <label className="flex items-center gap-2 text-sm font-medium pointer-coarse:min-h-11">
               <input {...register('suc_activa')} type="checkbox" />
               Sucursal activa
             </label>

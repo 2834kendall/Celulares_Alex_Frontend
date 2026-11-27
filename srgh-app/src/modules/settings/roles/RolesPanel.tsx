@@ -6,6 +6,7 @@ import { Copy, Lock, Plus, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { normalizeSearchText } from '@/components/ui/SearchSelect'
 import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '@/components/ui/Button'
+import { TOQUE_AMPLIADO } from '@/components/ui/styles'
 import { cn } from '@/lib/utils/cn'
 import { ASSIGNABLE_PERMISSIONS } from './permissions'
 import type { RoleSummary, RolesSettings } from './types'
@@ -33,7 +34,7 @@ function RoleCard({ role }: { role: RoleSummary }) {
           ) : (
             <Link
               href={`/settings/roles/${role.id}`}
-              className="break-words font-bold text-slate-900 hover:underline"
+              className={`break-words font-bold text-slate-900 hover:underline ${TOQUE_AMPLIADO}`}
             >
               {role.nombre}
             </Link>

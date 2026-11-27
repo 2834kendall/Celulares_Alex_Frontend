@@ -57,7 +57,7 @@ export function TextoPlegable({ children, className }: TextoPlegableProps) {
       className={cn(
         'flex min-w-0 items-start gap-1.5',
         plegable &&
-          'cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60',
+          'cursor-pointer rounded-md outline-none pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-brand-500/60',
         className
       )}
       role={plegable ? 'button' : undefined}

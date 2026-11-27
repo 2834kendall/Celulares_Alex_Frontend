@@ -50,7 +50,7 @@ const TAB_BUTTON =
   'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold pointer-coarse:min-h-11 transition outline-none active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2'
 
 const STANDALONE_BUTTON =
-  'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:shadow-md active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2'
+  'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white pointer-coarse:min-h-11 shadow-sm outline-none transition hover:shadow-md active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2'
 
 /**
  * Pestanas sincronizadas con el query param `?tab=`.
