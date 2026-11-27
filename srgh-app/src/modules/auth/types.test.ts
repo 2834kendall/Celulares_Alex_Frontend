@@ -23,7 +23,7 @@ describe('loginSchema', () => {
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error.issues[0].message).toBe(
-        'Ingrese un correo electrónico o un usuario válido.'
+        'Ingresá un correo electrónico o un usuario válido.'
       )
     }
   })
@@ -38,7 +38,7 @@ describe('loginSchema', () => {
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error.issues[0].message).toBe(
-        'Ingrese un correo electrónico o un usuario válido.'
+        'Ingresá un correo electrónico o un usuario válido.'
       )
     }
   })
@@ -63,7 +63,7 @@ describe('loginSchema', () => {
     const result = loginSchema.safeParse({ email: 'user@mail.com', password: '' })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0].message).toBe('Ingrese su contraseña.')
+      expect(result.error.issues[0].message).toBe('Ingresá tu contraseña.')
     }
   })
 
@@ -141,7 +141,7 @@ describe('activateAccountSchema', () => {
     })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0].message).toBe('Confirme su contraseña.')
+      expect(result.error.issues[0].message).toBe('Confirmá tu contraseña.')
     }
   })
 
@@ -168,7 +168,7 @@ describe('forgotPasswordSchema', () => {
     const result = forgotPasswordSchema.safeParse({ email: 'no-es-correo' })
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error.issues[0].message).toBe('Ingrese un correo electrónico válido.')
+      expect(result.error.issues[0].message).toBe('Ingresá un correo electrónico válido.')
     }
   })
 

@@ -12,15 +12,15 @@ function getLoginMessage(error: AuthError) {
   const message = error.message.toLowerCase()
 
   if (error.status === 429 || error.code === 'over_request_rate_limit') {
-    return 'Demasiados intentos. Espere un momento antes de volver a intentar.'
+    return 'Demasiados intentos. Esperá un momento antes de volver a intentar.'
   }
 
   if (error.code === 'email_not_confirmed' || message.includes('email not confirmed')) {
-    return 'No se pudo completar el acceso. Confirme su correo o contacte al administrador.'
+    return 'No se pudo completar el acceso. Confirmá tu correo o contactá al administrador.'
   }
 
   if (message.includes('failed to fetch') || message.includes('network')) {
-    return 'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
+    return 'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.'
   }
 
   return 'Credenciales inválidas.'
@@ -52,7 +52,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
       return {
         ok: false,
         error:
-          'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
+          'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.',
       }
     }
     if (!kiosk) return { ok: false, error: 'Credenciales inválidas.' }

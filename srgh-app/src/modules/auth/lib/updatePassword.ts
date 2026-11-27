@@ -18,10 +18,10 @@ export function getPasswordUpdateMessage(error: AuthError) {
   }
 
   if (error.code === 'weak_password' || message.includes('weak')) {
-    return 'La contraseña es demasiado débil. Use una combinación más segura.'
+    return 'La contraseña es demasiado débil. Usá una combinación más segura.'
   }
 
-  return 'No se pudo guardar la contraseña. Intente de nuevo.'
+  return 'No se pudo guardar la contraseña. Intentá de nuevo.'
 }
 
 /**

@@ -95,7 +95,7 @@ export function SetPasswordForm({
       router.refresh()
     } catch {
       setServerError(
-        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
+        'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.'
       )
     }
   }
@@ -229,7 +229,7 @@ export function SetPasswordForm({
                   aria-invalid={!!errors.confirmPassword}
                   {...register('confirmPassword')}
                   className={cn(INPUT, 'py-3 pl-10')}
-                  placeholder="Repite la contraseña"
+                  placeholder="Repetí la contraseña"
                 />
               </div>
               {errors.confirmPassword && (

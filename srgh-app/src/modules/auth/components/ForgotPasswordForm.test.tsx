@@ -36,7 +36,7 @@ describe('<ForgotPasswordForm />', () => {
 
     await submitEmail('no-es-correo')
 
-    expect(await screen.findByText('Ingrese un correo electrónico válido.')).toBeVisible()
+    expect(await screen.findByText('Ingresá un correo electrónico válido.')).toBeVisible()
     expect(mockRequestPasswordReset).not.toHaveBeenCalled()
   })
 
@@ -59,7 +59,7 @@ describe('<ForgotPasswordForm />', () => {
     await waitFor(() => {
       expect(mockRequestPasswordReset).toHaveBeenCalledWith({ email: 'ana@empresa.com' })
     })
-    expect(await screen.findByText('Revise su correo')).toBeInTheDocument()
+    expect(await screen.findByText('Revisá tu correo')).toBeInTheDocument()
     // El formulario desaparece: no hay nada más que hacer en esta pantalla.
     expect(screen.queryByLabelText('Correo electrónico')).not.toBeInTheDocument()
   })
@@ -73,12 +73,12 @@ describe('<ForgotPasswordForm />', () => {
 
     const { unmount } = render(<ForgotPasswordForm />)
     await submitEmail('ana@empresa.com')
-    const acuseCuentaReal = (await screen.findByText('Revise su correo')).parentElement?.textContent
+    const acuseCuentaReal = (await screen.findByText('Revisá tu correo')).parentElement?.textContent
     unmount()
 
     render(<ForgotPasswordForm />)
     await submitEmail('nadie@empresa.com')
-    const acuseCuentaFalsa = (await screen.findByText('Revise su correo')).parentElement
+    const acuseCuentaFalsa = (await screen.findByText('Revisá tu correo')).parentElement
       ?.textContent
 
     expect(acuseCuentaFalsa).toBe(acuseCuentaReal)
@@ -89,14 +89,14 @@ describe('<ForgotPasswordForm />', () => {
   it('muestra el error del servidor sin pasar al acuse', async () => {
     mockRequestPasswordReset.mockResolvedValue({
       ok: false,
-      error: 'Demasiadas solicitudes. Espere unos minutos antes de volver a intentar.',
+      error: 'Demasiadas solicitudes. Esperá unos minutos antes de volver a intentar.',
     })
     render(<ForgotPasswordForm />)
 
     await submitEmail('ana@empresa.com')
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Demasiadas solicitudes.')
-    expect(screen.queryByText('Revise su correo')).not.toBeInTheDocument()
+    expect(screen.queryByText('Revisá tu correo')).not.toBeInTheDocument()
   })
 
   it('muestra el error de conexión si la action lanza', async () => {
@@ -125,7 +125,7 @@ describe('<ForgotPasswordForm />', () => {
     expect(screen.getByLabelText('Correo electrónico')).toBeDisabled()
 
     resolveRequest({ ok: true })
-    expect(await screen.findByText('Revise su correo')).toBeInTheDocument()
+    expect(await screen.findByText('Revisá tu correo')).toBeInTheDocument()
   })
 
   it('tras un intento fallido la escena se repone al rato', async () => {

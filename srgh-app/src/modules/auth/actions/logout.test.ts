@@ -81,7 +81,7 @@ describe('logout (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'El servidor no pudo cerrar la sesión. Intente de nuevo en unos segundos.',
+      error: 'El servidor no pudo cerrar la sesión. Intentá de nuevo en unos segundos.',
     })
     expect(revalidatePath).not.toHaveBeenCalled()
     expect(deleteCookie).not.toHaveBeenCalled()

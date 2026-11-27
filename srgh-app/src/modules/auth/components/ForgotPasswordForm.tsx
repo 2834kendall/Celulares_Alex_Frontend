@@ -81,7 +81,7 @@ export function ForgotPasswordForm() {
       setSentTo(input.email)
     } catch {
       setServerError(
-        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.'
+        'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.'
       )
       setErrorPulse(true)
     }
@@ -95,13 +95,13 @@ export function ForgotPasswordForm() {
             <AuthBadge>
               <MailCheck className="h-6 w-6" />
             </AuthBadge>
-            <h2 className={AUTH_TITLE}>Revise su correo</h2>
+            <h2 className={AUTH_TITLE}>Revisá tu correo</h2>
             <p className="mt-1.5 text-sm leading-relaxed text-slate-500 auth-short:mt-1">
-              Le enviamos un enlace para restablecer la contraseña. Vence en una hora y solo puede
+              Te enviamos un enlace para restablecer la contraseña. Vence en una hora y solo puede
               usarse una vez.
             </p>
             <p className="mt-3 rounded-xl bg-brand-50 px-3.5 py-2.5 text-xs leading-relaxed text-slate-600 auth-short:mt-2">
-              ¿No llegó? Revise la carpeta de correo no deseado.
+              ¿No llegó? Revisá la carpeta de correo no deseado.
             </p>
           </div>
 
@@ -119,9 +119,9 @@ export function ForgotPasswordForm() {
             <AuthBadge>
               <KeyRound className="h-6 w-6" />
             </AuthBadge>
-            <h2 className={AUTH_TITLE}>¿Olvidó su contraseña?</h2>
+            <h2 className={AUTH_TITLE}>¿Olvidaste tu contraseña?</h2>
             <p className="mt-1.5 text-sm text-slate-500 auth-short:mt-1 auth-short:text-xs">
-              Le enviaremos un enlace para definir una nueva.
+              Te vamos a enviar un enlace para definir una nueva.
             </p>
           </div>
 

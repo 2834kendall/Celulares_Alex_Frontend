@@ -97,7 +97,7 @@ describe('<LoginForm />', () => {
   it('ofrece la salida a recuperar la contrasena', () => {
     render(<LoginForm />)
 
-    expect(screen.getByRole('link', { name: /olvidó su contraseña/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /olvidaste tu contraseña/i })).toHaveAttribute(
       'href',
       '/forgot-password'
     )
@@ -110,7 +110,7 @@ describe('<LoginForm />', () => {
     await user.click(screen.getByRole('button', { name: /iniciar sesión/i }))
 
     expect(await screen.findByText('El correo o usuario es requerido.')).toBeInTheDocument()
-    expect(screen.getByText('Ingrese su contraseña.')).toBeInTheDocument()
+    expect(screen.getByText('Ingresá tu contraseña.')).toBeInTheDocument()
     expect(mockLogin).not.toHaveBeenCalled()
   })
 

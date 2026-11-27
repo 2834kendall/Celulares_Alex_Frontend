@@ -46,7 +46,7 @@ export async function logout(): Promise<LogoutResult> {
   if (error) {
     return {
       ok: false,
-      error: 'El servidor no pudo cerrar la sesión. Intente de nuevo en unos segundos.',
+      error: 'El servidor no pudo cerrar la sesión. Intentá de nuevo en unos segundos.',
     }
   }
 

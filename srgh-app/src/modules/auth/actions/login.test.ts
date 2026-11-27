@@ -100,7 +100,7 @@ describe('login (server action)', () => {
       expect(result).toEqual({
         ok: false,
         error:
-          'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
+          'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.',
       })
       expect(client.auth.signInWithPassword).not.toHaveBeenCalled()
     })
@@ -157,27 +157,27 @@ describe('login (server action)', () => {
     it.each([
       [
         { status: 429, message: 'x' },
-        'Demasiados intentos. Espere un momento antes de volver a intentar.',
+        'Demasiados intentos. Esperá un momento antes de volver a intentar.',
       ],
       [
         { code: 'over_request_rate_limit', message: 'x' },
-        'Demasiados intentos. Espere un momento antes de volver a intentar.',
+        'Demasiados intentos. Esperá un momento antes de volver a intentar.',
       ],
       [
         { code: 'email_not_confirmed', message: 'x' },
-        'No se pudo completar el acceso. Confirme su correo o contacte al administrador.',
+        'No se pudo completar el acceso. Confirmá tu correo o contactá al administrador.',
       ],
       [
         { message: 'Email not confirmed' },
-        'No se pudo completar el acceso. Confirme su correo o contacte al administrador.',
+        'No se pudo completar el acceso. Confirmá tu correo o contactá al administrador.',
       ],
       [
         { message: 'Failed to fetch' },
-        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
+        'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.',
       ],
       [
         { message: 'network error occurred' },
-        'No se pudo conectar con el servicio de autenticación. Revise la conexión e intente de nuevo.',
+        'No se pudo conectar con el servicio de autenticación. Revisá la conexión e intentá de nuevo.',
       ],
       [{ message: 'Invalid login credentials' }, 'Credenciales inválidas.'],
     ])('mapea %o a "%s"', async (signInError, expected) => {

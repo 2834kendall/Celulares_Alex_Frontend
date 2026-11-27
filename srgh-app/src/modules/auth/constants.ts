@@ -34,14 +34,14 @@ export const expiredLinkContent = {
   invite: {
     title: 'Enlace inválido o vencido',
     description:
-      'El enlace de la invitación ya no es válido. Solicite a la persona administradora que le reenvíe la invitación desde la sección de usuarios.',
+      'El enlace de la invitación ya no es válido. Pedile a la persona administradora que te reenvíe la invitación desde la sección de usuarios.',
     ctaHref: '/login',
     ctaLabel: 'Ir a iniciar sesión',
   },
   recovery: {
     title: 'Enlace inválido o vencido',
     description:
-      'El enlace para restablecer la contraseña ya venció o se usó antes. Solicite uno nuevo, llega a su correo en unos minutos.',
+      'El enlace para restablecer la contraseña ya venció o se usó antes. Pedí uno nuevo: llega a tu correo en unos minutos.',
     ctaHref: '/forgot-password',
     ctaLabel: 'Solicitar un enlace nuevo',
   },

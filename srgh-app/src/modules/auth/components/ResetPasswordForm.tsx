@@ -19,7 +19,7 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
       title="Restablecer contraseña"
       description={
         <>
-          Elija la contraseña nueva
+          Elegí la contraseña nueva
           {email ? (
             <>
               {' '}
@@ -31,7 +31,7 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
       }
       submitLabel="Guardar contraseña"
       pendingLabel="Guardando contraseña"
-      footer="¿No solicitó este cambio? Avise al soporte interno de TI."
+      footer="¿No pediste este cambio? Avisá al soporte interno de TI."
     />
   )
 }

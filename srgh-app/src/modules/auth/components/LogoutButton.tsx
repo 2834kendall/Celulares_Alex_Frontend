@@ -43,7 +43,7 @@ export function LogoutButton({
       // Solo fallos de red: no bloquear el boton, y decirlo, para que nadie se
       // vaya creyendo que salio.
       toast.error(
-        'No se pudo conectar para cerrar la sesión. Revise su conexión e intente de nuevo.'
+        'No se pudo conectar para cerrar la sesión. Revisá tu conexión e intentá de nuevo.'
       )
       setLoading(false)
     }
