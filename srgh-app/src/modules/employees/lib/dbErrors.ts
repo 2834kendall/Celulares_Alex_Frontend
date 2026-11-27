@@ -9,6 +9,16 @@ interface PostgresError {
 const UNIQUE_VIOLATION = '23505'
 
 /**
+ * Algunas funciones de la base (crear_empleado_completo, crear_contrato,
+ * editar_contrato…) levantan sus mensajes en tuteo ("No tienes acceso…"), y la
+ * app los muestra tal cual. Se pasan a voseo acá para no tener que redefinir
+ * esas funciones solo por el texto (SGRH-123).
+ */
+export function mensajeDeLaBase(mensaje: string | undefined): string | undefined {
+  return mensaje?.replace(/\bNo tienes\b/g, 'No tenés')
+}
+
+/**
  * sgrh_empleados tiene varias columnas únicas (identificación, correo personal,
  * nº de asegurado CCSS). Postgres reporta todas con el código 23505, pero el
  * nombre de la columna violada viene en message/details — de ahí sale el
@@ -51,7 +61,7 @@ export function mapContractError(
     case '23514':
     case '23503':
     case '42501':
-      return error.message || generico
+      return mensajeDeLaBase(error.message) || generico
     default:
       return generico
   }

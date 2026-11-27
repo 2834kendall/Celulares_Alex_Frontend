@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requirePermission } from '@/lib/auth/require-permission'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { onboardingEmpleadoSchema, type OnboardingEmpleadoInput } from '@/modules/employees/types'
-import { mapEmployeeUniqueError } from '@/modules/employees/lib/dbErrors'
+import { mapEmployeeUniqueError, mensajeDeLaBase } from '@/modules/employees/lib/dbErrors'
 import { validateDatosPago } from '@/modules/employees/lib/validateDatosPago'
 import { encryptField } from '@/lib/crypto/fieldCrypto'
 import { inviteUser } from '@/modules/users/actions/inviteUser'
@@ -74,7 +74,10 @@ export async function createEmployee(
       return { ok: false, error: uniqueError }
     }
     if (error?.code === '42501') {
-      return { ok: false, error: error.message || 'No tenés permiso para crear empleados.' }
+      return {
+        ok: false,
+        error: mensajeDeLaBase(error.message) || 'No tenés permiso para crear empleados.',
+      }
     }
     if (error?.code === '23514') {
       // check_violation: las validaciones de coherencia que le quedan a la RPC
