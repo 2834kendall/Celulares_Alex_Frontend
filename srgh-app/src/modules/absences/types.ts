@@ -30,7 +30,7 @@ export const tipoAusenciaSchema = z
       .string('El código es requerido.')
       .trim()
       .toUpperCase()
-      .regex(/^[A-Z0-9_]{2,20}$/, 'Use 2 a 20 letras, números o guion bajo.'),
+      .regex(/^[A-Z0-9_]{2,20}$/, 'Usá de 2 a 20 letras, números o guion bajo.'),
     tau_nombre: z
       .string('El nombre es requerido.')
       .trim()
@@ -38,11 +38,11 @@ export const tipoAusenciaSchema = z
       .max(100, 'Máximo 100 caracteres.'),
     tau_requiere_documento_ccss: z.boolean().default(false),
     tau_paga_empleador_dias: z
-      .number('Indique los días que paga el patrono (0 si ninguno).')
+      .number('Indicá los días que paga el patrono (0 si ninguno).')
       .int('Tiene que ser un número entero.')
       .min(0, 'Mínimo 0 días.')
       .max(365, 'Máximo 365 días.'),
-    tau_porcentaje_pago_empleador: percent('Indique el porcentaje que paga el patrono.'),
+    tau_porcentaje_pago_empleador: percent('Indicá el porcentaje que paga el patrono.'),
     // Cuota obrera CCSS que se le rebaja a lo que paga el patrono (ej. 10.83
     // en la licencia de maternidad, si el contador dice que corresponde).
     // Vacío = 0: no se rebaja nada, como antes.
@@ -66,7 +66,7 @@ export const tipoAusenciaSchema = z
     (data) =>
       (data.tau_paga_ccss_desde_dia === null) === (data.tau_porcentaje_subsidio_ccss === null),
     {
-      message: 'Indique el día de inicio y el porcentaje del subsidio, o deje ambos vacíos.',
+      message: 'Indicá el día de inicio y el porcentaje del subsidio, o dejá ambos vacíos.',
       path: ['tau_porcentaje_subsidio_ccss'],
     }
   )
@@ -78,9 +78,9 @@ const dateRegex = /^\d{4}-\d{2}-\d{2}$/
 export const createAusenciaSchema = z
   .object({
     employmentHistoryId: z.number().int().positive(),
-    tipoAusenciaId: z.number('Seleccione un tipo.').int().positive(),
-    fechaInicio: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
-    fechaFin: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+    tipoAusenciaId: z.number('Seleccioná un tipo.').int().positive(),
+    fechaInicio: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
+    fechaFin: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
     numeroBoletaCcss: z.string().trim().max(50).optional(),
     observaciones: z.string().trim().max(300).optional(),
   })
@@ -93,8 +93,8 @@ export type CreateAusenciaInput = z.input<typeof createAusenciaSchema>
 
 const ausenciaRangeSchema = z
   .object({
-    fechaInicio: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
-    fechaFin: z.string().regex(dateRegex, 'Formato de fecha invalido (YYYY-MM-DD).'),
+    fechaInicio: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
+    fechaFin: z.string().regex(dateRegex, 'Formato de fecha inválido (YYYY-MM-DD).'),
   })
   .refine((range) => range.fechaFin >= range.fechaInicio, {
     message: 'La fecha final debe ser igual o posterior a la fecha de inicio.',
@@ -109,8 +109,8 @@ const ausenciaRangeSchema = z
  */
 export const createAusenciasBulkSchema = z.object({
   employmentHistoryId: z.number().int().positive(),
-  tipoAusenciaId: z.number('Seleccione un tipo.').int().positive(),
-  ranges: z.array(ausenciaRangeSchema).min(1, 'Agregue al menos un periodo.'),
+  tipoAusenciaId: z.number('Seleccioná un tipo.').int().positive(),
+  ranges: z.array(ausenciaRangeSchema).min(1, 'Agregá al menos un periodo.'),
   numeroBoletaCcss: z.string().trim().max(50).optional(),
   observaciones: z.string().trim().max(300).optional(),
 })

@@ -12,7 +12,7 @@ export function tipoAusenciaDbError(
   accion: 'crear' | 'actualizar' | 'eliminar'
 ): string {
   if (error.code === UNIQUE_VIOLATION) {
-    return `Ya existe un tipo con el código ${codigo}. Use un código distinto.`
+    return `Ya existe un tipo con el código ${codigo}. Usá un código distinto.`
   }
 
   if (error.code === FOREIGN_KEY_VIOLATION && accion === 'eliminar') {
