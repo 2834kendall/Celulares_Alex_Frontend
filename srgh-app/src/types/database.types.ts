@@ -3425,6 +3425,18 @@ export type Database = {
         Args: { p_npe_id: number }
         Returns: undefined
       }
+      empleados_con_contrato_vigente_oculto: {
+        Args: { p_emp_ids: number[] }
+        Returns: number[]
+      }
+      nomina_alcance_relacion: {
+        Args: { p_desde?: string; p_hasta?: string; p_lab_ids: number[] }
+        Returns: {
+          lab_id: number
+          tiene_alcance_oculto: boolean
+          ultimo_corte_liquidado: string | null
+        }[]
+      }
       nomina_contratos_con_filas_ocultas: {
         Args: { p_desde?: string; p_hasta?: string; p_lab_ids: number[] }
         Returns: number[]
@@ -3550,6 +3562,13 @@ export type Database = {
         Returns: boolean
       }
       tiene_permiso: { Args: { p_codigo: string }; Returns: boolean }
+      verificar_cuenta_pago_duplicada: {
+        Args: { p_cuenta_hmac: string; p_excluir_emp_id?: number }
+        Returns: {
+          duplicada: boolean
+          empleado_nombre: string | null
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
