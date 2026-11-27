@@ -38,7 +38,7 @@ export function avisarCorreoComprobante(
   reintentar: () => void
 ) {
   if (!correo || correo.estado === 'sin_configurar') {
-    toast.success(`${prefijo}. Ya puedes ver e imprimir el comprobante.`)
+    toast.success(`${prefijo}. Ya podés ver e imprimir el comprobante.`)
     return
   }
   if (correo.estado === 'enviado') {

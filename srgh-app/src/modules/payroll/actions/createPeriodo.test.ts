@@ -164,7 +164,7 @@ describe('createPeriodo (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No tienes permiso para crear periodos de nómina.',
+      error: 'No tenés permiso para crear periodos de nómina.',
     })
   })
 

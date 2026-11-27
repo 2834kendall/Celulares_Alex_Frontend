@@ -32,8 +32,22 @@ import {
 } from './prellenadoAsistencia'
 import { lecturaUtilizable } from './horasPeriodo'
 import { round2 } from './numeros'
+import { revisarZipXlsx } from './zipSeguro'
+import { HojaLeida, leerExcelAislado } from './leerExcelAislado'
 
 const SHEET_NAME = 'Planilla'
+
+/**
+ * Un texto que empieza con = + - @ (o tabulador / retorno) Excel lo puede
+ * tomar como fórmula al editar la celda o al pasar el archivo a CSV: un nombre
+ * como "=HYPERLINK(...)" se volvería un enlace. Se le antepone un apóstrofo,
+ * que lo deja como texto. Al leer, leerExcelAislado lo quita de nuevo.
+ */
+const INICIO_DE_FORMULA = /^[=+\-@\t\r]/
+
+export function textoSeguroExcel(texto: string): string {
+  return INICIO_DE_FORMULA.test(texto) ? `'${texto}` : texto
+}
 
 // Hoja oculta con la procedencia del archivo: de qué periodo salió, con qué
 // catálogo se armó y qué sucursales incluye. Sin esto, la subida no puede
@@ -251,18 +265,18 @@ export async function buildPlanillaTemplate(
   const colTotalNeto = colTotalDeducciones + 1
   const colContrato = colTotalNeto + 1
 
-  ws.getCell('A1').value = info.titulo
+  ws.getCell('A1').value = textoSeguroExcel(info.titulo)
   ws.getCell('A1').font = { bold: true, size: 14 }
-  ws.getCell('A2').value = info.subtitulo
+  ws.getCell('A2').value = textoSeguroExcel(info.subtitulo)
   ws.getCell('A2').font = { color: { argb: 'FF64748B' }, size: 10 }
   ws.getCell('A3').value =
-    'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues o borres columnas (tampoco las ocultas) — las columnas grises se calculan solas.'
+    'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revisalos antes de subir. Editá solo las columnas azules. No cambiés la cédula ni agregués o borrés columnas (tampoco las ocultas) — las columnas grises se calculan solas.'
   ws.getCell('A3').font = { color: { argb: 'FFB45309' }, size: 10 }
 
   const headerRow = ws.getRow(HEADER_ROW)
   headers.forEach((h, index) => {
     const cell = headerRow.getCell(index + 1)
-    cell.value = h.label
+    cell.value = textoSeguroExcel(h.label)
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
     cell.fill = {
       type: 'pattern',
@@ -276,9 +290,9 @@ export async function buildPlanillaTemplate(
   empleados.forEach((emp, index) => {
     const rowNumber = HEADER_ROW + 1 + index
     const row = ws.getRow(rowNumber)
-    row.getCell(colCedula).value = emp.cedula
-    row.getCell(2).value = emp.nombre
-    row.getCell(colSucursal).value = emp.sucursalNombre ?? ''
+    row.getCell(colCedula).value = textoSeguroExcel(emp.cedula)
+    row.getCell(2).value = textoSeguroExcel(emp.nombre)
+    row.getCell(colSucursal).value = textoSeguroExcel(emp.sucursalNombre ?? '')
     row.getCell(colContrato).value = emp.labId
     // La misma cuenta que usa "cargar empleados desde asistencia", compartida
     // en lib/prellenadoAsistencia.ts: si cada camino tuviera la suya, armar la
@@ -485,38 +499,16 @@ function leerContratoId(valor: RawCell): number | null {
   return Number.isInteger(id) && id > 0 ? id : null
 }
 
-/** Valor plano de una celda: resuelve fórmulas a su resultado y texto enriquecido a string. */
-function cellValue(cell: ExcelJS.Cell): RawCell {
-  const value = cell.value
-  if (value === null || value === undefined) return null
-  if (typeof value === 'number' || typeof value === 'string') return value
-  if (typeof value === 'object') {
-    if (
-      'result' in value &&
-      (typeof value.result === 'number' || typeof value.result === 'string')
-    ) {
-      return value.result
-    }
-    if ('richText' in value) {
-      return value.richText.map((part) => part.text).join('')
-    }
-    if ('text' in value && typeof value.text === 'string') {
-      return value.text
-    }
-  }
-  return String(value)
-}
-
 /**
  * Ubica la fila del encabezado buscando la etiqueta "Cédula" en la columna A
  * (las primeras 20 filas). Así el parseo tolera que el usuario inserte o
  * borre una fila por accidente al editar — no depende de que el encabezado
  * siga exactamente en la fila 4. Si no la encuentra, usa HEADER_ROW.
  */
-function locateHeaderRow(ws: ExcelJS.Worksheet): number {
+function locateHeaderRow(ws: HojaLeida): number {
   const maxScan = Math.min(ws.rowCount, 20)
   for (let rowNumber = 1; rowNumber <= maxScan; rowNumber += 1) {
-    const value = cellValue(ws.getRow(rowNumber).getCell(1))
+    const value = ws.celda(rowNumber, 1)
     if (typeof value === 'string' && value.trim() === LABEL_CEDULA) {
       return rowNumber
     }
@@ -525,9 +517,14 @@ function locateHeaderRow(ws: ExcelJS.Worksheet): number {
 }
 
 /** Busca en la fila de encabezado la columna cuyo texto coincide exactamente con `label`. */
-function locateColumn(headerRow: ExcelJS.Row, label: string, maxCol: number): number | null {
+function locateColumn(
+  ws: HojaLeida,
+  headerRow: number,
+  label: string,
+  maxCol: number
+): number | null {
   for (let col = 1; col <= maxCol; col += 1) {
-    const value = cellValue(headerRow.getCell(col))
+    const value = ws.celda(headerRow, col)
     if (typeof value === 'string' && value.trim() === label) return col
   }
   return null
@@ -539,45 +536,45 @@ function locateColumn(headerRow: ExcelJS.Row, label: string, maxCol: number): nu
  * reportar, o el alcance (sucursales) sellado en el archivo si todo cuadra.
  */
 function validarProcedencia(
-  wb: ExcelJS.Workbook,
+  hojas: HojaLeida[],
   conceptos: ConceptoPlanillaColumna[],
   periodoId: number
 ): { error: PlanillaRowError } | { alcance: number[] } {
   const error = (mensaje: string) => ({ error: { fila: 0, mensaje } })
-  const meta = wb.getWorksheet(META_SHEET_NAME)
+  const meta = hojas.find((h) => h.nombre === META_SHEET_NAME)
 
   // Una plantilla de antes de que el archivo llevara su alcance: no dice de
   // qué sucursales es, así que no se puede saber a quién sacar y a quién no.
-  if (meta && cellValue(meta.getCell('B1')) === 1) {
+  if (meta && meta.celda(1, 2) === 1) {
     return error(
-      'Esta plantilla se descargó antes de una actualización del sistema y ya no se puede subir. Descarga la plantilla de nuevo y vuelve a llenarla.'
+      'Esta plantilla se descargó antes de una actualización del sistema y ya no se puede subir. Descargá la plantilla de nuevo y volvé a llenarla.'
     )
   }
 
-  if (!meta || cellValue(meta.getCell('B1')) !== META_VERSION) {
+  if (!meta || meta.celda(1, 2) !== META_VERSION) {
     return error(
-      'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descarga la plantilla de este periodo y vuelve a intentar.'
+      'El archivo no es la plantilla que genera el sistema (o se guardó en un formato que perdió su información interna). Descargá la plantilla de este periodo y volvve a intentar.'
     )
   }
 
-  const periodoDelArchivo = Number(cellValue(meta.getCell('B2')))
+  const periodoDelArchivo = Number(meta.celda(2, 2))
   if (periodoDelArchivo !== periodoId) {
     return error(
-      `Esta plantilla es del periodo ${periodoDelArchivo}, no del que estás subiendo. Descarga la plantilla de este periodo.`
+      `Esta plantilla es del periodo ${periodoDelArchivo}, no del que estás subiendo. Descargá la plantilla de este periodo.`
     )
   }
 
-  const catalogoDelArchivo = String(cellValue(meta.getCell('B3')) ?? '')
+  const catalogoDelArchivo = String(meta.celda(3, 2) ?? '')
   if (catalogoDelArchivo !== firmaCatalogo(conceptos)) {
     return error(
-      'Los conceptos de nómina cambiaron desde que se descargó esta plantilla, así que sus columnas ya no corresponden. Descarga la plantilla de nuevo y vuelve a llenarla.'
+      'Los conceptos de nómina cambiaron desde que se descargó esta plantilla, así que sus columnas ya no corresponden. Descargá la plantilla de nuevo y volvé a llenarla.'
     )
   }
 
-  const alcance = leerAlcance(cellValue(meta.getCell('B4')))
+  const alcance = leerAlcance(meta.celda(4, 2))
   if (!alcance) {
     return error(
-      'El archivo perdió la información de las sucursales que incluye. Descarga la plantilla de nuevo y vuelve a llenarla.'
+      'El archivo perdió la información de las sucursales que incluye. Descargá la plantilla de nuevo y volvé a llenarla.'
     )
   }
 
@@ -597,26 +594,36 @@ export async function parsePlanillaWorkbook(
   conceptos: ConceptoPlanillaColumna[],
   periodoId: number
 ): Promise<ParsePlanillaResult> {
-  const wb = new ExcelJS.Workbook()
-
-  try {
-    await wb.xlsx.load(buffer)
-  } catch {
+  // Antes de abrirlo: un zip chico puede inflarse a gigas y tumbar el servidor.
+  const revision = revisarZipXlsx(buffer)
+  if (!revision.ok) {
     return {
       rows: [],
       alcance: [],
       errors: [
         {
           fila: 0,
-          mensaje:
-            'El archivo no es un Excel válido (.xlsx) o está dañado. Descarga la plantilla de nuevo y vuelve a intentar.',
+          mensaje: `No se puede abrir el archivo: ${revision.motivo}. Descargá la plantilla de nuevo y volvé a intentar.`,
         },
       ],
     }
   }
 
+  // En un hilo aparte con tope de memoria y tiempo: ExcelJS tiene
+  // vulnerabilidades sin corregir y un archivo armado podía tumbar el servidor.
+  const lectura = await leerExcelAislado(buffer, INICIO_DE_FORMULA)
+  if (!lectura.ok) {
+    const mensaje =
+      lectura.motivo === 'invalido'
+        ? 'El archivo no es un Excel válido (.xlsx) o está dañado. Descargá la plantilla de nuevo y volvé a intentar.'
+        : 'El archivo es demasiado grande o complejo para leerlo. Descargá la plantilla de nuevo y volvé a intentar.'
+    return { rows: [], alcance: [], errors: [{ fila: 0, mensaje }] }
+  }
+
+  const hojas = lectura.hojas.map((h) => new HojaLeida(h))
   const ws =
-    wb.getWorksheet(SHEET_NAME) ?? wb.worksheets.find((hoja) => hoja.name !== META_SHEET_NAME)
+    hojas.find((hoja) => hoja.nombre === SHEET_NAME) ??
+    hojas.find((hoja) => hoja.nombre !== META_SHEET_NAME)
   if (!ws) {
     return {
       rows: [],
@@ -625,7 +632,7 @@ export async function parsePlanillaWorkbook(
     }
   }
 
-  const procedencia = validarProcedencia(wb, conceptos, periodoId)
+  const procedencia = validarProcedencia(hojas, conceptos, periodoId)
   if ('error' in procedencia) {
     return { rows: [], alcance: [], errors: [procedencia.error] }
   }
@@ -635,19 +642,22 @@ export async function parsePlanillaWorkbook(
   const columnasMontoDef = [...ingresoManual, ...deduccionManual]
 
   const headerRowNumber = locateHeaderRow(ws)
-  const headerRow = ws.getRow(headerRowNumber)
-  const maxCol = Math.max(ws.columnCount, headerRow.actualCellCount, columnasMontoDef.length + 20)
+  const maxCol = Math.max(
+    ws.columnCount,
+    ws.celdasConValor(headerRowNumber),
+    columnasMontoDef.length + 20
+  )
 
-  const colCedula = locateColumn(headerRow, LABEL_CEDULA, maxCol)
-  const colHoras = locateColumn(headerRow, LABEL_HORAS, maxCol)
-  const colHorasExtra = locateColumn(headerRow, LABEL_HORAS_EXTRA, maxCol)
-  const colSalarioHora = locateColumn(headerRow, LABEL_SALARIO_HORA, maxCol)
-  const colContrato = locateColumn(headerRow, LABEL_CONTRATO, maxCol)
+  const colCedula = locateColumn(ws, headerRowNumber, LABEL_CEDULA, maxCol)
+  const colHoras = locateColumn(ws, headerRowNumber, LABEL_HORAS, maxCol)
+  const colHorasExtra = locateColumn(ws, headerRowNumber, LABEL_HORAS_EXTRA, maxCol)
+  const colSalarioHora = locateColumn(ws, headerRowNumber, LABEL_SALARIO_HORA, maxCol)
+  const colContrato = locateColumn(ws, headerRowNumber, LABEL_CONTRATO, maxCol)
 
   const columnasMonto = columnasMontoDef.map((c) => ({
     codigo: c.con_codigo,
     etiqueta: c.con_nombre,
-    columna: locateColumn(headerRow, c.con_nombre, maxCol),
+    columna: locateColumn(ws, headerRowNumber, c.con_nombre, maxCol),
   }))
 
   // Una columna que no aparece NO es un 0: es un archivo que no corresponde.
@@ -680,7 +690,7 @@ export async function parsePlanillaWorkbook(
       errors: [
         {
           fila: headerRowNumber,
-          mensaje: `Al archivo le faltan columnas obligatorias: ${faltantes.join(', ')}. No cambies ni borres los encabezados; descarga la plantilla de nuevo si hace falta.`,
+          mensaje: `Al archivo le faltan columnas obligatorias: ${faltantes.join(', ')}. No cambiés ni borrés los encabezados; descargá la plantilla de nuevo si hace falta.`,
         },
       ],
     }
@@ -694,21 +704,19 @@ export async function parsePlanillaWorkbook(
   const contratosPorCedula = new Map<string, Set<number | null>>()
 
   for (let rowNumber = headerRowNumber + 1; rowNumber <= ws.rowCount; rowNumber += 1) {
-    const row = ws.getRow(rowNumber)
-
     const montosCrudos = columnasMonto.map(({ codigo, etiqueta, columna }) => ({
       codigo,
       etiqueta,
       // El guard de arriba ya garantiza que ninguna quedó en null.
-      valor: cellValue(row.getCell(columna!)),
+      valor: ws.celda(rowNumber, columna!),
     }))
 
     const result = parsePlanillaRow(
       rowNumber,
-      cellValue(row.getCell(colCedula)),
-      cellValue(row.getCell(colHoras)),
-      cellValue(row.getCell(colHorasExtra)),
-      cellValue(row.getCell(colSalarioHora)),
+      ws.celda(rowNumber, colCedula),
+      ws.celda(rowNumber, colHoras),
+      ws.celda(rowNumber, colHorasExtra),
+      ws.celda(rowNumber, colSalarioHora),
       montosCrudos
     )
 
@@ -718,7 +726,7 @@ export async function parsePlanillaWorkbook(
       continue
     }
 
-    const contratoId = leerContratoId(cellValue(row.getCell(colContrato)))
+    const contratoId = leerContratoId(ws.celda(rowNumber, colContrato))
     const vistos = contratosPorCedula.get(result.row.cedula)
     if (vistos && (contratoId === null || vistos.has(null) || vistos.has(contratoId))) {
       errors.push({ fila: rowNumber, mensaje: `Cédula repetida: ${result.row.cedula}.` })

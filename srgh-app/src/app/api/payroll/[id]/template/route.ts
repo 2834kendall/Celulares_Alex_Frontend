@@ -87,8 +87,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json(
       {
         error: alcance.porEmpresa
-          ? 'No hay empleados con contrato activo en las sucursales que ves de este periodo. Verifica el historial laboral antes de generar la planilla.'
-          : 'La sucursal de este periodo no tiene empleados con contrato activo. Verifica el historial laboral antes de generar la planilla.',
+          ? 'No hay empleados con contrato activo en las sucursales que ves de este periodo. Verificá el historial laboral antes de generar la planilla.'
+          : 'La sucursal de este periodo no tiene empleados con contrato activo. Verificá el historial laboral antes de generar la planilla.',
       },
       { status: 422 }
     )
@@ -120,7 +120,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json(
       {
         error:
-          'No hay conceptos activos en el catálogo. Crea al menos uno en "Conceptos de nómina" antes de generar la planilla.',
+          'No hay conceptos activos en el catálogo. Creá al menos uno en "Conceptos de nómina" antes de generar la planilla.',
       },
       { status: 422 }
     )

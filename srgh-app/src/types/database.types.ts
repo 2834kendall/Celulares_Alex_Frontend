@@ -3453,6 +3453,7 @@ export type Database = {
         Args: { p_npe_id: number }
         Returns: number | null
       }
+      normalizar_identificacion: { Args: { p_numero: string }; Returns: string }
       sucursales_visibles: { Args: never; Returns: number[] }
       get_emp_id: { Args: never; Returns: number }
       get_empresa_id: { Args: never; Returns: number }
@@ -3463,6 +3464,7 @@ export type Database = {
         Args: { p_bruto_anterior: number; p_calculo: Json; p_ndt_id: number }
         Returns: undefined
       }
+      identificacion_en_uso: { Args: { p_numero: string }; Returns: boolean }
       nomina_asistencia_periodo: {
         Args: { p_desde: string; p_hasta: string; p_lab_ids: number[] }
         Returns: Json

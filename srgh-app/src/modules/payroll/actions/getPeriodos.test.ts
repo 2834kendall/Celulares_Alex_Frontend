@@ -147,6 +147,26 @@ describe('getPeriodos (server action)', () => {
       [7, true],
     ])
   })
+  it('un periodo pagado no se ofrece para eliminar', async () => {
+    mockCreateClient.mockResolvedValue(
+      createSupabaseClientMock({
+        sgrh_nomina_periodo: {
+          data: [
+            { ...PERIODO_BASE, npe_id: 9, npe_estado: 'pagado' },
+            { ...PERIODO_BASE, npe_id: 10, npe_estado: 'borrador' },
+          ],
+          error: null,
+        },
+      }) as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getPeriodos()
+
+    expect(result.ok && result.data.map((p) => [p.id, p.puedeEliminar])).toEqual([
+      [9, false],
+      [10, true],
+    ])
+  })
 })
 
 describe('getPeriodos: atraso visto por la cuenta', () => {

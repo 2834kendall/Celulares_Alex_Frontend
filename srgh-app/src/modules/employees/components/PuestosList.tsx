@@ -95,7 +95,7 @@ export function PuestosList({ puestos, canWrite }: PuestosListProps) {
           <EmptyState
             icon={Briefcase}
             title="No hay puestos"
-            description="Crea el primero para poder asignarlo al contratar empleados."
+            description="Creá el primero para poder asignarlo al contratar empleados."
             action={
               canWrite && (
                 <Button onClick={() => setEditing('new')} className="mt-1">

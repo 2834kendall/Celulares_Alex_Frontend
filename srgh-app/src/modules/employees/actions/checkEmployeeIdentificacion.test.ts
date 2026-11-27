@@ -12,7 +12,10 @@ const mockCreateAdminClient = vi.mocked(createAdminClient)
 const mockRequirePermission = vi.mocked(requirePermission)
 
 function mockAdmin(response: { data: unknown; error: unknown }) {
-  const admin = createSupabaseAdminClientMock({ sgrh_empleados: response })
+  const admin = createSupabaseAdminClientMock(
+    {},
+    { rpcResponses: { identificacion_en_uso: response as never } }
+  )
   mockCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>)
   return admin
 }
@@ -54,22 +57,28 @@ describe('checkEmployeeIdentificacion (server action)', () => {
   })
 
   it('devuelve disponible: true cuando no existe ningún empleado con esa identificación', async () => {
-    const admin = mockAdmin({ data: null, error: null })
+    const admin = mockAdmin({ data: false, error: null })
 
     const result = await checkEmployeeIdentificacion('  1-1111-1111  ')
 
     expect(result).toEqual({ ok: true, disponible: true })
     expect(mockRequirePermission).toHaveBeenCalledWith(PERMISOS.EMPLEADOS_WRITE)
-    const query = admin.from.mock.results[0].value
-    expect(query.eq).toHaveBeenCalledWith('emp_numero_identificacion', '1-1111-1111')
+    expect(admin.rpc).toHaveBeenCalledWith('identificacion_en_uso', { p_numero: '1-1111-1111' })
   })
 
   it('devuelve disponible: false cuando la identificación ya está registrada (sin exponer PII)', async () => {
-    mockAdmin({ data: { emp_id: 42 }, error: null })
+    mockAdmin({ data: true, error: null })
 
     const result = await checkEmployeeIdentificacion('1-1111-1111')
 
     expect(result).toEqual({ ok: true, disponible: false })
+  })
+
+  it('compara sin guiones: 130000300 choca con 1-3000-0300 (lo decide la función)', async () => {
+    const admin = mockAdmin({ data: true, error: null })
+
+    expect(await checkEmployeeIdentificacion('130000300')).toEqual({ ok: true, disponible: false })
+    expect(admin.rpc).toHaveBeenCalledWith('identificacion_en_uso', { p_numero: '130000300' })
   })
 
   it('devuelve error genérico si la consulta falla', async () => {

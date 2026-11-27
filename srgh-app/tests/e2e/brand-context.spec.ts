@@ -262,7 +262,7 @@ test('logging out deletes the choice', async ({ page, context }) => {
   await chooseBrand(page, DOS.name)
   expect((await context.cookies()).some((c) => c.name === CONTEXT_COOKIE)).toBe(true)
 
-  await page.locator('header').getByRole('button', { name: 'Menu de usuario' }).click()
+  await page.locator('header').getByRole('button', { name: 'Menú de usuario' }).click()
   await page.getByRole('button', { name: /Cerrar sesi/ }).click()
   await expect(page).toHaveURL(/\/login/)
   expect((await context.cookies()).some((c) => c.name === CONTEXT_COOKIE)).toBe(false)

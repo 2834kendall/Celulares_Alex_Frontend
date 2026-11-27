@@ -18,6 +18,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { usePagination } from '@/hooks/usePagination'
 import { Pagination } from '@/components/ui/Pagination'
+import { TOQUE_AMPLIADO } from '@/components/ui/styles'
 import {
   META_LABEL,
   TABLE_DESKTOP_WRAP,
@@ -82,7 +83,7 @@ function AccionLiquidacion({
       type="button"
       onClick={() => onPagar(item)}
       disabled={pagando}
-      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
+      className="pointer-coarse:min-h-11 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
     >
       {pagando ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Pagar'}
     </button>
@@ -108,7 +109,7 @@ function BotonDetalle({ abierto, onClick }: { abierto: boolean; onClick: () => v
       type="button"
       onClick={onClick}
       aria-expanded={abierto}
-      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 outline-none transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-500/60"
+      className={`${TOQUE_AMPLIADO} inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 outline-none transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-500/60`}
     >
       {abierto ? 'Ocultar detalle' : 'Ver detalle'}
       <ChevronDown

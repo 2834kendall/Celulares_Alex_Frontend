@@ -180,7 +180,7 @@ describe('<EmployeeForm />', () => {
     await chooseSelectMenuOption(user, 'Provincia *', 'Alajuela')
 
     expect(screen.getByLabelText('Cantón *')).toHaveTextContent('Seleccionar…')
-    expect(screen.getByLabelText('Distrito *')).toHaveTextContent('Elige el cantón primero')
+    expect(screen.getByLabelText('Distrito *')).toHaveTextContent('Elegí el cantón primero')
     // El postal se deriva del distrito: sin distrito, no hay postal.
     expect(screen.getByLabelText('Código postal')).toHaveValue('')
   })

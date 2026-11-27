@@ -68,7 +68,7 @@ describe('addEmployeeDocument (server action)', () => {
   it('rechaza el FormData sin archivo SIN tocar permisos', async () => {
     const result = await addEmployeeDocument(10, new FormData())
 
-    expect(result).toEqual({ ok: false, error: 'Selecciona un archivo.' })
+    expect(result).toEqual({ ok: false, error: 'Seleccioná un archivo.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 

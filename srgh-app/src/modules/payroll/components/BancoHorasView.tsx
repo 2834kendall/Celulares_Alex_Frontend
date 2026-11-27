@@ -154,7 +154,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`rounded-lg px-3 py-1.5 transition ${
+            className={`pointer-coarse:min-h-11 rounded-lg px-3 py-1.5 transition ${
               tab === t.id
                 ? 'bg-white text-brand-700 shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
@@ -328,7 +328,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                             onClick={() => handleRevertir(item)}
                             disabled={submittingId === item.id}
                             title="Devuelve las horas al banco y, si se habían pagado, saca el monto de esa quincena"
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-amber-300 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:opacity-60"
+                            className="pointer-coarse:min-h-11 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-amber-300 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:opacity-60"
                           >
                             {submittingId === item.id ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
@@ -347,7 +347,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                           type="button"
                           onClick={() => setItemACompensar(item)}
                           disabled={submittingId === item.id}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60"
+                          className="pointer-coarse:min-h-11 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition hover:border-brand-300 hover:text-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60"
                         >
                           {item.liquidadoSinIncluir ? 'Compensar con nota' : 'Compensar'}
                         </button>
@@ -356,7 +356,7 @@ export function BancoHorasView({ pendientes, historial, canWrite }: BancoHorasVi
                             type="button"
                             onClick={() => setItemAPagar(item)}
                             disabled={submittingId === item.id}
-                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
+                            className="pointer-coarse:min-h-11 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-60"
                           >
                             {submittingId === item.id ? (
                               <Loader2 className="h-3 w-3 animate-spin" />

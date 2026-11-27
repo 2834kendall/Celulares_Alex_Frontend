@@ -158,6 +158,8 @@ function horarioDelTramo(row: ProgramacionRow): HorarioDia | null {
   }
 }
 
+const MINUTOS_POR_DIA = 24 * 60
+
 const minutos = (hora: string) => {
   const [h, m] = hora.split(':').map(Number)
   return h * 60 + m
@@ -194,8 +196,17 @@ function bloquesDelTramo(
  * Ahora el día va de la entrada del primer bloque a la salida del último, y lo
  * que hay entre bloques es un hueco sin pago (HorarioDia.huecos), igual que un
  * almuerzo. Un día de un solo bloque queda exactamente como antes.
+ *
+ * Un bloque que cruza la medianoche (22–06) termina al día siguiente: su
+ * salida se cuenta después de la medianoche y queda como el final del día.
+ * Antes, si un bloque cruzaba la medianoche, se tomaba solo el primero y los
+ * demás se perdían: 07–11 + 22–06 se medía como 4 h en vez de 12.
+ *
+ * Si los bloques suman una jornada de más de 24 h (05–09 y 22–07: el turno de
+ * la noche se monta sobre el de la mañana siguiente), no se puede medir sin
+ * adivinar y se devuelve 'traslapado' para que el día se reporte.
  */
-function horarioDelDia(rows: ProgramacionRow[]): HorarioDia | null {
+function horarioDelDia(rows: ProgramacionRow[]): HorarioDia | 'traslapado' | null {
   // Sin filtrar el día libre: no convive con otros tramos (trigger de
   // SGRH-110), así que es siempre la única fila y queda como antes.
   const bloques = rows.flatMap((r) => {
@@ -205,26 +216,32 @@ function horarioDelDia(rows: ProgramacionRow[]): HorarioDia | null {
   if (bloques.length === 0) return null
   if (bloques.length === 1) return bloques[0].horario
 
-  // Un bloque que cruza la medianoche no se puede ordenar contra otros con
-  // una resta de horas (el trigger tampoco los valida): queda el primero.
-  if (bloques.some((b) => minutos(b.fin) <= minutos(b.inicio))) return bloques[0].horario
+  // Fin del bloque en minutos desde la medianoche del día: el de un bloque
+  // que cruza la medianoche cae al día siguiente.
+  const finDe = (b: { inicio: string; fin: string }) =>
+    minutos(b.fin) <= minutos(b.inicio) ? minutos(b.fin) + MINUTOS_POR_DIA : minutos(b.fin)
 
   const ordenados = [...bloques].sort((a, b) => minutos(a.inicio) - minutos(b.inicio))
   const primero = ordenados[0].horario
+  const inicioDia = minutos(ordenados[0].inicio)
+  if (Math.max(...ordenados.map(finDe)) - inicioDia > MINUTOS_POR_DIA) return 'traslapado'
+
   const huecos: { inicio: string; fin: string }[] = []
+  // El hueco se mide contra el fin más tardío hasta ahí, no contra el bloque
+  // anterior: un bloque que queda dentro de otro no abre un hueco falso.
+  let ultimo = ordenados[0]
   for (let i = 1; i < ordenados.length; i += 1) {
-    const anterior = ordenados[i - 1]
     const actual = ordenados[i]
-    if (minutos(actual.inicio) > minutos(anterior.fin)) {
-      huecos.push({ inicio: anterior.fin, fin: actual.inicio })
+    if (minutos(actual.inicio) > finDe(ultimo)) {
+      huecos.push({ inicio: ultimo.fin, fin: actual.inicio })
     }
     // El almuerzo de los tramos que no son el primero también es sin pago.
     const h = actual.horario
     if (h !== primero && h.inicioAlmuerzo && h.finAlmuerzo) {
       huecos.push({ inicio: h.inicioAlmuerzo, fin: h.finAlmuerzo })
     }
+    if (finDe(actual) > finDe(ultimo)) ultimo = actual
   }
-  const ultimo = ordenados.reduce((max, b) => (minutos(b.fin) > minutos(max.fin) ? b : max))
   const conReceso =
     ordenados.find((b) => b.horario.inicioBreak && b.horario.finBreak)?.horario ?? primero
 
@@ -442,7 +459,8 @@ export async function getHorasDelPeriodo(
   for (const labId of historialLaboralIds) {
     const horarioDe = (fecha: string) => {
       const filas = programacionPorDia.get(clave(labId, fecha))
-      return filas ? horarioDelDia(filas) : null
+      const h = filas ? horarioDelDia(filas) : null
+      return h === 'traslapado' ? null : h
     }
 
     const arrastradasPorDia = new Map<string, RawMark[]>(
@@ -462,10 +480,12 @@ export async function getHorasDelPeriodo(
       const prog = filas.length > 0 ? filas : null
 
       const propias = (marcasPorDia.get(k) ?? []).filter((m) => !yaConsumidas.has(m.id))
+      const horario = prog ? horarioDelDia(prog) : null
 
       return {
         fecha,
-        horario: prog ? horarioDelDia(prog) : null,
+        horario: horario === 'traslapado' ? null : horario,
+        horarioTraslapado: horario === 'traslapado',
         marcas: [...propias, ...(arrastradasPorDia.get(fecha) ?? [])],
         // Un día libre no convive con otros tramos (trigger de SGRH-110).
         esDiaLibre: filas.some((f) => f.prg_es_dia_libre),

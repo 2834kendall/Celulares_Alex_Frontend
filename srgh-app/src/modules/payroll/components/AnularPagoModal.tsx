@@ -100,7 +100,7 @@ export function AnularPagoModal({
             type="button"
             disabled={submitting || !valido}
             onClick={() => onConfirm(motivo.trim())}
-            className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-rose-700 focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="pointer-coarse:min-h-11 flex items-center gap-1.5 rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-rose-700 focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
             Sí, anular el pago

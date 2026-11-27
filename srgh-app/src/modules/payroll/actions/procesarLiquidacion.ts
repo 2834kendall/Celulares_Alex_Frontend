@@ -196,7 +196,7 @@ export async function procesarLiquidacion(
 
   if (origenSalario === 'contrato') {
     advertencias.push(
-      `No hay suficientes quincenas pagadas para promediar: el salario diario salió del salario del contrato (₡${bases.salarioContrato.toLocaleString('es-CR')} ÷ 30).`
+      `No hay suficientes quincenas pagadas para promediar: el salario diario salió del salario del contrato (${formatCRC(bases.salarioContrato)} ÷ 30).`
     )
   }
   if (bases.promedio.excluidas.length > 0) {

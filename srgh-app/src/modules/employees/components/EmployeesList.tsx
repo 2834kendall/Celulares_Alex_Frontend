@@ -143,12 +143,12 @@ export function EmployeesList({ employees, canWrite }: EmployeesListProps) {
         <EmptyState
           icon={Users}
           title="Todavía no hay empleados registrados"
-          description="Registra al primer colaborador para empezar a gestionar su información y contrato."
+          description="Registrá al primer colaborador para empezar a gestionar su información y contrato."
           action={
             canWrite && (
               <Link
                 href="/employees/new"
-                className="mt-1 flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 active:scale-[0.98]"
+                className="pointer-coarse:min-h-11 mt-1 flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 active:scale-[0.98]"
               >
                 <UserPlus className="h-3.5 w-3.5" /> Registrar el primer empleado
               </Link>

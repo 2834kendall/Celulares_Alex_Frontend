@@ -36,7 +36,7 @@ export function EmployeeWizardStepUsuario({
       {!canInviteUser && (
         <Alert tone="info" size="md">
           <p>
-            Tu rol no tiene permiso de gestión de usuarios. Puedes crear el empleado sin cuenta; un
+            Tu rol no tiene permiso de gestión de usuarios. Podés crear el empleado sin cuenta; un
             administrador podrá invitarlo más adelante.
           </p>
         </Alert>

@@ -15,7 +15,7 @@ import { DateField } from '@/components/ui/DatePickerButton'
 import { ControlledSelectMenu, parseNumber, SelectMenu } from '@/components/ui/SelectMenu'
 
 export const INPUT_CLASSES =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition pointer-coarse:min-h-11 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 aria-[invalid=true]:border-rose-400 aria-[invalid=true]:focus:ring-rose-400/20'
 
 export const LABEL_CLASSES =
   'mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500'
@@ -272,7 +272,7 @@ export function IbanInput({ name, invalid, disabled, mode = 'iban' }: IbanInputP
   }
 
   const placeholder = disabled
-    ? 'Selecciona el banco primero'
+    ? 'Seleccioná el banco primero'
     : mode === 'sinpe'
       ? '0000 0000'
       : 'CR00 0000 0000 0000 0000 00'
@@ -680,7 +680,7 @@ export function AddressFields({ basePath = '', territorio }: AddressFieldsProps)
         value={ubicacion.cantonId}
         searchable
         disabled={ubicacion.provinciaId === null}
-        placeholder={ubicacion.provinciaId === null ? 'Elige la provincia primero' : 'Seleccionar…'}
+        placeholder={ubicacion.provinciaId === null ? 'Elegí la provincia primero' : 'Seleccionar…'}
         onChange={(cantonId) => {
           setUbicacion((actual) => ({ ...actual, cantonId }))
           limpiarDistrito()
@@ -693,7 +693,7 @@ export function AddressFields({ basePath = '', territorio }: AddressFieldsProps)
         options={distritosVisibles}
         searchable
         disabled={ubicacion.cantonId === null}
-        placeholder={ubicacion.cantonId === null ? 'Elige el cantón primero' : 'Seleccionar…'}
+        placeholder={ubicacion.cantonId === null ? 'Elegí el cantón primero' : 'Seleccionar…'}
       />
 
       <Labeled label="Código postal">

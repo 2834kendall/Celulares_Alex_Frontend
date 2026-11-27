@@ -10,10 +10,10 @@ const AUTH_SECONDARY =
   'flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60 auth-short:py-2.5'
 
 const DESCRIPTION: Record<AccessExit, string> = {
-  home: 'Su usuario no tiene permiso para ver esta sección. Si lo necesita, pídalo a un administrador.',
+  home: 'Tu usuario no tiene permiso para ver esta sección. Si lo necesitás, pedíselo a un administrador.',
   logout:
-    'Su usuario todavía no tiene permisos asignados en el sistema. Pida a un administrador que se los asigne.',
-  login: 'Su sesión no está activa. Inicie sesión para continuar.',
+    'Tu usuario todavía no tiene permisos asignados en el sistema. Pedile a un administrador que te los asigne.',
+  login: 'Tu sesión no está activa. Iniciá sesión para continuar.',
 }
 
 /**

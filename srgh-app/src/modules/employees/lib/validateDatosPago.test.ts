@@ -195,7 +195,7 @@ describe('validateDatosPago', () => {
       validateDatosPago(supabase, { edp_banco_id: 3, edp_numero_cuenta: IBAN_BAC })
     ).resolves.toEqual({
       ok: false,
-      error: 'No se pudo verificar la cuenta bancaria. Intenta de nuevo.',
+      error: 'No se pudo verificar la cuenta bancaria. Intentá de nuevo.',
     })
   })
 
@@ -204,7 +204,7 @@ describe('validateDatosPago', () => {
 
     await expect(validateDatosPago(supabase, { edp_numero_cuenta: IBAN_BAC })).resolves.toEqual({
       ok: false,
-      error: 'Selecciona el banco de la cuenta.',
+      error: 'Seleccioná el banco de la cuenta.',
     })
     expect(client.from).not.toHaveBeenCalled()
   })

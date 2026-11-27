@@ -99,7 +99,7 @@ export function PagarBancoHorasModal({
             type="button"
             disabled={submitting || !montoValido}
             onClick={() => onConfirm(montoNumero)}
-            className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="pointer-coarse:min-h-11 flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
             Confirmar pago

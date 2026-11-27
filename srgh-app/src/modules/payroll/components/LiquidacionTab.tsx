@@ -352,7 +352,7 @@ export function LiquidacionTab({
             <fieldset>
               <legend className={LABEL}>¿Se pactó pagar cesantía?</legend>
               <div className="flex gap-4 text-xs text-slate-700">
-                <label className="flex items-center gap-1.5">
+                <label className="pointer-coarse:min-h-11 flex items-center gap-1.5">
                   <input
                     type="radio"
                     value="si"
@@ -361,7 +361,7 @@ export function LiquidacionTab({
                   />
                   Sí, se paga cesantía
                 </label>
-                <label className="flex items-center gap-1.5">
+                <label className="pointer-coarse:min-h-11 flex items-center gap-1.5">
                   <input
                     type="radio"
                     value="no"
@@ -385,7 +385,7 @@ export function LiquidacionTab({
             <fieldset>
               <legend className={LABEL}>¿El contrato se pactó por seis meses o más?</legend>
               <div className="flex gap-4 text-xs text-slate-700">
-                <label className="flex items-center gap-1.5">
+                <label className="pointer-coarse:min-h-11 flex items-center gap-1.5">
                   <input
                     type="radio"
                     value="si"
@@ -394,7 +394,7 @@ export function LiquidacionTab({
                   />
                   Sí, seis meses o más
                 </label>
-                <label className="flex items-center gap-1.5">
+                <label className="pointer-coarse:min-h-11 flex items-center gap-1.5">
                   <input
                     type="radio"
                     value="no"

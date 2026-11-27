@@ -207,7 +207,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return { ok: false, error: 'Periodo inválido.' }
   }
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: 'Selecciona el archivo de planilla (.xlsx).' }
+    return { ok: false, error: 'Seleccioná el archivo de planilla (.xlsx).' }
   }
   if (file.size > MAX_FILE_BYTES) {
     return { ok: false, error: 'El archivo supera el límite de 2 MB.' }
@@ -258,7 +258,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
     return {
       ok: false,
       error:
-        'No hay conceptos activos en el catálogo. Crea al menos uno en "Conceptos de nómina" antes de subir la planilla.',
+        'No hay conceptos activos en el catálogo. Creá al menos uno en "Conceptos de nómina" antes de subir la planilla.',
     }
   }
 
@@ -976,7 +976,7 @@ export async function uploadPlanilla(formData: FormData): Promise<UploadPlanilla
         error:
           errLineasNuevas === ERROR_REGISTRAR_BANCO_HORAS
             ? errLineasNuevas
-            : 'Se guardaron los totales, pero fallaron algunas líneas de la planilla. Vuelve a subir el archivo.',
+            : 'Se guardaron los totales, pero fallaron algunas líneas de la planilla. Volvé a subir el archivo.',
       }
     }
 

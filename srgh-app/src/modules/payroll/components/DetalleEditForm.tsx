@@ -123,7 +123,7 @@ export function DetalleEditForm({
 
       {conceptosManuales.length === 0 ? (
         <TextoPlegable className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          No hay conceptos manuales activos en el catálogo (tipo &quot;monto manual&quot;). Crea al
+          No hay conceptos manuales activos en el catálogo (tipo &quot;monto manual&quot;). Creá al
           menos uno en &quot;Conceptos de nómina&quot; para poder cargar montos aquí.
         </TextoPlegable>
       ) : (
@@ -290,7 +290,7 @@ export function DetalleEditForm({
           type="button"
           onClick={() => guard.confirmLeave(() => onCancel?.())}
           disabled={isSubmitting}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
+          className="pointer-coarse:min-h-11 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 disabled:opacity-60"
         >
           Cancelar
         </button>

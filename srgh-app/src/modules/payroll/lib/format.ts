@@ -104,10 +104,20 @@ export function formatFechaHora(iso: string | null | undefined) {
   return `${parte('day')}/${parte('month')}/${parte('year')} ${parte('hour')}:${parte('minute')}`
 }
 
-/** Monto en colones con separador de miles; '—' cuando no hay dato. */
+/**
+ * Monto en colones con separador de miles; '—' cuando no hay dato.
+ *
+ * Sin céntimos se muestra entero ("₡235 001") y con céntimos siempre con dos
+ * decimales ("₡235 001,50"): con un solo decimal ("₡235 001,5") parece un
+ * monto cortado.
+ */
 export function formatCRC(amount: number | null | undefined) {
   if (amount === null || amount === undefined) return '—'
-  return `₡${new Intl.NumberFormat('es-CR', { maximumFractionDigits: 2 }).format(amount)}`
+  const tieneCentimos = Math.round(amount * 100) % 100 !== 0
+  return `₡${new Intl.NumberFormat('es-CR', {
+    minimumFractionDigits: tieneCentimos ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amount)}`
 }
 
 /** Agrupa de 4 en 4 para lectura: 'CR05015202001026284066' → 'CR05 0152 0200 1026 2840 66'. */
