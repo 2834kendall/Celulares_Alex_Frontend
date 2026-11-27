@@ -37,6 +37,7 @@ import {
 import {
   SELECT_CONTRATO,
   aContrato,
+  alcanceRelacionContratos,
   cargarAusencias,
   cargarQuincenas,
   contratosConFilasOcultas,
@@ -187,44 +188,50 @@ export async function calcularAguinaldosDelCiclo(
   // arriba, no entre sí: se leen juntos (antes, uno detrás de otro, y las
   // quincenas y ausencias van paginadas). Los errores se revisan en el mismo
   // orden de siempre.
-  const [quincenasResult, ausenciasResult, pagosYProvisiones, conFilasOcultas] = await Promise.all([
-    cargarQuincenas(supabase, todosLosContratos),
-    cargarAusencias(supabase, todosLosIds),
-    todosLosIds.length > 0
-      ? Promise.all([
-          supabase
-            .from('sgrh_pagos_extraordinarios')
-            .select(
-              `pex_id, pex_historial_laboral_id, pex_fecha_pago, pex_monto_bruto, ${SELECT_ANULACION}`
-            )
-            .eq('pex_tipo', 'aguinaldo')
-            .eq('pex_anio_aguinaldo', anio)
-            .in('pex_historial_laboral_id', todosLosIds)
-            .returns<PagoAguinaldoRow[]>(),
-          supabase
-            .from('sgrh_provisiones_anuales')
-            .select('pra_historial_laboral_id, pra_aguinaldo_pagado, pra_fecha_pago_aguinaldo')
-            .eq('pra_anio', anio)
-            .in('pra_historial_laboral_id', todosLosIds)
-            .returns<
-              {
-                pra_historial_laboral_id: number
-                pra_aguinaldo_pagado: boolean
-                pra_fecha_pago_aguinaldo: string | null
-              }[]
-            >(),
-        ])
-      : null,
-    // Quincenas del ciclo en sucursales que la cuenta no ve: un traslado deja
-    // las de antes en la sucursal vieja aunque el contrato ya sea de esta.
-    contratosConFilasOcultas(supabase, todosLosIds, visibles, {
-      desde: `${anio - 1}-12-01`,
-      hasta: `${anio}-11-30`,
-    }),
-  ])
+  const [quincenasResult, ausenciasResult, pagosYProvisiones, conFilasOcultas, alcanceRelacion] =
+    await Promise.all([
+      cargarQuincenas(supabase, todosLosContratos),
+      cargarAusencias(supabase, todosLosIds),
+      todosLosIds.length > 0
+        ? Promise.all([
+            supabase
+              .from('sgrh_pagos_extraordinarios')
+              .select(
+                `pex_id, pex_historial_laboral_id, pex_fecha_pago, pex_monto_bruto, ${SELECT_ANULACION}`
+              )
+              .eq('pex_tipo', 'aguinaldo')
+              .eq('pex_anio_aguinaldo', anio)
+              .in('pex_historial_laboral_id', todosLosIds)
+              .returns<PagoAguinaldoRow[]>(),
+            supabase
+              .from('sgrh_provisiones_anuales')
+              .select('pra_historial_laboral_id, pra_aguinaldo_pagado, pra_fecha_pago_aguinaldo')
+              .eq('pra_anio', anio)
+              .in('pra_historial_laboral_id', todosLosIds)
+              .returns<
+                {
+                  pra_historial_laboral_id: number
+                  pra_aguinaldo_pagado: boolean
+                  pra_fecha_pago_aguinaldo: string | null
+                }[]
+              >(),
+          ])
+        : null,
+      // Quincenas del ciclo en sucursales que la cuenta no ve: un traslado deja
+      // las de antes en la sucursal vieja aunque el contrato ya sea de esta.
+      contratosConFilasOcultas(supabase, todosLosIds, visibles, {
+        desde: `${anio - 1}-12-01`,
+        hasta: `${anio}-11-30`,
+      }),
+      // Contratos ocultos y cortes liquidados previos de la relación en otras sucursales.
+      alcanceRelacionContratos(supabase, todosLosIds, visibles, {
+        desde: `${anio - 1}-12-01`,
+        hasta: `${anio}-11-30`,
+      }),
+    ])
   if (!quincenasResult.ok) return { ok: false, error: quincenasResult.error }
   if (!ausenciasResult.ok) return { ok: false, error: ausenciasResult.error }
-  if (conFilasOcultas === null) {
+  if (conFilasOcultas === null || alcanceRelacion === null) {
     return { ok: false, error: 'No se pudo revisar en qué sucursales trabajó cada empleado.' }
   }
 
@@ -254,7 +261,8 @@ export async function calcularAguinaldosDelCiclo(
     const inicioRelacion = inicioDeLaRelacion(
       emp.emp_fecha_ingreso_original,
       candidato.lab_id,
-      contratos
+      contratos,
+      alcanceRelacion.ultimosCortes.get(candidato.lab_id) ?? null
     )
     // Quien entró después del 30 de noviembre no tiene nada en este ciclo:
     // listarlo como "no le corresponde" solo ensucia la pestaña.
@@ -305,7 +313,7 @@ export async function calcularAguinaldosDelCiclo(
               c.fechaInicio <= `${anio}-11-30` && (!c.fechaFin || c.fechaFin >= `${anio - 1}-12-01`)
           ),
           visibles
-        ) || labIds.some((id) => conFilasOcultas.has(id)),
+        ) || labIds.some((id) => conFilasOcultas.has(id) || alcanceRelacion.ocultos.has(id)),
       pagado: pago !== null || provisionPagada !== null,
       fechaPago: pago?.pex_fecha_pago ?? provisionPagada?.pra_fecha_pago_aguinaldo ?? null,
       pagoId: pago?.pex_id ?? null,

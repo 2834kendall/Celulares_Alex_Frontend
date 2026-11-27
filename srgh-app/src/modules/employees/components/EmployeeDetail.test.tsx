@@ -110,6 +110,38 @@ describe('<EmployeeDetail />', () => {
     expect(screen.queryByRole('heading', { name: 'Datos de pago' })).not.toBeInTheDocument()
   })
 
+  it('muestra Activo y mensaje de contrato en otra sucursal cuando contrato_vigente_otra_sucursal es true', () => {
+    searchString = 'tab=contrato'
+    render(
+      <EmployeeDetail
+        empleado={{
+          ...EMPLEADO_DETALLE,
+          historial_activo: null,
+          historial_completo: [],
+          contrato_vigente_otra_sucursal: true,
+        }}
+        tiposIdentificacion={TIPOS_IDENTIFICACION}
+        bancos={BANCOS}
+        territorio={TERRITORIO}
+        canWrite
+        canEditContrato
+        catalogosContrato={{
+          puestos: [],
+          sucursales: [],
+          tiposContrato: [],
+          tiposJornada: [],
+        }}
+        motivosSalida={[]}
+      />
+    )
+
+    expect(screen.getByText('Activo')).toBeInTheDocument()
+    expect(
+      screen.getByText('Este empleado tiene un contrato vigente en otra sucursal.')
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /nuevo contrato/i })).toBeDisabled()
+  })
+
   it('muestra la dirección resuelta hasta provincia y su código postal', () => {
     render(
       <EmployeeDetail

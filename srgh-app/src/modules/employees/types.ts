@@ -538,6 +538,10 @@ export type EmpleadoDetalle = EmpleadoRow & {
   // iniciales si es null o si el firmado falló.
   foto_url: string | null
   historial_activo: ContratoDetalle | null
+  // En cuentas acotadas por sucursal, indica si el empleado tiene un contrato
+  // vigente en otra sucursal oculta por RLS (evita mostrarlo como inactivo o
+  // intentar recontratarlo).
+  contrato_vigente_otra_sucursal?: boolean
   // Todos los contratos del empleado en la empresa, del más reciente al más
   // antiguo, vigente incluido. Los cerrados son el historial de contrataciones.
   historial_completo: ContratoDetalle[]

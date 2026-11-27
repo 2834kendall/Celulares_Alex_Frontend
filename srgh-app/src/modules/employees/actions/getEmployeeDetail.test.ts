@@ -513,4 +513,35 @@ describe('getEmployeeDetail (server action)', () => {
       error: 'No se pudieron cargar los salarios de los contratos.',
     })
   })
+
+  it('usuario acotado por sucursal sin contrato visible: detecta contrato vigente en otra sucursal', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { empresa_id: 1, permisos: ['EMPLEADOS_READ'], sucursal_ids: [1] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const client = createSupabaseClientMock(
+      {
+        sgrh_empleados: { data: EMPLEADO_ROW, error: null },
+        sgrh_historial_laboral: { data: [], error: null },
+        sgrh_nomina_detalle: SIN_PLANILLA,
+        sgrh_empleado_datos_pago: { data: null, error: null },
+      },
+      {
+        rpcResponses: {
+          empleados_con_contrato_vigente_oculto: { data: [10], error: null },
+        },
+      }
+    )
+    mockCreateClient.mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>
+    )
+
+    const result = await getEmployeeDetail(10)
+
+    expect(client.rpc).toHaveBeenCalledWith('empleados_con_contrato_vigente_oculto', {
+      p_emp_ids: [10],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.contrato_vigente_otra_sucursal).toBe(true)
+  })
 })

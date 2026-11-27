@@ -90,9 +90,11 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
   }
 
   const claims = await requirePermission(PERMISOS.EMPLEADOS_READ)
-  const meta = claims.app_metadata as { empresa_id?: number; permisos?: string[] } | undefined
+  const meta = claims.app_metadata as
+    { empresa_id?: number; permisos?: string[]; sucursal_ids?: number[] | null } | undefined
   const empresaId = meta?.empresa_id
   const canReadSalarios = (meta?.permisos ?? []).includes(PERMISOS.NOMINA_READ)
+  const tieneRestriccionSucursal = Array.isArray(meta?.sucursal_ids)
 
   if (!empresaId) {
     return { ok: false, error: 'No se pudo determinar la empresa del usuario.' }
@@ -197,7 +199,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
 
   // Segunda tanda, también en paralelo: dependen de lo leído arriba pero no
   // entre sí.
-  const [fotoUrl, estadoPlanilla, cuenta, salariosResult] = await Promise.all([
+  const [fotoUrl, estadoPlanilla, cuenta, salariosResult, ocultosResult] = await Promise.all([
     // Una sola foto: getSignedUrl (no el batch). Si falla o no hay path, la
     // ficha igual se muestra — Avatar cae a iniciales.
     empleado.emp_foto_path
@@ -239,11 +241,23 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
           historialCompleto.map((c) => c.lab_id)
         )
       : Promise.resolve(null),
+    !historialActivo && tieneRestriccionSucursal
+      ? supabase.rpc('empleados_con_contrato_vigente_oculto', { p_emp_ids: [empId] })
+      : Promise.resolve({ data: [] as number[], error: null }),
   ])
 
   if (salariosResult && !salariosResult.ok) {
     return { ok: false, error: 'No se pudieron cargar los salarios de los contratos.' }
   }
+
+  if (ocultosResult.error) {
+    return { ok: false, error: 'No se pudo verificar si el empleado tiene contrato vigente.' }
+  }
+
+  const contratoVigenteOtraSucursal =
+    !historialActivo &&
+    Array.isArray(ocultosResult.data) &&
+    (ocultosResult.data as number[]).includes(empId)
 
   if (salariosResult?.ok) {
     for (const contrato of historialCompleto) {
@@ -298,6 +312,7 @@ export async function getEmployeeDetail(empId: number): Promise<GetEmployeeDetai
     tipo_identificacion_nombre: sgrh_cat_tipos_identificacion?.tid_nombre ?? '—',
     foto_url: fotoUrl,
     historial_activo: historialActivo,
+    contrato_vigente_otra_sucursal: contratoVigenteOtraSucursal,
     historial_completo: historialCompleto,
     direccion,
     datos_pago: datosPagoDto,

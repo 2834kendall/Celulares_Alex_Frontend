@@ -488,18 +488,65 @@ describe('procesarLiquidacion (server action)', () => {
     client.rpc.mockImplementation(async (fn: string) =>
       fn === 'nomina_contratos_con_filas_ocultas'
         ? { data: [HISTORIAL.lab_id], error: null }
-        : fn === 'obtener_salarios_historial'
+        : fn === 'nomina_alcance_relacion'
+          ? { data: [], error: null }
+          : fn === 'obtener_salarios_historial'
+            ? {
+                data: [
+                  {
+                    lab_id: HISTORIAL.lab_id,
+                    lab_salario_base: HISTORIAL.lab_salario_base,
+                    lab_salario_real: HISTORIAL.lab_salario_real,
+                  },
+                ],
+                error: null,
+              }
+            : GUARDADA
+    )
+
+    const result = await procesarLiquidacion(INPUT)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('sucursal que tu usuario no ve')
+    expect(llamadaRpc(client)).toBeUndefined()
+  })
+
+  it('usuario de sucursal: no liquida si hay otro contrato de la relación oculto por RLS', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {
+        permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE', 'AUSENCIAS_READ'],
+        sucursal_ids: [2],
+      },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const client = escenario({
+      sgrh_historial_laboral: { data: { ...HISTORIAL, lab_sucursal_id: 2 }, error: null },
+    })
+    client.rpc.mockImplementation(async (fn: string) =>
+      fn === 'nomina_contratos_con_filas_ocultas'
+        ? { data: [], error: null }
+        : fn === 'nomina_alcance_relacion'
           ? {
               data: [
                 {
                   lab_id: HISTORIAL.lab_id,
-                  lab_salario_base: HISTORIAL.lab_salario_base,
-                  lab_salario_real: HISTORIAL.lab_salario_real,
+                  tiene_alcance_oculto: true,
+                  ultimo_corte_liquidado: null,
                 },
               ],
               error: null,
             }
-          : GUARDADA
+          : fn === 'obtener_salarios_historial'
+            ? {
+                data: [
+                  {
+                    lab_id: HISTORIAL.lab_id,
+                    lab_salario_base: HISTORIAL.lab_salario_base,
+                    lab_salario_real: HISTORIAL.lab_salario_real,
+                  },
+                ],
+                error: null,
+              }
+            : GUARDADA
     )
 
     const result = await procesarLiquidacion(INPUT)
@@ -520,7 +567,7 @@ describe('procesarLiquidacion (server action)', () => {
       sgrh_historial_laboral: { data: { ...HISTORIAL, lab_sucursal_id: 2 }, error: null },
     })
     client.rpc.mockImplementation(async (fn: string) =>
-      fn === 'nomina_contratos_con_filas_ocultas'
+      fn === 'nomina_contratos_con_filas_ocultas' || fn === 'nomina_alcance_relacion'
         ? { data: [], error: null }
         : fn === 'obtener_salarios_historial'
           ? {
@@ -542,6 +589,73 @@ describe('procesarLiquidacion (server action)', () => {
     expect(client.rpc).toHaveBeenCalledWith('nomina_contratos_con_filas_ocultas', {
       p_lab_ids: [HISTORIAL.lab_id],
     })
+    expect(client.rpc).toHaveBeenCalledWith('nomina_alcance_relacion', {
+      p_lab_ids: [HISTORIAL.lab_id],
+    })
+  })
+
+  it('recontratación tras contrato liquidado oculto en otra sucursal (emp 104): no arrastra antigüedad del primer ingreso', async () => {
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: {
+        permisos: ['NOMINA_WRITE', 'HISTORIAL_WRITE', 'AUSENCIAS_READ'],
+        sucursal_ids: [10],
+      },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const recontratado = {
+      ...HISTORIAL,
+      lab_id: 7,
+      lab_empleado_id: 104,
+      lab_sucursal_id: 10,
+      lab_fecha_inicio: '2026-05-01',
+      lab_fecha_fin: '2026-09-15',
+      lab_motivo_salida_id: 6,
+      sgrh_empleados: {
+        emp_fecha_ingreso_original: '2025-01-01',
+        sgrh_historial_laboral: [
+          {
+            lab_id: 7,
+            lab_sucursal_id: 10,
+            lab_fecha_inicio: '2026-05-01',
+            lab_fecha_fin: '2026-09-15',
+            lab_salario_base: 300000,
+            lab_salario_real: 300000,
+            sgrh_liquidaciones: null,
+          },
+        ],
+      },
+    }
+    const client = escenario({
+      sgrh_historial_laboral: { data: recontratado, error: null },
+      sgrh_cat_motivos_salida: { data: MOTIVO_CON_DERECHOS, error: null },
+      sgrh_provisiones_anuales: { data: [], error: null },
+    })
+    client.rpc.mockImplementation(async (fn: string) =>
+      fn === 'nomina_contratos_con_filas_ocultas'
+        ? { data: [], error: null }
+        : fn === 'nomina_alcance_relacion'
+          ? {
+              data: [
+                {
+                  lab_id: 7,
+                  tiene_alcance_oculto: false,
+                  ultimo_corte_liquidado: '2026-04-30',
+                },
+              ],
+              error: null,
+            }
+          : fn === 'obtener_salarios_historial'
+            ? {
+                data: [{ lab_id: 7, lab_salario_base: 300000, lab_salario_real: 300000 }],
+                error: null,
+              }
+            : GUARDADA
+    )
+
+    const result = await procesarLiquidacion({ historialLaboralId: 7, diasVacacionesPendientes: 0 })
+
+    expect(result.ok).toBe(true)
+    // De mayo a setiembre son ~4.5 meses (7 días de cesantía), no ~20 meses desde 2025-01-01.
+    expect(insercion(client).liq_dias_cesantia).toBe(7)
   })
 
   describe('mutuo acuerdo (Art. 86 CT): la cesantía se paga solo si se pactó', () => {

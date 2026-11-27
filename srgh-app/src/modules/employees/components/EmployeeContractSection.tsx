@@ -23,6 +23,8 @@ interface EmployeeContractSectionProps {
   veLiquidaciones: boolean
   /** NOMINA_READ: habilita mostrar salario base y salario real. */
   veSalarios?: boolean
+  /** Tiene un contrato vigente en otra sucursal oculta por RLS. */
+  contratoVigenteOtraSucursal?: boolean
   /** Los botones (EmployeeContractActions), a la derecha del título de la tarjeta. */
   acciones?: React.ReactNode
 }
@@ -36,6 +38,7 @@ export function EmployeeContractSection({
   contratos,
   veLiquidaciones,
   veSalarios = true,
+  contratoVigenteOtraSucursal = false,
   acciones,
 }: EmployeeContractSectionProps) {
   const { vigente, cerrados, ultimo, programada, pendienteDeLiquidar } =
@@ -79,6 +82,11 @@ export function EmployeeContractSection({
               {ultimo.motivo_salida_nombre ? ` (${ultimo.motivo_salida_nombre})` : ''} · pendiente
               de liquidar.
             </p>
+          </div>
+        ) : contratoVigenteOtraSucursal ? (
+          <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+            <p>Este empleado tiene un contrato vigente en otra sucursal.</p>
           </div>
         ) : (
           <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">

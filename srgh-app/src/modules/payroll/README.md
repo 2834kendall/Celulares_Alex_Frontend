@@ -60,9 +60,15 @@ Rutas: `/payroll`, `/payroll/new`, `/payroll/[id]`, `/payroll/concepts`,
 Policies base en `20260101000600_rls_policies.sql`. `NOMINA_READ` lee y `NOMINA_WRITE`
 escribe. Las filas de planilla, sus líneas y sus comprobantes se acotan por la sucursal de la
 fila (`ndt_sucursal_id IN sucursales_visibles()`, migración `20261117130000`); el encabezado
-del período es de la empresa ([planilla](docs/planilla.md#quién-ve-qué)). El propio empleado ve
-sus filas, líneas y comprobantes por la rama `get_emp_id()`. Las tablas de cada tema están en
-su documento.
+del período es de la empresa ([planilla](docs/planilla.md#quién-ve-qué)). `sgrh_liquidaciones`,
+`sgrh_pagos_extraordinarios` y `sgrh_banco_horas_movimientos` también exigen
+`sucursal_visible(lab_sucursal_id)` (`20261127020000`). El propio empleado ve sus filas,
+líneas y comprobantes por la rama `get_emp_id()`. Las tablas de cada tema están en su documento.
+
+Los salarios de los contratos se cargan exclusivamente vía `fetchSalariosContratos` /
+`obtener_salarios_historial` (nunca directo desde `sgrh_historial_laboral`), y Aguinaldo /
+Liquidación usan `nomina_alcance_relacion` para detectar contratos no liquidados ocultos por RLS
+y cortes liquidados previos en otras sucursales (`ultimo_corte_liquidado`).
 
 ## Trampas
 

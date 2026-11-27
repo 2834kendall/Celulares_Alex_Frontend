@@ -1,15 +1,26 @@
 # Contratos
 
-Tab **Contrato** del perfil del empleado: crear, editar, terminar y revertir. Las reglas viven
-en las RPC (`SECURITY INVOKER`, con `HISTORIAL_WRITE`), no en la UI. La pantalla solo las
-anticipa.
+Tab **Contrato** del perfil del empleado: crear, editar, terminar y revertir. Las escrituras
+directas sobre `sgrh_historial_laboral` están revocadas (`INSERT`, `UPDATE`, `DELETE`): todas
+las reglas viven en las RPC `SECURITY DEFINER` (`HISTORIAL_WRITE`, más `NOMINA_READ` para
+editar salarios y `sucursal_visible` sobre sucursal origen/destino), no en la UI. La pantalla
+solo las anticipa.
 
 ## Reglas de negocio
 
 - **Un solo contrato vigente por empleado.** Vigente = `lab_fecha_fin IS NULL`. Lo garantiza
-  el índice `ux_historial_un_contrato_vigente`.
+  el índice `ux_historial_un_contrato_vigente`. En cuentas acotadas por sucursal,
+  `crear_contrato` (`SECURITY DEFINER`) sigue viendo contratos vigentes o pendientes de liquidar
+  en otras sucursales de la empresa para impedir duplicados o altas saltándose una liquidación,
+  y la ficha usa `empleados_con_contrato_vigente_oculto` para mostrar «Este empleado tiene un
+  contrato vigente en otra sucursal.» y deshabilitar «Nuevo contrato» (si el contrato previo en
+  otra sucursal ya está liquidado, la recontratación sí queda habilitada).
+- **Salarios protegidos por columna y permiso:** `authenticated` no tiene `SELECT` directo sobre
+  `lab_salario_base` ni `lab_salario_real`; para verlos o modificarlos con `editar_contrato` se
+  exige `NOMINA_READ`. El check `chk_historial_salarios_positivos` garantiza ambos `> 0`.
 - **El contrato vigente se edita siempre**, haya pasado por planilla o no. Se corrigen el
-  puesto, la sucursal base, el tipo, la jornada y los dos salarios.
+  puesto, la sucursal base (exigiendo `sucursal_visible` tanto en la actual como en la nueva),
+  el tipo, la jornada y los dos salarios (si el usuario tiene `NOMINA_READ`).
 - **Cuándo aplica el cambio:**
   - Las quincenas que ya tienen filas **conservan sus montos**: cada fila guarda la foto del
     contrato con que se calculó ([foto del contrato](../../payroll/docs/foto-del-contrato.md)).
@@ -59,12 +70,12 @@ RLS no vería filas si quien edita no tiene `NOMINA_READ`, y el guard fallaría 
 
 ## Datos
 
-| RPC                    | qué hace                                                                                     | migración                                |
-| ---------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `crear_contrato`       | contrato nuevo; valida fecha contra empresa, contrato anterior, primera marca y primer turno | `20260927120000_contratos_crud.sql`      |
-| `editar_contrato`      | corrige el vigente (reglas de arriba)                                                        | `20261011120000_foto_salario_nomina.sql` |
-| `terminar_contrato`    | registra la salida, con o sin preaviso                                                       | `20260927120000_contratos_crud.sql`      |
-| `revertir_terminacion` | deshace una salida no liquidada                                                              | `20260927120000_contratos_crud.sql`      |
+| RPC                    | qué hace                                                                                                        | migración                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `crear_contrato`       | contrato nuevo (`SECURITY DEFINER`); valida empresa, contratos previos en otras sucursales y `sucursal_visible` | `20261127020000_sgrh_118_historial_laboral_lockdown.sql` |
+| `editar_contrato`      | corrige el vigente (`SECURITY DEFINER`); exige `HISTORIAL_WRITE`, `NOMINA_READ` y `sucursal_visible`            | `20261127020000_sgrh_118_historial_laboral_lockdown.sql` |
+| `terminar_contrato`    | registra la salida (`SECURITY DEFINER`), con o sin preaviso, validando `sucursal_visible`                       | `20261127020000_sgrh_118_historial_laboral_lockdown.sql` |
+| `revertir_terminacion` | deshace una salida no liquidada (`SECURITY DEFINER`), verificando liquidaciones y contratos activos             | `20261127020000_sgrh_118_historial_laboral_lockdown.sql` |
 
 Acciones: `actions/createContract.ts`, `updateContract.ts`, `terminateContract.ts`,
 `revertContractTermination.ts`.
