@@ -30,7 +30,7 @@ export async function updateRubro(
   if (areaError) {
     return {
       ok: false,
-      error: 'No se pudo actualizar el rubro. Verifique que el nombre no este repetido.',
+      error: 'No se pudo actualizar el rubro. Verificá que el nombre no esté repetido.',
     }
   }
 
@@ -45,7 +45,7 @@ export async function updateRubro(
         .insert({ cri_area_id: areaId, cri_descripcion: parsed.data.descripcion, cri_activo: true })
 
   if (criterioError) {
-    return { ok: false, error: 'No se pudo actualizar la descripcion del rubro.' }
+    return { ok: false, error: 'No se pudo actualizar la descripción del rubro.' }
   }
 
   revalidatePath('/evaluations')

@@ -46,7 +46,7 @@ describe('createEvaluation (server action)', () => {
       periodoFin: '2026-06-01',
     })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de la evaluacion invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos de la evaluación inválidos.' })
     expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 
@@ -56,7 +56,7 @@ describe('createEvaluation (server action)', () => {
       scores: [{ criterioId: 1, puntaje: 11, observacion: '', noAplica: false }],
     })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de la evaluacion invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos de la evaluación inválidos.' })
   })
 
   it('rechaza notas con decimales', async () => {
@@ -65,7 +65,7 @@ describe('createEvaluation (server action)', () => {
       scores: [{ criterioId: 1, puntaje: 8.5, observacion: '', noAplica: false }],
     })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de la evaluacion invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos de la evaluación inválidos.' })
   })
 
   it('rechaza una evaluacion donde ningun rubro aplica', async () => {
@@ -74,7 +74,7 @@ describe('createEvaluation (server action)', () => {
       scores: [{ criterioId: 1, puntaje: null, observacion: '', noAplica: true }],
     })
 
-    expect(result).toEqual({ ok: false, error: 'Datos de la evaluacion invalidos.' })
+    expect(result).toEqual({ ok: false, error: 'Datos de la evaluación inválidos.' })
   })
 
   it('falla si la sesion no trae empresa o usuario', async () => {
@@ -82,7 +82,7 @@ describe('createEvaluation (server action)', () => {
 
     const result = await createEvaluation(validInput)
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo determinar la sesion del evaluador.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo determinar la sesión del evaluador.' })
   })
 
   it('falla si el colaborador no pertenece a la empresa', async () => {
@@ -94,7 +94,7 @@ describe('createEvaluation (server action)', () => {
 
     const result = await createEvaluation(validInput)
 
-    expect(result).toEqual({ ok: false, error: 'El colaborador seleccionado no es valido.' })
+    expect(result).toEqual({ ok: false, error: 'El colaborador seleccionado no es válido.' })
   })
 
   it('revierte la evaluacion si fallan los resultados por rubro', async () => {

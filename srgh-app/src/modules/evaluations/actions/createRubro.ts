@@ -27,7 +27,7 @@ export async function createRubro(input: RubroInput): Promise<CreateRubroResult>
   if (areaError) {
     return {
       ok: false,
-      error: 'No se pudo crear el rubro. Verifique que el nombre no este repetido.',
+      error: 'No se pudo crear el rubro. Verificá que el nombre no esté repetido.',
     }
   }
 
@@ -40,7 +40,7 @@ export async function createRubro(input: RubroInput): Promise<CreateRubroResult>
   if (criterioError) {
     // Sin el criterio el rubro no puede calificarse: se revierte el area.
     await supabase.from('sgrh_cat_areas_evaluacion').delete().eq('are_id', area.are_id)
-    return { ok: false, error: 'No se pudo guardar la descripcion del rubro.' }
+    return { ok: false, error: 'No se pudo guardar la descripción del rubro.' }
   }
 
   revalidatePath('/evaluations')

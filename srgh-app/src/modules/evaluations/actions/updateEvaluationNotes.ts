@@ -34,7 +34,7 @@ export async function updateEvaluationNotes(
     .maybeSingle()
 
   if (error) {
-    return { ok: false, error: 'No se pudieron guardar las notas de la evaluacion.' }
+    return { ok: false, error: 'No se pudieron guardar las notas de la evaluación.' }
   }
 
   if (!data) {

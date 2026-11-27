@@ -44,7 +44,7 @@ describe('createRubro (server action)', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo crear el rubro. Verifique que el nombre no este repetido.',
+      error: 'No se pudo crear el rubro. Verificá que el nombre no esté repetido.',
     })
   })
 
@@ -58,7 +58,7 @@ describe('createRubro (server action)', () => {
 
     const result = await createRubro(validInput)
 
-    expect(result).toEqual({ ok: false, error: 'No se pudo guardar la descripcion del rubro.' })
+    expect(result).toEqual({ ok: false, error: 'No se pudo guardar la descripción del rubro.' })
     expect(revalidatePath).not.toHaveBeenCalled()
   })
 

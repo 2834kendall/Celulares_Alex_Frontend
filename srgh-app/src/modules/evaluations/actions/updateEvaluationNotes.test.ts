@@ -43,7 +43,7 @@ describe('evaluation note updates', () => {
     setup(null, { message: 'private detail' })
     expect(await updateEvaluationNotes(8, notes)).toEqual({
       ok: false,
-      error: 'No se pudieron guardar las notas de la evaluacion.',
+      error: 'No se pudieron guardar las notas de la evaluación.',
     })
     expect(revalidatePath).not.toHaveBeenCalled()
   })

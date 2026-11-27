@@ -103,7 +103,7 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
             Expediente de desempeño personalizado
           </h2>
           <p className="text-xs text-slate-500">
-            Consulte por separado las fortalezas, comentarios e índices de cada trabajador.
+            Consultá por separado las fortalezas, comentarios e índices de cada trabajador.
           </p>
         </div>
         <label className="block w-full @sm:w-64">
@@ -296,7 +296,7 @@ export function IndividualView({ collaborators, rubros, canWrite }: IndividualVi
           <EmptyState
             icon={CalendarDays}
             title="Este colaborador aún no tiene evaluaciones"
-            description="Registre su primera evaluación de desempeño desde la pestaña “Nueva evaluación” o en el botón inferior para ver aquí sus criterios, fortalezas y aspectos a mejorar."
+            description="Registrá su primera evaluación de desempeño desde la pestaña “Nueva evaluación” o en el botón inferior para ver aquí sus criterios, fortalezas y aspectos a mejorar."
             className="justify-center py-12"
             action={
               canWrite && (

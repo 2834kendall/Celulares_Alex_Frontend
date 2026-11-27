@@ -92,7 +92,7 @@ export function EvaluationForm({
     })
 
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Revise los datos del formulario.')
+      setError(parsed.error.issues[0]?.message ?? 'Revisá los datos del formulario.')
       return
     }
 
@@ -159,9 +159,9 @@ export function EvaluationForm({
             value={String(labId)}
             disabled={isSubmitting}
             onChange={(v) => setLabId(v === '' ? '' : Number(v))}
-            placeholder="Seleccione un colaborador..."
+            placeholder="Seleccioná un colaborador..."
             options={[
-              { value: '', label: 'Seleccione un colaborador...' },
+              { value: '', label: 'Seleccioná un colaborador...' },
               ...collaborators.map((c) => ({
                 value: String(c.labId),
                 label: `${c.fullName} — ${c.branchName}`,
