@@ -9,7 +9,7 @@ const MENSAJES: Record<StorageErrorCode, string> = {
   ALREADY_EXISTS: 'Ya existe un archivo con ese nombre.',
   TOO_LARGE: 'El archivo supera el tamaño máximo permitido.',
   INVALID_TYPE: 'El tipo de archivo no está permitido.',
-  FORBIDDEN: 'No tienes permiso para acceder a este archivo.',
+  FORBIDDEN: 'No tenés permiso para acceder a este archivo.',
   UNKNOWN: 'No se pudo completar la operación con el archivo.',
 }
 

@@ -151,7 +151,7 @@ export async function setBrandLogo(id: number, formData: FormData): Promise<Simp
   if (!idSchema.safeParse(id).success) return { ok: false, error: 'Marca inválida.' }
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: 'Selecciona un archivo.' }
+    return { ok: false, error: 'Seleccioná un archivo.' }
   }
 
   const { admin, empresa, actor } = await branchAdmin()

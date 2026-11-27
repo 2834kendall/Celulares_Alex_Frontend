@@ -148,7 +148,7 @@ export function BirthdaysPanel({
   }
 
   function copyMessage(birthday: UpcomingBirthday) {
-    const message = `¡Feliz cumpleaños, ${firstName(birthday.nombre)}! Que tengas un gran día.`
+    const message = `¡Feliz cumpleaños, ${firstName(birthday.nombre)}! Que tengás un gran día.`
     /* Clipboard needs a secure context and can be denied: the button simply
        does not confirm in that case. */
     void navigator.clipboard

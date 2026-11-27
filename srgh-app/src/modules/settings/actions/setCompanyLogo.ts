@@ -24,7 +24,7 @@ export type SetCompanyLogoResult = { ok: true } | { ok: false; error: string }
 export async function setCompanyLogo(formData: FormData): Promise<SetCompanyLogoResult> {
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: 'Selecciona un archivo.' }
+    return { ok: false, error: 'Seleccioná un archivo.' }
   }
 
   const claims = await requirePermission(PERMISOS.EMPRESAS_WRITE)

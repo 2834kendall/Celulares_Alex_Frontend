@@ -165,7 +165,7 @@ describe('birthday dashboard interactions', () => {
       fireEvent.click(within(item).getByRole('button', { name: 'Copiar mensaje' }))
     )
     expect(writeText).toHaveBeenCalledExactlyOnceWith(
-      '¡Feliz cumpleaños, Ana! Que tengas un gran día.'
+      '¡Feliz cumpleaños, Ana! Que tengás un gran día.'
     )
     expect(within(item).getByRole('button', { name: 'Copiado' })).toBeInTheDocument()
   })

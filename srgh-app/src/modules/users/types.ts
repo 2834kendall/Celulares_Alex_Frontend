@@ -17,7 +17,7 @@ const emailNormalizado = z.preprocess(
 const rolId = z
   .number({ error: 'El rol es obligatorio' })
   .int()
-  .positive('Seleccione un rol válido')
+  .positive('Seleccioná un rol válido')
 
 // Vacío = el usuario opera a nivel empresa (equivalente al viejo sucursal_id
 // null); uno o más ids = restringido a esas sucursales (gerente/supervisor a
@@ -28,7 +28,7 @@ const sucursalIds = z.array(z.number().int().positive('Sucursal inválida.')).de
 // significan "sin vínculo" y se normalizan a null antes de validar.
 const empleadoId = z.preprocess(
   (value) => (value === '' || (typeof value === 'number' && Number.isNaN(value)) ? null : value),
-  z.number().int().positive('Seleccione un empleado válido').nullable().optional()
+  z.number().int().positive('Seleccioná un empleado válido').nullable().optional()
 )
 
 // ─── Schema de invitación ─────────────────────────────────────────────────────
