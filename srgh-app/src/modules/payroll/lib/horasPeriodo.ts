@@ -92,6 +92,12 @@ export interface DiaProgramado {
    * cumplimiento en vez de subir lo que falta por trabajar.
    */
   sinProgramar?: boolean
+  /**
+   * true = los tramos del día no se pueden combinar en una sola jornada: con
+   * el turno de la noche suman más de 24 h (05–09 y 22–07). `horario` viene en
+   * null y el día se reporta en vez de medirse contra un solo tramo.
+   */
+  horarioTraslapado?: boolean
 }
 
 /**
@@ -134,6 +140,7 @@ export type ProblemaDia =
   | 'marco_en_dia_libre'
   | 'justificado_sin_horario'
   | 'sin_programar'
+  | 'horario_traslapado'
 
 export const MENSAJE_PROBLEMA: Record<ProblemaDia, string> = {
   sin_marcas:
@@ -153,6 +160,8 @@ export const MENSAJE_PROBLEMA: Record<ProblemaDia, string> = {
     'Día pagado (feriado o ausencia aprobada) sin horario programado: se le acreditó la jornada diaria del contrato (horas semanales ÷ 6). Si ese día tenía horario, programalo para que se acredite exacto.',
   sin_programar:
     'No hay programación para este día: ni horario, ni día libre, ni feriado, ni ausencia. No se pudo medir, así que cuenta como jornada sin cumplir para el cálculo de la quincena y baja lo que corresponde cobrar. Completá el horario de ese día o marcalo como libre.',
+  horario_traslapado:
+    'Los tramos de horario de este día se traslapan con el turno de la noche y la jornada pasaría de 24 horas, así que no se pudo medir. Corregí los horarios de ese día en Horarios.',
 }
 
 /**
@@ -174,6 +183,9 @@ export const PROBLEMAS_QUE_BLOQUEAN: ReadonlySet<ProblemaDia> = new Set<Problema
   'sin_entrada',
   'sin_salida',
   'marca_ilegible',
+  // Un horario mal cargado no se puede medir: pagar el día con un solo tramo
+  // (lo que se hacía antes, sin avisar) le quitaba horas trabajadas.
+  'horario_traslapado',
 ])
 
 export interface DiaCalculado {
@@ -459,6 +471,12 @@ export function calcularDia(dia: DiaProgramado): DiaCalculado {
   // decidir.
   if (dia.esDiaLibre) {
     return DIA_VACIO(dia.fecha, dia.marcas.length > 0 ? 'marco_en_dia_libre' : null, 0)
+  }
+
+  // Tramos que no se pueden combinar: ni se mide ni se acredita nada hasta
+  // que se corrija el horario.
+  if (dia.horarioTraslapado) {
+    return DIA_VACIO(dia.fecha, 'horario_traslapado', 0)
   }
 
   // Feriado o ausencia de día completo: no suma horas esperadas (no había que

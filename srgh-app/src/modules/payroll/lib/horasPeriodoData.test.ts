@@ -633,6 +633,81 @@ describe('getHorasDelPeriodo: días de varios bloques', () => {
     expect(t.horasEsperadas).toBe(4)
   })
 
+  // SGRH-122: si un bloque cruzaba la medianoche se medía solo el primero.
+  // 07–11 + 22–06 daba 4 h esperadas y 4 trabajadas en vez de 12.
+  it('un tramo de día y otro nocturno: suma los dos', async () => {
+    const t = await leer(
+      [tramo('07:00', '11:00'), tramo('22:00', '06:00')],
+      [
+        marca('2026-07-06', 'entrada', '07:00:00'),
+        marca('2026-07-06', 'salida', '11:00:00'),
+        marca('2026-07-06', 'entrada', '22:00:00'),
+        marca('2026-07-07', 'salida', '06:00:00'),
+      ]
+    )
+    expect(t).toMatchObject({ horasEsperadas: 12, horasOrdinarias: 12, horasExtra: 0 })
+    expect(t.diasConProblema).toEqual([])
+  })
+
+  it('plantilla partida con el segundo bloque nocturno: suma los dos', async () => {
+    const t = await leer(
+      [
+        programado('2026-07-06', {
+          sgrh_cat_horarios: {
+            ...HORARIO_8H,
+            hor_hora_entrada: '07:00:00',
+            hor_hora_salida: '11:00:00',
+            hor_hora_entrada_2: '22:00:00',
+            hor_hora_salida_2: '06:00:00',
+          },
+        }),
+      ],
+      [
+        marca('2026-07-06', 'entrada', '07:00:00'),
+        marca('2026-07-06', 'salida', '11:00:00'),
+        marca('2026-07-06', 'entrada', '22:00:00'),
+        marca('2026-07-07', 'salida', '06:00:00'),
+      ]
+    )
+    // El almuerzo de la plantilla (12–13) cae dentro del hueco 11–22: no se
+    // descuenta dos veces.
+    expect(t).toMatchObject({ horasEsperadas: 12, horasOrdinarias: 12, horasExtra: 0 })
+    expect(t.diasConProblema).toEqual([])
+  })
+
+  it('si sale antes en el turno nocturno, cobra lo que trabajó de los dos bloques', async () => {
+    const t = await leer(
+      [tramo('07:00', '11:00'), tramo('22:00', '06:00')],
+      [
+        marca('2026-07-06', 'entrada', '07:00:00'),
+        marca('2026-07-06', 'salida', '11:00:00'),
+        marca('2026-07-06', 'entrada', '22:00:00'),
+        marca('2026-07-07', 'salida', '04:00:00'),
+      ]
+    )
+    expect(t).toMatchObject({ horasEsperadas: 12, horasOrdinarias: 10, horasExtra: 0 })
+  })
+
+  // 05–09 y 22–07: el turno de la noche se monta sobre el de la mañana
+  // siguiente. Antes se medía solo 05–09 sin avisar.
+  it('tramos que pasan de 24 h: reporta el día y bloquea el pago', async () => {
+    const t = await leer(
+      [tramo('05:00', '09:00'), tramo('22:00', '07:00')],
+      [marca('2026-07-06', 'entrada', '05:00:00'), marca('2026-07-06', 'salida', '09:00:00')]
+    )
+    expect(t).toMatchObject({ horasEsperadas: 0, horasOrdinarias: 0 })
+    expect(t.diasQueBloquean).toEqual([{ fecha: '2026-07-06', problema: 'horario_traslapado' }])
+  })
+
+  it('un tramo dentro de otro no abre un hueco sin pago', async () => {
+    const t = await leer(
+      [tramo('08:00', '17:00'), tramo('09:00', '10:00'), tramo('16:00', '20:00')],
+      marcasPorBloque([['08:00:00', '20:00:00']])
+    )
+    // 08–20 sin huecos y sin almuerzo (los tramos con horas propias no traen).
+    expect(t).toMatchObject({ horasEsperadas: 12, horasOrdinarias: 12 })
+  })
+
   it('un día de un solo tramo queda igual que antes', async () => {
     const t = await leer(
       [programado('2026-07-06')],
