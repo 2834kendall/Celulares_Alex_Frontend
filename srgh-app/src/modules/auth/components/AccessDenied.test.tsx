@@ -36,7 +36,9 @@ describe('<AccessDenied />', () => {
       'href',
       '/dashboard'
     )
-    expect(screen.getByText(/no tiene permiso para ver esta sección/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/tu usuario no tiene permiso para ver esta sección/i)
+    ).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /cerrar sesión/i }))
     expect(mockLogout).toHaveBeenCalledTimes(1)
@@ -57,6 +59,6 @@ describe('<AccessDenied />', () => {
 
     expect(screen.getByRole('link', { name: /iniciar sesión/i })).toHaveAttribute('href', '/login')
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.getByText(/su sesión no está activa/i)).toBeInTheDocument()
+    expect(screen.getByText(/tu sesión no está activa/i)).toBeInTheDocument()
   })
 })
