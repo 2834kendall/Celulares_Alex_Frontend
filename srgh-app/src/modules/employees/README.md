@@ -45,20 +45,28 @@ Rutas: `/employees` (lista), `/employees/new` (alta), `/employees/[id]` (perfil 
 
 ## Datos
 
-| tabla / RPC                                                                      | permiso                                                 | definida en                                                                         |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `sgrh_empleados`                                                                 | `EMPLEADOS_READ` / `EMPLEADOS_WRITE`                    | `20260101000200_tablas_core.sql`                                                    |
-| `sgrh_historial_laboral` (contratos)                                             | `HISTORIAL_READ` o `EMPLEADOS_READ` / `HISTORIAL_WRITE` | `20260101000200_tablas_core.sql`                                                    |
-| `sgrh_empleado_datos_pago`                                                       | `NOMINA_READ` o `EMPLEADOS_WRITE`                       | `20260101000200_tablas_core.sql` (cifrado: `20260824120000_datos_pago_cifrado.sql`) |
-| `sgrh_direcciones`                                                               | según la entidad que la referencia                      | `20260101000200_tablas_core.sql`                                                    |
-| `sgrh_documentos`                                                                | `DOCUMENTOS_READ` / `DOCUMENTOS_WRITE`                  | `20260101000300_tablas_operativas.sql`                                              |
-| `crear_empleado_completo` (DEFINER)                                              | `EMPLEADOS_WRITE` (+ `USUARIOS_WRITE` para invitar)     | `20260824120000_datos_pago_cifrado.sql`                                             |
-| `crear_contrato`, `editar_contrato`, `terminar_contrato`, `revertir_terminacion` | `HISTORIAL_WRITE`                                       | ver [contratos](docs/contratos.md)                                                  |
+| tabla / RPC                                                                            | permiso                                                            | definida en                                                                         |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `sgrh_empleados`                                                                       | `EMPLEADOS_READ` / `EMPLEADOS_WRITE` (alcance empresa)             | `20260101000200_tablas_core.sql` (`20261127020000`)                                 |
+| `sgrh_historial_laboral` (solo 14 cols sin salarios; DML revocado)                     | `HISTORIAL_READ`, `EMPLEADOS_READ` o `NOMINA_READ` (por sucursal)  | `20260101000200_tablas_core.sql` (lockdown: `20261127020000`)                       |
+| `obtener_salarios_historial` (DEFINER)                                                 | `NOMINA_READ` (por alcance) o propio empleado                      | `20261127005451_sgrh_118_salary_rpc_and_branch_scope.sql`                           |
+| `sgrh_empleado_datos_pago`                                                             | `NOMINA_READ` o `EMPLEADOS_WRITE`                                  | `20260101000200_tablas_core.sql` (cifrado: `20260824120000_datos_pago_cifrado.sql`) |
+| `verificar_cuenta_pago_duplicada` (DEFINER)                                            | `EMPLEADOS_WRITE` (toda la empresa)                                | `20261127020000_sgrh_118_historial_laboral_lockdown.sql`                            |
+| `empleados_con_contrato_vigente_oculto` (DEFINER)                                      | `EMPLEADOS_READ` o `HISTORIAL_READ`                                | `20261127020000_sgrh_118_historial_laboral_lockdown.sql`                            |
+| `sgrh_direcciones`                                                                     | según la entidad que la referencia (alcance empresa en empleados)  | `20260101000200_tablas_core.sql` (`20261127020000`)                                 |
+| `sgrh_documentos`                                                                      | `DOCUMENTOS_READ` / `DOCUMENTOS_WRITE`                             | `20260101000300_tablas_operativas.sql`                                              |
+| `crear_empleado_completo` (DEFINER)                                                    | `EMPLEADOS_WRITE` + `HISTORIAL_WRITE` (+ `USUARIOS_WRITE` invitar) | `20261127005451_sgrh_118_salary_rpc_and_branch_scope.sql`                           |
+| `crear_contrato`, `editar_contrato`, `terminar_contrato`, `revertir_terminacion` (DEF) | `HISTORIAL_WRITE` (`editar_contrato` exige además `NOMINA_READ`)   | ver [contratos](docs/contratos.md)                                                  |
 
-Policies: `20260101000600_rls_policies.sql`. En todas, el propio empleado ve lo suyo por la
-rama `emp_id = get_emp_id()`.
+Policies base: `20260101000600_rls_policies.sql`; lockdown de contratos y alcance:
+`20261127020000_sgrh_118_historial_laboral_lockdown.sql`. En todas, el propio empleado ve lo suyo
+por la rama `emp_id = get_emp_id()`.
 
 ## Trampas
+
+- **Prohibido consultar salarios o mutar `sgrh_historial_laboral` directo desde el cliente:**
+  `historialQueryGuardrail.test.ts` falla el build de pruebas si aparece `.select('*')`,
+  `lab_salario_base`/`lab_salario_real`, o `.insert/.update/.delete/.upsert` sobre esa tabla.
 
 - **Los grupos de campos compartidos (`EmployeeFields`, `ContractFields`) usan container
   queries** (`@sm:`, `@2xl:`). El formulario que los use necesita un ancestro con

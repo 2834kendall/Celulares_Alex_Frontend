@@ -11,7 +11,28 @@
   `ndt_sucursal_id` de la fila de planilla), nunca sobre la sucursal actual del empleado. Por eso un traslado no mueve
   el historial entre sucursales, ni se lo quita al gerente que era responsable entonces.
 - **El expediente (`sgrh_empleados`) es de la empresa**: una persona no le pertenece a una
-  sucursal.
+  sucursal. `sgrh_private.empleado_en_empresa()` (`SECURITY DEFINER`) valida la pertenencia vía
+  `sgrh_historial_laboral` para que `empleados_select/update/delete` y
+  `direcciones_select/update/delete` sigan siendo de toda la empresa aunque el historial
+  esté acotado por sucursal.
+- **`sgrh_historial_laboral` (lockdown por columnas, filas y escrituras — migración `20261127020000`)**:
+  - `authenticated` solo tiene `SELECT` sobre las 14 columnas no salariales (`lab_salario_base`
+    y `lab_salario_real` están revocadas a nivel de columna; los salarios se leen únicamente vía
+    `public.obtener_salarios_historial(integer[])` con `NOMINA_READ` o autoservicio).
+  - `INSERT`, `UPDATE` y `DELETE` directos están revocados para `authenticated` (sin policies
+    de DML): toda escritura pasa por las RPC `SECURITY DEFINER` (`crear_empleado_completo`,
+    `crear_contrato`, `editar_contrato`, `terminar_contrato`, `revertir_terminacion`,
+    `cerrar_contratos_programados`), respaldadas por el check `chk_historial_salarios_positivos`
+    (`lab_salario_base > 0 AND lab_salario_real > 0`).
+  - `historial_select` permite autoservicio (`lab_empleado_id = get_emp_id()`) o lectura con
+    `HISTORIAL_READ`, `EMPLEADOS_READ` o `NOMINA_READ` filtrada por
+    `sgrh_private.historial_en_alcance()` (`SECURITY DEFINER` sin recursión `42P17`), que
+    habilita la sucursal base del contrato o contratos con actividad en sucursales visibles
+    (planilla, programación semanal, marcas, justificaciones de bloque y evaluaciones, apoyado
+    por `idx_evaluaciones_historial_sucursal`).
+- **Tablas financieras ligadas al contrato**: `sgrh_liquidaciones`, `sgrh_pagos_extraordinarios`
+  y `sgrh_banco_horas_movimientos` exigen `sucursal_visible(lab_sucursal_id)` en sus ramas de
+  permisos (`NOMINA_READ` / `NOMINA_WRITE`), conservando el autoservicio en `SELECT`.
 - **Traslado de empleado** = cerrar la fila vigente de `sgrh_historial_laboral` y abrir otra.
   Es distinto de corregir la sucursal base del contrato, que sí se edita en sitio (ver
   [contratos](../../src/modules/employees/docs/contratos.md)).

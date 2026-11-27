@@ -11,7 +11,11 @@ usuario (opcional)**.
   en SQL. Si falla, el empleado queda creado y se avisa para reintentar.
 - Unicidad en `sgrh_empleados`: cédula, nº de asegurado CCSS y correo personal. Los `NULL`
   no chocan entre sí (el CCSS es opcional). `lib/dbErrors.ts` traduce cada `23505` a un
-  mensaje por campo.
+  mensaje por campo. En el paso 1 del wizard, `validarFechaNacimiento` rechaza fechas futuras
+  (calendario de Costa Rica) y `checkEmployeeIdentificacion` verifica cédula duplicada antes de
+  avanzar al paso 2.
+- En el paso de nómina, los campos de salario aceptan montos positivos (`> 0`) con hasta 2
+  decimales.
 
 ### `crear_empleado_completo` es `SECURITY DEFINER` a propósito
 
@@ -21,10 +25,10 @@ de SELECT** a la fila devuelta. `empleados_select` exige que el empleado ya teng
 el contrato se inserta _después_. Con `direcciones_select` pasa lo mismo.
 
 **Consecuencia:** como la función se salta la RLS, los chequeos internos son la **única
-capa**. Valida `EMPLEADOS_WRITE`, toma `empresa_id` solo del JWT y verifica puesto y sucursal
-contra esa empresa. Si se le agrega una tabla, hay que agregarle a mano el permiso que pediría
-la policy de INSERT de esa tabla. Ya pasó: escribía en `sgrh_historial_laboral`
-(`HISTORIAL_WRITE`, donde están los salarios) validando solo `EMPLEADOS_WRITE`.
+capa**. Valida `EMPLEADOS_WRITE` y `HISTORIAL_WRITE`, toma `empresa_id` solo del JWT, exige
+puesto de la empresa, sucursal activa de la empresa y visible para el usuario
+(`sucursal_visible`), salarios mayores a 0 y fecha de nacimiento no futura. Si se le agrega una
+tabla, hay que agregarle a mano el permiso que pediría la policy de INSERT de esa tabla.
 
 **Al cambiar su firma:** `CREATE OR REPLACE` con parámetros nuevos crea una sobrecarga y deja
 viva la vieja (PostgREST se vuelve ambiguo). Hay que hacer `DROP FUNCTION` de la firma vieja y
@@ -43,8 +47,10 @@ repetir `REVOKE PUBLIC / REVOKE anon / GRANT authenticated`.
   checksum ISO 13616, y su código de entidad (posiciones 6-8) tiene que coincidir con
   `sgrh_cat_bancos.ban_codigo`. La RPC **ya no** valida formato: recibe ciphertext.
 - **Cuentas repetidas:** se detectan con un índice ciego (`edp_cuenta_hmac`, HMAC con llave
-  aparte). Si otro empleado de la misma empresa ya tiene esa cuenta, se pide confirmación,
-  pero **no se bloquea**: una cuenta compartida puede ser legítima.
+  aparte) vía la RPC `SECURITY DEFINER` `verificar_cuenta_pago_duplicada`, que revisa toda la
+  empresa incluso cuando el empleado dueño pertenece a otra sucursal sin exponer filas de
+  pago. Si otro empleado de la empresa ya tiene esa cuenta, se pide confirmación, pero **no se
+  bloquea**: una cuenta compartida puede ser legítima.
 
 ## Dirección
 
@@ -58,13 +64,13 @@ repetir `REVOKE PUBLIC / REVOKE anon / GRANT authenticated`.
 
 ## Ficha del perfil
 
-| tab / sección                              | permiso                                | notas                                                                                                                                    |
-| ------------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Datos personales                           | `EMPLEADOS_READ` / `EMPLEADOS_WRITE`   | modo edición de la ficha                                                                                                                 |
-| Foto (`<Avatar/>`, reusado en toda la app) | `EMPLEADOS_WRITE`                      |                                                                                                                                          |
-| Documentos                                 | `DOCUMENTOS_READ` / `DOCUMENTOS_WRITE` | CRUD siempre visible, independiente del modo edición. Por categoría (`sgrh_cat_tipos_documento`), vencimiento opcional y badge "Vencido" |
-| Contrato                                   | `HISTORIAL_WRITE`                      | ver [contratos](contratos.md)                                                                                                            |
-| Rostro (SGRH-102)                          | `BIOMETRIA_WRITE`                      | ver abajo                                                                                                                                |
+| tab / sección                              | permiso                                | notas                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------ | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Datos personales                           | `EMPLEADOS_READ` / `EMPLEADOS_WRITE`   | modo edición de la ficha                                                                                                                                                                                                                                                                        |
+| Foto (`<Avatar/>`, reusado en toda la app) | `EMPLEADOS_WRITE`                      |                                                                                                                                                                                                                                                                                                 |
+| Documentos                                 | `DOCUMENTOS_READ` / `DOCUMENTOS_WRITE` | CRUD siempre visible, independiente del modo edición. Por categoría (`sgrh_cat_tipos_documento`), vencimiento opcional y badge "Vencido"                                                                                                                                                        |
+| Contrato                                   | `HISTORIAL_WRITE` / `NOMINA_READ`      | los salarios (`lab_salario_base`, `lab_salario_real`) se cargan vía `obtener_salarios_historial` solo con `NOMINA_READ`; si el empleado tiene contrato vigente en otra sucursal oculta por RLS, `empleados_con_contrato_vigente_oculto` evita mostrarlo inactivo. Ver [contratos](contratos.md) |
+| Rostro (SGRH-102)                          | `BIOMETRIA_WRITE`                      | ver abajo                                                                                                                                                                                                                                                                                       |
 
 **Rostro:** reemplaza a `/kiosco/enrolar`. Tres capturas consistentes con prueba de vida;
 las plantillas se guardan cifradas (`sgrh_biometria_empleado`) y las lecturas de estado
