@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import ExcelJS from 'exceljs'
-import { buildPlanillaTemplate, parsePlanillaWorkbook } from './planillaExcel'
+import { deflateRawSync } from 'node:zlib'
+import { buildPlanillaTemplate, parsePlanillaWorkbook, textoSeguroExcel } from './planillaExcel'
 import type { ConceptoPlanillaColumna } from './planilla'
 import type { HorasDeAsistencia } from './prellenadoAsistencia'
 
@@ -736,5 +737,72 @@ describe('parsePlanillaWorkbook: alcance sellado', () => {
     })
     expect(errors).toEqual([])
     expect(rows.find((r) => r.cedula === '3-3333-3333')?.contratoId).toBeNull()
+  })
+})
+
+describe('textos que Excel podría tomar como fórmula', () => {
+  it('antepone un apóstrofo a lo que empieza con = + - @', () => {
+    expect(textoSeguroExcel('=HYPERLINK("http://x")')).toBe(`'=HYPERLINK("http://x")`)
+    expect(textoSeguroExcel('+50688888888')).toBe(`'+50688888888`)
+    expect(textoSeguroExcel('-1')).toBe(`'-1`)
+    expect(textoSeguroExcel('@SUM(A1)')).toBe(`'@SUM(A1)`)
+  })
+
+  it('no toca un texto normal', () => {
+    expect(textoSeguroExcel('Ana Mora')).toBe('Ana Mora')
+    expect(textoSeguroExcel('1-1111-1111')).toBe('1-1111-1111')
+  })
+
+  it('la plantilla escribe el nombre con apóstrofo y la cédula se lee de vuelta intacta', async () => {
+    const empleados = [
+      { ...EMPLEADOS[0], nombre: '=HYPERLINK("http://malo")', cedula: '+1-1111-1111' },
+    ]
+    const buffer = await buildPlanillaTemplate(INFO, empleados, CONCEPTOS)
+
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer.buffer)
+    const ws = wb.getWorksheet('Planilla')!
+    const fila = ws.getRow(5)
+    expect(fila.getCell(2).value).toBe(`'=HYPERLINK("http://malo")`)
+    expect(fila.getCell(1).value).toBe(`'+1-1111-1111`)
+
+    const { rows, errors } = await parsePlanillaWorkbook(buffer.buffer, CONCEPTOS, PERIODO_ID)
+    expect(errors).toEqual([])
+    expect(rows[0].cedula).toBe('+1-1111-1111')
+  })
+})
+
+describe('parsePlanillaWorkbook: archivo que se infla (zip bomb)', () => {
+  it('lo rechaza antes de abrirlo con exceljs', async () => {
+    // Un zip de una sola parte con 30 MB de ceros: pesa unos 30 KB.
+    const nombre = Buffer.from('xl/worksheets/sheet1.xml')
+    const contenido = Buffer.alloc(30 * 1024 * 1024)
+    const comprimido = deflateRawSync(contenido)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(8, 8)
+    local.writeUInt32LE(comprimido.length, 18)
+    local.writeUInt32LE(contenido.length, 22)
+    local.writeUInt16LE(nombre.length, 26)
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(8, 10)
+    central.writeUInt32LE(comprimido.length, 20)
+    central.writeUInt32LE(contenido.length, 24)
+    central.writeUInt16LE(nombre.length, 28)
+    const inicioDirectorio = 30 + nombre.length + comprimido.length
+    const fin = Buffer.alloc(22)
+    fin.writeUInt32LE(0x06054b50, 0)
+    fin.writeUInt16LE(1, 8)
+    fin.writeUInt16LE(1, 10)
+    fin.writeUInt32LE(46 + nombre.length, 12)
+    fin.writeUInt32LE(inicioDirectorio, 16)
+    const bomba = new Uint8Array(Buffer.concat([local, nombre, comprimido, central, nombre, fin]))
+
+    const { rows, errors } = await parsePlanillaWorkbook(bomba.buffer, CONCEPTOS, PERIODO_ID)
+
+    expect(rows).toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0].mensaje).toContain('No se puede abrir el archivo')
   })
 })

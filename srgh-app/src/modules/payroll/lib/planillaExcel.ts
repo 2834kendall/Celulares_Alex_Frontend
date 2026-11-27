@@ -32,8 +32,25 @@ import {
 } from './prellenadoAsistencia'
 import { lecturaUtilizable } from './horasPeriodo'
 import { round2 } from './numeros'
+import { revisarZipXlsx } from './zipSeguro'
 
 const SHEET_NAME = 'Planilla'
+
+/**
+ * Un texto que empieza con = + - @ (o tabulador / retorno) Excel lo puede
+ * tomar como fórmula al editar la celda o al pasar el archivo a CSV: un nombre
+ * como "=HYPERLINK(...)" se volvería un enlace. Se le antepone un apóstrofo,
+ * que lo deja como texto. Al leer, cellValue lo quita de nuevo.
+ */
+const INICIO_DE_FORMULA = /^[=+\-@\t\r]/
+
+export function textoSeguroExcel(texto: string): string {
+  return INICIO_DE_FORMULA.test(texto) ? `'${texto}` : texto
+}
+
+function sinApostrofoDeSeguridad(texto: string): string {
+  return texto.startsWith("'") && INICIO_DE_FORMULA.test(texto.slice(1)) ? texto.slice(1) : texto
+}
 
 // Hoja oculta con la procedencia del archivo: de qué periodo salió, con qué
 // catálogo se armó y qué sucursales incluye. Sin esto, la subida no puede
@@ -251,9 +268,9 @@ export async function buildPlanillaTemplate(
   const colTotalNeto = colTotalDeducciones + 1
   const colContrato = colTotalNeto + 1
 
-  ws.getCell('A1').value = info.titulo
+  ws.getCell('A1').value = textoSeguroExcel(info.titulo)
   ws.getCell('A1').font = { bold: true, size: 14 }
-  ws.getCell('A2').value = info.subtitulo
+  ws.getCell('A2').value = textoSeguroExcel(info.subtitulo)
   ws.getCell('A2').font = { color: { argb: 'FF64748B' }, size: 10 }
   ws.getCell('A3').value =
     'Las horas, las horas extra y el salario por hora vienen de las marcas de asistencia: revísalos antes de subir. Edita solo las columnas azules. No cambies la cédula ni agregues o borres columnas (tampoco las ocultas) — las columnas grises se calculan solas.'
@@ -262,7 +279,7 @@ export async function buildPlanillaTemplate(
   const headerRow = ws.getRow(HEADER_ROW)
   headers.forEach((h, index) => {
     const cell = headerRow.getCell(index + 1)
-    cell.value = h.label
+    cell.value = textoSeguroExcel(h.label)
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
     cell.fill = {
       type: 'pattern',
@@ -276,9 +293,9 @@ export async function buildPlanillaTemplate(
   empleados.forEach((emp, index) => {
     const rowNumber = HEADER_ROW + 1 + index
     const row = ws.getRow(rowNumber)
-    row.getCell(colCedula).value = emp.cedula
-    row.getCell(2).value = emp.nombre
-    row.getCell(colSucursal).value = emp.sucursalNombre ?? ''
+    row.getCell(colCedula).value = textoSeguroExcel(emp.cedula)
+    row.getCell(2).value = textoSeguroExcel(emp.nombre)
+    row.getCell(colSucursal).value = textoSeguroExcel(emp.sucursalNombre ?? '')
     row.getCell(colContrato).value = emp.labId
     // La misma cuenta que usa "cargar empleados desde asistencia", compartida
     // en lib/prellenadoAsistencia.ts: si cada camino tuviera la suya, armar la
@@ -489,7 +506,8 @@ function leerContratoId(valor: RawCell): number | null {
 function cellValue(cell: ExcelJS.Cell): RawCell {
   const value = cell.value
   if (value === null || value === undefined) return null
-  if (typeof value === 'number' || typeof value === 'string') return value
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') return sinApostrofoDeSeguridad(value)
   if (typeof value === 'object') {
     if (
       'result' in value &&
@@ -597,6 +615,21 @@ export async function parsePlanillaWorkbook(
   conceptos: ConceptoPlanillaColumna[],
   periodoId: number
 ): Promise<ParsePlanillaResult> {
+  // Antes de abrirlo: un zip chico puede inflarse a gigas y tumbar el servidor.
+  const revision = revisarZipXlsx(buffer)
+  if (!revision.ok) {
+    return {
+      rows: [],
+      alcance: [],
+      errors: [
+        {
+          fila: 0,
+          mensaje: `No se puede abrir el archivo: ${revision.motivo}. Descargá la plantilla de nuevo y volvé a intentar.`,
+        },
+      ],
+    }
+  }
+
   const wb = new ExcelJS.Workbook()
 
   try {
