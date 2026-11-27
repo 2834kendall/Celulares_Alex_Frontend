@@ -28,6 +28,7 @@ import { getFotoAsistencia } from '@/modules/payroll/lib/horasPeriodoData'
 import { camposFotoAsistencia } from '@/modules/payroll/lib/horasOrigen'
 import { ahoraLocal } from '@/modules/payroll/lib/fechas'
 import { sincronizarMovimientoBancoHoras } from '@/modules/payroll/lib/bancoHorasAccrual'
+import { fetchSalariosContratos } from '@/lib/employees/fetchSalariosContratos'
 
 interface DetalleActualRow {
   ndt_id: number
@@ -49,8 +50,6 @@ interface DetalleActualRow {
 }
 
 interface ContratoRow {
-  lab_salario_base: number | null
-  lab_salario_real: number | null
   sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
 }
 
@@ -174,14 +173,18 @@ export async function updateDetalleManual(
   if (!hayConceptoAjuste(conceptos)) {
     return { ok: false, error: ERROR_SIN_CONCEPTO_AJUSTE }
   }
-  const { data: contrato, error: errContrato } = await supabase
-    .from('sgrh_historial_laboral')
-    .select(
-      'lab_salario_base, lab_salario_real, sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )'
-    )
-    .eq('lab_id', detalle.ndt_historial_laboral_id)
-    .maybeSingle<ContratoRow>()
-  if (errContrato || !contrato) {
+  const [{ data: contrato, error: errContrato }, salariosResult] = await Promise.all([
+    supabase
+      .from('sgrh_historial_laboral')
+      .select('sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )')
+      .eq('lab_id', detalle.ndt_historial_laboral_id)
+      .maybeSingle<ContratoRow>(),
+    fetchSalariosContratos(supabase, [detalle.ndt_historial_laboral_id]),
+  ])
+  const salario = salariosResult.ok
+    ? salariosResult.data.get(detalle.ndt_historial_laboral_id)
+    : null
+  if (errContrato || !contrato || !salariosResult.ok || !salario) {
     return { ok: false, error: 'No se pudo cargar el contrato del empleado.' }
   }
   const lecturaCompleta =
@@ -190,8 +193,8 @@ export async function updateDetalleManual(
       : null
   const periodo = detalle.sgrh_nomina_periodo
   const contratoPago = {
-    salarioBaseMensual: contrato.lab_salario_base ?? 0,
-    salarioRealMensual: contrato.lab_salario_real ?? null,
+    salarioBaseMensual: salario.lab_salario_base ?? 0,
+    salarioRealMensual: salario.lab_salario_real ?? null,
     horasSemanales: contrato.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
   }
   const quincena = {

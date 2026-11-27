@@ -80,9 +80,24 @@ const OK = { data: null, error: null }
 const GUARDADA = { data: [{ ndt_id: 1 }], error: null }
 
 function mockSupabase(
-  responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
+  responses: Record<
+    string,
+    { data: unknown; error: unknown } | { data: unknown; error: unknown }[]
+  >,
+  rpcResponses: Record<string, { data: unknown; error: unknown }> = {}
 ) {
-  const client = createSupabaseClientMock({ sgrh_historial_laboral: CONTRATO, ...responses })
+  const client = createSupabaseClientMock(
+    { sgrh_historial_laboral: CONTRATO, ...responses },
+    {
+      rpcResponses: {
+        obtener_salarios_historial: {
+          data: [{ lab_id: 5, lab_salario_base: 400000, lab_salario_real: 430000 }],
+          error: null,
+        },
+        ...rpcResponses,
+      },
+    }
+  )
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }
@@ -318,8 +333,7 @@ describe('updateDetalleManual (server action)', () => {
     // existe el banco de horas.
     const activos = CONCEPTOS_ACTIVOS.filter((c) => c.con_codigo !== 'HORAS_EXTRA')
 
-    const client = createSupabaseClientMock({
-      sgrh_historial_laboral: CONTRATO,
+    const client = mockSupabase({
       sgrh_nomina_detalle: [
         {
           data: {
@@ -345,9 +359,6 @@ describe('updateDetalleManual (server action)', () => {
       sgrh_nomina_linea_deduccion: [{ data: [], error: null }, OK, OK],
       sgrh_banco_horas_movimientos: { data: null, error: null },
     })
-    mockCreateClient.mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>
-    )
 
     const result = await updateDetalleManual(1, INPUT)
 

@@ -69,8 +69,42 @@ function mockSupabase(
     string,
     { data: unknown; error: unknown } | { data: unknown; error: unknown }[]
   >,
-  filasDelPeriodo?: { data: unknown; error: unknown }
+  filasDelPeriodo?: { data: unknown; error: unknown },
+  rpcResponses: Record<string, { data: unknown; error: unknown }> = {}
 ) {
+  const histEntrada = responses.sgrh_historial_laboral
+  const histLista = Array.isArray(histEntrada)
+    ? histEntrada
+    : histEntrada
+      ? [histEntrada]
+      : [{ data: { lab_salario_base: 0, sgrh_cat_tipos_jornada: null }, error: null }]
+  const histConSalario = histLista.find(
+    (r) =>
+      r.data &&
+      !Array.isArray(r.data) &&
+      ('lab_salario_base' in (r.data as object) || 'lab_salario_real' in (r.data as object))
+  )
+  const histData =
+    histConSalario && !Array.isArray(histConSalario.data)
+      ? (histConSalario.data as {
+          lab_salario_base?: number | null
+          lab_salario_real?: number | null
+        })
+      : null
+  const histUltimo = histLista[histLista.length - 1]
+  const defaultSalarios = histUltimo?.error
+    ? { data: [], error: histUltimo.error }
+    : {
+        data: [
+          {
+            lab_id: DETALLE_BASE.ndt_historial_laboral_id,
+            lab_salario_base: histData?.lab_salario_base ?? 0,
+            lab_salario_real: histData?.lab_salario_real ?? null,
+          },
+        ],
+        error: null,
+      }
+
   const client = createSupabaseClientMock(
     {
       // Sin comprobante previo: la acción emite uno al marcar el pago. Los
@@ -93,7 +127,13 @@ function mockSupabase(
       sgrh_ausencias: { data: [], error: null },
       ...responses,
     },
-    filasDelPeriodo ? { rpcResponses: { nomina_filas_estado: filasDelPeriodo } } : {}
+    {
+      rpcResponses: {
+        obtener_salarios_historial: defaultSalarios,
+        ...(filasDelPeriodo ? { nomina_filas_estado: filasDelPeriodo } : {}),
+        ...rpcResponses,
+      },
+    }
   )
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client

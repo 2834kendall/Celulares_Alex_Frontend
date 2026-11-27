@@ -52,6 +52,7 @@ import {
   ERROR_OTRA_SUCURSAL,
   sucursalVisibleParaLaCuenta,
 } from '@/modules/payroll/lib/sucursalCuenta'
+import { fetchSalariosContratos } from '@/lib/employees/fetchSalariosContratos'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -62,8 +63,8 @@ export interface HistorialLiquidacionRow {
   lab_fecha_inicio: string
   lab_fecha_fin: string | null
   lab_motivo_salida_id: number | null
-  lab_salario_base: number | null
-  lab_salario_real: number | null
+  lab_salario_base?: number | null
+  lab_salario_real?: number | null
   /** Tipo de contrato: decide si aplica el Art. 31 (plazo fijo). */
   sgrh_cat_tipos_contrato?: { tco_codigo: string } | null
   sgrh_empleados: {
@@ -82,7 +83,6 @@ export type HistorialTerminadoRow = HistorialLiquidacionRow & {
 }
 
 export const SELECT_HISTORIAL_LIQUIDACION = `lab_id, lab_empleado_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_motivo_salida_id,
-   lab_salario_base, lab_salario_real,
    sgrh_cat_tipos_contrato ( tco_codigo ),
    sgrh_empleados ( emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) ),
    sgrh_liquidaciones ( liq_id )`
@@ -189,18 +189,27 @@ export async function calcularBasesLiquidacion(
   const fechaIngreso = ingresoOriginal ?? historial.lab_fecha_inicio
 
   const filasContrato = historial.sgrh_empleados?.sgrh_historial_laboral ?? []
-  const contratos: ContratoDelEmpleado[] = filasContrato.map(aContrato)
+  const labIdsSalarios = [historial.lab_id, ...filasContrato.map((r) => r.lab_id)]
+  const salariosResult = await fetchSalariosContratos(supabase, labIdsSalarios)
+  if (!salariosResult.ok) {
+    return { ok: false, error: 'No se pudieron cargar los salarios de los contratos.' }
+  }
+
+  const contratos: ContratoDelEmpleado[] = filasContrato.map((r) =>
+    aContrato(r, salariosResult.data)
+  )
   if (!contratos.some((c) => c.labId === historial.lab_id)) {
     contratos.push(
-      aContrato({
-        lab_id: historial.lab_id,
-        lab_sucursal_id: historial.lab_sucursal_id,
-        lab_fecha_inicio: historial.lab_fecha_inicio,
-        lab_fecha_fin: historial.lab_fecha_fin,
-        lab_salario_base: historial.lab_salario_base,
-        lab_salario_real: historial.lab_salario_real,
-        sgrh_liquidaciones: null,
-      })
+      aContrato(
+        {
+          lab_id: historial.lab_id,
+          lab_sucursal_id: historial.lab_sucursal_id,
+          lab_fecha_inicio: historial.lab_fecha_inicio,
+          lab_fecha_fin: historial.lab_fecha_fin,
+          sgrh_liquidaciones: null,
+        },
+        salariosResult.data
+      )
     )
   }
   const relacion = contratosDeLaRelacion(historial.lab_id, contratos)
@@ -243,10 +252,11 @@ export async function calcularBasesLiquidacion(
   // salarioMensualContrato en derechos.ts). Antes se tomaba el base, y a quien
   // salía con menos de dos quincenas pagadas se le liquidaba de menos. El
   // base solo cuando el real no está.
+  const salarioPrincipal = salariosResult.data.get(historial.lab_id)
   const salarioContrato =
-    (historial.lab_salario_real ?? 0) > 0
-      ? historial.lab_salario_real!
-      : (historial.lab_salario_base ?? 0)
+    (salarioPrincipal?.lab_salario_real ?? 0) > 0
+      ? salarioPrincipal!.lab_salario_real
+      : (salarioPrincipal?.lab_salario_base ?? 0)
 
   // Quincena de ingreso o de salida a medias: cuenta por lo trabajado.
   const rango = inicioRelacion ? { inicio: inicioRelacion, fin: fechaSalida } : null

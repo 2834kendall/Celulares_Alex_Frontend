@@ -47,6 +47,7 @@ import {
 } from './derechosData'
 import { SELECT_ANULACION, separarPagos, type AnulacionRow } from './anulacionPagos'
 import type { AnulacionPago } from '@/modules/payroll/types'
+import { fetchSalariosContratos } from '@/lib/employees/fetchSalariosContratos'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
@@ -55,8 +56,6 @@ interface CandidatoRow {
   lab_sucursal_id: number | null
   lab_fecha_inicio: string
   lab_fecha_fin: string | null
-  lab_salario_base: number | null
-  lab_salario_real: number | null
   sgrh_empleados: {
     emp_nombre: string
     emp_apellido_1: string
@@ -124,7 +123,7 @@ export async function calcularAguinaldosDelCiclo(
   let consulta = supabase
     .from('sgrh_historial_laboral')
     .select(
-      `lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real,
+      `lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin,
        sgrh_empleados ( emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion,
                         emp_email_personal, emp_fecha_ingreso_original, sgrh_historial_laboral ( ${SELECT_CONTRATO} ) )`
     )
@@ -133,6 +132,18 @@ export async function calcularAguinaldosDelCiclo(
 
   const { data: candidatos, error } = await consulta.returns<CandidatoRow[]>()
   if (error) return { ok: false, error: 'No se pudieron cargar los empleados.' }
+
+  const labIdsSalarios = new Set<number>()
+  for (const c of candidatos ?? []) {
+    labIdsSalarios.add(c.lab_id)
+    for (const h of c.sgrh_empleados?.sgrh_historial_laboral ?? []) {
+      labIdsSalarios.add(h.lab_id)
+    }
+  }
+  const salariosResult = await fetchSalariosContratos(supabase, [...labIdsSalarios])
+  if (!salariosResult.ok) {
+    return { ok: false, error: 'No se pudieron cargar los salarios de los contratos.' }
+  }
 
   // Una fila por relación: la del contrato más reciente.
   interface Fila {
@@ -143,9 +154,11 @@ export async function calcularAguinaldosDelCiclo(
   const porRelacion = new Map<number, Fila>()
   for (const c of candidatos ?? []) {
     if (!c.sgrh_empleados) continue
-    const contratos = (c.sgrh_empleados.sgrh_historial_laboral ?? []).map(aContrato)
+    const contratos = (c.sgrh_empleados.sgrh_historial_laboral ?? []).map((h) =>
+      aContrato(h, salariosResult.data)
+    )
     if (!contratos.some((x) => x.labId === c.lab_id)) {
-      contratos.push(aContrato({ ...c, sgrh_liquidaciones: null }))
+      contratos.push(aContrato({ ...c, sgrh_liquidaciones: null }, salariosResult.data))
     }
     const relacion = contratosDeLaRelacion(c.lab_id, contratos)
     const clave = Math.min(...relacion.map((x) => x.labId))

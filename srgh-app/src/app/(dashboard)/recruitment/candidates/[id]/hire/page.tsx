@@ -82,7 +82,7 @@ export default async function HireCandidatePage({ params, searchParams }: HireCa
     getCandidateDetail(candidatoId),
     getTiposIdentificacion(),
     getPuestos(),
-    getSucursales(),
+    getSucursales({ soloVisibles: true }),
     getTiposContrato(),
     getTiposJornada(),
     getBancos(),

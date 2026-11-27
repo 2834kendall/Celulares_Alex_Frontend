@@ -79,6 +79,43 @@ function mockTables(
   responses: Record<string, { data: unknown; error: unknown }>,
   rpcResponses: Record<string, { data: unknown; error: unknown }> = {}
 ) {
+  const salarios: { lab_id: number; lab_salario_base: number; lab_salario_real: number | null }[] =
+    []
+  const detallesData = Array.isArray(responses.sgrh_nomina_detalle?.data)
+    ? (responses.sgrh_nomina_detalle.data as Array<{
+        ndt_historial_laboral_id?: number
+        sgrh_historial_laboral?: {
+          lab_salario_base?: number | null
+          lab_salario_real?: number | null
+        } | null
+      }>)
+    : []
+  for (const d of detallesData) {
+    if (typeof d.ndt_historial_laboral_id === 'number') {
+      salarios.push({
+        lab_id: d.ndt_historial_laboral_id,
+        lab_salario_base: d.sgrh_historial_laboral?.lab_salario_base ?? 500000,
+        lab_salario_real: d.sgrh_historial_laboral?.lab_salario_real ?? null,
+      })
+    }
+  }
+  const histData = Array.isArray(responses.sgrh_historial_laboral?.data)
+    ? (responses.sgrh_historial_laboral.data as Array<{
+        lab_id?: number
+        lab_salario_base?: number | null
+        lab_salario_real?: number | null
+      }>)
+    : []
+  for (const h of histData) {
+    if (typeof h.lab_id === 'number' && !salarios.some((s) => s.lab_id === h.lab_id)) {
+      salarios.push({
+        lab_id: h.lab_id,
+        lab_salario_base: h.lab_salario_base ?? 500000,
+        lab_salario_real: h.lab_salario_real ?? null,
+      })
+    }
+  }
+
   const client = createSupabaseClientMock(
     {
       // La acción consulta esta tabla en todos los casos; los tests que no la
@@ -91,7 +128,12 @@ function mockTables(
       sgrh_ausencias: { data: [], error: null },
       ...responses,
     },
-    { rpcResponses }
+    {
+      rpcResponses: {
+        obtener_salarios_historial: { data: salarios, error: null },
+        ...rpcResponses,
+      },
+    }
   )
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
@@ -1055,7 +1097,7 @@ describe('getPeriodoDetail: periodo de toda la empresa', () => {
 
     expect(result.ok && result.data.sucursalNombre).toBe('Mall')
     expect(getFiltroMarca).not.toHaveBeenCalled()
-    expect(client.rpc).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('nomina_filas_estado', expect.anything())
   })
 
   it('en un periodo de una sucursal no pregunta por la marca ni por las demás filas', async () => {
@@ -1072,7 +1114,7 @@ describe('getPeriodoDetail: periodo de toda la empresa', () => {
     await getPeriodoDetail(7)
 
     expect(getFiltroMarca).not.toHaveBeenCalled()
-    expect(client.rpc).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('nomina_filas_estado', expect.anything())
     expect(client.from.mock.calls.map((c) => c[0])).not.toContain('sgrh_sucursales')
   })
 })

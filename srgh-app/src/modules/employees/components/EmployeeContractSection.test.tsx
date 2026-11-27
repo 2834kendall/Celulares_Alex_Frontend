@@ -13,8 +13,14 @@ const TERMINADO_SIN_LIQUIDAR: ContratoDetalle = {
   liquidado: false,
 }
 
-function renderSection(contratos: ContratoDetalle[], veLiquidaciones = false) {
-  return render(<EmployeeContractSection contratos={contratos} veLiquidaciones={veLiquidaciones} />)
+function renderSection(contratos: ContratoDetalle[], veLiquidaciones = false, veSalarios = true) {
+  return render(
+    <EmployeeContractSection
+      contratos={contratos}
+      veLiquidaciones={veLiquidaciones}
+      veSalarios={veSalarios}
+    />
+  )
 }
 
 describe('<EmployeeContractSection />', () => {
@@ -95,5 +101,23 @@ describe('<EmployeeContractSection />', () => {
 
     expect(screen.queryByText(/pendiente de liquidar/i)).not.toBeInTheDocument()
     expect(screen.getByText(/no tiene un contrato vigente/i)).toBeInTheDocument()
+  })
+
+  it('oculta Salario base y Salario real sin NOMINA_READ o cuando llegan en null', () => {
+    const { rerender } = renderSection([HISTORIAL_ACTIVO], false, false)
+
+    expect(screen.queryByText('Salario base')).not.toBeInTheDocument()
+    expect(screen.queryByText('Salario real')).not.toBeInTheDocument()
+    expect(screen.getByText('Cajera')).toBeInTheDocument()
+
+    rerender(
+      <EmployeeContractSection
+        contratos={[{ ...HISTORIAL_ACTIVO, lab_salario_base: null, lab_salario_real: null }]}
+        veLiquidaciones={false}
+        veSalarios={true}
+      />
+    )
+    expect(screen.queryByText('Salario base')).not.toBeInTheDocument()
+    expect(screen.queryByText('Salario real')).not.toBeInTheDocument()
   })
 })

@@ -26,7 +26,6 @@ function empleado(overrides: Partial<EmpleadoListItem>): EmpleadoListItem {
     puesto_nombre: 'Cajera',
     sucursal_nombre: 'Central',
     tipo_contrato_nombre: 'Indefinido',
-    salario_base: 500000,
     fecha_inicio_contrato: '2024-02-01',
     activo: true,
     foto_url: null,

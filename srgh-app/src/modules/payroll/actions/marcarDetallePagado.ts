@@ -44,6 +44,7 @@ import {
 } from '@/modules/payroll/lib/planilla'
 import { formatCRC, formatDate, formatHoras, rangoAguinaldo } from '@/modules/payroll/lib/format'
 import { marcasCambiaron, origenHoras } from '@/modules/payroll/lib/horasOrigen'
+import { fetchSalariosContratos } from '@/lib/employees/fetchSalariosContratos'
 
 interface DetalleActualRow {
   ndt_id: number
@@ -206,8 +207,6 @@ interface LineaIngresoBaseRow {
 }
 
 interface ContratoBaseRow {
-  lab_salario_base: number | null
-  lab_salario_real: number | null
   sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
 }
 
@@ -239,23 +238,26 @@ async function verificarBaseGuardado(
     }
   | { ok: false; error: string }
 > {
-  const [{ data: lineas, error: errLineas }, { data: contrato, error: errContrato }] =
-    await Promise.all([
-      supabase
-        .from('sgrh_nomina_linea_ingreso')
-        .select('ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
-        .eq('ing_nomina_detalle_id', params.ndtId)
-        .returns<LineaIngresoBaseRow[]>(),
-      supabase
-        .from('sgrh_historial_laboral')
-        .select(
-          'lab_salario_base, lab_salario_real, sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )'
-        )
-        .eq('lab_id', params.historialLaboralId)
-        .maybeSingle<ContratoBaseRow>(),
-    ])
+  const [
+    { data: lineas, error: errLineas },
+    { data: contrato, error: errContrato },
+    salariosResult,
+  ] = await Promise.all([
+    supabase
+      .from('sgrh_nomina_linea_ingreso')
+      .select('ing_monto, sgrh_cat_conceptos_nomina ( con_codigo )')
+      .eq('ing_nomina_detalle_id', params.ndtId)
+      .returns<LineaIngresoBaseRow[]>(),
+    supabase
+      .from('sgrh_historial_laboral')
+      .select('sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )')
+      .eq('lab_id', params.historialLaboralId)
+      .maybeSingle<ContratoBaseRow>(),
+    fetchSalariosContratos(supabase, [params.historialLaboralId]),
+  ])
 
-  if (errLineas || errContrato || !contrato) {
+  const salario = salariosResult.ok ? salariosResult.data.get(params.historialLaboralId) : null
+  if (errLineas || errContrato || !contrato || !salariosResult.ok || !salario) {
     return {
       ok: false,
       error:
@@ -277,8 +279,8 @@ async function verificarBaseGuardado(
     // corrección de salario —que tiene que aplicar desde el período que
     // viene— bloquearía el pago de este.
     contrato: contratoDeLaFila(params.foto, {
-      salarioBaseMensual: contrato.lab_salario_base ?? 0,
-      salarioRealMensual: contrato.lab_salario_real ?? null,
+      salarioBaseMensual: salario.lab_salario_base ?? 0,
+      salarioRealMensual: salario.lab_salario_real ?? null,
       horasSemanales: contrato.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
     }),
     guardadas: params.guardadas,
@@ -434,12 +436,8 @@ async function incapacidadAlPagar(
   rango: { inicio: string; fin: string } | null,
   foto: FotoContratoFila
 ): Promise<IncapacidadCongelada | null> {
-  const [contrato, respaldo, ausencias] = await Promise.all([
-    supabase
-      .from('sgrh_historial_laboral')
-      .select('lab_salario_base, lab_salario_real')
-      .eq('lab_id', labId)
-      .maybeSingle<{ lab_salario_base: number | null; lab_salario_real: number | null }>(),
+  const [salariosResult, respaldo, ausencias] = await Promise.all([
+    fetchSalariosContratos(supabase, [labId]),
     supabase
       .from('sgrh_cat_tipos_ausencia')
       .select(SELECT_TIPO_SUBSIDIO)
@@ -458,7 +456,8 @@ async function incapacidadAlPagar(
           .returns<AusenciaDeLaFilaRow[]>()
       : { data: [] as AusenciaDeLaFilaRow[], error: null },
   ])
-  if (contrato.error || !contrato.data || ausencias.error) return null
+  const salario = salariosResult.ok ? salariosResult.data.get(labId) : null
+  if (!salariosResult.ok || !salario || ausencias.error) return null
 
   const lista: AusenciaSubsidio[] = (ausencias.data ?? [])
     .filter((a) => esAusenciaDeSubsidio(a.sgrh_cat_tipos_ausencia) && a.aus_fecha_fin)
@@ -473,8 +472,8 @@ async function incapacidadAlPagar(
   if (!tipo) return null
 
   const contratoFila = contratoDeLaFila(foto, {
-    salarioBaseMensual: Number(contrato.data.lab_salario_base ?? 0),
-    salarioRealMensual: contrato.data.lab_salario_real ?? null,
+    salarioBaseMensual: Number(salario.lab_salario_base ?? 0),
+    salarioRealMensual: salario.lab_salario_real ?? null,
     horasSemanales: null,
   })
   const montos = subsidioPatronoEnVivo(dias.empleador, contratoFila, tipo)

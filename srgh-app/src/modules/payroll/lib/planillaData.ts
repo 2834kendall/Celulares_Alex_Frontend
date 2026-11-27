@@ -6,14 +6,13 @@ import type { createClient } from '@/lib/supabase/server'
 import type { FilaGuardadaPlantilla } from './planillaExcel'
 import { origenHoras } from './horasOrigen'
 import { leerFilasEstado } from './filasEstado'
+import { fetchSalariosContratos } from '@/lib/employees/fetchSalariosContratos'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 interface HistorialActivoRow {
   lab_id: number
   lab_sucursal_id: number
-  lab_salario_base: number
-  lab_salario_real: number | null
   sgrh_empleados: {
     emp_numero_identificacion: string
     emp_nombre: string
@@ -60,8 +59,6 @@ export type GetEmpleadosActivosResult =
 const SELECT_CONTRATO_PLANILLA = `
       lab_id,
       lab_sucursal_id,
-      lab_salario_base,
-      lab_salario_real,
       sgrh_empleados ( emp_numero_identificacion, emp_nombre, emp_apellido_1, emp_apellido_2 ),
       sgrh_cat_tipos_jornada ( tjo_horas_max_semanales )
     `
@@ -174,22 +171,31 @@ export async function getEmpleadosActivos(
     }
   }
 
-  const aEmpleado = (row: HistorialActivoRow): EmpleadoActivo => ({
-    labId: row.lab_id,
-    cedula: row.sgrh_empleados!.emp_numero_identificacion,
-    nombre: [
-      row.sgrh_empleados!.emp_nombre,
-      row.sgrh_empleados!.emp_apellido_1,
-      row.sgrh_empleados!.emp_apellido_2,
-    ]
-      .filter(Boolean)
-      .join(' '),
-    sucursalId: sucursalDeLaFila.get(row.lab_id) ?? row.lab_sucursal_id,
-    salarioBaseMensual: row.lab_salario_base,
-    salarioRealMensual: row.lab_salario_real ?? null,
-    horasSemanales: row.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
-  })
   const conEmpleado = (row: HistorialActivoRow) => row.sgrh_empleados !== null
+  const labIdsSalarios = [...filas, ...filasEnOtraSucursal].filter(conEmpleado).map((r) => r.lab_id)
+  const salariosResult = await fetchSalariosContratos(supabase, labIdsSalarios)
+  if (!salariosResult.ok) {
+    return { ok: false, error: 'No se pudieron cargar los salarios de los contratos.' }
+  }
+
+  const aEmpleado = (row: HistorialActivoRow): EmpleadoActivo => {
+    const salario = salariosResult.data.get(row.lab_id)
+    return {
+      labId: row.lab_id,
+      cedula: row.sgrh_empleados!.emp_numero_identificacion,
+      nombre: [
+        row.sgrh_empleados!.emp_nombre,
+        row.sgrh_empleados!.emp_apellido_1,
+        row.sgrh_empleados!.emp_apellido_2,
+      ]
+        .filter(Boolean)
+        .join(' '),
+      sucursalId: sucursalDeLaFila.get(row.lab_id) ?? row.lab_sucursal_id,
+      salarioBaseMensual: salario?.lab_salario_base ?? 0,
+      salarioRealMensual: salario?.lab_salario_real ?? null,
+      horasSemanales: row.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
+    }
+  }
 
   return {
     ok: true,

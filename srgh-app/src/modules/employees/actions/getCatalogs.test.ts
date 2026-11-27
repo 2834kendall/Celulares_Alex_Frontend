@@ -107,6 +107,60 @@ describe('getCatalogs (server actions)', () => {
     })
   })
 
+  it('getSucursales({ soloVisibles: true }) filtra por sucursal_ids del JWT y devuelve todas cuando es null', async () => {
+    const sucursalesData = [
+      { suc_id: 1, suc_nombre: 'Centro' },
+      { suc_id: 2, suc_nombre: 'Mall' },
+      { suc_id: 3, suc_nombre: 'Plaza' },
+    ]
+
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { sucursal_ids: [1, 3] },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const clientFiltered = mockClient({
+      sgrh_sucursales: { data: sucursalesData, error: null },
+    })
+    const resFiltered = await getSucursales({ soloVisibles: true })
+    expect(resFiltered).toEqual({
+      ok: true,
+      data: [
+        { id: 1, nombre: 'Centro' },
+        { id: 3, nombre: 'Plaza' },
+      ],
+    })
+    expect(clientFiltered.from.mock.results[0].value.in).toHaveBeenCalledWith('suc_id', [1, 3])
+
+    // Sin soloVisibles sigue devolviendo todas aunque sucursal_ids esté acotado
+    mockClient({ sgrh_sucursales: { data: sucursalesData, error: null } })
+    const resAllByDefault = await getSucursales()
+    expect(resAllByDefault).toEqual({
+      ok: true,
+      data: [
+        { id: 1, nombre: 'Centro' },
+        { id: 2, nombre: 'Mall' },
+        { id: 3, nombre: 'Plaza' },
+      ],
+    })
+
+    // Con sucursal_ids: null devuelve todas las sucursales de la empresa
+    mockRequirePermission.mockResolvedValue({
+      app_metadata: { sucursal_ids: null },
+    } as unknown as Awaited<ReturnType<typeof requirePermission>>)
+    const clientNull = mockClient({
+      sgrh_sucursales: { data: sucursalesData, error: null },
+    })
+    const resNull = await getSucursales({ soloVisibles: true })
+    expect(resNull).toEqual({
+      ok: true,
+      data: [
+        { id: 1, nombre: 'Centro' },
+        { id: 2, nombre: 'Mall' },
+        { id: 3, nombre: 'Plaza' },
+      ],
+    })
+    expect(clientNull.from.mock.results[0].value.in).not.toHaveBeenCalled()
+  })
+
   it('getTiposContrato mapea al DTO CatalogoItem', async () => {
     mockClient({
       sgrh_cat_tipos_contrato: { data: [{ tco_id: 3, tco_nombre: 'Indefinido' }], error: null },

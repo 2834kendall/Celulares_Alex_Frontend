@@ -239,12 +239,24 @@ describe('createEmployee (server action)', () => {
     })
   })
 
-  it('mapea el rechazo de permiso de la RPC (42501)', async () => {
-    mockRpc({ data: null, error: { code: '42501', message: 'Sin permiso' } })
+  it('propaga el mensaje de rechazo 42501 de la RPC y usa fallback si viene vacío', async () => {
+    mockRpc({
+      data: null,
+      error: { code: '42501', message: 'No tienes acceso a la sucursal seleccionada.' },
+    })
 
-    const result = await createEmployee(VALID_INPUT)
+    const resConMensaje = await createEmployee(VALID_INPUT)
+    expect(resConMensaje).toEqual({
+      ok: false,
+      error: 'No tienes acceso a la sucursal seleccionada.',
+    })
 
-    expect(result).toEqual({ ok: false, error: 'No tienes permiso para crear empleados.' })
+    mockRpc({ data: null, error: { code: '42501', message: '' } })
+    const resSinMensaje = await createEmployee(VALID_INPUT)
+    expect(resSinMensaje).toEqual({
+      ok: false,
+      error: 'No tienes permiso para crear empleados.',
+    })
   })
 
   it('devuelve error generico ante cualquier otro fallo de la RPC', async () => {
