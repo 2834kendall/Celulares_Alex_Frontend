@@ -39,6 +39,10 @@ import {
   leerFilasEstado,
 } from '@/modules/payroll/lib/alcancePlanilla'
 import { leerEmpleadosQueFaltan } from '@/modules/payroll/lib/empleadosFaltantesData'
+import {
+  fetchSalariosContratos,
+  type SalarioContrato,
+} from '@/lib/employees/fetchSalariosContratos'
 
 interface PeriodoRow {
   npe_id: number
@@ -88,8 +92,6 @@ interface DetalleRow {
   sgrh_historial_laboral: {
     lab_fecha_inicio?: string | null
     lab_fecha_fin?: string | null
-    lab_salario_base: number
-    lab_salario_real: number | null
     sgrh_cat_tipos_jornada: { tjo_horas_max_semanales: number | null } | null
     sgrh_empleados: {
       emp_id: number
@@ -195,8 +197,6 @@ export async function getPeriodoDetail(
       sgrh_historial_laboral (
         lab_fecha_inicio,
         lab_fecha_fin,
-        lab_salario_base,
-        lab_salario_real,
         sgrh_cat_tipos_jornada ( tjo_horas_max_semanales ),
         sgrh_empleados ( emp_id, emp_nombre, emp_apellido_1, emp_apellido_2, emp_numero_identificacion, emp_email_personal )
       )
@@ -301,6 +301,7 @@ export async function getPeriodoDetail(
     datosPagoDescifrados,
     etiquetasSucursal,
     filasDelPeriodo,
+    salariosResult,
   ] = await Promise.all([
     filas.length > 0 && hayFechas
       ? getHorasDelPeriodo(supabase, {
@@ -371,7 +372,17 @@ export async function getPeriodoDetail(
     // Cuántas filas tiene el periodo en total, para avisar si esta vista no
     // las muestra todas. Informativo: si falla, no se avisa.
     porEmpresa && soloDetalleId === undefined ? leerFilasEstado(supabase, periodoId) : null,
+    filas.length > 0
+      ? fetchSalariosContratos(
+          supabase,
+          filas.map((d: DetalleRow) => d.ndt_historial_laboral_id)
+        )
+      : null,
   ])
+
+  const salariosPorLab = salariosResult?.ok
+    ? salariosResult.data
+    : new Map<number, SalarioContrato>()
 
   // Quién falta en un periodo de toda la empresa que todavía se puede cargar.
   // Informativo: si no se puede calcular, la pantalla sale sin el aviso.
@@ -557,9 +568,10 @@ export async function getPeriodoDetail(
     // contrato vigente se puede editar en cualquier momento, leerlo en vivo
     // haría que corregir un salario moviera los montos de un período ya
     // armado. Sin foto (filas viejas) cae al contrato en vivo.
+    const salarioContrato = salariosPorLab.get(row.ndt_historial_laboral_id)
     const contratoFila = contratoDeLaFila(row, {
-      salarioBaseMensual: row.sgrh_historial_laboral?.lab_salario_base ?? 0,
-      salarioRealMensual: row.sgrh_historial_laboral?.lab_salario_real ?? null,
+      salarioBaseMensual: salarioContrato?.lab_salario_base ?? 0,
+      salarioRealMensual: salarioContrato?.lab_salario_real ?? null,
       horasSemanales:
         row.sgrh_historial_laboral?.sgrh_cat_tipos_jornada?.tjo_horas_max_semanales ?? null,
     })

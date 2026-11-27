@@ -14,6 +14,7 @@
 
 import 'server-only'
 import type { createClient } from '@/lib/supabase/server'
+import type { SalarioContrato } from '@/lib/employees/fetchSalariosContratos'
 import { PERMISOS } from '@/lib/permissions/catalog'
 import { rangoQuincena } from '@/modules/payroll/lib/fechas'
 import { periodoLabel } from '@/modules/payroll/lib/format'
@@ -46,24 +47,29 @@ export interface ContratoRow {
   lab_sucursal_id?: number | null
   lab_fecha_inicio: string
   lab_fecha_fin: string | null
-  lab_salario_base: number | null
-  lab_salario_real: number | null
+  lab_salario_base?: number | null
+  lab_salario_real?: number | null
   sgrh_liquidaciones: { liq_id: number } | { liq_id: number }[] | null
 }
 
 /** Columnas para pedir los contratos de un empleado con su liquidación (si tiene). */
 export const SELECT_CONTRATO =
-  'lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, lab_salario_base, lab_salario_real, sgrh_liquidaciones ( liq_id )'
+  'lab_id, lab_sucursal_id, lab_fecha_inicio, lab_fecha_fin, sgrh_liquidaciones ( liq_id )'
 
-export function aContrato(row: ContratoRow): ContratoDelEmpleado {
+export function aContrato(
+  row: ContratoRow,
+  salarios?: ReadonlyMap<number, SalarioContrato>
+): ContratoDelEmpleado {
   const liq = row.sgrh_liquidaciones
   const liquidado = Array.isArray(liq) ? liq.length > 0 : liq !== null && liq !== undefined
-  const real = Number(row.lab_salario_real ?? 0)
+  const salario = salarios?.get(row.lab_id)
+  const real = Number(salario?.lab_salario_real ?? row.lab_salario_real ?? 0)
+  const base = Number(salario?.lab_salario_base ?? row.lab_salario_base ?? 0)
   return {
     labId: row.lab_id,
     fechaInicio: row.lab_fecha_inicio,
     fechaFin: row.lab_fecha_fin,
-    salarioMensual: real > 0 ? real : Number(row.lab_salario_base ?? 0),
+    salarioMensual: real > 0 ? real : base,
     liquidado,
     sucursalId: row.lab_sucursal_id ?? null,
   }

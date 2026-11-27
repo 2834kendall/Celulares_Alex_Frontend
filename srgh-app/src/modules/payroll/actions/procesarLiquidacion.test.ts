@@ -78,12 +78,55 @@ const GUARDADA = { data: 100, error: null }
 
 type Respuesta = { data: unknown; error: unknown }
 
+function extraerSalariosDeHistorial(histResponse: Respuesta | Respuesta[] | undefined): Respuesta {
+  const resp = Array.isArray(histResponse) ? histResponse[0] : histResponse
+  const row = resp?.data as
+    | {
+        lab_id?: number
+        lab_salario_base?: number | null
+        lab_salario_real?: number | null
+        sgrh_empleados?: {
+          sgrh_historial_laboral?: Array<{
+            lab_id?: number
+            lab_salario_base?: number | null
+            lab_salario_real?: number | null
+          }> | null
+        } | null
+      }
+    | null
+    | undefined
+  const map = new Map<
+    number,
+    { lab_id: number; lab_salario_base: number; lab_salario_real: number }
+  >()
+  if (row && typeof row.lab_id === 'number') {
+    map.set(row.lab_id, {
+      lab_id: row.lab_id,
+      lab_salario_base: row.lab_salario_base ?? 0,
+      lab_salario_real: row.lab_salario_real ?? 0,
+    })
+  }
+  for (const c of row?.sgrh_empleados?.sgrh_historial_laboral ?? []) {
+    if (typeof c.lab_id === 'number') {
+      map.set(c.lab_id, {
+        lab_id: c.lab_id,
+        lab_salario_base: c.lab_salario_base ?? 0,
+        lab_salario_real: c.lab_salario_real ?? 0,
+      })
+    }
+  }
+  return { data: [...map.values()], error: null }
+}
+
 function mockSupabase(
   responses: Record<string, Respuesta | Respuesta[]>,
   registrarLiquidacion: Respuesta = GUARDADA
 ) {
   const client = createSupabaseClientMock(responses, {
-    rpcResponses: { registrar_liquidacion: registrarLiquidacion },
+    rpcResponses: {
+      registrar_liquidacion: registrarLiquidacion,
+      obtener_salarios_historial: extraerSalariosDeHistorial(responses.sgrh_historial_laboral),
+    },
   })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
@@ -445,7 +488,18 @@ describe('procesarLiquidacion (server action)', () => {
     client.rpc.mockImplementation(async (fn: string) =>
       fn === 'nomina_contratos_con_filas_ocultas'
         ? { data: [HISTORIAL.lab_id], error: null }
-        : GUARDADA
+        : fn === 'obtener_salarios_historial'
+          ? {
+              data: [
+                {
+                  lab_id: HISTORIAL.lab_id,
+                  lab_salario_base: HISTORIAL.lab_salario_base,
+                  lab_salario_real: HISTORIAL.lab_salario_real,
+                },
+              ],
+              error: null,
+            }
+          : GUARDADA
     )
 
     const result = await procesarLiquidacion(INPUT)
@@ -466,7 +520,20 @@ describe('procesarLiquidacion (server action)', () => {
       sgrh_historial_laboral: { data: { ...HISTORIAL, lab_sucursal_id: 2 }, error: null },
     })
     client.rpc.mockImplementation(async (fn: string) =>
-      fn === 'nomina_contratos_con_filas_ocultas' ? { data: [], error: null } : GUARDADA
+      fn === 'nomina_contratos_con_filas_ocultas'
+        ? { data: [], error: null }
+        : fn === 'obtener_salarios_historial'
+          ? {
+              data: [
+                {
+                  lab_id: HISTORIAL.lab_id,
+                  lab_salario_base: HISTORIAL.lab_salario_base,
+                  lab_salario_real: HISTORIAL.lab_salario_real,
+                },
+              ],
+              error: null,
+            }
+          : GUARDADA
     )
 
     const result = await procesarLiquidacion(INPUT)
@@ -798,7 +865,7 @@ describe('procesarLiquidacion (server action)', () => {
       const result = await procesarLiquidacion(INPUT)
 
       expect(result.ok).toBe(false)
-      expect(client.rpc).not.toHaveBeenCalled()
+      expect(client.rpc).not.toHaveBeenCalledWith('registrar_liquidacion', expect.anything())
     })
 
     it('sin horas pendientes no agrega nada', async () => {
@@ -1223,7 +1290,7 @@ describe('procesarLiquidacion: vista previa antes de guardar', () => {
     if (!result.ok) return
     expect(result.data.liqId).toBeNull()
     expect(result.data.neto).toBeGreaterThan(0)
-    expect(client.rpc).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('registrar_liquidacion', expect.anything())
   })
 
   it('la vista previa y lo que se guarda son el mismo cálculo', async () => {
@@ -1251,7 +1318,7 @@ describe('procesarLiquidacion: vista previa antes de guardar', () => {
 
     expect(result.ok).toBe(false)
     expect(!result.ok && result.error).toContain('Los montos cambiaron desde la vista previa')
-    expect(client.rpc).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('registrar_liquidacion', expect.anything())
   })
 })
 

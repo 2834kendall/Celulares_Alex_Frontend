@@ -97,9 +97,37 @@ function totales(over: Record<string, unknown> = {}) {
 }
 
 function mockSupabase(
-  responses: Record<string, { data: unknown; error: unknown } | { data: unknown; error: unknown }[]>
+  responses: Record<
+    string,
+    { data: unknown; error: unknown } | { data: unknown; error: unknown }[]
+  >,
+  rpcResponses: Record<string, { data: unknown; error: unknown }> = {}
 ) {
-  const client = createSupabaseClientMock(responses)
+  const hist = Array.isArray(responses.sgrh_historial_laboral)
+    ? responses.sgrh_historial_laboral[0]
+    : responses.sgrh_historial_laboral
+  const histData = hist?.data as
+    { lab_salario_base?: number | null; lab_salario_real?: number | null } | null | undefined
+  const defaultSalarios =
+    hist?.error || !histData
+      ? { data: [], error: hist?.error ?? null }
+      : {
+          data: [
+            {
+              lab_id: 5,
+              lab_salario_base: histData.lab_salario_base ?? 0,
+              lab_salario_real: histData.lab_salario_real ?? null,
+            },
+          ],
+          error: null,
+        }
+
+  const client = createSupabaseClientMock(responses, {
+    rpcResponses: {
+      obtener_salarios_historial: defaultSalarios,
+      ...rpcResponses,
+    },
+  })
   mockCreateClient.mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>)
   return client
 }

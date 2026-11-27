@@ -121,8 +121,15 @@ describe('getEmpleadosActivos con el periodo', () => {
     ndt_historial_laboral_id: lab,
     ndt_sucursal_id: sucursal,
   })
+  const salariosRpc = (...labs: number[]) => ({
+    obtener_salarios_historial: {
+      data: labs.map((l) => ({ lab_id: l, lab_salario_base: 400000, lab_salario_real: 430000 })),
+      error: null,
+    },
+  })
   /** nomina_filas_estado: todas las filas del periodo, las vea o no la cuenta. */
   const estado = (...labs: number[]) => ({
+    ...salariosRpc(...labs),
     nomina_filas_estado: {
       data: labs.map((l) => ({
         ndt_historial_laboral_id: l,
@@ -238,9 +245,12 @@ describe('getEmpleadosActivos con el periodo', () => {
   })
 
   it('busca los contratos de todas las sucursales del alcance', async () => {
-    const supabase = createSupabaseClientMock({
-      sgrh_historial_laboral: { data: [ANA], error: null },
-    })
+    const supabase = createSupabaseClientMock(
+      {
+        sgrh_historial_laboral: { data: [ANA], error: null },
+      },
+      { rpcResponses: salariosRpc(1) }
+    )
 
     await getEmpleadosActivos(supabase as unknown as Cliente, [3, 5])
 
@@ -258,15 +268,19 @@ describe('getEmpleadosActivos con el periodo', () => {
   })
 
   it('sin periodo, solo los vigentes (como al cargar empleados)', async () => {
-    const supabase = createSupabaseClientMock({
-      sgrh_historial_laboral: { data: [ANA], error: null },
-    })
+    const supabase = createSupabaseClientMock(
+      {
+        sgrh_historial_laboral: { data: [ANA], error: null },
+      },
+      { rpcResponses: salariosRpc(1) }
+    )
 
     const r = await getEmpleadosActivos(supabase as unknown as Cliente, [3])
 
     expect(r.ok && r.data.map((e) => e.labId)).toEqual([1])
     expect(supabase.from.mock.calls.map((c) => c[0])).toEqual(['sgrh_historial_laboral'])
-    expect(supabase.rpc).not.toHaveBeenCalled()
+    expect(supabase.rpc).toHaveBeenCalledWith('obtener_salarios_historial', { p_lab_ids: [1] })
+    expect(supabase.rpc).not.toHaveBeenCalledWith('nomina_filas_estado', expect.anything())
   })
 
   it('si no puede leer las filas del periodo, falla en vez de dejar a alguien afuera', async () => {
